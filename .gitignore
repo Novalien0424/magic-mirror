@@ -1,0 +1,30 @@
+# Dependencies / build output (Phase 0+)
+node_modules/
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# Local environment & secrets — credentials live in the OS keystore, never in the repo
+.env
+.env.*
+*.local.json
+.claude/settings.local.json
+
+# Runtime data (SQLite, enrollment images, diagnostics, backups live outside the repo,
+# but guard against accidental copies)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+data/
+diagnostics/
+backups/
+
+# Large binary assets are delivered out-of-band until an asset pipeline exists
+assets/avatar/
+assets/music/
+assets/offline/
+
+# OS noise
+.DS_Store
+Thumbs.db
