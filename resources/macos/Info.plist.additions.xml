@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist additions for the packaged Magic Mirror .app.
+
+  Phase 7 packaging merges these keys into the generated Info.plist
+  (electron-builder: `mac.extendInfo`; Forge: `packagerConfig.extendInfo`).
+
+  Why they matter: macOS TCC attributes microphone and camera grants to the PARENT
+  app bundle, so the spawned wake worker (utilityProcess) and the Python face worker
+  inherit the parent's grant. A MISSING usage-description key is a SILENT denial with
+  no dialog at all — the number one cause of "the camera looks broken".
+
+  The Console Audio/Camera cards surface TCC authorization status explicitly so a
+  denial is distinguishable from dead hardware; both are reported as Degraded and are
+  never retry-looped.
+
+  STATUS: authored on the Windows dev machine — NOT field-verified. Verify on the
+  target Mac in Phase 7 (packaging, signing, notarization, first-run TCC prompts).
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>魔鏡需要麥克風才能聽見你說話。Magic Mirror uses the microphone to hear you speak.</string>
+
+    <key>NSCameraUsageDescription</key>
+    <string>魔鏡需要相機才能辨識面前的訪客。Magic Mirror uses the camera to recognise the visitor in front of it.</string>
+  </dict>
+</plist>

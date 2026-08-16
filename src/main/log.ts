@@ -10,7 +10,7 @@ export type MarkerFields = Readonly<Record<string, string | number | boolean>>
 
 const MAX_VALUE_LENGTH = 200
 
-export function sanitizeMarkerValue(value: string | number | boolean): string {
+function sanitizeMarkerValue(value: string | number | boolean): string {
   const text = String(value).replace(/\s+/g, '_')
   return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)}…` : text
 }

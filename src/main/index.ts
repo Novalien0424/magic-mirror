@@ -3,8 +3,8 @@ import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'e
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { createCrashRecovery } from './crash-recovery'
-import { formatMarker, marker } from './log'
-import { evaluateSmoke, parseSmokeMode, type SmokeState } from './smoke'
+import { formatMarker, marker, type MarkerFields } from './log'
+import { evaluateSmoke, parseSmokeMode } from './smoke'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
@@ -13,7 +13,7 @@ const EXIT_FLUSH_TIMEOUT_MS = 500
 
 const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
-const headless = smokeMode.kind === 'on'
+const hideWindowsForSmoke = smokeMode.kind === 'on'
 
 /**
  * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
@@ -32,10 +32,12 @@ const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolea
   loaded: { mirror: false, console: false }
 }
 
-function rendererEntry(kind: MirrorWindowKind): { url?: string; file?: string } {
+type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
+
+function rendererEntry(kind: MirrorWindowKind): RendererEntry {
   const devServer = process.env['ELECTRON_RENDERER_URL']
-  if (devServer !== undefined && devServer !== '') return { url: `${devServer}/${kind}/index.html` }
-  return { file: join(__dirname, `../renderer/${kind}/index.html`) }
+  if (devServer !== undefined && devServer !== '') return { from: 'dev-server', url: `${devServer}/${kind}/index.html` }
+  return { from: 'file', file: join(__dirname, `../renderer/${kind}/index.html`) }
 }
 
 function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructorOptions {
@@ -96,19 +98,20 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   // The console stays hidden until Ctrl+Shift+D.
   if (kind === 'mirror') {
     win.once('ready-to-show', () => {
-      if (headless) {
+      if (hideWindowsForSmoke) {
         marker('WINDOW_KEPT_HIDDEN', { window: kind, reason: 'smoke_mode' })
         return
       }
       if (isDarwin) win.setSimpleFullScreen(true)
       else win.maximize()
       win.show()
+      marker('WINDOW_SHOWN', { window: kind, mode: isDarwin ? 'simple_fullscreen' : 'maximized' })
     })
   }
 
   const entry = rendererEntry(kind)
-  if (entry.url !== undefined) void win.loadURL(entry.url)
-  else void win.loadFile(entry.file as string)
+  if (entry.from === 'dev-server') void win.loadURL(entry.url)
+  else void win.loadFile(entry.file)
 
   return win
 }
@@ -160,18 +163,21 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
 
   if (decision.action === 'give_up') {
     // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts — never app.relaunch().
-    exitAfterFlush(
-      formatMarker('APP_EXIT', { code: 1, window: kind, attempts: decision.attempt, reason: decision.reason }),
-      1
-    )
+    exitWithMarker('APP_EXIT', { code: 1, window: kind, attempts: decision.attempt, reason: decision.reason }, 1)
     return
   }
 
   // Build the replacement before disposing of the corpse so no moment has zero windows.
   const stale = windows.get(kind)
-  createWindow(kind)
+  const wasVisible = stale !== undefined && !stale.isDestroyed() && stale.isVisible()
+  const replacement = createWindow(kind)
   if (stale !== undefined && !stale.isDestroyed()) stale.destroy()
-  marker('WINDOW_RECREATED', { window: kind, attempt: decision.attempt })
+  // A window the operator had open must come back, not silently disappear.
+  // The mirror re-shows itself from 'ready-to-show'; the console has no such handler
+  // (it opens on the shortcut), so an open console must be restored explicitly rather
+  // than silently disappearing from under the operator.
+  if (kind === 'console' && wasVisible) replacement.show()
+  marker('WINDOW_RECREATED', { window: kind, attempt: decision.attempt, was_visible: wasVisible })
 }
 
 function toggleConsoleWindow(): void {
@@ -194,23 +200,24 @@ function toggleConsoleWindow(): void {
 function registerConsoleShortcut(): void {
   const registered = globalShortcut.register(CONSOLE_SHORTCUT, toggleConsoleWindow)
   if (registered) marker('SHORTCUT_REGISTERED', { accelerator: CONSOLE_SHORTCUT })
-  else marker('SHORTCUT_REGISTER_FAILED', { accelerator: CONSOLE_SHORTCUT, reason: 'already_taken' })
+  else marker('SHORTCUT_REGISTER_FAILED', { accelerator: CONSOLE_SHORTCUT, reason: 'accelerator_unavailable' })
 }
 
-function exitAfterFlush(line: string, code: number): void {
+/** Logs a final marker and exits once it has reached the pipe — the exit code is the contract. */
+function exitWithMarker(name: string, fields: MarkerFields, code: number): void {
   let exited = false
   const quit = (): void => {
     if (exited) return
     exited = true
     app.exit(code)
   }
-  process.stdout.write(line, quit)
+  process.stdout.write(formatMarker(name, fields), quit)
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
 }
 
 function finishSmokeRun(): void {
-  const verdict = evaluateSmoke(boot as SmokeState)
-  exitAfterFlush(formatMarker('SMOKE_RESULT', { exit: verdict.exitCode, reason: verdict.reason }), verdict.exitCode)
+  const verdict = evaluateSmoke(boot)
+  exitWithMarker('SMOKE_RESULT', { exit: verdict.exitCode, reason: verdict.reason }, verdict.exitCode)
 }
 
 void app.whenReady().then(() => {
@@ -221,10 +228,7 @@ void app.whenReady().then(() => {
   })
 
   if (smokeMode.kind === 'invalid') {
-    exitAfterFlush(
-      formatMarker('SMOKE_CONFIG_INVALID', { raw: smokeMode.raw, reason: 'mirror_smoke_ms_not_a_positive_number' }),
-      2
-    )
+    exitWithMarker('SMOKE_CONFIG_INVALID', { raw: smokeMode.raw, reason: 'mirror_smoke_ms_not_a_positive_number' }, 2)
     return
   }
 
