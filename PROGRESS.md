@@ -112,3 +112,9 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
 - **Navigation hardening not set yet** (`setWindowOpenHandler` deny, `will-navigate`
   guard). Nothing in Phase 0 can navigate, but Task 8 should add it with the visitor UI.
 - Kiosk polish (cursor hiding, `powerSaveBlocker`) is deliberately out of Task 1 scope.
+
+## Codex harness migration — Task 1 Step 2 status (2026-08-17)
+
+- Preflight/hash recording captured for the RED-baseline sequence; the ignored receipt records exactly 8 SHA-256 values for `CLAUDE.md` and the seven legacy skills.
+- Known launcher ruling: the PowerShell wrapper was invoked directly, and an equivalent command-object marker returned `PROFILE_READY` with exit code `0`; no profile contents, credentials, environment secrets, or private data were recorded.
+- Invariant IDs 1–12 remain unchanged product constraints; this metadata-only note does not change application task status.
