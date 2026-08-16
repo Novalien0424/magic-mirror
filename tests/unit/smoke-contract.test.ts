@@ -97,4 +97,38 @@ describe('boot smoke contract', () => {
     },
     VITEST_TIMEOUT_MS
   )
+
+  it(
+    'recreates the mirror window after a renderer crash and still exits 0',
+    async () => {
+      const run = await runSmoke({ MIRROR_FORCE_RENDERER_CRASH: '1' })
+
+      expect(run.timedOut, `app hung after the renderer crash${report(run)}`).toBe(false)
+      expect(run.stdout, `crash was swallowed${report(run)}`).toMatch(/RENDERER_GONE window=mirror reason=\S+/)
+      expect(run.stdout, `window was not recreated${report(run)}`).toContain('WINDOW_RECREATED window=mirror attempt=1')
+      expect(run.stdout, `recreated window never loaded${report(run)}`).toContain('SMOKE_RESULT exit=0')
+      expect(run.code, `crash recovery must still smoke-pass${report(run)}`).toBe(0)
+    },
+    VITEST_TIMEOUT_MS
+  )
+
+  it(
+    'stops recreating after the budget and exits 1 for the supervisor to restart',
+    async () => {
+      const run = await runSmoke({ MIRROR_FORCE_RENDERER_CRASH: '2' })
+
+      expect(run.timedOut, `app hung in a crash loop${report(run)}`).toBe(false)
+      expect(run.stdout, `only one recreate is budgeted${report(run)}`).toContain(
+        'WINDOW_RECREATED window=mirror attempt=1'
+      )
+      expect(run.stdout, `second recreate should not happen${report(run)}`).not.toContain(
+        'WINDOW_RECREATED window=mirror attempt=2'
+      )
+      expect(run.stdout, `give-up must be announced${report(run)}`).toMatch(
+        /APP_EXIT code=1 window=mirror attempts=2 reason=recreate_limit_exhausted/
+      )
+      expect(run.code, `supervisor restart is signalled by exit 1${report(run)}`).toBe(1)
+    },
+    VITEST_TIMEOUT_MS
+  )
 })

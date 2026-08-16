@@ -2,6 +2,7 @@ import { basename, join } from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
+import { createCrashRecovery } from './crash-recovery'
 import { formatMarker, marker } from './log'
 import { evaluateSmoke, parseSmokeMode, type SmokeState } from './smoke'
 
@@ -14,9 +15,16 @@ const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
 const headless = smokeMode.kind === 'on'
 
+/**
+ * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
+ * renderers, so recreate-once and the give-up branch are both testable end to end.
+ */
+let forcedCrashesLeft = Math.max(0, Number.parseInt(process.env['MIRROR_FORCE_RENDERER_CRASH'] ?? '', 10) || 0)
+
 const windows = new Map<MirrorWindowKind, BrowserWindow>()
 /** Per-webContents so a recreated window reports readiness again. */
 const readyReported = new WeakSet<WebContents>()
+const crashRecovery = createCrashRecovery()
 
 const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolean> } = {
   // Task 2 owns the real machine; Task 1 only needs "did we leave starting".
@@ -65,6 +73,14 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   win.webContents.on('did-finish-load', () => {
     boot.loaded[kind] = true
     marker('WINDOW_LOADED', { window: kind })
+    if (kind === 'mirror' && forcedCrashesLeft > 0) {
+      forcedCrashesLeft -= 1
+      // Next tick: crashing inside the load event confuses Electron's own teardown.
+      setImmediate(() => {
+        marker('FORCED_RENDERER_CRASH', { window: kind, reason: 'mirror_force_renderer_crash' })
+        win.webContents.forcefullyCrashRenderer()
+      })
+    }
   })
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
@@ -130,6 +146,34 @@ function onRendererReady(sender: WebContents): void {
   }
 }
 
+function onRenderProcessGone(contents: WebContents, details: Electron.RenderProcessGoneDetails): void {
+  const kind = windowKindOf(contents)
+  if (kind === null) {
+    marker('RENDERER_GONE_UNTRACKED', { reason: details.reason })
+    return
+  }
+
+  const decision = crashRecovery.decide({ window: kind, reason: details.reason, exitCode: details.exitCode })
+  if (decision.action === 'ignore') return
+
+  marker('RENDERER_GONE', { window: kind, reason: details.reason, exit_code: details.exitCode })
+
+  if (decision.action === 'give_up') {
+    // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts — never app.relaunch().
+    exitAfterFlush(
+      formatMarker('APP_EXIT', { code: 1, window: kind, attempts: decision.attempt, reason: decision.reason }),
+      1
+    )
+    return
+  }
+
+  // Build the replacement before disposing of the corpse so no moment has zero windows.
+  const stale = windows.get(kind)
+  createWindow(kind)
+  if (stale !== undefined && !stale.isDestroyed()) stale.destroy()
+  marker('WINDOW_RECREATED', { window: kind, attempt: decision.attempt })
+}
+
 function toggleConsoleWindow(): void {
   const win = windows.get('console')
   if (win === undefined || win.isDestroyed()) {
@@ -185,6 +229,7 @@ void app.whenReady().then(() => {
   }
 
   ipcMain.on(BOOT_RENDERER_READY_CHANNEL, (event) => onRendererReady(event.sender))
+  app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
   createWindows()
   registerConsoleShortcut()
 
