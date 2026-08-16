@@ -26,7 +26,7 @@ anchors are given so you can verify the source.
 | 8 | Exactly one mic owner at a time: wake worker XOR renderer, with explicit release→acquire handshake. Handoff failure = local Maintenance, not cloud OfflineLoop | Spec §8.1 |
 | 9 | No silent failure: every ignore/drop/fallback/degrade produces a visitor-visible state or a Console event with a `reason`. Event schema (metadata only): `{time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?}`. Repeated identical errors may collapse into a counter on the same card — collapse, never discard. Catching an error is fine; swallowing it is not | Spec §6.3, §14.1 |
 | 10 | Failures degrade, never gate: camera, extractor, or a single adapter failing must not block conversation or other adapters. Cloud failure → OfflineLoop; local core failure → Maintenance. A black screen is never acceptable | PRD §5.1, Spec §14 |
-| 11 | Model IDs come only from versioned config (`active.json`). No source-code model literals, no silent fallback to a different model when the configured one fails — fail visibly instead. A single bounded retry of the SAME configured ID is a retry, not a fallback (allowed: max one per user action). All configured options exhausted → OfflineLoop, not substitution | Impl Plan §3.2, §1.3, P0 exit criteria |
+| 11 | Model IDs come only from versioned config (`active.json`). No source-code model literals, no silent fallback to a different model when the configured one fails — fail visibly instead. A single bounded retry of the SAME configured ID is a retry, not a fallback (allowed: max one per user action). All configured options exhausted → OfflineLoop, not substitution | Impl Plan §5 Phase 0 Scope＋Exit, §1 principle 3, Phase 1 Exit |
 | 12 | API credentials live in the OS keystore via Electron `safeStorage` (Keychain on the target Mac; DPAPI on Windows dev machines — same API), read by Main only. Renderer gets short-lived Realtime credentials. Keys never appear in config, logs, telemetry, or exports | Spec §13.4 |
 
 ## Correct Moves for the Classic Shortcuts
@@ -40,9 +40,11 @@ resolutions that pass review:
   Console transcript panel (cleared on dormant/restart). Join bad DB rows back
   to decision records.
 - **"Hardcode a fallback model so the demo survives"** → validate the model ID
-  at startup + Console "Test Connection" preflight. If a fallback is truly
-  wanted, it is config data (`modelCandidates` list), and using a non-primary
-  entry raises a persistent Console degraded banner + counter.
+  at startup + Console "Test Connection"/Test Draft preflight. The ONLY
+  sanctioned model changes are Publish of a tested Draft or Rollback Entire
+  Config to Previous — one configured ID per role, no candidate lists, no
+  auto-latest (Impl Plan §3.2). Runtime failure of the configured model →
+  OfflineLoop / visible degraded, never substitution (Phase 1 Exit).
 - **"Let the model's tool return the guest ID"** → tool returns only
   `{answer: 'yes'|'no'|'unclear'}`; Main resolves it against the
   `pendingCandidateProfileId` it already holds; reject payloads carrying IDs.

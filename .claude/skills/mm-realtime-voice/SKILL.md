@@ -71,10 +71,13 @@ Expiry gates session *start*, not duration. Never `useInsecureApiKey`.
   end on WebRTC = raw `output_audio_buffer.stopped` via
   `session.transport.on(...)`. Use that for Speaking→Listening, the 300 s
   idle timer, and safe rollover (Spec §8.3).
-- Web Audio: pass our own `audioElement`, then
-  `audioCtx.createMediaStreamSource(audioElement.srcObject)` → analyser
-  (lip sync) → AI gain → output. Keep the (muted-ok) audio element alive —
-  Chromium drops MediaStreamSource output without one.
+- Web Audio: the SDK's audio element (ours, unmuted) is the ONLY audible
+  path (Spec §8.2). The analyser is a silent tap —
+  `audioCtx.createMediaStreamSource(audioElement.srcObject)` → AnalyserNode,
+  NEVER connected to `destination` (that would double-play). AI ducking/mute
+  acts on `audioElement.volume`. Chromium's MediaStreamSource quirk is
+  satisfied automatically because the stream stays attached to the playing
+  element.
 - We supply the `mediaStream`, so `close()` does NOT stop mic tracks — stop
   them explicitly before handing the mic back to the wake worker.
 
@@ -111,6 +114,10 @@ in production.
   cheapest, Structured Outputs OK, `reasoning.effort: 'none'` available) —
   sensible Draft baseline; `gpt-5.6-terra` mid-tier. Extraction jobs use the
   `JobModelSnapshot` taken at enqueue.
+- Snapshot boundary rule (P1-D5/D6, P6-D8): sessions freeze a
+  `SessionModelSnapshot` at creation, jobs a `JobModelSnapshot` at enqueue —
+  a mid-session Publish never retargets live sessions or in-flight jobs;
+  only the next session/job picks up the new revision.
 
 ## Gotchas Checklist
 

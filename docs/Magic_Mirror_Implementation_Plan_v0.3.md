@@ -82,7 +82,7 @@ Phase Exit Criteria 是「是否適合開始下一階段」的開發判斷，不
 
 - State transition、module status、duration、error code。
 - Realtime connection、首音延遲、interrupt、usage metadata。
-- Wake 偵測 metadata（keyword、設定 threshold／boost）、Camera candidate score、active face model version。
+- Wake 偵測 metadata（keyword、設定 threshold／boost）、Camera candidate score、active face model pair（detector＋recognizer）version。
 - Avatar FPS、audio underrun。
 - Memory extraction success／failure、queue depth，不含內容。
 - Scene／adapter result。

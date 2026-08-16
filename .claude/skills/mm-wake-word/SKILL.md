@@ -72,7 +72,10 @@ const kws = new sherpa_onnx.KeywordSpotter({
 
 Worker holds the mic only in Dormant. On detection: worker closes its stream
 and confirms release → Main tells renderer to acquire → Realtime session owns
-mic. Reverse on Suspending/OfflineLoop. Handoff failure = local audio fault →
+mic. Reverse on Suspending/OfflineLoop — and note the Realtime SDK's
+`close()` does NOT stop app-owned mic tracks: the renderer must `track.stop()`
+each track before Main hands the mic back (Spec §8.1), or this worker hits
+device-busy. Handoff failure = local audio fault →
 Maintenance (never OfflineLoop). During Active the worker must not reopen the
 mic; a wake phrase said mid-conversation is just a normal utterance.
 

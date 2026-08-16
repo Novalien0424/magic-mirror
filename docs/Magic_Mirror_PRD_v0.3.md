@@ -405,7 +405,7 @@ Console 必須回答五個問題：
 
 - App state transition、module status、duration、error code。
 - Realtime connection、首音延遲、interrupt、usage metadata。
-- Wake 偵測 metadata（keyword、設定 threshold／boost；KWS 引擎不輸出 per-event confidence）、Camera candidate score、active face model version。
+- Wake 偵測 metadata（keyword、設定 threshold／boost；KWS 引擎不輸出 per-event confidence）、Camera candidate score、active face model pair（detector＋recognizer）version。
 - Avatar FPS、audio underrun。
 - Memory extraction success／failure 與 queue depth，不含內容。
 - Scene／adapter result。

@@ -41,9 +41,9 @@ tool with `model: "opus"`.**
   module contracts, the 11 fixed architecture decisions (§18).
 - `docs/Magic_Mirror_Implementation_Plan_v0.3.md` — Phase 0–7 scope, per-phase
   independent demos (P0-D1…P7-D7), exit criteria, traceability matrix.
-- `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md` — verified stack
-  pins, spec deviations (wake confidence, detector-pair versioning), and
-  contract-test traps; read before Phase 0/1/2/5 work.
+- `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md` — rationale for
+  the applied v0.3.1 amendments, contract-test traps, and the one deferred
+  latency mitigation; read before Phase 0/1/2/3/5/6 work.
 - `PROGRESS.md` — current verified state, risks, next action (create at Phase 0;
   update every session that changes behavior).
 - `DECISIONS.md` — new ADRs only; never re-litigate Tech Spec §18 decisions.
@@ -58,7 +58,7 @@ English. Guest-facing speech and personas are Traditional Chinese.
 | `mm-phase-workflow` | Slicing, dispatching, or executing any Phase work unit |
 | `mm-invariants` | Always loaded into every implementation/test dispatch prompt |
 | `mm-electron-foundation` | Electron main/renderer, lifecycle, SQLite, config, Keychain, workers (Phase 0) |
-| `mm-realtime-voice` | OpenAI Agents SDK RealtimeSession, WebRTC, transcripts, memory-extractor models (Phases 1, 6) |
+| `mm-realtime-voice` | OpenAI Agents SDK RealtimeSession, WebRTC, transcripts, memory-extractor models (Phases 1, 5, 6) |
 | `mm-wake-word` | sherpa-onnx Chinese keyword spotting, mic handoff (Phase 2) |
 | `mm-live2d-avatar` | Live2D rendering, lip sync, motions, Web Audio graph (Phase 3) |
 | `mm-face-identity` | YuNet/SFace pipeline, enrollment, embedding rebuild (Phase 5) |
@@ -71,31 +71,40 @@ Structured Outputs (memory extraction). SQLite is the only truth store.
 sherpa-onnx wake worker; Python + OpenCV YuNet/SFace face worker; Live2D
 avatar; typed Lighting/Fog/Music adapters each with a mock. All model IDs come
 from versioned config (`active.json`/`draft.json`/`previous.json`) — never
-source-code literals. Exact dependency versions get pinned in lockfiles at
-Phase start, not in docs.
+source-code literals. Docs carry the mandatory floors (Electron 43.x,
+sherpa-onnx ≥ 1.13.5, opencv-python + YuNet as a pinned pair, `node:sqlite`);
+exact patch versions land in lockfiles at Phase start.
 
 **Dev environment note:** development happens on this Windows workstation;
-target runtime is macOS. Keep macOS-only integrations (Keychain, LaunchAgent,
-TCC, AVFoundation) behind adapters with mocks so the app boots in dev mode on
-Windows; field acceptance always runs on the Mac mini.
+target runtime is macOS. Credentials use Electron `safeStorage` — Keychain on
+macOS, DPAPI on Windows, one code path, no shim. Keep the genuinely
+macOS-only integrations (LaunchAgent, TCC, AVFoundation, kiosk fullscreen)
+behind platform guards/mocks so the app boots in dev mode on Windows; field
+acceptance always runs on the Mac mini.
 
-## Hard Invariants (violation = rejected review; full list in `mm-invariants`)
+## Hard Invariants (violation = rejected review; numbering is canonical with
+`mm-invariants` — always cite these numbers)
 
-1. No transcript/audio persistence — final transcripts live in RAM only.
+1. No transcript/audio persistence — final transcripts, extracted memory
+   values, and private context never reach disk, logs, or telemetry.
 2. Face proposes candidates; only verbal confirmation loads private memory.
-3. `guestId`/`candidateProfileId` is bound by Main; never accepted from model
-   output or tools.
-4. Profile switch = close old session, clean confirmation session, then
+3. Guest IDs are bound by Main; never accepted from model output, tools, or
+   renderer IPC (public call names may cross to the model; identifiers not).
+4. Profile switch = close old session → clean confirmation session →
    `updateAgent` in place.
 5. Extraction jobs write only to `ownerProfileIdAtTurnStart`.
-6. Scenes trigger only on normalized exact full-transcript spell match; LLM
-   never emits hardware parameters.
-7. One mic owner at a time (wake worker XOR renderer).
-8. No silent failure: every fallback/drop/ignore produces a Console event.
-9. Failures degrade, never gate: camera/memory/one-adapter failure must not
-   block conversation; cloud failure → OfflineLoop; local core failure →
-   Maintenance. Never a black screen.
-10. Configured model unavailable ≠ substitute a fallback model.
+6. Control turns (confirm/name/switch/group/sleep/spell) never enter
+   personal memory extraction.
+7. Scenes trigger only on normalized exact full-transcript spell match, once
+   per turn; LLM never emits hardware parameters.
+8. One mic owner at a time (wake worker XOR renderer).
+9. No silent failure: every fallback/drop/ignore produces a Console event
+   with a reason.
+10. Failures degrade, never gate: cloud failure → OfflineLoop; local core
+    failure → Maintenance; never a black screen.
+11. Model IDs come only from versioned config; configured model unavailable ≠
+    substitute a fallback model.
+12. Credentials live in the OS keystore via `safeStorage`, Main-only.
 
 ## Work Units (Implementation Plan §14)
 

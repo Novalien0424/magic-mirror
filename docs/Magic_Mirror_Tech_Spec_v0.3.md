@@ -61,7 +61,7 @@
 
 Phase 1 採用一個 Electron modular monolith，也就是「一個應用程式、內部分模組」，而不是多個服務互相呼叫。
 
-實作基線為 TypeScript＋Electron＋React（Electron pin 43.x）；XState v5 若採用，只管理七個 lifecycle states。SQLite baseline 為 Node 內建 `node:sqlite`（Electron ≥43 可用；WAL 以 pragma 開啟、備份走 online backup API），必要時才退回單一 embedded binding。Wake Worker 使用 sherpa-onnx（**pin ≥ 1.13.5**：1.13.4 的 KWS 在 M4／SME Apple Silicon 上靜默偵測不到任何關鍵詞，k2-fsa/sherpa-onnx#3791）；Face Worker 使用 pin 版 Python／OpenCV YuNet＋SFace（detector 與 recognition model 成對 pin）。開始實作時依 2026-08 當日 stable release 鎖定精確 patch 和 lockfile，不在 PRD 寫死易變版本。
+實作基線為 TypeScript＋Electron＋React（Electron pin 43.x）；XState v5 若採用，只管理七個 lifecycle states。SQLite baseline 為 Node 內建 `node:sqlite`（Electron ≥36 起可用、本案 pin 43.x；WAL 以 pragma 開啟、備份走 online backup API），必要時才退回單一 embedded binding。Wake Worker 使用 sherpa-onnx（**pin ≥ 1.13.5**：1.13.4 的 KWS 在 M4／SME Apple Silicon 上靜默偵測不到任何關鍵詞，k2-fsa/sherpa-onnx#3791）；Face Worker 使用 pin 版 Python／OpenCV YuNet＋SFace（detector 與 recognition model 成對 pin）。開始實作時依 2026-08 當日 stable release 鎖定精確 patch 和 lockfile，不在 PRD 寫死易變版本。
 ```mermaid
 flowchart TB
   subgraph Mac["Mac mini M4"]
@@ -186,7 +186,7 @@ Main 維護最多 2,000 筆事件的 RAM ring buffer，並以非阻塞 writer �
 
 每筆事件只包含：
 ```text
-time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?
+time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?, source?
 ```
 
 允許記錄：
@@ -241,7 +241,7 @@ Realtime可在completed transcript抵達前開始回答，Voice hot path不等�
 ### 7.2 建立 session
 
 1. Renderer 向 Main 要短效 Realtime credential。
-2. Main 從 macOS Keychain 讀正式 API credential並取得短效 credential。
+2. Main 以 `safeStorage` 從 OS keystore（目標機為 macOS Keychain）讀正式 API credential並取得短效 credential。
 3. Renderer 以 app-owned microphone stream 建立 `RealtimeSession`。
 4. 連線完成後才把 lifecycle 從 Activating 改為 Active。
 5. 斷線時立即停止 AI audio，關閉該 session ID 並進 OfflineLoop。
@@ -307,7 +307,8 @@ Active: RealtimeSession
 若交接失敗，這是本機音訊故障而不是雲端故障：進 Maintenance，Console 顯示 Audio Failed；Main 可嘗試一次重建 owner，仍失敗就等待人工處理。
 ### 8.2 Web Audio graph
 ```text
-Realtime remote audio → analyser → AI gain → output
+Realtime remote audio → audio element（唯一可聽輸出；AI ducking／mute 作用於其 volume）
+                        └─ analyser tap（僅供嘴型與量測，不接 destination）
 Local music           → music gain / ducking → output
 ```
 - Realtime remote audio只接一條播放路徑：SDK 的 audio element 就是唯一可聽輸出，analyser 從同一 MediaStream 取樣（Chromium 的 `MediaStreamSource` 需要 stream 掛在 audio element 上才有輸出）；不得再經 Web Audio 額外輸出一次造成重複播放。
@@ -530,6 +531,7 @@ Phase 1 需要：
 Application Support/MagicMirror/
   config/
     active.json
+    draft.json
     previous.json
   data/
     mirror.sqlite
@@ -544,12 +546,12 @@ Application Support/MagicMirror/
 ```
 ### 13.3 Config
 
-單一 `active.json` 包含：
+`active.json`（連同 `draft.json`／`previous.json` 兩份姊妹檔）包含：
 - Persona 與選定 Voice。
 - idle duration。
 - audio／camera stable device IDs。
 - wake phrase和本機 model version。
-- active face embedding model。
+- active face model pair（detector＋recognizer）。
 - memory數量／context budget。
 - spells、scene cues和adapter presets。
 - Avatar、music、offline asset paths。
@@ -583,7 +585,7 @@ Backup 是單機資料可靠性功能，不是法規級資料清除系統。
 | Live2D或OfflineLoop核心asset fail | 顯示內建Maintenance still／shader | Asset card指出缺少或decode error |
 | Lighting／Fog fail | 其他cue和對話繼續 | scene標示partial failure |
 | Music fail | 不播放音樂，對話繼續 | Music adapter顯示error |
-| Renderer crash | LaunchAgent／Main重啟 visitor window | 依health回Dormant、OfflineLoop或Maintenance |
+| Renderer crash | Main 於 `render-process-gone` 重建 visitor window | 依health回Dormant、OfflineLoop或Maintenance |
 | Main crash | LaunchAgent重啟整個app | 未完成RAM記憶可遺失 |
 
 Restart ownership 單一化：launchd（LaunchAgent `KeepAlive={SuccessfulExit=false}`）是唯一的 app-level restart owner；Main 只在 `render-process-gone` 時重建 window。程式內不使用 `app.relaunch()`（兩套重啟機制會互相干擾）；連續失敗達上限時 `app.exit(1)` 交給 launchd。
@@ -621,15 +623,15 @@ Console只記原因和metadata，不因此保存私人內容。
 這些是最終 Hardening 驗收，不要求每個小改動都重跑72小時。
 ## 16. Progressive Implementation Plan
 
-每個 Phase 都必須有一個不依賴下一階段的展示和驗收方式。
+每個 Phase 都必須有一個不依賴下一階段的展示和驗收方式。正式 Exit Criteria 以 `Magic_Mirror_Implementation_Plan_v0.3.md` 為準；本表為摘要，數字若有出入以 Implementation Plan 為權威。
 | Phase | 要完成的垂直切片 | 可獨立驗證的完成條件 |
 |---|---|---|
-| 0 Foundation／Console | Electron kiosk、自啟、簡單 lifecycle、Dormant stub、OfflineLoop、Console、local telemetry、config／Keychain／SQLite skeleton，以及全部 mocks | 5次開機不黑畫面；模擬雲端失敗→OfflineLoop，本機核心失敗→Maintenance；Console可從每個狀態打開；未完成模組顯示`Not implemented` |
-| 1 Realtime Voice | Console手動啟動官方`RealtimeSession`／WebRTC、built-in Voice、中文Persona、completed transcript、barge-in、cloud-loss與OpenAI contract test | 20回合中文／中英對話和20次插話；wake尚未實作也可demo；connect／active failure都進OfflineLoop |
+| 0 Foundation／Console | Electron kiosk、自啟、簡單 lifecycle、Dormant stub、OfflineLoop、Console、local telemetry、config／Keychain／SQLite skeleton，以及全部 mocks | 10次開機不黑畫面；模擬雲端失敗→OfflineLoop，本機核心失敗→Maintenance；Console可從每個狀態打開；未完成模組顯示`Not implemented` |
+| 1 Realtime Voice | Console手動啟動官方`RealtimeSession`／WebRTC、built-in Voice、中文Persona、completed transcript、barge-in、cloud-loss與OpenAI contract test | 20回合中文／中英對話和10次插話；wake尚未實作也可demo；connect／active failure都進OfflineLoop |
 | 2 Wake Lifecycle | sherpa custom wake、mic handoff、五分鐘idle、口頭sleep、離線時仍可wake | 20次wake→talk→sleep；離線wake進OfflineLoop；Wake與Realtime不會同時持有mic |
-| 3 Avatar／Audio | 正式Live2D、remote audio嘴型、idle motion、expression transition、music graph／ducking | 30分鐘Voice＋Avatar＋music無雙重播放或underrun；插話停止嘴型；5人中至少4人認為不突兀 |
-| 4 Scenes | Exact spell、cooldown、timeline、三類mock／physical adapters、scene result、Console Scene panel | 每個spell 30正例／60負例且誤觸0；拔除設備只造成可見partial failure |
-| 5 Identity／Profiles | Profile／image／embedding schema、face candidate、Main-bound口頭確認、匿名／認錯／多人／換人、clean session、gallery和rebuild | 5人完成註冊與3次回訪；B session無A history；更換embedding model不需重拍 |
+| 3 Avatar／Audio | 正式Live2D、remote audio嘴型、idle motion、expression transition、music graph／ducking | 10分鐘Voice＋Avatar＋music無雙重播放或underrun；插話停止嘴型（「5人中至少4人認為不突兀」改列 Phase 7 現場檢查） |
+| 4 Scenes | Exact spell、cooldown、timeline、三類mock／physical adapters、scene result、Console Scene panel | 每個spell 20正例／30負例且誤觸0；拔除設備只造成可見partial failure |
+| 5 Identity／Profiles | Profile／image／embedding schema、face candidate、Main-bound口頭確認、匿名／認錯／多人／換人、clean session、gallery和rebuild | 兩位以上真人完成註冊與回訪流程；B session無A history；更換embedding model不需重拍 |
 | 6 Memory | Recent summary、durable fact、Master、structured extractor、TurnContext、context composer、Admin editor | 30～50組中文案例；A／B交叉洩漏0；extractor失敗不影響Voice |
 | 7 Field Hardening | 最終硬體／資產、完整Setup／Admin、backup／restore、diagnostic export、process recovery | 全部PRD Must stories、100 lifecycle、72小時soak；無人工重啟或無限queue／memory成長 |
 ## 17. 測試策略

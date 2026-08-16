@@ -91,8 +91,10 @@ code path, no shim needed.
   `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in Info.plist
   and `com.apple.security.device.audio-input`/`.camera` entitlements with
   hardenedRuntime; grants then cover spawned children. A missing key =
-  **silent denial, no dialog** — the #1 "camera looks broken" cause. Surface
-  it as a Console `Degraded`, don't retry-loop.
+  **silent denial, no dialog** — the #1 "camera looks broken" cause. The
+  Console Audio/Camera cards display TCC authorization status explicitly
+  (Spec §6.2) so permission denial and dead hardware are distinguishable;
+  surface as `Degraded`, don't retry-loop.
 
 ## Config Files
 
