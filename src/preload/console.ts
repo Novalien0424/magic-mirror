@@ -1,9 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { BOOT_RENDERER_READY_CHANNEL, type BootBridge } from '../shared/bridge'
+import type { BootBridge, BootChannel } from '../shared/bridge'
+
+// Sandboxed preloads cannot `require` relative files, so this file must bundle to a
+// single self-contained chunk: type-only imports from shared/ are the only ones allowed.
+const READY_CHANNEL: BootChannel = 'boot:renderer-ready'
 
 const bridge: BootBridge = {
   window: 'console',
-  notifyReady: () => ipcRenderer.send(BOOT_RENDERER_READY_CHANNEL)
+  notifyReady: () => ipcRenderer.send(READY_CHANNEL)
 }
 
 contextBridge.exposeInMainWorld('magicMirror', bridge)

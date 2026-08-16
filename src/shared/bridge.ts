@@ -5,8 +5,15 @@
 
 export type MirrorWindowKind = 'mirror' | 'console';
 
-/** Channel the renderer uses to tell Main "I mounted and painted a screen". */
-export const BOOT_RENDERER_READY_CHANNEL = 'boot:renderer-ready';
+/**
+ * Channel the renderer uses to tell Main "I mounted and painted a screen".
+ *
+ * Sandboxed preloads cannot `require` relative files, so each preload must bundle to a
+ * single self-contained chunk and therefore repeats this literal instead of importing
+ * the constant. `BootChannel` pins those literals: a rename breaks typecheck.
+ */
+export type BootChannel = 'boot:renderer-ready';
+export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready';
 
 export interface BootBridge {
   /**
