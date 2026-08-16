@@ -1,17 +1,32 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 of 10 done and reviewed.**
 
 - Plan: `docs/superpowers/plans/2026-08-16-phase0-foundation.md`
 - Branch: `phase0-foundation`
 - Last verified: 2026-08-16, Task 1, on the Windows 11 dev machine
   (Electron 43.4.0, Node 22.21.0, electron-vite 5.0.0, vite 7.3.6, vitest 4.1.10)
 
+## Next action (for the next session)
+
+1. Resume subagent-driven execution: the SDD ledger is at
+   `.superpowers/sdd/2026-08-16-phase0-foundation/progress.md` (on disk,
+   git-ignored). It records Task 1 complete and 5 standing rulings — read it
+   first; tasks with a `complete` line are done, resume at Task 2 (lifecycle
+   state machine). Workflow: CLAUDE.md harness rule + `mm-phase-workflow` +
+   superpowers:subagent-driven-development; dispatch briefs live next to the
+   ledger (`shared-interfaces.md` is the cross-task contract file).
+2. **Before Task 3**: upgrade dev Node from 22.21.0 to ≥22.22.2 or ≥24.15.0 —
+   `write-file-atomic@8` declares that engine range and Task 3's vitest run
+   uses the dev Node (`npm install` already warns EBADENGINE).
+3. Tasks run SEQUENTIALLY (ledger Ruling R5) even where the plan marks them
+   parallel-eligible.
+
 ## Task status
 
 | #  | Task                                            | State       | Evidence |
 |----|-------------------------------------------------|-------------|----------|
-| 1  | Scaffold, two windows, never-black-screen boot  | done        | `npm run typecheck` clean; `npm test` 16 passing, incl. 4 spawned smoke runs |
+| 1  | Scaffold, two windows, never-black-screen boot  | done + reviewed | `npm run typecheck` clean; `npm test` 4 files / 20 tests passing, incl. 4 spawned smoke runs; orchestrator review clean (3 minors deferred, see SDD ledger) |
 | 2  | Lifecycle state machine (XState v5)             | not started | |
 | 3  | ConfigService + credentials                     | not started | |
 | 4  | Telemetry (metadata-only, non-blocking)         | not started | |

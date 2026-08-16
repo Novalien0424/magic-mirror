@@ -25,6 +25,9 @@ assets/avatar/
 assets/music/
 assets/offline/
 
+# SDD orchestration scratch (ledger/briefs/reports live on disk, not in git)
+.superpowers/
+
 # OS noise
 .DS_Store
 Thumbs.db

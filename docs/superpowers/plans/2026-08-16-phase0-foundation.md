@@ -166,13 +166,13 @@ Demo step affected:   P0-D1 (start), P0-D4 (restart survives)
 
 **Interfaces:** Produces `src/shared/types.ts` VERBATIM from Shared Interfaces above; produces `createWindows()`, `MIRROR_SMOKE_MS` contract. Consumes nothing.
 
-- [ ] Scaffold electron-vite + React + TS; pin `electron@43`, add `xstate@5`, `zod@4`, `write-file-atomic@8`, `vitest`. Add `node:sqlite` to main rollup externals.
-- [ ] Write `src/shared/types.ts` verbatim. `npm run typecheck` passes.
-- [ ] Failing test `tests/unit/smoke-contract.test.ts`: spawn `npm run dev` with `MIRROR_SMOKE_MS=8000`, expect exit 0 and stdout containing `MAIN_READY` (guard with 60s timeout; skip-if-CI flag not allowed — it must run locally).
-- [ ] Implement main: create Mirror window (fullscreen on win32 dev = maximized frameless; `simpleFullscreen` under `process.platform==='darwin'` guard), Console window hidden until `Ctrl+Shift+D`, `render-process-gone` → log + recreate once, smoke-mode auto-quit. Watch test pass.
-- [ ] Failure test: env `MIRROR_FORCE_RENDERER_FAIL=1` makes mirror preload throw → smoke exits 2. Implement the guard; watch pass.
-- [ ] Author `resources/macos/` files (Info.plist additions with `NSMicrophoneUsageDescription`/`NSCameraUsageDescription`, entitlements with `com.apple.security.device.*`, LaunchAgent plist with `KeepAlive={SuccessfulExit=false}`) — content per `mm-electron-foundation`; mark "field-verified in Phase 7" in comments.
-- [ ] Create `PROGRESS.md` (state: Phase 0 in progress, task table). Commit.
+- [x] Scaffold electron-vite + React + TS; pin `electron@43`, add `xstate@5`, `zod@4`, `write-file-atomic@8`, `vitest`. Add `node:sqlite` to main rollup externals.
+- [x] Write `src/shared/types.ts` verbatim. `npm run typecheck` passes.
+- [x] Failing test `tests/unit/smoke-contract.test.ts`: spawn `npm run dev` with `MIRROR_SMOKE_MS=8000`, expect exit 0 and stdout containing `MAIN_READY` (guard with 60s timeout; skip-if-CI flag not allowed — it must run locally).
+- [x] Implement main: create Mirror window (fullscreen on win32 dev = maximized frameless; `simpleFullscreen` under `process.platform==='darwin'` guard), Console window hidden until `Ctrl+Shift+D`, `render-process-gone` → log + recreate once, smoke-mode auto-quit. Watch test pass.
+- [x] Failure test: env `MIRROR_FORCE_RENDERER_FAIL=1` makes mirror preload throw → smoke exits 2. Implement the guard; watch pass.
+- [x] Author `resources/macos/` files (Info.plist additions with `NSMicrophoneUsageDescription`/`NSCameraUsageDescription`, entitlements with `com.apple.security.device.*`, LaunchAgent plist with `KeepAlive={SuccessfulExit=false}`) — content per `mm-electron-foundation`; mark "field-verified in Phase 7" in comments.
+- [x] Create `PROGRESS.md` (state: Phase 0 in progress, task table). Commit. *(Task 1 done + reviewed 2026-08-16 — commits 0aa6a84..8771d32; see SDD ledger.)*
 
 ### Task 2: Lifecycle state machine
 
