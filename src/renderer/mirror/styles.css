@@ -1,0 +1,45 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #05070a;
+  color: #e8eef6;
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  height: 100%;
+  text-align: center;
+}
+
+.screen__title {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: 200;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+}
+
+.screen__detail {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.6vw, 1.15rem);
+  opacity: 0.65;
+}
+
+.screen--fault .screen__detail {
+  color: #ffb4a2;
+  opacity: 1;
+}
