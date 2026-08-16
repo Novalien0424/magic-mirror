@@ -80,4 +80,21 @@ describe('boot smoke contract', () => {
     },
     VITEST_TIMEOUT_MS
   )
+
+  it(
+    'exits 2 — not a hang, not a black screen — when the mirror preload fails',
+    async () => {
+      const run = await runSmoke({ MIRROR_FORCE_RENDERER_FAIL: '1' })
+
+      expect(run.timedOut, `app hung instead of failing fast${report(run)}`).toBe(false)
+      expect(run.stdout, `preload failure was swallowed${report(run)}`).toContain('PRELOAD_ERROR window=mirror')
+      // The window still loads and paints; what is missing is the readiness signal.
+      expect(run.stdout, `mirror window should still load${report(run)}`).toContain('WINDOW_LOADED window=mirror')
+      expect(run.stdout, `verdict must name the unmet condition${report(run)}`).toMatch(
+        /SMOKE_RESULT exit=2 reason=\S*lifecycle_still_starting/
+      )
+      expect(run.code, `expected the documented failure exit code${report(run)}`).toBe(2)
+    },
+    VITEST_TIMEOUT_MS
+  )
 })
