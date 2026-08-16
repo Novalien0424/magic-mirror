@@ -2,7 +2,7 @@
 
 Date: 2026-08-16  
 Branch: `phase0-foundation`  
-Status: awaiting written-spec review
+Status: approved for implementation
 
 ## Goal and boundaries
 
