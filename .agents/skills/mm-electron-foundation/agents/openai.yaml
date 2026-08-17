@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Electron Foundation"
+  short_description: "Design safe Electron shell and IPC boundaries"
+  default_prompt: "Use $mm-electron-foundation to design a safe Magic Mirror Electron boundary."
