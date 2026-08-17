@@ -1,0 +1,4 @@
+# Codex CLI discovery and dry-runs use --profile nova-auto; the profile is user-level and is never copied here.
+[agents]
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
