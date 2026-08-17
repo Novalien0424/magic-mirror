@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Face Identity"
+  short_description: "Apply YuNet and SFace identity safeguards"
+  default_prompt: "Use $mm-face-identity to apply safe YuNet and SFace identity guidance."
