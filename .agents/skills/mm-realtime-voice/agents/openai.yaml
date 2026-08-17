@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Realtime Voice"
+  short_description: "Apply pinned Realtime voice and privacy contracts"
+  default_prompt: "Use $mm-realtime-voice to apply the Magic Mirror Realtime voice contract."
