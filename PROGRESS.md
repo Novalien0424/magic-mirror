@@ -13,7 +13,7 @@
    `.superpowers/sdd/2026-08-16-phase0-foundation/progress.md` (on disk,
    git-ignored). It records Task 1 complete and 5 standing rulings — read it
    first; tasks with a `complete` line are done, resume at Task 2 (lifecycle
-   state machine). Workflow: CLAUDE.md harness rule + `mm-phase-workflow` +
+   state machine). Workflow: root harness rule + `mm-phase-workflow` +
    superpowers:subagent-driven-development; dispatch briefs live next to the
    ledger (`shared-interfaces.md` is the cross-task contract file).
 2. **Before Task 3**: upgrade dev Node from 22.21.0 to ≥22.22.2 or ≥24.15.0 —
@@ -21,6 +21,22 @@
    uses the dev Node (`npm install` already warns EBADENGINE).
 3. Tasks run SEQUENTIALLY (ledger Ruling R5) even where the plan marks them
    parallel-eligible.
+
+## Codex harness migration — Task 10 records-only update (2026-08-17)
+
+- Control plane complete: `cb4f439` captured the RED/hash baseline; `cdf982b`
+  added `AGENTS.md`, `.codex/config.toml`, and the three explicit worker roles.
+- Seven migrated skills are complete and root-reviewed: `mm-phase-workflow`
+  (`fba68fe`), `mm-invariants` (`899dd9d`), `mm-electron-foundation`
+  (`4480897`), `mm-realtime-voice` (`b161421`), `mm-wake-word` (`7ddcdc4`),
+  `mm-live2d-avatar` (`09cc954`), and `mm-face-identity` (`5ca5a6c`).
+- Validation status: per-task static skill/metadata, trigger, retrieval,
+  application-forward, and immutable-source `8/8` evidence is recorded; no
+  application, source, dependency, or runtime changes were made. Final
+  migration validation remains pending.
+- This is migration state only. The application task table below is unchanged:
+  application Task 1 remains done + reviewed, and application Task 2 remains
+  next/not started.
 
 ## Task status
 

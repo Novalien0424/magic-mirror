@@ -3,6 +3,20 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-17 — Codex harness migration routing
+
+- **Root ownership.** The root Codex thread is the sole orchestrator and
+  reviewer. Root does not implement changes, perform survey/research, or run
+  tests/validation.
+- **Worker route.** Every worker explicitly launches fresh through profile
+  `nova-auto` with model `gpt-5.6-luna`, `reasoning_effort: "max"`, exactly one
+  bounded role, and `fresh_worker: true`.
+- **Review boundary.** No separate review role exists. Root review is external
+  to worker self-review, and all current and future plans and workers allow at
+  most three self-review passes.
+- **Supersession.** The user's current Codex policy supersedes SDD ledger
+  R3/R4; R1/R2/R5 remain active.
+
 ## 2026-08-16 — Task 1 (Phase 0 scaffold)
 
 - **TypeScript 5.9, not 7.0.** xstate 5 and the vite/electron-vite toolchain
