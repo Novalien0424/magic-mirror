@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Wake Word"
+  short_description: "Tune wake-word workers and microphone handoff"
+  default_prompt: "Use $mm-wake-word to tune the Magic Mirror wake-word handoff."
