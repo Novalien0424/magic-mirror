@@ -38,6 +38,18 @@
   application Task 1 remains done + reviewed, and application Task 2 remains
   next/not started.
 
+## Codex harness migration - final validation (2026-08-17)
+
+- Overall result: PASS from the ignored `.superpowers/sdd/2026-08-16-phase0-foundation/final-validation.md` at validation HEAD `14fb5ab`.
+- Exact active set: seven skills — `mm-phase-workflow`, `mm-invariants`, `mm-electron-foundation`, `mm-realtime-voice`, `mm-wake-word`, `mm-live2d-avatar`, and `mm-face-identity` — plus three roles (`implementer`, `surveyor`, `tester`); no reviewer.
+- Frontmatter/skill-validator, YAML, ASCII, TOML, control-plane, and stale-template scans: PASS.
+- Immutable source receipt: `8/8`.
+- Execution gate: Node `v22.21.0`; `npm run typecheck` exit `0`; `npm test` exit `0` — 4 files / 20 tests, duration `35.42s`.
+- Migration scope: clean `23/23` allowed paths; no product/app/dependency/test changes.
+- Discovery LIMITATION: recursive live-selector discovery was unavailable because of the root-only launcher. Earlier profile-backed Luna/max local-direct trigger/retrieval evidence exists for all seven skills, but it is not recursive telemetry.
+- Commit evidence: design `15eae49`, plan `49479f6`, Task 1 `cb4f439`, Task 2 `cdf982b`, Task 3 `fba68fe`, Task 4 `899dd9d`, Task 5 `4480897`, Task 6 `b161421`, Task 7 `7ddcdc4`, Task 8 `09cc954`, Task 9 `5ca5a6c`, Task 10 `bd5f0a7`, Task 11 hygiene fix `14fb5ab`.
+- Residual: macOS field verification remains outstanding; Node must be upgraded to `>=22.22.2` or `>=24.15.0` before application Task 3.
+
 ## Task status
 
 | #  | Task                                            | State       | Evidence |
