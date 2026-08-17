@@ -215,7 +215,7 @@ Expected evidence: one commit containing only the migration status note; the ign
 
 ~~~
 Read the approved design at docs/superpowers/specs/2026-08-16-codex-harness-migration-design.md, current PROGRESS.md and DECISIONS.md, and all seven .claude/skills/*/SKILL.md source files. Create only the Codex control-plane files named in this task. Do not edit CLAUDE.md, .claude/skills, product docs, src, tests, package files, or the plan.
- 
+
 AGENTS.md must state: the root Codex thread alone orchestrates and reviews; root does not implement, perform exploratory repository survey/research, or execute tests; every worker dispatch explicitly supplies model gpt-5.6-luna, reasoning_effort max, exactly one role, bounded task, exact files, relevant skill paths, invariant IDs, write/read-only scope, and evidence format; no separate review role is created; root review is external to worker self-review; every current and future plan and worker self-review is capped at 3 passes; the legacy harness document and seven source skills are immutable; R1/R2/R5 remain, R3/R4 are superseded; Task 2 remains next and the Node >=22.22.2 or >=24.15.0 prerequisite remains before application Task 3; no application feature or dependency changes; every Codex CLI discovery or dry-run passes --profile nova-auto, while collaboration spawn calls have no profile field and still require explicit Luna/max.
 
 .codex/config.toml must be:
