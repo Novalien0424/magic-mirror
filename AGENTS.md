@@ -57,10 +57,12 @@ not initialize the next skill until the prior skill's source-preservation,
 frontmatter, metadata, trigger/retrieval, and required behavior evidence has
 been accepted by root review.
 
-The following process rulings remain active: R1 keeps work in place on
-`phase0-foundation`; R2 keeps the authoritative `handleSimulator` return
-shape; and R5 keeps Tasks 2–5 sequential. R3 and R4 are superseded by the
-user's current Codex policy. The application task order is unchanged:
+The following process rulings remain active: R1 is completed historical
+in-place work through local integration on `phase0-foundation`; the current
+Task 2 branch is `phase0-lifecycle`. R2 keeps the authoritative
+`handleSimulator` return shape; and R5 keeps Tasks 2–5 sequential.
+R3 and R4 are superseded by the user's current Codex policy.
+The application task order is unchanged:
 application Task 2 (the lifecycle state machine) remains the next application
 task. This refers only to the application task order and does not indicate
 that a harness-migration Task 2 is pending. The completed

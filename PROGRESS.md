@@ -1,26 +1,39 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 of 10 done and reviewed.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 of 10 done and reviewed; Task 2 prepared, not started.**
 
-- Plan: `docs/superpowers/plans/2026-08-16-phase0-foundation.md`
-- Branch: `phase0-foundation`
-- Last verified: 2026-08-16, Task 1, on the Windows 11 dev machine
-  (Electron 43.4.0, Node 22.21.0, electron-vite 5.0.0, vite 7.3.6, vitest 4.1.10)
+- Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
+- Current branch: `phase0-lifecycle` (starts at `426728f012556b4095eb8b25d94aa7476617f103`)
+- Task 2 dispatch brief: `.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`
+  (git-ignored; preparation only)
 
 ## Next action (for the next session)
 
-1. Resume subagent-driven execution: the SDD ledger is at
-   `.superpowers/sdd/2026-08-16-phase0-foundation/progress.md` (on disk,
-   git-ignored). It records Task 1 complete and 5 standing rulings — read it
-   first; tasks with a `complete` line are done, resume at Task 2 (lifecycle
-   state machine). Workflow: root harness rule + `mm-phase-workflow` +
-   superpowers:subagent-driven-development; dispatch briefs live next to the
-   ledger (`shared-interfaces.md` is the cross-task contract file).
-2. **Before Task 3**: upgrade dev Node from 22.21.0 to ≥22.22.2 or ≥24.15.0 —
+1. Use the accepted plan at
+   `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md` and the
+   ignored brief at
+   `.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`
+   to execute the four sequential Task 2 checkpoints on `phase0-lifecycle`.
+   Task 2 is prepared but not started; this record is not implementation or
+   test evidence.
+2. **Before Task 3, not before Task 2**: upgrade dev Node from 22.21.0 to
+   ≥22.22.2 or ≥24.15.0 —
    `write-file-atomic@8` declares that engine range and Task 3's vitest run
    uses the dev Node (`npm install` already warns EBADENGINE).
 3. Tasks run SEQUENTIALLY (ledger Ruling R5) even where the plan marks them
    parallel-eligible.
+
+## Local integration and post-merge verification (2026-08-17)
+
+- `main` was locally fast-forwarded from `7c07244` to
+  `426728f012556b4095eb8b25d94aa7476617f103`; no remote/upstream exists.
+- `phase0-foundation` was deleted after green verification. The current
+  `phase0-lifecycle` branch starts at `426728f012556b4095eb8b25d94aa7476617f103`.
+- A fresh `nova-auto` `gpt-5.6-luna` max tester verified merged `main` at that
+  exact HEAD: Node `v22.21.0`, `npm run typecheck` exit `0`, `npm test` exit
+  `0`, 4 files / 20 tests, Vitest `34.96s`, clean.
+- This is pre-Task-2 application state. Phase 0 remains in progress; Tasks
+  2–5 remain sequential; Phase 1 remains blocked and must not start.
 
 ## Codex harness migration — Task 10 records-only update (2026-08-17)
 

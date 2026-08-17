@@ -3,6 +3,29 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-17 — Phase 0 Task 1 integration and Task 2 dispatch preparation
+
+- **Local integration.** `main` was fast-forwarded locally from `7c07244` to
+  `426728f012556b4095eb8b25d94aa7476617f103`; no remote/upstream exists.
+  `phase0-foundation` was deleted after green verification, and
+  `phase0-lifecycle` is the current Task 2 branch from that exact HEAD.
+- **Post-merge check.** A fresh `nova-auto` `gpt-5.6-luna` max tester verified
+  merged `main` at that HEAD: Node `v22.21.0`, `npm run typecheck` exit `0`,
+  `npm test` exit `0`, 4 files / 20 tests, Vitest `34.96s`, clean.
+- **Authoritative Task 2 shape.** The accepted plan
+  (`docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`) and ignored
+  brief (`.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`)
+  replace the stale SDD idle/listening/processing/speaking and
+  `src/main/console.ts` suggestions with the exact seven-state lifecycle and
+  injected metadata-only telemetry boundary. Detailed `LOCAL_CORE_FAILED
+  anywhere` supplements the Tech Spec primary-edge diagram and routes to
+  `maintenance`.
+- **Process state.** Task 2 is prepared but not started; Tasks 2–5 remain
+  sequential; Phase 0 remains in progress and Phase 1 remains blocked and
+  must not advance. The Node
+  prerequisite upgrade to `>=22.22.2` or `>=24.15.0` applies before Task
+  3, not Task 2.
+
 ## 2026-08-17 — Codex harness migration routing
 
 - **Root ownership.** The root Codex thread is the sole orchestrator and
@@ -15,7 +38,8 @@ architecture decisions in Tech Spec §18 are not repeated here.
   to worker self-review, and all current and future plans and workers allow at
   most three self-review passes.
 - **Supersession.** The user's current Codex policy supersedes SDD ledger
-  R3/R4; R1/R2/R5 remain active.
+  R3/R4; R1 is completed historical in-place integration, while R2/R5 remain
+  active.
 
 ## 2026-08-16 — Task 1 (Phase 0 scaffold)
 
