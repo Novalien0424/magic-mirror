@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Invariants"
+  short_description: "Apply Magic Mirror privacy and safety invariants"
+  default_prompt: "Use $mm-invariants to check a Magic Mirror change against all canonical invariants."
