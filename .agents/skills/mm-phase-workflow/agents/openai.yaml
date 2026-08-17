@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Phase Workflow"
+  short_description: "Plan and route Magic Mirror phase units"
+  default_prompt: "Use $mm-phase-workflow to plan one bounded Magic Mirror phase unit."
