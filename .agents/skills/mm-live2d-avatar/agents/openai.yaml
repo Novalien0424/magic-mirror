@@ -1,0 +1,4 @@
+interface:
+  display_name: "MM Live2D Avatar"
+  short_description: "Build audio-driven Live2D avatar behavior"
+  default_prompt: "Use $mm-live2d-avatar to design audio-driven Magic Mirror avatar behavior."
