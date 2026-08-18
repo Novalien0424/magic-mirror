@@ -19,6 +19,7 @@
 - Main owns the RAM ring, queue, writer lifecycle, and counters. Telemetry never becomes a renderer/model boundary and never receives guest/profile identifiers from a renderer or model tool.
 - Persisted event fields are exactly time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?, source?. Unknown fields are stripped before any serialization; raw errors are never serialized.
 - The exact production caps are RAM ring maximum 2,000 events, writer queue maximum 1,000 events, JSONL maximum 5 * 1024 * 1024 bytes per file, and maximum 5 files. The queue drops its oldest item at capacity and increments telemetryDroppedCount.
+- Accepted event timestamps are exactly canonical 24-character UTC strings matching `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` and round-tripping through `new Date(value).toISOString() === value`; the default and fallback clocks use `new Date().toISOString()`. The maximum valid field lengths plus that canonical timestamp keep every accepted JSONL line safely far below the fixed 5,242,880-byte `maxFileBytes` cap.
 - The writer is non-blocking from emit: emit is synchronous, returns void, never waits for disk, and never throws to wake, Voice, Avatar, scenes, config, credentials, or lifecycle producers. flush and close are explicit asynchronous test/control methods.
 - Internal drop, scheduler, writer, and rotation diagnostics bypass emit and enqueue directly into RAM plus counters. They never enqueue themselves and never retry indefinitely.
 - Source labels remain distinct: omitted source normalizes to runtime; explicit runtime, simulator, and contract_test are preserved and filterable. A simulator or contract-test event is never relabeled as runtime.
@@ -190,7 +191,6 @@ export const TELEMETRY_DEFAULTS: Readonly<{
 
 export type TelemetryInternalErrorCode =
   | 'telemetry_event_invalid'
-  | 'telemetry_event_too_large'
   | 'telemetry_queue_full'
   | 'telemetry_writer_failed'
   | 'telemetry_rotation_failed'
@@ -217,10 +217,10 @@ The implementation may add unexported helper types and functions, but it must no
 8. error_code must match ^[a-z][a-z0-9_]{0,63}$. Raw exception messages, stack traces, and arbitrary punctuation are rejected. The internal error-code union above is stable and metadata-only; module producers must map their own failures to similarly stable codes before emit.
 9. session_id and scene_id must be non-empty safe identifiers of at most 128 characters using A–Z, a–z, 0–9, period, underscore, colon, or hyphen.
 10. reason is optional, at most 1024 characters, and must match the delimiter-safe metadata grammar ^[A-Za-z0-9_=;.%:+,/?-]+$. This prevents spaces, quotes, control characters, newlines, raw errors, and ordinary private content. Wake phrases are encoded by formatWakeMetadata.
-11. A non-object, array, invalid allow-listed field, invalid source, invalid time result, or invalid reason rejects the event without throwing. The rejection counter increments and a direct RAM-only telemetry_event_rejected event uses reason cause=validation_failed;field=<safe-field-name> and error_code telemetry_event_invalid.
+11. A non-object, array, invalid allow-listed field, invalid source, or invalid reason rejects the event without throwing. The rejection counter increments and a direct RAM-only telemetry_event_rejected event uses reason cause=validation_failed;field=<safe-field-name> and error_code telemetry_event_invalid.
 12. If unknown keys are present but the allow-listed core is valid, the event is accepted after copying only the allow-listed values. extraFieldStrippedCount increments and one direct RAM-only telemetry_extra_fields_stripped event records only field_count=<number>. It never records the unknown names or values.
 13. Construct normalized objects from selected fields. Never JSON.stringify the input object, an unknown value, or a caught exception. This is the sensitive-sentinel boundary.
-14. Use the injected clock for time. It must return a valid ISO-8601 string; if it throws or returns an invalid value, use a safe current ISO timestamp and record only the stable validation/fallback reason in RAM. Never include the clock exception.
+14. Define an accepted timestamp as exactly the canonical 24-character UTC representation `YYYY-MM-DDTHH:mm:ss.sssZ`: the value must satisfy `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` and `new Date(value).toISOString() === value`. The optional/default clock is `() => new Date().toISOString()`, and every fallback clock uses `new Date().toISOString()`. If the injected clock throws, returns an invalid date, uses non-canonical precision or an offset, or returns an overlong string, use a fresh canonical fallback timestamp and direct-record only the safe RAM-only `telemetry_event_rejected` clock-fallback diagnostic with `error_code=telemetry_event_invalid` and `reason=cause=clock_fallback`; never include the candidate value or clock exception, and keep the event accepted with the fallback time.
 
 ### RAM ring and pagination
 
@@ -238,7 +238,6 @@ The implementation may add unexported helper types and functions, but it must no
 - A drain initializes the supplied directory, then processes queued lines oldest first. New events emitted while an awaited file operation is pending remain FIFO after the current item.
 - On a line write or rotation failure, do not expose the caught error. Increment writerFailureCount for a write failure or rotationFailureCount for a rotation failure; increment telemetryDroppedCount for the failed item and every remaining queued item; clear the queue; direct-record one telemetry_writer_degraded event with the matching stable error code and reason cause=writer_failure;dropped_count=<count> or cause=rotation_failure;dropped_count=<count>; resolve drain/flush.
 - No internal diagnostic calls emit, schedules, or queues another event. It only appends a trusted normalized record to RAM and updates counters. If RAM is at capacity, the normal oldest-ring eviction rule applies.
-- An event whose serialized UTF-8 line exceeds maxFileBytes is not written. Increment telemetryDroppedCount, direct-record telemetry_writer_degraded with error_code telemetry_event_too_large and reason cause=line_too_large;dropped_count=1, and continue without rotation.
 
 ### JSONL serialization and rotation
 
@@ -323,7 +322,7 @@ const telemetry = createTelemetry({
 
 - [ ] **Step 2: Add RED assertions for accepted schema and exact serialization**
 
-Cover fixed time, required fields, optional-field omission, exact Object.keys order, one LF, UTF-8 byte sizing, and no incoming time trust.
+  Cover the canonical fixed time, the precise timestamp regex and `new Date(value).toISOString() === value` round-trip, required fields, optional-field omission, exact Object.keys order, one LF, UTF-8 byte sizing, and no incoming time trust.
 
 ~~~ts
 telemetry.emit({
@@ -364,11 +363,30 @@ Run the scheduled callback manually, await it, and assert ensureDirectory and ap
 
 - [ ] **Step 7: Add RED assertions for exact rotation**
 
-Compute the serialized UTF-8 byte length `L` of the actual valid test line with `Buffer.byteLength(line, 'utf8')`. Seed `telemetry-0.jsonl` at `maxFileBytes - L`, append that same line, and verify the exact fit does not rotate. Reset the harness, seed the active file at `maxFileBytes - L + 1`, append the same line, and verify the one-byte overflow removes index 4 then renames 3, 2, 1, and 0 in descending order before writing index 0. Verify at most five files and newest-to-oldest suffix order without writing five real megabyte files; do not use a one-byte remainder for a multi-byte line.
+  First construct a maximum-valid normalized metadata-only record using the contract maxima—64-character event and error code, 128-character session and scene IDs, a 1,024-character reason, the maximum accepted duration, the longest valid fixed enum values, and the canonical 24-character `FIXED_TIME`. Assert that `JSON.stringify(maxValidRecord) + '\n'` has `Buffer.byteLength(..., 'utf8') < TELEMETRY_DEFAULTS.maxFileBytes`; use only these bounded fields and do not allocate a multi-megabyte string. Emit `maxValidInput` through the harness and assert the actual serialized line satisfies the same bound.
+
+  ~~~ts
+  const maxValidInput = {
+    module: 'telemetry',
+    event: `e${'a'.repeat(63)}`,
+    status: 'degraded',
+    duration_ms: 86400000,
+    error_code: `e${'a'.repeat(63)}`,
+    session_id: 'A'.repeat(128),
+    scene_id: 'B'.repeat(128),
+    reason: 'r'.repeat(1024),
+    source: 'contract_test'
+  }
+  const maxValidRecord = { time: FIXED_TIME, ...maxValidInput }
+  const maxValidLine = `${JSON.stringify(maxValidRecord)}\n`
+  expect(Buffer.byteLength(maxValidLine, 'utf8')).toBeLessThan(TELEMETRY_DEFAULTS.maxFileBytes)
+  ~~~
+
+  Compute the serialized UTF-8 byte length `L` of the actual valid test line with `Buffer.byteLength(line, 'utf8')`. Seed `telemetry-0.jsonl` at `maxFileBytes - L`, append that same line, and verify the exact fit does not rotate. Reset the harness, seed the active file at `maxFileBytes - L + 1`, append the same line, and verify the one-byte overflow removes index 4 then renames 3, 2, 1, and 0 in descending order before writing index 0. Verify at most five files and newest-to-oldest suffix order without writing five real megabyte files; do not use a one-byte remainder for a multi-byte line.
 
 - [ ] **Step 8: Add RED assertions for writer, rotation, scheduler, flush, and close failures**
 
-Inject each failure separately. Verify no promise rejection escapes emit, flush, or close; counters increment exactly; queued items are bounded and cleared after the first drain failure; one stable direct RAM diagnostic appears; raw error sentinel is absent; close drains existing work, is idempotent, and post-close emit records telemetry_emit_ignored without queueing.
+  Inject each writer, rotation, scheduler, and clock case separately, including a thrown clock, invalid date, non-canonical precision/offset, and overlong clock string. Verify clock cases use a fresh canonical fallback and only the safe clock-fallback diagnostic; verify no promise rejection escapes emit, flush, or close; counters increment exactly; queued items are bounded and cleared after the first drain failure; one stable direct RAM diagnostic appears; raw error sentinel is absent; close drains existing work, is idempotent, and post-close emit records telemetry_emit_ignored without queueing.
 
 - [ ] **Step 9: Add RED assertions for wake metadata**
 
@@ -399,7 +417,7 @@ Implement TELEMETRY_DEFAULTS exactly. Use node:fs/promises mkdir, stat, appendFi
 
 - [ ] **Step 2: Implement normalization before any queue or file operation**
 
-Copy only the exact allow-listed keys, reject invalid allow-listed values using stable field names, default omitted source to runtime, take time from the injected clock, and count/diagnose stripped keys without reading their values. Build JSON only from the normalized object. Keep all caught exceptions private.
+  Copy only the exact allow-listed keys, reject invalid allow-listed values using stable field names, default omitted source to runtime, and accept injected clock output only after the exact canonical timestamp regex and `new Date(value).toISOString() === value` round-trip validation. The default and fallback clocks use `new Date().toISOString()`; thrown, invalid, non-canonical, and overlong injected results use a fresh fallback and the safe clock-fallback diagnostic. Count/diagnose stripped keys without reading their values. Build JSON only from the normalized object. Keep all caught exceptions private.
 
 ~~~ts
 function recordInternal(
@@ -512,7 +530,8 @@ The test-only and production implementers do not execute these commands. The RED
 |---|---|
 | Existing synchronous emit seam | accepted-schema test calls emit and observes immediate RAM state before any scheduler callback |
 | Exact persisted field set and order | exact Object.keys and JSONL line assertion |
-| Time owned by Telemetry | incoming time is ignored; injected clock value is persisted |
+| Time owned by Telemetry | incoming time is ignored; canonical injected clock value is persisted; throw, invalid-date, non-canonical, and overlong clock results fall back to a fresh canonical timestamp with only the safe clock-fallback diagnostic |
+| Bounded accepted record | maximum valid event/error code, ID, reason, duration, fixed-enum, and canonical-time values serialize to a UTF-8 line below `maxFileBytes` without a multi-megabyte allocation |
 | Runtime module/status/source allow-lists | valid enum cases pass; invalid values reject; source filters separate runtime/simulator/contract_test |
 | Event, ID, duration, error, and reason validation | table-driven invalid metadata cases produce stable rejection diagnostics and no throw |
 | Arbitrary extra stripping | cast-only unknown keys are absent from RAM and JSONL; counter and direct diagnostic increment |
@@ -523,7 +542,7 @@ The test-only and production implementers do not execute these commands. The RED
 | No-throw/non-blocking producer | pending writer and failing scheduler tests show emit returns synchronously and never rejects |
 | FIFO drain order | scheduled callback appends lines in original queue order |
 | JSONL newline | compact UTF-8 JSON plus exactly one LF per line |
-| 5 MB file limit | byte-boundary harness accepts a fitting line and rotates a non-fitting line at 5,242,880 bytes |
+| 5 MB file limit | fixed-cap byte-boundary harness accepts the exact-fit line at `maxFileBytes - L` and rotates on the one-byte overflow at `maxFileBytes - L + 1` |
 | Five-file rotation | suffix 4 removal and descending 3→4, 2→3, 1→2, 0→1 order; no sixth file |
 | Writer and rotation failures | stable direct RAM diagnostic, exact failure counter, bounded queue clear, no raw error |
 | Flush and close | flush settles after queue drain or bounded failure; close is idempotent and post-close emit is visible but not queued |
@@ -700,7 +719,10 @@ The interactive root accepts Task 4 only after the following external review, se
 - Confirm the diff contains exactly tests/unit/telemetry.test.ts and src/main/telemetry.ts for application implementation, with no index/IPC/Console/SQLite/package/config/source-model changes.
 - Confirm the RED test was observed failing for the missing production module, the focused GREEN test is complete, and full test/typecheck/build outputs include exit codes.
 - Confirm all public names/signatures match this plan and the existing synchronous emit seam.
+- Confirm every accepted timestamp is exactly the canonical 24-character UTC form matching the precise regex and `new Date(value).toISOString() === value`; default and fallback clocks use `new Date().toISOString()`, and injected throw/invalid/non-canonical/overlong results produce only the safe clock-fallback diagnostic.
+- Confirm the RED contract uses maximum valid field lengths plus canonical time to prove the serialized UTF-8 line is below the fixed `maxFileBytes` cap without allocating a multi-megabyte string.
 - Confirm field allow-list construction never copies arbitrary values; exact field order, optional omission, UTF-8 byte accounting, LF newline, file suffix order, and caps are test-backed.
+- Confirm the 5 MB and five-file caps remain fixed with no production or test-only limit override, including exact-fit and one-byte-overflow rotation coverage.
 - Confirm queue oldest-drop increments telemetryDroppedCount, writer/rotation/scheduler failures clear only bounded work, and internal diagnostics never call emit or enqueue.
 - Confirm all ignore/drop/degrade/failure paths have a safe reason and stable error code, with no raw exception message or stack.
 - Confirm RAM pagination is bounded, deterministic, source-filterable, and does not expose its private sequence.
@@ -767,5 +789,9 @@ Task 4 is accepted only when all of these are true:
 ## Task 5 handoff
 
 After Task 4 is integrated, Task 5 remains the next sequential application task. It may consume the Telemetry interface for metadata-only SQLite health/open/migration events, but it must not move telemetry events into SQLite, expand the persisted event schema, bypass the Main-owned sink, or alter the 2,000 RAM / 1,000 queue / 5-file JSONL contract. Task 5 owns node:sqlite initialization and migrations only; Task 4 owns no database path, schema, backup, or migration behavior.
+
+## Correction note
+
+Systematic debugging found that unbounded ISO wording made the test ambiguous: an injected timestamp could be arbitrarily long. Canonical time bounds each accepted record; no test-only limit override was added; actual fixed-cap rotation coverage remains.
 
 Plan complete
