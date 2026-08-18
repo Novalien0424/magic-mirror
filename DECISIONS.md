@@ -3,6 +3,47 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-19 — Task 3 integration and Task 4 telemetry decision
+
+- **Task 3 integration.** ConfigService + credentials is completed, reviewed,
+  and integrated on pushed `main`: implementation commit `0270686` and
+  correction/integration tip `835c92d`. Fresh merged-main verification
+  supplied for this record is 7 test files / 92 tests passed, full Node plus
+  web typecheck exit 0, and Electron Vite main/preload/renderer build exit 0.
+- **Current route.** `phase0-telemetry` is the current branch, pushed from
+  `main`. Application Task 4 is current and not started; Tasks 3–5 remain
+  sequential; Phase 0 remains in progress and Phase 1 remains blocked.
+- **Telemetry caps.** Task 4 uses a Main-owned RAM ring capped at 2,000
+  events, a non-blocking rotating JSONL writer capped at 5 * 1024 * 1024
+  bytes per file and 5 retained files, and a FIFO writer queue capped at
+  1,000 items. Queue overflow drops the oldest item and increments
+  `telemetryDroppedCount`. Console pagination is a later consumer; no
+  external telemetry stack is introduced.
+- **Persisted field boundary.** JSONL contains only
+  `time,module,event,status,duration_ms?,error_code?,session_id?,scene_id?,reason?,source?`.
+  Unknown fields are stripped before serialization; raw errors and arbitrary
+  extra values are rejected or omitted. Transcripts, audio, prompts/private
+  context/memory values, images/frames, embeddings, keys, Realtime secrets,
+  and other user content never enter telemetry.
+- **Failure visibility.** Queue, scheduler, writer, and rotation failures
+  remain visible through bounded RAM metadata and counters. Internal
+  drop/degraded records use a direct non-recursive RAM path and are never
+  enqueued indefinitely. Writer or rotation failure cannot block wake, Voice,
+  Avatar, scenes, config, credentials, or lifecycle.
+- **Source and wake boundary.** Runtime, simulator, and contract_test sources
+  remain distinct. Wake metadata uses the configurable keyword,
+  configured_threshold, boost, and num_trailing_blanks representation; it
+  never records per-event confidence and does not implement wake detection.
+- **Task 5 boundary.** Task 5 remains next and sequential. It may consume the
+  telemetry sink for metadata-only SQLite health events, but Task 4 telemetry
+  remains RAM/JSONL and is not stored in SQLite.
+- **Environment and platform risk.** The local `.env` boundary remains
+  metadata-only: presence was recorded, content/value was not accessed or
+  validated, and long-lived credentials remain Main plus safeStorage. The
+  existing unrelated Node DEP0190 warning remains; Windows development does
+  not field-verify macOS Keychain/TCC/signing/entitlements. The untracked
+  `scripts/install-node-lts.ps1` remains untouched.
+
 ## 2026-08-18 — Task 2 integration and Task 3 preparation
 
 - **Task 2 completion.** The Main-owned lifecycle state machine is completed,

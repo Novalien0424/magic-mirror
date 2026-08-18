@@ -1,19 +1,23 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 done and reviewed; Task 2 done, reviewed, and locally integrated; Task 3 prepared, not started.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–3 accepted; Task 4 current and not started.**
 
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
-- Current branch: `phase0-config` at the locally integrated Task 2 commit
-  `a7d74b14771de4f527762c30171ad2e68fc3d985`
+- Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`
+- Task 3 accepted integration: implementation commit `0270686` and correction/
+  integration tip `835c92d` are on pushed `main`.
+- Fresh merged-main verification supplied for Task 3: 7 test files / 92 tests
+  passed; full Node plus web typecheck exit 0; Electron Vite
+  main/preload/renderer build exit 0.
+- Current branch: `phase0-telemetry`, pushed from `main`; Task 4 is current
+  and its implementation has not started.
 - Verified integration metadata: GitHub origin is
-  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
-  `origin/main` at that Task 2 commit. `phase0-config` is local preparation
-  state; this record makes no claim that it has been pushed.
+  `https://github.com/Novalien0424/magic-mirror`.
 - Workspace note: the untracked `scripts/install-node-lts.ps1` remains
   untouched and is outside this task's scope.
 
-## Current setup and Phase 2 prerequisite (2026-08-18)
+## Current setup and Phase 2 prerequisite (2026-08-19)
 
 - **Credential setup (metadata only).** The user reports that the local OpenAI
   credential is provisioned through `.env`. Supplied metadata records
@@ -29,24 +33,54 @@
   Configurability is accepted, but implementation has not started: the
   editable phrase/config/raw keyword source must generate the artifact, with
   version/metadata and safe fallback visible.
-- These notes do not change application order or status; Task 3 remains
-  prepared and not started, Phase 0 remains in progress, and Phase 1 remains
-  blocked.
+- These notes preserve the application order: Task 3 is accepted/integrated,
+  Task 4 is current and not started, Task 5 remains next and sequential, Phase
+  0 remains in progress, and Phase 1 remains blocked.
+
+## Current Task 4 planning status (2026-08-19)
+
+- **Task 4:** metadata-only, non-blocking telemetry is current and not started.
+  The bounded plan is
+  `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`.
+- **Authoritative caps:** Main-owned RAM ring max 2,000 events; non-blocking
+  rotating JSONL max 5 MB per file and 5 files; writer queue max 1,000,
+  dropping oldest and incrementing `telemetryDroppedCount`; Console
+  pagination is a later consumer. No external telemetry stack is allowed.
+- **Persisted boundary:** only time, module, event, status, optional
+  duration_ms, error_code, session_id, scene_id, reason, and source. Transcripts,
+  audio, prompts/private context/memory values, images/frames, embeddings, keys,
+  Realtime secrets, raw errors, and arbitrary extra fields remain excluded.
+- **Failure boundary:** writer, rotation, scheduler, and queue failures must
+  remain visible through bounded RAM metadata/counters without blocking wake,
+  Voice, Avatar, scenes, config, credentials, or lifecycle. Internal failure
+  diagnostics use a non-recursive path.
+- **Known risks:** the existing unrelated Node DEP0190 warning remains; Windows
+  development does not field-verify macOS Keychain/TCC/signing/entitlements;
+  Task 4 has no boot/IPC/Console wiring until its later owner.
+- **Credential boundary:** .env metadata remains presence-only: exists true,
+  ignored by .gitignore line 9, not tracked, content/value not accessed, and
+  validity not checked. Long-lived credentials remain Main plus safeStorage;
+  no .env value is recorded.
+- **Wake boundary:** the wake phrase remains configurable and must be generated
+  into a versioned detector keyword artifact with metadata and safe fallback.
+  Task 4 records configurable keyword, configured_threshold, boost, and
+  num_trailing_blanks metadata only; it never records per-event confidence and
+  does not implement wake detection.
 
 ## Next action (for the next session)
 
-1. Use the accepted Task 3 plan at
-   `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md` to
-   execute its separate test-only RED, implementation, focused GREEN,
-   external-root-review, and full-suite/build tester checkpoints on
-   `phase0-config`. Task 3 is prepared but not started.
-2. Development Node is resolved at `v24.19.0`, satisfying the
-   `>=22.22.2` or `>=24.15.0` prerequisite required by
-   `write-file-atomic@8` and Task 3.
+1. Use the accepted Task 4 plan at
+   `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md` to execute
+   its separate test-only RED, production implementation, focused GREEN,
+   external-root-review, and full-suite/typecheck/build tester checkpoints on
+   `phase0-telemetry`. Task 4 is current and not started.
+2. Task 3 remains accepted evidence on pushed `main`: commits `0270686`
+   and `835c92d`, 7 test files / 92 tests, full Node plus web typecheck exit
+   0, and Electron Vite main/preload/renderer build exit 0.
 3. Tasks 3–5 run SEQUENTIALLY (ledger Ruling R5), even where a product plan
    marks other work parallel-eligible.
 4. No Phase 0 demo is complete from this preparation; P0-D3/P0-D4/P0-D5
-   remain later consumers of the Task 3 foundation.
+   remain later consumers of the Task 3 and Task 4 foundation.
 
 ## Task 2 completion and Task 3 preparation (2026-08-18)
 
@@ -118,8 +152,8 @@
 |----|-------------------------------------------------|-------------|----------|
 | 1  | Scaffold, two windows, never-black-screen boot  | done + reviewed | `npm run typecheck` clean; `npm test` 4 files / 20 tests passing, incl. 4 spawned smoke runs; orchestrator review clean (3 minors deferred, see SDD ledger) |
 | 2  | Lifecycle state machine (XState v5)             | done + reviewed + locally integrated | `a7d74b14771de4f527762c30171ad2e68fc3d985`; 31 focused lifecycle tests; merged tree 5 files / 51 tests; `npm run typecheck:node` clean |
-| 3  | ConfigService + credentials                     | prepared, not started | `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`; branch `phase0-config`; Node `v24.19.0` resolved |
-| 4  | Telemetry (metadata-only, non-blocking)         | not started | |
+| 3  | ConfigService + credentials                     | done + reviewed + integrated | `0270686` with correction/integration tip `835c92d` on pushed `main`; fresh merged-main 7 test files / 92 tests, full Node+web typecheck 0, Electron Vite main/preload/renderer build 0 |
+| 4  | Telemetry (metadata-only, non-blocking)         | current, not started | `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`; branch `phase0-telemetry`; exact implementation scope is tests/unit/telemetry.test.ts then src/main/telemetry.ts |
 | 5  | SQLite + migrations (`node:sqlite`)             | not started | |
 | 6  | Module registry + mocks                         | not started | |
 | 7  | AI model settings resolver + snapshots          | not started | |
