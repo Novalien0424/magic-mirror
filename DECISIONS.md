@@ -3,15 +3,52 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## Active process-efficiency ruling (2026-08-19)
+
+- For this nonindustrial project, the root uses the fewest bounded fresh-worker
+  gates consistent with strict TDD, tester-owned validation, privacy/invariants,
+  and external root review. Avoid duplicate surveys, separate review workers,
+  ceremonial tests, duplicate validation, and PR bureaucracy. Naturally
+  coupled behavior within one bounded unit may share a
+  test-write/implementation/validation sequence. This does not relax any
+  mandatory authority, role, profile, model, effort, scope, evidence,
+  tester-ownership, privacy/invariant, or external-root-review requirement.
+
+## 2026-08-19 — Task 7 model settings resolver completion
+
+- **Plan and implementation state.** The accepted plan
+  `docs/superpowers/plans/2026-08-19-phase0-task7-model-settings-resolver.md`
+  is recorded at `6214b6c`. The accepted implementation was root-reviewed and
+  pushed on `phase0-model-settings` at `5e24bdc`.
+- **Validation evidence.** Task 7 has 7 focused tests and 168 total tests;
+  Node/web typecheck and the Electron Vite build are green; both negative
+  runtime-model and fallback scans were successful. No OpenAI or `.env`
+  requirement was needed.
+- **Boundary and order.** The resolver preserves configured runtime model IDs,
+  frozen Active-only session/job snapshots, and metadata-only simulator
+  evidence without provider calls, persistence, UI, IPC, or credential access.
+  Task 8 (boot wiring, IPC, Mirror UI, and OfflineLoop) is next; Tasks 9/10
+  retain Console UI and demos/records/exit ownership.
+- **Environment/platform.** Development Node `v24.19.0` satisfies
+  `>=22.22.2` or `>=24.15.0`. The user-owned
+  `scripts/install-node-lts.ps1` remains untouched. `.env` remains
+  ignored-presence-only metadata: its content and value are never read or
+  inspected, and process records must not claim otherwise. Windows results do
+  not field-verify target macOS Keychain/TCC/signing/entitlements/
+  packaged-worker/LaunchAgent paths. The customizable wake word remains a
+  Phase 2 requirement needing keyword artifact generation plus tuning
+  evidence.
+
 ## 2026-08-19 — Task 6 module registry design and process boundary
 
 - **Plan/process state.** The accepted plan
   `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md` passed
   the five-command static gate: status scope, git diff check, 458 lines/final
   marker/trailing whitespace, 10 required markers, and no forbidden markers.
-  It was committed and pushed on `phase0-modules` at `83be86b`; that branch
-  tracks `origin/phase0-modules`. Application/test implementation has not
-  started.
+  It was committed at `83be86b` on `phase0-modules`. The accepted,
+  root-reviewed application implementation was pushed on `main` at `5b95a94`,
+  with 16 focused tests, 161 total tests, and Node/web typecheck plus Electron
+  Vite build green.
 - **Task 5 boundary remains accepted.** SQLite initialization and the
   migration baseline are accepted, root-reviewed, integrated, and pushed on
   `main` at `a8f0355`, with 32 focused tests, 145 total tests, Node/web
@@ -22,11 +59,11 @@ architecture decisions in Tech Spec §18 are not repeated here.
   result metadata has explicit `eventDelivery` values `emitted|failed`; and
   there is no retry or sibling-module gate. Boot, IPC, UI, and the model
   resolver remain outside this task.
-- **Implementation boundary.** The exact future application/test scope is
+- **Implementation boundary.** The exact application/test scope was
   `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`. TDD RED is the next application action. Task 7
-  remains next and separate; Tasks 8/9 own integration/UI; and Task 10 owns
-  demos/records/exit.
+  `src/main/module-mocks.ts`. Task 7 is accepted at the recorded plan and
+  implementation commits above; Task 8 is next, while Tasks 9/10 retain
+  integration/UI and demos/records/exit ownership.
 - **Environment/platform.** No user setup is required for Task 6.
   Development Node `v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`. The
   user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`

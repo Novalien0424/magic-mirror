@@ -1,12 +1,13 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–5 accepted; Task 6 planned/current, application code not started.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–7 accepted; Task 8 is next.**
 
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
 - Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`
 - Accepted Task 5 plan: `docs/superpowers/plans/2026-08-19-phase0-task5-sqlite.md`
 - Accepted Task 6 plan: `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`
+- Accepted Task 7 plan: `docs/superpowers/plans/2026-08-19-phase0-task7-model-settings-resolver.md`
 - Task 3 accepted integration: implementation commit `0270686` and correction/
   integration tip `835c92d` are on pushed `main`.
 - Fresh merged-main verification supplied for Task 3: 7 test files / 92 tests
@@ -18,10 +19,16 @@
 - Task 5 accepted integration: pushed `main` tip `a8f0355`; focused SQLite
   verification `32/32`; full suite `145/145`; Node plus web typecheck exit 0;
   Electron Vite build exit 0.
-- Current branch: `phase0-modules`, tracking `origin/phase0-modules`. The Task 6
-  plan is accepted, statically verified, committed, and pushed on this branch
-  at `83be86b`; application/test implementation has not started. Task 7
-  remains next and separate.
+- Task 6 accepted integration: pushed `main` tip `5b95a94`; focused
+  verification `16/16`; full suite `161/161`; Node plus web typecheck exit 0;
+  Electron Vite build exit 0.
+- Task 7 accepted implementation: accepted plan commit `6214b6c`; pushed
+  `phase0-model-settings` tip `5e24bdc`; focused verification `7/7`; full
+  suite `168/168`; Node plus web typecheck exit 0; Electron Vite build exit 0;
+  both negative runtime-model/fallback scans successful; no OpenAI or `.env`
+  requirement.
+- Current branch: `phase0-model-settings`; Task 7 is accepted and Task 8
+  (boot wiring, IPC, Mirror UI, and OfflineLoop) is next.
 - The five-command Task 6 plan static gate passed: status scope, git diff check,
   458 lines/final marker/trailing whitespace, 10 required markers, and no
   forbidden markers.
@@ -29,11 +36,12 @@
   closed-outcome adapters, separate deterministic mocks, stable metadata-only
   results/events, informational missing adapter, explicit
   `eventDelivery` `emitted|failed`, no retry/sibling gate, and no boot/IPC/UI/
-  model resolver. The exact future application/test scope is
+  model resolver. The application/test scope was
   `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`; TDD RED is the next application action. Tasks
-  8/9 own integration/UI, and Task 10 owns demos/records/exit.
-- No user setup is required for the Task 6 planning boundary. Deterministic
+  `src/main/module-mocks.ts`; Task 6 application implementation is accepted at
+  `5b95a94` on `main`. Tasks 8/9 own integration/UI, and Task 10 owns
+  demos/records/exit.
+- No user setup is required for Task 6. Deterministic
   injected adapters and mock controls provide the complete test path; no
   credential, device, network, or `.env` value is needed by this task.
   Development Node `v24.19.0` satisfies the repository prerequisite
@@ -62,11 +70,11 @@
   editable phrase/config/raw keyword source must generate the artifact, with
   version/metadata and safe fallback visible.
 - These notes preserve the application order: Tasks 3–5 are accepted,
-  integrated, and pushed; Task 6 is planned/current with application code not
-  started; Task 7 remains next and separate; Phase 0 remains in progress, and
+  integrated, and pushed; Tasks 6–7 are accepted at their recorded boundaries;
+  Task 8 is next; Phase 0 remains in progress, and
   Phase 1 remains blocked.
 
-## Current Task 5 completion and Task 6 planning boundary (2026-08-19)
+## Current Task 6 and Task 7 completion boundary (2026-08-19)
 
 - **Task 4 completion:** metadata-only, non-blocking telemetry is completed,
   root-reviewed, integrated, and pushed on `main` at `dca1327`. Focused
@@ -102,41 +110,37 @@
   accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
   32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
   build green.
-- **Task 6 planning boundary:** the accepted plan is
+- **Task 6 completion:** the accepted plan is
   `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`; its
   five-command static gate passed (status scope, git diff check, 458
   lines/final marker/trailing whitespace, 10 required markers, and no
-  forbidden markers). The plan was committed and pushed on the current
-  `phase0-modules` branch at `83be86b`, which tracks
-  `origin/phase0-modules`; application/test implementation is not started.
+  forbidden markers). The plan was committed at `83be86b` on
+  `phase0-modules`; the accepted implementation was root-reviewed and pushed
+  on `main` at `5b95a94`, with 16 focused tests, 161 total tests, and Node/web
+  typecheck plus Electron Vite build green.
   The selected design is a runtime-exhaustive Main registry with injected
   closed-outcome adapters and separate deterministic mocks, stable
   metadata-only results/events, informational missing-adapter handling,
   explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
-  and no boot/IPC/UI/model resolver. The exact future production/test scope is
+  and no boot/IPC/UI/model resolver. The application/test scope was
   only `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`; TDD RED is the next application action. Task 7
-  remains next and separate; Tasks 8/9 own integration/UI; and Task 10 owns
-  demos/records/exit. Windows results do not field-verify target macOS
+  `src/main/module-mocks.ts`. Task 7's accepted plan is recorded at `6214b6c`;
+  its accepted implementation was pushed on `phase0-model-settings` at
+  `5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
+  Electron Vite build green, both negative runtime-model/fallback scans
+  successful, and no OpenAI or `.env` requirement. Task 8 is next; Tasks 9/10
+  retain Console UI and demos/records/exit. Windows results do not field-verify target macOS
   Keychain/TCC/signing/entitlements/packaged-worker/LaunchAgent paths. The
   untracked `scripts/install-node-lts.ps1` remains untouched.
 
 ## Next action (for the next session)
 
-1. After this three-file process-state commit/push, dispatch the Task 6 RED
-   test-file implementer for `tests/unit/module-registry.test.ts` only.
-2. Then dispatch a fresh RED tester for the focused missing-production-module
-   checkpoint.
-3. After RED is accepted, dispatch the Task 6 production implementation
-   worker for the exact three-file application/test scope.
-4. After implementation is accepted, dispatch fresh testers for focused GREEN,
-   full test, Node/web typecheck, and Electron Vite build.
-5. After GREEN is accepted, the root performs external review and integration:
-   commit/push the three application/test files, fast-forward `main`, run the
-   merged-main evidence gate, and push the integrated `main` tip.
-6. Task 7 remains next and separate. No Phase 0 demo is complete from this
-   preparation; P0-D1–P0-D5 remain later consumers and Task 10 remains the
-   demo/record owner.
+1. Task 8 — boot wiring, IPC, Mirror UI, and OfflineLoop — is the next
+   separate application task.
+2. Preserve the existing Task 8 scope, strict TDD, tester-owned validation,
+   metadata-only evidence, privacy/invariant checks, and external root review.
+3. Tasks 9/10 remain the later Console UI and Phase 0 demo/record owners. No
+   Phase 0 demo is complete yet; P0-D1–P0-D5 remain later consumers.
 
 ## Task 2 completion and Task 3 preparation (2026-08-18)
 
@@ -211,9 +215,9 @@
 | 3  | ConfigService + credentials                     | done + reviewed + integrated | `0270686` with correction/integration tip `835c92d` on pushed `main`; fresh merged-main 7 test files / 92 tests, full Node+web typecheck 0, Electron Vite main/preload/renderer build 0 |
 | 4  | Telemetry (metadata-only, non-blocking)         | done + reviewed + integrated | pushed `main` tip `dca1327`; focused `21/21`; full `8 files / 113 tests`; Node plus web typecheck `0`; Electron Vite build `0` |
 | 5  | SQLite + migrations (`node:sqlite`)             | done + reviewed + integrated | pushed `main` tip `a8f0355`; focused `32/32`; full `145/145`; Node/web typecheck `0`; Electron Vite build `0` |
-| 6  | Module registry + mocks                         | current, plan accepted/static gate passed/committed/pushed, application/test implementation not started | `83be86b` on `phase0-modules` tracking `origin/phase0-modules`; exact three-file scope in accepted plan |
-| 7  | AI model settings resolver + snapshots          | next, separate, not started | remains separate from Task 6 |
-| 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | not started | |
+| 6  | Module registry + mocks                         | done + reviewed + accepted + integrated | `5b95a94` on pushed `main`; focused `16/16`; full `161/161`; Node/web typecheck and Electron Vite build green |
+| 7  | AI model settings resolver + snapshots          | done + reviewed + accepted | plan `6214b6c`; implementation `5e24bdc` on pushed `phase0-model-settings`; focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
+| 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | next, not started | next bounded application task |
 | 9  | Console UI — 6 pages                            | not started | |
 | 10 | P0 demo runner, exit criteria, tag              | not started | |
 

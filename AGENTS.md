@@ -70,25 +70,36 @@ correction/integration tip `835c92d`, and pushed on `main`; application Task 4
 at `dca1327`; application Task 5 (SQLite initialization and migration baseline)
 is accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
 32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
-build green. The current branch is `phase0-modules`, tracking
-`origin/phase0-modules`. Application Task 6 (Main-owned module registry plus
-deterministic mocks) has an accepted plan that passed the five-command static
-gate (status scope, git diff check, 458 lines/final marker/trailing whitespace,
-10 required markers, and no forbidden markers), was committed and pushed on
-`phase0-modules` at `83be86b`, and has not started application/test
-implementation. Its selected design is a runtime-exhaustive Main registry,
-injected closed-outcome adapters, separate deterministic mocks, stable
-metadata-only results/events, informational missing-adapter handling, explicit
-`eventDelivery` values `emitted|failed`, no retry or sibling gate, and no
-boot/IPC/UI/model resolver. The exact future application/test scope is
+build green. Application Task 6 (Main-owned module registry plus deterministic
+mocks) is accepted, root-reviewed, implemented, and pushed on `main` at
+`5b95a94`, with 16 focused tests, 161 total tests, and Node/web typecheck plus
+Electron Vite build green. Its selected design is a runtime-exhaustive Main
+registry, injected closed-outcome adapters, separate deterministic mocks,
+stable metadata-only results/events, informational missing-adapter handling,
+explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
+and no boot/IPC/UI/model resolver. The Task 6 plan's static gate commit was
+`83be86b` on `phase0-modules`; its application/test scope was
 `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-`src/main/module-mocks.ts`; TDD RED is the next application action. Task 7
-remains the next separate application task; Tasks 8/9 own integration/UI; and
-Task 10 owns demos/records/exit. This refers only to application task order and
+`src/main/module-mocks.ts`. Application Task 7's accepted plan is recorded at
+`6214b6c`; its accepted implementation is pushed on `phase0-model-settings` at
+`5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
+Electron Vite build green, both negative runtime-model/fallback scans
+successful, and no OpenAI or `.env` requirement. Task 8 (boot wiring, IPC,
+Mirror UI, and OfflineLoop) is next; Tasks 9/10 retain Console UI and
+demos/records/exit ownership. This refers only to application task order and
 does not indicate that a harness-migration Task 2 is pending. The completed
 application Task 1 status is not changed by this harness work. No user setup is
 required for Task 6. Development Node `v24.19.0` satisfies the prerequisite
 of `>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+
+Active efficiency ruling: for this nonindustrial project, the root uses the
+fewest bounded fresh-worker gates consistent with strict TDD, tester-owned
+validation, privacy/invariants, and external root review. Avoid duplicate
+surveys, separate review workers, ceremonial tests, duplicate validation, and
+PR bureaucracy. Naturally coupled behavior within one bounded unit may share
+a test-write/implementation/validation sequence. This does not relax any
+mandatory authority, role, profile, model, effort, scope, evidence, tester-
+ownership, privacy/invariant, or external-root-review requirement.
 
 The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
 credential presence is recorded only as ignored metadata; its content and
