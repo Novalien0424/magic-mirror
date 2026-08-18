@@ -61,19 +61,19 @@ The following process rulings remain active: R1 is completed historical
 in-place work through local integration on `phase0-foundation`; application
 Task 2 (the lifecycle state machine) is completed, reviewed, and locally
 integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
-was deleted; and the current Task 4 branch is `phase0-telemetry`. R2 keeps the
+was deleted; and the current Task 5 branch is `phase0-sqlite`. R2 keeps the
 authoritative `handleSimulator` return shape; and R5 keeps Tasks 3–5
 sequential. R3 and R4 are superseded by the user's current Codex policy.
 The application task order is unchanged: application Task 3 (ConfigService +
 credentials) is completed, corrected, integrated at implementation commit
 `0270686` with correction/integration tip `835c92d`, and pushed on `main`;
-application Task 4 (metadata-only telemetry) is current and its implementation
-plan is prepared but not started; Task 5 remains next and sequential. This
-refers only to the application task order and does not indicate that a
-harness-migration Task 2 is pending. The completed application Task 1 status is
-not changed by this harness work. Development Node `v24.19.0` satisfies the
-prerequisite of `>=22.22.2` or `>=24.15.0`. Do not change application task order
-or status.
+application Task 4 (metadata-only telemetry) is completed, root-reviewed,
+integrated, and pushed at `dca1327`; application Task 5 (SQLite initialization
+and migration baseline) is current, planned, and not started. This refers only
+to the application task order and does not indicate that a harness-migration
+Task 2 is pending. The completed application Task 1 status is not changed by
+this harness work. Development Node `v24.19.0` satisfies the prerequisite of
+`>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
 
 ## Immutable and product boundaries
 

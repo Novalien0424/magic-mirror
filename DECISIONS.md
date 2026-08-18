@@ -3,6 +3,57 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-19 — Task 4 integration and Task 5 SQLite boundary
+
+- **Task 4 integration.** Metadata-only telemetry is completed, root-reviewed,
+  integrated, and pushed on `main` at `dca1327`. The supplied evidence is
+  focused telemetry `21/21`, full `8 files / 113 tests`, Node plus web
+  typecheck exit `0`, and Electron Vite build exit `0`.
+- **Current route.** `phase0-sqlite` is the current branch from the pushed
+  `main` state at `dca1327`. Application Task 5 is current, planned, and not
+  started; Tasks 3–5 remain sequential; Phase 0 remains in progress; and
+  Phase 1 remains blocked.
+- **SQLite ownership.** Task 5 is limited to a Main-only
+  `openSqlite({ dbPath, telemetry, driverFactory? })` boundary. The caller
+  supplies the absolute persistent path. The service uses real
+  `node:sqlite` `DatabaseSync` by default and exposes only the narrow injected
+  driver factory required for deterministic foreign-key, WAL, migration,
+  integrity, and close failure tests. No dependency or alternate database is
+  introduced.
+- **Baseline schema.** The only table Task 5 may create is the exact
+  `app_migrations(version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)`
+  table. Internal migration `1` is named `foundation_baseline`. Guests,
+  enrollment, embeddings, visits, recent/durable/Master memory, telemetry,
+  logs, backup/restore, and all later schema are deferred; malformed/future
+  states are rejected rather than downgraded or recreated.
+- **SQLite guarantees.** `PRAGMA foreign_keys = ON`, `PRAGMA journal_mode =
+  WAL`, and `PRAGMA integrity_check` are required and verified. Empty, NUL,
+  non-absolute, and `:memory:` paths fail with stable `sqlite_` codes. No
+  hidden relocation, parent-directory creation, in-memory fallback, or
+  alternate file is permitted. Migration uses `BEGIN IMMEDIATE`/`COMMIT` and
+  best-effort `ROLLBACK`.
+- **Health and close.** `SqliteHealth` is defensive metadata only. `close()`
+  is idempotent; after a successful close health is `failed` with
+  `sqlite_closed`, while a driver close failure is visible as
+  `sqlite_close_failed` through both health and a metadata-only telemetry
+  event.
+- **Telemetry boundary.** The required sink is `Pick<Telemetry, 'emit'>`.
+  SQLite events use module `sqlite`, source `runtime`, and stable names,
+  statuses, error codes, and reasons. Sink exceptions never gate SQLite.
+  Task 4 remains RAM/JSONL-only; no telemetry or log table is created, and no
+  path, SQL, raw exception, user content, transcript, audio, private context,
+  secret, or credential enters telemetry.
+- **Downstream/demo boundary.** P0-D2 later maps DB failure to Maintenance,
+  P0-D3 later consumes SQLite metadata events, P0-D4 later consumes
+  reopen/idempotence evidence, and Task 10 owns demos and records. Task 5
+  itself claims no demo and does not wire boot, lifecycle, IPC, or UI.
+- **Environment/platform.** No user setup is required for this planning
+  boundary. `.env` remains presence/ignore metadata only: present, ignored by
+  `.gitignore` line 9, untracked, content/value not accessed, and validity not
+  checked. The untracked `scripts/install-node-lts.ps1` remains untouched.
+  Windows validation does not field-verify target macOS packaged
+  `node:sqlite`, TCC, Keychain, signing, or entitlements.
+
 ## 2026-08-19 — Task 3 integration and Task 4 telemetry decision
 
 - **Task 3 integration.** ConfigService + credentials is completed, reviewed,
