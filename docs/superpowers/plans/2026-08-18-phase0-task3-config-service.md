@@ -1512,7 +1512,11 @@ describe('ConfigService contract', () => {
         if (!before.has(path)) expect(harness.store.has(path)).toBe(false)
         else expect(harness.store.get(path)).toBe(before.get(path))
       }
-      expect(harness.removePaths).toContain(slotPath('mock-config', 'previous'))
+      if (operation === 'publish') {
+        expect(harness.removePaths).toContain(slotPath('mock-config', 'previous'))
+      } else {
+        expect(harness.removePaths).toEqual([])
+      }
       expectEvent(
         harness.events,
         'config_operation_failed',
@@ -2258,6 +2262,11 @@ codes.
    app, safeStorage, IPC, a renderer, a model SDK, or a model ID. Keep the
    source free of model-role literals and fallback arrays.
 
+   The installed `write-file-atomic@8.0.0` package lacks bundled declarations
+   and `@types` is absent, so this source uses a local `WriteFileAtomic` function
+   type plus a `require('write-file-atomic')` binding. Preserve the existing
+   dependency/version and all call behavior.
+
 2. Copy the exact exported interfaces, ConfigErrorCode unions,
    ConfigServiceError, mirrorConfigSchema, and createConfigService signature
    from the earlier sections. The public error constructor must always call
@@ -2422,6 +2431,11 @@ codes.
    network modules, config files, or backups. Copy the exact exported
    SafeStorageAdapter, file/atomic/event/store interfaces, error union,
    CredentialStoreError, and factory signature from the earlier contract.
+
+   The installed `write-file-atomic@8.0.0` package lacks bundled declarations
+   and `@types` is absent, so this source uses the same local `WriteFileAtomic`
+   function type plus a `require('write-file-atomic')` binding. Preserve the
+   existing dependency/version and all call behavior.
 
 2. Implement private disk credential adapters with mkdir/readFile/unlink and
    ENOENT-to-null behavior. The private atomic writer passes the encrypted
@@ -2589,6 +2603,9 @@ evidenced:
 - Production TypeScript contains no model literal or model fallback list,
   never imports Electron app/safeStorage, never writes config/backups from
   CredentialStore, and never gates unrelated conversation behavior.
+- Both production sources use the locally typed CommonJS
+  `write-file-atomic@8.0.0` binding, fresh production-build evidence covers
+  that load, and no `package.json`, `package-lock.json`, or `.d.ts` file changes.
 - All twelve invariant IDs are preserved, with direct evidence for 1, 9, 10,
   11, and 12.
 - No .env file and no scripts/install-node-lts.ps1 path is present in the diff
@@ -2627,5 +2644,16 @@ main branch. A worker does not integrate or push main.
 After that root integration, Application Task 4 remains next. Tasks 3, 4, and
 5 stay sequential; this continuation does not start Task 4, alter Task 4's
 order, declare a Phase 0 demo or exit, or change any application status.
+
+## Correction note
+
+Systematic debugging verified that the original unconditional removal assertion
+contradicted exact bytes-or-absence semantics for rollback; publish removal and
+rollback rewrite are now separately asserted. TS7016 came from missing
+declarations and was resolved in-source without dependency, package-file, or
+declaration-file changes. Fresh
+evidence: focused 41/41, node typecheck exit 0, full 7 files/92 tests, full
+typecheck exit 0, build exit 0. The existing DEP0190 warning remains unrelated;
+macOS Keychain/TCC was not field-verified on Windows.
 
 Plan complete
