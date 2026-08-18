@@ -3,6 +3,40 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-19 — Task 6 module registry design and process boundary
+
+- **Plan/process state.** The accepted plan
+  `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md` passed
+  the five-command static gate: status scope, git diff check, 458 lines/final
+  marker/trailing whitespace, 10 required markers, and no forbidden markers.
+  It was committed and pushed on `phase0-modules` at `83be86b`; that branch
+  tracks `origin/phase0-modules`. Application/test implementation has not
+  started.
+- **Task 5 boundary remains accepted.** SQLite initialization and the
+  migration baseline are accepted, root-reviewed, integrated, and pushed on
+  `main` at `a8f0355`, with 32 focused tests, 145 total tests, Node/web
+  typecheck green, and the Electron Vite build green.
+- **Selected design.** Task 6 uses a runtime-exhaustive Main registry with
+  injected closed-outcome adapters and separate deterministic mocks. Results
+  and events are stable and metadata-only; a missing adapter is informational;
+  result metadata has explicit `eventDelivery` values `emitted|failed`; and
+  there is no retry or sibling-module gate. Boot, IPC, UI, and the model
+  resolver remain outside this task.
+- **Implementation boundary.** The exact future application/test scope is
+  `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
+  `src/main/module-mocks.ts`. TDD RED is the next application action. Task 7
+  remains next and separate; Tasks 8/9 own integration/UI; and Task 10 owns
+  demos/records/exit.
+- **Environment/platform.** No user setup is required for Task 6.
+  Development Node `v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`. The
+  user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
+  credential presence is ignored metadata only; its content and value are
+  never read or inspected, and process records must not claim otherwise. The
+  customizable wake word remains a Phase 2 requirement and later needs
+  keyword artifact generation plus tuning evidence. Windows results do not
+  field-verify target macOS Keychain/TCC/signing/entitlements/packaged-worker/
+  LaunchAgent paths.
+
 ## 2026-08-19 — Task 4 integration and Task 5 SQLite boundary
 
 - **Task 4 integration.** Metadata-only telemetry is completed, root-reviewed,

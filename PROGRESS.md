@@ -1,11 +1,12 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–4 accepted; Task 5 current, planned, and not started.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–5 accepted; Task 6 planned/current, application code not started.**
 
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
 - Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`
 - Accepted Task 5 plan: `docs/superpowers/plans/2026-08-19-phase0-task5-sqlite.md`
+- Accepted Task 6 plan: `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`
 - Task 3 accepted integration: implementation commit `0270686` and correction/
   integration tip `835c92d` are on pushed `main`.
 - Fresh merged-main verification supplied for Task 3: 7 test files / 92 tests
@@ -14,11 +15,29 @@
 - Task 4 accepted integration: pushed `main` tip `dca1327`; focused telemetry
   `21/21`; full `8 files / 113 tests`; Node plus web typecheck exit 0; Electron
   Vite build exit 0.
-- Current branch: `phase0-sqlite`, from pushed `main` at `dca1327`; Task 5 is
-  current, planned, and not started.
-- No user setup is required for the Task 5 planning boundary. The caller will
-  supply the absolute persistent `dbPath`; no credential, device, or `.env`
-  value is needed by this task.
+- Task 5 accepted integration: pushed `main` tip `a8f0355`; focused SQLite
+  verification `32/32`; full suite `145/145`; Node plus web typecheck exit 0;
+  Electron Vite build exit 0.
+- Current branch: `phase0-modules`, tracking `origin/phase0-modules`. The Task 6
+  plan is accepted, statically verified, committed, and pushed on this branch
+  at `83be86b`; application/test implementation has not started. Task 7
+  remains next and separate.
+- The five-command Task 6 plan static gate passed: status scope, git diff check,
+  458 lines/final marker/trailing whitespace, 10 required markers, and no
+  forbidden markers.
+- Task 6 selected design: runtime-exhaustive Main registry, injected
+  closed-outcome adapters, separate deterministic mocks, stable metadata-only
+  results/events, informational missing adapter, explicit
+  `eventDelivery` `emitted|failed`, no retry/sibling gate, and no boot/IPC/UI/
+  model resolver. The exact future application/test scope is
+  `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
+  `src/main/module-mocks.ts`; TDD RED is the next application action. Tasks
+  8/9 own integration/UI, and Task 10 owns demos/records/exit.
+- No user setup is required for the Task 6 planning boundary. Deterministic
+  injected adapters and mock controls provide the complete test path; no
+  credential, device, network, or `.env` value is needed by this task.
+  Development Node `v24.19.0` satisfies the repository prerequisite
+  `>=22.22.2` or `>=24.15.0`.
 - Verified integration metadata: GitHub origin is
   `https://github.com/Novalien0424/magic-mirror`.
 - Workspace note: the untracked `scripts/install-node-lts.ps1` remains
@@ -30,22 +49,24 @@
   credential is provisioned through `.env`. Supplied metadata records
   `.env` exists: true, `.gitignore` line 9 rule `.env` ignores it, tracked by
   Git: false (untracked), content/value accessed: false, and validity checked:
-  false. No value is recorded. `.env` is provisioning input only, not runtime
+  false. No value is recorded, and process records must not claim that its
+  value was inspected. `.env` is provisioning input only, not runtime
   renderer-visible storage; Main/`safeStorage` and short-lived renderer
   credentials remain authoritative.
 - Credential existence does not itself prove account/billing/network/API
   validity, audio devices, or target macOS field readiness.
-- **Phase 2 prerequisite.** Wake phrase selection plus generation of the
-  detector keyword artifact remains required before real wake tuning.
+- **Phase 2 prerequisite.** The customizable wake word remains a Phase 2
+  requirement; keyword artifact generation plus tuning evidence remains
+  required before real wake tuning.
   Configurability is accepted, but implementation has not started: the
   editable phrase/config/raw keyword source must generate the artifact, with
   version/metadata and safe fallback visible.
-- These notes preserve the application order: Task 3 is accepted/integrated,
-  Task 4 is accepted/integrated, Task 5 is current, planned, and not started,
-  Tasks 3–5 remain sequential, Phase 0 remains in progress, and Phase 1
-  remains blocked.
+- These notes preserve the application order: Tasks 3–5 are accepted,
+  integrated, and pushed; Task 6 is planned/current with application code not
+  started; Task 7 remains next and separate; Phase 0 remains in progress, and
+  Phase 1 remains blocked.
 
-## Current Task 4 completion and Task 5 planning boundary (2026-08-19)
+## Current Task 5 completion and Task 6 planning boundary (2026-08-19)
 
 - **Task 4 completion:** metadata-only, non-blocking telemetry is completed,
   root-reviewed, integrated, and pushed on `main` at `dca1327`. Focused
@@ -64,42 +85,58 @@
   Voice, Avatar, scenes, config, credentials, or lifecycle. Internal failure
   diagnostics use a non-recursive path.
 - **Known risks:** the existing unrelated Node DEP0190 warning remains. Windows
-  development cannot field-verify target macOS packaged `node:sqlite`, TCC,
-  Keychain, signing, or entitlements. Task 4 has no boot/IPC/Console wiring
+  results do not field-verify target macOS Keychain/TCC/signing/entitlements/
+  packaged-worker/LaunchAgent paths. Task 4 has no boot/IPC/Console wiring
   until its later owner.
 - **Credential boundary:** `.env` remains ignored/present metadata only:
   exists true, ignored by `.gitignore` line 9, untracked, content/value never
-  accessed, and validity not checked. Long-lived credentials remain Main plus
-  safeStorage; no `.env` value is recorded.
+  accessed, and validity not checked. Process records must not claim that the
+  value was inspected. Long-lived credentials remain Main plus safeStorage;
+  no `.env` value is recorded.
 - **Wake boundary:** the wake phrase remains configurable and must be generated
   into a versioned detector keyword artifact with metadata and safe fallback.
   Task 4 records configurable keyword, configured_threshold, boost, and
   num_trailing_blanks metadata only; it never records per-event confidence and
   does not implement wake detection.
-- **Task 5 planning boundary:** SQLite initialization and the migration
-  baseline are current, planned, and not started. The accepted plan is
-  `docs/superpowers/plans/2026-08-19-phase0-task5-sqlite.md`; no user setup is
-  required, and the caller supplies the absolute persistent `dbPath`. The
+- **Task 5 completion:** SQLite initialization and the migration baseline are
+  accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
+  32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
+  build green.
+- **Task 6 planning boundary:** the accepted plan is
+  `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`; its
+  five-command static gate passed (status scope, git diff check, 458
+  lines/final marker/trailing whitespace, 10 required markers, and no
+  forbidden markers). The plan was committed and pushed on the current
+  `phase0-modules` branch at `83be86b`, which tracks
+  `origin/phase0-modules`; application/test implementation is not started.
+  The selected design is a runtime-exhaustive Main registry with injected
+  closed-outcome adapters and separate deterministic mocks, stable
+  metadata-only results/events, informational missing-adapter handling,
+  explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
+  and no boot/IPC/UI/model resolver. The exact future production/test scope is
+  only `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
+  `src/main/module-mocks.ts`; TDD RED is the next application action. Task 7
+  remains next and separate; Tasks 8/9 own integration/UI; and Task 10 owns
+  demos/records/exit. Windows results do not field-verify target macOS
+  Keychain/TCC/signing/entitlements/packaged-worker/LaunchAgent paths. The
   untracked `scripts/install-node-lts.ps1` remains untouched.
 
 ## Next action (for the next session)
 
-1. Run the Task 5 static plan gate from the accepted plan on `phase0-sqlite`.
-2. After the static gate, the root commits and pushes the four documentation
-   files on `phase0-sqlite`.
-3. Dispatch the Task 5 RED contract worker, then observe the focused RED
-   checkpoint for the absent production module.
-4. After RED is accepted, dispatch the Task 5 production implementation
-   worker.
-5. After the production implementation is accepted, dispatch the focused
-   GREEN/regression worker for focused test, full test, typecheck, and build.
-6. After GREEN is accepted, the root performs external review and integration:
-   commit/push the application files, fast-forward `main`, run the merged-main
-   evidence gate, and push the integrated `main` tip.
-7. Tasks 3–5 run SEQUENTIALLY (ledger Ruling R5), even where a product plan
-   marks other work parallel-eligible. No Phase 0 demo is complete from this
-   preparation; P0-D2/P0-D3/P0-D4/P0-D5 remain later consumers and Task 10
-   remains the demo/record owner.
+1. After this three-file process-state commit/push, dispatch the Task 6 RED
+   test-file implementer for `tests/unit/module-registry.test.ts` only.
+2. Then dispatch a fresh RED tester for the focused missing-production-module
+   checkpoint.
+3. After RED is accepted, dispatch the Task 6 production implementation
+   worker for the exact three-file application/test scope.
+4. After implementation is accepted, dispatch fresh testers for focused GREEN,
+   full test, Node/web typecheck, and Electron Vite build.
+5. After GREEN is accepted, the root performs external review and integration:
+   commit/push the three application/test files, fast-forward `main`, run the
+   merged-main evidence gate, and push the integrated `main` tip.
+6. Task 7 remains next and separate. No Phase 0 demo is complete from this
+   preparation; P0-D1–P0-D5 remain later consumers and Task 10 remains the
+   demo/record owner.
 
 ## Task 2 completion and Task 3 preparation (2026-08-18)
 
@@ -173,9 +210,9 @@
 | 2  | Lifecycle state machine (XState v5)             | done + reviewed + locally integrated | `a7d74b14771de4f527762c30171ad2e68fc3d985`; 31 focused lifecycle tests; merged tree 5 files / 51 tests; `npm run typecheck:node` clean |
 | 3  | ConfigService + credentials                     | done + reviewed + integrated | `0270686` with correction/integration tip `835c92d` on pushed `main`; fresh merged-main 7 test files / 92 tests, full Node+web typecheck 0, Electron Vite main/preload/renderer build 0 |
 | 4  | Telemetry (metadata-only, non-blocking)         | done + reviewed + integrated | pushed `main` tip `dca1327`; focused `21/21`; full `8 files / 113 tests`; Node plus web typecheck `0`; Electron Vite build `0` |
-| 5  | SQLite + migrations (`node:sqlite`)             | current, planned, not started | `docs/superpowers/plans/2026-08-19-phase0-task5-sqlite.md`; branch `phase0-sqlite`; exact implementation scope is tests/unit/sqlite-service.test.ts then src/main/sqlite-service.ts |
-| 6  | Module registry + mocks                         | not started | |
-| 7  | AI model settings resolver + snapshots          | not started | |
+| 5  | SQLite + migrations (`node:sqlite`)             | done + reviewed + integrated | pushed `main` tip `a8f0355`; focused `32/32`; full `145/145`; Node/web typecheck `0`; Electron Vite build `0` |
+| 6  | Module registry + mocks                         | current, plan accepted/static gate passed/committed/pushed, application/test implementation not started | `83be86b` on `phase0-modules` tracking `origin/phase0-modules`; exact three-file scope in accepted plan |
+| 7  | AI model settings resolver + snapshots          | next, separate, not started | remains separate from Task 6 |
 | 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | not started | |
 | 9  | Console UI — 6 pages                            | not started | |
 | 10 | P0 demo runner, exit criteria, tag              | not started | |

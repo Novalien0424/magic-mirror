@@ -61,19 +61,40 @@ The following process rulings remain active: R1 is completed historical
 in-place work through local integration on `phase0-foundation`; application
 Task 2 (the lifecycle state machine) is completed, reviewed, and locally
 integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
-was deleted; and the current Task 5 branch is `phase0-sqlite`. R2 keeps the
-authoritative `handleSimulator` return shape; and R5 keeps Tasks 3–5
-sequential. R3 and R4 are superseded by the user's current Codex policy.
-The application task order is unchanged: application Task 3 (ConfigService +
-credentials) is completed, corrected, integrated at implementation commit
-`0270686` with correction/integration tip `835c92d`, and pushed on `main`;
-application Task 4 (metadata-only telemetry) is completed, root-reviewed,
-integrated, and pushed at `dca1327`; application Task 5 (SQLite initialization
-and migration baseline) is current, planned, and not started. This refers only
-to the application task order and does not indicate that a harness-migration
-Task 2 is pending. The completed application Task 1 status is not changed by
-this harness work. Development Node `v24.19.0` satisfies the prerequisite of
-`>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+was deleted. R2 keeps the authoritative `handleSimulator` return shape; and
+R5 keeps Tasks 3–5 sequential. R3 and R4 are superseded by the user's current
+Codex policy. Application Task 3 (ConfigService + credentials) is completed,
+corrected, integrated at implementation commit `0270686` with
+correction/integration tip `835c92d`, and pushed on `main`; application Task 4
+(metadata-only telemetry) is completed, root-reviewed, integrated, and pushed
+at `dca1327`; application Task 5 (SQLite initialization and migration baseline)
+is accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
+32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
+build green. The current branch is `phase0-modules`, tracking
+`origin/phase0-modules`. Application Task 6 (Main-owned module registry plus
+deterministic mocks) has an accepted plan that passed the five-command static
+gate (status scope, git diff check, 458 lines/final marker/trailing whitespace,
+10 required markers, and no forbidden markers), was committed and pushed on
+`phase0-modules` at `83be86b`, and has not started application/test
+implementation. Its selected design is a runtime-exhaustive Main registry,
+injected closed-outcome adapters, separate deterministic mocks, stable
+metadata-only results/events, informational missing-adapter handling, explicit
+`eventDelivery` values `emitted|failed`, no retry or sibling gate, and no
+boot/IPC/UI/model resolver. The exact future application/test scope is
+`tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
+`src/main/module-mocks.ts`; TDD RED is the next application action. Task 7
+remains the next separate application task; Tasks 8/9 own integration/UI; and
+Task 10 owns demos/records/exit. This refers only to application task order and
+does not indicate that a harness-migration Task 2 is pending. The completed
+application Task 1 status is not changed by this harness work. No user setup is
+required for Task 6. Development Node `v24.19.0` satisfies the prerequisite
+of `>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+
+The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
+credential presence is recorded only as ignored metadata; its content and
+value are never read, and process records must not claim that its value was
+inspected. The customizable wake word remains a Phase 2 requirement and later
+requires keyword artifact generation plus tuning evidence.
 
 ## Immutable and product boundaries
 
@@ -89,9 +110,10 @@ content.
 
 Keep the Windows-development/macOS-target distinction explicit. Windows
 development uses the same Electron `safeStorage` API backed by DPAPI; the
-target Mac uses Keychain and its TCC, signing, and entitlement paths. A
-Windows result does not field-verify the macOS path. The target's only restart
-owner is the user LaunchAgent with `KeepAlive = { SuccessfulExit = false }`.
+target Mac uses Keychain and its TCC, signing, and entitlement paths. Windows
+results do not field-verify target macOS Keychain/TCC/signing/entitlements/
+packaged-worker/LaunchAgent paths. The target's only restart owner is the user
+LaunchAgent with `KeepAlive = { SuccessfulExit = false }`.
 In-app recovery may recreate a failed renderer once, then exits with code 1 so
 the LaunchAgent restarts the app. Never call `app.relaunch()` and never add a
 second restart owner.
