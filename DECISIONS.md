@@ -3,6 +3,70 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-08-18 — Task 2 integration and Task 3 preparation
+
+- **Task 2 completion.** The Main-owned lifecycle state machine is completed,
+  reviewed, and locally integrated at
+  `a7d74b14771de4f527762c30171ad2e68fc3d985`; the merged-tree evidence is 31
+  focused lifecycle tests, 5 files / 51 tests, and clean
+  `npm run typecheck:node`. The old `phase0-lifecycle` branch was deleted.
+- **Current application route.** `phase0-config` is the current local branch;
+  Task 3 (ConfigService + credentials) is next and is prepared but not
+  started. Tasks 3–5 remain sequential. Phase 0 remains in progress and
+  Phase 1 remains blocked.
+- **Integration metadata.** The verified GitHub origin is
+  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
+  `origin/main` at the integrated Task 2 commit. `phase0-config` has not been
+  claimed as pushed.
+- **Development prerequisite.** Node `v24.19.0` satisfies the required
+  `>=22.22.2` or `>=24.15.0` range for `write-file-atomic@8` and Task 3. The
+  untracked `scripts/install-node-lts.ps1` remains untouched.
+- **Task 3 scope.** The implementation plan is limited to new
+  `src/main/config-service.ts`, `src/main/credential-store.ts`,
+  `resources/config/default.json`,
+  `tests/unit/config-service.test.ts`, and
+  `tests/unit/credential-store.test.ts`. Existing shared types, Main wiring,
+  bridge/preloads/renderers, package files, and all other paths remain
+  read-only.
+- **Config boundary.** ConfigService receives its config directory and
+  versioned default path from its caller, validates the existing shared
+  `MirrorConfig` core, seeds first boot, persists Draft/Active/Previous with
+  atomic writes and compensating restoration, and degrades malformed scene or
+  spell items to disabled/empty surfaces with reasoned metadata. It does not
+  own Task 7 model-role resolution or session/job snapshots.
+- **Credential boundary.** CredentialStore is Main-only, receives its
+  credential path, Electron 43 `safeStorage` adapter, file operations, and
+  metadata sink from its caller, writes only an encrypted blob outside config
+  and backups, supports set/get/clear and safeStorage re-encryption, and
+  never uses keytar. Task 8 owns `app.ready` and renderer IPC wiring; Phase 1
+  owns short-lived credential exchange.
+- **Metadata boundary.** Task 3 defines an injected
+  `Omit<MirrorEvent, 'time'>` sink with fixed config/credential event names,
+  statuses, error codes, and reason grammar. Events contain only slot,
+  operation, count, field-path, revision, and cause metadata; no config values,
+  secrets, transcripts, audio, private context, images, embeddings, or
+  prompts are emitted.
+- **Execution boundary.** The plan routes TDD through a test-only
+  implementer, dedicated RED tester, the same logical implementer for
+  production/resource files, focused GREEN and node-typecheck tester, root
+  review, full-suite/build tester, and root commit. No worker stages, commits,
+  pushes, or merges; no demo is claimed by this preparation record.
+- **Credential provisioning setup (metadata only).** The user reports that the
+  local OpenAI credential is provisioned through `.env`. Supplied metadata
+  records `.env` exists: true, `.gitignore` line 9 rule `.env` ignores it,
+  tracked by Git: false (untracked), content/value accessed: false, and
+  validity checked: false. Current branch remains `phase0-config` and the
+  origin remains
+  `https://github.com/Novalien0424/magic-mirror`. `.env` is provisioning input
+  only and must never be committed, pushed, or treated as runtime
+  renderer-visible storage; Main/`safeStorage` and short-lived renderer
+  credentials remain authoritative.
+- **Phase 2 wake phrase requirement.** The wake phrase is customizable and
+  must never be hard-coded: the editable phrase/config/raw keyword source must
+  generate the detector keyword artifact, with version/metadata and safe
+  fallback visible. This requirement is accepted without starting its
+  implementation. Application order and status are unchanged.
+
 ## 2026-08-17 — Phase 0 Task 1 integration and Task 2 dispatch preparation
 
 - **Local integration.** `main` was fast-forwarded locally from `7c07244` to

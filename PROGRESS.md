@@ -1,39 +1,87 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 of 10 done and reviewed; Task 2 prepared, not started.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Task 1 done and reviewed; Task 2 done, reviewed, and locally integrated; Task 3 prepared, not started.**
 
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
-- Current branch: `phase0-lifecycle` (starts at `426728f012556b4095eb8b25d94aa7476617f103`)
-- Task 2 dispatch brief: `.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`
-  (git-ignored; preparation only)
+- Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
+- Current branch: `phase0-config` at the locally integrated Task 2 commit
+  `a7d74b14771de4f527762c30171ad2e68fc3d985`
+- Verified integration metadata: GitHub origin is
+  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
+  `origin/main` at that Task 2 commit. `phase0-config` is local preparation
+  state; this record makes no claim that it has been pushed.
+- Workspace note: the untracked `scripts/install-node-lts.ps1` remains
+  untouched and is outside this task's scope.
+
+## Current setup and Phase 2 prerequisite (2026-08-18)
+
+- **Credential setup (metadata only).** The user reports that the local OpenAI
+  credential is provisioned through `.env`. Supplied metadata records
+  `.env` exists: true, `.gitignore` line 9 rule `.env` ignores it, tracked by
+  Git: false (untracked), content/value accessed: false, and validity checked:
+  false. No value is recorded. `.env` is provisioning input only, not runtime
+  renderer-visible storage; Main/`safeStorage` and short-lived renderer
+  credentials remain authoritative.
+- Credential existence does not itself prove account/billing/network/API
+  validity, audio devices, or target macOS field readiness.
+- **Phase 2 prerequisite.** Wake phrase selection plus generation of the
+  detector keyword artifact remains required before real wake tuning.
+  Configurability is accepted, but implementation has not started: the
+  editable phrase/config/raw keyword source must generate the artifact, with
+  version/metadata and safe fallback visible.
+- These notes do not change application order or status; Task 3 remains
+  prepared and not started, Phase 0 remains in progress, and Phase 1 remains
+  blocked.
 
 ## Next action (for the next session)
 
-1. Use the accepted plan at
-   `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md` and the
-   ignored brief at
-   `.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`
-   to execute the four sequential Task 2 checkpoints on `phase0-lifecycle`.
-   Task 2 is prepared but not started; this record is not implementation or
-   test evidence.
-2. **Before Task 3, not before Task 2**: upgrade dev Node from 22.21.0 to
-   ≥22.22.2 or ≥24.15.0 —
-   `write-file-atomic@8` declares that engine range and Task 3's vitest run
-   uses the dev Node (`npm install` already warns EBADENGINE).
-3. Tasks run SEQUENTIALLY (ledger Ruling R5) even where the plan marks them
-   parallel-eligible.
+1. Use the accepted Task 3 plan at
+   `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md` to
+   execute its separate test-only RED, implementation, focused GREEN,
+   external-root-review, and full-suite/build tester checkpoints on
+   `phase0-config`. Task 3 is prepared but not started.
+2. Development Node is resolved at `v24.19.0`, satisfying the
+   `>=22.22.2` or `>=24.15.0` prerequisite required by
+   `write-file-atomic@8` and Task 3.
+3. Tasks 3–5 run SEQUENTIALLY (ledger Ruling R5), even where a product plan
+   marks other work parallel-eligible.
+4. No Phase 0 demo is complete from this preparation; P0-D3/P0-D4/P0-D5
+   remain later consumers of the Task 3 foundation.
 
-## Local integration and post-merge verification (2026-08-17)
+## Task 2 completion and Task 3 preparation (2026-08-18)
+
+- Task 2 is completed, reviewed, and locally integrated at
+  `a7d74b14771de4f527762c30171ad2e68fc3d985` on `phase0-config`; the old
+  `phase0-lifecycle` branch was deleted. The merged tree contains the
+  Main-owned seven-state lifecycle implementation and focused test contract.
+- Task 2 evidence: 31 focused lifecycle tests passed; merged-tree evidence is
+  5 files / 51 tests with `npm run typecheck:node` clean. This is application
+  test evidence from the completed Task 2 route, not evidence from this
+  documentation worker.
+- GitHub integration metadata was verified as
+  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
+  `origin/main` at the integrated commit. `phase0-config` has no push claim.
+- Task 3 is prepared, not started, with the accepted plan at
+  `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`.
+- Node `v24.19.0` now satisfies the development prerequisite. The untracked
+  `scripts/install-node-lts.ps1` remains untouched.
+- Phase 0 remains in progress. Phase 1 remains blocked until the complete
+  Phase 0 demos and exit review; no demo is claimed here.
+
+## Historical Task 1 local integration and pre-Task-2 verification (2026-08-17)
 
 - `main` was locally fast-forwarded from `7c07244` to
   `426728f012556b4095eb8b25d94aa7476617f103`; no remote/upstream exists.
-- `phase0-foundation` was deleted after green verification. The current
-  `phase0-lifecycle` branch starts at `426728f012556b4095eb8b25d94aa7476617f103`.
+- `phase0-foundation` was deleted after green verification. At that time the
+  `phase0-lifecycle` branch started at
+  `426728f012556b4095eb8b25d94aa7476617f103`; it was later completed and
+  deleted as recorded above.
 - A fresh `nova-auto` `gpt-5.6-luna` max tester verified merged `main` at that
   exact HEAD: Node `v22.21.0`, `npm run typecheck` exit `0`, `npm test` exit
   `0`, 4 files / 20 tests, Vitest `34.96s`, clean.
-- This is pre-Task-2 application state. Phase 0 remains in progress; Tasks
-  2–5 remain sequential; Phase 1 remains blocked and must not start.
+- This was pre-Task-2 application state. Phase 0 remains in progress; the
+  current sequential boundary is Tasks 3–5; Phase 1 remains blocked and must
+  not start.
 
 ## Codex harness migration — Task 10 records-only update (2026-08-17)
 
@@ -47,9 +95,9 @@
   application-forward, and immutable-source `8/8` evidence is recorded; no
   application, source, dependency, or runtime changes were made. Final
   migration validation remains pending.
-- This is migration state only. The application task table below is unchanged:
-  application Task 1 remains done + reviewed, and application Task 2 remains
-  next/not started.
+- This is migration state only. The application task table below preserves
+  Task 1 as done + reviewed and records the later Task 2 completion and Task 3
+  preparation separately.
 
 ## Codex harness migration - final validation (2026-08-17)
 
@@ -61,15 +109,16 @@
 - Migration scope: clean `23/23` allowed paths; no product/app/dependency/test changes.
 - Discovery LIMITATION: recursive live-selector discovery was unavailable because of the root-only launcher. Earlier profile-backed Luna/max local-direct trigger/retrieval evidence exists for all seven skills, but it is not recursive telemetry.
 - Commit evidence: design `15eae49`, plan `49479f6`, Task 1 `cb4f439`, Task 2 `cdf982b`, Task 3 `fba68fe`, Task 4 `899dd9d`, Task 5 `4480897`, Task 6 `b161421`, Task 7 `7ddcdc4`, Task 8 `09cc954`, Task 9 `5ca5a6c`, Task 10 `bd5f0a7`, Task 11 hygiene fix `14fb5ab`.
-- Residual: macOS field verification remains outstanding; Node must be upgraded to `>=22.22.2` or `>=24.15.0` before application Task 3.
+- Residual: macOS field verification remains outstanding. The development Node
+  prerequisite for application Task 3 is now satisfied by `v24.19.0`.
 
 ## Task status
 
 | #  | Task                                            | State       | Evidence |
 |----|-------------------------------------------------|-------------|----------|
 | 1  | Scaffold, two windows, never-black-screen boot  | done + reviewed | `npm run typecheck` clean; `npm test` 4 files / 20 tests passing, incl. 4 spawned smoke runs; orchestrator review clean (3 minors deferred, see SDD ledger) |
-| 2  | Lifecycle state machine (XState v5)             | not started | |
-| 3  | ConfigService + credentials                     | not started | |
+| 2  | Lifecycle state machine (XState v5)             | done + reviewed + locally integrated | `a7d74b14771de4f527762c30171ad2e68fc3d985`; 31 focused lifecycle tests; merged tree 5 files / 51 tests; `npm run typecheck:node` clean |
+| 3  | ConfigService + credentials                     | prepared, not started | `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`; branch `phase0-config`; Node `v24.19.0` resolved |
 | 4  | Telemetry (metadata-only, non-blocking)         | not started | |
 | 5  | SQLite + migrations (`node:sqlite`)             | not started | |
 | 6  | Module registry + mocks                         | not started | |
@@ -130,9 +179,9 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
 
 ## Phase 0 placeholders (replaced by later tasks)
 
-- The Mirror renderer's Starting → Dormant transition is a local 1.2 s timer; Main tracks
-  only "did the lifecycle leave `starting`". Task 2 brings the real XState machine and
-  Task 8 wires it through IPC.
+- The Mirror renderer's Starting → Dormant transition remains a local 1.2 s timer;
+  Main now has the completed seven-state XState contract from Task 2, and Task 8
+  will wire it through IPC.
 - `src/main/index.ts` exports `createWindows()`; Task 8 wires `bootSequence()` into the
   same file.
 - Console window is a shell listing its six pages as "Not implemented" (Task 9 fills them).
@@ -147,9 +196,10 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
 - **Renderer CSP not set yet.** Deferred to Task 8, which owns the visitor UI and must
   choose a policy that survives both the vite dev server and the packaged `file://` load
   (and later Cubism Core, which loads as a global script).
-- **Dev Node is 22.21.0, below `write-file-atomic@8`'s engine range**
-  (`^22.22.2 || ^24.15.0 || >=26`). Electron's own Node 24.17 satisfies it at runtime, but
-  Task 3's unit tests run on the dev Node — upgrade the dev machine's Node before Task 3.
+- **Development Node was previously 22.21.0, below `write-file-atomic@8`'s
+  engine range** (`^22.22.2 || ^24.15.0 || >=26`). It is now resolved at
+  `v24.19.0`, which satisfies the Task 3 prerequisite; Electron's own Node
+  24.17 remains a separate runtime fact.
 - **Navigation hardening not set yet** (`setWindowOpenHandler` deny, `will-navigate`
   guard). Nothing in Phase 0 can navigate, but Task 8 should add it with the visitor UI.
 - Kiosk polish (cursor hiding, `powerSaveBlocker`) is deliberately out of Task 1 scope.

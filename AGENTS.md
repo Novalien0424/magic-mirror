@@ -58,17 +58,19 @@ frontmatter, metadata, trigger/retrieval, and required behavior evidence has
 been accepted by root review.
 
 The following process rulings remain active: R1 is completed historical
-in-place work through local integration on `phase0-foundation`; the current
-Task 2 branch is `phase0-lifecycle`. R2 keeps the authoritative
-`handleSimulator` return shape; and R5 keeps Tasks 2–5 sequential.
-R3 and R4 are superseded by the user's current Codex policy.
-The application task order is unchanged:
-application Task 2 (the lifecycle state machine) remains the next application
-task. This refers only to the application task order and does not indicate
-that a harness-migration Task 2 is pending. The completed
-application Task 1 status is not changed by this harness work. Upgrade the
-development Node prerequisite to `>=22.22.2` or `>=24.15.0` before application
-Task 3. Do not change application task order or status.
+in-place work through local integration on `phase0-foundation`; application
+Task 2 (the lifecycle state machine) is completed, reviewed, and locally
+integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
+was deleted; and the current Task 3 branch is `phase0-config`. R2 keeps the
+authoritative `handleSimulator` return shape; and R5 keeps Tasks 3–5
+sequential. R3 and R4 are superseded by the user's current Codex policy.
+The application task order is unchanged: application Task 3 (ConfigService +
+credentials) is next and its implementation plan is prepared, but application
+Task 3 has not started. This refers only to the application task order and
+does not indicate that a harness-migration Task 2 is pending. The completed
+application Task 1 status is not changed by this harness work. Development
+Node `v24.19.0` satisfies the prerequisite of `>=22.22.2` or `>=24.15.0`.
+Do not change application task order or status.
 
 ## Immutable and product boundaries
 
