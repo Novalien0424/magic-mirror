@@ -14,6 +14,95 @@ architecture decisions in Tech Spec §18 are not repeated here.
   mandatory authority, role, profile, model, effort, scope, evidence,
   tester-ownership, privacy/invariant, or external-root-review requirement.
 
+## 2026-08-19 — Accepted subset of the Phase 0 adversarial review and corrected Task 10 handoff
+
+- **Review disposition and status.** The untracked 2026-08-19 adversarial
+  review is directionally valid, but root accepted a bounded subset of its
+  findings rather than every premise or recommendation. In particular, the
+  premise that Task 10 was implemented is false: Tasks 1–9 are accepted, the
+  original Task 10 plan is recorded at `255008e`, the correction plan is
+  recorded at `9adcca4`, Task 10 remains unimplemented, Phase 0 remains in
+  progress, and Phase 1 remains blocked. The review file and the immutable
+  2026-08-16 stack review are not edited. Review suggestions to pin
+  `electron-builder` 26.15.7, consolidate scans, or add URL-decoding are not
+  accepted in this unit. Application task order and status remain unchanged.
+- **Config schema boundary.** Serialized config has a separate numeric
+  `schemaVersion` envelope; `configVersion` remains the published revision and
+  is never a schema discriminator. A known legacy or missing schema marker is
+  migrated and materialized atomically (known `0`/missing → current schema)
+  while preserving operator values. An unsupported or future Active schema
+  fails visibly to Maintenance and never reaches packaged Default. The
+  Active → Previous → packaged Default chain is reserved for corrupt, missing,
+  or unreadable data, never an old-but-valid shape. Existing `config_recovered`
+  visibility is preserved and supplemented with schema-specific metadata
+  reasons; unrelated failure behavior is not weakened.
+- **Display-sleep boundary.** Before Phase 1, Main owns one
+  `powerSaveBlocker.start('prevent-display-sleep')` after readiness, retains
+  and checks its blocker ID, keeps protection active in Maintenance, stops it
+  on clean quit, and emits failure metadata without gating boot, conversation,
+  or recovery. This API contract is [verified in Electron's
+  `power-save-blocker` documentation](https://www.electronjs.org/docs/latest/api/power-save-blocker).
+  `pmset` and screensaver policy are a future target-Mac operations checkpoint,
+  not Windows evidence.
+- **SQLite backup contract.** The verified Node 24 module-level contract is:
+  `import { backup } from 'node:sqlite'; await backup(sourceDb, backupPath, options)`.
+  It returns a `Promise`; there is no `db.backup` instance method. See the
+  [verified Node 24 `node:sqlite` API](https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html).
+  The accepted SQLite schema baseline and `eventDelivery` values
+  `emitted|failed` remain unchanged.
+- **Corrected Task 10 contract.** Task 10 uses exact Electron `43.4.1`
+  ([verified release](https://github.com/electron/electron/releases/tag/v43.4.1))
+  and exact `electron-builder` `26.15.3` ([verified registry entry](https://registry.npmjs.org/electron-builder));
+  the #9983 issue is NSIS-only and NSIS is outside Task 10
+  ([issue reference](https://github.com/electron-userland/electron-builder/issues/9983)).
+  There is one OfflineLoop video placement: renderer `publicDir`/output plus
+  `asarUnpack`; the video is not in `extraResources`, while config Default
+  remains in `extraResources`. The text base64 generator is retained solely
+  because all worker writes must use `apply_patch`. Activation failure is
+  injected after `WAKE_DETECTED` and before `REALTIME_READY`; Console
+  Overview, Events, and Phase Tests are queried while OfflineLoop and
+  Maintenance are active; final smoke requires both windows loaded and the
+  lifecycle exactly `dormant` or `maintenance`. The bundled-Electron
+  `node:sqlite` open/WAL/close/reopen smoke is part of the evidence. All such
+  evidence is Windows-labeled and cannot verify target-macOS behavior.
+- **Future Realtime contract.** Phase 1 pins `@openai/agents` and
+  `@openai/agents-realtime` in exact lockstep at `0.16.1` ([verified npm
+  package metadata](https://registry.npmjs.org/@openai%2fagents),
+  [verified realtime metadata](https://registry.npmjs.org/@openai%2fagents-realtime)).
+  `ScriptedRealtimeTransport` is imported from the official testing export
+  ([verified source export](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents-realtime/src/testing/index.ts)).
+  `openai ^7.2.0` is an umbrella-package dependency, not a peer dependency of
+  `agents-realtime` ([verified agents package](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents/package.json),
+  [verified realtime package](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents-realtime/package.json)).
+  Runtime model IDs still come only from versioned config; a failed configured
+  ID never silently substitutes another ID. `realtimeSessionId` is authoritative
+  for stale-event rejection; `sessionGeneration` is diagnostic only.
+- **Future Console/config contracts.** Authorized Main/Console editing of
+  Persona instructions is planned. A one-time, operator-triggered `.env` to
+  Main `safeStorage` import is planned; `.env` is never a runtime source, and
+  no `.env` value is read or logged in evidence. Phase 5 owner display is
+  Console-only and sender-authorized, carrying public `call_name` only—never a
+  UUID, profile ID, guest ID, or candidate ID.
+- **Future audio/DB/asset contracts.** The delayed
+  `output_audio_buffer.stopped` report is currently **unverified** community
+  information absent a local primary official source; Phase 3 therefore keeps
+  a bounded actual-output-audio or analyser fallback with visible metadata
+  when the event is late. Phase 6/7 Main point lookups are indexed; batch
+  writes, scans, and backup use `utilityProcess` or worker-owned connections,
+  each with a nonzero busy timeout. Phase 3/5 large assets are unpacked or
+  `extraResources`, never streamed from `app.asar`.
+- **Target-Mac checkpoint.** Before Phase 2 exit on the real Mac, record stable
+  signing, packaged TCC keys plus microphone/camera capture, Keychain
+  `safeStorage`, LaunchAgent restart and clean quit, a 30-minute OfflineLoop
+  soak, ten boots, and the power-policy checkpoint. Windows cannot claim any
+  of this field evidence. The LaunchAgent remains the sole restart owner;
+  `app.relaunch()` and a second restart owner are prohibited.
+- **Preserved non-actions.** Do not reopen or weaken the accepted SQLite
+  baseline, change `eventDelivery`, implement scan consolidation or the
+  URL-decoding aside, pin `electron-builder` 26.15.7, change application task
+  order/status, or modify the untracked adversarial review or
+  `scripts/install-node-lts.ps1`.
+
 ## 2026-08-19 — Task 7 model settings resolver completion
 
 - **Plan and implementation state.** The accepted plan
@@ -62,8 +151,8 @@ architecture decisions in Tech Spec §18 are not repeated here.
 - **Implementation boundary.** The exact application/test scope was
   `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
   `src/main/module-mocks.ts`. Task 7 is accepted at the recorded plan and
-  implementation commits above; Task 8 is next, while Tasks 9/10 retain
-  integration/UI and demos/records/exit ownership.
+  implementation commits above; Tasks 8 and 9 are accepted, while Task 10
+  retains demos/records/exit ownership and remains unimplemented.
 - **Environment/platform.** No user setup is required for Task 6.
   Development Node `v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`. The
   user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`

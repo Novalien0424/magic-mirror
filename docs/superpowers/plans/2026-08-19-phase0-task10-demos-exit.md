@@ -1,5 +1,17 @@
 # Phase 0 Task 10 — Demos, Exit Evidence, Records, and Release Tag
 
+> **SUPERSEDED BASELINE NOTICE — 2026-08-19:** The original Task 10 plan was
+> committed at `255008e`; the accepted correction plan is `9adcca4`. Tasks 1–9
+> are accepted, but Task 10 remains unimplemented and Phase 1 remains blocked.
+> Corrected Task 10 execution is blocked until correction Units A–E in
+> `docs/superpowers/plans/2026-08-19-phase0-adversarial-review-fixes.md` have
+> each passed tester-owned validation where applicable and received external
+> root acceptance. The corrected contracts below supersede stale claims in
+> this historical plan, including duplicate video placement and the old smoke
+> terminal condition. After those prerequisite units are accepted, no demo,
+> exit, tag, or Phase 0 success is claimed until the completed Task 10 evidence
+> receives external root acceptance.
+
 > For-agentic-workers
 >
 > Execute this plan only through bounded fresh workers. Every implementation or
@@ -38,10 +50,12 @@ bounded RAM/rotating JSONL and is never authoritative phase storage; lifecycle,
 simulator, Config/Models, Console, smoke, snapshots, and fallback are accepted;
 Mirror currently points at missing resources/mock/offline-loop-v1.mp4 and has a
 nonblack fallback; resources/macos has the accepted Info.plist additions,
-entitlements, and LaunchAgent; electron-builder is absent and must be pinned to
-26.15.3; smoke exits 0 on success, 2 on unmet criteria, recreates a renderer
-once, then exits 1; app.relaunch is forbidden; development is Windows Node
-v24.19.0; no OpenAI, credential, device, network, or .env setup is needed.
+entitlements, and LaunchAgent; Electron is pinned exactly to 43.4.1 and
+electron-builder exactly to 26.15.3, with NSIS outside Task 10; smoke exits 0
+only on the corrected terminal condition, 2 on unmet criteria, recreates a
+renderer once, then exits 1; app.relaunch is forbidden; development is Windows
+Node v24.19.0; no OpenAI, credential, device, network, or .env setup is
+needed.
 
 ## Architecture
 
@@ -74,13 +88,15 @@ resolver, or parallel microphone owner is introduced.
 - Windows development environment with Node v24.19.0; the target remains
   macOS, but Windows evidence does not field-verify macOS Keychain, TCC,
   signing, entitlements, packaged-worker, or LaunchAgent behavior.
-- Electron 43.x, electron-vite 5, TypeScript, React, and Main-owned
-  node:sqlite.
+- Electron exactly 43.4.1, electron-vite 5, TypeScript, React, and Main-owned
+  node:sqlite ([verified release](https://github.com/electron/electron/releases/tag/v43.4.1)).
 - Electron safeStorage remains the credential boundary: DPAPI on Windows
   development and Keychain on the target Mac.
-- electron-builder is an exact devDependency pin at 26.15.3. Generation uses
-  the checked-in base64 source and Node only; it does not use ffmpeg or
-  network access.
+- electron-builder is an exact devDependency pin at 26.15.3
+  ([verified registry](https://registry.npmjs.org/electron-builder)); NSIS is
+  outside Task 10 ([NSIS-only issue #9983](https://github.com/electron-userland/electron-builder/issues/9983)).
+  Generation uses the checked-in base64 source and Node only; it does not use
+  ffmpeg or network access.
 - The only restart owner is the user LaunchAgent with
   KeepAlive = { SuccessfulExit = false }. In-app recovery recreates a failed
   renderer once and exits with code 1; it never calls app.relaunch.
@@ -112,6 +128,30 @@ the existing service error convention with stable metadata only. Boot wires
 this reader into the existing Console reader. App close flushes telemetry and
 closes SQLite exactly once.
 
+The final Phase 0 evidence also runs the bundled-Electron SQLite smoke from
+Unit E (`scripts/sqlite-electron-runtime-smoke.mjs`, exercised by
+`tests/integration/sqlite-electron-runtime.test.ts`): Electron's own
+`node:sqlite` must open a temporary database, confirm
+WAL, close, reopen, confirm the metadata sentinel, and close again. This is
+runtime evidence in addition to system-Node Vitest; it does not change the
+accepted schema baseline. The verified backup contract remains module-level
+`import { backup } from 'node:sqlite'; await backup(sourceDb, backupPath, options)`
+returning a Promise, not `db.backup()`.
+
+The pre-Phase 1 display-sleep contract is Main-owned: one
+`powerSaveBlocker.start('prevent-display-sleep')` after readiness, retained-ID
+check, protection in Maintenance, clean-quit stop, and visible non-gating
+failure metadata. The [Electron API is verified here](https://www.electronjs.org/docs/latest/api/power-save-blocker).
+`pmset` and screensaver remain future target-Mac operations evidence, not
+Windows evidence.
+
+Configuration evidence distinguishes the serialized `schemaVersion` from the
+published `configVersion`: known legacy or missing markers are materialized
+without losing operator values; unsupported/future Active schema reaches
+Maintenance; and Active → Previous → packaged Default is used only for
+corrupt, missing, or unreadable data. Existing `config_recovered` remains
+visible with schema-specific metadata reasons.
+
 Task 10B makes the OfflineLoop asset reproducible. The tracked source is
 resources/offline-loop/offline-loop-v1.mp4.base64 and the tracked generator is
 scripts/generate-offline-loop.mjs. The generator strictly decodes the source,
@@ -124,15 +164,17 @@ is accepted.
 
 electron.vite.config.ts sets renderer publicDir to resources/generated, so the
 accepted Mirror source path ../mock/offline-loop-v1.mp4 resolves in both dev
-and packaged renderer output. The nonblack fallback remains in place. Starting
-preflight emits asset_ready or asset_unavailable. An unavailable asset is
-visitor-visible and carries a stable metadata reason. .gitignore already has
+and packaged renderer output. The one packaged video placement is the renderer
+output protected by `asarUnpack`; the video is not copied to `extraResources`.
+The nonblack fallback remains in place. Starting preflight emits asset_ready or
+asset_unavailable. An unavailable asset is visitor-visible and carries a stable
+metadata reason. .gitignore already has
 `.superpowers/`, which covers every Task 10 SDD artifact path. The only new
 ignore rule is `resources/generated/`; no redundant `.superpowers` child rules
 are added. The exact ignored tester paths remain named in each tester write
 scope below while the base64 source stays tracked.
 
-package.json pins electron-builder at 26.15.3 and adds these exact script
+package.json pins Electron at 43.4.1 and electron-builder at 26.15.3 and adds these exact script
 contracts:
 
     "generate:offline-loop": "node scripts/generate-offline-loop.mjs"
@@ -155,16 +197,16 @@ remains the sole restart-owner reference.
 
 electron-builder.yml declares `files` as exactly `out/**/*` plus
 `package.json`, asar true, and `asarUnpack` as exactly
-`out/renderer/mock/*.mp4`. Its `extraResources` contains exactly these two
-FileSets:
+`out/renderer/mock/*.mp4`. Its `extraResources` retains only the config
+Default FileSet:
 
     resources/config/default.json -> config/default.json
-    resources/generated/mock/offline-loop-v1.mp4 -> mock/offline-loop-v1.mp4
 
-The two declared package placements are intentional; no third or untracked
-source asset is allowed. The config also declares mac hardenedRuntime and an
-unpacked Windows x64 target. The packaging check is configuration/schema-only
-for macOS on Windows.
+There is no video `extraResources` placement and no third or untracked source
+asset. The text base64 generator remains tracked solely because worker writes
+must use `apply_patch`; it is not a second runtime placement. The config also
+declares mac hardenedRuntime and an unpacked Windows x64 target. The packaging
+check is configuration/schema-only for macOS on Windows.
 
 Task 10C adds one Main-owned phase0-demo-runner, one integration test, and one
 CLI script. The runner reuses accepted lifecycle, Config/Models, Console,
@@ -186,8 +228,11 @@ The failing mock reports cause=mock_probe_failed. No provider is called.
 P0-D1 observes exactly starting, dormant, activating, active, suspending,
 dormant. P0-D2 independently demonstrates cloud failure as visible, nonblack
 OfflineLoop and local-core failure as visible, nonblack Maintenance, both with
-reason events. P0-D3 queries existing Console Overview, Events, and Phase Tests
-for transitions, last error, and fallback. P0-D4 uses independent process A
+reason events. The activation-failure seam injects cloud failure after
+`WAKE_DETECTED` and before `REALTIME_READY`, separately from active cloud
+failure. P0-D3 queries existing Console Overview, Events, and Phase Tests while
+OfflineLoop is active and while Maintenance is active, covering transitions,
+last error, and fallback. P0-D4 uses independent process A
 and B with the same user-data directory to prove config, phase record, and
 reopen of exactly one allowlisted metadata tuple from
 `<userData>/telemetry/telemetry-0.jsonl`; process A flushes/closes exactly once,
@@ -208,7 +253,8 @@ telemetry.
 Task 10D writes one exact final evidence artifact, updates PROGRESS.md only
 after tester PASS and external root review, leaves DECISIONS.md unchanged,
 and reserves commit/tag operations for the root. The final evidence includes
-Node/npm versions, focused and full tests, both typechecks, build, ten smoke
+Node/npm versions, focused and full tests, the bundled-Electron SQLite
+open/WAL/close/reopen smoke, both typechecks, build, ten smoke
 boots, all five demos, the actual 1,800,000 ms OfflineLoop soak with
 `--soak-ms 1800000`, `--sample-ms 300000`, process timeout
 `--timeout-ms 1920000`, `--marker-timeout-ms 15000`, and
@@ -436,8 +482,9 @@ Make the OfflineLoop asset reproducible, visible, nonblack, and packageable
 without ffmpeg, network access, or a new runtime fallback model. Establish the
 tester-owned electron-builder 26.15.3 preflight before RED, apply the accepted
 candidate package-lock text without installing in the implementation worker,
-wire dev/packaged public assets, preserve the nonblack fallback, and validate
-unpacked Windows x64 resource placement and equal hashes.
+wire one renderer `publicDir`/output video protected by `asarUnpack`, preserve
+the nonblack fallback, and validate the unpacked Windows x64 resource hash.
+The video is not placed in `extraResources`; config Default remains there.
 
 ### Files
 
@@ -568,6 +615,8 @@ The handoffs remain strictly sequential:
 The generator strictly decodes base64, rejects invalid alphabet/padding and
 unexpected byte length, checks the fixed hash before and after atomic output,
 writes only resources/generated/mock/offline-loop-v1.mp4, and emits metadata.
+It remains solely because worker writes must use `apply_patch`; it does not
+create a second packaged video placement.
 electron.vite.config.ts points renderer publicDir to resources/generated.
 Mirror keeps ../mock/offline-loop-v1.mp4 and its nonblack fallback. Starting
 emits asset_ready only after all checks pass; asset_unavailable includes a
@@ -578,17 +627,17 @@ electron-builder.yml declares the new Task 10 identity
 the accepted LaunchAgent executable path; appId is a new Task 10 decision and
 is not inferred from the LaunchAgent label. Its exact `files` contract is
 `out/**/*` plus `package.json`; it keeps asar true and
-`asarUnpack: out/renderer/mock/*.mp4`. Its `extraResources` contains exactly
-these two FileSets:
+`asarUnpack: out/renderer/mock/*.mp4`. Its `extraResources` retains exactly
+the config FileSet:
 
     resources/config/default.json -> config/default.json
-    resources/generated/mock/offline-loop-v1.mp4 -> mock/offline-loop-v1.mp4
 
-The two package placements are intentional. `extendInfo` uses
+There is no video `extraResources` placement. `extendInfo` uses
 `resources/macos/Info.plist.additions.xml`; both `entitlements` and
 `entitlementsInherit` use `resources/macos/entitlements.plist`; and
 `resources/macos/com.magicmirror.launchagent.plist` remains the sole
-restart-owner reference. No third or untracked source asset is allowed, and
+restart-owner reference. The text base64 generator is retained solely because
+worker writes must use `apply_patch`. No third or untracked source asset is allowed, and
 LaunchAgent semantics are unchanged.
 
 ### GREEN command and expected result
@@ -623,15 +672,14 @@ directory:
     $task10Repo = (Get-Location).Path
     & (Join-Path $task10bPreflight 'node_modules/.bin/electron-builder.cmd') --dir --win --x64 --publish never --config (Join-Path $task10Repo 'electron-builder.yml') --config.directories.output (Join-Path $task10bPreflight 'windows-unpacked')
 
-Expected exit is 0. The tester inspects both exact package locations:
+Expected exit is 0. The tester inspects the one exact packaged video location:
 
     $packageRoot = Join-Path $task10bPreflight 'windows-unpacked/win-unpacked/resources'
-    Get-FileHash (Join-Path $packageRoot 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4'),(Join-Path $packageRoot 'mock/offline-loop-v1.mp4') -Algorithm SHA256 | ConvertTo-Json -Compress
+    Get-FileHash (Join-Path $packageRoot 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4') -Algorithm SHA256 | ConvertTo-Json -Compress
     (Get-Item (Join-Path $packageRoot 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')).Length
-    (Get-Item (Join-Path $packageRoot 'mock/offline-loop-v1.mp4')).Length
 
-Expected output has two equal fixed hashes, two equal fixed byte lengths, and
-exit 0. The packaged demo/renderer probe must report a decodable, advancing,
+Expected output has one fixed hash and byte length, and exit 0. The packaged
+demo/renderer probe must report a decodable, advancing,
 nonblack OfflineLoop through metadata-only markers; no frame or audio is saved.
 The preflight and package outputs remain under task10b-package-preflight/.
 
@@ -639,10 +687,11 @@ The preflight and package outputs remain under task10b-package-preflight/.
 
 No ffmpeg, network download, source video replacement, renderer Node
 integration, model fallback, macOS field test, code signing assertion,
-LaunchAgent replacement, or third/untracked source asset is allowed. A candidate
-electron-builder schema mismatch stops the task before RED. A package that
-builds but omits either exact resource location, hash, length, or decodability
-does not pass. The generated file, package output, and preflight dependencies
+LaunchAgent replacement, video `extraResources`, or third/untracked source
+asset is allowed. A candidate electron-builder schema mismatch stops the task
+before RED. A package that builds but omits the exact renderer resource
+location, hash, length, or decodability does not pass. The generated file,
+package output, and preflight dependencies
 remain ignored and are not added to the commit.
 
 ## Task 10C — deterministic P0-D1..P0-D5 plus reopen demo harness
@@ -783,11 +832,15 @@ P0-D1 asserts the exact lower-case lifecycle sequence:
 P0-D2 runs two independent cases. cloud-failure must report visible,
 nonblack OfflineLoop and a stable cloud failure reason. core-failure must
 report visible, nonblack Maintenance and a stable local-core failure reason.
-Neither case may gate unrelated Console or conversation paths.
+The activation-failure seam injects the cloud failure after `WAKE_DETECTED` and
+before `REALTIME_READY`, so Activating → OfflineLoop is exercised without
+changing the public simulator contract. Neither case may gate unrelated
+Console or conversation paths.
 
 P0-D3 queries the existing Console Overview, Events, and Phase Tests views or
-their accepted data contracts and asserts transitions, last error, fallback,
-record status, and reason are available without private content.
+their accepted data contracts while OfflineLoop is active and while Maintenance
+is active, and asserts transitions, last error, fallback, record status, and
+reason are available without private content.
 
 P0-D4 starts independent process A, publishes deterministic config, writes a
 phase record, and emits exactly one deterministic metadata-only tuple:
@@ -857,8 +910,9 @@ PHASE_RECORD_WRITTEN, and PHASE_DEMO_RESULT(result=passed).
 
     node scripts/run-phase0-demos.mjs --demo P0-D3 --build-commit phase0-task10 --user-data-root .superpowers/sdd/2026-08-19-phase0-task8-boot-ipc-mirror/task10-user-data --timeout-ms 120000 --marker-timeout-ms 15000 --retain-on-success
 
-Expected exit 0, Console Overview/Events/Phase Tests query markers, transitions,
-last-error/fallback reason metadata, PHASE_RECORD_WRITTEN, and a passed result.
+Expected exit 0, Console Overview/Events/Phase Tests query markers while
+OfflineLoop and Maintenance are active, transitions, last-error/fallback
+reason metadata, PHASE_RECORD_WRITTEN, and a passed result.
 
     node scripts/run-phase0-demos.mjs --demo P0-D4 --build-commit phase0-task10 --user-data-root .superpowers/sdd/2026-08-19-phase0-task8-boot-ipc-mirror/task10-user-data --timeout-ms 120000 --marker-timeout-ms 15000 --retain-on-success
 
@@ -1024,6 +1078,12 @@ Expected exit 0; record only the version.
 
 Expected exit 0 with the accepted 10A focused tests.
 
+    npx vitest run tests/integration/sqlite-electron-runtime.test.ts --reporter=verbose
+
+Expected exit 0 with the bundled-Electron `node:sqlite` marker proving
+open/WAL/close/reopen/close-again. This is not replaced by system-Node
+Vitest coverage.
+
     npx vitest run tests/unit/offline-loop-packaging.test.ts --reporter=verbose
 
 Expected exit 0 with the accepted 10B focused tests.
@@ -1085,10 +1145,14 @@ captured separately. The ignored root is created before Resolve-Path:
         }
     }
 
-Expected every iteration exits 0, emits nonblank startup/lifecycle markers,
-and leaves no black screen. Smoke's accepted unmet code remains 2 and its
-accepted renderer-recovery exit remains 1; either is a failed final smoke
-iteration. Failed smoke data is retained under the Task10 root.
+Final smoke pass requires both Mirror and Console windows loaded and lifecycle
+exactly `dormant` or `maintenance`. `starting` fails with
+`lifecycle_still_starting`; `activating`, `active`, `suspending`, and
+`offlineLoop` fail with `lifecycle_not_terminal`. Every iteration must exit 0,
+emit nonblank startup/lifecycle markers, and leave no black screen. Smoke's
+accepted unmet code remains 2 and its accepted renderer-recovery exit remains
+1; either is a failed final smoke iteration. Failed smoke data is retained
+under the Task10 root.
 
 The tester repeats the five demos with the exact commands from 10C, each with
 --timeout-ms 120000, --marker-timeout-ms 15000, --retain-on-success, and the
@@ -1146,11 +1210,12 @@ The tester reruns the unpacked Windows x64 package command:
     $task10bPreflight = Join-Path (Get-Location) '.superpowers/sdd/2026-08-19-phase0-task8-boot-ipc-mirror/task10b-package-preflight'
     & (Join-Path $task10bPreflight 'node_modules/.bin/electron-builder.cmd') --dir --win --x64 --publish never --config (Join-Path (Get-Location) 'electron-builder.yml') --config.directories.output (Join-Path $task10bPreflight 'windows-unpacked')
 
-Expected exit 0. Hashes and lengths at
-app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4 and
-mock/offline-loop-v1.mp4 must equal the fixed source pair, and the packaged
-probe must report decodable, advancing, nonblack playback. The output stays
-below task10b-package-preflight/windows-unpacked.
+Expected exit 0. The hash and length at
+app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4 must equal the fixed
+source contract, and the packaged probe must report decodable, advancing,
+nonblack playback. No video is expected under `extraResources`; config Default
+remains the only `extraResources` entry. The output stays below
+task10b-package-preflight/windows-unpacked.
 
 The exact whitespace check for Task 10 tracked paths is:
 
@@ -1185,6 +1250,7 @@ stdout/stderr and exit code; it never claims a skipped gate passed.
 | Builder schema | exact JSON parse of installed node_modules/app-builder-lib/scheme.json, recursively collecting schema keys/definition names for hardenedRuntime, entitlements, entitlementsInherit, extendInfo, extraResources, asarUnpack, FileSet | status supported, exit 0 | absent/malformed schema or missing key | task10b-package-preflight/ |
 | Generated asset | npm run generate:offline-loop plus fixed hash/length commands | exit 0, exact fixed pair, decodable | decode/hash/length failure | task10-final-evidence.md and ignored generated path |
 | Focused 10A | npx vitest run tests/unit/sqlite-phase-tests.test.ts --reporter=verbose | exit 0 | nonzero/missing contract | task10-final-evidence.md |
+| Electron SQLite runtime | npx vitest run tests/integration/sqlite-electron-runtime.test.ts --reporter=verbose | exit 0; bundled-Electron open/WAL/close/reopen marker | nonzero/missing marker | task10-final-evidence.md |
 | Focused 10B | npx vitest run tests/unit/offline-loop-packaging.test.ts --reporter=verbose | exit 0 | nonzero/missing contract | task10-final-evidence.md |
 | Focused 10C | npx vitest run tests/integration/phase0-demos.test.ts --reporter=verbose | exit 0 | nonzero/missing contract | task10-final-evidence.md |
 | Full suite | npx vitest run --reporter=verbose | exit 0 | any failure or privacy output | task10-final-evidence.md |
@@ -1197,7 +1263,7 @@ stdout/stderr and exit code; it never claims a skipped gate passed.
 | Restart scan | exact rg app.relaunch command | exit 1, no output | match or non-1 result | task10-final-evidence.md |
 | Privacy scan | exact rg privacy command | exit 1, no output | match or non-1 result | task10-final-evidence.md |
 | Package | preflight-installed electron-builder --dir --win --x64 --publish never | exit 0, output below ignored directory | nonzero or tracked output | task10b-package-preflight/ |
-| Resource hashes | exact app.asar.unpacked and extraResources hash/length checks | equal fixed values and decodable | mismatch/missing location | task10-final-evidence.md |
+| Resource hash | exact renderer `app.asar.unpacked` hash/length check; config Default remains the only `extraResources` entry | one fixed value and decodable | mismatch/missing renderer location or video `extraResources` | task10-final-evidence.md |
 | Whitespace | exact git diff --check Task 10 path list | exit 0, no output | nonzero/output or extra path | task10-final-evidence.md |
 | Credential-free | no .env read; no credential value in output | evidence contains only metadata | any key/value or .env access | task10-final-evidence.md |
 
@@ -1227,8 +1293,8 @@ allowed.
 | No runtime model literal/fallback | exact rg runtime scan | 1; no output | final evidence |
 | No app.relaunch | exact rg app.relaunch scan | 1; no output | final evidence |
 | Privacy | exact rg privacy scan | 1; no output | final evidence |
-| Builder contract | exact version and JSON-parse v26 schema node commands for installed node_modules/app-builder-lib/scheme.json | 0; 26.15.3/status supported | final evidence; preflight metadata |
-| Windows package/resource | exact preflight-installed electron-builder --dir --win --x64 --publish never command and hash checks | 0; equal fixed hashes/lengths, decodable paths | final evidence; ignored package output |
+| Builder contract | exact version and JSON-parse v26 schema node commands for installed node_modules/app-builder-lib/scheme.json | 0; 26.15.3/status supported; NSIS out of scope | final evidence; preflight metadata |
+| Windows package/resource | exact preflight-installed electron-builder --dir --win --x64 --publish never command and renderer hash check | 0; one fixed hash/length, decodable renderer path | final evidence; ignored package output |
 | Task 10 scope/whitespace | exact git diff --check Task 10 path list | 0; no output | final evidence |
 | Phase record authority | 10A tests plus D1–D5 PHASE_RECORD_WRITTEN and Console Phase Tests | one row/attempt, newest 20, telemetry supplementary | final evidence; SQLite/Console metadata |
 | Project record | git diff --check -- PROGRESS.md after authorized update | 0; no output | root-reviewed PROGRESS diff |
@@ -1243,7 +1309,8 @@ allowed.
       exactly-once close.
 - [ ] Confirm Task 10B used the accepted ignored package candidate, applied
       package-lock text exactly, keeps generated/package output ignored, and
-      proves both packaged resource locations and the nonblack fallback.
+      proves one renderer video location plus the nonblack fallback; config
+      Default remains the only `extraResources` entry.
 - [ ] Confirm Task 10C has one runner, isolated process A/B reopen, exact
       markers, one phase record per attempt, D1 exact states, both D2 fallbacks,
       D3 Console queries, and D5 fixture/config preservation.

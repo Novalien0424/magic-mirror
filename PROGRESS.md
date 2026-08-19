@@ -1,6 +1,20 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–7 accepted; Task 8 is next.**
+**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–9 accepted; Task 10 is planned but unimplemented; Phase 1 is blocked.**
+
+## Current verified state (2026-08-19)
+
+- Tasks 1–9 are accepted. Task 10 is not implemented: its original plan is
+  at `255008e`, the accepted correction plan is at `9adcca4`, and no Task 10
+  demo, exit, tag, or Phase 0 success is claimed here.
+- The current branch is `phase0-boot-ipc`. Phase 0 remains in progress and
+  Phase 1 remains blocked until corrected Units A–E, Task 10, external root
+  acceptance, and the root-only Phase 0 tag are complete.
+- This ledger is updated again only after final Task 10 PASS and external root
+  acceptance. It does not pre-claim Units B–E or any Phase 0/Phase 1 result.
+- The adversarial review is directionally valid, but root accepted only its
+  recorded subset. Any premise that Task 10 was already implemented is false;
+  the review file itself remains unmodified.
 
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
@@ -27,8 +41,8 @@
   suite `168/168`; Node plus web typecheck exit 0; Electron Vite build exit 0;
   both negative runtime-model/fallback scans successful; no OpenAI or `.env`
   requirement.
-- Current branch: `phase0-model-settings`; Task 7 is accepted and Task 8
-  (boot wiring, IPC, Mirror UI, and OfflineLoop) is next.
+- Current branch: `phase0-boot-ipc`; Tasks 8 and 9 are accepted. Task 10 is
+  planned but not started or implemented.
 - The five-command Task 6 plan static gate passed: status scope, git diff check,
   458 lines/final marker/trailing whitespace, 10 required markers, and no
   forbidden markers.
@@ -71,8 +85,8 @@
   version/metadata and safe fallback visible.
 - These notes preserve the application order: Tasks 3–5 are accepted,
   integrated, and pushed; Tasks 6–7 are accepted at their recorded boundaries;
-  Task 8 is next; Phase 0 remains in progress, and
-  Phase 1 remains blocked.
+  Tasks 8 and 9 are accepted; Task 10 remains planned and unimplemented;
+  Phase 0 remains in progress, and Phase 1 remains blocked.
 
 ## Current Task 6 and Task 7 completion boundary (2026-08-19)
 
@@ -128,19 +142,20 @@
   its accepted implementation was pushed on `phase0-model-settings` at
   `5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
   Electron Vite build green, both negative runtime-model/fallback scans
-  successful, and no OpenAI or `.env` requirement. Task 8 is next; Tasks 9/10
-  retain Console UI and demos/records/exit. Windows results do not field-verify target macOS
+  successful, and no OpenAI or `.env` requirement. Tasks 8 and 9 are accepted;
+  Task 10 retains demos/records/exit ownership but remains unimplemented.
+  Windows results do not field-verify target macOS
   Keychain/TCC/signing/entitlements/packaged-worker/LaunchAgent paths. The
   untracked `scripts/install-node-lts.ps1` remains untouched.
 
 ## Next action (for the next session)
 
-1. Task 8 — boot wiring, IPC, Mirror UI, and OfflineLoop — is the next
-   separate application task.
-2. Preserve the existing Task 8 scope, strict TDD, tester-owned validation,
-   metadata-only evidence, privacy/invariant checks, and external root review.
-3. Tasks 9/10 remain the later Console UI and Phase 0 demo/record owners. No
-   Phase 0 demo is complete yet; P0-D1–P0-D5 remain later consumers.
+1. Complete the root-accepted adversarial-review correction units in order;
+   Unit A is documentation-only and Units B–E are not pre-claimed here.
+2. Resume the corrected Task 10 plan only after Units A–E receive external
+   root acceptance. Task 10 remains the Phase 0 demo/record/exit owner.
+3. Keep Phase 0 in progress and Phase 1 blocked. No P0-D1–P0-D5 demo or
+   release tag is complete yet.
 
 ## Task 2 completion and Task 3 preparation (2026-08-18)
 
@@ -203,6 +218,9 @@
 - Migration scope: clean `23/23` allowed paths; no product/app/dependency/test changes.
 - Discovery LIMITATION: recursive live-selector discovery was unavailable because of the root-only launcher. Earlier profile-backed Luna/max local-direct trigger/retrieval evidence exists for all seven skills, but it is not recursive telemetry.
 - Commit evidence: design `15eae49`, plan `49479f6`, Task 1 `cb4f439`, Task 2 `cdf982b`, Task 3 `fba68fe`, Task 4 `899dd9d`, Task 5 `4480897`, Task 6 `b161421`, Task 7 `7ddcdc4`, Task 8 `09cc954`, Task 9 `5ca5a6c`, Task 10 `bd5f0a7`, Task 11 hygiene fix `14fb5ab`.
+- The `Task 10` label in this historical commit list is a Codex harness
+  migration task, not application Task 10. It does not change the current
+  application status above: application Task 10 remains unimplemented.
 - Residual: macOS field verification remains outstanding. The development Node
   prerequisite for application Task 3 is now satisfied by `v24.19.0`.
 
@@ -217,11 +235,13 @@
 | 5  | SQLite + migrations (`node:sqlite`)             | done + reviewed + integrated | pushed `main` tip `a8f0355`; focused `32/32`; full `145/145`; Node/web typecheck `0`; Electron Vite build `0` |
 | 6  | Module registry + mocks                         | done + reviewed + accepted + integrated | `5b95a94` on pushed `main`; focused `16/16`; full `161/161`; Node/web typecheck and Electron Vite build green |
 | 7  | AI model settings resolver + snapshots          | done + reviewed + accepted | plan `6214b6c`; implementation `5e24bdc` on pushed `phase0-model-settings`; focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
-| 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | next, not started | next bounded application task |
-| 9  | Console UI — 6 pages                            | not started | |
-| 10 | P0 demo runner, exit criteria, tag              | not started | |
+| 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | accepted | accepted application task; no Task 10 evidence implied |
+| 9  | Console UI — 6 pages                            | accepted | accepted application task; no Task 10 evidence implied |
+| 10 | P0 demo runner, exit criteria, tag              | planned, not implemented | original plan `255008e`; correction plan `9adcca4`; Task 10 remains unimplemented |
 
-Phase demo records (P0-D1…P0-D5): none yet — Task 10 runs and records them.
+Phase demo records (P0-D1…P0-D5): none yet — corrected Task 10 will run and
+record them after the prerequisite correction units. Phase 0 and Phase 1
+success are not claimed.
 
 ## How to run
 
@@ -236,7 +256,7 @@ Phase demo records (P0-D1…P0-D5): none yet — Task 10 runs and records them.
 
 | Environment variable            | Effect |
 |---------------------------------|--------|
-| `MIRROR_SMOKE_MS=<n>`           | Quit `n` ms after `app.ready`. Exit **0** only if both windows loaded **and** the lifecycle left `starting`; exit **2** otherwise. Windows are created and loaded but stay hidden in smoke mode so repeated runs do not hijack the desktop. A set-but-unusable value (non-numeric, `0`, negative) exits 2 rather than silently booting non-smoke. |
+| `MIRROR_SMOKE_MS=<n>`           | Quit `n` ms after `app.ready`. Exit **0** only if both windows loaded and the lifecycle is exactly `dormant` or `maintenance`; exit **2** otherwise. `starting` uses `lifecycle_still_starting`; `activating`, `active`, `suspending`, and `offlineLoop` use `lifecycle_not_terminal`. Windows are created and loaded but stay hidden in smoke mode so repeated runs do not hijack the desktop. A set-but-unusable value (non-numeric, `0`, negative) exits 2 rather than silently booting non-smoke. |
 | `MIRROR_FORCE_RENDERER_FAIL=1`  | Mirror preload throws: the window still loads and paints a Starting screen saying the bridge is unavailable, no readiness signal arrives, run exits 2. |
 | `MIRROR_FORCE_RENDERER_CRASH=<n>` | Crashes the next `n` mirror renderers (test hook for crash recovery). |
 
@@ -253,8 +273,9 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
 
 ## Decisions taken in Task 1
 
-- **Electron `^43.0.0`** (43.4.0 today) with a committed `package-lock.json`: pins the
-  major per the plan while keeping patch fixes; the lockfile makes installs reproducible.
+- **Historical Electron `^43.0.0`** wording (43.4.0 at the time) is superseded by
+  the corrected Task 10 exact `43.4.1` pin; this documentation unit does not
+  change package metadata or the lockfile.
 - **TypeScript 5.9, not 7.0.** TS 7 shipped recently; xstate 5 and the vite/electron-vite
   toolchain are only verified against 5.x. Revisit when Phase 0 closes.
 - **electron-vite 5 peers vite ^7**, so the renderer uses `@vitejs/plugin-react@5` (vite 8
@@ -271,7 +292,11 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
 - **`node:sqlite` is in the main config's rollup externals** already, so Task 5 does not
   have to touch the build.
 
-## Phase 0 placeholders (replaced by later tasks)
+## SUPERSEDED historical Phase 0 placeholders
+
+The following bullets describe the pre-Task-8/9 scaffold and remain only for
+historical traceability. Tasks 8 and 9 are accepted; they are not current
+status or a claim that Task 10, Phase 0, or Phase 1 is complete.
 
 - The Mirror renderer's Starting → Dormant transition remains a local 1.2 s timer;
   Main now has the completed seven-state XState contract from Task 2, and Task 8
@@ -296,7 +321,10 @@ the Phase 0 stand-in for telemetry, which Task 4 owns:
   24.17 remains a separate runtime fact.
 - **Navigation hardening not set yet** (`setWindowOpenHandler` deny, `will-navigate`
   guard). Nothing in Phase 0 can navigate, but Task 8 should add it with the visitor UI.
-- Kiosk polish (cursor hiding, `powerSaveBlocker`) is deliberately out of Task 1 scope.
+- Kiosk polish was deliberately out of Task 1 scope. The accepted correction
+  plan now assigns one Main-owned `powerSaveBlocker` start/ID/stop contract to
+  the pre-Phase-1 foundation; `pmset` and screensaver remain future target-Mac
+  operations evidence, not Windows evidence.
 
 ## Codex harness migration — Task 1 Step 2 status (2026-08-17)
 
