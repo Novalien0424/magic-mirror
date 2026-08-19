@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "configVersion": 1,
   "persona": {
     "name": "mock-persona-v1",

@@ -51,6 +51,8 @@ export interface ConfigService {
 
 export type ConfigErrorCode =
   | 'config_schema_invalid'
+  | 'config_schema_unsupported'
+  | 'config_schema_migration_failed'
   | 'config_read_failed'
   | 'config_write_failed'
   | 'config_default_invalid'
@@ -86,6 +88,8 @@ export class ConfigServiceError extends Error {
     Object.setPrototypeOf(this, new.target.prototype)
   }
 }
+
+const CURRENT_CONFIG_SCHEMA_VERSION = 1
 
 const aiModelRoleSchema = z.object({
   modelId: z.string().trim().min(1),
@@ -131,8 +135,9 @@ export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope
 
 type SlotInspection =
   | { status: 'missing'; raw: null }
-  | { status: 'valid'; raw: string; value: MirrorConfig }
+  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 }
   | { status: 'invalid'; raw: string; fields: readonly FieldError[] }
+  | { status: 'unsupported'; raw: string; schemaVersion: number }
   | { status: 'unreadable'; raw: null }
 
 type RawSlots = Record<ConfigSlot, string | null>
@@ -176,6 +181,16 @@ class SchemaFailure extends Error {
   constructor(fields: readonly FieldError[]) {
     super('Config schema invalid')
     this.fields = [...fields]
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+class UnsupportedSchemaFailure extends Error {
+  readonly schemaVersion: number
+
+  constructor(schemaVersion: number) {
+    super('Config schema unsupported')
+    this.schemaVersion = schemaVersion
     Object.setPrototypeOf(this, new.target.prototype)
   }
 }
@@ -245,7 +260,9 @@ function slotPath(configDir: string, slot: ConfigSlot): string {
 }
 
 function serializeConfig(config: MirrorConfig): string {
-  return JSON.stringify(config, null, 2) + '\n'
+  const persisted = { ...config } as Record<string, unknown>
+  delete persisted.schemaVersion
+  return JSON.stringify({ schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION, ...persisted }, null, 2) + '\n'
 }
 
 function emitConfigEvent(
@@ -432,11 +449,39 @@ function normalizeAuxiliary(
   return { ...config, spells, scenes }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseConfigEnvelope(decoded: unknown): {
+  schemaVersion: 0 | 1
+  config: unknown
+} {
+  if (!isRecord(decoded)) return { schemaVersion: 0, config: decoded }
+
+  const hasSchemaVersion = Object.prototype.hasOwnProperty.call(decoded, 'schemaVersion')
+  if (!hasSchemaVersion) return { schemaVersion: 0, config: decoded }
+
+  const schemaVersion = decoded.schemaVersion
+  if (typeof schemaVersion === 'number' && Number.isSafeInteger(schemaVersion)) {
+    if (schemaVersion > CURRENT_CONFIG_SCHEMA_VERSION) {
+      throw new UnsupportedSchemaFailure(schemaVersion)
+    }
+    if (schemaVersion === 0 || schemaVersion === CURRENT_CONFIG_SCHEMA_VERSION) {
+      const config = { ...decoded }
+      delete config.schemaVersion
+      return { schemaVersion: schemaVersion as 0 | 1, config }
+    }
+  }
+
+  throw new SchemaFailure([{ path: '$', message: 'schema_invalid' }])
+}
+
 function parseConfigText(
   contents: string,
   slot: ConfigSlot,
   events: ConfigEventSink,
-): MirrorConfig {
+): { value: MirrorConfig; schemaVersion: 0 | 1 } {
   let decoded: unknown
   try {
     decoded = JSON.parse(contents) as unknown
@@ -444,11 +489,15 @@ function parseConfigText(
     throw new SchemaFailure([{ path: '$', message: 'invalid_json' }])
   }
 
-  const parsed = mirrorConfigSchema.safeParse(decoded)
+  const envelope = parseConfigEnvelope(decoded)
+  const parsed = mirrorConfigSchema.safeParse(envelope.config)
   if (!parsed.success) {
     throw new SchemaFailure(safeFields(parsed.error.issues as readonly SafeIssue[]))
   }
-  return normalizeAuxiliary(parsed.data as MirrorConfig, slot, events)
+  return {
+    value: normalizeAuxiliary(parsed.data as MirrorConfig, slot, events),
+    schemaVersion: envelope.schemaVersion,
+  }
 }
 
 async function inspectSlot(
@@ -464,12 +513,17 @@ async function inspectSlot(
   if (raw === null) return { status: 'missing', raw: null }
 
   try {
+    const parsed = parseConfigText(raw, slot, options.events)
     return {
       status: 'valid',
       raw,
-      value: parseConfigText(raw, slot, options.events),
+      value: parsed.value,
+      schemaVersion: parsed.schemaVersion,
     }
   } catch (error) {
+    if (error instanceof UnsupportedSchemaFailure) {
+      return { status: 'unsupported', raw, schemaVersion: error.schemaVersion }
+    }
     const fields = error instanceof SchemaFailure
       ? error.fields
       : [{ path: '$', message: 'schema_invalid' }]
@@ -485,6 +539,149 @@ async function inspectAll(
     inspected[slot] = await inspectSlot(options, slot)
   }
   return inspected
+}
+
+function schemaReason(
+  slot: string,
+  from: number,
+  to: number,
+  action: string,
+  cause: string,
+): string {
+  return 'slot=' + slot
+    + ';from=' + String(from)
+    + ';to=' + String(to)
+    + ';action=' + action
+    + ';cause=' + cause
+}
+
+function emitSchemaEvent(
+  options: ResolvedConfigServiceOptions,
+  event: 'config_schema_migrated' | 'config_schema_migration_failed' | 'config_schema_unsupported',
+  status: 'success' | 'failed',
+  slot: string,
+  from: number,
+  action: string,
+  cause: string,
+): void {
+  const reason = schemaReason(slot, from, CURRENT_CONFIG_SCHEMA_VERSION, action, cause)
+  if (event === 'config_schema_migrated') {
+    emitConfigEvent(options.events, event, status, reason)
+    return
+  }
+  emitConfigEvent(options.events, event, status, reason, event)
+}
+
+function rejectUnsupportedPhysical(
+  options: ResolvedConfigServiceOptions,
+  physical: Record<ConfigSlot, SlotInspection>,
+): void {
+  let found = false
+  for (const slot of ['active', 'previous', 'draft'] as const) {
+    const inspection = physical[slot]
+    if (inspection.status !== 'unsupported') continue
+    found = true
+    emitSchemaEvent(
+      options,
+      'config_schema_unsupported',
+      'failed',
+      slot,
+      inspection.schemaVersion,
+      'reject',
+      'unsupported',
+    )
+  }
+  if (found) throw new ConfigServiceError('config_schema_unsupported')
+}
+
+type RawSlotSnapshot = Partial<Record<ConfigSlot, string | null>>
+
+async function restoreMigratedSlots(
+  options: ResolvedConfigServiceOptions,
+  originals: RawSlotSnapshot,
+  touched: readonly ConfigSlot[],
+): Promise<void> {
+  let failed = false
+  for (const slot of SLOT_ORDER) {
+    if (!touched.includes(slot)) continue
+    try {
+      const filePath = slotPath(options.configDir, slot)
+      const contents = originals[slot]
+      if (contents === null || contents === undefined) await options.files.remove(filePath)
+      else await options.atomicWriter.write(filePath, contents)
+    } catch {
+      failed = true
+    }
+  }
+  if (failed) throw new CompensationFailure()
+}
+
+async function migrateLegacySlots(
+  options: ResolvedConfigServiceOptions,
+  physical: Record<ConfigSlot, SlotInspection>,
+): Promise<void> {
+  const legacySlots = SLOT_ORDER.filter((slot) => {
+    const inspection = physical[slot]
+    return inspection.status === 'valid' && inspection.schemaVersion === 0
+  })
+  if (legacySlots.length === 0) return
+
+  const originals: RawSlotSnapshot = {}
+  const touched: ConfigSlot[] = []
+  try {
+    await options.files.ensureDirectory(options.configDir)
+    for (const slot of legacySlots) {
+      const inspection = physical[slot]
+      if (inspection.status !== 'valid') continue
+      originals[slot] = inspection.raw
+      touched.push(slot)
+      await options.atomicWriter.write(
+        slotPath(options.configDir, slot),
+        serializeConfig(inspection.value),
+      )
+    }
+  } catch {
+    emitSchemaEvent(
+      options,
+      'config_schema_migration_failed',
+      'failed',
+      'all',
+      0,
+      'materialize',
+      'io_failure',
+    )
+    try {
+      await restoreMigratedSlots(options, originals, touched)
+    } catch {
+      emitConfigEvent(
+        options.events,
+        'config_operation_failed',
+        'failed',
+        'operation=migrate;slot=all;action=restore;cause=compensation_failure',
+        'config_compensation_failed',
+      )
+      throw new ConfigServiceError('config_compensation_failed')
+    }
+    emitConfigEvent(
+      options.events,
+      'config_transaction_compensated',
+      'info',
+      'operation=migrate;action=restore;cause=io_failure',
+    )
+    throw new ConfigServiceError('config_schema_migration_failed')
+  }
+
+  for (const slot of legacySlots) {
+    emitSchemaEvent(
+      options,
+      'config_schema_migrated',
+      'success',
+      slot,
+      0,
+      'materialize',
+      'legacy',
+    )
+  }
 }
 
 async function readRawSlots(options: ResolvedConfigServiceOptions): Promise<RawSlots> {
@@ -613,8 +810,9 @@ async function readDefaultConfig(
     throw new DefaultInvalidFailure([{ path: '$', message: 'missing' }])
   }
   try {
-    return parseConfigText(raw, slot, options.events)
+    return (parseConfigText(raw, slot, options.events)).value
   } catch (error) {
+    if (error instanceof UnsupportedSchemaFailure) throw error
     if (error instanceof SchemaFailure) throw new DefaultInvalidFailure(error.fields)
     throw new DefaultInvalidFailure([{ path: '$', message: 'schema_invalid' }])
   }
@@ -625,6 +823,18 @@ function emitDefaultFailure(
   operation: 'initialize' | 'read',
   failure: unknown,
 ): never {
+  if (failure instanceof UnsupportedSchemaFailure) {
+    emitSchemaEvent(
+      options,
+      'config_schema_unsupported',
+      'failed',
+      'default',
+      failure.schemaVersion,
+      'reject',
+      'unsupported',
+    )
+    throw new ConfigServiceError('config_schema_unsupported')
+  }
   if (failure instanceof DefaultInvalidFailure) {
     const issueCount = failure.fields.length
     emitConfigEvent(
@@ -651,6 +861,8 @@ async function resolveSlots(
   inspected?: Record<ConfigSlot, SlotInspection>,
 ): Promise<ConfigSlots> {
   const physical = inspected ?? await inspectAll(options)
+  rejectUnsupportedPhysical(options, physical)
+  await migrateLegacySlots(options, physical)
   let active: MirrorConfig
   if (physical.active.status === 'valid') {
     active = physical.active.value
@@ -890,7 +1102,10 @@ export function createConfigService(options: ConfigServiceOptions): ConfigServic
     },
 
     async rollback(): Promise<MirrorConfig> {
-      const physicalPrevious = await inspectSlot(resolved, 'previous')
+      const physical = await inspectAll(resolved)
+      rejectUnsupportedPhysical(resolved, physical)
+
+      const physicalPrevious = physical.previous
       if (physicalPrevious.status !== 'valid') {
         emitConfigEvent(
           resolved.events,
@@ -902,8 +1117,10 @@ export function createConfigService(options: ConfigServiceOptions): ConfigServic
         throw new ConfigServiceError('config_previous_unavailable')
       }
 
-      const physicalActive = await inspectSlot(resolved, 'active')
+      const physicalActive = physical.active
       if (physicalActive.status !== 'valid') return emitReadCaptureFailure(resolved, 'rollback')
+
+      await migrateLegacySlots(resolved, physical)
 
       let before: RawSlots
       try {

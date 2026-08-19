@@ -5,6 +5,7 @@ import {
   createStartingSnapshot,
   projectAppSnapshot,
 } from '../../src/main/boot'
+import { ConfigServiceError } from '../../src/main/config-service'
 import {
   authorizeSender,
   CONSOLE_IPC_CHANNELS,
@@ -45,6 +46,7 @@ interface BootRuntimeLike {
 
 interface HarnessOptions {
   readonly failure?: BootFailure
+  readonly configError?: Error
   readonly pendingConfig?: boolean
   readonly moduleStatuses?: ModuleStatuses
 }
@@ -72,6 +74,14 @@ interface RegisteredIpcHarness {
 function rawFailure(message: string, code: string): Error & { code: string } {
   const failure = new Error(message) as Error & { code: string }
   failure.code = code
+  return failure
+}
+
+function unsupportedSchemaConfigError(): ConfigServiceError {
+  const failure = new ConfigServiceError('config_schema_invalid', [
+    { path: RAW_CONFIG_ERROR, message: RAW_CONFIG_ERROR },
+  ])
+  Object.defineProperty(failure, 'code', { value: 'config_schema_unsupported' })
   return failure
 }
 
@@ -252,6 +262,9 @@ function makeBootHarness(harnessOptions: HarnessOptions = {}): BootHarness {
   const configService = {
     initialize: () => {
       calls.push('configService.initialize')
+      if (harnessOptions.configError !== undefined) {
+        return Promise.reject(harnessOptions.configError)
+      }
       if (harnessOptions.failure === 'config') {
         return Promise.reject(rawFailure(RAW_CONFIG_ERROR, 'config_read_failed'))
       }
@@ -537,6 +550,38 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       expectReasonedMetadataEvents(harness.events)
     },
   )
+
+  it('routes a ConfigServiceError for unsupported schema to Maintenance with safe metadata only', async () => {
+    const harness = makeBootHarness({ configError: unsupportedSchemaConfigError() })
+    const runtime = startBoot(harness.options)
+
+    await runtime.ready
+    const snapshot = runtime.snapshot()
+
+    expect(snapshot.lifecycle).toBe('maintenance')
+    expect(snapshot.maintenance).toEqual({
+      code: 'config_schema_unsupported',
+      detail: 'config_schema_unsupported',
+    })
+    expect(snapshot.lastError).toEqual(expect.objectContaining({
+      module: 'config',
+      error_code: 'config_schema_unsupported',
+    }))
+    expect(harness.events).toContainEqual(expect.objectContaining({
+      module: 'config',
+      event: 'local_core_failed',
+      status: 'failed',
+      error_code: 'config_schema_unsupported',
+      reason: 'operation=initialize;cause=read_failed',
+      source: 'runtime',
+    }))
+    expectNoIdentifierKeys(snapshot)
+    expectNoPrivateSentinels(snapshot)
+    expectNoPrivateSentinels(harness.events)
+    expect(serialize(snapshot)).not.toContain(RAW_CONFIG_ERROR)
+    expect(serialize(harness.events)).not.toContain(RAW_CONFIG_ERROR)
+    expectReasonedMetadataEvents(harness.events)
+  })
 
   it('keeps failed and degraded non-core modules visible without gating Dormant', async () => {
     const harness = makeBootHarness({
