@@ -37,6 +37,11 @@ const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolea
 let mainLifecycle: LifecycleState = 'starting'
 let mirrorRendererReady = false
 let displaySleepBlocker: DisplaySleepBlocker | null = null
+let bootRuntime: BootRuntime | null = null
+let shutdownPromise: Promise<void> | null = null
+let willQuitHandled = false
+let quitResourcesStopped = false
+let appQuitFinalizationStarted = false
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -179,7 +184,7 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
   marker('RENDERER_GONE', { window: kind, reason: details.reason, exit_code: details.exitCode })
 
   if (decision.action === 'give_up') {
-    // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts — never app.relaunch().
+    // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts; do not relaunch in-app.
     exitWithMarker('APP_EXIT', { code: 1, window: kind, attempts: decision.attempt, reason: decision.reason }, 1)
     return
   }
@@ -226,7 +231,8 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
   const quit = (): void => {
     if (exited) return
     exited = true
-    app.exit(code)
+    stopQuitResources()
+    void shutdownBootRuntime().then(() => app.exit(code))
   }
   process.stdout.write(formatMarker(name, fields), quit)
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
@@ -267,7 +273,7 @@ void app.whenReady().then(() => {
     return
   }
 
-  const bootRuntime: BootRuntime = bootSequence({
+  const runtime: BootRuntime = bootSequence({
     appVersion: app.getVersion(),
     buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
     isPackaged: app.isPackaged,
@@ -277,6 +283,7 @@ void app.whenReady().then(() => {
     defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
   })
+  bootRuntime = runtime
 
   displaySleepBlocker = createDisplaySleepBlocker(
     {
@@ -284,7 +291,7 @@ void app.whenReady().then(() => {
       isStarted: (id) => powerSaveBlocker.isStarted(id),
       stop: (id) => powerSaveBlocker.stop(id),
     },
-    (event) => emitDisplaySleepMetadata(bootRuntime.telemetry, event),
+    (event) => emitDisplaySleepMetadata(runtime.telemetry, event),
   )
   displaySleepBlocker.start()
 
@@ -293,29 +300,62 @@ void app.whenReady().then(() => {
   createWindows()
   registerIpcHandlers({
     ipcMain,
-    runtime: bootRuntime,
-    console: bootRuntime.console,
+    runtime,
+    console: runtime.console,
     windows,
-    telemetry: bootRuntime.telemetry,
+    telemetry: runtime.telemetry,
     onReady: (kind) => {
       const win = windows.get(kind)
       if (win !== undefined && !win.isDestroyed()) onRendererReady(win.webContents)
     },
   })
-  bootRuntime.subscribe((snapshot) => {
+  runtime.subscribe((snapshot) => {
     mainLifecycle = snapshot.lifecycle
     boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
-    void publishSnapshot('mirror', snapshot, windows, bootRuntime.telemetry)
-    void publishSnapshot('console', snapshot, windows, bootRuntime.telemetry)
+    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
+    void publishSnapshot('console', snapshot, windows, runtime.telemetry)
   })
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
 })
 
-app.on('will-quit', () => {
+function shutdownBootRuntime(): Promise<void> {
+  if (shutdownPromise !== null) return shutdownPromise
+  const runtime = bootRuntime
+  if (runtime === null) {
+    shutdownPromise = Promise.resolve()
+    return shutdownPromise
+  }
+
+  shutdownPromise = Promise.resolve()
+    .then(() => runtime.shutdown())
+    .catch(() => {
+      marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })
+    })
+  return shutdownPromise
+}
+
+function stopQuitResources(): void {
+  if (quitResourcesStopped) return
+  quitResourcesStopped = true
   globalShortcut.unregisterAll()
   displaySleepBlocker?.stop()
+}
+
+app.on('will-quit', (event) => {
+  if (willQuitHandled) return
+
+  event.preventDefault()
+  stopQuitResources()
+  if (appQuitFinalizationStarted) return
+  appQuitFinalizationStarted = true
+
+  void shutdownBootRuntime().then(() => {
+    // Release before app.quit() so Electron's reentrant will-quit is allowed through.
+    willQuitHandled = true
+    app.quit()
+  })
 })
 
 app.on('window-all-closed', () => {

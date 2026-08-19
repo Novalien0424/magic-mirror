@@ -11,7 +11,7 @@ import type {
   SimulatorCommand,
   SimulatorResult,
 } from '../shared/types'
-import type { DeveloperModeDecision } from '../shared/console-types'
+import type { DeveloperModeDecision, PhaseTestRecordReader } from '../shared/console-types'
 import {
   DEFAULT_MODULE_STATUSES,
   MODULE_IDS,
@@ -51,6 +51,7 @@ import {
 import {
   openSqlite as defaultOpenSqlite,
   type SqliteFailure,
+  type SqlitePhaseTestService,
   type SqliteService,
 } from './sqlite-service'
 import {
@@ -157,6 +158,7 @@ export interface BootRuntime {
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
+  shutdown(): Promise<void>
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleSimulator(command: unknown): Promise<SimulatorResult>
@@ -572,6 +574,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let configService: ConfigService | null = options.configService ?? null
+  let sqliteService: SqlitePhaseTestService | null = null
   const resolveModelSettings = options.resolveModelSettings ?? defaultResolveModelSettings
   let developerMode: DeveloperModeDecision = resolveDeveloperMode(
     isPackaged,
@@ -744,7 +747,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       dbPath: options.sqlitePath ?? join(process.cwd(), 'mirror.sqlite'),
       telemetry,
     }))
-    let sqliteService: SqliteService | null = null
     try {
       const opened = await Promise.resolve(openSqlite())
       if (isRecord(opened) && readProperty(opened, 'ok') === false) {
@@ -752,13 +754,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         rememberFailure(failure, failures)
       } else if (isRecord(opened) && readProperty(opened, 'ok') === true) {
         const value = readProperty(opened, 'value')
-        if (isRecord(value)) sqliteService = value as unknown as SqliteService
+        if (isRecord(value)) sqliteService = value as unknown as SqlitePhaseTestService
         else rememberFailure(
           { module: 'sqlite', errorCode: 'sqlite_open_failed', reason: 'cause=invalid_result' },
           failures,
         )
       } else if (isRecord(opened)) {
-        sqliteService = opened as unknown as SqliteService
+        sqliteService = opened as unknown as SqlitePhaseTestService
       } else {
         rememberFailure(
           { module: 'sqlite', errorCode: 'sqlite_open_failed', reason: 'cause=invalid_result' },
@@ -894,6 +896,59 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       notifyListeners()
     }
   })
+
+  const phaseTestsReader: PhaseTestRecordReader = {
+    read() {
+      const service = sqliteService
+      if (service === null) return []
+      try {
+        const result = service.readPhaseTestRecords('0')
+        if (result.ok) return result.value
+      } catch {
+        // The Console phase-test controller maps this stable reader failure to metadata.
+      }
+      throw new Error('sqlite_phase_record_read_failed')
+    },
+  }
+
+  let shutdownPromise: Promise<void> | null = null
+  async function shutdown(): Promise<void> {
+    if (shutdownPromise !== null) return shutdownPromise
+
+    shutdownPromise = (async () => {
+      try {
+        await ready
+      } catch {
+        // The bounded boot promise already maps failures to a visible state.
+      }
+
+      try {
+        await telemetry.flush()
+      } catch {
+        emitMetadata(telemetry, {
+          module: 'app',
+          event: 'telemetry_flush_failed',
+          status: 'failed',
+          error_code: 'telemetry_flush_failed',
+          reason: 'cause=flush_failed',
+          source: 'runtime',
+        })
+      }
+
+      try {
+        await telemetry.close()
+      } catch {
+        // Telemetry is supplementary; close failure cannot gate SQLite cleanup.
+      }
+
+      try {
+        sqliteService?.close()
+      } catch {
+        // SQLite close failures are represented by its stable service result/event.
+      }
+    })()
+    return shutdownPromise
+  }
 
   async function handleSimulator(command: unknown): Promise<SimulatorResult> {
     await ready
@@ -1079,11 +1134,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getStartedAt: () => startedAt,
     handleSimulator,
     getConfigController: () => consoleConfigController,
+    getPhaseTestsReader: () => phaseTestsReader,
   })
 
   const runtime: BootRuntime = {
     ready,
     console: consoleDataPlane,
+    shutdown,
     telemetry: {
       emit: (event) => emitMetadata(telemetry, event),
     },
