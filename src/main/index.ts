@@ -1,9 +1,10 @@
 import { basename, join } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { bootSequence, type BootRuntime } from './boot'
 import { createCrashRecovery } from './crash-recovery'
+import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
 import { publishSnapshot, registerIpcHandlers } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
@@ -35,6 +36,7 @@ const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolea
 }
 let mainLifecycle: LifecycleState = 'starting'
 let mirrorRendererReady = false
+let displaySleepBlocker: DisplaySleepBlocker | null = null
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -235,6 +237,24 @@ function finishSmokeRun(): void {
   exitWithMarker('SMOKE_RESULT', { exit: verdict.exitCode, reason: verdict.reason }, verdict.exitCode)
 }
 
+function emitDisplaySleepMetadata(
+  telemetry: BootRuntime['telemetry'],
+  event: DisplaySleepBlockerEvent,
+): void {
+  const metadata: Parameters<typeof telemetry.emit>[0] = {
+    module: 'app',
+    event: `display_sleep_blocker_${event.action}`,
+    status: event.status === 'degraded' ? 'degraded' : event.status === 'not_started' ? 'info' : 'success',
+    source: 'runtime',
+  }
+  if (event.reason !== undefined) metadata.reason = event.reason
+  try {
+    telemetry.emit(metadata)
+  } catch {
+    // A diagnostic sink failure cannot gate blocker startup or clean quit.
+  }
+}
+
 void app.whenReady().then(() => {
   marker('MAIN_READY', {
     electron: process.versions.electron,
@@ -247,8 +267,6 @@ void app.whenReady().then(() => {
     return
   }
 
-  app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
-
   const bootRuntime: BootRuntime = bootSequence({
     appVersion: app.getVersion(),
     buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
@@ -259,6 +277,18 @@ void app.whenReady().then(() => {
     defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
   })
+
+  displaySleepBlocker = createDisplaySleepBlocker(
+    {
+      start: (type) => powerSaveBlocker.start(type),
+      isStarted: (id) => powerSaveBlocker.isStarted(id),
+      stop: (id) => powerSaveBlocker.stop(id),
+    },
+    (event) => emitDisplaySleepMetadata(bootRuntime.telemetry, event),
+  )
+  displaySleepBlocker.start()
+
+  app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
 
   createWindows()
   registerIpcHandlers({
@@ -283,7 +313,10 @@ void app.whenReady().then(() => {
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  displaySleepBlocker?.stop()
+})
 
 app.on('window-all-closed', () => {
   if (!isDarwin) app.quit()
