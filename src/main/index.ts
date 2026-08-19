@@ -252,6 +252,8 @@ void app.whenReady().then(() => {
   const bootRuntime: BootRuntime = bootSequence({
     appVersion: app.getVersion(),
     buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
+    isPackaged: app.isPackaged,
+    developerModeOverride: process.env['MIRROR_DEVELOPER_MODE'],
     telemetryDirectory: join(app.getPath('userData'), 'telemetry'),
     configDir: join(app.getPath('userData'), 'config'),
     defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
@@ -262,6 +264,7 @@ void app.whenReady().then(() => {
   registerIpcHandlers({
     ipcMain,
     runtime: bootRuntime,
+    console: bootRuntime.console,
     windows,
     telemetry: bootRuntime.telemetry,
     onReady: (kind) => {

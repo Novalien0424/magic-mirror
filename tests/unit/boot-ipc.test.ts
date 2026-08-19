@@ -686,6 +686,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       getSnapshot: 'console:get-snapshot',
       snapshot: 'console:snapshot',
       simulate: 'console:simulate',
+      overview: 'console:get-overview',
+      events: 'console:get-events',
       ready: 'boot:renderer-ready',
     })
   })

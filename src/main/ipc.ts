@@ -10,7 +10,13 @@ import type {
   MirrorChannelMap,
   MirrorWindowKind,
 } from '../shared/bridge'
+import type {
+  ConsoleErrorCode,
+  ConsoleReason,
+  ConsoleResponse,
+} from '../shared/console-types'
 import { projectAppSnapshot, type BootRuntime } from './boot'
+import type { ConsoleBaseDataPlane } from './console-data'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
@@ -22,6 +28,8 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   getSnapshot: 'console:get-snapshot',
   snapshot: 'console:snapshot',
   simulate: 'console:simulate',
+  overview: 'console:get-overview',
+  events: 'console:get-events',
   ready: 'boot:renderer-ready',
 })
 
@@ -61,7 +69,10 @@ export type SenderRejectionReason =
 
 export interface RegisterIpcHandlersOptions {
   readonly ipcMain: IpcMainRegistrar
-  readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator'>
+  readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator'> & {
+    readonly console?: ConsoleBaseDataPlane
+  }
+  readonly console?: ConsoleBaseDataPlane
   readonly windows: TrackedWindows
   readonly telemetry: IpcEventSink
   readonly onReady?: (kind: MirrorWindowKind) => void
@@ -290,6 +301,47 @@ function payloadRejected(telemetry: IpcEventSink): void {
   })
 }
 
+function consoleFailure<T>(
+  error: ConsoleErrorCode,
+  reason: ConsoleReason,
+): ConsoleResponse<T> {
+  return { ok: false, error, reason }
+}
+
+function consoleUnavailable(telemetry: IpcEventSink): ConsoleResponse<never> {
+  emit(telemetry, {
+    module: 'app',
+    event: 'console_request_failed',
+    status: 'failed',
+    error_code: 'console_not_ready',
+    reason: 'cause=console_data_plane_unavailable',
+    source: 'runtime',
+  })
+  return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+}
+
+async function invokeConsole<T>(
+  facade: ConsoleBaseDataPlane | null,
+  operation: (value: ConsoleBaseDataPlane) => ConsoleResponse<T> | PromiseLike<ConsoleResponse<T>>,
+  telemetry: IpcEventSink,
+): Promise<ConsoleResponse<T>> {
+  if (facade === null) return consoleUnavailable(telemetry)
+  try {
+    return await Promise.resolve(operation(facade))
+  } catch {
+    return consoleUnavailable(telemetry)
+  }
+}
+
+function consoleFacade(options: RegisterIpcHandlersOptions): ConsoleBaseDataPlane | null {
+  try {
+    if (options.console !== undefined) return options.console
+    return options.runtime.console ?? null
+  } catch {
+    return null
+  }
+}
+
 function rejectedSimulatorResult(): SimulatorResult {
   return { op: 'failed' }
 }
@@ -428,6 +480,33 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return rejectedSimulatorResult()
     }
     return invokeSimulator(runtime, validation.value, telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.overview, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.getOverview(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.events, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length > 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    const request = args.length === 0 ? undefined : args[0]
+    return invokeConsole(consoleFacade(options), (facade) => facade.getEvents(request), telemetry)
   })
 
   ipcMain.on(CONSOLE_IPC_CHANNELS.ready, (event, ...args) => {

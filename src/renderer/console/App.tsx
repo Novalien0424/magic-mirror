@@ -1,34 +1,829 @@
-import { useEffect, useState } from 'react'
+import * as React from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+import type { ConsoleBridge } from '../../shared/bridge'
+import type {
+  ConsoleEventSummary,
+  ConsoleEventsQuery,
+  ConsoleModuleObservation,
+  ConsoleOverviewPayload,
+  ConsoleResponse,
+} from '../../shared/console-types'
+import type {
+  MirrorEvent,
+  ModuleId,
+  SimulatorCommand,
+  SimulatorResult,
+} from '../../shared/types'
 
 const PAGES = ['Overview', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const MODULES = [
+  'app',
+  'openai',
+  'wake',
+  'audio',
+  'camera',
+  'identity',
+  'memory',
+  'avatar',
+  'lighting',
+  'fog',
+  'music',
+  'sqlite',
+  'config',
+  'telemetry',
+] as const satisfies readonly ModuleId[]
+const SIMULATOR_COMMANDS = [
+  'wake',
+  'cloud_failure',
+  'cloud_recovery',
+  'camera_result',
+  'avatar_state',
+  'scene_result',
+  'sqlite_failure',
+  'sleep',
+] as const
+const EVENT_COLUMNS = [
+  'time',
+  'module',
+  'event',
+  'status',
+  'duration',
+  'error code',
+  'session',
+  'reason',
+  'source',
+] as const
+const EVENT_STATUSES = ['success', 'degraded', 'failed', 'info'] as const
+const EVENT_SOURCES = ['runtime', 'simulator', 'contract_test'] as const
+const EVENT_PAGE_LIMIT = 50
+
+type SimulatorCommandName = (typeof SIMULATOR_COMMANDS)[number]
+type EventModuleFilter = 'all' | ModuleId
+type EventStatusFilter = 'all' | (typeof EVENT_STATUSES)[number]
+type EventSourceFilter = 'all' | (typeof EVENT_SOURCES)[number]
+
+const SIMULATOR_COMMAND_VALUES: Readonly<Record<SimulatorCommandName, SimulatorCommand>> = {
+  wake: { type: 'wake' },
+  cloud_failure: { type: 'cloud_failure' },
+  cloud_recovery: { type: 'cloud_recovery' },
+  camera_result: { type: 'camera_result', faces: 0 },
+  avatar_state: { type: 'avatar_state', state: 'idle' },
+  scene_result: { type: 'scene_result', sceneId: 'demo_scene', status: 'success' },
+  sqlite_failure: { type: 'sqlite_failure' },
+  sleep: { type: 'sleep' },
+}
+
+export const CONSOLE_UI_CONTRACT = {
+  tabs: PAGES,
+  placeholders: {
+    'Phase Tests': { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
+    Config: { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
+    Models: { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
+  },
+  overview: {
+    readinessLabel: 'Mock / simulator',
+    tccLabel: 'TCC: not_checked',
+  },
+  simulator: {
+    disabledCopy: 'Developer Mode is disabled for simulator controls until Main authorizes them.',
+    commands: SIMULATOR_COMMANDS,
+  },
+  events: {
+    columns: EVENT_COLUMNS,
+    filters: ['module', 'status', 'source'] as const,
+    pagination: ['beforeSequence', 'nextBeforeSequence'] as const,
+  },
+} as const
+
+interface ConsoleFailure {
+  readonly error: string
+  readonly reason: string
+}
+
+type OverviewState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'success'; readonly value: ConsoleOverviewPayload }
+  | ({ readonly status: 'failure' } & ConsoleFailure)
+
+interface EventsStatePage {
+  readonly events: readonly ConsoleEventSummary[]
+  readonly nextBeforeSequence: number | null
+}
+
+type EventsState =
+  | ({ readonly status: 'loading' } & EventsStatePage)
+  | ({ readonly status: 'success' } & EventsStatePage)
+  | ({ readonly status: 'failure' } & EventsStatePage & ConsoleFailure)
+
+type SimulatorState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'loading'; readonly command: SimulatorCommandName }
+  | {
+      readonly status: 'success'
+      readonly command: SimulatorCommandName
+      readonly result: SimulatorResult
+    }
+  | ({ readonly status: 'failure'; readonly command: SimulatorCommandName } & ConsoleFailure)
+
+const BRIDGE_FAILURE: ConsoleFailure = {
+  error: 'console_request_rejected',
+  reason: 'cause=console_data_plane_unavailable',
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isConsoleBridge(value: unknown): value is ConsoleBridge {
+  if (!isRecord(value)) return false
+  return typeof value.notifyReady === 'function'
+    && typeof value.getSnapshot === 'function'
+    && typeof value.onSnapshot === 'function'
+    && typeof value.simulate === 'function'
+    && typeof value.getOverview === 'function'
+    && typeof value.getEvents === 'function'
+}
+
+function readConsoleBridge(): ConsoleBridge | null {
+  const candidate = window.magicMirror
+  return isConsoleBridge(candidate) ? candidate : null
+}
+
+function displayValue(value: string | number | null | undefined): string {
+  return value === null || value === undefined || value === '' ? '—' : String(value)
+}
+
+function statusClass(status: string): string {
+  if (status === 'success' || status === 'ready') return 'console__status console__status--success'
+  if (status === 'degraded') return 'console__status console__status--degraded'
+  if (status === 'failed') return 'console__status console__status--failed'
+  if (status === 'loading') return 'console__status console__status--loading'
+  if (status === 'not_implemented') return 'console__status console__status--muted'
+  return 'console__status'
+}
+
+function buildEventsQuery(
+  module: EventModuleFilter,
+  status: EventStatusFilter,
+  source: EventSourceFilter,
+  beforeSequence?: number,
+): ConsoleEventsQuery {
+  const query: {
+    limit: number
+    beforeSequence?: number
+    module?: ModuleId
+    status?: MirrorEvent['status']
+    source?: NonNullable<MirrorEvent['source']>
+  } = { limit: EVENT_PAGE_LIMIT }
+
+  if (beforeSequence !== undefined) query.beforeSequence = beforeSequence
+  if (module !== 'all') query.module = module
+  if (status !== 'all') query.status = status
+  if (source !== 'all') query.source = source
+  return query
+}
+
+function eventSummaryKey(event: ConsoleEventSummary): string {
+  return [
+    event.time,
+    event.module,
+    event.event,
+    event.status,
+    event.duration_ms,
+    event.error_code,
+    event.session_id,
+    event.scene_id,
+    event.reason,
+    event.source,
+  ].map((value) => String(value ?? '')).join('\u001f')
+}
+
+function appendUniqueEvents(
+  existing: readonly ConsoleEventSummary[],
+  incoming: readonly ConsoleEventSummary[],
+): readonly ConsoleEventSummary[] {
+  const seen = new Set(existing.map(eventSummaryKey))
+  const appended = incoming.filter((event) => {
+    const key = eventSummaryKey(event)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  return [...existing, ...appended]
+}
+
+function requestFailure(response: ConsoleResponse<unknown>): ConsoleFailure | null {
+  return response.ok ? null : { error: response.error, reason: response.reason }
+}
+
+function OverviewField({
+  label,
+  value,
+  detail,
+}: {
+  readonly label: string
+  readonly value: string
+  readonly detail?: string
+}): React.JSX.Element {
+  return (
+    <div className="console__overview-field">
+      <span className="console__label">{label}</span>
+      <strong>{value}</strong>
+      {detail ? <small>{detail}</small> : null}
+    </div>
+  )
+}
+
+function MetadataEntry({
+  name,
+  value,
+}: {
+  readonly name: string
+  readonly value: string | number | undefined
+}): React.JSX.Element | null {
+  if (value === undefined) return null
+  return (
+    <div>
+      <dt>{name}</dt>
+      <dd>{String(value)}</dd>
+    </div>
+  )
+}
+
+function BoundedSummary({ summary }: { readonly summary: ConsoleEventSummary }): React.JSX.Element {
+  return (
+    <dl className="console__summary-fields">
+      <MetadataEntry name="time" value={summary.time} />
+      <MetadataEntry name="event" value={summary.event} />
+      <MetadataEntry name="status" value={summary.status} />
+      <MetadataEntry name="duration_ms" value={summary.duration_ms} />
+      <MetadataEntry name="error_code" value={summary.error_code} />
+      <MetadataEntry name="session_id" value={summary.session_id} />
+      <MetadataEntry name="scene_id" value={summary.scene_id} />
+      <MetadataEntry name="reason" value={summary.reason} />
+      <MetadataEntry name="source" value={summary.source} />
+    </dl>
+  )
+}
+
+function ModuleSummary({
+  label,
+  summary,
+}: {
+  readonly label: string
+  readonly summary: ConsoleEventSummary | null
+}): React.JSX.Element {
+  return (
+    <div className="console__module-summary">
+      <span className="console__label">{label}</span>
+      {summary ? <BoundedSummary summary={summary} /> : <span className="console__muted">—</span>}
+    </div>
+  )
+}
+
+function ModuleCard({
+  module,
+  observation,
+}: {
+  readonly module: ModuleId
+  readonly observation?: ConsoleModuleObservation
+}): React.JSX.Element {
+  const moduleStatus = observation?.status ?? 'not_implemented'
+  const readinessLabel = observation?.readiness === 'not_checked'
+    ? 'Not checked'
+    : CONSOLE_UI_CONTRACT.overview.readinessLabel
+
+  return (
+    <li className="console__module-card">
+      <div className="console__module-heading">
+        <strong>{module}</strong>
+        <span className={statusClass(moduleStatus)}>{moduleStatus}</span>
+      </div>
+      <span className="console__module-readiness">{readinessLabel}</span>
+      <div className="console__module-summaries">
+        <ModuleSummary label="last success" summary={observation?.lastSuccess ?? null} />
+        <ModuleSummary label="last error" summary={observation?.lastError ?? null} />
+        <ModuleSummary label="last fallback" summary={observation?.lastFallback ?? null} />
+      </div>
+    </li>
+  )
+}
+
+function OverviewPanel({ state }: { readonly state: OverviewState }): React.JSX.Element {
+  const overview = state.status === 'success' ? state.value : null
+  const audioTcc = overview?.audioTcc ?? 'not_checked'
+  const cameraTcc = overview?.cameraTcc ?? 'not_checked'
+
+  return (
+    <section className="console__panel" aria-labelledby="console-overview">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Observation</p>
+          <h2 id="console-overview">Overview</h2>
+        </div>
+        <span className="console__status console__status--mock">{CONSOLE_UI_CONTRACT.overview.readinessLabel}</span>
+      </div>
+
+      {state.status === 'loading' ? (
+        <p className="console__request-state" aria-live="polite">Loading Overview…</p>
+      ) : null}
+      {state.status === 'failure' ? (
+        <p className="console__fault" role="status">Overview failed: {state.error}; {state.reason}</p>
+      ) : null}
+
+      <div className="console__overview-grid">
+        <OverviewField label="lifecycle" value={displayValue(overview?.lifecycle)} />
+        <OverviewField label="appVersion" value={displayValue(overview?.appVersion)} />
+        <OverviewField label="buildCommit" value={displayValue(overview?.buildCommit)} />
+        <OverviewField label="configVersion" value={displayValue(overview?.configVersion)} />
+        <OverviewField label="identityStatus" value={displayValue(overview?.identityStatus)} />
+        <OverviewField label="realtimeSessionId" value={displayValue(overview?.realtimeSessionId)} />
+        <OverviewField label="sessionGeneration" value={displayValue(overview?.sessionGeneration)} />
+        <OverviewField
+          label="uptime"
+          value={overview ? `${overview.uptimeSeconds}s` : '—'}
+        />
+        <OverviewField
+          label="developerMode"
+          value={overview ? (overview.developerMode ? 'enabled' : 'disabled') : '—'}
+          detail={overview?.developerModeSource}
+        />
+        <OverviewField label="audioTcc" value={`TCC: ${audioTcc}`} />
+        <OverviewField label="cameraTcc" value={`TCC: ${cameraTcc}`} />
+      </div>
+
+      <p className="console__muted">Module health is informational and never gates conversation.</p>
+      <ul className="console__modules" aria-label="Module health">
+        {MODULES.map((module) => (
+          <ModuleCard key={module} module={module} observation={overview?.modules[module]} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function SimulatorPanel({
+  developerMode,
+  bridgeAvailable,
+  state,
+  onSimulate,
+}: {
+  readonly developerMode: boolean
+  readonly bridgeAvailable: boolean
+  readonly state: SimulatorState
+  readonly onSimulate: (command: SimulatorCommand) => void
+}): React.JSX.Element {
+  const developerModeDisabled = !developerMode
+  const controlsDisabled = developerModeDisabled || !bridgeAvailable || state.status === 'loading'
+
+  return (
+    <section className="console__panel" aria-labelledby="console-simulator">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Main-owned controls</p>
+          <h2 id="console-simulator">Simulator</h2>
+        </div>
+        <span className={developerMode && bridgeAvailable ? 'console__status console__status--success' : 'console__status console__status--disabled'}>
+          {developerMode && bridgeAvailable ? 'Enabled' : 'Disabled'}
+        </span>
+      </div>
+
+      {developerModeDisabled ? (
+        <p className="console__notice">{CONSOLE_UI_CONTRACT.simulator.disabledCopy}</p>
+      ) : null}
+      {!developerModeDisabled && !bridgeAvailable ? (
+        <p className="console__fault" role="status">Simulator unavailable: {BRIDGE_FAILURE.error}; {BRIDGE_FAILURE.reason}</p>
+      ) : null}
+      {developerMode && bridgeAvailable ? (
+        <p className="console__muted">Commands use fixed metadata-only defaults and remain non-production controls.</p>
+      ) : null}
+
+      <div className="console__command-list" aria-label="Simulator commands">
+        {CONSOLE_UI_CONTRACT.simulator.commands.map((commandName) => (
+          <button
+            key={commandName}
+            type="button"
+            disabled={controlsDisabled}
+            onClick={() => onSimulate(SIMULATOR_COMMAND_VALUES[commandName])}
+          >
+            {commandName}
+          </button>
+        ))}
+      </div>
+
+      {state.status === 'loading' ? (
+        <p className="console__result console__result--loading" role="status" aria-live="polite">
+          Running {state.command}…
+        </p>
+      ) : null}
+      {state.status === 'success' ? (
+        <div className="console__result console__result--success" role="status" aria-live="polite">
+          <strong>Simulator result: {state.result.op}</strong>
+          {state.result.lifecycleEvent ? <span>Lifecycle event: {state.result.lifecycleEvent}</span> : null}
+        </div>
+      ) : null}
+      {state.status === 'failure' ? (
+        <p className="console__result console__result--failed" role="status" aria-live="polite">
+          Simulator failed: {state.error}; {state.reason}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+function toModuleFilter(value: string): EventModuleFilter {
+  return value === 'all' || MODULES.includes(value as ModuleId) ? value as EventModuleFilter : 'all'
+}
+
+function toStatusFilter(value: string): EventStatusFilter {
+  return value === 'all' || EVENT_STATUSES.includes(value as (typeof EVENT_STATUSES)[number])
+    ? value as EventStatusFilter
+    : 'all'
+}
+
+function toSourceFilter(value: string): EventSourceFilter {
+  return value === 'all' || EVENT_SOURCES.includes(value as (typeof EVENT_SOURCES)[number])
+    ? value as EventSourceFilter
+    : 'all'
+}
+
+function EventsPanel({
+  state,
+  moduleFilter,
+  statusFilter,
+  sourceFilter,
+  onModuleFilterChange,
+  onStatusFilterChange,
+  onSourceFilterChange,
+  onLoadOlder,
+  bridgeAvailable,
+}: {
+  readonly state: EventsState
+  readonly moduleFilter: EventModuleFilter
+  readonly statusFilter: EventStatusFilter
+  readonly sourceFilter: EventSourceFilter
+  readonly onModuleFilterChange: (value: EventModuleFilter) => void
+  readonly onStatusFilterChange: (value: EventStatusFilter) => void
+  readonly onSourceFilterChange: (value: EventSourceFilter) => void
+  readonly onLoadOlder: () => void
+  readonly bridgeAvailable: boolean
+}): React.JSX.Element {
+  const loading = state.status === 'loading'
+  const canLoadOlder = bridgeAvailable && !loading && state.nextBeforeSequence !== null
+
+  return (
+    <section className="console__panel" aria-labelledby="console-events">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Metadata only</p>
+          <h2 id="console-events">Events</h2>
+        </div>
+        <span className="console__status">RAM page</span>
+      </div>
+
+      {loading ? <p className="console__request-state" aria-live="polite">Loading Events…</p> : null}
+      {state.status === 'success' ? (
+        <p className="console__success" role="status">Loaded {state.events.length} metadata events.</p>
+      ) : null}
+      {state.status === 'failure' ? (
+        <p className="console__fault" role="status">Events failed: {state.error}; {state.reason}</p>
+      ) : null}
+
+      <div className="console__filters" aria-label="Event filters">
+        <label>
+          <span>module</span>
+          <select
+            aria-label="module"
+            value={moduleFilter}
+            onChange={(event) => onModuleFilterChange(toModuleFilter(event.currentTarget.value))}
+          >
+            <option value="all">All</option>
+            {MODULES.map((module) => <option key={module} value={module}>{module}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>status</span>
+          <select
+            aria-label="status"
+            value={statusFilter}
+            onChange={(event) => onStatusFilterChange(toStatusFilter(event.currentTarget.value))}
+          >
+            <option value="all">All</option>
+            {EVENT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>source</span>
+          <select
+            aria-label="source"
+            value={sourceFilter}
+            onChange={(event) => onSourceFilterChange(toSourceFilter(event.currentTarget.value))}
+          >
+            <option value="all">All</option>
+            {EVENT_SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div className="console__table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {CONSOLE_UI_CONTRACT.events.columns.map((column) => <th key={column}>{column}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {state.events.length === 0 ? (
+              <tr>
+                <td colSpan={CONSOLE_UI_CONTRACT.events.columns.length} className="console__empty">
+                  {loading ? 'Loading events…' : 'No events loaded.'}
+                </td>
+              </tr>
+            ) : state.events.map((event, index) => (
+              <tr key={`${eventSummaryKey(event)}-${index}`}>
+                <td>{event.time}</td>
+                <td>{event.module}</td>
+                <td>{event.event}</td>
+                <td>{event.status}</td>
+                <td>{event.duration_ms === undefined ? '—' : `${event.duration_ms} ms`}</td>
+                <td>{displayValue(event.error_code)}</td>
+                <td>{displayValue(event.session_id)}</td>
+                <td>{displayValue(event.reason)}</td>
+                <td>{displayValue(event.source)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="console__pagination">
+        <span>beforeSequence: cursor; nextBeforeSequence: {displayValue(state.nextBeforeSequence)}</span>
+        <button type="button" disabled={!canLoadOlder} onClick={onLoadOlder}>Load older events</button>
+      </div>
+    </section>
+  )
+}
+
+function Placeholder({ page }: { readonly page: 'Phase Tests' | 'Config' | 'Models' }): React.JSX.Element {
+  const id = `console-${page.toLowerCase().replace(' ', '-')}`
+  return (
+    <section className="console__panel" aria-labelledby={id}>
+      <h2 id={id}>{page}</h2>
+      <p className="console__muted">{CONSOLE_UI_CONTRACT.placeholders[page].copy}</p>
+    </section>
+  )
+}
 
 export function App(): React.JSX.Element {
-  const [bridgeMissing, setBridgeMissing] = useState(false)
+  const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Overview')
+  const [bridgeAvailable, setBridgeAvailable] = useState(false)
+  const [bridgeError, setBridgeError] = useState<ConsoleFailure | null>(null)
+  const [overviewState, setOverviewState] = useState<OverviewState>({ status: 'loading' })
+  const [eventsState, setEventsState] = useState<EventsState>({
+    status: 'loading',
+    events: [],
+    nextBeforeSequence: null,
+  })
+  const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
+  const [moduleFilter, setModuleFilter] = useState<EventModuleFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<EventStatusFilter>('all')
+  const [sourceFilter, setSourceFilter] = useState<EventSourceFilter>('all')
+  const bridgeRef = useRef<ConsoleBridge | null>(null)
+  const mountedRef = useRef(false)
+  const didNotifyReadyRef = useRef(false)
+  const didLoadOverviewRef = useRef(false)
+  const eventsRequestIdRef = useRef(0)
 
   useEffect(() => {
-    const bridge = window.magicMirror
-    if (bridge === undefined) {
-      console.error('RENDER_BRIDGE_MISSING window=console')
-      setBridgeMissing(true)
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      bridgeRef.current = null
+    }
+  }, [])
+
+  const requestOverview = async (bridge: ConsoleBridge): Promise<void> => {
+    if (!mountedRef.current) return
+    setOverviewState({ status: 'loading' })
+    try {
+      const overviewResponse = await bridge.getOverview()
+      if (!mountedRef.current) return
+      const failure = requestFailure(overviewResponse)
+      if (failure) {
+        setOverviewState({ status: 'failure', ...failure })
+        return
+      }
+      if (overviewResponse.ok) {
+        const overview = overviewResponse.value
+        setOverviewState({
+          status: 'success',
+          value: {
+            lifecycle: overview.lifecycle,
+            appVersion: overview.appVersion,
+            buildCommit: overview.buildCommit,
+            configVersion: overview.configVersion,
+            identityStatus: overview.identityStatus,
+            realtimeSessionId: overview.realtimeSessionId,
+            sessionGeneration: overview.sessionGeneration,
+            uptimeSeconds: overview.uptimeSeconds,
+            developerMode: overview.developerMode,
+            developerModeSource: overview.developerModeSource,
+            modules: overview.modules,
+            audioTcc: overview.audioTcc,
+            cameraTcc: overview.cameraTcc,
+          },
+        })
+      }
+    } catch {
+      if (!mountedRef.current) return
+      setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
+    }
+  }
+
+  const requestEvents = async (
+    bridge: ConsoleBridge,
+    request: ConsoleEventsQuery,
+    append: boolean,
+  ): Promise<void> => {
+    if (!mountedRef.current) return
+    const requestId = eventsRequestIdRef.current + 1
+    eventsRequestIdRef.current = requestId
+    const query: ConsoleEventsQuery = {
+      limit: request.limit ?? EVENT_PAGE_LIMIT,
+      ...(request.beforeSequence === undefined ? {} : { beforeSequence: request.beforeSequence }),
+      ...(request.module === undefined ? {} : { module: request.module }),
+      ...(request.status === undefined ? {} : { status: request.status }),
+      ...(request.source === undefined ? {} : { source: request.source }),
+    }
+    setEventsState((previous) => ({
+      status: 'loading',
+      events: append ? previous.events : [],
+      nextBeforeSequence: append ? previous.nextBeforeSequence : null,
+    }))
+    try {
+      // Load older events reuses nextBeforeSequence and appends metadata without duplicates.
+      const eventsResponse = await bridge.getEvents(query)
+      if (!mountedRef.current || eventsRequestIdRef.current !== requestId) return
+      const failure = requestFailure(eventsResponse)
+      if (failure) {
+        setEventsState((previous) => ({
+          status: 'failure',
+          events: append ? previous.events : [],
+          nextBeforeSequence: append ? previous.nextBeforeSequence : null,
+          ...failure,
+        }))
+        return
+      }
+      if (eventsResponse.ok) {
+        setEventsState((previous) => ({
+          status: 'success',
+          events: append
+            ? appendUniqueEvents(previous.events, eventsResponse.value.events)
+            : eventsResponse.value.events,
+          nextBeforeSequence: eventsResponse.value.nextBeforeSequence,
+        }))
+      }
+    } catch {
+      if (!mountedRef.current || eventsRequestIdRef.current !== requestId) return
+      setEventsState((previous) => ({
+        status: 'failure',
+        events: append ? previous.events : [],
+        nextBeforeSequence: append ? previous.nextBeforeSequence : null,
+        ...BRIDGE_FAILURE,
+      }))
+    }
+  }
+
+  useEffect(() => {
+    const bridge = readConsoleBridge()
+    if (bridge === null) {
+      bridgeRef.current = null
+      eventsRequestIdRef.current += 1
+      setBridgeAvailable(false)
+      setBridgeError(BRIDGE_FAILURE)
+      setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
+      setEventsState({ status: 'failure', events: [], nextBeforeSequence: null, ...BRIDGE_FAILURE })
       return
     }
-    bridge.notifyReady()
-  }, [])
+
+    bridgeRef.current = bridge
+    setBridgeAvailable(true)
+    setBridgeError(null)
+
+    if (!didNotifyReadyRef.current) {
+      didNotifyReadyRef.current = true
+      try {
+        bridge.notifyReady()
+      } catch {
+        setBridgeError(BRIDGE_FAILURE)
+      }
+    }
+
+    if (!didLoadOverviewRef.current) {
+      didLoadOverviewRef.current = true
+      void requestOverview(bridge)
+    }
+
+    const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter)
+    void requestEvents(bridge, query, false)
+  }, [moduleFilter, sourceFilter, statusFilter])
+
+  const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
+
+  const runSimulation = (command: SimulatorCommand): void => {
+    const bridge = bridgeRef.current
+    const developerModeDisabled = !developerMode
+    // Developer Mode is disabled until the Main Overview response authorizes the controls.
+    if (developerModeDisabled || bridge === null || !bridgeAvailable) {
+      setSimulatorState({
+        status: 'failure',
+        command: command.type,
+        ...BRIDGE_FAILURE,
+      })
+      return
+    }
+
+    setSimulatorState({ status: 'loading', command: command.type })
+    void (async () => {
+      try {
+        const result = await bridge.simulate(command)
+        if (!mountedRef.current) return
+        setSimulatorState({ status: 'success', command: command.type, result })
+      } catch {
+        if (!mountedRef.current) return
+        setSimulatorState({
+          status: 'failure',
+          command: command.type,
+          ...BRIDGE_FAILURE,
+        })
+      }
+    })()
+  }
+
+  const loadOlderEvents = (): void => {
+    const bridge = bridgeRef.current
+    const beforeSequence = eventsState.nextBeforeSequence
+    if (bridge === null || !bridgeAvailable || beforeSequence === null) return
+    const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter, beforeSequence)
+    void requestEvents(bridge, query, true)
+  }
 
   return (
     <main className="console">
-      <h1 className="console__title">Magic Mirror Console</h1>
-      <p className="console__detail">
-        Phase 0 shell. Pages arrive in Task 9; this window only proves it opens and loads.
-      </p>
-      {bridgeMissing ? <p className="console__fault">Bridge unavailable — readiness not reported.</p> : null}
-      <ul className="console__pages">
-        {PAGES.map((page) => (
-          <li key={page} className="console__page">
-            {page} <span className="console__badge">Not implemented</span>
-          </li>
+      <header className="console__header">
+        <div>
+          <p className="console__eyebrow">Phase 0 · Main observation</p>
+          <h1 className="console__title">Magic Mirror Console</h1>
+          <p className="console__detail">A bounded, non-gating view of the mirror runtime.</p>
+        </div>
+        <span className="console__status console__status--mock">Mock / simulator</span>
+      </header>
+
+      {bridgeError ? (
+        <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
+      ) : null}
+
+      <nav className="console__tabs" aria-label="Console pages">
+        {CONSOLE_UI_CONTRACT.tabs.map((page) => (
+          <button
+            key={page}
+            type="button"
+            className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
+            aria-selected={activePage === page}
+            onClick={() => setActivePage(page)}
+          >
+            {page}
+          </button>
         ))}
-      </ul>
+      </nav>
+
+      <div className="console__panels">
+        <div hidden={activePage !== 'Overview'}><OverviewPanel state={overviewState} /></div>
+        <div hidden={activePage !== 'Simulator'}>
+          <SimulatorPanel
+            developerMode={developerMode}
+            bridgeAvailable={bridgeAvailable}
+            state={simulatorState}
+            onSimulate={runSimulation}
+          />
+        </div>
+        <div hidden={activePage !== 'Events'}>
+          <EventsPanel
+            state={eventsState}
+            moduleFilter={moduleFilter}
+            statusFilter={statusFilter}
+            sourceFilter={sourceFilter}
+            onModuleFilterChange={setModuleFilter}
+            onStatusFilterChange={setStatusFilter}
+            onSourceFilterChange={setSourceFilter}
+            onLoadOlder={loadOlderEvents}
+            bridgeAvailable={bridgeAvailable}
+          />
+        </div>
+        <div hidden={activePage !== 'Phase Tests'}><Placeholder page="Phase Tests" /></div>
+        <div hidden={activePage !== 'Config'}><Placeholder page="Config" /></div>
+        <div hidden={activePage !== 'Models'}><Placeholder page="Models" /></div>
+      </div>
     </main>
   )
 }

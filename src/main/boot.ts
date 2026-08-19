@@ -11,6 +11,7 @@ import type {
   SimulatorCommand,
   SimulatorResult,
 } from '../shared/types'
+import type { DeveloperModeDecision } from '../shared/console-types'
 import {
   DEFAULT_MODULE_STATUSES,
   MODULE_IDS,
@@ -52,6 +53,11 @@ import {
   type SqliteFailure,
   type SqliteService,
 } from './sqlite-service'
+import {
+  createConsoleDataPlane,
+  resolveDeveloperMode,
+  type ConsoleBaseDataPlane,
+} from './console-data'
 
 const SAFE_CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
@@ -115,6 +121,8 @@ interface BootContextView {
 export interface BootOptions {
   readonly appVersion?: string
   readonly buildCommit?: string
+  readonly isPackaged?: boolean
+  readonly developerModeOverride?: unknown
   readonly telemetryDirectory?: string
   readonly configDir?: string
   readonly defaultConfigPath?: string
@@ -146,6 +154,7 @@ export interface BootSubscription {
 export interface BootRuntime {
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
+  readonly console: ConsoleBaseDataPlane
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleSimulator(command: unknown): Promise<SimulatorResult>
@@ -536,6 +545,8 @@ function simulatorCommandOf(value: unknown): SimulatorCommand | null {
 export function bootSequence(options: BootOptions = {}): BootRuntime {
   const appVersion = options.appVersion ?? 'unknown'
   const buildCommit = options.buildCommit ?? 'unknown'
+  const isPackaged = options.isPackaged === true
+  const startedAt = Date.now()
   const now = options.now ?? (() => new Date().toISOString())
   const createActivationId = options.createActivationId ?? (() => `activation-${nowValue(now)}`)
   const createRealtimeSessionId = options.createRealtimeSessionId ?? (() => `session-${nowValue(now)}`)
@@ -558,6 +569,11 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let lastError: AppSnapshot['lastError'] = null
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
+  let developerMode: DeveloperModeDecision = resolveDeveloperMode(
+    isPackaged,
+    options.developerModeOverride,
+    () => {},
+  )
   const listeners = new Set<(snapshot: AppSnapshot) => void>()
   let current = createStartingSnapshot({ appVersion, buildCommit })
 
@@ -671,6 +687,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         failures,
       )
     }
+
+    developerMode = resolveDeveloperMode(
+      isPackaged,
+      options.developerModeOverride,
+      (event) => emitMetadata(telemetry, event),
+    )
 
     const configService: Pick<ConfigService, 'initialize'> = options.configService ?? (() => {
       try {
@@ -1004,8 +1026,20 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return simulatorResult(status)
   }
 
+  const consoleDataPlane = createConsoleDataPlane({
+    getSnapshot: () => projectAppSnapshot(current),
+    getTelemetry: () => ({
+      readPage: (request) => telemetry.readPage(request),
+      emit: (event) => emitMetadata(telemetry, event),
+    }),
+    getDeveloperMode: () => developerMode,
+    getStartedAt: () => startedAt,
+    handleSimulator,
+  })
+
   const runtime: BootRuntime = {
     ready,
+    console: consoleDataPlane,
     telemetry: {
       emit: (event) => emitMetadata(telemetry, event),
     },

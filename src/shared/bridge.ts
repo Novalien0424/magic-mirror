@@ -1,4 +1,10 @@
 import type { AppSnapshot, SimulatorCommand, SimulatorResult } from './types'
+import type {
+  ConsoleEventsPage,
+  ConsoleEventsQuery,
+  ConsoleOverviewPayload,
+  ConsoleResponse,
+} from './console-types'
 
 export type MirrorWindowKind = 'mirror' | 'console'
 
@@ -15,6 +21,8 @@ export interface ConsoleChannelMap {
   readonly getSnapshot: 'console:get-snapshot'
   readonly snapshot: 'console:snapshot'
   readonly simulate: 'console:simulate'
+  readonly overview: 'console:get-overview'
+  readonly events: 'console:get-events'
   readonly ready: BootChannel
 }
 
@@ -28,6 +36,8 @@ export interface MirrorBridge {
 
 export interface ConsoleBridge extends MirrorBridge {
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
+  getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>>
+  getEvents(request?: ConsoleEventsQuery): Promise<ConsoleResponse<ConsoleEventsPage>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */
