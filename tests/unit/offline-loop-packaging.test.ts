@@ -163,9 +163,9 @@ async function loadCrashRecovery(): Promise<{ readonly module: CrashRecoveryModu
 }
 
 function assertMetadataEvent(event: unknown, eventName: string): void {
-  const record = isRecord(event)
-  expect(record).toBe(true)
-  if (!record) return
+  const record = event
+  expect(isRecord(record)).toBe(true)
+  if (!isRecord(record)) return
 
   expect(record.event === eventName).toBe(true)
   expect(typeof record.status === 'string').toBe(true)

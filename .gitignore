@@ -4,6 +4,7 @@ dist/
 out/
 build/
 *.tsbuildinfo
+resources/generated/
 
 # Local environment & secrets — credentials live in the OS keystore, never in the repo
 .env

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type {
@@ -121,6 +123,35 @@ interface BootContextView {
   readonly context: LifecycleContext
 }
 
+const OFFLINE_LOOP_ASSET_SHA256 = '8cfb50f578dab21b75b6d5bfd7ae707494c77047735ae231c1a4e4ff2cfbff12'
+const OFFLINE_LOOP_ASSET_BYTE_LENGTH = 648
+
+export interface AssetPreflightResult {
+  readonly status: 'ready' | 'unavailable'
+  readonly reason: 'asset_verified' | 'offline_loop_asset_missing' | 'offline_loop_asset_corrupt'
+  readonly fallback?: {
+    readonly state: 'maintenance'
+    readonly visible: true
+    readonly nonblack: true
+  }
+}
+
+interface AssetPreflightEvent {
+  readonly time: string
+  readonly module: 'app'
+  readonly event: 'asset_ready' | 'asset_unavailable'
+  readonly status: 'success' | 'degraded'
+  readonly reason: AssetPreflightResult['reason']
+  readonly source: 'runtime'
+}
+
+export interface AssetPreflightOptions {
+  readonly assetPath: string
+  readonly emit: (event: AssetPreflightEvent) => void
+  readonly onUnrelatedModuleGate?: () => void
+  readonly acquireMicrophone?: () => void
+}
+
 export interface BootOptions {
   readonly appVersion?: string
   readonly buildCommit?: string
@@ -130,6 +161,7 @@ export interface BootOptions {
   readonly configDir?: string
   readonly defaultConfigPath?: string
   readonly sqlitePath?: string
+  readonly offlineLoopAssetPath?: string
   readonly createTelemetry?: () => Telemetry | PromiseLike<Telemetry>
   readonly configService?: ConfigService
   readonly resolveModelSettings?: (slots: ConfigSlots) => ModelSettingsResolution | PromiseLike<ModelSettingsResolution>
@@ -205,6 +237,63 @@ function nowValue(now: () => string): string {
   } catch {
     return '1970-01-01T00:00:00.000Z'
   }
+}
+
+function assetEventTime(): string {
+  try {
+    return new Date().toISOString()
+  } catch {
+    return '1970-01-01T00:00:00.000Z'
+  }
+}
+
+function assetSha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+function unavailableAssetResult(
+  options: AssetPreflightOptions,
+  reason: 'offline_loop_asset_missing' | 'offline_loop_asset_corrupt',
+): AssetPreflightResult {
+  options.emit({
+    time: assetEventTime(),
+    module: 'app',
+    event: 'asset_unavailable',
+    status: 'degraded',
+    reason,
+    source: 'runtime',
+  })
+  return {
+    status: 'unavailable',
+    reason,
+    fallback: { state: 'maintenance', visible: true, nonblack: true },
+  }
+}
+
+export function preflightOfflineLoopAsset(options: AssetPreflightOptions): AssetPreflightResult {
+  let bytes: Uint8Array
+  try {
+    bytes = readFileSync(options.assetPath)
+  } catch {
+    return unavailableAssetResult(options, 'offline_loop_asset_missing')
+  }
+
+  if (
+    bytes.byteLength !== OFFLINE_LOOP_ASSET_BYTE_LENGTH
+    || assetSha256(bytes) !== OFFLINE_LOOP_ASSET_SHA256
+  ) {
+    return unavailableAssetResult(options, 'offline_loop_asset_corrupt')
+  }
+
+  options.emit({
+    time: assetEventTime(),
+    module: 'app',
+    event: 'asset_ready',
+    status: 'success',
+    reason: 'asset_verified',
+    source: 'runtime',
+  })
+  return { status: 'ready', reason: 'asset_verified' }
 }
 
 function noOpTelemetry(): Telemetry {
@@ -828,6 +917,26 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
           error_code: failure.errorCode,
           reason: failure.reason,
           source: 'runtime',
+        })
+      }
+    }
+
+    if (options.offlineLoopAssetPath !== undefined) {
+      const assetResult = preflightOfflineLoopAsset({
+        assetPath: options.offlineLoopAssetPath,
+        emit: (event) => emitMetadata(telemetry, {
+          module: event.module,
+          event: event.event,
+          status: event.status,
+          reason: event.reason,
+          source: event.source,
+        }),
+      })
+      if (assetResult.status === 'unavailable') {
+        failures.push({
+          module: 'app',
+          errorCode: assetResult.reason,
+          reason: assetResult.reason,
         })
       }
     }

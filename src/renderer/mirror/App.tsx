@@ -28,8 +28,8 @@ interface MirrorProjectionOptions {
   readonly offlineAssetAvailable?: boolean
 }
 
-const OFFLINE_LOOP_ASSET_SRC = 'resources/mock/offline-loop-v1.mp4'
 const OFFLINE_LOOP_ASSET_UNAVAILABLE = 'offline_loop_asset_unavailable'
+const MAINTENANCE_SCREEN_CLASS = 'screen screen--maintenance'
 
 type OfflineLoopMediaStatus = 'unavailable' | 'playing'
 
@@ -77,7 +77,7 @@ export function projectMirrorSnapshot(
   if (state === 'maintenance') {
     return {
       state,
-      className: `screen screen--${state}`,
+      className: MAINTENANCE_SCREEN_CLASS,
       title: copy.title,
       detail: stableMaintenanceCode(readProperty(snapshot, 'maintenance')),
     }
@@ -110,7 +110,7 @@ function OfflineLoopScreen(): React.JSX.Element {
       >
         <video
           className="screen__offline-media"
-          src={OFFLINE_LOOP_ASSET_SRC}
+          src="../mock/offline-loop-v1.mp4"
           autoPlay
           loop
           muted

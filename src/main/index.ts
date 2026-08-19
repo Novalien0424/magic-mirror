@@ -1,4 +1,4 @@
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
@@ -49,6 +49,13 @@ function rendererEntry(kind: MirrorWindowKind): RendererEntry {
   const devServer = process.env['ELECTRON_RENDERER_URL']
   if (devServer !== undefined && devServer !== '') return { from: 'dev-server', url: `${devServer}/${kind}/index.html` }
   return { from: 'file', file: join(__dirname, `../renderer/${kind}/index.html`) }
+}
+
+function resolveOfflineLoopAssetPath(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')
+  }
+  return resolve(__dirname, '../../resources/generated/mock/offline-loop-v1.mp4')
 }
 
 function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructorOptions {
@@ -232,7 +239,13 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
     if (exited) return
     exited = true
     stopQuitResources()
-    void shutdownBootRuntime().then(() => app.exit(code))
+    void shutdownBootRuntime().then(() => {
+      if (code === 1) {
+        app.exit(1)
+        return
+      }
+      app.exit(code)
+    })
   }
   process.stdout.write(formatMarker(name, fields), quit)
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
@@ -282,6 +295,7 @@ void app.whenReady().then(() => {
     configDir: join(app.getPath('userData'), 'config'),
     defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
+    offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
   })
   bootRuntime = runtime
 
