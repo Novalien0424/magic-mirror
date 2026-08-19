@@ -16,6 +16,7 @@ body {
 }
 
 .screen {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -39,6 +40,39 @@ body {
   opacity: 0.65;
 }
 
+.screen__offline {
+  position: relative;
+  width: min(34rem, 72vw);
+  height: min(10rem, 20vh);
+  overflow: hidden;
+  border: 1px solid rgb(232 238 246 / 18%);
+  border-radius: 1rem;
+  background: #080c12;
+}
+
+.screen__offline-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.screen__offline--unavailable .screen__offline-media {
+  display: none;
+}
+
+.screen__offline-fallback {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgb(232 238 246 / 10%), transparent 70%);
+}
+
+.screen--offlineLoop .screen__detail {
+  color: #ffd166;
+  opacity: 1;
+}
+
+.screen--maintenance .screen__detail,
 .screen--fault .screen__detail {
   color: #ffb4a2;
   opacity: 1;

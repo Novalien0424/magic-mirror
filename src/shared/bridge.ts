@@ -1,36 +1,41 @@
-/**
- * Boot bridge: the only preload surface Task 1 owns. The typed application IPC
- * surface (state, console, simulator) arrives in Task 8 and lives in `src/main/ipc.ts`.
- */
+import type { AppSnapshot, SimulatorCommand, SimulatorResult } from './types'
 
-export type MirrorWindowKind = 'mirror' | 'console';
+export type MirrorWindowKind = 'mirror' | 'console'
 
-/**
- * Channel the renderer uses to tell Main "I mounted and painted a screen".
- *
- * Sandboxed preloads cannot `require` relative files, so each preload must bundle to a
- * single self-contained chunk and therefore repeats this literal instead of importing
- * the constant. `BootChannel` pins those literals: a rename breaks typecheck.
- */
-export type BootChannel = 'boot:renderer-ready';
-export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready';
+export type BootChannel = 'boot:renderer-ready'
+export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready'
 
-export interface BootBridge {
-  /**
-   * Which window this bridge belongs to. Display/debug only — Main identifies the
-   * sender by its `webContents`, never by a renderer-supplied value.
-   */
-  readonly window: MirrorWindowKind;
-  /** Signals Main that the first screen is on the glass. */
-  notifyReady(): void;
+export interface MirrorChannelMap {
+  readonly getSnapshot: 'mirror:get-snapshot'
+  readonly snapshot: 'mirror:snapshot'
+  readonly ready: BootChannel
 }
+
+export interface ConsoleChannelMap {
+  readonly getSnapshot: 'console:get-snapshot'
+  readonly snapshot: 'console:snapshot'
+  readonly simulate: 'console:simulate'
+  readonly ready: BootChannel
+}
+
+export type SnapshotListener = (snapshot: AppSnapshot) => void
+
+export interface MirrorBridge {
+  notifyReady(): void
+  getSnapshot(): Promise<AppSnapshot>
+  onSnapshot(listener: SnapshotListener): () => void
+}
+
+export interface ConsoleBridge extends MirrorBridge {
+  simulate(command: SimulatorCommand): Promise<SimulatorResult>
+}
+
+/** Compatibility alias for code that only needs the shared renderer surface. */
+export type BootBridge = MirrorBridge | ConsoleBridge
 
 declare global {
   interface Window {
-    /**
-     * Absent when the preload failed to load. Renderers MUST degrade visibly
-     * (invariant #9/#10: no silent failure, never a black screen).
-     */
-    readonly magicMirror?: BootBridge;
+    /** Absent when the preload failed; renderers must keep a visible fallback. */
+    readonly magicMirror?: BootBridge
   }
 }

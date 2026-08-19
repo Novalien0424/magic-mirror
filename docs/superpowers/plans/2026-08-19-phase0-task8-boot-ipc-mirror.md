@@ -144,7 +144,7 @@ Select-String -LiteralPath src/renderer/mirror/index.html,src/renderer/console/i
 - [ ] Run exactly these commands, with no `.env` access and no credential/device/network setup:
 
 ```powershell
-npm test -- --reporter=verbose
+npx vitest run --reporter=verbose
 npm run typecheck:node
 npm run typecheck:web
 npm run build

@@ -8,6 +8,7 @@ export type ModuleId =
 
 export type ModuleStatus = 'not_implemented' | 'ready' | 'degraded' | 'failed';
 export type OpStatus = 'success' | 'degraded' | 'failed';
+export type IdentityStatus = 'unassigned' | 'confirming' | 'active' | 'anonymous' | 'group';
 
 export interface MirrorEvent {
   time: string;                 // ISO-8601, set by Telemetry.emit
@@ -59,9 +60,9 @@ export interface JobModelSnapshot {
 
 export interface AppSnapshot {
   lifecycle: LifecycleState;
-  appVersion: string; buildCommit: string; configVersion: number;
+  appVersion: string; buildCommit: string; configVersion: number | null;
   modules: Record<ModuleId, ModuleStatus>;
-  activeProfileId: string | 'anonymous' | null;
+  identityStatus: IdentityStatus;
   realtimeSessionId: string | null;
   sessionGeneration: number;
   lastError: { module: ModuleId; error_code: string; time: string } | null;
@@ -76,6 +77,11 @@ export type SimulatorCommand =
   | { type: 'scene_result'; sceneId: string; status: OpStatus }
   | { type: 'sqlite_failure' }
   | { type: 'sleep' };
+
+export interface SimulatorResult {
+  readonly op: OpStatus;
+  readonly lifecycleEvent?: string;
+}
 
 export interface PhaseTestRecord {
   demoId: string;               // 'P0-D1' ...

@@ -2,7 +2,9 @@ import { basename, join } from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
+import { bootSequence, type BootRuntime } from './boot'
 import { createCrashRecovery } from './crash-recovery'
+import { publishSnapshot, registerIpcHandlers } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
@@ -26,11 +28,13 @@ const windows = new Map<MirrorWindowKind, BrowserWindow>()
 const readyReported = new WeakSet<WebContents>()
 const crashRecovery = createCrashRecovery()
 
+/** Smoke-only state: Main lifecycle is projected only after the current mirror is ready. */
 const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolean> } = {
-  // Task 2 owns the real machine; Task 1 only needs "did we leave starting".
   lifecycle: 'starting',
   loaded: { mirror: false, console: false }
 }
+let mainLifecycle: LifecycleState = 'starting'
+let mirrorRendererReady = false
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -47,7 +51,8 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
       preload: join(__dirname, `../preload/${kind}.js`),
       sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true
     }
   }
 
@@ -71,6 +76,16 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
 function createWindow(kind: MirrorWindowKind): BrowserWindow {
   const win = new BrowserWindow(windowOptions(kind))
   windows.set(kind, win)
+  boot.loaded[kind] = false
+  if (kind === 'mirror') {
+    mirrorRendererReady = false
+    boot.lifecycle = 'starting'
+  }
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
 
   win.webContents.on('did-finish-load', () => {
     boot.loaded[kind] = true
@@ -85,13 +100,13 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
     }
   })
 
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    marker('WINDOW_LOAD_FAILED', { window: kind, error_code: errorCode, reason: errorDescription })
+  win.webContents.on('did-fail-load', (_event, errorCode, _errorDescription) => {
+    marker('WINDOW_LOAD_FAILED', { window: kind, error_code: errorCode, reason: 'window_load_failed' })
   })
 
-  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+  win.webContents.on('preload-error', (_event, preloadPath, _error) => {
     // No silent failure: a preload that threw means a renderer with no bridge.
-    marker('PRELOAD_ERROR', { window: kind, file: basename(preloadPath), reason: error.message })
+    marker('PRELOAD_ERROR', { window: kind, file: basename(preloadPath), reason: 'preload_exception' })
   })
 
   // The mirror is the visitor-facing glass: show it as soon as it can paint.
@@ -143,9 +158,9 @@ function onRendererReady(sender: WebContents): void {
   readyReported.add(sender)
 
   marker('RENDERER_READY', { window: kind })
-  if (kind === 'mirror' && boot.lifecycle === 'starting') {
-    boot.lifecycle = 'dormant'
-    marker('LIFECYCLE', { from: 'starting', to: 'dormant' })
+  if (kind === 'mirror') {
+    mirrorRendererReady = true
+    boot.lifecycle = mainLifecycle
   }
 }
 
@@ -232,9 +247,34 @@ void app.whenReady().then(() => {
     return
   }
 
-  ipcMain.on(BOOT_RENDERER_READY_CHANNEL, (event) => onRendererReady(event.sender))
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
+
+  const bootRuntime: BootRuntime = bootSequence({
+    appVersion: app.getVersion(),
+    buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
+    telemetryDirectory: join(app.getPath('userData'), 'telemetry'),
+    configDir: join(app.getPath('userData'), 'config'),
+    defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
+    sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
+  })
+
   createWindows()
+  registerIpcHandlers({
+    ipcMain,
+    runtime: bootRuntime,
+    windows,
+    telemetry: bootRuntime.telemetry,
+    onReady: (kind) => {
+      const win = windows.get(kind)
+      if (win !== undefined && !win.isDestroyed()) onRendererReady(win.webContents)
+    },
+  })
+  bootRuntime.subscribe((snapshot) => {
+    mainLifecycle = snapshot.lifecycle
+    boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
+    void publishSnapshot('mirror', snapshot, windows, bootRuntime.telemetry)
+    void publishSnapshot('console', snapshot, windows, bootRuntime.telemetry)
+  })
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
