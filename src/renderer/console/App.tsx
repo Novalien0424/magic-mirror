@@ -12,6 +12,7 @@ import type {
   ConsoleOverviewPayload,
   ConsoleModelsPayload,
   ConsoleModelDraftInput,
+  ConsolePhaseTestsPayload,
   ConsoleResponse,
 } from '../../shared/console-types'
 import type {
@@ -81,11 +82,6 @@ const SIMULATOR_COMMAND_VALUES: Readonly<Record<SimulatorCommandName, SimulatorC
 
 export const CONSOLE_UI_CONTRACT = {
   tabs: PAGES,
-  placeholders: {
-    'Phase Tests': { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
-    Config: { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
-    Models: { status: 'placeholder', copy: 'Not implemented — reserved for later.' },
-  },
   overview: {
     readinessLabel: 'Mock / simulator',
     tccLabel: 'TCC: not_checked',
@@ -98,6 +94,15 @@ export const CONSOLE_UI_CONTRACT = {
     columns: EVENT_COLUMNS,
     filters: ['module', 'status', 'source'] as const,
     pagination: ['beforeSequence', 'nextBeforeSequence'] as const,
+  },
+  phaseTests: {
+    emptyCopy: 'No Phase 0 records yet — Task 10 owns demo execution and record production.',
+    ownershipCopy: 'Task 10 owns demo execution and record production.',
+    resultLabels: {
+      passed: 'Passed',
+      failed: 'Failed',
+      mock_passed: 'Mock passed',
+    },
   },
   config: {
     safeFields: [
@@ -145,6 +150,11 @@ type EventsState =
   | ({ readonly status: 'success' } & EventsStatePage)
   | ({ readonly status: 'failure' } & EventsStatePage & ConsoleFailure)
 
+export type PhaseTestsViewState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'success'; readonly value: ConsolePhaseTestsPayload }
+  | ({ readonly status: 'failure' } & ConsoleFailure)
+
 type SimulatorState =
   | { readonly status: 'idle' }
   | { readonly status: 'loading'; readonly command: SimulatorCommandName }
@@ -190,6 +200,7 @@ function isConsoleBridge(value: unknown): value is ConsoleBridge {
     && typeof value.publish === 'function'
     && typeof value.rollback === 'function'
     && typeof value.createNextRuntimeSnapshots === 'function'
+    && typeof value.getPhaseTests === 'function'
 }
 
 function readConsoleBridge(): ConsoleBridge | null {
@@ -611,6 +622,55 @@ function EventsPanel({
   )
 }
 
+export function PhaseTestsPanel({
+  state,
+}: {
+  readonly state: PhaseTestsViewState
+}): React.JSX.Element {
+  const payload = state.status === 'success' ? state.value : null
+  const latest = payload?.latest ?? null
+
+  return (
+    <section className="console__panel" aria-labelledby="console-phase-tests">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Validated metadata only</p>
+          <h2 id="console-phase-tests">Phase Tests</h2>
+        </div>
+        <span className="console__status">Read-only</span>
+      </div>
+
+      <p className="console__muted">{CONSOLE_UI_CONTRACT.phaseTests.ownershipCopy}</p>
+      {state.status === 'loading' ? (
+        <p className="console__request-state" aria-live="polite">Loading Phase Tests…</p>
+      ) : null}
+      {state.status === 'failure' ? (
+        <p className="console__fault" role="status">
+          Phase Tests failed: {state.error}; {state.reason}
+        </p>
+      ) : null}
+      {state.status === 'success' && latest === null ? (
+        <p className="console__notice" role="status">{CONSOLE_UI_CONTRACT.phaseTests.emptyCopy}</p>
+      ) : null}
+      {latest !== null ? (
+        <div className="console__phase-test-record" role="status">
+          <p className="console__success">Latest validated Phase 0 record</p>
+          <dl className="console__summary-fields">
+            <MetadataEntry name="demoId" value={latest.demoId} />
+            <MetadataEntry name="build" value={latest.build} />
+            <MetadataEntry name="time" value={latest.time} />
+            <MetadataEntry
+              name="result"
+              value={CONSOLE_UI_CONTRACT.phaseTests.resultLabels[latest.result]}
+            />
+            <MetadataEntry name="note" value={latest.note} />
+          </dl>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function safeDraftFromConfig(value: ConsoleConfigPayload['draft']): ConsoleConfigDraftInput {
   return {
     personaName: value.personaName,
@@ -1017,16 +1077,6 @@ export function ModelsPanel({
   )
 }
 
-function Placeholder({ page }: { readonly page: 'Phase Tests' | 'Config' | 'Models' }): React.JSX.Element {
-  const id = `console-${page.toLowerCase().replace(' ', '-')}`
-  return (
-    <section className="console__panel" aria-labelledby={id}>
-      <h2 id={id}>{page}</h2>
-      <p className="console__muted">{CONSOLE_UI_CONTRACT.placeholders[page].copy}</p>
-    </section>
-  )
-}
-
 export function App(): React.JSX.Element {
   const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Overview')
   const [bridgeAvailable, setBridgeAvailable] = useState(false)
@@ -1037,6 +1087,7 @@ export function App(): React.JSX.Element {
     events: [],
     nextBeforeSequence: null,
   })
+  const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
@@ -1149,6 +1200,23 @@ export function App(): React.JSX.Element {
     }
   }
 
+  const requestPhaseTests = async (bridge: ConsoleBridge): Promise<void> => {
+    if (!mountedRef.current) return
+    setPhaseTestsState({ status: 'loading' })
+    try {
+      const response = await bridge.getPhaseTests()
+      if (!mountedRef.current) return
+      const failure = requestFailure(response)
+      if (failure) {
+        setPhaseTestsState({ status: 'failure', ...failure })
+        return
+      }
+      if (response.ok) setPhaseTestsState({ status: 'success', value: response.value })
+    } catch {
+      if (mountedRef.current) setPhaseTestsState({ status: 'failure', ...BRIDGE_FAILURE })
+    }
+  }
+
   const requestConfig = async (bridge: ConsoleBridge): Promise<void> => {
     if (!mountedRef.current) return
     setConfigState({ status: 'loading' })
@@ -1199,6 +1267,7 @@ export function App(): React.JSX.Element {
       setBridgeError(BRIDGE_FAILURE)
       setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
       setEventsState({ status: 'failure', events: [], nextBeforeSequence: null, ...BRIDGE_FAILURE })
+      setPhaseTestsState({ status: 'failure', ...BRIDGE_FAILURE })
       setConfigState({ status: 'failure', ...BRIDGE_FAILURE })
       setModelsState({ status: 'failure', ...BRIDGE_FAILURE })
       return
@@ -1224,6 +1293,7 @@ export function App(): React.JSX.Element {
 
     const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter)
     void requestEvents(bridge, query, false)
+    void requestPhaseTests(bridge)
     void requestConfig(bridge)
     void requestModels(bridge)
   }, [moduleFilter, sourceFilter, statusFilter])
@@ -1320,7 +1390,7 @@ export function App(): React.JSX.Element {
             bridgeAvailable={bridgeAvailable}
           />
         </div>
-        <div hidden={activePage !== 'Phase Tests'}><Placeholder page="Phase Tests" /></div>
+        <div hidden={activePage !== 'Phase Tests'}><PhaseTestsPanel state={phaseTestsState} /></div>
         <div hidden={activePage !== 'Config'}>
           <ConfigPanel
             state={configState}

@@ -6,6 +6,7 @@ import type {
   ConsoleModuleObservation,
   ConsoleModelsPayload,
   ConsoleOverviewPayload,
+  ConsolePhaseTestsPayload,
   ConsoleReason,
   ConsoleResponse,
   ConsoleDraftTestResult,
@@ -24,6 +25,11 @@ import type {
 } from '../shared/types'
 import { MODULE_IDS } from './module-registry'
 import type { Telemetry } from './telemetry'
+import {
+  createConsolePhaseTests,
+  type ConsolePhaseTestsController,
+} from './console-phase-tests'
+import type { PhaseTestRecordReader } from '../shared/console-types'
 
 const MAX_PAGE_SIZE = 200
 const MAX_UPTIME_SECONDS = 2_147_483_647
@@ -91,6 +97,7 @@ export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
   publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
+  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
 }
 
 interface ConsoleDataPlaneDependencies {
@@ -100,6 +107,8 @@ interface ConsoleDataPlaneDependencies {
   readonly getStartedAt: () => number
   readonly handleSimulator: (command: unknown) => Promise<SimulatorResult>
   readonly getConfigController?: () => ConsoleConfigController | null
+  readonly getPhaseTestsController?: () => ConsolePhaseTestsController | null
+  readonly getPhaseTestsReader?: () => PhaseTestRecordReader
 }
 
 type QueryValidation =
@@ -475,6 +484,38 @@ export function resolveDeveloperMode(
 export function createConsoleDataPlane(
   dependencies: ConsoleDataPlaneDependencies,
 ): ConsoleDataPlane {
+  const phaseTestsController = (() => {
+    try {
+      const injectedController = dependencies.getPhaseTestsController?.() ?? null
+      if (injectedController !== null && typeof injectedController.get === 'function') {
+        return injectedController
+      }
+    } catch {
+      // A missing optional controller falls back to the honest empty reader.
+    }
+
+    let reader: PhaseTestRecordReader = { read: () => [] }
+    try {
+      const injectedReader = dependencies.getPhaseTestsReader?.()
+      if (injectedReader !== undefined && injectedReader !== null) reader = injectedReader
+    } catch {
+      // A missing optional reader falls back to the honest empty reader.
+    }
+
+    return createConsolePhaseTests({
+      reader,
+      getBuildCommit: () => {
+        try {
+          const buildCommit = readProperty(dependencies.getSnapshot(), 'buildCommit')
+          return typeof buildCommit === 'string' ? buildCommit : 'unknown'
+        } catch {
+          return 'unknown'
+        }
+      },
+      emit: (event) => emitSafely(dependencies.getTelemetry, event),
+    })
+  })()
+
   function getOverview(): ConsoleResponse<ConsoleOverviewPayload> {
     let snapshot: unknown
     let page: unknown
@@ -591,5 +632,6 @@ export function createConsoleDataPlane(
     publish: (confirmation) => invokeConfig((controller) => controller.publish(confirmation)),
     rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),
     createNextRuntimeSnapshots: () => invokeConfig((controller) => controller.createNextRuntimeSnapshots()),
+    getPhaseTests: () => phaseTestsController.get(),
   }
 }

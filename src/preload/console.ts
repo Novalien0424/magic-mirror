@@ -10,6 +10,7 @@ import type {
   ConsoleModelDraftInput,
   ConsoleModelsPayload,
   ConsoleOverviewPayload,
+  ConsolePhaseTestsPayload,
   ConsoleResponse,
   ConsoleRuntimeSnapshotResult,
 } from '../shared/console-types'
@@ -29,6 +30,7 @@ const TEST_DRAFT_CHANNEL = 'console:test-draft' as const
 const PUBLISH_CHANNEL = 'console:publish' as const
 const ROLLBACK_CHANNEL = 'console:rollback' as const
 const NEXT_RUNTIME_CHANNEL = 'console:create-next-runtime' as const
+const GET_PHASE_TESTS_CHANNEL = 'console:get-phase-tests' as const
 
 const bridge: ConsoleBridge = {
   notifyReady(): void {
@@ -89,6 +91,10 @@ const bridge: ConsoleBridge = {
 
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>> {
     return ipcRenderer.invoke(NEXT_RUNTIME_CHANNEL) as Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
+  },
+
+  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>> {
+    return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   },
 }
 

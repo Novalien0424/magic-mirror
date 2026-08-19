@@ -110,6 +110,26 @@ export interface ConsoleEventsPage {
   readonly nextBeforeSequence: number | null
 }
 
+export interface PhaseTestRecord {
+  readonly phase: '0'
+  readonly demoId: 'P0-D1' | 'P0-D2' | 'P0-D3' | 'P0-D4' | 'P0-D5'
+  readonly build: string
+  readonly time: string
+  readonly result: 'passed' | 'failed' | 'mock_passed'
+  readonly note: string
+}
+
+export interface PhaseTestRecordReader {
+  read(phase: '0'): readonly PhaseTestRecord[] | PromiseLike<readonly PhaseTestRecord[]>
+}
+
+export interface ConsolePhaseTestsPayload {
+  readonly phase: '0'
+  readonly source: 'empty' | 'reader'
+  readonly latest: PhaseTestRecord | null
+  readonly records: readonly PhaseTestRecord[]
+}
+
 export interface DeveloperModeDecision {
   readonly enabled: boolean
   readonly source: 'packaging_default' | 'startup_override'

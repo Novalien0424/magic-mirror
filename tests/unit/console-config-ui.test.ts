@@ -176,7 +176,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
   it('renders Models with exactly three bounded Draft role inputs and the saveModelDraft action', () => {
     const html = renderConsole()
     const models = contractPage('models')
-    const modelsSource = sourceSection('function ModelsPanel', 'function Placeholder')
+    const modelsSource = sourceSection('function ModelsPanel', 'export function App')
     const saveCall = /\.saveModelDraft\s*\(([\s\S]{0,800})\)/.exec(modelsSource)
 
     expect(typeof ModelsPanel).toBe('function')
@@ -211,7 +211,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
       reason: 'cause=all_configured_ids_observed',
     })
     const configSource = sourceSection('function ConfigPanel', 'function ModelsPanel')
-    const modelsSource = sourceSection('function ModelsPanel', 'function Placeholder')
+    const modelsSource = sourceSection('function ModelsPanel', 'export function App')
 
     expect(configSource).toMatch(/changed paths|changedPaths/i)
     expect(configSource).toMatch(/nonModelChanges/)
@@ -229,7 +229,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
 
   it('shows Draft, Published Active, Runtime loaded, Previous, and pending next session/job evidence', () => {
     const html = renderConsole()
-    const modelsSource = sourceSection('function ModelsPanel', 'function Placeholder')
+    const modelsSource = sourceSection('function ModelsPanel', 'export function App')
 
     for (const section of EXPECTED_MODEL_SECTIONS) expect(modelsSource).toContain(section)
     expect(modelsSource).toMatch(/current|old|new/)
@@ -250,7 +250,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
     const config = contractPage('config')
     const models = contractPage('models')
     const configSource = sourceSection('function ConfigPanel', 'function ModelsPanel')
-    const modelsSource = sourceSection('function ModelsPanel', 'function Placeholder')
+    const modelsSource = sourceSection('function ModelsPanel', 'export function App')
     const serializedContracts = JSON.stringify({ config, models })
 
     expect(serializedContracts).not.toMatch(/credential|apiKey|clientSecret|safeStorage|provider|router|auto.?latest|contract[_ ]passed/i)

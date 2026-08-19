@@ -9,6 +9,7 @@ import type {
   ConsoleModelDraftInput,
   ConsoleModelsPayload,
   ConsoleOverviewPayload,
+  ConsolePhaseTestsPayload,
   ConsoleResponse,
   ConsoleRuntimeSnapshotResult,
 } from './console-types'
@@ -38,6 +39,7 @@ export interface ConsoleChannelMap {
   readonly publish: 'console:publish'
   readonly rollback: 'console:rollback'
   readonly nextRuntime: 'console:create-next-runtime'
+  readonly phaseTests: 'console:get-phase-tests'
   readonly ready: BootChannel
 }
 
@@ -61,6 +63,7 @@ export interface ConsoleBridge extends MirrorBridge {
   publish(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
+  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

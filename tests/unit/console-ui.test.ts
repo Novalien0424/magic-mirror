@@ -107,19 +107,16 @@ function renderConsole(): string {
 }
 
 describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
-  it('renders exactly the six Console tabs and keeps later pages as honest placeholders', () => {
+  it('renders exactly the six Console tabs and exposes the Task 10 Phase Tests ownership sentence', () => {
     const html = renderConsole()
 
     expect(CONSOLE_UI_CONTRACT.tabs).toEqual(EXPECTED_TABS)
     for (const tab of EXPECTED_TABS) {
       expect(html).toContain(tab)
     }
-    expect(CONSOLE_UI_CONTRACT.placeholders).toEqual(expect.objectContaining({
-      'Phase Tests': expect.objectContaining({ status: 'placeholder' }),
-      Config: expect.objectContaining({ status: 'placeholder' }),
-      Models: expect.objectContaining({ status: 'placeholder' }),
-    }))
-    expect(html).toMatch(/not implemented|reserved|later/i)
+    expect(CONSOLE_UI_CONTRACT).not.toHaveProperty('placeholders')
+    expect(html).toContain('Task 10 owns demo execution and record production.')
+    expect(html).not.toMatch(/Not implemented|reserved for later/i)
   })
 
   it('shows mock simulator readiness and explicit unverified TCC copy on Overview', () => {

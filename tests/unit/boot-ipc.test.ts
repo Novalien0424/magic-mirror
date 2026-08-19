@@ -690,6 +690,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       events: 'console:get-events',
       config: 'console:get-config',
       models: 'console:get-models',
+      phaseTests: 'console:get-phase-tests',
       saveModelDraft: 'console:save-model-draft',
       saveDraft: 'console:save-draft',
       testDraft: 'console:test-draft',

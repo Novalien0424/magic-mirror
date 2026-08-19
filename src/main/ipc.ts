@@ -38,6 +38,7 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   publish: 'console:publish',
   rollback: 'console:rollback',
   nextRuntime: 'console:create-next-runtime',
+  phaseTests: 'console:get-phase-tests',
   ready: 'boot:renderer-ready',
 })
 
@@ -619,6 +620,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     return invokeConsole(consoleFacade(options), (facade) => facade.createNextRuntimeSnapshots(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.phaseTests, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.getPhaseTests(), telemetry)
   })
 
   ipcMain.on(CONSOLE_IPC_CHANNELS.ready, (event, ...args) => {
