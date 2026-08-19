@@ -56,8 +56,10 @@ import {
 import {
   createConsoleDataPlane,
   resolveDeveloperMode,
-  type ConsoleBaseDataPlane,
+  type ConsoleDataPlane,
 } from './console-data'
+import { createConsoleConfigController } from './console-config'
+import type { ConsoleConfigRefreshResult } from './console-config'
 
 const SAFE_CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
@@ -154,7 +156,7 @@ export interface BootSubscription {
 export interface BootRuntime {
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
-  readonly console: ConsoleBaseDataPlane
+  readonly console: ConsoleDataPlane
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleSimulator(command: unknown): Promise<SimulatorResult>
@@ -569,6 +571,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let lastError: AppSnapshot['lastError'] = null
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
+  let configService: ConfigService | null = options.configService ?? null
+  const resolveModelSettings = options.resolveModelSettings ?? defaultResolveModelSettings
   let developerMode: DeveloperModeDecision = resolveDeveloperMode(
     isPackaged,
     options.developerModeOverride,
@@ -694,7 +698,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       (event) => emitMetadata(telemetry, event),
     )
 
-    const configService: Pick<ConfigService, 'initialize'> = options.configService ?? (() => {
+    const createdConfigService: ConfigService | null = options.configService ?? (() => {
       try {
         return defaultCreateConfigService({
           configDir: options.configDir ?? join(process.cwd(), 'config'),
@@ -702,16 +706,18 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
           events: telemetry,
         })
       } catch {
-        return {
-          initialize: async () => {
-            throw new Error('config_service_create_failed')
-          },
-        }
+        return null
       }
     })()
+    configService = createdConfigService
+    const configInitializer: Pick<ConfigService, 'initialize'> = createdConfigService ?? {
+      initialize: async () => {
+        throw new Error('config_service_create_failed')
+      },
+    }
 
     try {
-      configSlots = await configService.initialize()
+      configSlots = await configInitializer.initialize()
       const activeVersion = readProperty(readProperty(configSlots, 'active'), 'configVersion')
       if (typeof activeVersion === 'number' && Number.isSafeInteger(activeVersion) && activeVersion >= 1) {
         configVersion = activeVersion
@@ -723,7 +729,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       )
     }
 
-    const resolveModelSettings = options.resolveModelSettings ?? defaultResolveModelSettings
     try {
       resolvedModelSettings = await Promise.resolve(resolveModelSettings(configSlots ?? ({} as ConfigSlots)))
       const activeVersion = resolvedModelSettings.active.configVersion
@@ -1026,6 +1031,44 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return simulatorResult(status)
   }
 
+  async function refreshConfig(): Promise<ConsoleConfigRefreshResult> {
+    const refreshFailure = (): ConsoleConfigRefreshResult => {
+      resolvedModelSettings = null
+      configVersion = null
+      refreshSnapshot()
+      notifyListeners()
+      return { ok: false, error: 'console_config_refresh_failed', reason: 'cause=refresh_failed' }
+    }
+    const service = configService
+    if (service === null) {
+      return refreshFailure()
+    }
+    try {
+      const slots = await service.read()
+      const resolution = await Promise.resolve(resolveModelSettings(slots))
+      const activeVersion = resolution.active.configVersion
+      if (!Number.isSafeInteger(activeVersion) || activeVersion < 1) {
+        return refreshFailure()
+      }
+      configVersion = activeVersion
+      resolvedModelSettings = resolution
+      refreshSnapshot()
+      notifyListeners()
+      return { ok: true, configVersion: activeVersion, resolution }
+    } catch {
+      return refreshFailure()
+    }
+  }
+
+  const consoleConfigController = createConsoleConfigController({
+    getConfigService: () => configService,
+    getModelSettings: () => resolvedModelSettings,
+    refreshConfig,
+    getDeveloperMode: () => developerMode.enabled,
+    emit: (event) => emitMetadata(telemetry, event),
+    now: () => nowValue(now),
+  })
+
   const consoleDataPlane = createConsoleDataPlane({
     getSnapshot: () => projectAppSnapshot(current),
     getTelemetry: () => ({
@@ -1035,6 +1078,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getDeveloperMode: () => developerMode,
     getStartedAt: () => startedAt,
     handleSimulator,
+    getConfigController: () => consoleConfigController,
   })
 
   const runtime: BootRuntime = {

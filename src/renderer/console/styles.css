@@ -410,13 +410,133 @@ th {
   padding: 0.45rem 0.65rem;
 }
 
+.console__config-grid,
+.console__diff-grid,
+.console__model-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.console__model-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.console__config-grid fieldset,
+.console__diff-grid fieldset,
+.console__model-card,
+.console__runtime-evidence {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border: 1px solid #263039;
+  border-radius: 6px;
+}
+
+.console__config-grid fieldset,
+.console__diff-grid fieldset {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.console__config-grid legend,
+.console__diff-grid legend {
+  padding: 0 0.3rem;
+  color: #b5c2cc;
+}
+
+.console__config-grid label,
+.console__model-draft-form label {
+  display: grid;
+  gap: 0.3rem;
+  color: #9aa9b6;
+  font-size: 0.75rem;
+}
+
+.console__config-grid input,
+.console__config-grid select,
+.console__model-draft-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+}
+
+.console__action-row,
+.console__model-draft-form,
+.console__runtime-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.console__action-row button,
+.console__diff-grid button,
+.console__model-draft-form button,
+.console__runtime-evidence button {
+  padding: 0.45rem 0.65rem;
+}
+
+.console__model-draft-form {
+  align-items: end;
+}
+
+.console__model-draft-form label {
+  min-width: 12rem;
+  flex: 1 1 12rem;
+}
+
+.console__model-draft-form button {
+  align-self: end;
+}
+
+.console__path-list {
+  max-height: 13rem;
+  overflow: auto;
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #b6c1ca;
+  font-size: 0.78rem;
+}
+
+.console__path-list li {
+  overflow-wrap: anywhere;
+}
+
+.console__diff-grid fieldset > span {
+  color: #9aa9b6;
+  font-size: 0.78rem;
+}
+
+.console__model-card h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.console__runtime-evidence {
+  justify-content: flex-start;
+  color: #b6c1ca;
+  font-size: 0.8rem;
+}
+
+.console__runtime-evidence strong {
+  color: #d5e0e8;
+  font-weight: 500;
+}
+
 @media (max-width: 800px) {
   .console {
     padding: 1rem;
   }
 
   .console__overview-grid,
-  .console__modules {
+  .console__modules,
+  .console__config-grid,
+  .console__diff-grid,
+  .console__model-cards {
     grid-template-columns: 1fr;
   }
 }

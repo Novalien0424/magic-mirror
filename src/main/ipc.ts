@@ -16,7 +16,7 @@ import type {
   ConsoleResponse,
 } from '../shared/console-types'
 import { projectAppSnapshot, type BootRuntime } from './boot'
-import type { ConsoleBaseDataPlane } from './console-data'
+import type { ConsoleDataPlane } from './console-data'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
@@ -30,6 +30,14 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   simulate: 'console:simulate',
   overview: 'console:get-overview',
   events: 'console:get-events',
+  config: 'console:get-config',
+  models: 'console:get-models',
+  saveModelDraft: 'console:save-model-draft',
+  saveDraft: 'console:save-draft',
+  testDraft: 'console:test-draft',
+  publish: 'console:publish',
+  rollback: 'console:rollback',
+  nextRuntime: 'console:create-next-runtime',
   ready: 'boot:renderer-ready',
 })
 
@@ -70,9 +78,9 @@ export type SenderRejectionReason =
 export interface RegisterIpcHandlersOptions {
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator'> & {
-    readonly console?: ConsoleBaseDataPlane
+    readonly console?: ConsoleDataPlane
   }
-  readonly console?: ConsoleBaseDataPlane
+  readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
   readonly telemetry: IpcEventSink
   readonly onReady?: (kind: MirrorWindowKind) => void
@@ -321,8 +329,8 @@ function consoleUnavailable(telemetry: IpcEventSink): ConsoleResponse<never> {
 }
 
 async function invokeConsole<T>(
-  facade: ConsoleBaseDataPlane | null,
-  operation: (value: ConsoleBaseDataPlane) => ConsoleResponse<T> | PromiseLike<ConsoleResponse<T>>,
+  facade: ConsoleDataPlane | null,
+  operation: (value: ConsoleDataPlane) => ConsoleResponse<T> | PromiseLike<ConsoleResponse<T>>,
   telemetry: IpcEventSink,
 ): Promise<ConsoleResponse<T>> {
   if (facade === null) return consoleUnavailable(telemetry)
@@ -333,7 +341,7 @@ async function invokeConsole<T>(
   }
 }
 
-function consoleFacade(options: RegisterIpcHandlersOptions): ConsoleBaseDataPlane | null {
+function consoleFacade(options: RegisterIpcHandlersOptions): ConsoleDataPlane | null {
   try {
     if (options.console !== undefined) return options.console
     return options.runtime.console ?? null
@@ -507,6 +515,110 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     }
     const request = args.length === 0 ? undefined : args[0]
     return invokeConsole(consoleFacade(options), (facade) => facade.getEvents(request), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.config, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.getConfig(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.models, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.getModels(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.saveModelDraft, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.saveModelDraft(args[0]), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.saveDraft, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.saveDraft(args[0]), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.testDraft, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.testDraft(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.publish, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.publish(args[0]), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.rollback, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.rollback(args[0]), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.nextRuntime, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), (facade) => facade.createNextRuntimeSnapshots(), telemetry)
   })
 
   ipcMain.on(CONSOLE_IPC_CHANNELS.ready, (event, ...args) => {

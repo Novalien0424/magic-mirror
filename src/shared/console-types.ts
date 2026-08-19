@@ -1,9 +1,11 @@
 import type {
   IdentityStatus,
+  JobModelSnapshot,
   LifecycleState,
   MirrorEvent,
   ModuleId,
   ModuleStatus,
+  SessionModelSnapshot,
 } from './types'
 
 export type ConsoleResponse<T> =
@@ -111,4 +113,130 @@ export interface ConsoleEventsPage {
 export interface DeveloperModeDecision {
   readonly enabled: boolean
   readonly source: 'packaging_default' | 'startup_override'
+}
+
+export interface ConsoleConfigSafeView {
+  readonly configVersion: number
+  readonly personaName: string
+  readonly voice: string
+  readonly idleSeconds: number
+  readonly wake: { readonly phrase: string; readonly modelVersion: string }
+  readonly faceModel: { readonly detectorId: string; readonly recognizerId: string }
+  readonly assets: {
+    readonly offlineLoopVideo: string
+    readonly avatarDir: string
+    readonly musicDir: string
+  }
+  readonly adapters: {
+    readonly lighting: 'mock' | 'physical'
+    readonly fog: 'mock' | 'physical'
+    readonly music: 'mock' | 'physical'
+  }
+}
+
+export interface ConsoleConfigDraftInput {
+  readonly personaName: string
+  readonly voice: string
+  readonly idleSeconds: number
+  readonly wake: { readonly phrase: string; readonly modelVersion: string }
+  readonly faceModel: { readonly detectorId: string; readonly recognizerId: string }
+  readonly assets: {
+    readonly offlineLoopVideo: string
+    readonly avatarDir: string
+    readonly musicDir: string
+  }
+  readonly adapters: {
+    readonly lighting: 'mock' | 'physical'
+    readonly fog: 'mock' | 'physical'
+    readonly music: 'mock' | 'physical'
+  }
+}
+
+export interface ConsoleConfigDiffEntry {
+  readonly path: string
+  readonly kind: 'model' | 'non_model'
+  readonly change: 'added' | 'removed' | 'updated'
+}
+
+export interface ConsoleConfigDiff {
+  readonly operation: 'publish' | 'rollback'
+  readonly from: 'active' | 'previous'
+  readonly to: 'draft' | 'active'
+  readonly expectedActiveVersion: number
+  readonly changed: readonly ConsoleConfigDiffEntry[]
+  readonly nonModelChanges: boolean
+  readonly confirmationDigest: string
+}
+
+export interface ConsoleDiffConfirmation {
+  readonly operation: 'publish' | 'rollback'
+  readonly expectedActiveVersion: number
+  readonly changedPaths: readonly string[]
+  readonly nonModelChanges: boolean
+  readonly confirmationDigest: string
+}
+
+export interface ConsoleDraftTestResult {
+  readonly result: 'mock_passed' | 'failed'
+  readonly source: 'simulator'
+  readonly configVersion: number
+  readonly fingerprint: string
+  readonly roleCount: 3
+  readonly reason: 'cause=all_configured_ids_observed' | 'cause=mock_probe_failed' | 'cause=draft_invalid'
+}
+
+export type ConsoleModelRole = 'realtimeDialogue' | 'inputTranscription' | 'memoryExtractor'
+
+export interface ConsoleModelSlot {
+  readonly configVersion: number
+  readonly fingerprint: string
+  readonly modelId: string
+}
+
+export interface ConsoleModelDraftInput {
+  readonly realtimeDialogue: string
+  readonly inputTranscription: string
+  readonly memoryExtractor: string
+}
+
+export interface ConsoleModelCard {
+  readonly role: ConsoleModelRole
+  readonly label: 'Realtime Dialogue' | 'Input Transcription' | 'Memory Extractor'
+  readonly draft: ConsoleModelSlot
+  readonly publishedActive: ConsoleModelSlot
+  readonly runtimeLoaded: ConsoleModelSlot
+  readonly previous: ConsoleModelSlot
+  readonly pending: 'none' | 'next_session' | 'next_job'
+}
+
+export interface ConsoleRuntimeSnapshot {
+  readonly label: 'current' | 'old' | 'new'
+  readonly source: 'simulator'
+  readonly session: Readonly<SessionModelSnapshot> | null
+  readonly job: Readonly<JobModelSnapshot> | null
+}
+
+export interface ConsoleModelsPayload {
+  readonly cards: readonly ConsoleModelCard[]
+  readonly runtime: {
+    readonly current: ConsoleRuntimeSnapshot | null
+    readonly old: ConsoleRuntimeSnapshot | null
+    readonly new: ConsoleRuntimeSnapshot | null
+  }
+  readonly latestTest: ConsoleDraftTestResult | null
+}
+
+export interface ConsoleRuntimeSnapshotResult {
+  readonly result: 'mock_passed' | 'failed'
+  readonly source: 'simulator'
+  readonly reason: 'cause=next_snapshot_created' | 'cause=developer_mode_disabled' | 'cause=refresh_failed'
+}
+
+export interface ConsoleConfigPayload {
+  readonly active: ConsoleConfigSafeView
+  readonly draft: ConsoleConfigSafeView
+  readonly previous: ConsoleConfigSafeView
+  readonly publishDiff: ConsoleConfigDiff
+  readonly rollbackDiff: ConsoleConfigDiff
+  readonly draftTest: ConsoleDraftTestResult | null
 }

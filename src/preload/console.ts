@@ -1,10 +1,17 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot, SimulatorCommand, SimulatorResult } from '../shared/types'
 import type {
+  ConsoleConfigDraftInput,
+  ConsoleConfigPayload,
+  ConsoleDiffConfirmation,
+  ConsoleDraftTestResult,
   ConsoleEventsPage,
   ConsoleEventsQuery,
+  ConsoleModelDraftInput,
+  ConsoleModelsPayload,
   ConsoleOverviewPayload,
   ConsoleResponse,
+  ConsoleRuntimeSnapshotResult,
 } from '../shared/console-types'
 import type { ConsoleBridge, SnapshotListener } from '../shared/bridge'
 
@@ -14,6 +21,14 @@ const GET_SNAPSHOT_CHANNEL = 'console:get-snapshot' as const
 const SIMULATE_CHANNEL = 'console:simulate' as const
 const GET_OVERVIEW_CHANNEL = 'console:get-overview' as const
 const GET_EVENTS_CHANNEL = 'console:get-events' as const
+const GET_CONFIG_CHANNEL = 'console:get-config' as const
+const GET_MODELS_CHANNEL = 'console:get-models' as const
+const SAVE_MODEL_DRAFT_CHANNEL = 'console:save-model-draft' as const
+const SAVE_DRAFT_CHANNEL = 'console:save-draft' as const
+const TEST_DRAFT_CHANNEL = 'console:test-draft' as const
+const PUBLISH_CHANNEL = 'console:publish' as const
+const ROLLBACK_CHANNEL = 'console:rollback' as const
+const NEXT_RUNTIME_CHANNEL = 'console:create-next-runtime' as const
 
 const bridge: ConsoleBridge = {
   notifyReady(): void {
@@ -42,6 +57,38 @@ const bridge: ConsoleBridge = {
 
   getEvents(request?: ConsoleEventsQuery): Promise<ConsoleResponse<ConsoleEventsPage>> {
     return ipcRenderer.invoke(GET_EVENTS_CHANNEL, request) as Promise<ConsoleResponse<ConsoleEventsPage>>
+  },
+
+  getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke(GET_CONFIG_CHANNEL) as Promise<ConsoleResponse<ConsoleConfigPayload>>
+  },
+
+  getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>> {
+    return ipcRenderer.invoke(GET_MODELS_CHANNEL) as Promise<ConsoleResponse<ConsoleModelsPayload>>
+  },
+
+  saveModelDraft(input: ConsoleModelDraftInput): Promise<ConsoleResponse<ConsoleModelsPayload>> {
+    return ipcRenderer.invoke(SAVE_MODEL_DRAFT_CHANNEL, input) as Promise<ConsoleResponse<ConsoleModelsPayload>>
+  },
+
+  saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke(SAVE_DRAFT_CHANNEL, input) as Promise<ConsoleResponse<ConsoleConfigPayload>>
+  },
+
+  testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>> {
+    return ipcRenderer.invoke(TEST_DRAFT_CHANNEL) as Promise<ConsoleResponse<ConsoleDraftTestResult>>
+  },
+
+  publish(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke(PUBLISH_CHANNEL, confirmation) as Promise<ConsoleResponse<ConsoleConfigPayload>>
+  },
+
+  rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke(ROLLBACK_CHANNEL, confirmation) as Promise<ConsoleResponse<ConsoleConfigPayload>>
+  },
+
+  createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>> {
+    return ipcRenderer.invoke(NEXT_RUNTIME_CHANNEL) as Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   },
 }
 

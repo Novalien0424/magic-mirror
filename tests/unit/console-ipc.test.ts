@@ -216,14 +216,14 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
   it('registers the 9A Console channels while preserving Task 8 snapshot, simulate, ready, and Mirror contracts', async () => {
     const registered = makeHarness()
 
-    expect(CONSOLE_IPC_CHANNELS).toEqual({
+    expect(CONSOLE_IPC_CHANNELS).toEqual(expect.objectContaining({
       getSnapshot: 'console:get-snapshot',
       snapshot: 'console:snapshot',
       simulate: 'console:simulate',
       overview: 'console:get-overview',
       events: 'console:get-events',
       ready: 'boot:renderer-ready',
-    })
+    }))
     expect(MIRROR_IPC_CHANNELS).toEqual({
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',

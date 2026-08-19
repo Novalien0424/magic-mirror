@@ -688,6 +688,14 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       simulate: 'console:simulate',
       overview: 'console:get-overview',
       events: 'console:get-events',
+      config: 'console:get-config',
+      models: 'console:get-models',
+      saveModelDraft: 'console:save-model-draft',
+      saveDraft: 'console:save-draft',
+      testDraft: 'console:test-draft',
+      publish: 'console:publish',
+      rollback: 'console:rollback',
+      nextRuntime: 'console:create-next-runtime',
       ready: 'boot:renderer-ready',
     })
   })

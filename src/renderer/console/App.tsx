@@ -3,10 +3,15 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { ConsoleBridge } from '../../shared/bridge'
 import type {
+  ConsoleConfigDraftInput,
+  ConsoleConfigPayload,
+  ConsoleDiffConfirmation,
   ConsoleEventSummary,
   ConsoleEventsQuery,
   ConsoleModuleObservation,
   ConsoleOverviewPayload,
+  ConsoleModelsPayload,
+  ConsoleModelDraftInput,
   ConsoleResponse,
 } from '../../shared/console-types'
 import type {
@@ -94,6 +99,30 @@ export const CONSOLE_UI_CONTRACT = {
     filters: ['module', 'status', 'source'] as const,
     pagination: ['beforeSequence', 'nextBeforeSequence'] as const,
   },
+  config: {
+    safeFields: [
+      'personaName',
+      'voice',
+      'idleSeconds',
+      'wake.phrase',
+      'wake.modelVersion',
+      'faceModel.detectorId',
+      'faceModel.recognizerId',
+      'assets.offlineLoopVideo',
+      'assets.avatarDir',
+      'assets.musicDir',
+      'adapters.lighting',
+      'adapters.fog',
+      'adapters.music',
+    ] as const,
+    actions: ['saveDraft', 'testDraft', 'publish', 'rollback'] as const,
+  },
+  models: {
+    roles: ['realtimeDialogue', 'inputTranscription', 'memoryExtractor'] as const,
+    cardLabels: ['Realtime Dialogue', 'Input Transcription', 'Memory Extractor'] as const,
+    sections: ['Draft', 'Published Active', 'Runtime loaded', 'Previous'] as const,
+    draftInputs: ['realtimeDialogue', 'inputTranscription', 'memoryExtractor'] as const,
+  },
 } as const
 
 interface ConsoleFailure {
@@ -126,6 +155,16 @@ type SimulatorState =
     }
   | ({ readonly status: 'failure'; readonly command: SimulatorCommandName } & ConsoleFailure)
 
+type ConfigState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'success'; readonly value: ConsoleConfigPayload }
+  | ({ readonly status: 'failure' } & ConsoleFailure)
+
+type ModelsState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'success'; readonly value: ConsoleModelsPayload }
+  | ({ readonly status: 'failure' } & ConsoleFailure)
+
 const BRIDGE_FAILURE: ConsoleFailure = {
   error: 'console_request_rejected',
   reason: 'cause=console_data_plane_unavailable',
@@ -143,6 +182,14 @@ function isConsoleBridge(value: unknown): value is ConsoleBridge {
     && typeof value.simulate === 'function'
     && typeof value.getOverview === 'function'
     && typeof value.getEvents === 'function'
+    && typeof value.getConfig === 'function'
+    && typeof value.getModels === 'function'
+    && typeof value.saveModelDraft === 'function'
+    && typeof value.saveDraft === 'function'
+    && typeof value.testDraft === 'function'
+    && typeof value.publish === 'function'
+    && typeof value.rollback === 'function'
+    && typeof value.createNextRuntimeSnapshots === 'function'
 }
 
 function readConsoleBridge(): ConsoleBridge | null {
@@ -564,6 +611,412 @@ function EventsPanel({
   )
 }
 
+function safeDraftFromConfig(value: ConsoleConfigPayload['draft']): ConsoleConfigDraftInput {
+  return {
+    personaName: value.personaName,
+    voice: value.voice,
+    idleSeconds: value.idleSeconds,
+    wake: { ...value.wake },
+    faceModel: { ...value.faceModel },
+    assets: { ...value.assets },
+    adapters: { ...value.adapters },
+  }
+}
+
+function confirmationFromDiff(
+  diff: ConsoleConfigPayload['publishDiff'],
+): ConsoleDiffConfirmation {
+  return {
+    operation: diff.operation,
+    expectedActiveVersion: diff.expectedActiveVersion,
+    changedPaths: diff.changed.map((entry) => entry.path).slice().sort(),
+    nonModelChanges: diff.nonModelChanges,
+    confirmationDigest: diff.confirmationDigest,
+  }
+}
+
+interface ConfigPanelProps {
+  readonly state: ConfigState
+  readonly bridge: ConsoleBridge | null
+  readonly bridgeAvailable: boolean
+  readonly onChanged: () => void
+}
+
+export function ConfigPanel({
+  state,
+  bridge,
+  bridgeAvailable,
+  onChanged,
+}: ConfigPanelProps): React.JSX.Element {
+  const config = state.status === 'success' ? state.value : null
+  const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(
+    config === null ? null : safeDraftFromConfig(config.draft),
+  )
+
+  useEffect(() => {
+    if (config !== null) setDraft(safeDraftFromConfig(config.draft))
+  }, [config])
+
+  const disabled = !bridgeAvailable || bridge === null || draft === null
+  const updateDraft = (update: (current: ConsoleConfigDraftInput) => ConsoleConfigDraftInput): void => {
+    setDraft((current) => current === null ? current : update(current))
+  }
+  const run = async (action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action()
+      onChanged()
+    } catch {
+      onChanged()
+    }
+  }
+
+  return (
+    <section className="console__panel" aria-labelledby="console-config">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Main-owned safe fields</p>
+          <h2 id="console-config">Config</h2>
+        </div>
+        <span className="console__status">Safe Draft</span>
+      </div>
+
+      {state.status === 'loading' ? <p className="console__request-state">Loading Config…</p> : null}
+      {state.status === 'failure' ? (
+        <p className="console__fault" role="status">Config failed: {state.error}; {state.reason}</p>
+      ) : null}
+      {config === null ? <p className="console__muted">Config is unavailable until Main is ready.</p> : null}
+
+      <div className="console__config-grid">
+        <fieldset>
+          <legend>Active</legend>
+          <dl className="console__summary-fields">
+            <MetadataEntry name="configVersion" value={config?.active.configVersion} />
+            <MetadataEntry name="personaName" value={config?.active.personaName} />
+            <MetadataEntry name="voice" value={config?.active.voice} />
+            <MetadataEntry name="idleSeconds" value={config?.active.idleSeconds} />
+            <MetadataEntry name="wake" value={config?.active.wake.phrase} />
+            <MetadataEntry name="faceModel" value={config?.active.faceModel.detectorId} />
+            <MetadataEntry name="assets" value={config?.active.assets.offlineLoopVideo} />
+            <MetadataEntry name="adapters" value={config?.active.adapters.lighting} />
+          </dl>
+        </fieldset>
+
+        <fieldset>
+          <legend>Previous</legend>
+          <dl className="console__summary-fields">
+            <MetadataEntry name="configVersion" value={config?.previous.configVersion} />
+            <MetadataEntry name="personaName" value={config?.previous.personaName} />
+            <MetadataEntry name="voice" value={config?.previous.voice} />
+            <MetadataEntry name="idleSeconds" value={config?.previous.idleSeconds} />
+            <MetadataEntry name="wake" value={config?.previous.wake.phrase} />
+            <MetadataEntry name="faceModel" value={config?.previous.faceModel.detectorId} />
+            <MetadataEntry name="assets" value={config?.previous.assets.offlineLoopVideo} />
+            <MetadataEntry name="adapters" value={config?.previous.adapters.lighting} />
+          </dl>
+        </fieldset>
+
+        <fieldset>
+          <legend>Draft safe fields</legend>
+          <label>
+            <span>personaName</span>
+            <input
+              type="text"
+              value={draft?.personaName ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, personaName: event.currentTarget.value }))}
+            />
+          </label>
+          <label>
+            <span>voice</span>
+            <input
+              type="text"
+              value={draft?.voice ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, voice: event.currentTarget.value }))}
+            />
+          </label>
+          <label>
+            <span>idleSeconds</span>
+            <input
+              type="number"
+              value={draft?.idleSeconds ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, idleSeconds: Number(event.currentTarget.value) }))}
+            />
+          </label>
+          <label>
+            <span>wake.phrase</span>
+            <input
+              type="text"
+              value={draft?.wake.phrase ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, phrase: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>wake.modelVersion</span>
+            <input
+              type="text"
+              value={draft?.wake.modelVersion ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, modelVersion: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>faceModel.detectorId</span>
+            <input
+              type="text"
+              value={draft?.faceModel.detectorId ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, detectorId: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>faceModel.recognizerId</span>
+            <input
+              type="text"
+              value={draft?.faceModel.recognizerId ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, recognizerId: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>assets.offlineLoopVideo</span>
+            <input
+              type="text"
+              value={draft?.assets.offlineLoopVideo ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, offlineLoopVideo: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>assets.avatarDir</span>
+            <input
+              type="text"
+              value={draft?.assets.avatarDir ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, avatarDir: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>assets.musicDir</span>
+            <input
+              type="text"
+              value={draft?.assets.musicDir ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, musicDir: event.currentTarget.value } }))}
+            />
+          </label>
+          <label>
+            <span>adapters.lighting</span>
+            <select
+              value={draft?.adapters.lighting ?? 'mock'}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, adapters: { ...current.adapters, lighting: event.currentTarget.value as 'mock' | 'physical' } }))}
+            >
+              <option value="mock">mock</option>
+              <option value="physical">physical</option>
+            </select>
+          </label>
+          <label>
+            <span>adapters.fog</span>
+            <select
+              value={draft?.adapters.fog ?? 'mock'}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, adapters: { ...current.adapters, fog: event.currentTarget.value as 'mock' | 'physical' } }))}
+            >
+              <option value="mock">mock</option>
+              <option value="physical">physical</option>
+            </select>
+          </label>
+          <label>
+            <span>adapters.music</span>
+            <select
+              value={draft?.adapters.music ?? 'mock'}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({ ...current, adapters: { ...current.adapters, music: event.currentTarget.value as 'mock' | 'physical' } }))}
+            >
+              <option value="mock">mock</option>
+              <option value="physical">physical</option>
+            </select>
+          </label>
+        </fieldset>
+      </div>
+
+      <div className="console__action-row">
+        <button type="button" disabled={disabled} onClick={() => bridge && draft && void run(() => bridge.saveDraft(draft))}>Save Draft</button>
+        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
+      </div>
+
+      {config?.draftTest ? (
+        <p className={config.draftTest.result === 'mock_passed' ? 'console__success' : 'console__fault'} role="status">
+          {config.draftTest.result === 'mock_passed' ? 'Mock passed' : 'Mock failed'} · source=simulator · {config.draftTest.reason}
+        </p>
+      ) : null}
+
+      <div className="console__diff-grid">
+        {([
+          ['Publish', config?.publishDiff],
+          ['Rollback', config?.rollbackDiff],
+        ] as const).map(([label, diff]) => (
+          <fieldset key={label}>
+            <legend>{label}</legend>
+            <strong>changed paths</strong>
+            <ul className="console__path-list">
+              {(diff?.changed ?? []).map((entry) => (
+                <li key={`${label}-${entry.path}`}>{entry.path} · {entry.kind} · {entry.change}</li>
+              ))}
+            </ul>
+            <span>nonModelChanges: {diff?.nonModelChanges ? 'true' : 'false'}</span>
+            <span>complete confirmation required</span>
+            <button
+              type="button"
+              disabled={bridge === null || diff === undefined}
+              onClick={() => bridge && diff && void run(() => label === 'Publish'
+                ? bridge.publish(confirmationFromDiff(diff))
+                : bridge.rollback(confirmationFromDiff(diff)))}
+            >
+              {label}
+            </button>
+          </fieldset>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+interface ModelsPanelProps {
+  readonly state: ModelsState
+  readonly bridge: ConsoleBridge | null
+  readonly bridgeAvailable: boolean
+  readonly onChanged: () => void
+}
+
+export function ModelsPanel({
+  state,
+  bridge,
+  bridgeAvailable,
+  onChanged,
+}: ModelsPanelProps): React.JSX.Element {
+  const payload = state.status === 'success' ? state.value : null
+  const [draft, setDraft] = useState<ConsoleModelDraftInput>({
+    realtimeDialogue: '',
+    inputTranscription: '',
+    memoryExtractor: '',
+  })
+
+  useEffect(() => {
+    if (payload === null) return
+    const find = (role: string): string => {
+      const card = payload.cards.find((candidate) => candidate.role === role)
+      return card?.draft.modelId ?? ''
+    }
+    setDraft({
+      realtimeDialogue: find('realtimeDialogue'),
+      inputTranscription: find('inputTranscription'),
+      memoryExtractor: find('memoryExtractor'),
+    })
+  }, [payload?.cards])
+
+  const run = async (action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action()
+      onChanged()
+    } catch {
+      onChanged()
+    }
+  }
+
+  const cards = payload?.cards ?? []
+  const cardFor = (role: string) => cards.find((card) => card.role === role)
+  const slotText = (role: string, section: 'draft' | 'publishedActive' | 'runtimeLoaded' | 'previous'): string => {
+    const card = cardFor(role)
+    return card === undefined ? '—' : card[section].modelId
+  }
+
+  return (
+    <section className="console__panel" aria-labelledby="console-models">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Console-only configured roles</p>
+          <h2 id="console-models">Models</h2>
+        </div>
+        <span className="console__status console__status--mock">Mock / simulator</span>
+      </div>
+
+      {state.status === 'loading' ? <p className="console__request-state">Loading Models…</p> : null}
+      {state.status === 'failure' ? (
+        <p className="console__fault" role="status">Models failed: {state.error}; {state.reason}</p>
+      ) : null}
+
+      <p className="console__muted">Draft values are bounded inputs; only an explicit next session/job action creates simulated runtime evidence.</p>
+      <div className="console__model-draft-form">
+        <label>
+          <span>realtimeDialogue</span>
+          <input type="text" value={draft.realtimeDialogue} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, realtimeDialogue: event.currentTarget.value }))} />
+        </label>
+        <label>
+          <span>inputTranscription</span>
+          <input type="text" value={draft.inputTranscription} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, inputTranscription: event.currentTarget.value }))} />
+        </label>
+        <label>
+          <span>memoryExtractor</span>
+          <input type="text" value={draft.memoryExtractor} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, memoryExtractor: event.currentTarget.value }))} />
+        </label>
+        <button
+          type="button"
+          disabled={!bridgeAvailable || bridge === null}
+          onClick={() => bridge && void run(() => bridge.saveModelDraft({
+            realtimeDialogue: draft.realtimeDialogue,
+            inputTranscription: draft.inputTranscription,
+            memoryExtractor: draft.memoryExtractor,
+          }))}
+        >Save Model Draft</button>
+      </div>
+
+      <div className="console__model-cards">
+        {CONSOLE_UI_CONTRACT.models.roles.map((role, index) => {
+          const label = CONSOLE_UI_CONTRACT.models.cardLabels[index]
+          const card = cardFor(role)
+          const pending = card?.pending ?? (role === 'memoryExtractor' ? 'next_job' : 'next_session')
+          return (
+            <article className="console__model-card" key={role}>
+              <h3>{label}</h3>
+              <dl className="console__summary-fields">
+                <MetadataEntry name="Draft" value={slotText(role, 'draft')} />
+                <MetadataEntry name="Published Active" value={slotText(role, 'publishedActive')} />
+                <MetadataEntry name="Runtime loaded" value={slotText(role, 'runtimeLoaded')} />
+                <MetadataEntry name="Previous" value={slotText(role, 'previous')} />
+                <MetadataEntry name="pending" value={pending} />
+              </dl>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="console__runtime-evidence">
+        <strong>Runtime loaded</strong>
+        <span>current: {payload?.runtime.current === null || payload === null ? '—' : 'simulator'}</span>
+        <span>old: {payload?.runtime.old === null || payload === null ? '—' : 'simulator'}</span>
+        <span>new: {payload?.runtime.new === null || payload === null ? '—' : 'simulator'}</span>
+        <span>pending next session / next job</span>
+        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void run(() => bridge.createNextRuntimeSnapshots())}>Create next mock session/job</button>
+      </div>
+
+      {payload?.latestTest ? (
+        <p
+          className={payload.latestTest.result === 'mock_passed' ? 'console__success' : 'console__fault'}
+          role="status"
+        >
+          {payload.latestTest.result === 'mock_passed' ? 'Mock passed' : 'Mock failed'} · source=simulator · {payload.latestTest.reason}
+        </p>
+      ) : (
+        <p className="console__muted" role="status">No mock Test Draft result yet.</p>
+      )}
+    </section>
+  )
+}
+
 function Placeholder({ page }: { readonly page: 'Phase Tests' | 'Config' | 'Models' }): React.JSX.Element {
   const id = `console-${page.toLowerCase().replace(' ', '-')}`
   return (
@@ -585,6 +1038,8 @@ export function App(): React.JSX.Element {
     nextBeforeSequence: null,
   })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
+  const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
+  const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
   const [moduleFilter, setModuleFilter] = useState<EventModuleFilter>('all')
   const [statusFilter, setStatusFilter] = useState<EventStatusFilter>('all')
   const [sourceFilter, setSourceFilter] = useState<EventSourceFilter>('all')
@@ -694,6 +1149,47 @@ export function App(): React.JSX.Element {
     }
   }
 
+  const requestConfig = async (bridge: ConsoleBridge): Promise<void> => {
+    if (!mountedRef.current) return
+    setConfigState({ status: 'loading' })
+    try {
+      const response = await bridge.getConfig()
+      if (!mountedRef.current) return
+      const failure = requestFailure(response)
+      if (failure) {
+        setConfigState({ status: 'failure', ...failure })
+        return
+      }
+      if (response.ok) setConfigState({ status: 'success', value: response.value })
+    } catch {
+      if (mountedRef.current) setConfigState({ status: 'failure', ...BRIDGE_FAILURE })
+    }
+  }
+
+  const requestModels = async (bridge: ConsoleBridge): Promise<void> => {
+    if (!mountedRef.current) return
+    setModelsState({ status: 'loading' })
+    try {
+      const response = await bridge.getModels()
+      if (!mountedRef.current) return
+      const failure = requestFailure(response)
+      if (failure) {
+        setModelsState({ status: 'failure', ...failure })
+        return
+      }
+      if (response.ok) setModelsState({ status: 'success', value: response.value })
+    } catch {
+      if (mountedRef.current) setModelsState({ status: 'failure', ...BRIDGE_FAILURE })
+    }
+  }
+
+  const refreshConfigAndModels = (): void => {
+    const bridge = bridgeRef.current
+    if (bridge === null || !bridgeAvailable) return
+    void requestConfig(bridge)
+    void requestModels(bridge)
+  }
+
   useEffect(() => {
     const bridge = readConsoleBridge()
     if (bridge === null) {
@@ -703,6 +1199,8 @@ export function App(): React.JSX.Element {
       setBridgeError(BRIDGE_FAILURE)
       setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
       setEventsState({ status: 'failure', events: [], nextBeforeSequence: null, ...BRIDGE_FAILURE })
+      setConfigState({ status: 'failure', ...BRIDGE_FAILURE })
+      setModelsState({ status: 'failure', ...BRIDGE_FAILURE })
       return
     }
 
@@ -726,6 +1224,8 @@ export function App(): React.JSX.Element {
 
     const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter)
     void requestEvents(bridge, query, false)
+    void requestConfig(bridge)
+    void requestModels(bridge)
   }, [moduleFilter, sourceFilter, statusFilter])
 
   const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
@@ -821,8 +1321,22 @@ export function App(): React.JSX.Element {
           />
         </div>
         <div hidden={activePage !== 'Phase Tests'}><Placeholder page="Phase Tests" /></div>
-        <div hidden={activePage !== 'Config'}><Placeholder page="Config" /></div>
-        <div hidden={activePage !== 'Models'}><Placeholder page="Models" /></div>
+        <div hidden={activePage !== 'Config'}>
+          <ConfigPanel
+            state={configState}
+            bridge={bridgeRef.current}
+            bridgeAvailable={bridgeAvailable}
+            onChanged={refreshConfigAndModels}
+          />
+        </div>
+        <div hidden={activePage !== 'Models'}>
+          <ModelsPanel
+            state={modelsState}
+            bridge={bridgeRef.current}
+            bridgeAvailable={bridgeAvailable}
+            onChanged={refreshConfigAndModels}
+          />
+        </div>
       </div>
     </main>
   )

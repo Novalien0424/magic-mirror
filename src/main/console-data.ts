@@ -1,13 +1,18 @@
 import type {
   ConsoleEventSummary,
+  ConsoleConfigPayload,
   ConsoleEventsPage,
   ConsoleEventsQuery,
   ConsoleModuleObservation,
+  ConsoleModelsPayload,
   ConsoleOverviewPayload,
   ConsoleReason,
   ConsoleResponse,
+  ConsoleDraftTestResult,
+  ConsoleRuntimeSnapshotResult,
   DeveloperModeDecision,
 } from '../shared/console-types'
+import type { ConsoleConfigController } from './console-config'
 import type {
   AppSnapshot,
   IdentityStatus,
@@ -77,12 +82,24 @@ export interface ConsoleBaseDataPlane {
   simulate(command: unknown): Promise<SimulatorResult>
 }
 
+export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
+  getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
+  saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
+  saveDraft(input: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>>
+  publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
+}
+
 interface ConsoleDataPlaneDependencies {
   readonly getSnapshot: () => AppSnapshot
   readonly getTelemetry: () => Pick<Telemetry, 'readPage' | 'emit'>
   readonly getDeveloperMode: () => DeveloperModeDecision
   readonly getStartedAt: () => number
   readonly handleSimulator: (command: unknown) => Promise<SimulatorResult>
+  readonly getConfigController?: () => ConsoleConfigController | null
 }
 
 type QueryValidation =
@@ -457,7 +474,7 @@ export function resolveDeveloperMode(
 
 export function createConsoleDataPlane(
   dependencies: ConsoleDataPlaneDependencies,
-): ConsoleBaseDataPlane {
+): ConsoleDataPlane {
   function getOverview(): ConsoleResponse<ConsoleOverviewPayload> {
     let snapshot: unknown
     let page: unknown
@@ -545,5 +562,34 @@ export function createConsoleDataPlane(
     return dependencies.handleSimulator(command)
   }
 
-  return { getOverview, getEvents, simulate }
+  async function invokeConfig<T>(
+    operation: (controller: ConsoleConfigController) => Promise<ConsoleResponse<T>>,
+  ): Promise<ConsoleResponse<T>> {
+    let controller: ConsoleConfigController | null = null
+    try {
+      controller = dependencies.getConfigController?.() ?? null
+    } catch {
+      controller = null
+    }
+    if (controller === null) return unavailable(dependencies.getTelemetry, 'console_config_not_ready')
+    try {
+      return await operation(controller)
+    } catch {
+      return unavailable(dependencies.getTelemetry, 'console_config_request_failed')
+    }
+  }
+
+  return {
+    getOverview,
+    getEvents,
+    simulate,
+    getConfig: () => invokeConfig((controller) => controller.getConfig()),
+    getModels: () => invokeConfig((controller) => controller.getModels()),
+    saveModelDraft: (input) => invokeConfig((controller) => controller.saveModelDraft(input)),
+    saveDraft: (input) => invokeConfig((controller) => controller.saveDraft(input)),
+    testDraft: () => invokeConfig((controller) => controller.testDraft()),
+    publish: (confirmation) => invokeConfig((controller) => controller.publish(confirmation)),
+    rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),
+    createNextRuntimeSnapshots: () => invokeConfig((controller) => controller.createNextRuntimeSnapshots()),
+  }
 }
