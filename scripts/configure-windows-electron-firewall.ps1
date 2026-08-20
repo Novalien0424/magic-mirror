@@ -67,7 +67,7 @@ try {
         )
 
         if ($PSCmdlet.ShouldProcess('MagicMirror.Development.Electron.TCP', 'Create persistent inbound TCP firewall rule')) {
-            New-NetFirewallRule -Name 'MagicMirror.Development.Electron.TCP' -Program $electronPath -Protocol TCP -Direction Inbound -Profile Private -Action Allow -Enabled True -EdgeTraversalPolicy Block -PolicyStore PersistentStore -ErrorAction Stop
+            New-NetFirewallRule -Name 'MagicMirror.Development.Electron.TCP' -DisplayName 'MagicMirror.Development.Electron.TCP' -Program $electronPath -Protocol TCP -Direction Inbound -Profile Private -Action Allow -Enabled True -EdgeTraversalPolicy Block -PolicyStore PersistentStore -ErrorAction Stop
             Write-Output '[status] action=installed rule=MagicMirror.Development.Electron.TCP protocol=TCP profile=Private'
         }
         else {
@@ -75,7 +75,7 @@ try {
         }
 
         if ($PSCmdlet.ShouldProcess('MagicMirror.Development.Electron.UDP', 'Create persistent inbound UDP firewall rule')) {
-            New-NetFirewallRule -Name 'MagicMirror.Development.Electron.UDP' -Program $electronPath -Protocol UDP -Direction Inbound -Profile Private -Action Allow -Enabled True -EdgeTraversalPolicy Block -PolicyStore PersistentStore -ErrorAction Stop
+            New-NetFirewallRule -Name 'MagicMirror.Development.Electron.UDP' -DisplayName 'MagicMirror.Development.Electron.UDP' -Program $electronPath -Protocol UDP -Direction Inbound -Profile Private -Action Allow -Enabled True -EdgeTraversalPolicy Block -PolicyStore PersistentStore -ErrorAction Stop
             Write-Output '[status] action=installed rule=MagicMirror.Development.Electron.UDP protocol=UDP profile=Private'
         }
         else {

@@ -71,6 +71,10 @@ describe('Windows Electron development firewall static contract', () => {
 
       expect(context).toMatch(/\bNew-NetFirewallRule\b/i)
       expect(context).toMatch(quotedLiteral(RULE_NAMES[protocol]))
+      expect(context).toMatch(new RegExp(
+        `\\bNew-NetFirewallRule\\b[\\s\\S]{0,500}-DisplayName\\s+${quotedLiteral(RULE_NAMES[protocol]).source}`,
+        'i',
+      ))
       expect(context).toMatch(/(?:-Direction\s+["']?Inbound["']?|\bDirection\s*=\s*["']?Inbound["']?)/i)
       expect(context).toMatch(/(?:-Profile\s+["']?Private["']?|\bProfile\s*=\s*["']?Private["']?)/i)
       expect(context).toMatch(/(?:-Action\s+["']?Allow["']?|\bAction\s*=\s*["']?Allow["']?)/i)
