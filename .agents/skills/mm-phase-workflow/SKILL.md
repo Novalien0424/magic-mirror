@@ -28,7 +28,7 @@ metadata preflight. From the repository root, use this one compact canonical
 invocation:
 
 ```powershell
-pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path>
+pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path> -TimeoutSeconds 600 -MaxOutputBytes 4194304
 ```
 
 Do not place prompt content in argv, JavaScript template literals, or
@@ -41,12 +41,18 @@ The launcher pins this exact child argv and order:
 exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" -
 ```
 
-Read only targeted prerequisite files and relevant skill sections before a
-dispatch. Keep source/skill reads separate from validation commands; never
-combine source or skill dumps with validation in one shell command. Returned
-validation evidence still includes complete stdout/stderr and exit codes for
-the named commands, while excluding unrelated output flooding. H1 launcher
-routing does not claim H2 timeout, output, or process-tree behavior.
+The bounded H2 worker harness uses three separate PowerShell command boundaries for prompt creation, launcher invocation, and exact prompt cleanup.
+Create a temporary UTF-8 file outside the repository. Pass its exact resolved path to the launcher; use the exact resolved path only after the worker completes for exact prompt cleanup.
+Never combine prompt creation, launcher invocation, and prompt cleanup in one shell expression.
+An already-launched worker executes directly and must not recursively invoke Codex or the launcher.
+Read only targeted files and required skill sections.
+Do not dump unrelated source or skill content or flood worker output.
+Keep source/skill reads separate from validation commands; never combine source or skill dumps with validation in one shell command. Returned validation evidence still includes complete stdout/stderr and exit codes for the named commands.
+The launcher forwards at most the combined byte cap for stdout and stderr (`-MaxOutputBytes`) and uses metadata-only markers; timeout and output-limit failures exit 2:
+`codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded`
+and `codex_worker_launcher stage=output status=failed reason=limit_exceeded`.
+It terminates and confirms the exact descendant process tree before reporting
+either failure.
 
 ## Phase Order (never skip ahead)
 

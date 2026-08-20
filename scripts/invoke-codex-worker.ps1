@@ -9,6 +9,14 @@ param(
     [string]$PromptPath,
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 3600)]
+    [int]$TimeoutSeconds = 600,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1024, 67108864)]
+    [long]$MaxOutputBytes = 4194304,
+
+    [Parameter(Mandatory = $false)]
     [string]$CodexCommandPath
 )
 
@@ -158,6 +166,27 @@ function Resolve-PowerShellHost {
     return $null
 }
 
+function Confirm-ChildTreeTermination {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Process
+    )
+
+    $treeTerminated = $false
+    try {
+        $Process.Kill($true)
+        $treeTerminated = $Process.WaitForExit(5000)
+        if ($treeTerminated -and -not $Process.HasExited) {
+            $treeTerminated = $false
+        }
+    }
+    catch {
+        $treeTerminated = $false
+    }
+
+    return [bool]$treeTerminated
+}
+
 try {
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath '..') -ErrorAction Stop).Path
 }
@@ -240,50 +269,272 @@ $childArguments = @(
     '-'
 )
 
-$processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
-$processStartInfo.UseShellExecute = $false
-$processStartInfo.CreateNoWindow = $true
-$processStartInfo.RedirectStandardInput = $true
-
-if ([System.IO.Path]::GetExtension($commandPath) -ieq '.ps1') {
-    $powerShellHost = Resolve-PowerShellHost
-    if ([string]::IsNullOrWhiteSpace($powerShellHost)) {
-        Stop-Launcher -Stage 'launch' -Reason 'powershell_host_not_found'
-    }
-    $processStartInfo.FileName = $powerShellHost
-    $effectiveArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $commandPath) + $childArguments
-}
-else {
-    $processStartInfo.FileName = $commandPath
-    $effectiveArguments = $childArguments
-}
-
-$argumentListProperty = $processStartInfo.GetType().GetProperty('ArgumentList')
-if ($null -ne $argumentListProperty) {
-    foreach ($argument in $effectiveArguments) {
-        [void]$processStartInfo.ArgumentList.Add([string]$argument)
-    }
-}
-else {
-    $processStartInfo.Arguments = (($effectiveArguments | ForEach-Object {
-        ConvertTo-ProcessArgument -Value ([string]$_)
-    }) -join ' ')
-}
-
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = $processStartInfo
-
+$process = $null
+$processStarted = $false
 try {
+    $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processStartInfo.UseShellExecute = $false
+    $processStartInfo.CreateNoWindow = $true
+    $processStartInfo.RedirectStandardInput = $true
+    $processStartInfo.RedirectStandardOutput = $true
+    $processStartInfo.RedirectStandardError = $true
+
+    if ([System.IO.Path]::GetExtension($commandPath) -ieq '.ps1') {
+        $powerShellHost = Resolve-PowerShellHost
+        if ([string]::IsNullOrWhiteSpace($powerShellHost)) {
+            Stop-Launcher -Stage 'launch' -Reason 'powershell_host_not_found'
+        }
+        $processStartInfo.FileName = $powerShellHost
+        $effectiveArguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $commandPath) + $childArguments
+    }
+    else {
+        $processStartInfo.FileName = $commandPath
+        $effectiveArguments = $childArguments
+    }
+
+    $argumentListProperty = $processStartInfo.GetType().GetProperty('ArgumentList')
+    if ($null -ne $argumentListProperty) {
+        foreach ($argument in $effectiveArguments) {
+            [void]$processStartInfo.ArgumentList.Add([string]$argument)
+        }
+    }
+    else {
+        $processStartInfo.Arguments = (($effectiveArguments | ForEach-Object {
+            ConvertTo-ProcessArgument -Value ([string]$_)
+        }) -join ' ')
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processStartInfo
+
     if (-not $process.Start()) {
         Stop-Launcher -Stage 'launch' -Reason 'child_not_started'
     }
+    $processStarted = $true
+
+    $lifetimeClock = [System.Diagnostics.Stopwatch]::StartNew()
+    $timeoutMilliseconds = [long]$TimeoutSeconds * 1000
 
     $inputStream = $process.StandardInput.BaseStream
-    $inputStream.Write($promptBytes, 0, $promptBytes.Length)
-    $inputStream.Flush()
-    $process.StandardInput.Close()
+    $stdoutStream = $process.StandardOutput.BaseStream
+    $stderrStream = $process.StandardError.BaseStream
+    $parentStdoutStream = [Console]::OpenStandardOutput()
+    $parentStderrStream = [Console]::OpenStandardError()
 
-    $process.WaitForExit()
+    $stdoutBuffer = New-Object byte[] 4096
+    $stderrBuffer = New-Object byte[] 4096
+    $stdoutReadTask = $stdoutStream.ReadAsync($stdoutBuffer, 0, $stdoutBuffer.Length)
+    $stderrReadTask = $stderrStream.ReadAsync($stderrBuffer, 0, $stderrBuffer.Length)
+    $inputWriteTask = $inputStream.WriteAsync($promptBytes, 0, $promptBytes.Length)
+    $inputFlushTask = $null
+
+    $stdoutActive = $true
+    $stderrActive = $true
+    $inputWriteActive = $true
+    $inputFlushActive = $false
+    $timeoutExceeded = $false
+    $outputLimitExceeded = $false
+    $streamFailureReason = $null
+    $launchFailureReason = $null
+    [long]$totalOutputBytes = 0
+
+    while ($stdoutActive -or $stderrActive -or $inputWriteActive -or $inputFlushActive) {
+        $remainingMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+        if ($remainingMilliseconds -le 0) {
+            $timeoutExceeded = $true
+            break
+        }
+
+        $activeTasks = @()
+        if ($stdoutActive) {
+            $activeTasks += $stdoutReadTask
+        }
+        if ($stderrActive) {
+            $activeTasks += $stderrReadTask
+        }
+        if ($inputWriteActive) {
+            $activeTasks += $inputWriteTask
+        }
+        if ($inputFlushActive) {
+            $activeTasks += $inputFlushTask
+        }
+        $activeTasks = [System.Threading.Tasks.Task[]]$activeTasks
+
+        try {
+            $completedIndex = [System.Threading.Tasks.Task]::WaitAny(
+                $activeTasks,
+                [int]$remainingMilliseconds
+            )
+        }
+        catch {
+            $streamFailureReason = 'stream_wait_failed'
+            break
+        }
+
+        if ($completedIndex -lt 0) {
+            $timeoutExceeded = $true
+            break
+        }
+
+        $completedTask = $activeTasks[$completedIndex]
+
+        if ($inputWriteActive -and [object]::ReferenceEquals($completedTask, $inputWriteTask)) {
+            try {
+                [void]$completedTask.GetAwaiter().GetResult()
+                $inputWriteActive = $false
+                $inputWriteTask = $null
+                $inputFlushTask = $inputStream.FlushAsync()
+                $inputFlushActive = $true
+            }
+            catch {
+                $launchFailureReason = 'child_input_failed'
+                break
+            }
+            continue
+        }
+
+        if ($inputFlushActive -and [object]::ReferenceEquals($completedTask, $inputFlushTask)) {
+            try {
+                [void]$completedTask.GetAwaiter().GetResult()
+                $process.StandardInput.Close()
+                $inputFlushActive = $false
+                $inputFlushTask = $null
+            }
+            catch {
+                $launchFailureReason = 'child_input_failed'
+                break
+            }
+            continue
+        }
+
+        $isStdout = $stdoutActive -and [object]::ReferenceEquals($completedTask, $stdoutReadTask)
+        $isStderr = $stderrActive -and [object]::ReferenceEquals($completedTask, $stderrReadTask)
+        if (-not $isStdout -and -not $isStderr) {
+            $streamFailureReason = 'stream_task_unknown'
+            break
+        }
+
+        try {
+            $bytesRead = [int]$completedTask.GetAwaiter().GetResult()
+        }
+        catch {
+            $streamFailureReason = 'stream_read_failed'
+            break
+        }
+
+        if ($bytesRead -eq 0) {
+            if ($isStdout) {
+                $stdoutActive = $false
+                $stdoutReadTask = $null
+            }
+            else {
+                $stderrActive = $false
+                $stderrReadTask = $null
+            }
+            continue
+        }
+
+        [long]$forwardBytes = $bytesRead
+        [long]$remainingOutputBytes = $MaxOutputBytes - $totalOutputBytes
+        if ($forwardBytes -gt $remainingOutputBytes) {
+            $forwardBytes = $remainingOutputBytes
+        }
+
+        try {
+            if ($forwardBytes -gt 0) {
+                if ($isStdout) {
+                    $parentStdoutStream.Write($stdoutBuffer, 0, [int]$forwardBytes)
+                    $parentStdoutStream.Flush()
+                }
+                else {
+                    $parentStderrStream.Write($stderrBuffer, 0, [int]$forwardBytes)
+                    $parentStderrStream.Flush()
+                }
+            }
+        }
+        catch {
+            $streamFailureReason = 'stream_write_failed'
+            break
+        }
+
+        $totalOutputBytes += $bytesRead
+        if ($totalOutputBytes -gt $MaxOutputBytes) {
+            $outputLimitExceeded = $true
+            break
+        }
+
+        try {
+            if ($isStdout) {
+                $stdoutReadTask = $stdoutStream.ReadAsync($stdoutBuffer, 0, $stdoutBuffer.Length)
+            }
+            else {
+                $stderrReadTask = $stderrStream.ReadAsync($stderrBuffer, 0, $stderrBuffer.Length)
+            }
+        }
+        catch {
+            $streamFailureReason = 'stream_read_failed'
+            break
+        }
+    }
+
+    if ($outputLimitExceeded) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'output' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'output' -Reason 'limit_exceeded'
+    }
+
+    if ($timeoutExceeded) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+    }
+
+    if ($null -ne $launchFailureReason) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'launch' -Reason 'tree_termination_failed' -ExitCode 1
+        }
+        Stop-Launcher -Stage 'launch' -Reason $launchFailureReason -ExitCode 1
+    }
+
+    if ($null -ne $streamFailureReason) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'output' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'output' -Reason $streamFailureReason
+    }
+
+    $remainingMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+    if ($remainingMilliseconds -le 0) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+    }
+
+    $completed = $process.WaitForExit([int]$remainingMilliseconds)
+    if (-not $completed) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+    }
+
+    try {
+        $parentStdoutStream.Flush()
+        $parentStderrStream.Flush()
+    }
+    catch {
+        Stop-Launcher -Stage 'output' -Reason 'stream_write_failed'
+    }
+
     $childExitCode = $process.ExitCode
     if ($childExitCode -eq 0) {
         exit 0
@@ -292,6 +543,12 @@ try {
     Stop-Launcher -Stage 'child' -Reason 'exit_nonzero' -ExitCode 1
 }
 catch {
+    if ($processStarted) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'launch' -Reason 'tree_termination_failed' -ExitCode 1
+        }
+    }
     Stop-Launcher -Stage 'launch' -Reason 'child_launch_failed' -ExitCode 1
 }
 finally {

@@ -18,12 +18,21 @@ const launcherLinePattern = /(?:invoke-codex-worker\.ps1:|line\s+)(\d+)/i
 
 type WorkerRole = 'implementer' | 'surveyor' | 'tester'
 
+interface LauncherRunOptions {
+  readonly timeoutSeconds?: number
+  readonly maxOutputBytes?: number
+  readonly flood?: boolean
+}
+
 interface Fixture {
   readonly captureDir: string
   readonly fakeCodexPath: string
+  readonly fakeGrandchildPath: string
   readonly promptPath: string
   readonly stdinPath: string
   readonly argvPath: string
+  readonly childPidPath: string
+  readonly grandchildPidPath: string
 }
 
 interface LauncherRun {
@@ -38,15 +47,48 @@ interface LauncherRun {
 }
 
 const fixtureDirs: string[] = []
+const fixturePidPaths: string[] = []
 
 const fakeCodexScript = `
 $capture = $env:MM_CODEX_WORKER_CAPTURE_DIR
 $utf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+
+if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
+  [System.IO.File]::WriteAllText((Join-Path $capture 'child.pid'), [string]$PID, $utf8)
+
+  $grandchildScript = Join-Path $capture 'fake-grandchild.ps1'
+  $powerShellHost = Join-Path $PSHOME 'pwsh.exe'
+  $grandchild = Start-Process -FilePath $powerShellHost -ArgumentList @(
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-File',
+    $grandchildScript
+  ) -PassThru -WindowStyle Hidden
+  [System.IO.File]::WriteAllText((Join-Path $capture 'grandchild.pid'), [string]$grandchild.Id, $utf8)
+
+  if ($env:MM_CODEX_WORKER_FLOOD -eq '1') {
+    $stdoutBlock = ('S' * 256) -join ''
+    $stderrBlock = ('E' * 256) -join ''
+
+    while ($true) {
+      [Console]::Out.WriteLine($stdoutBlock)
+      [Console]::Error.WriteLine($stderrBlock)
+      [Console]::Out.Flush()
+      [Console]::Error.Flush()
+    }
+  }
+
+  while ($true) {
+    Start-Sleep -Seconds 1
+  }
+}
+
 $argvText = @($args) -join [char]0
 [System.IO.File]::WriteAllText((Join-Path $capture 'argv.txt'), $argvText, $utf8)
 
 $inputStream = [Console]::OpenStandardInput()
-$memory = New-Object System.IO.MemoryStream
+$memory = New-Object -TypeName System.IO.MemoryStream
 $buffer = New-Object byte[] 4096
 $read = 0
 do {
@@ -57,6 +99,12 @@ do {
 } while ($read -gt 0)
 [System.IO.File]::WriteAllBytes((Join-Path $capture 'stdin.bin'), $memory.ToArray())
 exit 0
+`
+
+const fakeGrandchildScript = `
+while ($true) {
+  Start-Sleep -Seconds 1
+}
 `
 
 function makePrompt(role: WorkerRole): string {
@@ -84,38 +132,71 @@ async function makeFixture(prompt: string): Promise<Fixture> {
   const captureDir = join(root, 'capture')
   const promptPath = join(root, 'prompt.txt')
   const fakeCodexPath = join(root, 'fake-codex.ps1')
+  const fakeGrandchildPath = join(captureDir, 'fake-grandchild.ps1')
   const stdinPath = join(captureDir, 'stdin.bin')
   const argvPath = join(captureDir, 'argv.txt')
+  const childPidPath = join(captureDir, 'child.pid')
+  const grandchildPidPath = join(captureDir, 'grandchild.pid')
 
   await mkdir(captureDir)
   await writeFile(promptPath, Buffer.from(prompt, 'utf8'))
   await writeFile(fakeCodexPath, Buffer.from(fakeCodexScript, 'utf8'))
+  await writeFile(fakeGrandchildPath, Buffer.from(fakeGrandchildScript, 'utf8'))
+  fixturePidPaths.push(childPidPath, grandchildPidPath)
 
-  return { captureDir, fakeCodexPath, promptPath, stdinPath, argvPath }
+  return {
+    captureDir,
+    fakeCodexPath,
+    fakeGrandchildPath,
+    promptPath,
+    stdinPath,
+    argvPath,
+    childPidPath,
+    grandchildPidPath
+  }
 }
 
-function runLauncher(fixture: Fixture, role: WorkerRole): LauncherRun {
+function runLauncher(
+  fixture: Fixture,
+  role: WorkerRole,
+  options: number | LauncherRunOptions = {}
+): LauncherRun {
+  const normalizedOptions = typeof options === 'number' ? { timeoutSeconds: options } : options
+  const { timeoutSeconds, maxOutputBytes, flood = false } = normalizedOptions
+  const launcherArguments = [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-File',
+    launcherPath,
+    '-Role',
+    role,
+    '-PromptPath',
+    fixture.promptPath
+  ]
+  if (timeoutSeconds !== undefined) {
+    launcherArguments.push('-TimeoutSeconds', String(timeoutSeconds))
+  }
+  if (maxOutputBytes !== undefined) {
+    launcherArguments.push('-MaxOutputBytes', String(maxOutputBytes))
+  }
+  launcherArguments.push('-CodexCommandPath', fixture.fakeCodexPath)
+
   const result = spawnSync(
     powershell,
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-File',
-      launcherPath,
-      '-Role',
-      role,
-      '-PromptPath',
-      fixture.promptPath,
-      '-CodexCommandPath',
-      fixture.fakeCodexPath
-    ],
+    launcherArguments,
     {
       cwd: repoRoot,
-      env: { ...process.env, MM_CODEX_WORKER_CAPTURE_DIR: fixture.captureDir },
+      env: {
+        ...process.env,
+        MM_CODEX_WORKER_CAPTURE_DIR: fixture.captureDir,
+        MM_CODEX_WORKER_HANG: timeoutSeconds !== undefined && !flood ? '1' : '0',
+        MM_CODEX_WORKER_FLOOD: flood ? '1' : '0'
+      },
       encoding: 'buffer',
       maxBuffer: outputCapBytes,
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutSeconds === undefined ? undefined : 10_000,
       windowsHide: true
     }
   )
@@ -158,7 +239,56 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+async function readFixturePid(path: string): Promise<number> {
+  const value = Number.parseInt((await readFile(path, 'utf8')).trim(), 10)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`fixture PID must be a positive integer: ${path}`)
+  }
+  return value
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (processExists(pid) && Date.now() < deadline) {
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50))
+  }
+  return !processExists(pid)
+}
+
+async function readRecordedFixturePid(path: string): Promise<number | null> {
+  try {
+    return await readFixturePid(path)
+  } catch {
+    return null
+  }
+}
+
 afterEach(async () => {
+  const recordedPidPaths = fixturePidPaths.splice(0)
+  const recordedPids = new Set(
+    (
+      await Promise.all(recordedPidPaths.map((path) => readRecordedFixturePid(path)))
+    ).filter((pid): pid is number => pid !== null)
+  )
+  await Promise.all(
+    [...recordedPids].map(async (pid) => {
+      try {
+        process.kill(pid)
+      } catch {
+        return
+      }
+      await waitForProcessExit(pid, 1_000)
+    })
+  )
   await Promise.all(fixtureDirs.splice(0).map((directory) => rm(directory, { force: true, recursive: true })))
 })
 
@@ -207,6 +337,47 @@ describe('Codex worker launcher contract', () => {
     ).toMatch(/@openai\/agents-realtime\s+\*\*0\.16\.1\*\*/)
   })
 
+  it('documents the bounded H2 worker harness contract in both control-plane sources', async () => {
+    const [agents, phaseWorkflow] = await Promise.all([
+      readFile(resolve(repoRoot, 'AGENTS.md'), 'utf8'),
+      readFile(resolve(repoRoot, '.agents', 'skills', 'mm-phase-workflow', 'SKILL.md'), 'utf8')
+    ])
+
+    const requiredDocumentationPhrases: readonly string[] = [
+      '-TimeoutSeconds 600',
+      '-MaxOutputBytes 4194304',
+      'three separate PowerShell command boundaries',
+      'prompt creation',
+      'launcher invocation',
+      'exact prompt cleanup',
+      'Never combine prompt creation, launcher invocation, and prompt cleanup in one shell expression.',
+      'temporary UTF-8 file outside the repository',
+      'exact resolved path only after the worker completes',
+      'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded',
+      'codex_worker_launcher stage=output status=failed reason=limit_exceeded',
+      'exact descendant process tree',
+      'Read only targeted files and required skill sections.',
+      'Do not dump unrelated source or skill content or flood worker output.',
+      'already-launched worker executes directly',
+      'must not recursively invoke Codex or the launcher'
+    ]
+
+    const staleH1Sentence =
+      'H1 launcher routing does not claim H2 timeout, output, or process-tree behavior.'
+
+    for (const [path, source] of [
+      ['AGENTS.md', agents],
+      ['.agents/skills/mm-phase-workflow/SKILL.md', phaseWorkflow]
+    ] as const) {
+      for (const phrase of requiredDocumentationPhrases) {
+        expect(source, `${path} must contain exact phrase: ${phrase}`).toContain(phrase)
+      }
+      expect(source, `${path} must remove the stale H1-only sentence`).not.toContain(
+        staleH1Sentence
+      )
+    }
+  })
+
   it('launches a matching tester envelope with exact argv and byte-preserved prompt stdin', async () => {
     const prompt = makePrompt('tester')
     const fixture = await makeFixture(prompt)
@@ -247,5 +418,62 @@ describe('Codex worker launcher contract', () => {
     expect(run.status, 'preflight mismatch must use the launcher preflight exit code').toBe(2)
     expect(await pathExists(fixture.argvPath), 'fake codex must not receive invalid work').toBe(false)
     expect(await pathExists(fixture.stdinPath), 'fake codex must not receive invalid prompt').toBe(false)
+  })
+
+  it('times out and terminates the exact fake pwsh process tree', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', 1)
+
+    expect(run.spawnErrorName, 'PowerShell must be available for timeout validation').toBeNull()
+    expect(run.status, 'timeout must use the launcher timeout exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'timeout must report the exact launcher marker').toBe(
+      'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded'
+    )
+
+    const [childPid, grandchildPid] = await Promise.all([
+      readFixturePid(fixture.childPidPath),
+      readFixturePid(fixture.grandchildPidPath)
+    ])
+    const [childGone, grandchildGone] = await Promise.all([
+      waitForProcessExit(childPid, 3_000),
+      waitForProcessExit(grandchildPid, 3_000)
+    ])
+
+    expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
+    expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
+  })
+
+  it('bounds combined stdout and stderr and terminates the exact fake pwsh process tree', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', {
+      timeoutSeconds: 10,
+      maxOutputBytes: 1024,
+      flood: true
+    })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for output validation').toBeNull()
+    expect(
+      run.status,
+      `output limit must use the launcher output exit code; launcherFailureMarker=${run.launcherFailureMarker}; stdoutBytes=${run.stdoutBytes}; stderrBytes=${run.stderrBytes}; powerShellFailureClass=${run.powerShellFailureClass}; launcherLine=${run.launcherLine}; emptyParameterName=${run.emptyParameterName}`
+    ).toBe(2)
+    expect(run.launcherFailureMarker, 'output limit must report the exact launcher marker').toBe(
+      'codex_worker_launcher stage=output status=failed reason=limit_exceeded'
+    )
+    expect(
+      run.stdoutBytes + run.stderrBytes,
+      'forwarded combined output must stay within the cap plus marker/framing allowance'
+    ).toBeLessThanOrEqual(1024 + 256)
+
+    const [childPid, grandchildPid] = await Promise.all([
+      readFixturePid(fixture.childPidPath),
+      readFixturePid(fixture.grandchildPidPath)
+    ])
+    const [childGone, grandchildGone] = await Promise.all([
+      waitForProcessExit(childPid, 3_000),
+      waitForProcessExit(grandchildPid, 3_000)
+    ])
+
+    expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
+    expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
   })
 })
