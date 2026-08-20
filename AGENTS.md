@@ -132,14 +132,32 @@ second restart owner.
 ## Dispatch contract
 
 For every post-plan implementation, repository survey or research, and
-test/validation worker, root launches a fresh profile-backed worker through
-this direct PATH-resolved `codex` wrapper command. The canonical launcher uses
-every routing flag explicitly; no `.Source` assignment is used. Substitute
-only the task prompt:
+test/validation worker, the interactive root uses
+`scripts/invoke-codex-worker.ps1`, which resolves `codex` from PATH unless its
+test-only `-CodexCommandPath` seam is supplied. PowerShell 7 (`pwsh`) is the
+required outer host for this launcher; Windows PowerShell 5.1
+(`powershell.exe`) is not a supported outer host because its parameter binder
+can fail before the launcher's metadata preflight. The root writes the prompt
+to a temporary file and supplies its path with `-PromptPath`; the launcher
+streams the original prompt bytes to Codex stdin, never to argv. Use this one
+compact canonical invocation from the repository root:
 
 ```powershell
-codex exec --profile nova-auto --ephemeral --cd 'C:\Project\magic-mirror' -m gpt-5.6-luna -c 'model_reasoning_effort="max"' $taskPrompt
+pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path>
 ```
+
+The launcher pins this exact child argv, in this order; the final `-` selects
+stdin for the prompt:
+
+```text
+exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" -
+```
+
+Do not use JavaScript template literals, shell command reconstruction, or a
+prompt argument. Every CLI discovery or dry-run still carries
+`--profile nova-auto`, `--ephemeral`, `-m gpt-5.6-luna`, and
+`-c model_reasoning_effort="max"` through this launcher. Preserve the literal
+Windows repository path `C:\Project\magic-mirror`.
 
 Every task prompt must repeat these fields and values:
 

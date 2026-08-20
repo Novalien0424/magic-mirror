@@ -18,6 +18,36 @@ route below. No separate review worker is created. Worker self-review is
 limited to at most 3 passes; root review is external to that self-review
 limit.
 
+Interactive root dispatches go through the canonical
+`scripts/invoke-codex-worker.ps1` launcher. The root writes each complete
+prompt to a temporary UTF-8 file, then supplies `-Role` and `-PromptPath`; the
+launcher streams the prompt bytes to Codex stdin. PowerShell 7 (`pwsh`) is the
+required outer host; Windows PowerShell 5.1 (`powershell.exe`) is not a
+supported outer host because its parameter binder can fail before launcher
+metadata preflight. From the repository root, use this one compact canonical
+invocation:
+
+```powershell
+pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path>
+```
+
+Do not place prompt content in argv, JavaScript template literals, or
+reconstructed shell command strings. Keep the repository path literal as
+`C:\Project\magic-mirror`.
+
+The launcher pins this exact child argv and order:
+
+```text
+exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" -
+```
+
+Read only targeted prerequisite files and relevant skill sections before a
+dispatch. Keep source/skill reads separate from validation commands; never
+combine source or skill dumps with validation in one shell command. Returned
+validation evidence still includes complete stdout/stderr and exit codes for
+the named commands, while excluding unrelated output flooding. H1 launcher
+routing does not claim H2 timeout, output, or process-tree behavior.
+
 ## Phase Order (never skip ahead)
 
 0 Foundation/Console -> 1 Realtime Voice -> 2 Wake Lifecycle -> 3 Avatar/Audio ->
@@ -31,8 +61,8 @@ exit criteria: `docs/Magic_Mirror_Implementation_Plan_v0.3.md`.
 1. The root orchestrator slices a 0.5-2 day unit from the current phase scope
    and fills the unit template below. Consult the matching `.agents/skills/mm-*`
    domain skill.
-2. Dispatch exactly one implementation worker per unit. Every dispatch uses
-   the explicit bounded route:
+2. Dispatch exactly one implementation worker per unit through the canonical
+   launcher. Every dispatch uses the explicit bounded route:
 
    ```text
    model: "gpt-5.6-luna"
@@ -43,9 +73,11 @@ exit criteria: `docs/Magic_Mirror_Implementation_Plan_v0.3.md`.
 
    The dispatch prompt contains the filled template, the relevant PRD story
    ID, the applicable canonical invariant IDs from `mm-invariants`, and
-   pointers to the product docs and relevant skills. Independent units may run
-   in parallel; dependent units never do. Any follow-up keeps the same bounded
-   implementer route and scope.
+   pointers to the product docs and relevant skills. It also states exactly
+   one role (`implementer`, `surveyor`, or `tester`), an exact `write_scope`,
+   metadata-only `evidence`, `self_review` capped at 3 passes, and an external
+   `root_review`. Independent units may run in parallel; dependent units never
+   do. Any follow-up keeps the same bounded implementer route and scope.
 3. **Mock first, real second:** Console mock control plus a fixture proves the
    full visitor path before any real service or device is wired.
 4. The implementation worker returns its diff and test output. The root
