@@ -22,7 +22,7 @@
 
 ## Global constraints
 
-- package.json and package-lock.json add exactly @openai/agents 0.16.1 and @openai/agents-realtime 0.16.1 in lockstep. Keep Electron 43.4.1 and electron-builder 26.15.3 unchanged. openai ^7.2.0 remains the umbrella-package dependency relationship; it is not treated as an agents-realtime peer. No other package upgrade is part of Phase 1.
+- package.json declares exactly @openai/agents 0.16.1 and @openai/agents-realtime 0.16.1 in lockstep with the operator-generated package-lock.json. Keep Electron 43.4.1 and electron-builder 26.15.3 unchanged. openai ^7.2.0 remains the umbrella-package dependency relationship; it is not treated as an agents-realtime peer. No other package upgrade is part of Phase 1. The package-lock.json is generated only by the explicit post-GREEN operator lock-generation checkpoint; root reviews exact lock drift before a separately labeled operator materialization command runs npm ci --ignore-scripts.
 - Use only the official imports from the pinned SDK and the official ScriptedRealtimeTransport export. Do not create a transport double that imitates the official export, use an alternate SDK, use an npx/network runtime path, build an SDP/data-channel transport, or add a sideband server.
 - Runtime model IDs come only from versioned configuration and the published Active model settings. The current session freezes SessionModelSnapshot at creation. Draft is used only by explicit contract tests and Publish preflight. A mid-session Publish never retargets the current session. A forced new session and the 60-minute rollover freeze the Published Active values at their own creation boundary.
 - Production and live contract tests use the same versioned-config resolver. Deterministic tests may inject the official transport, fetch, clock, and device fixtures, but they do not bypass model snapshot creation or invent a second resolver.
@@ -50,9 +50,10 @@
 
 | Contract | Authoritative decision | Evidence boundary |
 |---|---|---|
-| SDK versions | package.json and package-lock.json contain @openai/agents 0.16.1 and @openai/agents-realtime 0.16.1 exactly; official imports and official ScriptedRealtimeTransport only | P1-U1 lockstep test and P1-D5 real contract |
+| SDK versions | package.json and the operator-generated package-lock.json contain @openai/agents 0.16.1 and @openai/agents-realtime 0.16.1 exactly; official imports and official ScriptedRealtimeTransport only | P1-U1 lockstep test and P1-D5 real contract |
 | Realtime model | Published Active aiModels.realtimeDialogue.modelId; Phase 1 baseline is gpt-realtime-2.1 in versioned config, never a source literal | P1-U1 snapshot test; P1-D5 |
 | Input transcription | Published Active aiModels.inputTranscription.modelId; Phase 1 baseline is gpt-live-transcribe in versioned config, explicitly sent to the session | P1-U1/U3 contract test; hidden gpt-4o-mini-transcribe is rejected unless configured |
+| Config schema | MirrorConfig schemaVersion is the persisted envelope version and is current at 2; configVersion remains the independent publish revision. Missing/schema 0/schema 1 values migrate to schema 2, absent reasoningEffort and turnDetectionProfile receive only the authoritative v2 baseline, supplied invalid values are rejected, and future schema values fail closed without fallback or materialization | P1-U1 ConfigService amendment and packaged-default assertions |
 | Model snapshot | SessionModelSnapshot captures all three role IDs, voice, reasoning, turn-detection profile, config revision/fingerprint, and SDK version at session creation | P1-D6 proves a mid-session Publish does not retarget |
 | Draft versus Active | Draft is allowed for validation and the explicit real P1-D5 contract; only Published Active creates runtime sessions; invalid Draft leaves Active unchanged | P1-U1/U7 and P1-D5 |
 | Session construction | RealtimeSession constructor owns transport, model, audio settings, transcription, turn detection, voice, reasoning, historyStoreAudio false, tracingDisabled true, and config.tracing null | P1-U3 constructor assertion |
@@ -87,7 +88,7 @@ A worker may not edit another unit's portion of a shared file.
 
 | Unit | Production paths | Test paths |
 |---|---|---|
-| P1-U1 | Extend package.json; Extend package-lock.json; Extend src/shared/types.ts; Extend src/main/model-settings.ts; optionally Create one narrow src/shared/realtime-contract.ts | Create tests/unit/realtime-sdk-lockstep.test.ts; Create tests/unit/session-snapshot-boundary.test.ts |
+| P1-U1 | Extend package.json; Extend resources/config/default.json; Extend src/shared/types.ts; Extend src/main/config-service.ts; Extend src/main/model-settings.ts | Existing accepted/frozen RED: tests/unit/realtime-sdk-lockstep.test.ts; tests/unit/session-snapshot-boundary.test.ts. RED amendment: tests/unit/config-service.test.ts. GREEN fixture/assertion maintenance: tests/unit/model-settings.test.ts; tests/unit/console-config-models.test.ts |
 | P1-U2 | Extend src/main/credential-store.ts; Extend src/main/index.ts; Extend src/main/boot.ts; Create one narrow src/main/realtime/client-secret-broker.ts; shared metadata types only if needed | Create tests/unit/realtime-client-secret-broker.test.ts; Create tests/unit/realtime-credential-import.test.ts; Create tests/unit/realtime-privacy-flags.test.ts |
 | P1-U3 | Extend src/shared/bridge.ts; Extend src/main/ipc.ts; Extend src/main/boot.ts; Extend src/preload/mirror.ts; Create src/renderer/realtime/realtime-session-adapter.ts; Create src/renderer/realtime/realtime-transport.ts; Create src/shared/realtime-events.ts | Create tests/unit/realtime-session-adapter.test.ts; Create tests/unit/realtime-scripted-transport.test.ts; Create tests/integration/realtime-contract.test.ts |
 | P1-U4 | Create src/renderer/realtime/mic-owner.ts; Create src/renderer/realtime/realtime-audio-output.ts; Create src/renderer/realtime/playback-completion.ts | Create tests/unit/realtime-audio-ownership.test.ts; Create tests/unit/realtime-playback-completion.test.ts |
@@ -95,6 +96,11 @@ A worker may not edit another unit's portion of a shared file.
 | P1-U6 | Create src/renderer/realtime/transcript-buffer.ts; Create src/renderer/realtime/turn-controller.ts; Create src/renderer/realtime/session-cleanup.ts; Extend src/shared/console-types.ts and src/main/console-data.ts only for the opt-in bounded RAM projection | Create tests/unit/realtime-transcript-buffer.test.ts; Create tests/unit/realtime-interruption.test.ts; Create tests/unit/realtime-privacy-cleanup.test.ts |
 | P1-U7 | Extend src/renderer/console/App.tsx; Extend src/renderer/console/App.css; Extend src/shared/console-types.ts; Extend src/shared/bridge.ts; Extend src/main/console-data.ts; Extend src/main/ipc.ts; Extend src/preload/console.ts; Extend src/main/console-config.ts only if the existing controller needs a narrow gap closure | Create tests/unit/console-realtime-voice.test.ts; Create tests/integration/console-realtime-ipc.test.ts |
 | P1-U8 | Create src/main/phase1-demo-runner.ts; Extend src/main/sqlite-service.ts; Extend src/shared/console-types.ts; Extend src/main/console-data.ts; Extend src/main/boot.ts only if record append wiring is required; Create scripts/run-phase1-demos.mjs | Create tests/unit/phase1-demo-runner.test.ts; Create tests/unit/phase1-privacy-sentinel.test.ts; Create tests/unit/phase1-records.test.ts; Create tests/integration/phase1-demos.test.ts; Extend tests/unit/sqlite-phase-tests.test.ts |
+
+P1-U1's package-lock.json is an operator/package-manager-generated artifact,
+not an apply_patch implementer write path. The GREEN implementer patches
+package.json only; the explicit operator checkpoint below generates and then
+materializes the accepted lock before the GREEN tester runs.
 
 Shared contracts used by later units:
 
@@ -138,10 +144,10 @@ Apply this sequence to P1-U1 through P1-U8 using the unit's exact paths and
 commands below:
 
 - [ ] Root confirms the previous unit's external review, accepted diff, and integration boundary before dispatching this unit.
-- [ ] A fresh RED implementer writes only the named failing tests and returns read/diff/scope/self-review evidence; it does not run validation commands.
-- [ ] A fresh RED tester runs the unit's exact RED command and confirms the stated failure reason without changing files.
+- [ ] A fresh RED implementer writes only the named failing tests and returns read/diff/scope/self-review evidence; for P1-U1, the two accepted/frozen RED tests remain unchanged and only the named schema-v2 ConfigService amendment is added; the implementer does not run validation commands.
+- [ ] A fresh RED tester runs the unit's exact RED command(s) in the declared order and confirms each stated failure reason without changing files; P1-U1 runs its amendment before GREEN while preserving the accepted/frozen lockstep and snapshot evidence.
 - [ ] Root reviews the RED evidence, then a fresh GREEN implementer writes only the unit's production/test allowlist.
-- [ ] A fresh GREEN tester runs the exact GREEN commands, including the unit's focused tests and any named typecheck.
+- [ ] A fresh GREEN tester runs the exact GREEN commands, including the unit's focused tests and any named typecheck, only after the unit's declared operator checkpoint.
 - [ ] Root reviews the implementer diff/evidence plus the tester's complete command output, privacy/invariant posture, and self-review count; root integrates the unit locally only after acceptance.
 - [ ] Root records the unit's metadata-only result and unresolved risks under .superpowers/sdd/2026-08-20-phase1-realtime-voice/ before the next dispatch.
 
@@ -155,70 +161,102 @@ commands below:
 test to use the exact approved SDK pair and the Published Active model settings,
 so a Draft change or SDK drift cannot silently change a live session.
 
+**Plan correction rationale:** U1 explicitly owns the schema-v2 config values
+consumed by the session snapshot and their migration/default contract. This
+keeps versioned configuration, Published Active resolution, and snapshot
+inputs aligned, while separating operator-generated lockfile materialization
+from implementer source edits and limiting downstream changes to schema-
+complete test fixtures.
+
 **Exact production paths:**
 
-- Extend package.json and package-lock.json with exactly the two 0.16.1 SDK packages and preserve all existing pins. The implementer patches both manifests with apply_patch only and never mutates node_modules.
-- Extend src/shared/types.ts at the existing SessionModelSnapshot type, preserving the Phase 0 public types while adding only the Phase 1 snapshot metadata required by the contract.
-- Extend src/main/model-settings.ts at the existing Active/Draft/Previous resolver and existing createSessionModelSnapshot factory; do not create a second resolver or snapshot owner.
-- Create one narrow src/shared/realtime-contract.ts only if the focused contract assertions cannot remain in the existing shared types; it may validate the pinned SDK contract but may not duplicate the resolver or snapshot factory.
+- Extend package.json with exactly @openai/agents 0.16.1 and @openai/agents-realtime 0.16.1, preserving all existing pins; do not add or alter a package script. package-lock.json is generated by the operator checkpoint below and is not an apply_patch implementer write path.
+- Extend resources/config/default.json to schemaVersion 2 with explicit Phase 1 baseline values `reasoningEffort: "low"` and `turnDetectionProfile: "semantic-vad-interruptible"`; keep schemaVersion distinct from configVersion and preserve the existing mock-only resource values.
+- Extend src/shared/types.ts so MirrorConfig owns top-level versioned `reasoningEffort` and `turnDetectionProfile` values, and extend the existing SessionModelSnapshot type with the complete Phase 1 snapshot metadata.
+- Extend src/main/config-service.ts so missing/schema 0/schema 1 config envelopes migrate to schema 2. Add the two new fields only when absent, using the authoritative v2 baseline; preserve every existing operator value; reject supplied invalid new values rather than replacing them; materialize every touched slot through the existing compensated atomic migration path; serialize v2; and visibly reject future schema >2 without fallback or materialization.
+- Extend src/main/model-settings.ts at the existing Active/Draft/Previous resolver and createSessionModelSnapshot factory. The snapshot captures sdkVersion `"0.16.1"`, all three Published Active role IDs including memoryExtractor, voice, reasoningEffort, turnDetectionProfile, configVersion, fingerprint, and takenAt. No runtime default or model substitution is permitted: the SDK contract constant is fixed metadata, while runtime model IDs and tuning come only from versioned config.
 
 **Exact test paths:**
 
-- Create tests/unit/realtime-sdk-lockstep.test.ts.
-- Create tests/unit/session-snapshot-boundary.test.ts.
+- Existing accepted/frozen RED tests (preserve unchanged): tests/unit/realtime-sdk-lockstep.test.ts; tests/unit/session-snapshot-boundary.test.ts.
+- Smallest RED amendment before GREEN: extend tests/unit/config-service.test.ts with the v1-to-v2 preservation/materialization/future-schema assertions and the v2 packaged-default assertion; include only the minimal schema-complete local fixture updates required by those assertions.
+- GREEN fixture/assertion maintenance: extend tests/unit/model-settings.test.ts and tests/unit/console-config-models.test.ts so directly constructed MirrorConfig fixtures are schema-complete. Console payload and UI assertions remain unchanged.
+- src/main/console-config.ts does not change in U1.
 
 **Interfaces consumed and produced:**
 
-- Consume the existing Published Active resolver and the existing SessionModelSnapshot/JobModelSnapshot names owned by src/shared/types.ts and src/main/model-settings.ts.
-- Extend the existing createSessionModelSnapshot(publishedActive, takenAt) factory and, only if needed, create a narrow assertRealtimeContract(snapshot): void helper; neither may become a duplicate owner.
-- The existing factory copies configured IDs and non-secret voice settings, records config version/fingerprint, the pinned SDK version 0.16.1, and the required session metadata, and never reads Draft for runtime creation.
+- Consume the existing ConfigService migration/atomic-write path, Published Active resolver, and existing SessionModelSnapshot/JobModelSnapshot names owned by src/shared/types.ts and src/main/model-settings.ts.
+- Extend the existing createSessionModelSnapshot(publishedActive, takenAt) factory; do not create a second resolver, snapshot owner, or src/shared/realtime-contract.ts.
+- The existing factory copies all three configured Published Active role IDs and non-secret voice/tuning settings, records config version/fingerprint, the pinned SDK contract version `0.16.1`, and the required session metadata, and never reads Draft for runtime creation.
 
 **Console/telemetry increment:** Define the metadata contract later consumed by
 U7's existing Models card: SDK 0.16.1, Published Active role IDs, Runtime
 loaded snapshot, Previous, revision, fingerprint, and a pending-next-session
 marker. Emit realtime_config_loaded and realtime_model_contract_rejected with
 role, requested model ID, config version, SDK version, status, reason, and
-source; never emit prompt or content. U1 does not edit the Console UI.
+source; never emit prompt or content. U1 does not edit the Console UI or
+src/main/console-config.ts; the Console test change is fixture-only.
 
 **Happy-path tests:**
 
-- A Published Active fixture creates a snapshot containing the configured Realtime Dialogue, Input Transcription, voice, reasoning, turn-detection profile, revision, fingerprint, and SDK version.
+- The packaged default is schemaVersion 2 with explicit `low` and `semantic-vad-interruptible` baselines, while schemaVersion remains distinct from configVersion.
+- A schema-1 Published Active/Previous/Draft fixture preserves every existing operator value, adds only absent v2 fields, materializes every touched slot through the compensated atomic path, and serializes schemaVersion 2.
+- A Published Active fixture creates a snapshot containing all three configured role IDs including memoryExtractor, voice, reasoning, turn-detection profile, revision, fingerprint, SDK version, and takenAt.
 - A Draft Publish leaves the current snapshot unchanged and a new session factory reads the newly Published Active snapshot.
-- The package manifest and lockfile contain both exact 0.16.1 packages and preserve Electron 43.4.1/electron-builder 26.15.3.
+- The package manifest and operator-generated lockfile contain both exact 0.16.1 packages and preserve Electron 43.4.1/electron-builder 26.15.3, with no extra dependency drift.
 
 **Failure/fallback tests:**
 
 - A missing or mismatched SDK package version fails the lockstep assertion with a metadata-only reason and never creates a runtime adapter.
+- A supplied invalid reasoningEffort or turnDetectionProfile is rejected and is never replaced by the v2 baseline.
+- A future schema >2 is visibly rejected without fallback or materialization of any touched slot.
 - An invalid Draft does not alter Active or Previous.
 - A fixture that omits Input Transcription config fails rather than accepting hidden gpt-4o-mini-transcribe.
 - A failed configured model is represented as failed/degraded and never replaced by a different model ID.
 
-**Exact RED implementer dispatch boundary:**
+**Accepted/frozen RED evidence:**
+
+The already-accepted RED tests remain byte-for-byte unchanged and are carried
+into U1 GREEN. No RED worker may rewrite them or add production/package files.
+
+**Accepted/frozen RED tester command:**
+
+~~~powershell
+.\node_modules\.bin\vitest.cmd run tests/unit/realtime-sdk-lockstep.test.ts tests/unit/session-snapshot-boundary.test.ts --reporter=verbose
+~~~
+
+**Accepted/frozen expected RED reason:** FAIL because the exact SDK entries
+and/or the complete Published-Active SessionModelSnapshot contract are not
+yet present. This evidence does not claim that SDK imports are runnable before
+the operator materializes the accepted lockfile.
+
+**Exact RED amendment implementer dispatch boundary:**
 
 ~~~text
 model: "gpt-5.6-luna"
 reasoning_effort: "max"
 role: "implementer"
 fresh_worker: true
-task: RED only for P1-U1. Add the two focused failing tests that require exact manifest lockstep and Published-Active SessionModelSnapshot capture. Keep the RED tests static/fixture-based and do not import the SDK before dependency materialization. Do not implement production behavior, update package files, or edit any other path.
-write_scope: tests/unit/realtime-sdk-lockstep.test.ts; tests/unit/session-snapshot-boundary.test.ts
-skills: .agents/skills/mm-phase-workflow/SKILL.md; .agents/skills/mm-invariants/SKILL.md; .agents/skills/mm-electron-foundation/SKILL.md; .agents/skills/mm-realtime-voice/SKILL.md
-self_invariants: 1, 9, 10, 11, 12
-evidence: exact test paths, diff summary, read/diff/scope/self-review evidence, expected RED failure reason, metadata-only risks; no validation command is run by the implementer
+task: RED amendment only for P1-U1. Preserve the already-accepted/frozen lockstep and snapshot tests byte-for-byte. Add only the smallest failing ConfigService assertions and local fixture updates needed to require schema-1-to-schema-2 preservation/materialization, invalid-new-field rejection, future-schema rejection without fallback/materialization, and the schemaVersion-2 packaged default with explicit v2 baselines. Do not implement production behavior, update package.json, edit resources/config/default.json, or edit any other path.
+write_scope: tests/unit/config-service.test.ts
+skills: .agents/skills/mm-phase-workflow/SKILL.md; .agents/skills/mm-invariants/SKILL.md; .agents/skills/mm-realtime-voice/SKILL.md
+self_invariants: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+evidence: exact changed test path, concise diff summary, read/diff/scope/self-review evidence, expected RED amendment failure reason, metadata-only risks; no validation command is run by the implementer
 self_review: read the own diff/output; no more than 3 passes
 root_review: external root gate after return; not part of self-review
 ~~~
 
-**Exact RED tester command:**
+**Exact RED amendment tester command:**
 
 ~~~powershell
-.\node_modules\.bin\vitest.cmd run tests/unit/realtime-sdk-lockstep.test.ts tests/unit/session-snapshot-boundary.test.ts --reporter=verbose
+.\node_modules\.bin\vitest.cmd run tests/unit/config-service.test.ts --reporter=verbose
 ~~~
 
-**Expected RED reason:** FAIL because the exact SDK entries and/or the
-SessionModelSnapshot factory/assertion are not yet present. The tester must
-return the complete failure output and exit code; no production file is changed
-in the RED phase. This RED test does not claim that SDK imports are runnable.
+**Expected RED amendment reason:** FAIL because the current ConfigService and
+packaged resource are schemaVersion 1 and do not yet provide the required v2
+fields/migration contract. The tester returns complete stdout/stderr and exit
+code; no production, package, or resource file changes occur in the RED
+amendment.
 
 **Exact GREEN implementer dispatch boundary:**
 
@@ -227,53 +265,93 @@ model: "gpt-5.6-luna"
 reasoning_effort: "max"
 role: "implementer"
 fresh_worker: true
-task: GREEN P1-U1. Implement only the exact SDK lockstep and Published-Active session snapshot contract required by the RED tests. Extend the existing model-settings boundary; do not build RealtimeSession, credentials, audio, lifecycle recovery, Console UI, demos, or persistence.
-write_scope: package.json; package-lock.json; src/shared/types.ts; src/main/model-settings.ts; src/shared/realtime-contract.ts (only if needed); tests/unit/realtime-sdk-lockstep.test.ts; tests/unit/session-snapshot-boundary.test.ts
-skills: .agents/skills/mm-phase-workflow/SKILL.md; .agents/skills/mm-invariants/SKILL.md; .agents/skills/mm-electron-foundation/SKILL.md; .agents/skills/mm-realtime-voice/SKILL.md
-self_invariants: 1, 9, 10, 11, 12
-evidence: exact changed paths, concise diff summary, read/diff/scope/self-review evidence, snapshot fields, package-manifest intent, metadata-only risks; validation output is tester-owned and not run by the implementer
+task: GREEN P1-U1. Implement only the exact SDK lockstep, schema-v2 ConfigService/default contract, and Published-Active SessionModelSnapshot contract required by the accepted RED tests and RED amendment. Preserve the accepted/frozen lockstep and snapshot tests and the RED amendment test. Update only the named schema-complete model-settings and Console fixtures/assertions; Console payload/UI behavior is unchanged. Do not build RealtimeSession, credentials, audio, lifecycle recovery, Console UI, demos, persistence, a new resolver, or a new shared contract file. Do not edit or generate package-lock.json; it belongs to the operator checkpoint.
+write_scope: package.json; resources/config/default.json; src/shared/types.ts; src/main/config-service.ts; src/main/model-settings.ts; tests/unit/model-settings.test.ts; tests/unit/console-config-models.test.ts
+skills: .agents/skills/mm-phase-workflow/SKILL.md; .agents/skills/mm-invariants/SKILL.md; .agents/skills/mm-realtime-voice/SKILL.md
+self_invariants: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+evidence: exact changed paths, concise diff summary naming schema/default, snapshot, and fixture boundaries, read/diff/scope/self-review evidence, package-manifest intent, metadata-only risks; validation output is tester-owned and not run by the implementer
 self_review: read the own diff/output; no more than 3 passes
 root_review: external root gate after return; not part of self-review
 ~~~
 
-**Operator dependency-materialization checkpoint:** After root accepts the
-U1 package.json/package-lock.json patch, pause before any SDK-import validation.
-The user/operator runs `npm ci --ignore-scripts` to materialize the exact
-lockfile dependencies. This is an operator action, not a tester command or a
-worker success claim; implementers never mutate node_modules. Only after this
-checkpoint may the GREEN tester run the SDK-import lockstep assertion.
+**Operator dependency lock-generation checkpoint (after GREEN implementer,
+before GREEN tester):** The accepted GREEN implementer patch contains
+package.json and the production/test allowlist above, but not package-lock.json.
+The user/operator runs exactly this lock-generation command:
+
+~~~powershell
+Set-Location -LiteralPath 'C:\Project\magic-mirror'
+npm install --package-lock-only --ignore-scripts
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+~~~
+
+This command generates package-lock.json only. Root then reviews exact lock
+drift and either accepts the exact dependency change or stops the unit. This is
+an explicit user/operator action, not a worker or tester command and not an
+implementer success claim.
+
+**Operator dependency materialization command (after root lock-drift review):**
+
+After root accepts the exact lock drift, the user/operator runs exactly:
+
+~~~powershell
+Set-Location -LiteralPath 'C:\Project\magic-mirror'
+npm ci --ignore-scripts
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+~~~
+
+This command materializes exactly the accepted lock and may replace
+node_modules. It is an explicit user/operator action, not a worker or tester
+command and not an implementer success claim. Only after this command may the
+GREEN tester run the SDK-import lockstep assertion.
 
 **Exact GREEN tester commands after the operator checkpoint:**
 
 ~~~powershell
-.\node_modules\.bin\vitest.cmd run tests/unit/realtime-sdk-lockstep.test.ts tests/unit/session-snapshot-boundary.test.ts --reporter=verbose
+.\node_modules\.bin\vitest.cmd run tests/unit/realtime-sdk-lockstep.test.ts tests/unit/session-snapshot-boundary.test.ts tests/unit/config-service.test.ts tests/unit/model-settings.test.ts tests/unit/console-config-models.test.ts --reporter=verbose
 npm run typecheck:node
 ~~~
 
-**Invariant IDs:** 1, 9, 10, 11, 12. The final Phase 1 invariant map also
-checks all other IDs even though identity, memory, scene, and wake behavior are
-explicit non-goals here.
+The GREEN tester owns both commands and returns complete stdout/stderr and exit
+codes after the operator checkpoint.
+
+**Invariant IDs:** 1-12. The RED amendment and GREEN implementer both require
+and check every canonical invariant. U1 directly exercises IDs 1, 9, 10, 11,
+and 12 through metadata-only migration/snapshot evidence, visible rejection or
+degradation, configured-model/no-fallback handling, and credential-boundary
+preservation. IDs 2-8 are reviewed as unchanged/not applicable to U1's
+configuration and snapshot scope: identity candidate confirmation and
+guest-profile binding, profile switching, memory ownership and control-turn
+exclusion, scene spell/preset control, and microphone-owner handoff remain
+outside this unit and are not omitted from review. In particular, v2 migration
+and snapshot evidence must remain metadata-only, visibly degrade/reject on
+invalid or future input, and never substitute a runtime model or tuning value.
 
 **Non-goals:** No SDK imports in runtime yet, no network call, no credential
 broker, no audio, no lifecycle transition, no Console control, no Persona
-editing, no real model contract, and no new config service.
+editing, no real network model contract, no new config service or resolver, and
+no new shared contract file.
 
 **Affected demos:** P1-D5 consumes the snapshot and package contract; P1-D6
 consumes the snapshot freeze boundary.
 
 **Root review checklist:**
 
-- Exact dependency versions are present in both manifests, with no unrelated dependency drift.
-- Runtime factory reads only Published Active and captures every required field.
+- package.json declares the exact SDK pair, adds or alters no package script, and preserves Electron 43.4.1/electron-builder 26.15.3; the operator-generated package-lock.json has only the accepted exact drift and no unrelated dependency changes.
+- resources/config/default.json is schemaVersion 2 with explicit `low` and `semantic-vad-interruptible` baselines, and schemaVersion remains distinct from configVersion.
+- ConfigService migrates missing/schema 0/schema 1 to schema 2, preserves every existing operator value, adds new fields only when absent, rejects invalid supplied values, uses the existing compensated atomic path for every touched slot, serializes v2, and rejects future schema without fallback/materialization.
+- Runtime factory reads only Published Active and captures all three role IDs including memoryExtractor, voice, reasoningEffort, turnDetectionProfile, config version/fingerprint, sdkVersion `0.16.1`, and takenAt.
 - No model literal or fallback was added to a runtime TypeScript module.
 - Input transcription is explicit and hidden SDK default cannot pass the contract.
 - No credentials, transcript, audio, private context, or raw errors appear in tests or telemetry.
-- The changed paths match this unit exactly and self-review stayed within three passes.
+- src/main/console-config.ts is unchanged; Console changes are schema-complete test fixtures only and Console payload/UI assertions remain unchanged.
+- The changed paths match this unit exactly, the accepted/frozen RED tests were not rewritten, and self-review stayed within three passes.
 
 **Integration/commit boundary:** After external root acceptance, root integrates
-only the listed paths and records a local commit named
-feat(phase1): lock realtime sdk and session snapshots. No worker commit, push, or
-tag is permitted.
+only the accepted U1 production paths, RED-amended/fixture-maintained test
+paths, and the operator-generated package-lock.json after exact lock-drift
+review, then records a local commit named feat(phase1): lock realtime sdk and
+session snapshots. No worker commit, push, or tag is permitted.
 
 ### P1-U2 Main safeStorage credential import + ephemeral client-secret broker
 
