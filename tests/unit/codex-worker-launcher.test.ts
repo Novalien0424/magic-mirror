@@ -335,6 +335,30 @@ describe('Codex worker launcher contract', () => {
       realtimeVoice,
       'realtime package guidance must pin @openai/agents-realtime 0.16.1'
     ).toMatch(/@openai\/agents-realtime\s+\*\*0\.16\.1\*\*/)
+    expect(
+      realtimeVoice,
+      'realtime package guidance must name @openai/agents-core'
+    ).toContain('@openai/agents-core')
+    expect(
+      realtimeVoice,
+      'realtime package guidance must name @openai/agents-openai'
+    ).toContain('@openai/agents-openai')
+    expect(
+      realtimeVoice,
+      'realtime package guidance must describe openai ^7.2.0 as an umbrella-package dependency'
+    ).toMatch(/openai[\s`*]+\^7\.2\.0[\s`*]+is an umbrella-package dependency/)
+    expect(
+      realtimeVoice,
+      'realtime package guidance must reject nonexistent realtime-core package names'
+    ).not.toContain('@openai/agents-realtime-core')
+    expect(
+      realtimeVoice,
+      'realtime package guidance must reject nonexistent realtime-openai package names'
+    ).not.toContain('@openai/agents-realtime-openai')
+    expect(
+      realtimeVoice,
+      'realtime package guidance must not exact-pin openai 7.4.0'
+    ).not.toMatch(/\bopenai\b[^\r\n]{0,40}\b7\.4\.0\b/)
   })
 
   it('documents the bounded H2 worker harness contract in both control-plane sources', async () => {

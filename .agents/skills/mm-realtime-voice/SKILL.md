@@ -7,11 +7,11 @@ description: Use when implementing or testing anything touching the OpenAI Agent
 
 ## Overview
 
-Verified against @openai/agents **0.16.1**,
-@openai/agents-realtime **0.16.1**, and openai **7.4.0** on
-**2026-08-16**. These facts seed implementation; the Phase 1 live contract
-test against the pinned SDK is still the authority (Spec section 7.6). If
-this file and the contract test disagree, fix this file.
+Verified against @openai/agents **0.16.1** and
+@openai/agents-realtime **0.16.1** on **2026-08-16**. These facts seed
+implementation; the Phase 1 live contract test against the pinned SDK is
+still the authority (Spec section 7.6). If this file and the contract test
+disagree, fix this file.
 
 ## Worker envelope and scope
 
@@ -61,8 +61,10 @@ must never silently substitute the worker model or another runtime ID.
 
 - `@openai/agents` **0.16.1** and `@openai/agents-realtime` **0.16.1**;
   realtime imports use the official subpath `@openai/agents/realtime`.
-  The lockstep packages remain `@openai/agents-realtime-core` and
-  `@openai/agents-realtime-openai`; `openai` remains **7.4.0**. Peer: **Zod v4**.
+  The package graph uses `@openai/agents-core` and `@openai/agents-openai`.
+  `openai ^7.2.0` is an umbrella-package dependency, not an
+  `agents-realtime` peer or an exact Phase 1 direct pin; the operator-generated
+  `package-lock.json` owns the concrete compatible resolution. Peer: **Zod v4**.
 - `gpt-realtime-2.1` exists and is the SDK default model. Voices include
   `marin`, `cedar` (recommended), `alloy`, `sage`, `verse`, and others.
 
