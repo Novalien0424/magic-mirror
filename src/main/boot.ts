@@ -10,10 +10,15 @@ import type {
   ModuleStatus,
   MirrorEvent,
   OpStatus,
+  Result,
   SimulatorCommand,
   SimulatorResult,
 } from '../shared/types'
-import type { DeveloperModeDecision, PhaseTestRecordReader } from '../shared/console-types'
+import type {
+  ConsoleRuntimeSnapshot,
+  DeveloperModeDecision,
+  PhaseTestRecordReader,
+} from '../shared/console-types'
 import {
   DEFAULT_MODULE_STATUSES,
   MODULE_IDS,
@@ -62,7 +67,10 @@ import {
   type ConsoleDataPlane,
 } from './console-data'
 import { createConsoleConfigController } from './console-config'
-import type { ConsoleConfigRefreshResult } from './console-config'
+import type {
+  ConsoleConfigControllerOptions,
+  ConsoleConfigRefreshResult,
+} from './console-config'
 
 const SAFE_CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
@@ -123,8 +131,8 @@ interface BootContextView {
   readonly context: LifecycleContext
 }
 
-const OFFLINE_LOOP_ASSET_SHA256 = '8cfb50f578dab21b75b6d5bfd7ae707494c77047735ae231c1a4e4ff2cfbff12'
-const OFFLINE_LOOP_ASSET_BYTE_LENGTH = 648
+const OFFLINE_LOOP_ASSET_SHA256 = 'e9e4383572854438f47591b67153d5b25dfc20f577019d649f2149e4cbb34cd6'
+const OFFLINE_LOOP_ASSET_BYTE_LENGTH = 1687
 
 export interface AssetPreflightResult {
   readonly status: 'ready' | 'unavailable'
@@ -177,6 +185,10 @@ export interface BootOptions {
   readonly createMockModuleFactory?: () => ModuleMockFactory
   readonly createModuleRegistry?: (options: ModuleRegistryOptions) => ModuleRegistry
   readonly createLifecycleActor?: (deps: { telemetry: { emit(event: MetadataEvent): void } }) => LifecycleActor
+  /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
+  readonly activationFailureAfterWake?: boolean
+  readonly completeSleepForDemo?: boolean
+  readonly mockDraftProbe?: ConsoleConfigControllerOptions['mockDraftProbe']
   readonly now?: () => string
   readonly createActivationId?: () => string
   readonly createRealtimeSessionId?: () => string
@@ -194,6 +206,10 @@ export interface BootRuntime {
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleSimulator(command: unknown): Promise<SimulatorResult>
+  /** Main-owned phase-record writer; never exposed through renderer IPC. */
+  appendPhaseTestRecord(record: unknown): Result<void, SqliteFailure>
+  /** Main-only fixture seam; never exposed through renderer IPC. */
+  createInitialRuntimeSnapshotsForTest(): Promise<ConsoleRuntimeSnapshot>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -643,6 +659,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   const now = options.now ?? (() => new Date().toISOString())
   const createActivationId = options.createActivationId ?? (() => `activation-${nowValue(now)}`)
   const createRealtimeSessionId = options.createRealtimeSessionId ?? (() => `session-${nowValue(now)}`)
+  let activationFailureAfterWake = options.activationFailureAfterWake === true
 
   let telemetry: Telemetry = noOpTelemetry()
   let actor: LifecycleActor | null = null
@@ -1020,6 +1037,30 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     },
   }
 
+  function appendPhaseTestRecord(record: unknown): Result<void, SqliteFailure> {
+    const service = sqliteService
+    if (service === null) {
+      return {
+        ok: false,
+        error: {
+          code: 'sqlite_phase_record_write_failed',
+          reason: 'transaction_failed',
+        },
+      }
+    }
+    try {
+      return service.appendPhaseTestRecord(record)
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code: 'sqlite_phase_record_write_failed',
+          reason: 'transaction_failed',
+        },
+      }
+    }
+  }
+
   let shutdownPromise: Promise<void> | null = null
   async function shutdown(): Promise<void> {
     if (shutdownPromise !== null) return shutdownPromise
@@ -1091,6 +1132,19 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       if (!sendLifecycle({ type: 'WAKE_DETECTED', activationId, lastInteractionAt })) {
         return simulatorResult('failed')
       }
+      if (activationFailureAfterWake) {
+        activationFailureAfterWake = false
+        if (!sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'cloud_unavailable' })) {
+          return simulatorResult('failed')
+        }
+        lastError = {
+          module: 'openai',
+          error_code: 'cloud_unavailable',
+          time: nowValue(now),
+        }
+        refreshSnapshot()
+        return simulatorResult('degraded', 'CLOUD_FAILED')
+      }
       const realtimeSessionId = createRealtimeSessionId()
       if (!sendLifecycle({ type: 'REALTIME_READY', realtimeSessionId })) {
         return simulatorResult('failed')
@@ -1159,6 +1213,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
           source: 'simulator',
         })
         return simulatorResult('degraded')
+      }
+      if (options.completeSleepForDemo === true) {
+        sendLifecycle({ type: 'MEDIA_CLOSED' })
       }
       return simulatorResult('success', 'SLEEP_REQUESTED')
     }
@@ -1231,6 +1288,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getDeveloperMode: () => developerMode.enabled,
     emit: (event) => emitMetadata(telemetry, event),
     now: () => nowValue(now),
+    mockDraftProbe: options.mockDraftProbe,
   })
 
   const consoleDataPlane = createConsoleDataPlane({
@@ -1253,6 +1311,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     telemetry: {
       emit: (event) => emitMetadata(telemetry, event),
     },
+    appendPhaseTestRecord,
+    createInitialRuntimeSnapshotsForTest: () => consoleDataPlane.createInitialRuntimeSnapshotsForTest(),
     snapshot: () => projectAppSnapshot(current),
     subscribe(listener) {
       listeners.add(listener)

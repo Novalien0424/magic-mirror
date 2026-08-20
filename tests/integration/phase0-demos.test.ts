@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -27,6 +27,13 @@ const ALLOWED_MARKERS = new Set([
 ])
 
 const PRIVATE_FIELD_PATTERN = /(?:transcript|audio|credential|secret|token|embedding|prompt|utterance|private[_-]?context|raw[_-]?(?:line|jsonl)|(?:guest|candidate)_?id|profile_?id|memory[_-]?(?:value|text|content))/i
+const ALLOWLISTED_HASH_KEYS = new Set([
+  'realtimeHash',
+  'transcriptionHash',
+  'extractorHash',
+  'personaHash',
+])
+const SHA256_HASH_PATTERN = /^[0-9a-f]{64}$/
 const PRIVATE_SENTINELS = [
   'synthetic-private-marker',
   'synthetic-credential-marker',
@@ -47,6 +54,9 @@ type Marker = Record<string, unknown> & { readonly marker: string }
 interface DemoOptions {
   readonly caseName?: FailureCase
   readonly retainOnSuccess?: boolean
+  readonly soakMs?: number
+  readonly sampleMs?: number
+  readonly noTimeCompression?: boolean
 }
 
 interface DemoRun {
@@ -74,6 +84,9 @@ function runCli(
     '--marker-timeout-ms',
     '15000',
     ...(options.caseName === undefined ? [] : ['--case', options.caseName]),
+    ...(options.soakMs === undefined ? [] : ['--soak-ms', String(options.soakMs)]),
+    ...(options.sampleMs === undefined ? [] : ['--sample-ms', String(options.sampleMs)]),
+    ...(options.noTimeCompression === true ? ['--no-time-compression'] : []),
     ...(options.retainOnSuccess === false ? [] : ['--retain-on-success']),
   ]
 
@@ -139,6 +152,12 @@ function runDemo(demo: DemoId, options: DemoOptions = {}): DemoRun {
 }
 
 function assertMetadataValue(value: unknown, key: string): void {
+  if (ALLOWLISTED_HASH_KEYS.has(key)) {
+    expect(typeof value).toBe('string')
+    expect(value).toMatch(SHA256_HASH_PATTERN)
+    return
+  }
+
   expect(PRIVATE_FIELD_PATTERN.test(key)).toBe(false)
 
   if (Array.isArray(value)) {
@@ -202,6 +221,30 @@ function stringField(marker: Marker, key: string): string {
   const value = marker[key]
   expect(typeof value).toBe('string')
   return value as string
+}
+
+function integerField(marker: Marker, key: string, minimum: number): number {
+  const value = marker[key]
+  expect(typeof value).toBe('number')
+  expect(Number.isFinite(value)).toBe(true)
+  expect(Number.isInteger(value)).toBe(true)
+  expect(value).toBeGreaterThanOrEqual(minimum)
+  return value as number
+}
+
+function assertMemorySeries(samples: readonly Marker[], key: string): void {
+  const values = samples.map((sample) => integerField(sample, key, 1))
+  const baseline = values[0] as number
+  const maximum = Math.max(...values)
+  expect(maximum - baseline).toBeLessThanOrEqual(
+    Math.max(134_217_728, baseline * 0.25),
+  )
+
+  const strictlyIncreasing = values.slice(1).every((value, index) => value > (values[index] as number))
+  if (strictlyIncreasing) {
+    const finalValue = values[values.length - 1] as number
+    expect(finalValue - baseline).toBeLessThanOrEqual(134_217_728)
+  }
 }
 
 function demoIdField(marker: Marker): string {
@@ -351,6 +394,61 @@ describe('Phase 0 Task 10C black-box demos', () => {
     expect(markerOf(core, 'OFFLINE_LOOP_SAMPLE')).toHaveLength(0)
     expect(markerOf(cloud, 'PHASE_RECORD_WRITTEN')).toHaveLength(1)
     expect(markerOf(core, 'PHASE_RECORD_WRITTEN')).toHaveLength(1)
+  })
+
+  it('P0-D2 cloud failure provides real OfflineLoop soak media and memory evidence', () => {
+    const soakMs = 2_400
+    const sampleMs = 800
+    const startedAt = Date.now()
+    const run = runDemo('P0-D2', {
+      caseName: 'cloud-failure',
+      soakMs,
+      sampleMs,
+      noTimeCompression: true,
+    })
+    const wallClockMs = Date.now() - startedAt
+    const directory = assertPassedDemo(run, 'P0-D2')
+    const samples = markerOf(run, 'OFFLINE_LOOP_SAMPLE')
+
+    expect(samples).toHaveLength(4)
+    expect(samples.map((sample) => sample.elapsedMs)).toEqual([0, 800, 1_600, 2_400])
+    expect(wallClockMs).toBeGreaterThanOrEqual(soakMs - sampleMs / 2)
+
+    for (const sample of samples) {
+      expect(sample).toMatchObject({
+        demoId: 'P0-D2',
+        state: 'offlineLoop',
+        reason: 'cloud_unavailable',
+        playing: true,
+        nonblack: true,
+      })
+      const userDataDir = stringField(sample, 'userDataDir')
+      expect(isAbsolute(userDataDir)).toBe(true)
+      expect(userDataDir).toBe(directory)
+      const runId = stringField(sample, 'runId')
+      expect(runId.length).toBeGreaterThan(0)
+      expect(runId).toBe(basename(directory))
+      integerField(sample, 'rssBytes', 1)
+      integerField(sample, 'workingSetBytes', 1)
+      integerField(sample, 'heapUsedBytes', 1)
+      integerField(sample, 'mediaCurrentTimeMs', 0)
+      integerField(sample, 'loopCount', 0)
+    }
+
+    for (let index = 1; index < samples.length; index += 1) {
+      const previous = samples[index - 1] as Marker
+      const current = samples[index] as Marker
+      const previousMediaTime = integerField(previous, 'mediaCurrentTimeMs', 0)
+      const currentMediaTime = integerField(current, 'mediaCurrentTimeMs', 0)
+      const previousLoopCount = integerField(previous, 'loopCount', 0)
+      const currentLoopCount = integerField(current, 'loopCount', 0)
+      expect(currentLoopCount).toBeGreaterThanOrEqual(previousLoopCount)
+      expect(currentMediaTime > previousMediaTime || currentLoopCount > previousLoopCount).toBe(true)
+    }
+
+    assertMemorySeries(samples, 'rssBytes')
+    assertMemorySeries(samples, 'workingSetBytes')
+    assertMemorySeries(samples, 'heapUsedBytes')
   })
 
   it('P0-D3 queries Overview, Events, and Phase Tests in both degraded states', () => {

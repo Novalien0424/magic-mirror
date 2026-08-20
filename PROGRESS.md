@@ -1,8 +1,51 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–9 accepted; Task 10 is planned but unimplemented; Phase 1 is blocked.**
+**Phase 0 — Foundation / Visible Skeleton: COMPLETE — Tasks 1–10 accepted; Phase 1 is next.**
 
-## Current verified state (2026-08-19)
+## Task 10 / Phase 0 exit accepted (2026-08-20)
+
+- Task 10 and Phase 0 are accepted by the interactive root after the full
+  tester-owned gate. The accepted Task 10 implementation paths are
+  `resources/offline-loop/offline-loop-v1.mp4.base64`,
+  `scripts/generate-offline-loop.mjs`, `scripts/run-phase0-demos.mjs`,
+  `src/main/boot.ts`, `src/main/console-data.ts`,
+  `src/main/crash-recovery.ts`, `src/main/index.ts`,
+  `src/main/phase0-demo-runner.ts`,
+  `tests/integration/phase0-demos.test.ts`, and
+  `tests/unit/sqlite-phase-tests.test.ts`.
+- Focused Task 10B tests passed `13/13`; frozen Task 10C black-box demos passed
+  `8/8`; the full suite passed `311` tests; Node/web typechecks and the
+  Electron Vite build passed; and ten bounded smoke cycles passed.
+- P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failure cases.
+  The exact real-time 30-minute OfflineLoop soak passed with seven samples at
+  elapsed `0`, `300000`, `600000`, `900000`, `1200000`, `1500000`, and
+  `1800000` ms; every sample was nonblack and playing, and memory growth stayed
+  below the accepted `134217728`-byte allowance.
+- The privacy scan passed; `.env` was not read; `package.json` and
+  `package-lock.json` were unchanged; Electron `43.4.1` and
+  `electron-builder` `26.15.3` were preserved; and the negative runtime
+  model/fallback scan passed. Windows unpacked packaging, fixed asset
+  hash/length/decode, the no-relaunch scan, exact whitespace, and status-scope
+  gates passed.
+- The only post-gate correction was a comment-only wording change in
+  `src/main/crash-recovery.ts` so the literal no-relaunch scan remained clean;
+  runtime behavior was unchanged. The LaunchAgent
+  `KeepAlive={SuccessfulExit=false}` remains the sole restart owner, and no
+  relaunch behavior was added.
+- Model IDs remain versioned-config-only. D5 fixture model/persona values exist
+  only in the isolated demo configuration route and frozen test, never in
+  normal fallback, runtime, telemetry, or markers. Canonical invariants 1–12
+  remain preserved: diagnostics are metadata-only and private content stays
+  RAM-only; microphone ownership remains single; ignores/degrades have reasons;
+  failures do not gate unrelated behavior; configured model IDs are never
+  substituted; and credentials remain Main-owned through `safeStorage`.
+- Windows development validates DPAPI-backed `safeStorage` and local Windows
+  packaging only. It does not field-verify target macOS Keychain, TCC,
+  signing, entitlements, packaged-worker, or LaunchAgent behavior. No product
+  decision was made, so `DECISIONS.md` remains unchanged.
+- Phase 1 is the next application work. It has not started and is not complete.
+
+## Historical pre-exit state (2026-08-19)
 
 - Tasks 1–9 are accepted. Task 10 is not implemented: its original plan is
   at `255008e`, the accepted correction plan is at `9adcca4`, and no Task 10
@@ -65,7 +108,7 @@
 - Workspace note: the untracked `scripts/install-node-lts.ps1` remains
   untouched and is outside this task's scope.
 
-## Current setup and Phase 2 prerequisite (2026-08-19)
+## Historical setup and Phase 2 prerequisite (2026-08-19)
 
 - **Credential setup (metadata only).** The user reports that the local OpenAI
   credential is provisioned through `.env`. Supplied metadata records
@@ -88,7 +131,7 @@
   Tasks 8 and 9 are accepted; Task 10 remains planned and unimplemented;
   Phase 0 remains in progress, and Phase 1 remains blocked.
 
-## Current Task 6 and Task 7 completion boundary (2026-08-19)
+## Historical Task 6 and Task 7 completion boundary (2026-08-19)
 
 - **Task 4 completion:** metadata-only, non-blocking telemetry is completed,
   root-reviewed, integrated, and pushed on `main` at `dca1327`. Focused
@@ -148,7 +191,7 @@
   Keychain/TCC/signing/entitlements/packaged-worker/LaunchAgent paths. The
   untracked `scripts/install-node-lts.ps1` remains untouched.
 
-## Next action (for the next session)
+## Historical next action before Task 10 exit (2026-08-19)
 
 1. Complete the root-accepted adversarial-review correction units in order;
    Unit A is documentation-only and Units B–E are not pre-claimed here.
@@ -237,11 +280,10 @@
 | 7  | AI model settings resolver + snapshots          | done + reviewed + accepted | plan `6214b6c`; implementation `5e24bdc` on pushed `phase0-model-settings`; focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
 | 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | accepted | accepted application task; no Task 10 evidence implied |
 | 9  | Console UI — 6 pages                            | accepted | accepted application task; no Task 10 evidence implied |
-| 10 | P0 demo runner, exit criteria, tag              | planned, not implemented | original plan `255008e`; correction plan `9adcca4`; Task 10 remains unimplemented |
+| 10 | P0 demo runner, exit criteria, tag              | done + accepted | Task 10B `13/13`; Task 10C `8/8`; full `311` tests; typechecks/build, ten smoke cycles, P0-D1–D5, and 30-minute OfflineLoop soak passed |
 
-Phase demo records (P0-D1…P0-D5): none yet — corrected Task 10 will run and
-record them after the prerequisite correction units. Phase 0 and Phase 1
-success are not claimed.
+Phase demo records (P0-D1…P0-D5): passed. Task 10 and Phase 0 are accepted;
+Phase 1 is next and has not started.
 
 ## How to run
 

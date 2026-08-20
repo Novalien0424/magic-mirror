@@ -10,6 +10,7 @@ import type {
   ConsoleReason,
   ConsoleResponse,
   ConsoleDraftTestResult,
+  ConsoleRuntimeSnapshot,
   ConsoleRuntimeSnapshotResult,
   DeveloperModeDecision,
 } from '../shared/console-types'
@@ -98,6 +99,8 @@ export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  /** Main-only deterministic fixture seam; never registered as IPC. */
+  createInitialRuntimeSnapshotsForTest(): Promise<ConsoleRuntimeSnapshot>
 }
 
 interface ConsoleDataPlaneDependencies {
@@ -633,5 +636,15 @@ export function createConsoleDataPlane(
     rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),
     createNextRuntimeSnapshots: () => invokeConfig((controller) => controller.createNextRuntimeSnapshots()),
     getPhaseTests: () => phaseTestsController.get(),
+    createInitialRuntimeSnapshotsForTest: async () => {
+      let controller: ConsoleConfigController | null = null
+      try {
+        controller = dependencies.getConfigController?.() ?? null
+      } catch {
+        controller = null
+      }
+      if (controller === null) throw new Error('console_config_not_ready')
+      return controller.createInitialRuntimeSnapshotsForTest()
+    },
   }
 }

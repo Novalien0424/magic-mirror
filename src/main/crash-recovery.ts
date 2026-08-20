@@ -5,7 +5,7 @@ import type { MirrorWindowKind } from '../shared/bridge'
  * acceptable (invariant #10), so the window is recreated. Restarts of the *app* belong
  * to one owner only — the macOS LaunchAgent (`KeepAlive={SuccessfulExit=false}`) — so
  * once the recreate budget is spent we exit non-zero and let the supervisor relaunch.
- * `app.relaunch()` is deliberately never used: two restart owners fight.
+ * In-process application relaunch is deliberately not requested: two restart owners fight.
  *
  * Electron-free on purpose: the policy is unit-testable without a running app.
  */

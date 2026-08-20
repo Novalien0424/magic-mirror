@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -74,6 +74,23 @@ const temporaryDirectories: string[] = []
 
 function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function isSqlInputValue(value: unknown): value is SQLInputValue {
+  return value === null
+    || typeof value === 'number'
+    || typeof value === 'bigint'
+    || typeof value === 'string'
+    || ArrayBuffer.isView(value)
+}
+
+function toSqlInputValues(params: readonly unknown[] | undefined): SQLInputValue[] {
+  return (params === undefined ? [] : [...params]).map((value) => {
+    if (!isSqlInputValue(value)) {
+      throw new TypeError('sqlite_input_invalid')
+    }
+    return value
+  })
 }
 
 function makeTelemetry(): TestTelemetry {
@@ -233,11 +250,11 @@ function makePhaseDriverHarness(
       execute(sql, phaseOperation(sql))
     },
     get(sql, params) {
-      const values = params === undefined ? [] : [...params]
+      const values = toSqlInputValues(params)
       return statement(sql).get(...values) as Record<string, unknown> | undefined
     },
     all(sql, params) {
-      const values = params === undefined ? [] : [...params]
+      const values = toSqlInputValues(params)
       return statement(sql).all(...values) as readonly Record<string, unknown>[]
     },
     run(sql, params) {
@@ -248,7 +265,7 @@ function makePhaseDriverHarness(
           throw new Error(SYNTHETIC_DRIVER_FAILURE)
         }
       }
-      const values = params === undefined ? [] : [...params]
+      const values = toSqlInputValues(params)
       statement(sql).run(...values)
     },
     close() {

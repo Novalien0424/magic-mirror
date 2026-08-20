@@ -7,6 +7,7 @@ import { createCrashRecovery } from './crash-recovery'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
 import { publishSnapshot, registerIpcHandlers } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
+import { applyPhase0UserDataPath } from './phase0-demo-runner'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
 const isDarwin = process.platform === 'darwin'
@@ -15,6 +16,13 @@ const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 const EXIT_FLUSH_TIMEOUT_MS = 500
 
 const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
+const phase0UserDataPath = applyPhase0UserDataPath({
+  app,
+  demo: process.env['MIRROR_PHASE0_DEMO'],
+  smoke: smokeMode.kind === 'on',
+  userDataRoot: process.env['MIRROR_PHASE0_USER_DATA_ROOT'],
+  userDataDir: process.env['MIRROR_USER_DATA_DIR'],
+})
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
 const hideWindowsForSmoke = smokeMode.kind === 'on'
 
@@ -275,6 +283,11 @@ function emitDisplaySleepMetadata(
 }
 
 void app.whenReady().then(() => {
+  if (!phase0UserDataPath.ok) {
+    exitWithMarker('SMOKE_CONFIG_INVALID', { reason: 'phase0_user_data_isolation_invalid' }, 2)
+    return
+  }
+
   marker('MAIN_READY', {
     electron: process.versions.electron,
     platform: process.platform,

@@ -11,7 +11,7 @@ import {
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-export const OFFLINE_LOOP_ASSET_CONTRACT = Object.freeze({ sha256: '8cfb50f578dab21b75b6d5bfd7ae707494c77047735ae231c1a4e4ff2cfbff12', byteLength: 648 })
+export const OFFLINE_LOOP_ASSET_CONTRACT = Object.freeze({ sha256: 'e9e4383572854438f47591b67153d5b25dfc20f577019d649f2149e4cbb34cd6', byteLength: 1687 })
 
 const STRICT_BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
