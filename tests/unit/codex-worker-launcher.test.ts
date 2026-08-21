@@ -20,9 +20,11 @@ type WorkerRole = 'implementer' | 'surveyor' | 'tester'
 
 interface LauncherRunOptions {
   readonly timeoutSeconds?: number
+  readonly firstWriteTimeoutSeconds?: number
   readonly maxOutputBytes?: number
   readonly flood?: boolean
   readonly workerActive?: string
+  readonly patchSignal?: 'none' | 'completed'
 }
 
 interface Fixture {
@@ -90,6 +92,11 @@ if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
 
 $argvText = @($args) -join [char]0
 [System.IO.File]::WriteAllText((Join-Path $capture 'argv.txt'), $argvText, $utf8)
+
+if ($env:MM_CODEX_WORKER_PATCH_SIGNAL -eq 'completed') {
+  [Console]::Out.WriteLine('patch: completed')
+  [Console]::Out.Flush()
+}
 
 $inputStream = [Console]::OpenStandardInput()
 $memory = New-Object -TypeName System.IO.MemoryStream
@@ -187,7 +194,14 @@ function runLauncher(
   options: number | LauncherRunOptions = {}
 ): LauncherRun {
   const normalizedOptions = typeof options === 'number' ? { timeoutSeconds: options } : options
-  const { timeoutSeconds, maxOutputBytes, flood = false, workerActive = '0' } = normalizedOptions
+  const {
+    timeoutSeconds,
+    firstWriteTimeoutSeconds,
+    maxOutputBytes,
+    flood = false,
+    workerActive = '0',
+    patchSignal = 'none'
+  } = normalizedOptions
   const launcherArguments = [
     '-NoLogo',
     '-NoProfile',
@@ -202,6 +216,9 @@ function runLauncher(
   if (timeoutSeconds !== undefined) {
     launcherArguments.push('-TimeoutSeconds', String(timeoutSeconds))
   }
+  if (firstWriteTimeoutSeconds !== undefined) {
+    launcherArguments.push('-FirstWriteTimeoutSeconds', String(firstWriteTimeoutSeconds))
+  }
   if (maxOutputBytes !== undefined) {
     launcherArguments.push('-MaxOutputBytes', String(maxOutputBytes))
   }
@@ -215,8 +232,10 @@ function runLauncher(
       env: {
         ...process.env,
         MM_CODEX_WORKER_CAPTURE_DIR: fixture.captureDir,
-        MM_CODEX_WORKER_HANG: timeoutSeconds !== undefined && !flood ? '1' : '0',
+        MM_CODEX_WORKER_HANG:
+          timeoutSeconds !== undefined && !flood && patchSignal !== 'completed' ? '1' : '0',
         MM_CODEX_WORKER_FLOOD: flood ? '1' : '0',
+        MM_CODEX_WORKER_PATCH_SIGNAL: patchSignal,
         MIRROR_CODEX_WORKER_ACTIVE: workerActive
       },
       encoding: 'buffer',
@@ -507,6 +526,58 @@ describe('Codex worker launcher contract', () => {
 
     expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
     expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
+  })
+
+  it('enforces the implementer first-write deadline and confirms the exact fake process tree', async () => {
+    const fixture = await makeFixture(makePrompt('implementer'))
+    const run = runLauncher(fixture, 'implementer', {
+      timeoutSeconds: 10,
+      firstWriteTimeoutSeconds: 1
+    })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for first-write validation').toBeNull()
+    expect(run.status, 'missing implementer completion signal must use the first-write exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'first-write timeout must report the exact launcher marker').toBe(
+      'codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded'
+    )
+
+    if (
+      run.status !== 2 ||
+      run.launcherFailureMarker !==
+        'codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded'
+    ) {
+      return
+    }
+
+    const [childPid, grandchildPid] = await Promise.all([
+      readFixturePid(fixture.childPidPath),
+      readFixturePid(fixture.grandchildPidPath)
+    ])
+    const [childGone, grandchildGone] = await Promise.all([
+      waitForProcessExit(childPid, 3_000),
+      waitForProcessExit(grandchildPid, 3_000)
+    ])
+
+    expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
+    expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
+  })
+
+  it('allows an implementer to finish normally after the exact first-write signal', async () => {
+    const fixture = await makeFixture(makePrompt('implementer'))
+    const run = runLauncher(fixture, 'implementer', {
+      timeoutSeconds: 10,
+      firstWriteTimeoutSeconds: 1,
+      patchSignal: 'completed'
+    })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for first-write validation').toBeNull()
+    expect(
+      run.status,
+      `exact implementer completion signal must allow normal exit; launcherFailureMarker=${run.launcherFailureMarker}; stdoutBytes=${run.stdoutBytes}; stderrBytes=${run.stderrBytes}; powerShellFailureClass=${run.powerShellFailureClass}; launcherLine=${run.launcherLine}; emptyParameterName=${run.emptyParameterName}`
+    ).toBe(0)
+    expect(run.launcherFailureMarker, 'successful first-write completion must not emit a failure marker').toBe(
+      'unavailable'
+    )
   })
 
   it('bounds combined stdout and stderr and terminates the exact fake pwsh process tree', async () => {

@@ -28,10 +28,15 @@ Codex stdin. If launcher entry sees the exact inherited
 `MIRROR_CODEX_WORKER_ACTIVE=1` sentinel, it exits 2 with
 `codex_worker_launcher stage=preflight status=failed reason=recursive_invocation`
 before reading or launching Codex; only the Codex child environment receives
-the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed
-reads, a 180-second first-write target, and a 200-line displayed-read limit.
-These are context and execution bounds, not a claim that advice can force
-model completion. PowerShell 7 (`pwsh`) is the required outer host; Windows PowerShell 5.1
+the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed reads, and a
+200-line displayed-read limit. The launcher enforces a hard implementer-only
+180-second first-write deadline by observing only an exact complete stdout
+line `patch: completed`; surveyor and tester runs have no first-write deadline.
+On expiry it terminates and confirms the exact child tree, then exits 2 with
+`codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded`
+or uses `tree_termination_failed` at stage `first_write` if confirmation
+fails. These are context and execution bounds, not a claim that advice can
+force model completion. PowerShell 7 (`pwsh`) is the required outer host; Windows PowerShell 5.1
 (`powershell.exe`) is not a supported outer host because its
 parameter binder can fail before launcher metadata preflight. From the
 repository root, use this one compact canonical invocation:

@@ -13,6 +13,10 @@ param(
     [int]$TimeoutSeconds = 600,
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 3600)]
+    [int]$FirstWriteTimeoutSeconds = 180,
+
+    [Parameter(Mandatory = $false)]
     [ValidateRange(1024, 67108864)]
     [long]$MaxOutputBytes = 4194304,
 
@@ -350,6 +354,12 @@ try {
 
     $lifetimeClock = [System.Diagnostics.Stopwatch]::StartNew()
     $timeoutMilliseconds = [long]$TimeoutSeconds * 1000
+    $firstWriteEnforced = $Role -ceq 'implementer'
+    $firstWriteSignalObserved = -not $firstWriteEnforced
+    $firstWriteTimeoutMilliseconds = [long]$FirstWriteTimeoutSeconds * 1000
+    $patchSignalBytes = [System.Text.Encoding]::ASCII.GetBytes('patch: completed')
+    [long]$stdoutSignalLineLength = 0
+    $stdoutSignalLineMatches = $true
 
     $inputStream = $process.StandardInput.BaseStream
     $stdoutStream = $process.StandardOutput.BaseStream
@@ -369,15 +379,30 @@ try {
     $inputWriteActive = $true
     $inputFlushActive = $false
     $timeoutExceeded = $false
+    $firstWriteExceeded = $false
     $outputLimitExceeded = $false
     $streamFailureReason = $null
     $launchFailureReason = $null
     [long]$totalOutputBytes = 0
 
     while ($stdoutActive -or $stderrActive -or $inputWriteActive -or $inputFlushActive) {
-        $remainingMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+        $remainingOverallMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+        $remainingMilliseconds = $remainingOverallMilliseconds
+        $deadlineStage = 'timeout'
+        if ($firstWriteEnforced -and -not $firstWriteSignalObserved) {
+            $remainingFirstWriteMilliseconds = $firstWriteTimeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+            if ($remainingFirstWriteMilliseconds -le $remainingMilliseconds) {
+                $remainingMilliseconds = $remainingFirstWriteMilliseconds
+                $deadlineStage = 'first_write'
+            }
+        }
         if ($remainingMilliseconds -le 0) {
-            $timeoutExceeded = $true
+            if ($deadlineStage -eq 'first_write') {
+                $firstWriteExceeded = $true
+            }
+            else {
+                $timeoutExceeded = $true
+            }
             break
         }
 
@@ -408,7 +433,12 @@ try {
         }
 
         if ($completedIndex -lt 0) {
-            $timeoutExceeded = $true
+            if ($deadlineStage -eq 'first_write') {
+                $firstWriteExceeded = $true
+            }
+            else {
+                $timeoutExceeded = $true
+            }
             break
         }
 
@@ -470,6 +500,32 @@ try {
             continue
         }
 
+        if ($isStdout -and $firstWriteEnforced -and -not $firstWriteSignalObserved) {
+            for ($signalIndex = 0; $signalIndex -lt $bytesRead; $signalIndex++) {
+                $signalByte = $stdoutBuffer[$signalIndex]
+                if ($signalByte -eq 0x0A -or $signalByte -eq 0x0D) {
+                    if (
+                        $stdoutSignalLineMatches -and
+                        $stdoutSignalLineLength -eq $patchSignalBytes.Length
+                    ) {
+                        $firstWriteSignalObserved = $true
+                        break
+                    }
+                    $stdoutSignalLineLength = 0
+                    $stdoutSignalLineMatches = $true
+                    continue
+                }
+
+                if (
+                    $stdoutSignalLineLength -ge $patchSignalBytes.Length -or
+                    $signalByte -ne $patchSignalBytes[[int]$stdoutSignalLineLength]
+                ) {
+                    $stdoutSignalLineMatches = $false
+                }
+                $stdoutSignalLineLength++
+            }
+        }
+
         [long]$forwardBytes = $bytesRead
         [long]$remainingOutputBytes = $MaxOutputBytes - $totalOutputBytes
         if ($forwardBytes -gt $remainingOutputBytes) {
@@ -521,6 +577,14 @@ try {
         Stop-Launcher -Stage 'output' -Reason 'limit_exceeded'
     }
 
+    if ($firstWriteExceeded) {
+        $treeTerminated = Confirm-ChildTreeTermination -Process $process
+        if (-not $treeTerminated) {
+            Stop-Launcher -Stage 'first_write' -Reason 'tree_termination_failed'
+        }
+        Stop-Launcher -Stage 'first_write' -Reason 'deadline_exceeded'
+    }
+
     if ($timeoutExceeded) {
         $treeTerminated = Confirm-ChildTreeTermination -Process $process
         if (-not $treeTerminated) {
@@ -545,22 +609,49 @@ try {
         Stop-Launcher -Stage 'output' -Reason $streamFailureReason
     }
 
-    $remainingMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
-    if ($remainingMilliseconds -le 0) {
-        $treeTerminated = Confirm-ChildTreeTermination -Process $process
-        if (-not $treeTerminated) {
-            Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+    $remainingOverallMilliseconds = $timeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+    $remainingMilliseconds = $remainingOverallMilliseconds
+    $deadlineStage = 'timeout'
+    if ($firstWriteEnforced -and -not $firstWriteSignalObserved) {
+        $remainingFirstWriteMilliseconds = $firstWriteTimeoutMilliseconds - $lifetimeClock.ElapsedMilliseconds
+        if ($remainingFirstWriteMilliseconds -le $remainingMilliseconds) {
+            $remainingMilliseconds = $remainingFirstWriteMilliseconds
+            $deadlineStage = 'first_write'
         }
-        Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+    }
+    if ($remainingMilliseconds -le 0) {
+        if ($deadlineStage -eq 'first_write') {
+            $treeTerminated = Confirm-ChildTreeTermination -Process $process
+            if (-not $treeTerminated) {
+                Stop-Launcher -Stage 'first_write' -Reason 'tree_termination_failed'
+            }
+            Stop-Launcher -Stage 'first_write' -Reason 'deadline_exceeded'
+        }
+        else {
+            $treeTerminated = Confirm-ChildTreeTermination -Process $process
+            if (-not $treeTerminated) {
+                Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+            }
+            Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+        }
     }
 
     $completed = $process.WaitForExit([int]$remainingMilliseconds)
     if (-not $completed) {
-        $treeTerminated = Confirm-ChildTreeTermination -Process $process
-        if (-not $treeTerminated) {
-            Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+        if ($deadlineStage -eq 'first_write') {
+            $treeTerminated = Confirm-ChildTreeTermination -Process $process
+            if (-not $treeTerminated) {
+                Stop-Launcher -Stage 'first_write' -Reason 'tree_termination_failed'
+            }
+            Stop-Launcher -Stage 'first_write' -Reason 'deadline_exceeded'
         }
-        Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+        else {
+            $treeTerminated = Confirm-ChildTreeTermination -Process $process
+            if (-not $treeTerminated) {
+                Stop-Launcher -Stage 'timeout' -Reason 'tree_termination_failed'
+            }
+            Stop-Launcher -Stage 'timeout' -Reason 'deadline_exceeded'
+        }
     }
 
     try {
