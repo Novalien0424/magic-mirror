@@ -725,6 +725,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
+      requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       ready: 'boot:renderer-ready',
     })
     expect(CONSOLE_IPC_CHANNELS).toEqual({

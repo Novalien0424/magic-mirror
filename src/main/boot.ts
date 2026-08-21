@@ -66,6 +66,10 @@ import {
   resolveDeveloperMode,
   type ConsoleDataPlane,
 } from './console-data'
+import type {
+  ClientSecretBroker,
+  ClientSecretIssueResult,
+} from './realtime/client-secret-broker'
 import { createConsoleConfigController } from './console-config'
 import type {
   ConsoleConfigControllerOptions,
@@ -184,6 +188,7 @@ export interface BootOptions {
   readonly offlineLoopAssetPath?: string
   readonly createTelemetry?: () => Telemetry | PromiseLike<Telemetry>
   readonly configService?: ConfigService
+  readonly clientSecretBroker?: ClientSecretBroker
   readonly resolveModelSettings?: (slots: ConfigSlots) => ModelSettingsResolution | PromiseLike<ModelSettingsResolution>
   readonly openSqlite?: () =>
     | SqliteService
@@ -214,6 +219,7 @@ export interface BootRuntime {
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
+  requestRealtimeClientSecret(): Promise<ClientSecretIssueResult>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
@@ -1264,6 +1270,16 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return simulatorResult(status)
   }
 
+  async function requestRealtimeClientSecret(): Promise<ClientSecretIssueResult> {
+    await ready
+    const broker = options.clientSecretBroker
+    const activeModelSettings = resolvedModelSettings?.active
+    if (broker === undefined || activeModelSettings === undefined) {
+      throw new Error('realtime_client_secret_unavailable')
+    }
+    return broker.issue({ modelId: activeModelSettings.realtimeDialogue })
+  }
+
   async function refreshConfig(): Promise<ConsoleConfigRefreshResult> {
     const refreshFailure = (): ConsoleConfigRefreshResult => {
       resolvedModelSettings = null
@@ -1319,6 +1335,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   const runtime: BootRuntime = {
     ready,
     console: consoleDataPlane,
+    requestRealtimeClientSecret,
     shutdown,
     telemetry: {
       emit: (event) => emitMetadata(telemetry, event),

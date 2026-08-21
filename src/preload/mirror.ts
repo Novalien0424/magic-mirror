@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot } from '../shared/types'
-import type { MirrorBridge, SnapshotListener } from '../shared/bridge'
+import type {
+  MirrorBridge,
+  SnapshotListener,
+  TransientRealtimeSecretResult,
+} from '../shared/bridge'
 
 // Smoke-contract failure switch: a missing bridge remains visible in the renderer.
 if (process.env['MIRROR_FORCE_RENDERER_FAIL'] === '1') {
@@ -10,6 +14,7 @@ if (process.env['MIRROR_FORCE_RENDERER_FAIL'] === '1') {
 const READY_CHANNEL = 'boot:renderer-ready' as const
 const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
+const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
 
 const bridge: MirrorBridge = {
   notifyReady(): void {
@@ -18,6 +23,10 @@ const bridge: MirrorBridge = {
 
   getSnapshot(): Promise<AppSnapshot> {
     return ipcRenderer.invoke(GET_SNAPSHOT_CHANNEL) as Promise<AppSnapshot>
+  },
+
+  requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult> {
+    return ipcRenderer.invoke(REQUEST_REALTIME_CLIENT_SECRET_CHANNEL) as Promise<TransientRealtimeSecretResult>
   },
 
   onSnapshot(listener: SnapshotListener): () => void {

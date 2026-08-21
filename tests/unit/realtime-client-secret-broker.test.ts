@@ -116,7 +116,7 @@ describe('P1-U2 Main-only Realtime client-secret broker RED contract', () => {
       unknown,
       { method?: string; headers?: Record<string, string>; body?: string } | undefined,
     ]
-    expect(requestUrl).toBe('/v1/realtime/client_secrets')
+    expect(requestUrl).toBe('https://api.openai.com/v1/realtime/client_secrets')
     expect(requestInit?.method).toBe('POST')
     expect(requestInit?.headers).toEqual(expect.objectContaining({
       Authorization: `Bearer ${LONG_CREDENTIAL}`,

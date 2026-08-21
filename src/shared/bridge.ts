@@ -14,6 +14,24 @@ import type {
   ConsoleRuntimeSnapshotResult,
 } from './console-types'
 
+declare const transientRealtimeSecretBrand: unique symbol
+
+export type TransientRealtimeSecretInput = string & {
+  readonly [transientRealtimeSecretBrand]: true
+}
+
+export type TransientRealtimeSecretResult =
+  | {
+    readonly status: 'accepted'
+    readonly reason: 'mirror_authorized'
+    readonly value: TransientRealtimeSecretInput
+    readonly expiresAt?: number
+  }
+  | {
+    readonly status: 'rejected'
+    readonly reason: 'unauthorized_sender' | 'broker_unavailable' | 'broker_failed' | 'invalid_payload'
+  }
+
 export type MirrorWindowKind = 'mirror' | 'console'
 
 export type BootChannel = 'boot:renderer-ready'
@@ -22,6 +40,7 @@ export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready'
 export interface MirrorChannelMap {
   readonly getSnapshot: 'mirror:get-snapshot'
   readonly snapshot: 'mirror:snapshot'
+  readonly requestRealtimeClientSecret: 'mirror:request-realtime-client-secret'
   readonly ready: BootChannel
 }
 
@@ -45,13 +64,17 @@ export interface ConsoleChannelMap {
 
 export type SnapshotListener = (snapshot: AppSnapshot) => void
 
-export interface MirrorBridge {
+interface SharedRendererBridge {
   notifyReady(): void
   getSnapshot(): Promise<AppSnapshot>
   onSnapshot(listener: SnapshotListener): () => void
 }
 
-export interface ConsoleBridge extends MirrorBridge {
+export interface MirrorBridge extends SharedRendererBridge {
+  requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
+}
+
+export interface ConsoleBridge extends SharedRendererBridge {
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
   getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>>
   getEvents(request?: ConsoleEventsQuery): Promise<ConsoleResponse<ConsoleEventsPage>>

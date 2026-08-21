@@ -227,6 +227,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
+      requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)

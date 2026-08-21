@@ -127,7 +127,7 @@ export function createClientSecretBroker(
       let response: Response
       try {
         const fetchImpl = request.fetchImpl ?? fetch
-        response = await fetchImpl('/v1/realtime/client_secrets', {
+        response = await fetchImpl('https://api.openai.com/v1/realtime/client_secrets', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${credential}`,

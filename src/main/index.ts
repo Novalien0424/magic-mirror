@@ -1,13 +1,15 @@
 import { basename, join, resolve } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, safeStorage, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { bootSequence, type BootRuntime } from './boot'
+import { createCredentialStore, type CredentialEventSink, type SafeStorageAdapter } from './credential-store'
 import { createCrashRecovery } from './crash-recovery'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
 import { publishSnapshot, registerIpcHandlers } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { applyPhase0UserDataPath } from './phase0-demo-runner'
+import { createClientSecretBroker } from './realtime/client-secret-broker'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
 const isDarwin = process.platform === 'darwin'
@@ -282,6 +284,42 @@ function emitDisplaySleepMetadata(
   }
 }
 
+function createDeferredCredentialEventSink(): {
+  readonly sink: CredentialEventSink
+  readonly install: (target: CredentialEventSink) => void
+} {
+  let target: CredentialEventSink | null = null
+  const pending: Parameters<CredentialEventSink['emit']>[0][] = []
+
+  return {
+    sink: {
+      emit(event) {
+        if (target === null) {
+          pending.push(event)
+          return
+        }
+        try {
+          target.emit(event)
+        } catch {
+          // Credential diagnostics remain metadata-only and cannot gate a request.
+        }
+      },
+    },
+    install(nextTarget) {
+      target = nextTarget
+      while (pending.length > 0) {
+        const event = pending.shift()
+        if (event === undefined) continue
+        try {
+          target.emit(event)
+        } catch {
+          // A telemetry sink failure cannot expose or block credential handling.
+        }
+      }
+    },
+  }
+}
+
 void app.whenReady().then(() => {
   if (!phase0UserDataPath.ok) {
     exitWithMarker('SMOKE_CONFIG_INVALID', { reason: 'phase0_user_data_isolation_invalid' }, 2)
@@ -299,6 +337,23 @@ void app.whenReady().then(() => {
     return
   }
 
+  const deferredCredentialEvents = createDeferredCredentialEventSink()
+  const safeStorageAdapter: SafeStorageAdapter = {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (plaintext) => safeStorage.encryptString(plaintext),
+    decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+    shouldReEncrypt: () => false,
+  }
+  const credentialStore = createCredentialStore({
+    credentialPath: join(app.getPath('userData'), 'data', 'credentials', 'credential.blob'),
+    safeStorage: safeStorageAdapter,
+    events: deferredCredentialEvents.sink,
+  })
+  const clientSecretBroker = createClientSecretBroker({
+    credentialStore,
+    events: deferredCredentialEvents.sink,
+  })
+
   const runtime: BootRuntime = bootSequence({
     appVersion: app.getVersion(),
     buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
@@ -309,7 +364,9 @@ void app.whenReady().then(() => {
     defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
+    clientSecretBroker,
   })
+  deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
 
   displaySleepBlocker = createDisplaySleepBlocker(

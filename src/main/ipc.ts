@@ -9,6 +9,8 @@ import type {
   ConsoleChannelMap,
   MirrorChannelMap,
   MirrorWindowKind,
+  TransientRealtimeSecretInput,
+  TransientRealtimeSecretResult,
 } from '../shared/bridge'
 import type {
   ConsoleErrorCode,
@@ -17,10 +19,12 @@ import type {
 } from '../shared/console-types'
 import { projectAppSnapshot, type BootRuntime } from './boot'
 import type { ConsoleDataPlane } from './console-data'
+import type { ClientSecretIssueResult } from './realtime/client-secret-broker'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
   snapshot: 'mirror:snapshot',
+  requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
   ready: 'boot:renderer-ready',
 })
 
@@ -80,6 +84,7 @@ export interface RegisterIpcHandlersOptions {
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator'> & {
     readonly console?: ConsoleDataPlane
+    readonly requestRealtimeClientSecret?: () => Promise<ClientSecretIssueResult>
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -94,6 +99,28 @@ export type SenderAuthResult =
 export type SimulatorPayloadValidation =
   | { readonly ok: true; readonly value: SimulatorCommand }
   | { readonly ok: false; readonly reason: 'ipc_payload_invalid' }
+
+export interface RealtimeIpcContractSender {
+  readonly identity: 'mirror' | 'console' | 'unknown'
+}
+
+export interface RealtimeIpcContractRequest {
+  readonly sender: RealtimeIpcContractSender
+}
+
+export interface RealtimeIpcContractOptions {
+  readonly getTransientSecret: () => Promise<TransientRealtimeSecretInput>
+}
+
+export interface RealtimeIpcContract {
+  readonly handleTransientSecretRequest: (
+    request: RealtimeIpcContractRequest,
+  ) => Promise<TransientRealtimeSecretResult>
+  readonly mirror: {
+    readonly requestRealtimeClientSecret: () => Promise<TransientRealtimeSecretResult>
+  }
+  readonly console: Readonly<Record<string, never>>
+}
 
 const SAFE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/
 const SAFE_STATE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/
@@ -229,6 +256,42 @@ function exactKeys(value: unknown, expected: readonly string[]): boolean {
 
 function invalidPayload(): SimulatorPayloadValidation {
   return { ok: false, reason: 'ipc_payload_invalid' }
+}
+
+function rejectedTransientSecret(
+  reason: 'unauthorized_sender' | 'broker_unavailable' | 'broker_failed' | 'invalid_payload',
+): TransientRealtimeSecretResult {
+  return { status: 'rejected', reason }
+}
+
+export function createRealtimeIpcContract(
+  options: RealtimeIpcContractOptions,
+): RealtimeIpcContract {
+  const handleTransientSecretRequest = async (
+    request: RealtimeIpcContractRequest,
+  ): Promise<TransientRealtimeSecretResult> => {
+    if (request.sender.identity !== 'mirror') return rejectedTransientSecret('unauthorized_sender')
+    try {
+      const issued = await options.getTransientSecret()
+      return {
+        status: 'accepted',
+        reason: 'mirror_authorized',
+        value: issued,
+      }
+    } catch {
+      return rejectedTransientSecret('broker_failed')
+    }
+  }
+
+  return Object.freeze({
+    handleTransientSecretRequest,
+    mirror: Object.freeze({
+      requestRealtimeClientSecret: () => handleTransientSecretRequest({
+        sender: { identity: 'mirror' },
+      }),
+    }),
+    console: Object.freeze({}),
+  })
 }
 
 export function validateSimulatorPayload(value: unknown): SimulatorPayloadValidation {
@@ -446,6 +509,38 @@ async function invokeSimulator(
 
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
   const { ipcMain, runtime, windows, telemetry } = options
+
+  ipcMain.handle(MIRROR_IPC_CHANNELS.requestRealtimeClientSecret, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return rejectedTransientSecret('unauthorized_sender')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return rejectedTransientSecret('invalid_payload')
+    }
+
+    const issue = runtime.requestRealtimeClientSecret
+    if (issue === undefined) return rejectedTransientSecret('broker_unavailable')
+
+    try {
+      const result = await issue()
+      if (typeof result.value !== 'string' || result.value.length === 0) {
+        return rejectedTransientSecret('broker_failed')
+      }
+      const response = {
+        status: 'accepted' as const,
+        reason: 'mirror_authorized' as const,
+        value: result.value as TransientRealtimeSecretInput,
+      }
+      return typeof result.expiresAt === 'number' && Number.isSafeInteger(result.expiresAt)
+        ? { ...response, expiresAt: result.expiresAt }
+        : response
+    } catch {
+      return rejectedTransientSecret('broker_failed')
+    }
+  })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSnapshot, (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
