@@ -265,7 +265,7 @@ function expectedWorkerContextPreamble(role: WorkerRole): Buffer {
       'source_body_output: "forbidden_unless_evidence_requires"',
       'terminal_read_output: "metadata_only"',
       'repository_wide_discovery: "forbidden"',
-      'first_write_deadline_seconds: 420',
+      'first_write_deadline_seconds: 480',
       'post_write_idle_deadline_seconds: 120',
       'max_read_output_lines: 200',
       '--- BEGIN ORIGINAL PROMPT ---'
@@ -583,7 +583,7 @@ describe('Codex worker launcher contract', () => {
       'exact resolved path only after the worker completes',
       'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded',
       'codex_worker_launcher stage=output status=failed reason=limit_exceeded',
-      'first_write_deadline_seconds: 420',
+      'first_write_deadline_seconds: 480',
       'exact descendant process tree',
       'Read only targeted files and required skill sections.',
       'Do not dump unrelated source or skill content or flood worker output.',
@@ -608,8 +608,8 @@ describe('Codex worker launcher contract', () => {
 
     expect(
       launcher,
-      'launcher must default first-write supervision to 420 seconds'
-    ).toContain('[int]$FirstWriteTimeoutSeconds = 420')
+      'launcher must default first-write supervision to 480 seconds'
+    ).toContain('[int]$FirstWriteTimeoutSeconds = 480')
   })
 
   it('launches a matching tester envelope with exact argv and byte-preserved prompt stdin', async () => {
