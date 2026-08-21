@@ -25,6 +25,7 @@ interface LauncherRunOptions {
   readonly flood?: boolean
   readonly workerActive?: string
   readonly patchSignal?: 'none' | 'completed'
+  readonly patchSignalStream?: 'stdout' | 'stderr'
 }
 
 interface Fixture {
@@ -59,6 +60,17 @@ $utf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
 $workerActive = [string]$env:MIRROR_CODEX_WORKER_ACTIVE
 [System.IO.File]::WriteAllText((Join-Path $capture 'worker-active.txt'), $workerActive, $utf8)
 
+if ($env:MM_CODEX_WORKER_PATCH_SIGNAL -eq 'completed') {
+  if ($env:MM_CODEX_WORKER_PATCH_SIGNAL_STREAM -eq 'stderr') {
+    [Console]::Error.WriteLine('patch: completed')
+    [Console]::Error.Flush()
+  }
+  else {
+    [Console]::Out.WriteLine('patch: completed')
+    [Console]::Out.Flush()
+  }
+}
+
 if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
   [System.IO.File]::WriteAllText((Join-Path $capture 'child.pid'), [string]$PID, $utf8)
 
@@ -92,11 +104,6 @@ if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
 
 $argvText = @($args) -join [char]0
 [System.IO.File]::WriteAllText((Join-Path $capture 'argv.txt'), $argvText, $utf8)
-
-if ($env:MM_CODEX_WORKER_PATCH_SIGNAL -eq 'completed') {
-  [Console]::Out.WriteLine('patch: completed')
-  [Console]::Out.Flush()
-}
 
 $inputStream = [Console]::OpenStandardInput()
 $memory = New-Object -TypeName System.IO.MemoryStream
@@ -200,7 +207,8 @@ function runLauncher(
     maxOutputBytes,
     flood = false,
     workerActive = '0',
-    patchSignal = 'none'
+    patchSignal = 'none',
+    patchSignalStream = 'stdout'
   } = normalizedOptions
   const launcherArguments = [
     '-NoLogo',
@@ -233,9 +241,14 @@ function runLauncher(
         ...process.env,
         MM_CODEX_WORKER_CAPTURE_DIR: fixture.captureDir,
         MM_CODEX_WORKER_HANG:
-          timeoutSeconds !== undefined && !flood && patchSignal !== 'completed' ? '1' : '0',
+          timeoutSeconds !== undefined &&
+          !flood &&
+          (patchSignal !== 'completed' || patchSignalStream === 'stderr')
+            ? '1'
+            : '0',
         MM_CODEX_WORKER_FLOOD: flood ? '1' : '0',
         MM_CODEX_WORKER_PATCH_SIGNAL: patchSignal,
+        MM_CODEX_WORKER_PATCH_SIGNAL_STREAM: patchSignalStream,
         MIRROR_CODEX_WORKER_ACTIVE: workerActive
       },
       encoding: 'buffer',
@@ -577,6 +590,22 @@ describe('Codex worker launcher contract', () => {
     ).toBe(0)
     expect(run.launcherFailureMarker, 'successful first-write completion must not emit a failure marker').toBe(
       'unavailable'
+    )
+  })
+
+  it('allows an exact implementer completion signal on stderr to reach the overall timeout', async () => {
+    const fixture = await makeFixture(makePrompt('implementer'))
+    const run = runLauncher(fixture, 'implementer', {
+      timeoutSeconds: 2,
+      firstWriteTimeoutSeconds: 1,
+      patchSignal: 'completed',
+      patchSignalStream: 'stderr'
+    })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for stderr first-write validation').toBeNull()
+    expect(run.status, 'stderr completion must reach the launcher overall timeout').toBe(2)
+    expect(run.launcherFailureMarker, 'stderr completion must disable the first-write deadline').toBe(
+      'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded'
     )
   })
 

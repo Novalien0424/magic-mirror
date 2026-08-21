@@ -360,6 +360,8 @@ try {
     $patchSignalBytes = [System.Text.Encoding]::ASCII.GetBytes('patch: completed')
     [long]$stdoutSignalLineLength = 0
     $stdoutSignalLineMatches = $true
+    [long]$stderrSignalLineLength = 0
+    $stderrSignalLineMatches = $true
 
     $inputStream = $process.StandardInput.BaseStream
     $stdoutStream = $process.StandardOutput.BaseStream
@@ -500,29 +502,40 @@ try {
             continue
         }
 
-        if ($isStdout -and $firstWriteEnforced -and -not $firstWriteSignalObserved) {
+        if ($firstWriteEnforced -and -not $firstWriteSignalObserved) {
+            $signalBuffer = if ($isStdout) { $stdoutBuffer } else { $stderrBuffer }
+            [long]$signalLineLength = if ($isStdout) { $stdoutSignalLineLength } else { $stderrSignalLineLength }
+            $signalLineMatches = if ($isStdout) { $stdoutSignalLineMatches } else { $stderrSignalLineMatches }
             for ($signalIndex = 0; $signalIndex -lt $bytesRead; $signalIndex++) {
-                $signalByte = $stdoutBuffer[$signalIndex]
+                $signalByte = $signalBuffer[$signalIndex]
                 if ($signalByte -eq 0x0A -or $signalByte -eq 0x0D) {
                     if (
-                        $stdoutSignalLineMatches -and
-                        $stdoutSignalLineLength -eq $patchSignalBytes.Length
+                        $signalLineMatches -and
+                        $signalLineLength -eq $patchSignalBytes.Length
                     ) {
                         $firstWriteSignalObserved = $true
                         break
                     }
-                    $stdoutSignalLineLength = 0
-                    $stdoutSignalLineMatches = $true
+                    $signalLineLength = 0
+                    $signalLineMatches = $true
                     continue
                 }
 
                 if (
-                    $stdoutSignalLineLength -ge $patchSignalBytes.Length -or
-                    $signalByte -ne $patchSignalBytes[[int]$stdoutSignalLineLength]
+                    $signalLineLength -ge $patchSignalBytes.Length -or
+                    $signalByte -ne $patchSignalBytes[[int]$signalLineLength]
                 ) {
-                    $stdoutSignalLineMatches = $false
+                    $signalLineMatches = $false
                 }
-                $stdoutSignalLineLength++
+                $signalLineLength++
+            }
+            if ($isStdout) {
+                $stdoutSignalLineLength = $signalLineLength
+                $stdoutSignalLineMatches = $signalLineMatches
+            }
+            else {
+                $stderrSignalLineLength = $signalLineLength
+                $stderrSignalLineMatches = $signalLineMatches
             }
         }
 

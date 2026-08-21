@@ -30,8 +30,11 @@ Codex stdin. If launcher entry sees the exact inherited
 before reading or launching Codex; only the Codex child environment receives
 the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed reads, and a
 200-line displayed-read limit. The launcher enforces a hard implementer-only
-180-second first-write deadline by observing only an exact complete stdout
-line `patch: completed`; surveyor and tester runs have no first-write deadline.
+180-second first-write deadline by observing only an exact complete line
+`patch: completed` on either captured stdout or captured stderr. The detector
+accepts stderr because observed Codex tool-status output can arrive on that
+channel; this is an observed CLI behavior, not a universal CLI guarantee.
+Surveyor and tester runs have no first-write deadline.
 On expiry it terminates and confirms the exact child tree, then exits 2 with
 `codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded`
 or uses `tree_termination_failed` at stage `first_write` if confirmation
