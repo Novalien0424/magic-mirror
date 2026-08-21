@@ -1,3 +1,5 @@
+import type { RealtimeFailureInput } from './realtime-recovery'
+
 export const REALTIME_METADATA_EVENT_NAMES = Object.freeze([
   'realtime_session_created',
   'realtime_connect_started',
@@ -47,3 +49,7 @@ export interface RealtimeMetadataEvent {
 }
 
 export type RealtimeMetadataEventSink = (event: RealtimeMetadataEvent) => void
+
+export type RealtimeFailureCallback = (
+  failure: RealtimeFailureInput,
+) => void | PromiseLike<void>

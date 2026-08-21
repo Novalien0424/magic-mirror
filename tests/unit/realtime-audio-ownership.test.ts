@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createMicOwner } from "../../src/renderer/realtime/mic-owner";
+import {
+  createMicOwner,
+  type MicOwnerMetadataEvent,
+  type MicOwnerMetadataEventSink,
+} from "../../src/renderer/realtime/mic-owner";
 import type { RealtimeSessionHandle } from "../../src/renderer/realtime/realtime-session-adapter";
 import { createRealtimeAudioOutput } from "../../src/renderer/realtime/realtime-audio-output";
 
 type FakeTrack = {
   readonly kind: "audio";
-  readonly stop: ReturnType<typeof vi.fn>;
+  readonly stop: () => void;
 };
 
 type FakeStream = {
@@ -34,24 +38,30 @@ function makeSession(
   return {
     realtimeSessionId: "session-a",
     sessionGeneration: 1,
-    connect: vi.fn(async () => undefined),
-    interrupt: vi.fn(async () => undefined),
-    close: vi.fn(close),
+    connect: vi.fn<RealtimeSessionHandle["connect"]>(async () => undefined),
+    interrupt: vi.fn<RealtimeSessionHandle["interrupt"]>(async () => undefined),
+    close: vi.fn<RealtimeSessionHandle["close"]>(async (reason) => {
+      await close(reason);
+    }),
   };
 }
 
+function makeEventSink() {
+  return vi.fn<MicOwnerMetadataEventSink>(() => undefined);
+}
+
 function findEvent(
-  eventSink: ReturnType<typeof vi.fn>,
+  eventSink: ReturnType<typeof makeEventSink>,
   eventName: string,
-): Record<string, unknown> | undefined {
+): MicOwnerMetadataEvent | undefined {
   return eventSink.mock.calls
-    .map(([event]) => event as Record<string, unknown>)
-    .find((event) => event.event === eventName);
+    .map(([event]: [MicOwnerMetadataEvent]) => event)
+    .find((event: MicOwnerMetadataEvent) => event.event === eventName);
 }
 
 describe("realtime microphone ownership", () => {
   it("acquires exactly one app-owned stream from none to realtime and rejects a second owner", async () => {
-    const eventSink = vi.fn();
+    const eventSink = makeEventSink();
     const session = makeSession(async () => undefined);
     const owner = createMicOwner({ session, eventSink });
     const first = makeStream([() => undefined]);
@@ -70,7 +80,7 @@ describe("realtime microphone ownership", () => {
 
   it("closes the injected session before stopping every track, then returns owner to none", async () => {
     const sequence: string[] = [];
-    const eventSink = vi.fn();
+    const eventSink = makeEventSink();
     let owner: ReturnType<typeof createMicOwner>;
     const session = makeSession(async (reason) => {
       expect(owner.owner).toBe("realtime");
@@ -106,8 +116,8 @@ describe("realtime microphone ownership", () => {
   });
 
   it("reports a close failure as local Maintenance and keeps realtime ownership", async () => {
-    const eventSink = vi.fn();
-    const close = vi.fn(async () => {
+    const eventSink = makeEventSink();
+    const close = vi.fn<RealtimeSessionHandle["close"]>(async () => {
       throw new Error();
     });
     const session = makeSession(close);
@@ -138,7 +148,7 @@ describe("realtime microphone ownership", () => {
 
   it("reports a track-stop failure, still attempts every track once, and blocks a new owner", async () => {
     const sequence: string[] = [];
-    const eventSink = vi.fn();
+    const eventSink = makeEventSink();
     const session = makeSession(async () => {
       sequence.push("close");
     });

@@ -1,34 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { PlaybackCompletion } from "../../src/renderer/realtime/playback-completion";
+import {
+  PlaybackCompletion,
+  type PlaybackCompletionAnalyser,
+  type PlaybackCompletionMetadataEventSink,
+  type PlaybackCompletionScheduler,
+  type PlaybackCompletionTransport,
+} from "../../src/renderer/realtime/playback-completion";
 
-type RawListener = (event: unknown) => void;
-
-type TransportProbe = {
-  readonly transport: {
-    readonly on: ReturnType<typeof vi.fn>;
-    readonly off: ReturnType<typeof vi.fn>;
-  };
-  readonly emitStopped: () => void;
-  readonly listenerCount: () => number;
-};
-
-type SchedulerProbe = {
-  readonly scheduler: {
-    readonly now: ReturnType<typeof vi.fn>;
-    readonly setTimeout: ReturnType<typeof vi.fn>;
-    readonly clearTimeout: ReturnType<typeof vi.fn>;
-  };
-  readonly clearTimeout: ReturnType<typeof vi.fn>;
-  readonly tick: (elapsedMs: number) => void;
-  readonly pendingCount: () => number;
-};
-
-type AbortProbe = {
-  readonly signal: AbortSignal;
-  readonly abort: () => void;
-  readonly removeEventListener: ReturnType<typeof vi.fn>;
-};
+type RawListener = Parameters<PlaybackCompletionTransport["on"]>[1];
 
 type PlaybackCompletionConfig = Readonly<{
   readonly fallbackAfterMs: number;
@@ -62,21 +42,26 @@ const HARD_BOUND_COMPLETION_CONFIG: PlaybackCompletionConfig = Object.freeze({
   silentSamplesRequired: 2,
 });
 
-function makeTransportProbe(): TransportProbe {
+function makeTransportProbe() {
   const listeners = new Set<RawListener>();
-  const on = vi.fn((eventName: string, listener: RawListener) => {
-    if (eventName === "output_audio_buffer.stopped") {
-      listeners.add(listener);
-    }
-  });
-  const off = vi.fn((eventName: string, listener: RawListener) => {
-    if (eventName === "output_audio_buffer.stopped") {
-      listeners.delete(listener);
-    }
-  });
+  const on = vi.fn<PlaybackCompletionTransport["on"]>(
+    (eventName: string, listener: RawListener): void => {
+      if (eventName === "output_audio_buffer.stopped") {
+        listeners.add(listener);
+      }
+    },
+  );
+  const off = vi.fn<PlaybackCompletionTransport["off"]>(
+    (eventName: string, listener: RawListener): void => {
+      if (eventName === "output_audio_buffer.stopped") {
+        listeners.delete(listener);
+      }
+    },
+  );
+  const transport = { on, off } satisfies PlaybackCompletionTransport;
 
   return {
-    transport: { on, off },
+    transport,
     emitStopped: () => {
       for (const listener of [...listeners]) {
         listener({ type: "output_audio_buffer.stopped" });
@@ -86,22 +71,31 @@ function makeTransportProbe(): TransportProbe {
   };
 }
 
-function makeSchedulerProbe(): SchedulerProbe {
+function makeSchedulerProbe() {
   let currentTime = 1_000;
   let nextHandle = 0;
   const pending = new Map<number, { dueAt: number; callback: () => void }>();
-  const now = vi.fn(() => currentTime);
-  const setTimeout = vi.fn((callback: () => void, delayMs: number) => {
-    const handle = ++nextHandle;
-    pending.set(handle, { dueAt: currentTime + delayMs, callback });
-    return handle;
-  });
-  const clearTimeout = vi.fn((handle: number) => {
-    pending.delete(handle);
-  });
+  const now = vi.fn<PlaybackCompletionScheduler["now"]>(() => currentTime);
+  const setTimeout = vi.fn<PlaybackCompletionScheduler["setTimeout"]>(
+    (callback: () => void, delayMs: number): number => {
+      const handle = ++nextHandle;
+      pending.set(handle, { dueAt: currentTime + delayMs, callback });
+      return handle;
+    },
+  );
+  const clearTimeout = vi.fn<PlaybackCompletionScheduler["clearTimeout"]>(
+    (handle: number): void => {
+      pending.delete(handle);
+    },
+  );
+  const scheduler = {
+    now,
+    setTimeout,
+    clearTimeout,
+  } satisfies PlaybackCompletionScheduler;
 
   return {
-    scheduler: { now, setTimeout, clearTimeout },
+    scheduler,
     clearTimeout,
     tick: (elapsedMs: number) => {
       currentTime += elapsedMs;
@@ -117,7 +111,7 @@ function makeSchedulerProbe(): SchedulerProbe {
   };
 }
 
-function makeAbortProbe(): AbortProbe {
+function makeAbortProbe() {
   let aborted = false;
   const listeners = new Set<() => void>();
   const removeEventListener = vi.fn((_eventName: string, listener: () => void) => {
@@ -165,10 +159,10 @@ function expectMetadataEvent(
 }
 
 function createCompletion(
-  transportProbe: TransportProbe,
-  schedulerProbe: SchedulerProbe,
-  eventSink: ReturnType<typeof vi.fn>,
-  analyser: { readonly readPeakLevel: ReturnType<typeof vi.fn> },
+  transportProbe: ReturnType<typeof makeTransportProbe>,
+  schedulerProbe: ReturnType<typeof makeSchedulerProbe>,
+  eventSink: PlaybackCompletionMetadataEventSink,
+  analyser: PlaybackCompletionAnalyser,
   config: PlaybackCompletionConfig,
 ): PlaybackCompletion {
   const input: PlaybackCompletionConstructorInput = {
@@ -204,8 +198,10 @@ describe("realtime playback completion", () => {
     const transportProbe = makeTransportProbe();
     const schedulerProbe = makeSchedulerProbe();
     const abortProbe = makeAbortProbe();
-    const eventSink = vi.fn();
-    const analyser = { readPeakLevel: vi.fn(() => 0.8) };
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
+    const analyser = {
+      readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
+    } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
       transportProbe,
       schedulerProbe,
@@ -255,14 +251,14 @@ describe("realtime playback completion", () => {
     const transportProbe = makeTransportProbe();
     const schedulerProbe = makeSchedulerProbe();
     const abortProbe = makeAbortProbe();
-    const eventSink = vi.fn();
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
     const analyser = {
       readPeakLevel: vi
-        .fn()
+        .fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0)
         .mockReturnValueOnce(0.8)
         .mockReturnValueOnce(0)
         .mockReturnValueOnce(0),
-    };
+    } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
       transportProbe,
       schedulerProbe,
@@ -318,8 +314,10 @@ describe("realtime playback completion", () => {
     const transportProbe = makeTransportProbe();
     const schedulerProbe = makeSchedulerProbe();
     const abortProbe = makeAbortProbe();
-    const eventSink = vi.fn();
-    const analyser = { readPeakLevel: vi.fn(() => 0.8) };
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
+    const analyser = {
+      readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
+    } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
       transportProbe,
       schedulerProbe,
@@ -368,8 +366,10 @@ describe("realtime playback completion", () => {
     const transportProbe = makeTransportProbe();
     const schedulerProbe = makeSchedulerProbe();
     const abortProbe = makeAbortProbe();
-    const eventSink = vi.fn();
-    const analyser = { readPeakLevel: vi.fn(() => 0) };
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
+    const analyser = {
+      readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0),
+    } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
       transportProbe,
       schedulerProbe,

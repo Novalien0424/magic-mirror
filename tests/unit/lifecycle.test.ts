@@ -25,6 +25,7 @@ const exactLifecycleEventContract: Record<LifecycleEvent['type'], true> = {
   LOCAL_CORE_FAILED: true,
   WAKE_DETECTED: true,
   REALTIME_READY: true,
+  REALTIME_SESSION_REPLACED: true,
   CLOUD_FAILED: true,
   LOCAL_AUDIO_FAILED: true,
   IDLE_TIMEOUT: true,

@@ -9,7 +9,9 @@ import {
   type RealtimeMetadataEvent,
   type RealtimeMetadataEventSink,
   type RealtimeMetadataReason,
+  type RealtimeFailureCallback,
 } from '../../shared/realtime-events'
+import type { RealtimeFailureInput } from '../../shared/realtime-recovery'
 import {
   createWebRtcRealtimeTransport,
   type RealtimeTransportFactory,
@@ -37,6 +39,7 @@ export interface CreateRealtimeSessionInput {
   readonly audioElement: HTMLAudioElement
   readonly sessionId: string
   readonly eventSink: RealtimeMetadataEventSink
+  readonly onFailure?: RealtimeFailureCallback
   readonly dependencies?: RealtimeSessionDependencies
 }
 
@@ -239,11 +242,12 @@ export function createRealtimeSession(
 
   let closed = false
   let readyEmitted = false
+  let failureReported = false
   let connectPromise: Promise<void> | null = null
   let transientClientSecret: string | null = input.clientSecret
 
   const emitReady = (reason: RealtimeMetadataReason): void => {
-    if (closed || readyEmitted) return
+    if (closed || readyEmitted || failureReported) return
     readyEmitted = true
     emitMetadata(
       input,
@@ -288,6 +292,47 @@ export function createRealtimeSession(
     )
   }
 
+  const closeLegacySession = (): void => {
+    if (closed) return
+    closed = true
+    closeWithoutMetadata(session)
+  }
+
+  const reportFailure = (
+    kind: RealtimeFailureInput['kind'],
+    event: RealtimeMetadataEvent['event'],
+    status: RealtimeMetadataEvent['status'],
+    reason: RealtimeMetadataReason,
+  ): void => {
+    if (closed || failureReported) return
+    failureReported = true
+
+    const failure: RealtimeFailureInput = {
+      kind,
+      realtimeSessionId: input.sessionId,
+      reason,
+    }
+    const onFailure = input.onFailure
+
+    if (onFailure === undefined) {
+      closeLegacySession()
+      emitMetadata(input, event, status, reason, sessionGeneration, createdAt)
+      return
+    }
+
+    emitMetadata(input, event, status, reason, sessionGeneration, createdAt)
+    let delivery: void | PromiseLike<void>
+    try {
+      delivery = onFailure(failure)
+    } catch {
+      closeLegacySession()
+      return
+    }
+    void Promise.resolve(delivery).catch(() => {
+      closeLegacySession()
+    })
+  }
+
   const handleTransportEvent = (event: unknown): void => {
     if (rawEventIsStale(event, input.sessionId)) {
       emitStale()
@@ -299,25 +344,35 @@ export function createRealtimeSession(
       return
     }
     if (type === 'error') {
-      if (closed) return
-      closed = true
-      closeWithoutMetadata(session)
-      emitConnectFailed('cause=transport_error')
+      reportFailure(
+        readyEmitted ? 'ice' : 'connect',
+        'realtime_connect_failed',
+        'failed',
+        'cause=transport_error',
+      )
       return
     }
     if (type === 'connection_change' && rawEventStatus(event) === 'disconnected') {
-      if (closed) return
-      closed = true
-      closeWithoutMetadata(session)
-      emitDisconnected('cause=transport_disconnected')
+      reportFailure(
+        readyEmitted ? 'active_disconnect' : 'connect',
+        'realtime_disconnect',
+        'info',
+        'cause=transport_disconnected',
+      )
     }
   }
 
-  const handleSessionError = (): void => {
-    if (closed) return
-    closed = true
-    closeWithoutMetadata(session)
-    emitConnectFailed('cause=transport_error')
+  const handleSessionError = (event: unknown): void => {
+    if (rawEventIsStale(event, input.sessionId)) {
+      emitStale()
+      return
+    }
+    reportFailure(
+      readyEmitted ? 'ice' : 'connect',
+      'realtime_connect_failed',
+      'failed',
+      'cause=transport_error',
+    )
   }
 
   session.on('transport_event', handleTransportEvent)
@@ -340,9 +395,12 @@ export function createRealtimeSession(
     const clientSecret = transientClientSecret
     transientClientSecret = null
     if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
-      closed = true
-      closeWithoutMetadata(session)
-      emitConnectFailed('cause=connect_failed')
+      reportFailure(
+        'connect',
+        'realtime_connect_failed',
+        'failed',
+        'cause=connect_failed',
+      )
       throw new RealtimeSessionAdapterError('connect_failed')
     }
 
@@ -356,12 +414,18 @@ export function createRealtimeSession(
     )
     try {
       await session.connect({ apiKey: clientSecret })
+      if (failureReported) {
+        throw new RealtimeSessionAdapterError('connect_failed')
+      }
       if (!closed) emitReady('cause=connect_succeeded')
     } catch {
-      if (!closed) {
-        closed = true
-        closeWithoutMetadata(session)
-        emitConnectFailed('cause=connect_failed')
+      if (!closed && !failureReported) {
+        reportFailure(
+          readyEmitted ? 'ice' : 'connect',
+          'realtime_connect_failed',
+          'failed',
+          'cause=connect_failed',
+        )
       }
       throw new RealtimeSessionAdapterError('connect_failed')
     }

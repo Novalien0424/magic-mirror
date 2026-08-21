@@ -70,6 +70,8 @@ import type {
   ClientSecretBroker,
   ClientSecretIssueResult,
 } from './realtime/client-secret-broker'
+import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
+import type { RealtimeFailureInput } from '../shared/realtime-recovery'
 import { createConsoleConfigController } from './console-config'
 import type {
   ConsoleConfigControllerOptions,
@@ -202,6 +204,10 @@ export interface BootOptions {
   readonly createMockModuleFactory?: () => ModuleMockFactory
   readonly createModuleRegistry?: (options: ModuleRegistryOptions) => ModuleRegistry
   readonly createLifecycleActor?: (deps: { telemetry: { emit(event: MetadataEvent): void } }) => LifecycleActor
+  readonly createRealtimeRecoveryController?: (dependencies: {
+    lifecycleActor: LifecycleActor
+    metadataSink: (event: Record<string, unknown>) => void
+  }) => RealtimeOutageRecoveryController
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
@@ -223,6 +229,11 @@ export interface BootRuntime {
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
+  handleRealtimeFailure(input: RealtimeFailureInput): Promise<Record<string, unknown>>
+  scheduleRecoveryProbes(): void
+  manualStart(): Promise<Record<string, unknown>>
+  manualStop(): Promise<Record<string, unknown>>
+  rolloverAtSafeBoundary(): Promise<Record<string, unknown>>
   handleSimulator(command: unknown): Promise<SimulatorResult>
   /** Main-owned phase-record writer; never exposed through renderer IPC. */
   appendPhaseTestRecord(record: unknown): Result<void, SqliteFailure>
@@ -253,6 +264,41 @@ function safeIdentifier(value: unknown): string | null {
 
 function safeReason(value: unknown, fallback: string): string {
   return typeof value === 'string' && SAFE_REASON_PATTERN.test(value) ? value : fallback
+}
+
+function recoveryMetadataStatus(value: unknown): MetadataEvent['status'] {
+  if (value === 'success' || value === 'degraded' || value === 'failed' || value === 'info') {
+    return value
+  }
+  return 'failed'
+}
+
+function sanitizeRealtimeRecoveryMetadata(event: Record<string, unknown>): MetadataEvent {
+  const sanitized: MetadataEvent = {
+    module: 'app',
+    event: safeCode(readProperty(event, 'event'), 'realtime_recovery_event'),
+    status: recoveryMetadataStatus(readProperty(event, 'status')),
+    reason: safeReason(readProperty(event, 'reason'), 'realtime_recovery_event_invalid'),
+    source: 'runtime',
+  }
+
+  const errorCode = readProperty(event, 'error_code')
+  if (typeof errorCode === 'string' && SAFE_CODE_PATTERN.test(errorCode)) {
+    sanitized.error_code = errorCode
+  }
+  const sessionId = safeIdentifier(readProperty(event, 'session_id'))
+  if (sessionId !== null) {
+    sanitized.session_id = sessionId
+  }
+  const sceneId = safeIdentifier(readProperty(event, 'scene_id'))
+  if (sceneId !== null) {
+    sanitized.scene_id = sceneId
+  }
+  const durationMs = readProperty(event, 'duration_ms')
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
+    sanitized.duration_ms = durationMs
+  }
+  return sanitized
 }
 
 function safeTime(value: unknown): string | null {
@@ -526,8 +572,19 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
     starting: { LOCAL_READY: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
     dormant: { WAKE_DETECTED: 'activating', LOCAL_CORE_FAILED: 'maintenance' },
     activating: { REALTIME_READY: 'active', CLOUD_FAILED: 'offlineLoop', LOCAL_CORE_FAILED: 'maintenance' },
-    active: { CLOUD_FAILED: 'offlineLoop', SLEEP_REQUESTED: 'suspending', IDLE_TIMEOUT: 'suspending', LOCAL_CORE_FAILED: 'maintenance' },
-    suspending: { MEDIA_CLOSED: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
+    active: {
+      REALTIME_SESSION_REPLACED: 'active',
+      CLOUD_FAILED: 'offlineLoop',
+      SLEEP_REQUESTED: 'suspending',
+      IDLE_TIMEOUT: 'suspending',
+      LOCAL_AUDIO_FAILED: 'maintenance',
+      LOCAL_CORE_FAILED: 'maintenance',
+    },
+    suspending: {
+      MEDIA_CLOSED: 'dormant',
+      LOCAL_AUDIO_FAILED: 'maintenance',
+      LOCAL_CORE_FAILED: 'maintenance',
+    },
     offlineLoop: { RECOVERY_PASSED: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
     maintenance: { RETRY_STARTUP: 'starting', LOCAL_CORE_FAILED: 'maintenance' },
   }
@@ -565,6 +622,12 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
         }
       } else if (event.type === 'REALTIME_READY') {
         context = { ...context, realtimeSessionId: event.realtimeSessionId }
+      } else if (event.type === 'REALTIME_SESSION_REPLACED') {
+        context = {
+          ...context,
+          realtimeSessionId: event.realtimeSessionId,
+          sessionGeneration: event.sessionGeneration,
+        }
       } else if (event.type === 'CLOUD_FAILED') {
         context = {
           ...context,
@@ -575,6 +638,7 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
         }
       } else if (
         event.type === 'LOCAL_CORE_FAILED'
+        || event.type === 'LOCAL_AUDIO_FAILED'
         || event.type === 'MEDIA_CLOSED'
       ) {
         context = { ...context, realtimeSessionId: null, activeProfileId: null, sceneInvocationId: null }
@@ -699,6 +763,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let configService: ConfigService | null = options.configService ?? null
   let sqliteService: SqlitePhaseTestService | null = null
+  let realtimeRecoveryController: RealtimeOutageRecoveryController | null = null
+  const realtimeRecoveryUnavailable: Record<string, unknown> = Object.freeze({
+    event: 'realtime_recovery_unavailable',
+    status: 'failed',
+    reason: 'recovery_controller_unavailable',
+    source: 'runtime',
+  })
   const resolveModelSettings = options.resolveModelSettings ?? defaultResolveModelSettings
   let developerMode: DeveloperModeDecision = resolveDeveloperMode(
     isPackaged,
@@ -797,6 +868,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
   }
 
+  let readySettled = false
   const ready = (async () => {
     const failures: BootFailure[] = []
     let configSlots: ConfigSlots | undefined
@@ -1007,6 +1079,26 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
     attachActor(createdActor)
 
+    const createRealtimeRecoveryController = options.createRealtimeRecoveryController
+    if (createRealtimeRecoveryController !== undefined) {
+      try {
+        realtimeRecoveryController = createRealtimeRecoveryController({
+          lifecycleActor: createdActor,
+          metadataSink: (event) => emitMetadata(telemetry, sanitizeRealtimeRecoveryMetadata(event)),
+        })
+      } catch {
+        realtimeRecoveryController = null
+        emitMetadata(telemetry, {
+          module: 'app',
+          event: 'recovery_controller_create_failed',
+          status: 'failed',
+          error_code: 'recovery_controller_create_failed',
+          reason: 'cause=create_failed',
+          source: 'runtime',
+        })
+      }
+    }
+
     const firstFailure = failures[0]
     if (firstFailure === undefined) {
       sendLifecycle({ type: 'LOCAL_READY' })
@@ -1039,6 +1131,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       refreshSnapshot()
       notifyListeners()
     }
+  })
+  void ready.then(() => {
+    readySettled = true
   })
 
   const phaseTestsReader: PhaseTestRecordReader = {
@@ -1280,6 +1375,60 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return broker.issue({ modelId: activeModelSettings.realtimeDialogue })
   }
 
+  function emitRealtimeRecoveryUnavailable(): Record<string, unknown> {
+    emitMetadata(telemetry, sanitizeRealtimeRecoveryMetadata(realtimeRecoveryUnavailable))
+    return realtimeRecoveryUnavailable
+  }
+
+  async function handleRealtimeFailure(
+    input: RealtimeFailureInput,
+  ): Promise<Record<string, unknown>> {
+    await ready
+    if (realtimeRecoveryController === null) {
+      return emitRealtimeRecoveryUnavailable()
+    }
+    return realtimeRecoveryController.handleRealtimeFailure(input)
+  }
+
+  function scheduleRecoveryProbes(): void {
+    const invoke = (): void => {
+      if (realtimeRecoveryController === null) {
+        emitRealtimeRecoveryUnavailable()
+        return
+      }
+      realtimeRecoveryController.scheduleRecoveryProbes()
+    }
+    if (readySettled) {
+      invoke()
+      return
+    }
+    void ready.then(invoke)
+  }
+
+  async function manualStart(): Promise<Record<string, unknown>> {
+    await ready
+    if (realtimeRecoveryController === null) {
+      return emitRealtimeRecoveryUnavailable()
+    }
+    return realtimeRecoveryController.manualStart()
+  }
+
+  async function manualStop(): Promise<Record<string, unknown>> {
+    await ready
+    if (realtimeRecoveryController === null) {
+      return emitRealtimeRecoveryUnavailable()
+    }
+    return realtimeRecoveryController.manualStop()
+  }
+
+  async function rolloverAtSafeBoundary(): Promise<Record<string, unknown>> {
+    await ready
+    if (realtimeRecoveryController === null) {
+      return emitRealtimeRecoveryUnavailable()
+    }
+    return realtimeRecoveryController.rolloverAtSafeBoundary()
+  }
+
   async function refreshConfig(): Promise<ConsoleConfigRefreshResult> {
     const refreshFailure = (): ConsoleConfigRefreshResult => {
       resolvedModelSettings = null
@@ -1343,6 +1492,11 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     appendPhaseTestRecord,
     createInitialRuntimeSnapshotsForTest: () => consoleDataPlane.createInitialRuntimeSnapshotsForTest(),
     snapshot: () => projectAppSnapshot(current),
+    handleRealtimeFailure,
+    scheduleRecoveryProbes,
+    manualStart,
+    manualStop,
+    rolloverAtSafeBoundary,
     subscribe(listener) {
       listeners.add(listener)
       try {

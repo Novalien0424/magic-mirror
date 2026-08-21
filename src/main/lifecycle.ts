@@ -15,6 +15,11 @@ export type LifecycleEvent =
   | { type: 'LOCAL_CORE_FAILED'; errorCode?: string }
   | { type: 'WAKE_DETECTED'; activationId: string; lastInteractionAt: string }
   | { type: 'REALTIME_READY'; realtimeSessionId: string }
+  | {
+      type: 'REALTIME_SESSION_REPLACED';
+      realtimeSessionId: string;
+      sessionGeneration: number;
+    }
   | { type: 'CLOUD_FAILED'; errorCode?: string }
   | { type: 'LOCAL_AUDIO_FAILED'; errorCode?: string }
   | { type: 'IDLE_TIMEOUT' }
@@ -74,10 +79,13 @@ const LEGAL_TARGETS: Record<
     IDLE_TIMEOUT: 'suspending',
     SLEEP_REQUESTED: 'suspending',
     CLOUD_FAILED: 'offlineLoop',
+    REALTIME_SESSION_REPLACED: 'active',
+    LOCAL_AUDIO_FAILED: 'maintenance',
     LOCAL_CORE_FAILED: 'maintenance',
   },
   suspending: {
     MEDIA_CLOSED: 'dormant',
+    LOCAL_AUDIO_FAILED: 'maintenance',
     LOCAL_CORE_FAILED: 'maintenance',
   },
   offlineLoop: {
@@ -95,6 +103,7 @@ const CAUSES: Record<LifecycleEvent['type'], string> = {
   LOCAL_CORE_FAILED: 'local_core_failed',
   WAKE_DETECTED: 'wake_word_detected',
   REALTIME_READY: 'mic_and_realtime_ready',
+  REALTIME_SESSION_REPLACED: 'realtime_session_replaced',
   CLOUD_FAILED: 'cloud_failed',
   LOCAL_AUDIO_FAILED: 'local_audio_failed',
   IDLE_TIMEOUT: 'idle_timeout',
@@ -127,6 +136,15 @@ const lifecycleSetup = setup({
         return {};
       }
       return { realtimeSessionId: event.realtimeSessionId };
+    }),
+    assignRealtimeSessionReplacement: assign(({ event }) => {
+      if (event.type !== 'REALTIME_SESSION_REPLACED') {
+        return {};
+      }
+      return {
+        realtimeSessionId: event.realtimeSessionId,
+        sessionGeneration: event.sessionGeneration,
+      };
     }),
     clearSessionContext: assign(() => ({
       realtimeSessionId: null,
@@ -190,11 +208,19 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
     },
     active: {
       on: {
+        REALTIME_SESSION_REPLACED: {
+          target: 'active',
+          actions: 'assignRealtimeSessionReplacement',
+        },
         IDLE_TIMEOUT: 'suspending',
         SLEEP_REQUESTED: 'suspending',
         CLOUD_FAILED: {
           target: 'offlineLoop',
           actions: 'enterOfflineLoop',
+        },
+        LOCAL_AUDIO_FAILED: {
+          target: 'maintenance',
+          actions: 'clearSessionContext',
         },
         LOCAL_CORE_FAILED: {
           target: 'maintenance',
@@ -209,6 +235,10 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
           actions: 'clearSessionContext',
         },
         LOCAL_CORE_FAILED: {
+          target: 'maintenance',
+          actions: 'clearSessionContext',
+        },
+        LOCAL_AUDIO_FAILED: {
           target: 'maintenance',
           actions: 'clearSessionContext',
         },
