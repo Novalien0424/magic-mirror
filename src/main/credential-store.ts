@@ -66,6 +66,33 @@ export class CredentialStoreError extends Error {
   }
 }
 
+export interface CredentialImportOptions {
+  readonly credentialStore: CredentialStore
+  readonly sourcePath: string
+  readonly replace: boolean
+  readonly readText: (sourcePath: string) => string | PromiseLike<string>
+  readonly events: CredentialEventSink
+}
+
+export type CredentialImportErrorCode =
+  | 'credential_import_source_invalid'
+  | 'credential_import_lookup_failed'
+  | 'credential_import_replace_required'
+  | 'credential_import_read_failed'
+  | 'credential_import_key_missing'
+  | 'credential_import_store_failed'
+
+export class CredentialImportError extends Error {
+  readonly code: CredentialImportErrorCode
+
+  constructor(code: CredentialImportErrorCode) {
+    super('Credential import operation failed')
+    this.name = 'CredentialImportError'
+    this.code = code
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
 interface ResolvedCredentialStoreOptions {
   credentialPath: string
   safeStorage: SafeStorageAdapter
@@ -146,6 +173,152 @@ function encryptionAvailable(options: ResolvedCredentialStoreOptions): boolean {
   } catch {
     return false
   }
+}
+
+function emitCredentialImportStatus(
+  events: CredentialEventSink,
+  status: 'success' | 'info' | 'failed',
+  reason: string,
+  errorCode?: CredentialImportErrorCode,
+): void {
+  const event: Omit<MirrorEvent, 'time'> = {
+    module: 'config',
+    event: 'credential_status_changed',
+    status,
+    source: 'runtime',
+    reason,
+  }
+  if (errorCode !== undefined) event.error_code = errorCode
+  try {
+    events.emit(event)
+  } catch {
+    // A diagnostic sink failure cannot expose or block credential handling.
+  }
+}
+
+function importCredentialFailure(
+  events: CredentialEventSink,
+  code: CredentialImportErrorCode,
+  reason: string,
+  status: 'info' | 'failed' = 'failed',
+): never {
+  emitCredentialImportStatus(events, status, reason, code)
+  throw new CredentialImportError(code)
+}
+
+function parseOperatorCredential(sourceText: string): string | null {
+  for (const line of sourceText.split(/\r?\n/)) {
+    const candidate = line.trim()
+    if (candidate === '' || candidate.startsWith('#')) continue
+
+    const match = /^(?:export\s+)?OPENAI_API_KEY\s*=\s*(.*)$/.exec(candidate)
+    if (match === null) continue
+
+    let value = match[1]?.trim() ?? ''
+    const quoted = (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    if (quoted) value = value.slice(1, -1)
+    return value.length > 0 ? value : null
+  }
+  return null
+}
+
+export async function importCredentialFromOperatorAction(
+  options: CredentialImportOptions,
+): Promise<void> {
+  if (
+    typeof options.sourcePath !== 'string'
+    || options.sourcePath.length === 0
+    || typeof options.readText !== 'function'
+  ) {
+    return importCredentialFailure(
+      options.events,
+      'credential_import_source_invalid',
+      'operator_import;cause=source_invalid',
+    )
+  }
+
+  let existingCredential: string | null = null
+  let hasExistingCredential = false
+  try {
+    existingCredential = await options.credentialStore.get()
+    hasExistingCredential = typeof existingCredential === 'string' && existingCredential.length > 0
+  } catch {
+    existingCredential = null
+    return importCredentialFailure(
+      options.events,
+      'credential_import_lookup_failed',
+      'operator_import;cause=credential_lookup_failed',
+    )
+  } finally {
+    existingCredential = null
+  }
+
+  if (hasExistingCredential && options.replace !== true) {
+    return importCredentialFailure(
+      options.events,
+      'credential_import_replace_required',
+      'operator_import;cause=replace_required',
+      'info',
+    )
+  }
+
+  let sourceText: string | null = null
+  try {
+    const selectedText = await options.readText(options.sourcePath)
+    if (typeof selectedText !== 'string') {
+      return importCredentialFailure(
+        options.events,
+        'credential_import_source_invalid',
+        'operator_import;cause=source_invalid',
+      )
+    }
+    sourceText = selectedText
+  } catch (caught) {
+    sourceText = null
+    if (caught instanceof CredentialImportError) throw caught
+    return importCredentialFailure(
+      options.events,
+      'credential_import_read_failed',
+      'operator_import;cause=read_failed',
+    )
+  }
+
+  if (sourceText === null) {
+    return importCredentialFailure(
+      options.events,
+      'credential_import_source_invalid',
+      'operator_import;cause=source_invalid',
+    )
+  }
+
+  let importedCredential: string | null = parseOperatorCredential(sourceText)
+  sourceText = null
+  if (importedCredential === null) {
+    return importCredentialFailure(
+      options.events,
+      'credential_import_key_missing',
+      'operator_import;cause=key_missing',
+    )
+  }
+
+  try {
+    await options.credentialStore.set(importedCredential)
+  } catch {
+    return importCredentialFailure(
+      options.events,
+      'credential_import_store_failed',
+      'operator_import;cause=store_failed',
+    )
+  } finally {
+    importedCredential = null
+  }
+
+  emitCredentialImportStatus(
+    options.events,
+    'success',
+    `operator_import;result=stored;replace=${options.replace === true ? 'true' : 'false'}`,
+  )
 }
 
 export function createCredentialStore(options: CredentialStoreOptions): CredentialStore {

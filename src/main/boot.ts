@@ -72,6 +72,18 @@ import type {
   ConsoleConfigRefreshResult,
 } from './console-config'
 
+export function initializeRealtimePrivacyFlags(
+  environment: Record<string, string | undefined> = process.env,
+): void {
+  environment.OPENAI_AGENTS_DISABLE_TRACING = '1'
+  environment.OPENAI_AGENTS_DONT_LOG_MODEL_DATA = '1'
+  environment.OPENAI_AGENTS_DONT_LOG_TOOL_DATA = '1'
+}
+
+// Main establishes the privacy posture while this module is loaded, before
+// any future Realtime SDK/session composition or renderer creation.
+initializeRealtimePrivacyFlags()
+
 const SAFE_CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 const SAFE_REASON_PATTERN = /^[A-Za-z0-9_=;.%:+,/?-]{1,1024}$/
