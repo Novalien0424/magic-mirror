@@ -21,11 +21,20 @@ limit.
 Interactive root dispatches go through the canonical
 `scripts/invoke-codex-worker.ps1` launcher. The root writes each complete
 prompt to a temporary UTF-8 file, then supplies `-Role` and `-PromptPath`; the
-launcher streams the prompt bytes to Codex stdin. PowerShell 7 (`pwsh`) is the
-required outer host; Windows PowerShell 5.1 (`powershell.exe`) is not a
-supported outer host because its parameter binder can fail before launcher
-metadata preflight. From the repository root, use this one compact canonical
-invocation:
+launcher prepends the exact role-specific H3 worker-context preamble (CRLF
+UTF-8 without a BOM), appends the original prompt bytes unchanged after the
+`--- BEGIN ORIGINAL PROMPT ---` delimiter, and streams the combined bytes to
+Codex stdin. If launcher entry sees the exact inherited
+`MIRROR_CODEX_WORKER_ACTIVE=1` sentinel, it exits 2 with
+`codex_worker_launcher stage=preflight status=failed reason=recursive_invocation`
+before reading or launching Codex; only the Codex child environment receives
+the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed
+reads, a 180-second first-write target, and a 200-line displayed-read limit.
+These are context and execution bounds, not a claim that advice can force
+model completion. PowerShell 7 (`pwsh`) is the required outer host; Windows PowerShell 5.1
+(`powershell.exe`) is not a supported outer host because its
+parameter binder can fail before launcher metadata preflight. From the
+repository root, use this one compact canonical invocation:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path> -TimeoutSeconds 600 -MaxOutputBytes 4194304

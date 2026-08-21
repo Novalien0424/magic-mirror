@@ -139,8 +139,18 @@ required outer host for this launcher; Windows PowerShell 5.1
 (`powershell.exe`) is not a supported outer host because its parameter binder
 can fail before the launcher's metadata preflight. The root writes the prompt
 to a temporary file and supplies its path with `-PromptPath`; the launcher
-streams the original prompt bytes to Codex stdin, never to argv. Use this one
-compact canonical invocation from the repository root:
+prepends the exact role-specific H3 worker-context preamble (CRLF UTF-8
+without a BOM), then appends the original prompt bytes unchanged after the
+`--- BEGIN ORIGINAL PROMPT ---` delimiter and streams the combined bytes to
+Codex stdin, never to argv. If launcher entry sees the exact inherited
+`MIRROR_CODEX_WORKER_ACTIVE=1` sentinel, it exits 2 with
+`codex_worker_launcher stage=preflight status=failed reason=recursive_invocation`
+before reading or launching Codex; only the Codex child environment receives
+the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed
+reads, a 180-second first-write target, and a 200-line displayed-read limit.
+These are context and execution bounds, not a claim that advice can force
+model completion. Use this one compact canonical invocation from the
+repository root:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path> -TimeoutSeconds 600 -MaxOutputBytes 4194304

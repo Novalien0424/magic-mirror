@@ -22,6 +22,7 @@ interface LauncherRunOptions {
   readonly timeoutSeconds?: number
   readonly maxOutputBytes?: number
   readonly flood?: boolean
+  readonly workerActive?: string
 }
 
 interface Fixture {
@@ -31,6 +32,7 @@ interface Fixture {
   readonly promptPath: string
   readonly stdinPath: string
   readonly argvPath: string
+  readonly workerActivePath: string
   readonly childPidPath: string
   readonly grandchildPidPath: string
 }
@@ -52,6 +54,8 @@ const fixturePidPaths: string[] = []
 const fakeCodexScript = `
 $capture = $env:MM_CODEX_WORKER_CAPTURE_DIR
 $utf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+$workerActive = [string]$env:MIRROR_CODEX_WORKER_ACTIVE
+[System.IO.File]::WriteAllText((Join-Path $capture 'worker-active.txt'), $workerActive, $utf8)
 
 if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
   [System.IO.File]::WriteAllText((Join-Path $capture 'child.pid'), [string]$PID, $utf8)
@@ -125,6 +129,25 @@ function makePrompt(role: WorkerRole): string {
   ].join('\r\n') + '\r\n'
 }
 
+function expectedWorkerContextPreamble(role: WorkerRole): Buffer {
+  return Buffer.from(
+    [
+      'worker_context_version: "H3"',
+      'already_launched: true',
+      `role: "${role}"`,
+      'root_authority: false',
+      'recursive_codex: forbidden',
+      'recursive_launcher: forbidden',
+      'global_skill_mode: "subagent-stop"',
+      'quiet_reads: true',
+      'first_write_deadline_seconds: 180',
+      'max_read_output_lines: 200',
+      '--- BEGIN ORIGINAL PROMPT ---'
+    ].join('\r\n') + '\r\n',
+    'utf8'
+  )
+}
+
 async function makeFixture(prompt: string): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), 'magic-mirror-codex-worker-'))
   fixtureDirs.push(root)
@@ -135,6 +158,7 @@ async function makeFixture(prompt: string): Promise<Fixture> {
   const fakeGrandchildPath = join(captureDir, 'fake-grandchild.ps1')
   const stdinPath = join(captureDir, 'stdin.bin')
   const argvPath = join(captureDir, 'argv.txt')
+  const workerActivePath = join(captureDir, 'worker-active.txt')
   const childPidPath = join(captureDir, 'child.pid')
   const grandchildPidPath = join(captureDir, 'grandchild.pid')
 
@@ -151,6 +175,7 @@ async function makeFixture(prompt: string): Promise<Fixture> {
     promptPath,
     stdinPath,
     argvPath,
+    workerActivePath,
     childPidPath,
     grandchildPidPath
   }
@@ -162,7 +187,7 @@ function runLauncher(
   options: number | LauncherRunOptions = {}
 ): LauncherRun {
   const normalizedOptions = typeof options === 'number' ? { timeoutSeconds: options } : options
-  const { timeoutSeconds, maxOutputBytes, flood = false } = normalizedOptions
+  const { timeoutSeconds, maxOutputBytes, flood = false, workerActive = '0' } = normalizedOptions
   const launcherArguments = [
     '-NoLogo',
     '-NoProfile',
@@ -191,7 +216,8 @@ function runLauncher(
         ...process.env,
         MM_CODEX_WORKER_CAPTURE_DIR: fixture.captureDir,
         MM_CODEX_WORKER_HANG: timeoutSeconds !== undefined && !flood ? '1' : '0',
-        MM_CODEX_WORKER_FLOOD: flood ? '1' : '0'
+        MM_CODEX_WORKER_FLOOD: flood ? '1' : '0',
+        MIRROR_CODEX_WORKER_ACTIVE: workerActive
       },
       encoding: 'buffer',
       maxBuffer: outputCapBytes,
@@ -427,7 +453,23 @@ describe('Codex worker launcher contract', () => {
       'model_reasoning_effort="max"',
       '-'
     ])
-    expect(await readFile(fixture.stdinPath)).toEqual(Buffer.from(prompt, 'utf8'))
+    expect(await readFile(fixture.stdinPath)).toEqual(
+      Buffer.concat([expectedWorkerContextPreamble('tester'), Buffer.from(prompt, 'utf8')])
+    )
+    expect(await readFile(fixture.workerActivePath, 'utf8')).toBe('1')
+  })
+
+  it('rejects recursive launcher invocation from the inherited worker marker before invoking fake codex', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', { workerActive: '1' })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for recursion validation').toBeNull()
+    expect(run.status, 'recursive invocation must use the launcher preflight exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'launcher must reject inherited worker identity during preflight').toBe(
+      'codex_worker_launcher stage=preflight status=failed reason=recursive_invocation'
+    )
+    expect(await pathExists(fixture.argvPath), 'fake codex must not receive recursive work').toBe(false)
+    expect(await pathExists(fixture.stdinPath), 'fake codex must not receive recursive prompt').toBe(false)
   })
 
   it('rejects a mismatched role envelope before invoking fake codex', async () => {

@@ -37,6 +37,10 @@ function Stop-Launcher {
     exit $ExitCode
 }
 
+if ($env:MIRROR_CODEX_WORKER_ACTIVE -ceq '1') {
+    Stop-Launcher -Stage 'preflight' -Reason 'recursive_invocation'
+}
+
 if ([string]::IsNullOrWhiteSpace($PromptPath)) {
     Stop-Launcher -Stage 'preflight' -Reason 'missing_prompt_path'
 }
@@ -97,6 +101,31 @@ function Assert-RequiredField {
     if ($fieldLines.Count -ne 1) {
         Stop-Launcher -Stage 'preflight' -Reason ("duplicate_$FieldName")
     }
+}
+
+function Get-WorkerContextPreambleBytes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('implementer', 'surveyor', 'tester')]
+        [string]$Role
+    )
+
+    $preambleText = @(
+        'worker_context_version: "H3"'
+        'already_launched: true'
+        ('role: "{0}"' -f $Role)
+        'root_authority: false'
+        'recursive_codex: forbidden'
+        'recursive_launcher: forbidden'
+        'global_skill_mode: "subagent-stop"'
+        'quiet_reads: true'
+        'first_write_deadline_seconds: 180'
+        'max_read_output_lines: 200'
+        '--- BEGIN ORIGINAL PROMPT ---'
+    ) -join "`r`n"
+
+    $utf8NoBom = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+    return ,$utf8NoBom.GetBytes($preambleText + "`r`n")
 }
 
 function ConvertTo-ProcessArgument {
@@ -227,6 +256,11 @@ foreach ($requiredField in @('task', 'write_scope', 'skills', 'self_invariants',
     Assert-RequiredField -Lines $promptLines -FieldName $requiredField
 }
 
+$workerContextPreambleBytes = Get-WorkerContextPreambleBytes -Role $Role
+$promptInputBytes = New-Object byte[] ($workerContextPreambleBytes.Length + $promptBytes.Length)
+[System.Buffer]::BlockCopy($workerContextPreambleBytes, 0, $promptInputBytes, 0, $workerContextPreambleBytes.Length)
+[System.Buffer]::BlockCopy($promptBytes, 0, $promptInputBytes, $workerContextPreambleBytes.Length, $promptBytes.Length)
+
 try {
     if ($PSBoundParameters.ContainsKey('CodexCommandPath')) {
         $commandItem = Get-Item -LiteralPath $CodexCommandPath -Force -ErrorAction Stop
@@ -304,6 +338,8 @@ try {
         }) -join ' ')
     }
 
+    $processStartInfo.EnvironmentVariables['MIRROR_CODEX_WORKER_ACTIVE'] = '1'
+
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $processStartInfo
 
@@ -325,7 +361,7 @@ try {
     $stderrBuffer = New-Object byte[] 4096
     $stdoutReadTask = $stdoutStream.ReadAsync($stdoutBuffer, 0, $stdoutBuffer.Length)
     $stderrReadTask = $stderrStream.ReadAsync($stderrBuffer, 0, $stderrBuffer.Length)
-    $inputWriteTask = $inputStream.WriteAsync($promptBytes, 0, $promptBytes.Length)
+    $inputWriteTask = $inputStream.WriteAsync($promptInputBytes, 0, $promptInputBytes.Length)
     $inputFlushTask = $null
 
     $stdoutActive = $true
