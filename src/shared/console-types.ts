@@ -97,6 +97,17 @@ export interface ConsoleOverviewPayload {
   readonly cameraTcc: 'not_checked'
 }
 
+export interface ConsoleCurrentSessionTranscriptEntry {
+  readonly itemId: string
+  readonly turnId: string
+  readonly transcript: string
+}
+
+export interface ConsoleCurrentSessionTranscriptProjection {
+  readonly realtimeSessionId: string
+  readonly entries: readonly ConsoleCurrentSessionTranscriptEntry[]
+}
+
 export interface ConsoleEventsQuery {
   readonly limit?: number
   readonly beforeSequence?: number

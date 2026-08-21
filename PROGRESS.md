@@ -1,8 +1,93 @@
 # Magic Mirror — Progress
 
-**Phase 0 — Foundation / Visible Skeleton: COMPLETE — Tasks 1–10 accepted; Phase 1 is next.**
+**Current status — Phase 1 — Realtime Voice: IN PROGRESS — P1-U1 through P1-U6 accepted/local-only; P1-U7 next; P1-U8 and the real demo/exit matrix pending; Phase 1 is not complete.**
 
-## Task 10 / Phase 0 exit accepted (2026-08-20)
+## Phase 1 realtime voice checkpoint — P1-U6 accepted/local-only (2026-08-21)
+
+- **Route and baseline.** The current branch is `phase1-realtime-voice`. The
+  Phase 0 baseline remains local tag `phase0-v0.3.1` at accepted commit
+  `9237dc7`; no push occurred in this session. The accepted Phase 1 plan is
+  commit `82aa39c`.
+
+| Unit | Current state | Record |
+|------|---------------|--------|
+| P1-U1 — SDK lockstep + versioned voice/session snapshots | accepted/local-only | `4862383` |
+| P1-U2 — Main safeStorage credential import + ephemeral client-secret broker | accepted/local-only | `5be5871` |
+| P1-U3 — deterministic RealtimeSession/WebRTC adapter + official ScriptedRealtimeTransport | accepted/local-only | `18461e5` |
+| P1-U4 — one microphone owner + one audible output + playback completion | accepted/local-only | `cffd484` |
+| P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted/local-only | `fb5e58f` |
+| P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted/local-only | current integration commit for this checkpoint; no self-referential hash recorded |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | next | pending |
+| P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
+
+- **P1-U6 exact scope.** Production paths are
+  `src/renderer/realtime/transcript-buffer.ts`,
+  `src/renderer/realtime/turn-controller.ts`,
+  `src/renderer/realtime/session-cleanup.ts`,
+  `src/shared/console-types.ts`, and `src/main/console-data.ts`. Test paths
+  are `tests/unit/realtime-transcript-buffer.test.ts`,
+  `tests/unit/realtime-interruption.test.ts`, and
+  `tests/unit/realtime-privacy-cleanup.test.ts`.
+- **P1-U6 outcome.** Bounded current-session transcript mapping is RAM-only;
+  stale/invalid input degrades with stable metadata; VAD/manual interruption
+  stops audible gain and coalesces duplicate interrupt signals while Voice and
+  new-turn progress are not gated by transcription; all five stop/offline/
+  rollover/restart/close boundaries clear RAM; the current-session transcript
+  projection is Main-only and is not registered through renderer IPC; and no
+  persistence, telemetry, or export path was added for transcript content.
+- **P1-U6 tester gate.** The three focused files passed `32/32` tests;
+  `npm run typecheck:node` exited `0`; and `npm run typecheck:web` exited `0`.
+  The earlier privacy-bound RED was genuine for unsafe session IDs. Its first
+  GREEN exposed only a test capture-array defect, which was corrected without
+  weakening assertions; the final gate passed.
+- **Root scope and privacy review.** Exactly eight P1-U6 application/test
+  paths were in scope. User-owned
+  `docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` and
+  `scripts/install-node-lts.ps1` remained untouched; no `.env` content/value
+  was read; invariants `1, 4, 5, 6, 9, 10, 11, 12` were directly checked and
+  all canonical invariants `1–12` remain preserved.
+- **Runtime integration risk and next owners.** P1-U6 deliberately creates
+  bounded components and seams. P1-U7 must compose `TranscriptBuffer`,
+  `TurnController`, `SessionCleanup`, the existing P1-U5 realtime recovery
+  factory, adapter/audio events, cleanup boundaries, and authorized Console
+  controls into the default runtime; these seams are not yet installed
+  end-to-end. P1-U8 owns deterministic/real demos, Phase Test records, the
+  full regression/privacy scan, final exit acceptance, and the local
+  `phase1-v0.3.1` tag.
+- **Harness/operations checkpoint.** Launcher hardening through H9 culminates
+  at `5818830`; the frozen harness suite passed `15/15`, and a real
+  profile-backed probe passed. Fixed deadlines remain first-write `480` seconds,
+  post-write `120` seconds, and overall `600` seconds. Raw JSON event streams
+  remain suppressed and the final nonempty agent message is forwarded. Online
+  research verified Codex exec JSONL behavior and PowerShell redirected-stream
+  deadlock guidance; quiet output alone is not treated as a crash, and explicit
+  deadline markers plus child exit codes are authoritative.
+- **Windows firewall checkpoint.** Script-fix commit `3e93936` supplies
+  noninteractive `DisplayName` values. The operator installed persistent
+  Private-profile inbound TCP/UDP rules
+  `MagicMirror.Development.Electron.TCP` and
+  `MagicMirror.Development.Electron.UDP`. This is Windows development
+  evidence only and does not establish target-macOS network, TCC, or signing
+  behavior.
+- **Dependency materialization.** Operator `npm ci --ignore-scripts` succeeded
+  with `398` packages installed, `399` audited, and zero vulnerabilities.
+  Deprecation warnings are transitive through electron-builder `26.15.3`:
+  `inflight 1.0.6`/`glob 7.2.3` via `@electron/asar/app-builder-lib`,
+  `rimraf 2.6.3` via `temp/electron-winstaller`, and `boolean 3.2.0` via
+  nested `@electron/get/global-agent`. No direct Phase 1 dependency change or
+  reinstall rerun is justified; preserve Electron `43.4.1` and
+  electron-builder `26.15.3`.
+- **Clock-out and platform limits.** Work stops after P1-U6; P1-U7 is next.
+  No P1-U7 work, P1-U8 work, Phase 1 demo claim, Phase 1 completion claim,
+  tag, or push is part of this checkpoint. Windows evidence does not
+  field-verify target-macOS Keychain, TCC, signing, entitlements,
+  packaged-worker, LaunchAgent, real devices, or real provider/account
+  behavior. LaunchAgent `KeepAlive={SuccessfulExit=false}` remains the sole
+  restart owner; no `app.relaunch()` is used.
+- **Architecture record.** No new durable architecture decision beyond the
+  accepted plan was made; `DECISIONS.md` remains unchanged.
+
+## Historical Phase 0 exit accepted (2026-08-20)
 
 - Task 10 and Phase 0 are accepted by the interactive root after the full
   tester-owned gate. The accepted Task 10 implementation paths are

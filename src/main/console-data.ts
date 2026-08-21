@@ -1,6 +1,8 @@
 import type {
   ConsoleEventSummary,
   ConsoleConfigPayload,
+  ConsoleCurrentSessionTranscriptProjection,
+  ConsoleCurrentSessionTranscriptEntry,
   ConsoleEventsPage,
   ConsoleEventsQuery,
   ConsoleModuleObservation,
@@ -38,6 +40,7 @@ const MAX_SESSION_GENERATION = 2_147_483_647
 const MAX_DISPLAY_STRING_LENGTH = 128
 const MAX_REASON_LENGTH = 1024
 const MAX_DURATION_MS = 86_400_000
+const MAX_TRANSCRIPT_LENGTH = 16_384
 
 const LIFECYCLE_STATES: ReadonlySet<LifecycleState> = new Set([
   'starting',
@@ -82,6 +85,8 @@ const DISPLAY_STRING_PATTERN = /^[A-Za-z0-9._:+/-]+$/
 const CANONICAL_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
 const EVENT_QUERY_KEYS = ['limit', 'beforeSequence', 'module', 'status', 'source'] as const
+const CURRENT_SESSION_TRANSCRIPT_PROJECTION_KEYS = ['realtimeSessionId', 'entries'] as const
+const CURRENT_SESSION_TRANSCRIPT_ENTRY_KEYS = ['itemId', 'turnId', 'transcript'] as const
 
 export interface ConsoleBaseDataPlane {
   getOverview(): ConsoleResponse<ConsoleOverviewPayload>
@@ -99,6 +104,7 @@ export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  getCurrentSessionTranscripts(): Promise<ConsoleResponse<ConsoleCurrentSessionTranscriptProjection | null>>
   /** Main-only deterministic fixture seam; never registered as IPC. */
   createInitialRuntimeSnapshotsForTest(): Promise<ConsoleRuntimeSnapshot>
 }
@@ -112,6 +118,7 @@ interface ConsoleDataPlaneDependencies {
   readonly getConfigController?: () => ConsoleConfigController | null
   readonly getPhaseTestsController?: () => ConsolePhaseTestsController | null
   readonly getPhaseTestsReader?: () => PhaseTestRecordReader
+  readonly getCurrentSessionTranscriptProjection?: () => unknown
 }
 
 type QueryValidation =
@@ -151,6 +158,14 @@ function readOwnKeys(value: object): readonly (string | symbol)[] | null {
   }
 }
 
+function hasExactOwnKeys(value: object, expected: readonly string[]): boolean {
+  const keys = readOwnKeys(value)
+  return keys !== null
+    && keys.length === expected.length
+    && keys.every((key) => typeof key === 'string' && expected.includes(key))
+    && expected.every((key) => hasOwnProperty(value, key))
+}
+
 function isModuleId(value: unknown): value is ModuleId {
   return typeof value === 'string' && MODULE_ID_SET.has(value as ModuleId)
 }
@@ -183,6 +198,46 @@ function boundedDisplayString(value: unknown, fallback: string): string {
 
 function boundedIdentifier(value: unknown): string | null {
   return typeof value === 'string' && SAFE_IDENTIFIER_PATTERN.test(value) ? value : null
+}
+
+function projectCurrentSessionTranscriptProjection(
+  value: unknown,
+  authoritativeSessionId: string,
+): ConsoleCurrentSessionTranscriptProjection | null {
+  if (!isRecord(value) || !hasExactOwnKeys(value, CURRENT_SESSION_TRANSCRIPT_PROJECTION_KEYS)) {
+    return null
+  }
+
+  const realtimeSessionId = boundedIdentifier(readProperty(value, 'realtimeSessionId'))
+  if (realtimeSessionId === null || realtimeSessionId !== authoritativeSessionId) return null
+
+  const rawEntries = readProperty(value, 'entries')
+  if (!Array.isArray(rawEntries) || rawEntries.length > MAX_PAGE_SIZE) return null
+
+  const entries: ConsoleCurrentSessionTranscriptEntry[] = []
+  for (let index = 0; index < rawEntries.length; index += 1) {
+    const rawEntry = rawEntries[index]
+    if (!isRecord(rawEntry) || !hasExactOwnKeys(rawEntry, CURRENT_SESSION_TRANSCRIPT_ENTRY_KEYS)) {
+      return null
+    }
+
+    const itemId = boundedIdentifier(readProperty(rawEntry, 'itemId'))
+    const turnId = boundedIdentifier(readProperty(rawEntry, 'turnId'))
+    const transcript = readProperty(rawEntry, 'transcript')
+    if (
+      itemId === null
+      || turnId === null
+      || typeof transcript !== 'string'
+      || transcript.trim().length === 0
+      || transcript.length > MAX_TRANSCRIPT_LENGTH
+    ) {
+      return null
+    }
+
+    entries.push({ itemId, turnId, transcript })
+  }
+
+  return { realtimeSessionId, entries }
 }
 
 function emitSafely(
@@ -591,6 +646,29 @@ export function createConsoleDataPlane(
     return { ok: true, value: projectedPage }
   }
 
+  async function getCurrentSessionTranscripts(): Promise<
+    ConsoleResponse<ConsoleCurrentSessionTranscriptProjection | null>
+  > {
+    try {
+      const snapshot = dependencies.getSnapshot()
+      const authoritativeSessionId = boundedIdentifier(readProperty(snapshot, 'realtimeSessionId'))
+      if (authoritativeSessionId === null) return { ok: true, value: null }
+
+      const projectionDependency = dependencies.getCurrentSessionTranscriptProjection
+      if (projectionDependency === undefined) return { ok: true, value: null }
+
+      return {
+        ok: true,
+        value: projectCurrentSessionTranscriptProjection(
+          projectionDependency(),
+          authoritativeSessionId,
+        ),
+      }
+    } catch {
+      return { ok: true, value: null }
+    }
+  }
+
   async function simulate(command: unknown): Promise<SimulatorResult> {
     const decision = developerModeView(dependencies.getDeveloperMode)
     if (!decision.enabled) {
@@ -636,6 +714,7 @@ export function createConsoleDataPlane(
     rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),
     createNextRuntimeSnapshots: () => invokeConfig((controller) => controller.createNextRuntimeSnapshots()),
     getPhaseTests: () => phaseTestsController.get(),
+    getCurrentSessionTranscripts,
     createInitialRuntimeSnapshotsForTest: async () => {
       let controller: ConsoleConfigController | null = null
       try {
