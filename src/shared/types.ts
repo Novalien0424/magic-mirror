@@ -34,6 +34,8 @@ export interface MirrorConfig {
   configVersion: number;                     // bumped on every publish
   persona: { name: string; instructions: string };
   voice: string;
+  reasoningEffort: string;
+  turnDetectionProfile: string;
   idleSeconds: number;                       // 300 in production config
   aiModels: AiModelsConfig;
   wake: { phrase: string; modelVersion: string };
@@ -51,7 +53,9 @@ export interface ConfigDiff { changed: Array<{ path: string; from: unknown; to: 
 
 export interface SessionModelSnapshot {
   configVersion: number; fingerprint: string;
-  realtimeDialogue: string; inputTranscription: string; voice: string;
+  sdkVersion: '0.16.1';
+  realtimeDialogue: string; inputTranscription: string; memoryExtractor: string;
+  voice: string; reasoningEffort: string; turnDetectionProfile: string;
   takenAt: string;
 }
 export interface JobModelSnapshot {

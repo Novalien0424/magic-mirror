@@ -135,6 +135,8 @@ function fixtureConfig(configVersion: number, suffix: string): MirrorConfig {
       instructions: `fixture-persona-instructions-${suffix}`,
     },
     voice: `fixture-voice-${suffix}`,
+    reasoningEffort: 'low',
+    turnDetectionProfile: 'semantic-vad-interruptible',
     idleSeconds: 300,
     aiModels: {
       realtimeDialogue: { modelId: fixtureModelId('realtimeDialogue', suffix) },

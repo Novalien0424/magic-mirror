@@ -89,14 +89,25 @@ export class ConfigServiceError extends Error {
   }
 }
 
-const CURRENT_CONFIG_SCHEMA_VERSION = 1
+const CURRENT_CONFIG_SCHEMA_VERSION = 2
+
+const V2_BASELINE = {
+  reasoningEffort: 'low',
+  turnDetectionProfile: 'semantic-vad-interruptible',
+} as const
+
+const reasoningEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high'])
+const turnDetectionProfileSchema = z.enum([
+  'semantic-vad-interruptible',
+  'semantic-vad-strict',
+])
 
 const aiModelRoleSchema = z.object({
   modelId: z.string().trim().min(1),
   note: z.string().optional(),
 }).strict()
 
-const mirrorConfigCoreEnvelope = z.object({
+const mirrorConfigBaseEnvelope = z.object({
   configVersion: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   persona: z.object({
     name: z.string().trim().min(1),
@@ -131,11 +142,21 @@ const mirrorConfigCoreEnvelope = z.object({
   }).strict(),
 }).strict()
 
+const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
+  reasoningEffort: reasoningEffortSchema,
+  turnDetectionProfile: turnDetectionProfileSchema,
+}).strict()
+
+const mirrorConfigLegacyEnvelope = mirrorConfigBaseEnvelope.extend({
+  reasoningEffort: reasoningEffortSchema.default(V2_BASELINE.reasoningEffort),
+  turnDetectionProfile: turnDetectionProfileSchema.default(V2_BASELINE.turnDetectionProfile),
+}).strict()
+
 export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope
 
 type SlotInspection =
   | { status: 'missing'; raw: null }
-  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 }
+  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 | 2 }
   | { status: 'invalid'; raw: string; fields: readonly FieldError[] }
   | { status: 'unsupported'; raw: string; schemaVersion: number }
   | { status: 'unreadable'; raw: null }
@@ -301,6 +322,8 @@ const allowedCorePaths = new Set([
   'persona.name',
   'persona.instructions',
   'voice',
+  'reasoningEffort',
+  'turnDetectionProfile',
   'idleSeconds',
   'aiModels',
   'aiModels.realtimeDialogue',
@@ -454,7 +477,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseConfigEnvelope(decoded: unknown): {
-  schemaVersion: 0 | 1
+  schemaVersion: 0 | 1 | 2
   config: unknown
 } {
   if (!isRecord(decoded)) return { schemaVersion: 0, config: decoded }
@@ -467,10 +490,10 @@ function parseConfigEnvelope(decoded: unknown): {
     if (schemaVersion > CURRENT_CONFIG_SCHEMA_VERSION) {
       throw new UnsupportedSchemaFailure(schemaVersion)
     }
-    if (schemaVersion === 0 || schemaVersion === CURRENT_CONFIG_SCHEMA_VERSION) {
+    if (schemaVersion >= 0 && schemaVersion <= CURRENT_CONFIG_SCHEMA_VERSION) {
       const config = { ...decoded }
       delete config.schemaVersion
-      return { schemaVersion: schemaVersion as 0 | 1, config }
+      return { schemaVersion: schemaVersion as 0 | 1 | 2, config }
     }
   }
 
@@ -481,7 +504,7 @@ function parseConfigText(
   contents: string,
   slot: ConfigSlot,
   events: ConfigEventSink,
-): { value: MirrorConfig; schemaVersion: 0 | 1 } {
+): { value: MirrorConfig; schemaVersion: 0 | 1 | 2 } {
   let decoded: unknown
   try {
     decoded = JSON.parse(contents) as unknown
@@ -490,7 +513,10 @@ function parseConfigText(
   }
 
   const envelope = parseConfigEnvelope(decoded)
-  const parsed = mirrorConfigSchema.safeParse(envelope.config)
+  const schema = envelope.schemaVersion === CURRENT_CONFIG_SCHEMA_VERSION
+    ? mirrorConfigSchema
+    : mirrorConfigLegacyEnvelope
+  const parsed = schema.safeParse(envelope.config)
   if (!parsed.success) {
     throw new SchemaFailure(safeFields(parsed.error.issues as readonly SafeIssue[]))
   }
@@ -622,9 +648,14 @@ async function migrateLegacySlots(
 ): Promise<void> {
   const legacySlots = SLOT_ORDER.filter((slot) => {
     const inspection = physical[slot]
-    return inspection.status === 'valid' && inspection.schemaVersion === 0
+    return inspection.status === 'valid' && inspection.schemaVersion < CURRENT_CONFIG_SCHEMA_VERSION
   })
   if (legacySlots.length === 0) return
+
+  const migrationFrom = Math.min(...legacySlots.map((slot) => {
+    const inspection = physical[slot]
+    return inspection.status === 'valid' ? inspection.schemaVersion : CURRENT_CONFIG_SCHEMA_VERSION
+  }))
 
   const originals: RawSlotSnapshot = {}
   const touched: ConfigSlot[] = []
@@ -646,7 +677,7 @@ async function migrateLegacySlots(
       'config_schema_migration_failed',
       'failed',
       'all',
-      0,
+      migrationFrom,
       'materialize',
       'io_failure',
     )
@@ -677,7 +708,7 @@ async function migrateLegacySlots(
       'config_schema_migrated',
       'success',
       slot,
-      0,
+      (physical[slot] as Extract<SlotInspection, { status: 'valid' }>).schemaVersion,
       'materialize',
       'legacy',
     )
