@@ -14,7 +14,7 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 3600)]
-    [int]$FirstWriteTimeoutSeconds = 180,
+    [int]$FirstWriteTimeoutSeconds = 300,
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 3600)]
@@ -131,7 +131,7 @@ function Get-WorkerContextPreambleBytes {
         'source_body_output: "forbidden_unless_evidence_requires"'
         'terminal_read_output: "metadata_only"'
         'repository_wide_discovery: "forbidden"'
-        'first_write_deadline_seconds: 180'
+        'first_write_deadline_seconds: 300'
         'post_write_idle_deadline_seconds: 120'
         'max_read_output_lines: 200'
         '--- BEGIN ORIGINAL PROMPT ---'

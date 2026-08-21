@@ -265,7 +265,7 @@ function expectedWorkerContextPreamble(role: WorkerRole): Buffer {
       'source_body_output: "forbidden_unless_evidence_requires"',
       'terminal_read_output: "metadata_only"',
       'repository_wide_discovery: "forbidden"',
-      'first_write_deadline_seconds: 180',
+      'first_write_deadline_seconds: 300',
       'post_write_idle_deadline_seconds: 120',
       'max_read_output_lines: 200',
       '--- BEGIN ORIGINAL PROMPT ---'
@@ -565,9 +565,10 @@ describe('Codex worker launcher contract', () => {
   })
 
   it('documents the bounded H2 worker harness contract in both control-plane sources', async () => {
-    const [agents, phaseWorkflow] = await Promise.all([
+    const [agents, phaseWorkflow, launcher] = await Promise.all([
       readFile(resolve(repoRoot, 'AGENTS.md'), 'utf8'),
-      readFile(resolve(repoRoot, '.agents', 'skills', 'mm-phase-workflow', 'SKILL.md'), 'utf8')
+      readFile(resolve(repoRoot, '.agents', 'skills', 'mm-phase-workflow', 'SKILL.md'), 'utf8'),
+      readFile(resolve(repoRoot, 'scripts', 'invoke-codex-worker.ps1'), 'utf8')
     ])
 
     const requiredDocumentationPhrases: readonly string[] = [
@@ -582,6 +583,7 @@ describe('Codex worker launcher contract', () => {
       'exact resolved path only after the worker completes',
       'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded',
       'codex_worker_launcher stage=output status=failed reason=limit_exceeded',
+      'first_write_deadline_seconds: 300',
       'exact descendant process tree',
       'Read only targeted files and required skill sections.',
       'Do not dump unrelated source or skill content or flood worker output.',
@@ -603,6 +605,11 @@ describe('Codex worker launcher contract', () => {
         staleH1Sentence
       )
     }
+
+    expect(
+      launcher,
+      'launcher must default first-write supervision to 300 seconds'
+    ).toContain('[int]$FirstWriteTimeoutSeconds = 300')
   })
 
   it('launches a matching tester envelope with exact argv and byte-preserved prompt stdin', async () => {
