@@ -139,46 +139,79 @@ required outer host for this launcher; Windows PowerShell 5.1
 (`powershell.exe`) is not a supported outer host because its parameter binder
 can fail before the launcher's metadata preflight. The root writes the prompt
 to a temporary file and supplies its path with `-PromptPath`; the launcher
-prepends the exact role-specific H3 worker-context preamble (CRLF UTF-8
+prepends the exact role-specific H6 worker-context preamble (CRLF UTF-8
 without a BOM), then appends the original prompt bytes unchanged after the
 `--- BEGIN ORIGINAL PROMPT ---` delimiter and streams the combined bytes to
 Codex stdin, never to argv. If launcher entry sees the exact inherited
 `MIRROR_CODEX_WORKER_ACTIVE=1` sentinel, it exits 2 with
 `codex_worker_launcher stage=preflight status=failed reason=recursive_invocation`
 before reading or launching Codex; only the Codex child environment receives
-the sentinel. The H3 context carries global `subagent-stop`, quiet suppressed reads, and a
-200-line displayed-read limit. The launcher enforces a hard implementer-only
-180-second first-write deadline by observing only an exact complete line
-`patch: completed` on either captured stdout or captured stderr. The detector
-accepts stderr because observed Codex tool-status output can arrive on that
-channel; this is an observed CLI behavior, not a universal CLI guarantee.
-Surveyor and tester runs have no first-write deadline.
-On expiry it terminates and confirms the exact child tree, then exits 2 with
-`codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded`
-or uses `tree_termination_failed` at stage `first_write` if confirmation
-fails. These are context and execution bounds, not a claim that advice can
-force model completion. Use this one compact canonical invocation from the
+the sentinel. The H6 preamble carries, in fixed order, global
+`subagent-stop`, quiet reads, `read_scope_enforcement: "exact_only"`,
+`source_body_output: "forbidden_unless_evidence_requires"`,
+`terminal_read_output: "metadata_only"`,
+`repository_wide_discovery: "forbidden"`, fixed
+`first_write_deadline_seconds: 180`, fixed
+`post_write_idle_deadline_seconds: 120`, and
+`max_read_output_lines: 200`. Workers read only exact targeted paths; broad
+discovery and source/skill bodies are suppressed unless exact evidence
+requires a bounded excerpt.
+
+The launcher passes documented Codex `--json` immediately before the final
+stdin `-`. It captures raw stdout and stderr only for a combined raw byte cap;
+neither raw stream is forwarded. It parses bounded UTF-8 JSONL and pins only
+the local compatibility fields `type: "item.completed"` plus
+`item.type: "file_change"` for an implementer write, and
+`type: "item.completed"` plus `item.type: "agent_message"` with string
+`item.text` for the final message. These event fields are the locally tested
+Codex 0.148.0 compatibility contract, not an official universal schema
+guarantee; Codex `--json` itself is documented. Valid progress, file-change,
+and stderr payloads remain suppressed. After a zero-exit child and valid
+completed protocol, only the latest nonempty agent message is written once to
+parent stdout without framing or a newline. Malformed/non-object/nonconforming
+JSONL exits 2 with
+`codex_worker_launcher stage=protocol status=failed reason=invalid_jsonl`;
+zero-exit output without a nonempty final message uses
+`codex_worker_launcher stage=protocol status=failed reason=missing_final_message`.
+Implementers enforce the structured first-write deadline before the first
+file-change event, then arm/reset the post-write idle deadline on valid events;
+surveyor and tester runs have neither deadline. Human `patch: completed` lines
+never satisfy first-write. Live deadline, output, and supervision failures
+terminate and confirm the exact descendant process tree, using
+`tree_termination_failed` when confirmation fails. Post-exit protocol failures
+report the stable `invalid_jsonl` or `missing_final_message` markers without
+inventing tree evidence. The output cap marker remains
+`codex_worker_launcher stage=output status=failed reason=limit_exceeded`, and
+post-write expiry is
+`codex_worker_launcher stage=post_write status=failed reason=deadline_exceeded`.
+These are context and execution bounds, not a claim that advice can force
+model completion. Use this one compact canonical invocation from the
 repository root:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path> -TimeoutSeconds 600 -MaxOutputBytes 4194304
 ```
 
-The launcher pins this exact child argv, in this order; the final `-` selects
-stdin for the prompt:
+The launcher pins this exact child argv, in this order; documented `--json`
+immediately precedes the final `-`, which selects stdin for the prompt:
 
 ```text
-exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" -
+exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" --json -
 ```
 
-The bounded H2 worker harness uses three separate PowerShell command boundaries for prompt creation, launcher invocation, and exact prompt cleanup.
+The bounded H6 worker harness uses three separate PowerShell command boundaries for prompt creation, launcher invocation, and exact prompt cleanup.
 Create a temporary UTF-8 file outside the repository. Pass its exact resolved path to the launcher; use the exact resolved path only after the worker completes for exact prompt cleanup.
 Never combine prompt creation, launcher invocation, and prompt cleanup in one shell expression.
 An already-launched worker executes directly and must not recursively invoke Codex or the launcher.
 Read only targeted files and required skill sections.
-Do not dump unrelated source or skill content or flood worker output.
+Do not dump unrelated source or skill content or flood worker output. Source
+and skill bodies remain suppressed unless exact evidence requires them.
 Keep source/skill reads separate from validation commands; never combine source or skill dumps with validation in one shell command. Returned validation evidence still includes complete stdout/stderr and exit codes for the named commands.
-The launcher forwards at most the combined byte cap for stdout and stderr (`-MaxOutputBytes`) and uses metadata-only markers; timeout and output-limit failures exit 2:
+Tester workers include complete stdout/stderr and exit codes for every named
+command in the final agent message so the H6 launcher can forward that evidence
+without forwarding raw process streams. The launcher captures at most the
+combined raw byte cap for stdout and stderr (`-MaxOutputBytes`) and uses
+metadata-only markers; timeout and output-limit failures exit 2:
 `codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded`
 and `codex_worker_launcher stage=output status=failed reason=limit_exceeded`.
 It terminates and confirms the exact descendant process tree before reporting

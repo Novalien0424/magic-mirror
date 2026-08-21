@@ -36,6 +36,8 @@ external to worker self-review and is not part of the 3-pass limit.
 Diagnostics and worker evidence remain metadata-only: use IDs, enums, counts,
 timings, statuses, reasons, hashes, paths, and exit codes. Never put raw transcript text, audio, extracted memory values, private context, credentials, images, embeddings, or prompts containing user content in evidence, logs, telemetry, or reports.
 
+Workers read exact named paths quietly; repository-wide discovery and source/skill body output are excluded unless the evidence request names a bounded excerpt. Raw Codex JSONL, raw child stderr, prompt bodies, and private content are never parent output. Testers place complete stdout/stderr and exit codes for named validation commands in the final agent message, which is the only worker content the launcher forwards on clean success.
+
 ## The Invariants
 
 | # | Rule | Doc anchor |

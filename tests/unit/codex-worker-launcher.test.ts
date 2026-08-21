@@ -12,6 +12,19 @@ const powershell = 'pwsh'
 const canonicalOuterInvocation =
   'pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path>'
 const outputCapBytes = 8 * 1024
+const finalAgentMessage = 'tester-evidence:\r\nstatus=pass\r\nexit_code=0'
+const rawFixtureSentinels = [
+  'turn.started',
+  'item.completed',
+  'progress-payload-sentinel',
+  'missing-final-progress-sentinel',
+  'synthetic-file-change',
+  'synthetic-idle-file-change',
+  'malformed-jsonl-sentinel',
+  'stderr-noise-sentinel',
+  'flood-sentinel',
+  'stderr-flood-sentinel'
+] as const
 const powerShellFailureClassPattern =
   /\b(?:ParserError|CommandNotFoundException|PropertyNotFoundException|MethodInvocationException|PropertyAssignmentException|ParameterBindingException|RuntimeException|ParentContainsErrorRecordException|UnauthorizedAccess)\b/
 const launcherLinePattern = /(?:invoke-codex-worker\.ps1:|line\s+)(\d+)/i
@@ -20,9 +33,18 @@ type WorkerRole = 'implementer' | 'surveyor' | 'tester'
 
 interface LauncherRunOptions {
   readonly timeoutSeconds?: number
+  readonly postWriteIdleTimeoutSeconds?: number
   readonly firstWriteTimeoutSeconds?: number
   readonly maxOutputBytes?: number
   readonly flood?: boolean
+  readonly scenario?:
+    | 'success'
+    | 'file-change-idle'
+    | 'malformed'
+    | 'missing-final'
+    | 'empty-final-message'
+  readonly finalMessage?: string
+  readonly idleProcessTree?: boolean
   readonly workerActive?: string
   readonly patchSignal?: 'none' | 'completed'
   readonly patchSignalStream?: 'stdout' | 'stderr'
@@ -46,6 +68,14 @@ interface LauncherRun {
   readonly launcherFailureMarker: string
   readonly stderrBytes: number
   readonly stdoutBytes: number
+  readonly forwardedFinalMessageCount: number
+  readonly forwardedFinalMessageExactly: boolean
+  readonly forwardedRawEventEncoding: boolean
+  readonly forwardedProgressPayload: boolean
+  readonly forwardedToolPayload: boolean
+  readonly forwardedStderrNoise: boolean
+  readonly forwardedFloodSentinel: boolean
+  readonly forwardedRawFixtureContent: boolean
   readonly powerShellFailureClass: string
   readonly launcherLine: string
   readonly emptyParameterName: string
@@ -58,7 +88,26 @@ const fakeCodexScript = `
 $capture = $env:MM_CODEX_WORKER_CAPTURE_DIR
 $utf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
 $workerActive = [string]$env:MIRROR_CODEX_WORKER_ACTIVE
+$scenario = [string]$env:MM_CODEX_WORKER_SCENARIO
+$finalMessage = [string]$env:MM_CODEX_WORKER_FINAL_MESSAGE
 [System.IO.File]::WriteAllText((Join-Path $capture 'worker-active.txt'), $workerActive, $utf8)
+
+function Write-JsonEvent([hashtable]$event) {
+  [Console]::Out.WriteLine(($event | ConvertTo-Json -Compress -Depth 8))
+  [Console]::Out.Flush()
+}
+
+if ($scenario -eq 'file-change-idle') {
+  Write-JsonEvent @{
+    type = 'item.completed'
+    item = @{
+      type = 'file_change'
+      id = 'synthetic-idle-file-change'
+      path = 'synthetic/idle.ts'
+    }
+  }
+  $env:MM_CODEX_WORKER_HANG = '1'
+}
 
 if ($env:MM_CODEX_WORKER_PATCH_SIGNAL -eq 'completed') {
   if ($env:MM_CODEX_WORKER_PATCH_SIGNAL_STREAM -eq 'stderr') {
@@ -86,8 +135,8 @@ if ($env:MM_CODEX_WORKER_HANG -eq '1' -or $env:MM_CODEX_WORKER_FLOOD -eq '1') {
   [System.IO.File]::WriteAllText((Join-Path $capture 'grandchild.pid'), [string]$grandchild.Id, $utf8)
 
   if ($env:MM_CODEX_WORKER_FLOOD -eq '1') {
-    $stdoutBlock = ('S' * 256) -join ''
-    $stderrBlock = ('E' * 256) -join ''
+    $stdoutBlock = '{"type":"progress","payload":{"marker":"flood-sentinel-' + (('S' * 256) -join '') + '"}}'
+    $stderrBlock = '{"type":"progress","payload":{"marker":"stderr-flood-sentinel-' + (('E' * 256) -join '') + '"}}'
 
     while ($true) {
       [Console]::Out.WriteLine($stdoutBlock)
@@ -116,6 +165,64 @@ do {
   }
 } while ($read -gt 0)
 [System.IO.File]::WriteAllBytes((Join-Path $capture 'stdin.bin'), $memory.ToArray())
+
+if ($scenario -eq 'success') {
+  Write-JsonEvent @{
+    type = 'turn.started'
+    payload = @{ marker = 'progress-payload-sentinel' }
+  }
+  Write-JsonEvent @{
+    type = 'item.completed'
+    item = @{
+      type = 'file_change'
+      id = 'synthetic-file-change'
+      path = 'synthetic/path.ts'
+    }
+  }
+  Write-JsonEvent @{
+    type = 'item.completed'
+    item = @{
+      type = 'agent_message'
+      text = $finalMessage
+    }
+  }
+  [Console]::Error.WriteLine('stderr-noise-sentinel')
+  [Console]::Error.Flush()
+  exit 0
+}
+
+if ($scenario -eq 'empty-final-message') {
+  Write-JsonEvent @{
+    type = 'item.completed'
+    item = @{
+      type = 'agent_message'
+      text = $finalMessage
+    }
+  }
+  Write-JsonEvent @{
+    type = 'item.completed'
+    item = @{
+      type = 'agent_message'
+      text = ''
+    }
+  }
+  exit 0
+}
+
+if ($scenario -eq 'missing-final') {
+  Write-JsonEvent @{
+    type = 'turn.started'
+    payload = @{ marker = 'missing-final-progress-sentinel' }
+  }
+  exit 0
+}
+
+if ($scenario -eq 'malformed') {
+  [Console]::Out.WriteLine('malformed-jsonl-sentinel')
+  [Console]::Out.Flush()
+  exit 0
+}
+
 exit 0
 `
 
@@ -146,7 +253,7 @@ function makePrompt(role: WorkerRole): string {
 function expectedWorkerContextPreamble(role: WorkerRole): Buffer {
   return Buffer.from(
     [
-      'worker_context_version: "H3"',
+      'worker_context_version: "H6"',
       'already_launched: true',
       `role: "${role}"`,
       'root_authority: false',
@@ -154,7 +261,12 @@ function expectedWorkerContextPreamble(role: WorkerRole): Buffer {
       'recursive_launcher: forbidden',
       'global_skill_mode: "subagent-stop"',
       'quiet_reads: true',
+      'read_scope_enforcement: "exact_only"',
+      'source_body_output: "forbidden_unless_evidence_requires"',
+      'terminal_read_output: "metadata_only"',
+      'repository_wide_discovery: "forbidden"',
       'first_write_deadline_seconds: 180',
+      'post_write_idle_deadline_seconds: 120',
       'max_read_output_lines: 200',
       '--- BEGIN ORIGINAL PROMPT ---'
     ].join('\r\n') + '\r\n',
@@ -203,9 +315,13 @@ function runLauncher(
   const normalizedOptions = typeof options === 'number' ? { timeoutSeconds: options } : options
   const {
     timeoutSeconds,
+    postWriteIdleTimeoutSeconds,
     firstWriteTimeoutSeconds,
     maxOutputBytes,
     flood = false,
+    scenario = undefined,
+    finalMessage = '',
+    idleProcessTree = false,
     workerActive = '0',
     patchSignal = 'none',
     patchSignalStream = 'stdout'
@@ -223,6 +339,9 @@ function runLauncher(
   ]
   if (timeoutSeconds !== undefined) {
     launcherArguments.push('-TimeoutSeconds', String(timeoutSeconds))
+  }
+  if (postWriteIdleTimeoutSeconds !== undefined) {
+    launcherArguments.push('-PostWriteIdleTimeoutSeconds', String(postWriteIdleTimeoutSeconds))
   }
   if (firstWriteTimeoutSeconds !== undefined) {
     launcherArguments.push('-FirstWriteTimeoutSeconds', String(firstWriteTimeoutSeconds))
@@ -243,10 +362,15 @@ function runLauncher(
         MM_CODEX_WORKER_HANG:
           timeoutSeconds !== undefined &&
           !flood &&
-          (patchSignal !== 'completed' || patchSignalStream === 'stderr')
+          scenario !== 'success' &&
+          scenario !== 'malformed' &&
+          scenario !== 'missing-final' &&
+          (idleProcessTree || patchSignal !== 'completed' || patchSignalStream === 'stderr')
             ? '1'
             : '0',
         MM_CODEX_WORKER_FLOOD: flood ? '1' : '0',
+        MM_CODEX_WORKER_SCENARIO: scenario ?? '',
+        MM_CODEX_WORKER_FINAL_MESSAGE: finalMessage,
         MM_CODEX_WORKER_PATCH_SIGNAL: patchSignal,
         MM_CODEX_WORKER_PATCH_SIGNAL_STREAM: patchSignalStream,
         MIRROR_CODEX_WORKER_ACTIVE: workerActive
@@ -266,7 +390,14 @@ function runLauncher(
     : 'unavailable'
   const stdoutBuffer = Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.alloc(0)
   const stderrBuffer = Buffer.isBuffer(result.stderr) ? result.stderr : Buffer.alloc(0)
-  const combinedOutput = `${stdoutBuffer.toString('utf8')}\n${stderrBuffer.toString('utf8')}`
+  const stdoutText = stdoutBuffer.toString('utf8')
+  const stderrText = stderrBuffer.toString('utf8')
+  const combinedOutput = `${stdoutText}\n${stderrText}`
+  const forwardedRawFixtureContent = rawFixtureSentinels.some((sentinel) =>
+    combinedOutput.includes(sentinel)
+  )
+  const forwardedFinalMessageCount =
+    finalMessage.length === 0 ? 0 : stdoutText.split(finalMessage).length - 1
   const powerShellFailureClass =
     combinedOutput.match(powerShellFailureClassPattern)?.[0] ?? 'unavailable'
   const launcherLine = combinedOutput.match(launcherLinePattern)?.[1] ?? 'unavailable'
@@ -282,6 +413,20 @@ function runLauncher(
     launcherFailureMarker,
     stderrBytes: stderrBuffer.length,
     stdoutBytes: stdoutBuffer.length,
+    forwardedFinalMessageCount,
+    forwardedFinalMessageExactly: finalMessage.length > 0 && stdoutText === finalMessage,
+    forwardedRawEventEncoding:
+      stdoutText.includes('turn.started') || stdoutText.includes('item.completed'),
+    forwardedProgressPayload:
+      combinedOutput.includes('progress-payload-sentinel') ||
+      combinedOutput.includes('missing-final-progress-sentinel'),
+    forwardedToolPayload:
+      combinedOutput.includes('synthetic-file-change') ||
+      combinedOutput.includes('synthetic-idle-file-change'),
+    forwardedStderrNoise: combinedOutput.includes('stderr-noise-sentinel'),
+    forwardedFloodSentinel:
+      combinedOutput.includes('flood-sentinel') || combinedOutput.includes('stderr-flood-sentinel'),
+    forwardedRawFixtureContent,
     powerShellFailureClass,
     launcherLine,
     emptyParameterName
@@ -463,7 +608,10 @@ describe('Codex worker launcher contract', () => {
   it('launches a matching tester envelope with exact argv and byte-preserved prompt stdin', async () => {
     const prompt = makePrompt('tester')
     const fixture = await makeFixture(prompt)
-    const run = runLauncher(fixture, 'tester')
+    const run = runLauncher(fixture, 'tester', {
+      scenario: 'success',
+      finalMessage: finalAgentMessage
+    })
 
     expect(run.spawnErrorName, 'PowerShell must be available for the launcher contract').toBeNull()
     expect(
@@ -483,12 +631,85 @@ describe('Codex worker launcher contract', () => {
       'gpt-5.6-luna',
       '-c',
       'model_reasoning_effort="max"',
+      '--json',
       '-'
     ])
     expect(await readFile(fixture.stdinPath)).toEqual(
       Buffer.concat([expectedWorkerContextPreamble('tester'), Buffer.from(prompt, 'utf8')])
     )
     expect(await readFile(fixture.workerActivePath, 'utf8')).toBe('1')
+  })
+
+  it('forwards only the final agent message from structured JSONL output', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', {
+      scenario: 'success',
+      finalMessage: finalAgentMessage
+    })
+
+    expect(run.status, 'structured success must exit cleanly').toBe(0)
+    expect(run.forwardedFinalMessageExactly, 'final agent message must be forwarded exactly').toBe(
+      true
+    )
+    expect(run.forwardedFinalMessageCount, 'final agent message must be forwarded once').toBe(1)
+    expect(run.forwardedRawEventEncoding, 'raw JSONL event encoding must not be forwarded').toBe(
+      false
+    )
+    expect(run.forwardedProgressPayload, 'progress payloads must not be forwarded').toBe(false)
+    expect(run.forwardedToolPayload, 'file-change payloads must not be forwarded').toBe(false)
+    expect(run.forwardedStderrNoise, 'stderr noise must not be forwarded').toBe(false)
+    expect(run.forwardedRawFixtureContent, 'raw fixture sentinels must not be forwarded').toBe(false)
+  })
+
+  it('forwards the latest nonempty agent message when a later message is empty', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', {
+      scenario: 'empty-final-message',
+      finalMessage: finalAgentMessage
+    })
+
+    expect(run.status, 'empty trailing agent message must still exit cleanly').toBe(0)
+    expect(
+      run.forwardedFinalMessageExactly,
+      'latest nonempty agent message must be forwarded exactly'
+    ).toBe(true)
+    expect(run.forwardedFinalMessageCount, 'latest nonempty agent message must be forwarded once').toBe(
+      1
+    )
+    expect(run.forwardedRawEventEncoding, 'raw JSONL event encoding must not be forwarded').toBe(
+      false
+    )
+    expect(run.forwardedProgressPayload, 'progress payloads must not be forwarded').toBe(false)
+    expect(run.forwardedToolPayload, 'tool payloads must not be forwarded').toBe(false)
+    expect(run.forwardedStderrNoise, 'stderr noise must not be forwarded').toBe(false)
+    expect(run.forwardedRawFixtureContent, 'raw fixture sentinels must not be forwarded').toBe(false)
+  })
+
+  it('rejects malformed structured JSONL with an exact protocol marker and no raw fixture leakage', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', { scenario: 'malformed' })
+
+    expect(run.status, 'malformed JSONL must use the protocol failure exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'malformed JSONL must report the exact protocol marker').toBe(
+      'codex_worker_launcher stage=protocol status=failed reason=invalid_jsonl'
+    )
+    expect(run.forwardedRawFixtureContent, 'malformed fixture content must not be forwarded').toBe(
+      false
+    )
+  })
+
+  it('rejects zero-exit structured output without a final message with an exact protocol marker', async () => {
+    const fixture = await makeFixture(makePrompt('tester'))
+    const run = runLauncher(fixture, 'tester', { scenario: 'missing-final' })
+
+    expect(run.status, 'missing final message must use the protocol failure exit code').toBe(2)
+    expect(
+      run.launcherFailureMarker,
+      'missing final message must report the exact protocol marker'
+    ).toBe('codex_worker_launcher stage=protocol status=failed reason=missing_final_message')
+    expect(run.forwardedRawFixtureContent, 'missing-final fixture content must not be forwarded').toBe(
+      false
+    )
   })
 
   it('rejects recursive launcher invocation from the inherited worker marker before invoking fake codex', async () => {
@@ -575,38 +796,98 @@ describe('Codex worker launcher contract', () => {
     expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
   })
 
-  it('allows an implementer to finish normally after the exact first-write signal', async () => {
+  it('treats a structured file change as first-write and then enforces post-write idle termination', async () => {
     const fixture = await makeFixture(makePrompt('implementer'))
     const run = runLauncher(fixture, 'implementer', {
       timeoutSeconds: 10,
       firstWriteTimeoutSeconds: 1,
-      patchSignal: 'completed'
+      postWriteIdleTimeoutSeconds: 1,
+      scenario: 'file-change-idle',
+      idleProcessTree: true
     })
 
-    expect(run.spawnErrorName, 'PowerShell must be available for first-write validation').toBeNull()
+    expect(run.status, 'post-write idle timeout must use the launcher failure exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'file change must arm post-write idle supervision').toBe(
+      'codex_worker_launcher stage=post_write status=failed reason=deadline_exceeded'
+    )
+
+    if (
+      run.status !== 2 ||
+      run.launcherFailureMarker !==
+        'codex_worker_launcher stage=post_write status=failed reason=deadline_exceeded'
+    ) {
+      return
+    }
+
+    const [childPid, grandchildPid] = await Promise.all([
+      readFixturePid(fixture.childPidPath),
+      readFixturePid(fixture.grandchildPidPath)
+    ])
+    const [childGone, grandchildGone] = await Promise.all([
+      waitForProcessExit(childPid, 3_000),
+      waitForProcessExit(grandchildPid, 3_000)
+    ])
+
+    expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
+    expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
+  })
+
+  it('allows an implementer to finish normally after structured file change and final agent message', async () => {
+    const fixture = await makeFixture(makePrompt('implementer'))
+    const run = runLauncher(fixture, 'implementer', {
+      timeoutSeconds: 10,
+      firstWriteTimeoutSeconds: 1,
+      scenario: 'success',
+      finalMessage: finalAgentMessage
+    })
+
+    expect(run.spawnErrorName, 'PowerShell must be available for structured success validation').toBeNull()
     expect(
       run.status,
-      `exact implementer completion signal must allow normal exit; launcherFailureMarker=${run.launcherFailureMarker}; stdoutBytes=${run.stdoutBytes}; stderrBytes=${run.stderrBytes}; powerShellFailureClass=${run.powerShellFailureClass}; launcherLine=${run.launcherLine}; emptyParameterName=${run.emptyParameterName}`
+      `structured implementer success must allow normal exit; launcherFailureMarker=${run.launcherFailureMarker}; stdoutBytes=${run.stdoutBytes}; stderrBytes=${run.stderrBytes}; powerShellFailureClass=${run.powerShellFailureClass}; launcherLine=${run.launcherLine}; emptyParameterName=${run.emptyParameterName}`
     ).toBe(0)
-    expect(run.launcherFailureMarker, 'successful first-write completion must not emit a failure marker').toBe(
+    expect(run.forwardedFinalMessageExactly, 'final agent message must be forwarded exactly').toBe(
+      true
+    )
+    expect(run.forwardedFinalMessageCount, 'final agent message must be forwarded once').toBe(1)
+    expect(run.forwardedRawEventEncoding, 'raw JSONL event encoding must not be forwarded').toBe(
+      false
+    )
+    expect(run.forwardedProgressPayload, 'progress payloads must not be forwarded').toBe(false)
+    expect(run.forwardedToolPayload, 'file-change payloads must not be forwarded').toBe(false)
+    expect(run.forwardedStderrNoise, 'stderr noise must not be forwarded').toBe(false)
+    expect(run.forwardedRawFixtureContent, 'raw fixture sentinels must not be forwarded').toBe(false)
+    expect(run.launcherFailureMarker, 'successful structured completion must not emit a failure marker').toBe(
       'unavailable'
     )
   })
 
-  it('allows an exact implementer completion signal on stderr to reach the overall timeout', async () => {
+  it('does not treat a human completion line on stderr as first-write and terminates its process tree', async () => {
     const fixture = await makeFixture(makePrompt('implementer'))
     const run = runLauncher(fixture, 'implementer', {
-      timeoutSeconds: 2,
+      timeoutSeconds: 3,
       firstWriteTimeoutSeconds: 1,
       patchSignal: 'completed',
       patchSignalStream: 'stderr'
     })
 
     expect(run.spawnErrorName, 'PowerShell must be available for stderr first-write validation').toBeNull()
-    expect(run.status, 'stderr completion must reach the launcher overall timeout').toBe(2)
-    expect(run.launcherFailureMarker, 'stderr completion must disable the first-write deadline').toBe(
-      'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded'
+    expect(run.status, 'stderr human completion must use the first-write exit code').toBe(2)
+    expect(run.launcherFailureMarker, 'stderr human completion must not satisfy first-write supervision').toBe(
+      'codex_worker_launcher stage=first_write status=failed reason=deadline_exceeded'
     )
+
+    const [childPid, grandchildPid] = await Promise.all([
+      readFixturePid(fixture.childPidPath),
+      readFixturePid(fixture.grandchildPidPath)
+    ])
+    const [childGone, grandchildGone] = await Promise.all([
+      waitForProcessExit(childPid, 3_000),
+      waitForProcessExit(grandchildPid, 3_000)
+    ])
+
+    expect(childGone, `fake child PID ${childPid} must be gone`).toBe(true)
+    expect(grandchildGone, `fake grandchild PID ${grandchildPid} must be gone`).toBe(true)
   })
 
   it('bounds combined stdout and stderr and terminates the exact fake pwsh process tree', async () => {
@@ -629,6 +910,7 @@ describe('Codex worker launcher contract', () => {
       run.stdoutBytes + run.stderrBytes,
       'forwarded combined output must stay within the cap plus marker/framing allowance'
     ).toBeLessThanOrEqual(1024 + 256)
+    expect(run.forwardedFloodSentinel, 'flood sentinels must not be forwarded').toBe(false)
 
     const [childPid, grandchildPid] = await Promise.all([
       readFixturePid(fixture.childPidPath),
