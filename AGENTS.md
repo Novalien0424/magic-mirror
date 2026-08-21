@@ -151,7 +151,7 @@ the sentinel. The H6 preamble carries, in fixed order, global
 `source_body_output: "forbidden_unless_evidence_requires"`,
 `terminal_read_output: "metadata_only"`,
 `repository_wide_discovery: "forbidden"`, fixed
-`first_write_deadline_seconds: 300`, fixed
+`first_write_deadline_seconds: 420`, fixed
 `post_write_idle_deadline_seconds: 120`, and
 `max_read_output_lines: 200`. Workers read only exact targeted paths; broad
 discovery and source/skill bodies are suppressed unless exact evidence
