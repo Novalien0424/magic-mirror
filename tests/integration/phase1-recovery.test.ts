@@ -15,6 +15,7 @@ import {
   type RealtimeOutageRecoveryController,
 } from '../../src/main/realtime/outage-recovery'
 import {
+  RECOVERY_PROBE_DELAYS_MS,
   REALTIME_ROLLOVER_AFTER_MS,
   type RealtimeFailureInput,
 } from '../../src/shared/realtime-recovery'
@@ -122,6 +123,10 @@ type BootFixtureOptions = Readonly<{
   readonly dispatchResultForCommand?: (
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
+  readonly issueClientSecret?: () => Promise<Readonly<{
+    value: string
+    expiresAt: number
+  }>>
   readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => number
   readonly cancelRealtimeTimer?: (handle: number) => void
 }>
@@ -179,7 +184,7 @@ function createBootFixture(
     value: 'ek_synthetic-client-secret',
     expiresAt: 1_900_000_000_000,
   })
-  const issueClientSecret = async () => brokerResponse
+  const issueClientSecret = fixtureOptions.issueClientSecret ?? (async () => brokerResponse)
   const clientSecretBroker = Object.assign(issueClientSecret, {
     create: issueClientSecret,
     createClientSecret: issueClientSecret,
@@ -1504,5 +1509,282 @@ it('cancels the owned rollover timer on stop and shutdown without dispatching st
     ...shutdownFixture.metadata,
   ]) {
     expectMetadataOnly(event)
+  }
+})
+
+it('uses the production fallback for an active disconnect and enters Dormant after the first probe succeeds', async () => {
+  const timerHarness = createFakeRealtimeTimerHarness()
+  const activeRealtimeSessionId = 'synthetic-production-active-session'
+  let brokerCallCount = 0
+  let sessionIdCallCount = 0
+  const fixture = createBootFixture(undefined, activeRealtimeSessionId, {
+    createRealtimeSessionId: (): string => {
+      sessionIdCallCount += 1
+      return activeRealtimeSessionId
+    },
+    issueClientSecret: async () => {
+      brokerCallCount += 1
+      return Object.freeze({
+        value: 'ek_synthetic-fallback-client-secret',
+        expiresAt: 1_900_000_000_000,
+      })
+    },
+    scheduleRealtimeTimer: timerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: timerHarness.cancelRealtimeTimer,
+  })
+  const { runtime, commands, metadata } = fixture
+
+  await runtime.ready
+  await runtime.manualStart()
+  const startBundle = await runtime.requestRealtimeClientSecret()
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+
+  const rolloverTimer = timerHarness.timers.find(
+    (timer) => timer.delayMs === REALTIME_ROLLOVER_AFTER_MS,
+  )
+  if (rolloverTimer === undefined) throw new Error('expected active rollover timer')
+  timerHarness.cancelRealtimeTimer(rolloverTimer.handle)
+
+  const failureResult = await runtime.handleRealtimeFailure({
+    kind: 'active_disconnect',
+    realtimeSessionId: startBundle.identity.realtimeSessionId,
+    reason: 'active_disconnect',
+  })
+
+  expect(failureResult).toEqual({ status: 'degraded', reason: 'offline_loop_started' })
+  expectMetadataOnly(failureResult)
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'offlineLoop',
+    realtimeSessionId: null,
+  }))
+  const probeTimers = timerHarness.timers.filter((timer) =>
+    RECOVERY_PROBE_DELAYS_MS.some((delayMs) => delayMs === timer.delayMs),
+  )
+  expect(probeTimers.map((timer) => timer.delayMs)).toEqual([...RECOVERY_PROBE_DELAYS_MS])
+  expect(probeTimers.every((timer) => !timer.canceled)).toBe(true)
+  expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(brokerCallCount).toBe(1)
+  expect(sessionIdCallCount).toBe(1)
+
+  const firstProbeTimer = probeTimers[0]
+  if (firstProbeTimer === undefined) throw new Error('expected first recovery probe timer')
+  timerHarness.invoke(firstProbeTimer)
+  await drainMicrotasks()
+
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'dormant',
+    realtimeSessionId: null,
+  }))
+  expect(probeTimers.slice(1).every((timer) => timer.canceled)).toBe(true)
+  expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(brokerCallCount).toBe(2)
+  expect(sessionIdCallCount).toBe(1)
+  expect(metadata).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      event: 'realtime_failure_entered',
+      session_id: activeRealtimeSessionId,
+    }),
+    expect.objectContaining({
+      event: 'offline_loop_started',
+      reason: 'active_disconnect',
+    }),
+    expect.objectContaining({
+      event: 'recovery_probe',
+      status: 'success',
+      reason: `probe_delay_ms=${RECOVERY_PROBE_DELAYS_MS[0]};cause=probe_succeeded`,
+    }),
+    expect.objectContaining({
+      event: 'recovery_dormant',
+      status: 'success',
+      reason: expect.any(String),
+    }),
+  ]))
+  for (const event of metadata) {
+    expectMetadataOnly(event)
+    expect(typeof event.reason).toBe('string')
+  }
+})
+
+it('keeps OfflineLoop through four failed probes and enters Dormant only after exhaustion', async () => {
+  const timerHarness = createFakeRealtimeTimerHarness()
+  const activeRealtimeSessionId = 'synthetic-production-exhaustion-session'
+  let brokerCallCount = 0
+  let probeAttemptCount = 0
+  let sessionIdCallCount = 0
+  const fixture = createBootFixture(undefined, activeRealtimeSessionId, {
+    createRealtimeSessionId: (): string => {
+      sessionIdCallCount += 1
+      return activeRealtimeSessionId
+    },
+    issueClientSecret: async () => {
+      brokerCallCount += 1
+      if (brokerCallCount > 1) {
+        probeAttemptCount += 1
+        throw new Error('synthetic_probe_failure')
+      }
+      return Object.freeze({
+        value: 'ek_synthetic-exhaustion-client-secret',
+        expiresAt: 1_900_000_000_000,
+      })
+    },
+    scheduleRealtimeTimer: timerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: timerHarness.cancelRealtimeTimer,
+  })
+  const { runtime, commands, metadata } = fixture
+
+  await runtime.ready
+  await runtime.manualStart()
+  const startBundle = await runtime.requestRealtimeClientSecret()
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+  const rolloverTimer = timerHarness.timers.find(
+    (timer) => timer.delayMs === REALTIME_ROLLOVER_AFTER_MS,
+  )
+  if (rolloverTimer === undefined) throw new Error('expected active rollover timer')
+
+  const failureResult = await runtime.handleRealtimeFailure({
+    kind: 'active_disconnect',
+    realtimeSessionId: startBundle.identity.realtimeSessionId,
+    reason: 'active_disconnect',
+  })
+  expect(failureResult).toEqual({ status: 'degraded', reason: 'offline_loop_started' })
+  expectMetadataOnly(failureResult)
+  expect(rolloverTimer.canceled).toBe(true)
+
+  const probeTimers = timerHarness.timers.filter((timer) =>
+    RECOVERY_PROBE_DELAYS_MS.some((delayMs) => delayMs === timer.delayMs),
+  )
+  expect(probeTimers.map((timer) => timer.delayMs)).toEqual([...RECOVERY_PROBE_DELAYS_MS])
+  for (const [index, probeTimer] of probeTimers.entries()) {
+    timerHarness.invoke(probeTimer)
+    await drainMicrotasks()
+    expect(probeAttemptCount).toBe(index + 1)
+    expect(runtime.snapshot().lifecycle).toBe(index < 3 ? 'offlineLoop' : 'dormant')
+  }
+
+  expect(probeAttemptCount).toBe(4)
+  expect(brokerCallCount).toBe(5)
+  expect(sessionIdCallCount).toBe(1)
+  expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(metadata.filter((event) => event.event === 'recovery_probe')).toHaveLength(4)
+  expect(metadata).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      event: 'recovery_dormant',
+      status: 'success',
+      reason: 'recovery_probes_exhausted',
+    }),
+  ]))
+  for (const event of metadata) {
+    expectMetadataOnly(event)
+    expect(typeof event.reason).toBe('string')
+  }
+})
+
+it('ignores stale failures, deduplicates recovery scheduling, and shuts down captured probes safely', async () => {
+  const timerHarness = createFakeRealtimeTimerHarness()
+  const activeRealtimeSessionId = 'synthetic-production-stale-session'
+  const staleRealtimeSessionId = 'synthetic-production-old-session'
+  let brokerCallCount = 0
+  let sessionIdCallCount = 0
+  const fixture = createBootFixture(undefined, activeRealtimeSessionId, {
+    createRealtimeSessionId: (): string => {
+      sessionIdCallCount += 1
+      return activeRealtimeSessionId
+    },
+    issueClientSecret: async () => {
+      brokerCallCount += 1
+      return Object.freeze({
+        value: 'ek_synthetic-stale-client-secret',
+        expiresAt: 1_900_000_000_000,
+      })
+    },
+    scheduleRealtimeTimer: timerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: timerHarness.cancelRealtimeTimer,
+  })
+  const { runtime, commands, metadata } = fixture
+
+  await runtime.ready
+  await runtime.manualStart()
+  const startBundle = await runtime.requestRealtimeClientSecret()
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+  const rolloverTimer = timerHarness.timers.find(
+    (timer) => timer.delayMs === REALTIME_ROLLOVER_AFTER_MS,
+  )
+  if (rolloverTimer === undefined) throw new Error('expected active rollover timer')
+  const snapshotBeforeStaleFailure = runtime.snapshot()
+
+  const staleResult = await runtime.handleRealtimeFailure({
+    kind: 'ice',
+    realtimeSessionId: staleRealtimeSessionId,
+    reason: 'late_old_session_failure',
+  })
+  expect(staleResult).toEqual({ status: 'ignored', reason: 'stale_realtime_session' })
+  expectMetadataOnly(staleResult)
+  expect(runtime.snapshot()).toEqual(snapshotBeforeStaleFailure)
+  expect(rolloverTimer.canceled).toBe(false)
+  expect(timerHarness.timers).toHaveLength(1)
+  expect(brokerCallCount).toBe(1)
+
+  const acceptedResult = await runtime.handleRealtimeFailure({
+    kind: 'active_disconnect',
+    realtimeSessionId: startBundle.identity.realtimeSessionId,
+    reason: 'active_disconnect',
+  })
+  expect(acceptedResult).toEqual({ status: 'degraded', reason: 'offline_loop_started' })
+  expectMetadataOnly(acceptedResult)
+  expect(rolloverTimer.canceled).toBe(true)
+  const probeTimers = timerHarness.timers.filter((timer) =>
+    RECOVERY_PROBE_DELAYS_MS.some((delayMs) => delayMs === timer.delayMs),
+  )
+  expect(probeTimers.map((timer) => timer.delayMs)).toEqual([...RECOVERY_PROBE_DELAYS_MS])
+  expect(timerHarness.timers).toHaveLength(5)
+
+  const duplicateResult = await runtime.handleRealtimeFailure({
+    kind: 'ice',
+    realtimeSessionId: staleRealtimeSessionId,
+    reason: 'duplicate_old_session_failure',
+  })
+  expect(duplicateResult).toEqual({ status: 'ignored', reason: 'stale_realtime_session' })
+  expectMetadataOnly(duplicateResult)
+  const timerCountBeforeExplicitSchedule = timerHarness.timers.length
+  const brokerCallsBeforeExplicitSchedule = brokerCallCount
+  runtime.scheduleRecoveryProbes()
+  await drainMicrotasks()
+  expect(timerHarness.timers).toHaveLength(timerCountBeforeExplicitSchedule)
+  expect(brokerCallCount).toBe(brokerCallsBeforeExplicitSchedule)
+
+  await runtime.shutdown()
+  await runtime.shutdown()
+  for (const probeTimer of probeTimers) {
+    expect(probeTimer.canceled).toBe(true)
+    expect(timerHarness.cancelCalls.filter((handle) => handle === probeTimer.handle)).toHaveLength(1)
+  }
+  const brokerCallsBeforeCanceledCallbacks = brokerCallCount
+  for (const probeTimer of probeTimers) timerHarness.invoke(probeTimer)
+  await drainMicrotasks()
+  expect(brokerCallCount).toBe(brokerCallsBeforeCanceledCallbacks)
+  expect(sessionIdCallCount).toBe(1)
+  expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(metadata).toEqual(expect.arrayContaining([
+    expect.objectContaining({ reason: 'stale_realtime_session' }),
+    expect.objectContaining({
+      event: 'offline_loop_started',
+      reason: 'active_disconnect',
+    }),
+  ]))
+  for (const event of metadata) {
+    expectMetadataOnly(event)
+    expect(typeof event.reason).toBe('string')
   }
 })

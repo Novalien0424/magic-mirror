@@ -81,6 +81,7 @@ import {
 } from './realtime/session-start-bundle'
 import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
 import {
+  RECOVERY_PROBE_DELAYS_MS,
   REALTIME_ROLLOVER_AFTER_MS,
   type RealtimeFailureInput,
 } from '../shared/realtime-recovery'
@@ -160,6 +161,18 @@ interface MaintenanceInfo {
 interface BootContextView {
   readonly state: LifecycleState
   readonly context: LifecycleContext
+}
+
+interface RecoveryProbeTimer {
+  readonly delayMs: number
+  handle: unknown
+  fired: boolean
+}
+
+interface RecoveryProbeCycle {
+  readonly token: number
+  readonly timers: RecoveryProbeTimer[]
+  terminalTimer: RecoveryProbeTimer | null
 }
 
 const OFFLINE_LOOP_ASSET_SHA256 = 'e9e4383572854438f47591b67153d5b25dfc20f577019d649f2149e4cbb34cd6'
@@ -815,6 +828,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let realtimeRolloverTimerHandle: unknown = null
   let realtimeRolloverTimerOwned = false
   let realtimeRolloverTimerToken = 0
+  let recoveryProbeCycle: RecoveryProbeCycle | null = null
+  let recoveryProbeCycleToken = 0
   const scheduleRealtimeTimer = options.scheduleRealtimeTimer
     ?? ((callback: () => void, delayMs: number): unknown => setTimeout(callback, delayMs))
   const cancelRealtimeTimer = options.cancelRealtimeTimer
@@ -1018,6 +1033,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       } catch {
         // The actor already emitted its own stable transition; keep the last view.
       }
+      if (recoveryProbeCycle !== null && lifecycleView.state !== 'offlineLoop') {
+        cancelRecoveryProbeCycle()
+      }
       refreshSnapshot()
       return true
     } catch {
@@ -1038,6 +1056,189 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       return actor?.getState() ?? lifecycleView.state
     } catch {
       return lifecycleView.state
+    }
+  }
+
+  function emitRecoveryProbeMetadata(
+    status: 'success' | 'failed' | 'info',
+    reason: string,
+  ): void {
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: 'recovery_probe',
+      status,
+      reason,
+      source: 'runtime',
+    })
+  }
+
+  function emitRecoveryDormantMetadata(
+    status: 'success' | 'failed',
+    reason: string,
+  ): void {
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: 'recovery_dormant',
+      status,
+      reason,
+      source: 'runtime',
+    })
+  }
+
+  function cancelRecoveryProbeCycle(): void {
+    const cycle = recoveryProbeCycle
+    if (cycle === null) return
+
+    recoveryProbeCycle = null
+    recoveryProbeCycleToken += 1
+    for (const timer of cycle.timers) {
+      try {
+        cancelRealtimeTimer(timer.handle)
+      } catch {
+        emitRecoveryProbeMetadata(
+          'failed',
+          `probe_delay_ms=${timer.delayMs};cause=timer_cancel_failed`,
+        )
+      }
+    }
+  }
+
+  function isCurrentRecoveryProbeCycle(cycle: RecoveryProbeCycle): boolean {
+    return recoveryProbeCycle === cycle
+      && recoveryProbeCycleToken === cycle.token
+      && lifecycleState() === 'offlineLoop'
+  }
+
+  function finishRecoveryProbeCycle(
+    cycle: RecoveryProbeCycle,
+    reason: string,
+  ): void {
+    if (!isCurrentRecoveryProbeCycle(cycle)) return
+
+    cancelRecoveryProbeCycle()
+    if (!sendLifecycle({ type: 'RECOVERY_PASSED' })) {
+      emitRecoveryDormantMetadata('failed', 'cause=recovery_transition_failed')
+      refreshSnapshot()
+      notifyListeners()
+      return
+    }
+
+    lastError = null
+    maintenance = null
+    refreshSnapshot()
+    notifyListeners()
+    emitRecoveryDormantMetadata('success', reason)
+  }
+
+  function settleRecoveryProbe(
+    cycle: RecoveryProbeCycle,
+    timer: RecoveryProbeTimer,
+    succeeded: boolean,
+  ): void {
+    if (!isCurrentRecoveryProbeCycle(cycle)) return
+
+    emitRecoveryProbeMetadata(
+      succeeded ? 'success' : 'failed',
+      `probe_delay_ms=${timer.delayMs};cause=${succeeded ? 'probe_succeeded' : 'probe_failed'}`,
+    )
+    if (succeeded) {
+      finishRecoveryProbeCycle(cycle, 'recovery_probe_succeeded')
+      return
+    }
+    if (cycle.terminalTimer === timer) {
+      finishRecoveryProbeCycle(cycle, 'recovery_probes_exhausted')
+    }
+  }
+
+  function runRecoveryProbe(cycle: RecoveryProbeCycle, timer: RecoveryProbeTimer): void {
+    if (!isCurrentRecoveryProbeCycle(cycle) || timer.fired) return
+    timer.fired = true
+
+    const activeModelSettings = resolvedModelSettings?.active
+    if (
+      options.clientSecretBroker === undefined
+      || activeModelSettings === undefined
+      || typeof activeModelSettings.realtimeDialogue !== 'string'
+      || activeModelSettings.realtimeDialogue.length === 0
+    ) {
+      settleRecoveryProbe(cycle, timer, false)
+      return
+    }
+
+    let issueResult: PromiseLike<unknown>
+    try {
+      issueResult = options.clientSecretBroker.issue({
+        modelId: activeModelSettings.realtimeDialogue,
+      })
+    } catch {
+      settleRecoveryProbe(cycle, timer, false)
+      return
+    }
+
+    void Promise.resolve(issueResult).then(
+      () => settleRecoveryProbe(cycle, timer, true),
+      () => settleRecoveryProbe(cycle, timer, false),
+    )
+  }
+
+  function startRecoveryProbeCycle(): void {
+    const state = lifecycleState()
+    if (state !== 'offlineLoop') {
+      emitRecoveryProbeMetadata('info', `state=${state};cause=not_offline_loop`)
+      return
+    }
+    if (recoveryProbeCycle !== null) {
+      emitRecoveryProbeMetadata('info', 'cause=duplicate_schedule')
+      return
+    }
+
+    const cycle: RecoveryProbeCycle = {
+      token: recoveryProbeCycleToken + 1,
+      timers: [],
+      terminalTimer: null,
+    }
+    recoveryProbeCycleToken = cycle.token
+    recoveryProbeCycle = cycle
+
+    for (const delayMs of RECOVERY_PROBE_DELAYS_MS) {
+      if (!isCurrentRecoveryProbeCycle(cycle)) return
+
+      const timer: RecoveryProbeTimer = {
+        delayMs,
+        handle: null,
+        fired: false,
+      }
+      try {
+        timer.handle = scheduleRealtimeTimer(
+          () => runRecoveryProbe(cycle, timer),
+          delayMs,
+        )
+      } catch {
+        emitRecoveryProbeMetadata(
+          'failed',
+          `probe_delay_ms=${delayMs};cause=timer_schedule_failed`,
+        )
+        continue
+      }
+
+      if (!isCurrentRecoveryProbeCycle(cycle)) {
+        try {
+          cancelRealtimeTimer(timer.handle)
+        } catch {
+          emitRecoveryProbeMetadata(
+            'failed',
+            `probe_delay_ms=${delayMs};cause=timer_cancel_failed`,
+          )
+        }
+        return
+      }
+      cycle.timers.push(timer)
+      cycle.terminalTimer = timer
+    }
+
+    if (!isCurrentRecoveryProbeCycle(cycle)) return
+    if (cycle.timers.length === 0) {
+      finishRecoveryProbeCycle(cycle, 'recovery_probes_unavailable')
     }
   }
 
@@ -1070,6 +1271,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenance = null
     refreshSnapshot()
     notifyListeners()
+    if (realtimeRecoveryController === null && lifecycleState() === 'offlineLoop') {
+      startRecoveryProbeCycle()
+    }
   }
 
   function recordRealtimeStopFailure(): void {
@@ -1103,6 +1307,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenance = null
     refreshSnapshot()
     notifyListeners()
+    if (realtimeRecoveryController === null && lifecycleState() === 'offlineLoop') {
+      startRecoveryProbeCycle()
+    }
   }
 
   let readySettled = false
@@ -1416,6 +1623,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     if (shutdownPromise !== null) return shutdownPromise
 
     pendingRealtimeRolloverSessionIdentity = null
+    cancelRecoveryProbeCycle()
     cancelRealtimeRolloverTimer()
     shutdownPromise = (async () => {
       try {
@@ -1644,16 +1852,82 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     input: RealtimeFailureInput,
   ): Promise<Record<string, unknown>> {
     await ready
-    if (realtimeRecoveryController === null) {
-      return emitRealtimeRecoveryUnavailable()
+    if (realtimeRecoveryController !== null) {
+      return realtimeRecoveryController.handleRealtimeFailure(input)
     }
-    return realtimeRecoveryController.handleRealtimeFailure(input)
+
+    const kindValue = readProperty(input, 'kind')
+    const kind = kindValue === 'connect' || kindValue === 'ice' || kindValue === 'active_disconnect'
+      ? kindValue
+      : null
+    const reportedRealtimeSessionId = safeIdentifier(readProperty(input, 'realtimeSessionId'))
+    const reportedReason = safeReason(readProperty(input, 'reason'), 'realtime_failure_unknown')
+    const state = lifecycleState()
+    const authority = state === 'activating'
+      ? pendingRealtimeSessionIdentity
+      : state === 'active'
+        ? authoritativeRealtimeSessionIdentity()
+        : null
+
+    if (
+      kind === null
+      || reportedRealtimeSessionId === null
+      || authority === null
+      || reportedRealtimeSessionId !== authority.realtimeSessionId
+    ) {
+      emitMetadata(telemetry, {
+        module: 'openai',
+        event: 'realtime_failure_ignored',
+        status: 'info',
+        reason: 'stale_realtime_session',
+        source: 'runtime',
+      })
+      return Object.freeze({ status: 'ignored', reason: 'stale_realtime_session' })
+    }
+
+    const sessionId = authority.realtimeSessionId
+    const errorCode = `realtime_${kind}_failed`
+    const failureReason = safeReason(
+      `failure_kind=${kind};cause=${reportedReason}`,
+      `failure_kind=${kind};cause=realtime_failure_unknown`,
+    )
+    cancelRecoveryProbeCycle()
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
+    sendLifecycle({ type: 'CLOUD_FAILED', errorCode })
+    lastError = {
+      module: 'openai',
+      error_code: errorCode,
+      time: nowValue(now),
+    }
+    maintenance = null
+    refreshSnapshot()
+    notifyListeners()
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: 'realtime_failure_entered',
+      status: 'degraded',
+      error_code: errorCode,
+      session_id: sessionId,
+      reason: failureReason,
+      source: 'runtime',
+    })
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: 'offline_loop_started',
+      status: 'degraded',
+      session_id: sessionId,
+      reason: reportedReason,
+      source: 'runtime',
+    })
+    startRecoveryProbeCycle()
+    return Object.freeze({ status: 'degraded', reason: 'offline_loop_started' })
   }
 
   function scheduleRecoveryProbes(): void {
     const invoke = (): void => {
       if (realtimeRecoveryController === null) {
-        emitRealtimeRecoveryUnavailable()
+        startRecoveryProbeCycle()
         return
       }
       realtimeRecoveryController.scheduleRecoveryProbes()
@@ -1684,6 +1958,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
           : 'manual_start_requires_dormant',
       )
     }
+    cancelRecoveryProbeCycle()
 
     let activationId: string
     try {
