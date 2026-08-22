@@ -9,6 +9,7 @@ import type {
   ConsoleChannelMap,
   MirrorChannelMap,
   MirrorWindowKind,
+  RealtimeRuntimeCommand,
   RealtimeRuntimeOutcomeOperation,
   RealtimeRuntimeOutcomeStatus,
   RealtimeSessionStartBundleValue,
@@ -30,6 +31,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
   snapshot: 'mirror:snapshot',
   requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
+  realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
   interrupt: 'mirror:interrupt',
   reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
   ready: 'boot:renderer-ready',
@@ -385,7 +387,7 @@ function isValidRealtimeSessionStartBundle(
     || !nonEmptyString(readProperty(identity, 'realtimeSessionId'))
     || typeof readProperty(identity, 'sessionGeneration') !== 'number'
     || !Number.isSafeInteger(readProperty(identity, 'sessionGeneration'))
-    || (readProperty(identity, 'sessionGeneration') as number) < 0
+    || (readProperty(identity, 'sessionGeneration') as number) <= 0
   ) {
     return false
   }
@@ -771,6 +773,41 @@ function dispatchMirrorInterrupt(windows: TrackedWindows): Record<string, unknow
       status: 'failed',
       reason: 'cause=interrupt_dispatch_failed',
     }
+  }
+}
+
+export type RealtimeRuntimeCommandDispatchResult =
+  | Readonly<{ status: 'success'; reason: 'runtime_command_delivered' }>
+  | Readonly<{ status: 'failed'; reason: 'mirror_window_missing' }>
+  | Readonly<{ status: 'failed'; reason: 'mirror_window_destroyed' }>
+  | Readonly<{ status: 'failed'; reason: 'runtime_command_send_failed' }>
+
+export function dispatchMirrorRealtimeRuntimeCommand(
+  command: RealtimeRuntimeCommand,
+  windows: TrackedWindows,
+): RealtimeRuntimeCommandDispatchResult {
+  const tracked = getTrackedWindow(windows, 'mirror')
+  if (tracked === null) {
+    return { status: 'failed', reason: 'mirror_window_missing' }
+  }
+  if (isTrackedWindowDestroyed(tracked)) {
+    return { status: 'failed', reason: 'mirror_window_destroyed' }
+  }
+
+  const sender = readProperty(tracked, 'webContents')
+  if (!isWebContentsLike(sender)) {
+    return { status: 'failed', reason: 'mirror_window_destroyed' }
+  }
+
+  const dto = Object.freeze({
+    operation: command.operation,
+    reason: command.reason,
+  })
+  try {
+    sender.send(MIRROR_IPC_CHANNELS.realtimeRuntimeCommand, dto)
+    return { status: 'success', reason: 'runtime_command_delivered' }
+  } catch {
+    return { status: 'failed', reason: 'runtime_command_send_failed' }
   }
 }
 

@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot } from '../shared/types'
 import type {
   MirrorBridge,
+  RealtimeRuntimeCommand,
+  RealtimeRuntimeCommandListener,
   RealtimeRuntimeOutcomeReport,
   RealtimeSessionStartBundleValue,
   SnapshotListener,
@@ -17,6 +19,7 @@ const READY_CHANNEL = 'boot:renderer-ready' as const
 const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
 const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
+const REALTIME_RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command' as const
 const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
 const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
 
@@ -64,6 +67,22 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+function sanitizeRealtimeRuntimeCommand(value: unknown): RealtimeRuntimeCommand | null {
+  if (!isRecord(value) || !exactKeys(value, ['operation', 'reason'])) return null
+  const operation = readProperty(value, 'operation')
+  const reason = readProperty(value, 'reason')
+  if (operation === 'start' && reason === 'manual_start') {
+    return Object.freeze({ operation: 'start', reason: 'manual_start' })
+  }
+  if (operation === 'stop' && reason === 'manual_stop') {
+    return Object.freeze({ operation: 'stop', reason: 'manual_stop' })
+  }
+  if (operation === 'rollover' && reason === 'session_limit') {
+    return Object.freeze({ operation: 'rollover', reason: 'session_limit' })
+  }
+  return null
+}
+
 function isValidSessionStartBundleValue(value: unknown): value is RealtimeSessionStartBundleValue {
   if (!isRecord(value)) return false
   const hasExpiry = exactKeys(value, ['snapshot', 'identity', 'clientSecret', 'expiresAt'])
@@ -91,7 +110,7 @@ function isValidSessionStartBundleValue(value: unknown): value is RealtimeSessio
     || !nonEmptyString(readProperty(identity, 'realtimeSessionId'))
     || typeof readProperty(identity, 'sessionGeneration') !== 'number'
     || !Number.isSafeInteger(readProperty(identity, 'sessionGeneration'))
-    || (readProperty(identity, 'sessionGeneration') as number) < 0
+    || (readProperty(identity, 'sessionGeneration') as number) <= 0
   ) {
     return false
   }
@@ -201,6 +220,16 @@ const bridge: MirrorBridge = {
       reason: readProperty(report, 'reason'),
     })
     ipcRenderer.send(REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL, dto)
+  },
+
+  onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void {
+    const handler = (_event: IpcRendererEvent, value: unknown): void => {
+      const command = sanitizeRealtimeRuntimeCommand(value)
+      if (command === null) return
+      listener(command)
+    }
+    ipcRenderer.on(REALTIME_RUNTIME_COMMAND_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(REALTIME_RUNTIME_COMMAND_CHANNEL, handler)
   },
 
   onInterrupt(listener: () => void): () => void {

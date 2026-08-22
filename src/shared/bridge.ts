@@ -64,6 +64,7 @@ export interface MirrorChannelMap {
   readonly getSnapshot: 'mirror:get-snapshot'
   readonly snapshot: 'mirror:snapshot'
   readonly requestRealtimeClientSecret: 'mirror:request-realtime-client-secret'
+  readonly realtimeRuntimeCommand: 'mirror:realtime-runtime-command'
   readonly interrupt: 'mirror:interrupt'
   readonly reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome'
   readonly ready: BootChannel
@@ -92,6 +93,13 @@ export interface ConsoleChannelMap {
 
 export type SnapshotListener = (snapshot: AppSnapshot) => void
 
+export type RealtimeRuntimeCommand =
+  | Readonly<{ operation: 'start'; reason: 'manual_start' }>
+  | Readonly<{ operation: 'stop'; reason: 'manual_stop' }>
+  | Readonly<{ operation: 'rollover'; reason: 'session_limit' }>
+
+export type RealtimeRuntimeCommandListener = (command: RealtimeRuntimeCommand) => void
+
 interface SharedRendererBridge {
   notifyReady(): void
   getSnapshot(): Promise<AppSnapshot>
@@ -101,6 +109,7 @@ interface SharedRendererBridge {
 export interface MirrorBridge extends SharedRendererBridge {
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
   reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
+  onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
 }
 

@@ -6,6 +6,7 @@ import {
   projectAppSnapshot,
 } from '../../src/main/boot'
 import { ConfigServiceError } from '../../src/main/config-service'
+import * as mainIpc from '../../src/main/ipc'
 import {
   authorizeSender,
   CONSOLE_IPC_CHANNELS,
@@ -724,6 +725,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
   it('keeps exact Mirror and Console channel allowlists', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
+      realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
@@ -965,6 +967,130 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(serialize(runtime.snapshot())).not.toContain('guestId')
   })
 
+  describe('P1-U7F1 Main-to-Mirror runtime command dispatch', () => {
+    const RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command'
+
+    type RealtimeRuntimeCommand =
+      | Readonly<{ operation: 'start'; reason: 'manual_start' }>
+      | Readonly<{ operation: 'stop'; reason: 'manual_stop' }>
+      | Readonly<{ operation: 'rollover'; reason: 'session_limit' }>
+
+    type RuntimeCommandDispatchResult =
+      | Readonly<{ status: 'success'; reason: 'runtime_command_delivered' }>
+      | Readonly<{ status: 'failed'; reason: 'mirror_window_missing' }>
+      | Readonly<{ status: 'failed'; reason: 'mirror_window_destroyed' }>
+      | Readonly<{ status: 'failed'; reason: 'runtime_command_send_failed' }>
+
+    type SentMessage = { channel: string; payload: unknown[] }
+
+    function dispatchRuntimeCommand(
+      command: RealtimeRuntimeCommand,
+      windows: unknown,
+    ): RuntimeCommandDispatchResult {
+      const dispatch = (mainIpc as unknown as {
+        dispatchMirrorRealtimeRuntimeCommand?: (
+          value: RealtimeRuntimeCommand,
+          trackedWindows: unknown,
+        ) => RuntimeCommandDispatchResult
+      }).dispatchMirrorRealtimeRuntimeCommand
+
+      expect(dispatch).toBeTypeOf('function')
+      return (dispatch as (
+        value: RealtimeRuntimeCommand,
+        trackedWindows: unknown,
+      ) => RuntimeCommandDispatchResult)(command, windows)
+    }
+
+    function makeWindows(mode: 'live' | 'missing' | 'destroyed' | 'throws'): {
+      windows: Record<string, unknown>
+      mirrorMessages: SentMessage[]
+      consoleMessages: SentMessage[]
+    } {
+      const mirrorMessages: SentMessage[] = []
+      const consoleMessages: SentMessage[] = []
+      const mirrorFrame = {}
+      const consoleFrame = {}
+      const consoleSender = {
+        id: 702,
+        mainFrame: consoleFrame,
+        isDestroyed: () => false,
+        send: (channel: string, ...payload: unknown[]) => {
+          consoleMessages.push({ channel, payload })
+        },
+      }
+      const windows: Record<string, unknown> = {
+        console: { webContents: consoleSender, webContentsId: 702 },
+      }
+
+      if (mode !== 'missing') {
+        const mirrorSender = {
+          id: 701,
+          mainFrame: mirrorFrame,
+          isDestroyed: () => mode === 'destroyed',
+          send: (channel: string, ...payload: unknown[]) => {
+            if (mode === 'throws') throw new Error(RAW_DELIVERY_ERROR)
+            mirrorMessages.push({ channel, payload })
+          },
+        }
+        windows.mirror = { webContents: mirrorSender, webContentsId: 701 }
+      }
+
+      return { windows, mirrorMessages, consoleMessages }
+    }
+
+    it('delivers each exact frozen metadata-only command to live Mirror and never Console', () => {
+      const validCommands: RealtimeRuntimeCommand[] = [
+        { operation: 'start', reason: 'manual_start' },
+        { operation: 'stop', reason: 'manual_stop' },
+        { operation: 'rollover', reason: 'session_limit' },
+      ]
+      const { windows, mirrorMessages, consoleMessages } = makeWindows('live')
+
+      for (const command of validCommands) {
+        expect(dispatchRuntimeCommand(command, windows)).toEqual({
+          status: 'success',
+          reason: 'runtime_command_delivered',
+        })
+      }
+
+      expect(mirrorMessages).toHaveLength(validCommands.length)
+      for (const [index, command] of validCommands.entries()) {
+        const sent = mirrorMessages[index]
+        expect(sent?.channel).toBe(RUNTIME_COMMAND_CHANNEL)
+        expect(sent?.payload).toHaveLength(1)
+        expect(sent?.payload[0]).toEqual(command)
+        expect(Object.keys(sent?.payload[0] as object).sort()).toEqual(['operation', 'reason'])
+        expect(Object.isFrozen(sent?.payload[0])).toBe(true)
+      }
+      expect(consoleMessages).toHaveLength(0)
+      expectNoIdentifierKeys(mirrorMessages)
+      expectNoPrivateSentinels(mirrorMessages)
+      expect(collectKeys(mirrorMessages).some((key) =>
+        /secret|credential|profile|guest|candidate|transcript|audio|memory|private/i.test(key),
+      )).toBe(false)
+    })
+
+    it.each([
+      { mode: 'missing' as const, expected: { status: 'failed', reason: 'mirror_window_missing' } },
+      { mode: 'destroyed' as const, expected: { status: 'failed', reason: 'mirror_window_destroyed' } },
+      { mode: 'throws' as const, expected: { status: 'failed', reason: 'runtime_command_send_failed' } },
+    ])('returns stable metadata-only result for $mode Mirror delivery', ({ mode, expected }) => {
+      const { windows, mirrorMessages, consoleMessages } = makeWindows(mode)
+      const result = dispatchRuntimeCommand(
+        { operation: 'start', reason: 'manual_start' },
+        windows,
+      )
+
+      expect(result).toEqual(expected)
+      expect(Object.keys(result).sort()).toEqual(['reason', 'status'])
+      expectNoIdentifierKeys(result)
+      expectNoPrivateSentinels(result)
+      expect(serialize(result)).not.toContain(RAW_DELIVERY_ERROR)
+      expect(mirrorMessages).toHaveLength(0)
+      expect(consoleMessages).toHaveLength(0)
+    })
+  })
+
   it('delivers the Main session-start bundle through the existing Mirror handler', async () => {
     const events: MetadataEvent[] = []
     const mirrorFrame = {}
@@ -1004,7 +1130,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         },
         identity: {
           realtimeSessionId: 'synthetic-realtime-session',
-          sessionGeneration: 0,
+          sessionGeneration: 1,
         },
         clientSecret: {
           value: 'ek_synthetic-client-secret',
@@ -1033,11 +1159,89 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         },
         identity: {
           realtimeSessionId: 'synthetic-realtime-session',
-          sessionGeneration: 0,
+          sessionGeneration: 1,
         },
         clientSecret: 'ek_synthetic-client-secret',
         expiresAt: 1_800_000_000,
       },
     })
   })
+
+  it.each([
+    { sessionGeneration: 0, expectedStatus: 'rejected', expectedReason: 'invalid_payload' },
+    { sessionGeneration: 1, expectedStatus: 'accepted', expectedReason: 'mirror_authorized' },
+    {
+      sessionGeneration: Number.MAX_SAFE_INTEGER,
+      expectedStatus: 'accepted',
+      expectedReason: 'mirror_authorized',
+    },
+  ])(
+    'validates Main start-bundle sessionGeneration=$sessionGeneration',
+    async ({ sessionGeneration, expectedStatus, expectedReason }) => {
+      const events: MetadataEvent[] = []
+      const mirrorFrame = {}
+      const consoleFrame = {}
+      const mirrorSender = {
+        id: 611,
+        mainFrame: mirrorFrame,
+        isDestroyed: () => false,
+        send: () => {},
+      }
+      const consoleSender = {
+        id: 612,
+        mainFrame: consoleFrame,
+        isDestroyed: () => false,
+        send: () => {},
+      }
+      const windows = {
+        mirror: { webContents: mirrorSender, webContentsId: 611 },
+        console: { webContents: consoleSender, webContentsId: 612 },
+      }
+      const runtime = {
+        ready: Promise.resolve(),
+        snapshot: startingSnapshot,
+        handleSimulator: async () => ({ op: 'success' as const }),
+        requestRealtimeClientSecret: async () => ({
+          snapshot: {
+            configVersion: 7,
+            fingerprint: 'synthetic-config-fingerprint',
+            sdkVersion: '0.16.1',
+            realtimeDialogue: 'synthetic-realtime-model',
+            inputTranscription: 'synthetic-transcription-model',
+            memoryExtractor: 'synthetic-memory-model',
+            voice: 'synthetic-voice',
+            reasoningEffort: 'low',
+            turnDetectionProfile: 'semantic-vad',
+            takenAt: FIXED_TIME,
+          },
+          identity: {
+            realtimeSessionId: 'synthetic-realtime-session',
+            sessionGeneration,
+          },
+          clientSecret: {
+            value: 'ek_synthetic-client-secret',
+            expiresAt: 1_800_000_000,
+          },
+        }),
+      }
+      const registered = registerTestIpcHandlers(runtime, windows, events)
+      const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.requestRealtimeClientSecret) as IpcHandler
+
+      const result = await handler({ sender: mirrorSender, senderFrame: mirrorFrame })
+
+      expect(result).toEqual(expect.objectContaining({
+        status: expectedStatus,
+        reason: expectedReason,
+      }))
+      if (expectedStatus === 'accepted') {
+        expect(result).toEqual(expect.objectContaining({
+          value: expect.objectContaining({
+            identity: expect.objectContaining({ sessionGeneration }),
+          }),
+        }))
+      }
+      expectNoPrivateSentinels(result)
+      expectReasonedMetadataEvents(events)
+    },
+  )
 })

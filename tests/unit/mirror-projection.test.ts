@@ -295,6 +295,184 @@ describe('Mirror preload interrupt bridge contract', () => {
   })
 })
 
+describe('Mirror realtime runtime command transport', () => {
+  const RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command'
+
+  type RealtimeRuntimeCommand =
+    | Readonly<{ operation: 'start'; reason: 'manual_start' }>
+    | Readonly<{ operation: 'stop'; reason: 'manual_stop' }>
+    | Readonly<{ operation: 'rollover'; reason: 'session_limit' }>
+
+  it('delivers only exact frozen command DTOs and removes the exact subscription wrapper', async () => {
+    type IpcListener = (event: unknown, ...payload: unknown[]) => void
+
+    const registrations: Array<{ channel: string; listener: IpcListener }> = []
+    const removals: Array<{ channel: string; listener: IpcListener }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: (channel: string, listener: IpcListener) => {
+          registrations.push({ channel, listener })
+        },
+        removeListener: (channel: string, listener: IpcListener) => {
+          removals.push({ channel, listener })
+        },
+        send: () => undefined,
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+
+      const bridge = exposedBridge as unknown as MirrorBridge & {
+        onRealtimeRuntimeCommand?: (listener: (command: RealtimeRuntimeCommand) => void) => () => void
+      }
+      const listener = vi.fn<(command: RealtimeRuntimeCommand) => void>()
+      expect(bridge.onRealtimeRuntimeCommand).toBeTypeOf('function')
+      if (typeof bridge.onRealtimeRuntimeCommand !== 'function') return
+      const dispose = bridge.onRealtimeRuntimeCommand(listener)
+      const registration = registrations[0]
+
+      expect(registrations).toHaveLength(1)
+      expect(registration?.channel).toBe(RUNTIME_COMMAND_CHANNEL)
+      expect(registration?.listener).toBeTypeOf('function')
+      if (registration === undefined) return
+
+      const validCommands: RealtimeRuntimeCommand[] = [
+        { operation: 'start', reason: 'manual_start' },
+        { operation: 'stop', reason: 'manual_stop' },
+        { operation: 'rollover', reason: 'session_limit' },
+      ]
+      const invalidCommands: unknown[] = [
+        { operation: 'start', reason: 'manual_stop' },
+        { operation: 'stop', reason: 'session_limit' },
+        { operation: 'rollover', reason: 'manual_start' },
+        { operation: 'pause', reason: 'manual_start' },
+        { operation: 'start', reason: 'manual_start', profileId: RAW_PROFILE_ID },
+        { operation: 'stop', reason: 'manual_stop', transcript: RAW_TRANSCRIPT },
+        { operation: 'rollover', reason: 'session_limit', clientSecret: RAW_CREDENTIAL },
+        undefined,
+      ]
+
+      for (const command of validCommands) {
+        registration.listener({ type: 'synthetic-event' }, command)
+      }
+      for (const command of invalidCommands) {
+        registration.listener({ type: 'synthetic-event' }, command)
+      }
+
+      expect(listener).toHaveBeenCalledTimes(validCommands.length)
+      for (const [index, command] of validCommands.entries()) {
+        const received = listener.mock.calls[index]?.[0]
+        expect(received).toEqual(command)
+        expect(Object.keys(received as object).sort()).toEqual(['operation', 'reason'])
+        expect(Object.isFrozen(received)).toBe(true)
+      }
+      expect(collectKeys(listener.mock.calls).some((key) =>
+        /secret|credential|profile|guest|candidate|transcript|audio|memory|private|model/i.test(key),
+      )).toBe(false)
+      expect(serialized(listener.mock.calls)).not.toContain(RAW_CREDENTIAL)
+      expectNoForbiddenContent(listener.mock.calls)
+
+      dispose()
+
+      expect(removals).toHaveLength(1)
+      expect(removals[0]?.channel).toBe(RUNTIME_COMMAND_CHANNEL)
+      expect(removals[0]?.listener).toBe(registration.listener)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
+  })
+
+  function preloadStartBundle(sessionGeneration: number): Record<string, unknown> {
+    return {
+      snapshot: {
+        configVersion: 7,
+        fingerprint: 'synthetic-config-fingerprint',
+        sdkVersion: '0.16.1',
+        realtimeDialogue: 'synthetic-realtime-model',
+        inputTranscription: 'synthetic-transcription-model',
+        memoryExtractor: 'synthetic-memory-model',
+        voice: 'synthetic-voice',
+        reasoningEffort: 'low',
+        turnDetectionProfile: 'semantic-vad',
+        takenAt: '2026-08-19T00:00:00.000Z',
+      },
+      identity: {
+        realtimeSessionId: 'synthetic-realtime-session',
+        sessionGeneration,
+      },
+      clientSecret: 'ek_synthetic-client-secret',
+      expiresAt: 1_800_000_000,
+    }
+  }
+
+  it.each([
+    { sessionGeneration: 0, expectedStatus: 'rejected', expectedReason: 'invalid_payload' },
+    { sessionGeneration: 1, expectedStatus: 'accepted', expectedReason: 'mirror_authorized' },
+    {
+      sessionGeneration: Number.MAX_SAFE_INTEGER,
+      expectedStatus: 'accepted',
+      expectedReason: 'mirror_authorized',
+    },
+  ])(
+    'validates the preload start bundle at sessionGeneration=$sessionGeneration',
+    async ({ sessionGeneration, expectedStatus, expectedReason }) => {
+      let exposedBridge: Record<string, unknown> | undefined
+
+      vi.resetModules()
+      vi.doMock('electron', () => ({
+        contextBridge: {
+          exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+            exposedBridge = bridge
+          },
+        },
+        ipcRenderer: {
+          invoke: () => Promise.resolve({
+            status: 'accepted',
+            reason: 'mirror_authorized',
+            value: preloadStartBundle(sessionGeneration),
+          }),
+          on: () => undefined,
+          removeListener: () => undefined,
+          send: () => undefined,
+        },
+      }))
+
+      try {
+        await import('../../src/preload/mirror')
+
+        const bridge = exposedBridge as unknown as Pick<MirrorBridge, 'requestRealtimeClientSecret'>
+        const result = await bridge.requestRealtimeClientSecret()
+
+        expect(result).toEqual(expect.objectContaining({
+          status: expectedStatus,
+          reason: expectedReason,
+        }))
+        if (expectedStatus === 'accepted') {
+          expect(result).toEqual(expect.objectContaining({
+            value: expect.objectContaining({
+              identity: expect.objectContaining({ sessionGeneration }),
+            }),
+          }))
+        }
+      } finally {
+        vi.doUnmock('electron')
+        vi.resetModules()
+      }
+    },
+  )
+})
+
 describe('Mirror runtime outcome reporting', () => {
   type MirrorRuntimeOutcomeReport = Readonly<{
     status: 'success' | 'failed' | 'ignored' | 'degraded'
