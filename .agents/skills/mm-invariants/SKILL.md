@@ -1,6 +1,6 @@
 ---
 name: mm-invariants
-description: Use when implementing, reviewing, testing, or debugging ANY Magic Mirror code - and paste the checklist into every implementation/test dispatch prompt. Covers transcript persistence, profile isolation, guest ID binding, silent failure, mic ownership, spell matching, model fallback.
+description: Use when implementing, reviewing, testing, or debugging any Magic Mirror behavior, especially transcript persistence, profile isolation, guest ID binding, silent failure, mic ownership, spell matching, or model fallback.
 ---
 
 # Magic Mirror Hard Invariants
@@ -14,29 +14,24 @@ anchors are given so you can verify the source.
 
 ## Codex Worker Dispatch and Evidence Contract
 
-For every implementation or test dispatch, paste the applicable checklist
-below into the worker prompt. Every worker dispatch must state:
-
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-```
-
-Name the bounded task, exact write or read-only scope, applicable invariant
-IDs, and evidence format. A worker touching Magic Mirror behavior reports the
-IDs checked and uses metadata-only evidence. The worker may self-review its
-own diff and output for no more than 3 passes.
-
-The root Codex thread alone performs the external review after the worker
-returns. Do not create a separate review worker or review role. Root review is
-external to worker self-review and is not part of the 3-pass limit.
+Use the canonical dispatch envelope in `AGENTS.md`; do not duplicate its
+model, effort, role, freshness, scope, or evidence fields here. Every
+implementation, review, test, or debugging dispatch that touches Magic Mirror
+behavior names the applicable invariant IDs in the prompt and reports those
+IDs in metadata-only evidence. The default route is one bounded implementer,
+focused RED/GREEN when behavior changes, one independent tester, and external
+root acceptance. The root alone performs that external review; no review
+worker or review role is created, and worker self-review remains capped at
+three passes.
 
 Diagnostics and worker evidence remain metadata-only: use IDs, enums, counts,
-timings, statuses, reasons, hashes, paths, and exit codes. Never put raw transcript text, audio, extracted memory values, private context, credentials, images, embeddings, or prompts containing user content in evidence, logs, telemetry, or reports.
-
-Workers read exact named paths quietly; repository-wide discovery and source/skill body output are excluded unless the evidence request names a bounded excerpt. Raw Codex JSONL, raw child stderr, prompt bodies, and private content are never parent output. Testers place complete stdout/stderr and exit codes for named validation commands in the final agent message, which is the only worker content the launcher forwards on clean success.
+timings, statuses, reasons, hashes, paths, and exit codes. Never put raw
+transcript text, audio, extracted memory values, private context, credentials,
+images, embeddings, or prompts containing user content in evidence, logs,
+telemetry, or reports. Workers read exact named paths quietly; repository-wide
+discovery and source/skill body output are excluded unless a bounded evidence
+request requires it. Testers place complete stdout/stderr and exit codes for
+named validation commands in the final agent message.
 
 ## The Invariants
 

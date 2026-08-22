@@ -9,36 +9,21 @@ description: Use when implementing or tuning the sherpa-onnx Chinese wake-word w
 
 Verified **2026-08-16**. Baseline stack: `sherpa-onnx-node@1.13.5` or newer + `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` (int8) + `decibri` capture, in a worker process owned by Electron Main. Re-verify versions when Phase 2 pins the lockfile.
 
-## Reusable worker contract
+## Codex routing
 
-Use this envelope for a bounded wake-word worker or microphone-handoff task:
+For wake-word or microphone-handoff work, follow `AGENTS.md` together with
+`.agents/skills/mm-phase-workflow/SKILL.md` and
+`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
+applicable invariant IDs `8, 9, 10, 12`. Use the default route of one bounded
+fresh implementer, focused RED/GREEN for behavior changes, one independent
+tester, and external root acceptance; a correction or extra gate needs a
+concrete root finding or escalation trigger. Keep the exact scope,
+metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
 
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: "implementer"
-fresh_worker: true
-task: one bounded wake-word worker or microphone-handoff unit with explicit non-goals
-write_scope: exact task-named wake-word files only; read-only unless the task explicitly grants a write
-self_invariants: 8, 9, 10, 12
-evidence: exact changed files, diff summary, complete command output and exit codes, and unresolved risks
-self_review: read the own diff/output; no more than 3 passes
-root_review: external root gate after return; not part of self-review
-reviewer: none; do not create a reviewer subagent or another agent
-```
-
-The root Codex thread owns orchestration and external review. Worker evidence
-is metadata-only: use IDs, enums, counts, timings, statuses, reasons, hashes,
-paths, and exit codes. Never place raw transcripts, audio, private context,
-credentials, images, embeddings, or user-content prompts in evidence, logs,
-telemetry, or reports.
-
-The applicable hard invariants are: #8 exactly one microphone owner with an
-explicit release-then-acquire handoff; #9 every ignore, drop, fallback, or
-degrade is visitor-visible or a metadata-only Console event with a reason;
-#10 failures degrade without gating conversation or unrelated adapters; and
-#12 credentials are read by Main through `safeStorage` and never enter
-renderer data, logs, telemetry, or exports.
+Use `apply_patch` for writes. In particular, preserve the explicit
+release-then-acquire microphone handoff, visitor-visible or metadata-only
+degradation reasons, non-gating failure behavior, and Main `safeStorage`
+credential boundary described by invariants `8, 9, 10, 12`.
 
 ## Critical Version Pin
 

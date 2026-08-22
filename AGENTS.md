@@ -32,75 +32,82 @@ Use this order when instructions conflict:
    `docs/Magic_Mirror_Tech_Spec_v0.3.md`,
    `docs/Magic_Mirror_Implementation_Plan_v0.3.md`, and
    `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`.
-4. The migrated project skills under `.agents/skills/`, in the routing order
-   below.
+4. The migrated project skills under `.agents/skills/`, loaded only when
+   relevant to the bounded unit.
 5. `PROGRESS.md`, `DECISIONS.md`, and the ignored SDD ledger as process state.
 6. The immutable historical harness document and its seven source skill
    documents as reference input only.
 
-The seven skill routes are initialized and validated one at a time, in this
-order:
-
-1. `.agents/skills/mm-phase-workflow/SKILL.md`
-2. `.agents/skills/mm-invariants/SKILL.md`
-3. `.agents/skills/mm-electron-foundation/SKILL.md`
-4. `.agents/skills/mm-realtime-voice/SKILL.md`
-5. `.agents/skills/mm-wake-word/SKILL.md`
-6. `.agents/skills/mm-live2d-avatar/SKILL.md`
-7. `.agents/skills/mm-face-identity/SKILL.md`
-
-Use `mm-phase-workflow` for phase planning, dispatch, demos, and exit review.
-Use `mm-invariants` for every implementation, survey that touches product
-behavior, review, test, or debugging request; include the relevant canonical
-IDs in the worker prompt. Add the matching domain skill for domain work. Do
-not initialize the next skill until the prior skill's source-preservation,
-frontmatter, metadata, trigger/retrieval, and required behavior evidence has
-been accepted by root review.
+Use `mm-phase-workflow` for phase planning, bounded execution, demos, and exit
+review. Use `mm-invariants` for every implementation, review, test, debugging,
+or behavior-touching survey; include only the applicable canonical IDs in the
+worker prompt. Add one matching domain skill for domain work. Skill authoring
+or migration validation is conditional on actually changing a skill; it is not
+a prerequisite for unrelated product work.
 
 The following process rulings remain active: R1 is completed historical
-in-place work through local integration on `phase0-foundation`; application
-Task 2 (the lifecycle state machine) is completed, reviewed, and locally
-integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
-was deleted. R2 keeps the authoritative `handleSimulator` return shape; and
-R5 keeps Tasks 3–5 sequential. R3 and R4 are superseded by the user's current
-Codex policy. Application Task 3 (ConfigService + credentials) is completed,
-corrected, integrated at implementation commit `0270686` with
-correction/integration tip `835c92d`, and pushed on `main`; application Task 4
-(metadata-only telemetry) is completed, root-reviewed, integrated, and pushed
-at `dca1327`; application Task 5 (SQLite initialization and migration baseline)
-is accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
-32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
-build green. Application Task 6 (Main-owned module registry plus deterministic
-mocks) is accepted, root-reviewed, implemented, and pushed on `main` at
-`5b95a94`, with 16 focused tests, 161 total tests, and Node/web typecheck plus
-Electron Vite build green. Its selected design is a runtime-exhaustive Main
-registry, injected closed-outcome adapters, separate deterministic mocks,
-stable metadata-only results/events, informational missing-adapter handling,
-explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
-and no boot/IPC/UI/model resolver. The Task 6 plan's static gate commit was
-`83be86b` on `phase0-modules`; its application/test scope was
-`tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-`src/main/module-mocks.ts`. Application Task 7's accepted plan is recorded at
-`6214b6c`; its accepted implementation is pushed on `phase0-model-settings` at
-`5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
-Electron Vite build green, both negative runtime-model/fallback scans
-successful, and no OpenAI or `.env` requirement. Task 8 (boot wiring, IPC,
-Mirror UI, and OfflineLoop) is next; Tasks 9/10 retain Console UI and
-demos/records/exit ownership. This refers only to application task order and
-does not indicate that a harness-migration Task 2 is pending. The completed
-application Task 1 status is not changed by this harness work. No user setup is
-required for Task 6. Development Node `v24.19.0` satisfies the prerequisite
-of `>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+in-place work through local integration on `phase0-foundation`; R2 keeps the
+authoritative `handleSimulator` return shape; R5 keeps Tasks 3–5 sequential;
+and R3/R4 are superseded by the user's current Codex policy. Phase 0 Tasks
+1–10 are accepted at the recorded boundaries and local tag
+`phase0-v0.3.1` at `9237dc7`. Task 2 is integrated at
+`a7d74b14771de4f527762c30171ad2e68fc3d985`; Task 3 is at `0270686` with
+correction/integration tip `835c92d`; Task 4 is at `dca1327`; Task 5 is at
+`a8f0355`; Task 6 is at `5b95a94` with plan gate `83be86b`; and Task 7 has
+plan `6214b6c` and implementation `5e24bdc`. Tasks 8 and 9 are accepted.
+Task 10 acceptance retains Task 10B `13/13`, Task 10C `8/8`, full `311`,
+P0-D1–D5, ten smoke cycles, and the 30-minute OfflineLoop soak.
 
-Active efficiency ruling: for this nonindustrial project, the root uses the
-fewest bounded fresh-worker gates consistent with strict TDD, tester-owned
-validation, privacy/invariants, and external root review. Avoid duplicate
-surveys, separate review workers, ceremonial tests, duplicate validation, and
-PR bureaucracy. Naturally coupled behavior within one bounded unit may share
-a test-write/implementation/validation sequence. This does not relax any
-mandatory authority, role, profile, model, effort, scope, evidence, tester-
-ownership, privacy/invariant, or external-root-review requirement.
+Phase 1 is current and in progress on `phase1-realtime-voice` under plan
+`82aa39c`. P1-U1 through P1-U6 are accepted at `4862383`,
+`5be5871`, `18461e5`, `cffd484`, `fb5e58f`, and no self-referential U6 hash;
+P1-U7 is next and P1-U8 is pending. Phases 2–7 remain sequential and have
+not started. Do not change application task order or status.
 
+The H9 harness checkpoint is `5818830`; its frozen suite passed `15/15`.
+Fixed deadlines remain `480`/`120`/`600` seconds. Development Node
+`v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`; the user-owned
+`scripts/install-node-lts.ps1` content remains unchanged; the user's explicit
+2026-08-22 instruction authorizes tracking it and the user-owned adversarial
+review `docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md`, whose
+content also remains unchanged, in the integration commit. `.env` is metadata
+only:
+exists true, ignored by `.gitignore` line 9, untracked, content/value not
+accessed, and validity not checked; its value was never read. Windows
+development does not field-verify target-Mac Keychain, TCC, signing,
+entitlements, packaged-worker, or LaunchAgent behavior. The customizable
+wake word remains a Phase 2 requirement needing keyword artifact generation
+and tuning evidence. The LaunchAgent `KeepAlive={SuccessfulExit=false}` is
+the sole target restart owner; no `app.relaunch()` is used.
+
+Active efficiency ruling (2026-08-22): the default workflow is one in-thread
+root plan review with no plan artifact by default -> one bounded fresh
+implementer -> implementer-owned focused RED/GREEN for behavior changes -> one
+independent tester -> external root acceptance -> authorized root commit/push.
+The root plan review is a root decision, not a plan worker. By default there
+is no separate plan file, plan worker, survey, review worker, demo, regression,
+or full-suite gate. Naturally coupled units may be combined only when they are
+jointly reviewable and have one clear boundary.
+
+Use the smallest command set that proves the changed boundary. Full suite,
+build, demo, or regression evidence is required for phase exit or when the
+affected risk demands it, not for every unit. Surveys are read-only and allowed
+only when exact scope or evidence cannot be established from authoritative
+sources. A correction follow-up is allowed only for a concrete root finding.
+Escalate when the boundary involves privacy/identity/profile, credentials,
+runtime model IDs, microphone ownership, restart ownership,
+schema/destructive migrations, dependencies/packaging, launcher/protocol,
+failed evidence, or phase exit; an escalation may add a survey, focused
+validation, or full regression as justified.
+
+For behavior changes, the implementer owns the focused TDD RED/GREEN sequence
+and reports it; the independent tester owns fresh acceptance validation.
+Documentation/configuration-only changes use static checks without ceremonial
+application tests. This policy does not relax any mandatory authority, role,
+profile, model, effort, scope, evidence, privacy/invariant, freshness, or
+external-root-review requirement. The canonical launcher argv, profile, model,
+reasoning effort, protocol, deadlines, and output cap remain unchanged. After
+acceptance, root may commit and push when the user has authorized it.
 The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
 credential presence is recorded only as ignored metadata; its content and
 value are never read, and process records must not claim that its value was
@@ -109,10 +116,11 @@ requires keyword artifact generation plus tuning evidence.
 
 ## Immutable and product boundaries
 
-Treat the historical harness document and all seven source skill documents as
-immutable byte-level inputs. Do not edit, rename, reformat, or delete them.
-Do not change product documents, application source, tests, package files,
-dependencies, runtime model configuration, or application behavior in a
+Treat the historical harness document and its seven source skill documents as
+immutable byte-level inputs. The migrated `.agents/skills/` files are distinct
+control-plane artifacts and may change only when an exact task scope names
+them. Do not change product documents, application source, tests, package
+files, dependencies, runtime model configuration, or application behavior in a
 harness migration. The worker model is a harness route and must never be
 copied into runtime configuration, source code, `active.json`, telemetry, or
 product artifacts. Preserve all pinned product model IDs, package versions,
@@ -268,14 +276,15 @@ tester returns complete output even for a failed or unavailable command.
 
 ## TDD and verification
 
-For behavior or application-code work, route through TDD: write one focused
-failing test, observe the expected failure, implement the smallest change,
-observe the green result, then refactor only while green. Configuration or
-documentation-only work uses the task's strict static checks and does not add
-application tests merely for ceremony. The tester owns all named test and
-validation execution; the root does not execute them. Before any completion
-claim, run fresh verification, read the full output and exit code, and report
-evidence rather than confidence.
+For behavior or application-code work, the implementer routes through focused
+TDD: write one failing test, observe the expected failure, implement the
+smallest change, observe the green result, then refactor only while green.
+The implementer reports that RED/GREEN evidence; an independent tester owns
+fresh acceptance validation, and the root does not execute either role's
+commands. Configuration or documentation-only work uses strict static checks
+and does not add application tests merely for ceremony. Before any completion
+claim, the responsible worker reports complete output and exit codes for its
+named commands; root acceptance relies on that fresh evidence.
 
 ## Canonical invariants
 

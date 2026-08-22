@@ -8,9 +8,11 @@ description: Use when planning, dispatching, executing, or reviewing any Magic M
 ## Overview
 
 Every phase produces a runnable mirror build with its own Console controls,
-mocks, independent demo, and recorded result. Work flows as: root
-orchestrator slices -> one implementation worker implements -> root externally
-reviews -> demo -> record -> next unit.
+mocks, independent demo, and recorded result. The default unit flow is: one
+in-thread root plan review -> one bounded fresh implementer -> focused RED/GREEN
+when behavior changes -> one independent tester -> external root acceptance.
+Phase demos, records, regression smoke, and release tags belong at phase exit
+or to a justified risk escalation, not to every unit.
 
 The root Codex thread is the sole orchestrator and reviewer. It dispatches one
 bounded implementation unit at a time to a fresh worker with the explicit
@@ -116,54 +118,54 @@ exit criteria: `docs/Magic_Mirror_Implementation_Plan_v0.3.md`.
 
 ## The Unit Cycle
 
-1. The root orchestrator slices a 0.5-2 day unit from the current phase scope
-   and fills the unit template below. Consult the matching `.agents/skills/mm-*`
-   domain skill.
-2. Dispatch exactly one implementation worker per unit through the canonical
-   launcher. Every dispatch uses the explicit bounded route:
-
-   ```text
-   model: "gpt-5.6-luna"
-   reasoning_effort: "max"
-   role: "implementer"
-   fresh_worker: true
-   ```
-
-   The dispatch prompt contains the filled template, the relevant PRD story
-   ID, the applicable canonical invariant IDs from `mm-invariants`, and
-   pointers to the product docs and relevant skills. It also states exactly
-   one role (`implementer`, `surveyor`, or `tester`), an exact `write_scope`,
-   metadata-only `evidence`, `self_review` capped at 3 passes, and an external
-   `root_review`. Independent units may run in parallel; dependent units never
-   do. Any follow-up keeps the same bounded implementer route and scope.
-3. **Mock first, real second:** Console mock control plus a fixture proves the
-   full visitor path before any real service or device is wired.
-4. The implementation worker returns its diff and test output. The root
-   reviewer checks story acceptance, invariants, a failure-path test, a
-   Console event, and the absence of transcript/audio persistence. Reject with
-   specific feedback and re-dispatch the bounded unit when needed.
-5. Run the affected phase demo step; record build, time, and result in Console
-   Phase Tests and `PROGRESS.md`.
-6. Run a short regression smoke of prior phases' demos. Tag a recoverable phase
-   release before starting the next phase.
+1. The root orchestrator slices a bounded unit from the current phase scope,
+   conducts one in-thread plan review, and fills the compact contract below.
+   A separate plan file or plan worker is not the default. Load
+   `mm-phase-workflow`, `mm-invariants`, and one matching domain skill only when
+   relevant.
+2. Dispatch one bounded fresh implementer through the canonical launcher. The
+   root prompt retains the canonical model, effort, role, freshness, exact
+   scope, invariant IDs, metadata-only evidence, three-pass self-review cap,
+   and external root-review contract in `AGENTS.md`.
+3. For behavior changes, the implementer writes one focused failing test,
+   observes RED, makes the smallest change, observes GREEN, and reports both.
+   Documentation/configuration-only work uses the named static checks and no
+   ceremonial application tests. When an adapter or device boundary is
+   affected, mock first with a fixture that proves the visitor path; wire the
+   real service or device only within the named scope.
+4. Dispatch one independent tester for the smallest fresh acceptance command
+   set that proves the changed boundary. The tester reports complete output,
+   stderr, and exit codes for every named command. A survey, correction
+   follow-up, extra focused gate, or full regression is conditional on missing
+   scope/evidence, a concrete root finding, or an escalation trigger.
+5. The root performs the external acceptance review. Check the user-visible
+   outcome, applicable invariants, failure visibility, and absence of
+   transcript/audio persistence where relevant. A correction dispatch needs a
+   concrete root finding and keeps the same bounded scope; no review worker is
+   created.
+6. At phase exit, run the required product demo, record the build/time/result
+   in Console Phase Tests and `PROGRESS.md`, run the required prior-phase
+   regression smoke, and tag a recoverable phase release. These are not
+   per-unit gates unless affected risk justifies them.
 7. If exit evidence fails, the phase does not advance. Exit criteria are not
    runtime gates.
 
-## Unit Template (all 8 fields required)
+## Unit Template (all 6 fields required)
 
 ```text
-Story / Phase:
-User-visible outcome:
-Files / modules expected to change:
-Console control or telemetry to add:
-Happy-path test:
-Failure / fallback test:
+Task / user-visible outcome:
+write_scope: exact named read/write paths
 Explicit non-goals:
-Demo step affected:
+Relevant skills / canonical invariant IDs:
+Focused tests or static checks:
+Metadata-only evidence:
 ```
 
-A unit without a failure/fallback test or without a Console increment is not
-done - those two fields are where this project's value lives.
+Console controls, telemetry, demo, record, and phase-test fields are added
+only when the affected behavior or phase exit requires them. Failure and
+fallback behavior must still be visible to the visitor or as a metadata-only
+Console event with a reason when the boundary can ignore, drop, degrade, or
+fail.
 
 ## Quick Reference
 
@@ -185,5 +187,6 @@ done - those two fields are where this project's value lives.
   un-localizable. Mock first.
 - Treating exit criteria as runtime gates (blocking features on unrelated
   module health) -> the product principle is degrade-visibly, not gate.
-- Batching several units into one dispatch -> un-reviewable diffs. One unit,
-  one implementation worker.
+- Batching unrelated units into one dispatch -> un-reviewable diffs. Naturally
+  coupled work may share one implementer only when the joint boundary is clear
+  and jointly reviewable; otherwise use one unit and one implementer.

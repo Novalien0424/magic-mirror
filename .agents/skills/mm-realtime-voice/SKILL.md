@@ -13,36 +13,22 @@ implementation; the Phase 1 live contract test against the pinned SDK is
 still the authority (Spec section 7.6). If this file and the contract test
 disagree, fix this file.
 
-## Worker envelope and scope
+## Codex routing
 
-Use this explicit envelope for any worker handling this domain:
+For Realtime work, follow `AGENTS.md` together with
+`.agents/skills/mm-phase-workflow/SKILL.md` and
+`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
+applicable invariant IDs `1, 4, 5, 6, 8, 9, 10, 11, 12`. Use the default route
+of one bounded fresh implementer, focused RED/GREEN for behavior changes, one
+independent tester, and external root acceptance; a correction or extra gate
+needs a concrete root finding or an escalation trigger. Keep exact scope,
+metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
 
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-task: one bounded Realtime voice unit with explicit non-goals
-write_scope: exact named paths; read-only unless the named scope grants a write
-skills: mm-realtime-voice and the applicable mm-invariants skill
-self_invariants: 1, 4, 5, 6, 8, 9, 10, 11, 12
-evidence: exact paths, diff summary, complete command output and exit codes,
-          risks; metadata-only values
-self_review: read the own diff and output; no more than 3 passes
-root_review: external to worker self-review
-```
-
-The root thread owns the external review. Do not create a child worker, a
-reviewer worker, or a separate review role. Worker evidence and examples use
-only metadata: IDs, enums, counts, timings, statuses, reasons, hashes, paths,
-and exit codes. Never put transcript text, audio, extracted memory values,
-private context, credentials, images, embeddings, or user-content prompts in
-source, logs, telemetry, reports, or worker output.
-
-Treat `write_scope` as an exact allowlist. Edit an application, runtime,
-package, dependency, source, configuration, test, process-record, forward-test,
-or report path only when that exact path is named in `write_scope`. Never infer
-write permission from a Realtime concern, and never widen the scope.
+Use `apply_patch` for writes. Preserve the domain's privacy boundary: worker
+evidence and examples use only metadata, never transcript text, audio,
+extracted memory values, private context, credentials, images, embeddings, or
+user-content prompts. Never infer write permission from a Realtime concern or
+widen the named scope.
 
 ## Runtime model IDs versus worker routing
 

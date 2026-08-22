@@ -11,45 +11,22 @@ Verified 2026-08-16. Use the official Cubism 5 SDK for Web R5 with the
 MotionSync plugin R2. Build the RMS/AnalyserNode -> ParamMouthOpenY path first
 (about 20 lines, unblocking Phase 3), then layer MotionSync after it.
 
-## Reusable worker contract
+## Codex routing
 
-Use this bounded contract for any implementation worker using this skill:
+For Live2D, avatar, audio-lip-sync, or designer-asset work, follow `AGENTS.md`
+together with `.agents/skills/mm-phase-workflow/SKILL.md`,
+`.agents/skills/mm-invariants/SKILL.md`, and, when Realtime audio is touched,
+`.agents/skills/mm-realtime-voice/SKILL.md`; then add this domain skill. Check
+the applicable invariant IDs `1, 8, 9, 10, 11, 12`. Use the default route of
+one bounded fresh implementer, focused RED/GREEN for behavior changes, one
+independent tester, and external root acceptance. Keep exact scope,
+metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
 
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: "implementer"
-fresh_worker: true
-task: one bounded mm-live2d-avatar unit with explicit non-goals
-write_scope: exact task-named paths only; product, application, test,
-             dependency, runtime, and report paths are read-only unless an
-             exact future task write_scope explicitly names them
-skills: .agents/skills/mm-live2d-avatar/SKILL.md,
-        .agents/skills/mm-invariants/SKILL.md,
-        .agents/skills/mm-realtime-voice/SKILL.md
-self_invariants: 1, 8, 9, 10, 11, 12
-evidence: exact changed files, concise diff summary, complete stdout/stderr
-          and exit codes for every command, metadata-only risks
-self_review: read the own diff and output; no more than 3 passes
-root_review: external root gate after worker return; not part of self-review
-```
-
-Use `apply_patch` for every write. Do not delegate, spawn a child, create a
-reviewer, or create a separate review role. The root thread performs the
-external review. Keep evidence metadata-only: IDs, enums, counts, timings,
-statuses, reasons, hashes, paths, and exit codes. Never put transcripts,
-audio, extracted memory values, injected private context, credentials,
-images, embeddings, or prompts containing user content in evidence, logs,
-telemetry, or reports.
-
-Check these applicable invariants on every behavior task: 1 (transcripts,
-conversation audio, extracted memory values, and injected private context are
-RAM-only), 8 (exactly one microphone owner with release then acquire), 9
-(every ignore, drop, fallback, or degrade has a visitor-visible or
-metadata-only reason), 10 (failures degrade without gating conversation or
-unrelated adapters), 11 (runtime model IDs come only from versioned config
-and never silently substitute), and 12 (Main reads credentials through
-`safeStorage`; keys never enter renderer data, logs, telemetry, or exports).
+Use `apply_patch` for every write. Preserve this skill's renderer/audio safety
+rules and the invariant meanings: RAM-only transcript/audio/private data,
+single-microphone release-then-acquire handoff, visible degradation, non-gating
+failures, config-only model IDs without silent substitution, and Main-owned
+`safeStorage` credentials.
 
 ## SDK, renderer, and loading rules
 
