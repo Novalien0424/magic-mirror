@@ -134,6 +134,10 @@ export function createClientSecretBroker(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            expires_after: {
+              anchor: 'created_at',
+              seconds: 600,
+            },
             session: {
               type: 'realtime',
               model: request.modelId,

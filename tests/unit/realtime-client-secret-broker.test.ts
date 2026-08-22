@@ -123,6 +123,10 @@ describe('P1-U2 Main-only Realtime client-secret broker RED contract', () => {
       'Content-Type': 'application/json',
     }))
     expect(JSON.parse(requestInit?.body ?? '')).toEqual({
+      expires_after: {
+        anchor: 'created_at',
+        seconds: 600,
+      },
       session: {
         type: 'realtime',
         model: CONFIGURED_MODEL_ID,
@@ -180,6 +184,10 @@ describe('P1-U2 Main-only Realtime client-secret broker RED contract', () => {
     expect(mock).toHaveBeenCalledTimes(1)
     const [, requestInit] = mock.mock.calls[0] as [unknown, { body?: string } | undefined]
     expect(JSON.parse(requestInit?.body ?? '')).toEqual({
+      expires_after: {
+        anchor: 'created_at',
+        seconds: 600,
+      },
       session: {
         type: 'realtime',
         model: CONFIGURED_MODEL_ID,
