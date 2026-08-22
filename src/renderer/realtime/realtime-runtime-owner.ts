@@ -3,6 +3,7 @@ import type {
   RealtimeSessionStartBundleValue,
 } from '../../../src/shared/bridge'
 import type { PlaybackCompletionResult } from './playback-completion'
+import type { RealtimeSessionHandle } from './realtime-session-adapter'
 
 type MaybePromise<T> = T | PromiseLike<T>
 
@@ -47,12 +48,7 @@ export interface RealtimeRuntimeAudioOutput {
   readonly dispose: () => MaybePromise<void>
 }
 
-export interface RealtimeRuntimeSession extends RealtimeSessionIdentity {
-  readonly connect: () => MaybePromise<void>
-  readonly interrupt: () => MaybePromise<void>
-  readonly close: (reason: string) => MaybePromise<void>
-  readonly onOutputAudioBufferStopped: (listener: () => void) => void | (() => void)
-}
+export type RealtimeRuntimeSession = RealtimeSessionHandle
 
 export interface RealtimeRuntimeMicOwner {
   readonly acquire: (stream: MediaStream) => MaybePromise<void>
@@ -89,7 +85,9 @@ export interface RealtimeRuntimeOwnerDependencies {
     stream: MediaStream,
     audioElement: HTMLAudioElement,
   ) => MaybePromise<RealtimeRuntimeSession>
-  readonly createMicOwner: () => MaybePromise<RealtimeRuntimeMicOwner>
+  readonly createMicOwner: (
+    session: RealtimeRuntimeSession,
+  ) => MaybePromise<RealtimeRuntimeMicOwner>
   readonly createPlaybackTransport: (
     session: RealtimeRuntimeSession,
   ) => MaybePromise<RealtimeRuntimePlaybackTransport>
@@ -669,7 +667,7 @@ export function createRealtimeRuntimeOwner(
         throw new Error('start_cancelled')
       }
 
-      const micOwner = await dependencies.createMicOwner()
+      const micOwner = await dependencies.createMicOwner(session)
       resources.micOwner = micOwner
       if (control.cancelled) {
         throw new Error('start_cancelled')

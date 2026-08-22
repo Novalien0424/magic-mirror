@@ -43,6 +43,7 @@ export interface CreateRealtimeSessionInput {
   readonly mediaStream: MediaStream
   readonly audioElement: HTMLAudioElement
   readonly sessionId: string
+  readonly sessionGeneration?: number
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
   readonly dependencies?: RealtimeSessionDependencies
@@ -184,7 +185,13 @@ export function createRealtimeSession(
   input: CreateRealtimeSessionInput,
 ): RealtimeSessionHandle {
   const createdAt = Date.now()
-  const sessionGeneration = nextSessionGeneration()
+  const sessionGeneration =
+    input.sessionGeneration === undefined
+      ? nextSessionGeneration()
+      : input.sessionGeneration
+  if (!Number.isSafeInteger(sessionGeneration) || sessionGeneration <= 0) {
+    throw new RealtimeSessionAdapterError('invalid_session_generation')
+  }
   let turnDetection: {
     readonly type: 'semantic_vad'
     readonly interruptResponse: true
