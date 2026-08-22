@@ -7,8 +7,16 @@ import {
   type PlaybackCompletionScheduler,
   type PlaybackCompletionTransport,
 } from "../../src/renderer/realtime/playback-completion";
+import {
+  createPlaybackCompletionTransport,
+  PlaybackCompletionTransportDisposeError,
+} from "../../src/renderer/realtime/playback-transport-adapter";
+import type { RealtimeSessionHandle } from "../../src/renderer/realtime/realtime-session-adapter";
 
 type RawListener = Parameters<PlaybackCompletionTransport["on"]>[1];
+type SessionOutputListener = Parameters<
+  Pick<RealtimeSessionHandle, "onOutputAudioBufferStopped">["onOutputAudioBufferStopped"]
+>[0];
 
 type PlaybackCompletionConfig = Readonly<{
   readonly fallbackAfterMs: number;
@@ -65,6 +73,42 @@ function makeTransportProbe() {
     emitStopped: () => {
       for (const listener of [...listeners]) {
         listener({ type: "output_audio_buffer.stopped" });
+      }
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+function makeSessionProbe(
+  createDisposer: (index: number, remove: () => void) => () => void = (
+    _index,
+    remove,
+  ) => vi.fn(remove),
+) {
+  const listeners = new Set<SessionOutputListener>();
+  const disposers: Array<() => void> = [];
+  const onOutputAudioBufferStopped = vi.fn(
+    (listener: SessionOutputListener): (() => void) => {
+      const index = disposers.length;
+      listeners.add(listener);
+      const disposer = createDisposer(index, () => {
+        listeners.delete(listener);
+      });
+      disposers.push(disposer);
+      return disposer;
+    },
+  );
+  const session = {
+    onOutputAudioBufferStopped,
+  } satisfies Pick<RealtimeSessionHandle, "onOutputAudioBufferStopped">;
+
+  return {
+    session,
+    onOutputAudioBufferStopped,
+    disposers,
+    emitStopped: (...args: unknown[]) => {
+      for (const listener of [...listeners]) {
+        (listener as (...listenerArgs: unknown[]) => void)(...args);
       }
     },
     listenerCount: () => listeners.size,
@@ -159,14 +203,14 @@ function expectMetadataEvent(
 }
 
 function createCompletion(
-  transportProbe: ReturnType<typeof makeTransportProbe>,
+  transport: PlaybackCompletionTransport,
   schedulerProbe: ReturnType<typeof makeSchedulerProbe>,
   eventSink: PlaybackCompletionMetadataEventSink,
   analyser: PlaybackCompletionAnalyser,
   config: PlaybackCompletionConfig,
 ): PlaybackCompletion {
   const input: PlaybackCompletionConstructorInput = {
-    transport: transportProbe.transport,
+    transport,
     analyser,
     scheduler: schedulerProbe.scheduler,
     eventSink,
@@ -194,6 +238,205 @@ async function expectPending(promise: Promise<unknown>): Promise<void> {
 }
 
 describe("realtime playback completion", () => {
+  it("adapts the exact stopped event with zero listener arguments and exact disposer cleanup", () => {
+    const sessionProbe = makeSessionProbe();
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+    const originalListener = vi.fn<RawListener>(() => undefined);
+
+    transport.on("output_audio_buffer.stopped", originalListener);
+    expect(sessionProbe.onOutputAudioBufferStopped).toHaveBeenCalledTimes(1);
+    const registeredListener = sessionProbe.onOutputAudioBufferStopped.mock.calls[0]?.[0];
+    expect(registeredListener).not.toBe(originalListener);
+
+    sessionProbe.emitStopped("provider-event");
+
+    expect(originalListener).toHaveBeenCalledTimes(1);
+    expect(originalListener.mock.calls[0]).toEqual([]);
+
+    transport.off("output_audio_buffer.stopped", originalListener);
+    transport.off("output_audio_buffer.stopped", originalListener);
+
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.listenerCount()).toBe(0);
+  });
+
+  it("retains an exact-off mapping when its disposer fails so dispose can retry it", () => {
+    let attempts = 0;
+    const sessionProbe = makeSessionProbe((_index, remove) =>
+      vi.fn(() => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("raw disposer failure");
+        }
+        remove();
+      }),
+    );
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+    const listener = vi.fn<RawListener>(() => undefined);
+
+    transport.on("output_audio_buffer.stopped", listener);
+
+    let offError: unknown;
+    try {
+      transport.off("output_audio_buffer.stopped", listener);
+    } catch (error) {
+      offError = error;
+    }
+
+    expect(offError).toBeUndefined();
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.listenerCount()).toBe(1);
+
+    expect(() => transport.dispose()).not.toThrow();
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(2);
+    expect(sessionProbe.listenerCount()).toBe(0);
+
+    expect(() => transport.dispose()).not.toThrow();
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not subscribe or throw for unsupported events and unmapped listeners", () => {
+    const sessionProbe = makeSessionProbe();
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+    const listener = vi.fn<RawListener>(() => undefined);
+
+    transport.on("unsupported", listener);
+    transport.off("unsupported", listener);
+    transport.off("output_audio_buffer.stopped", listener);
+
+    expect(sessionProbe.onOutputAudioBufferStopped).not.toHaveBeenCalled();
+    expect(sessionProbe.listenerCount()).toBe(0);
+  });
+
+  it("does not duplicate a session subscription for the same event and listener", () => {
+    const sessionProbe = makeSessionProbe();
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+    const listener = vi.fn<RawListener>(() => undefined);
+
+    transport.on("output_audio_buffer.stopped", listener);
+    transport.on("output_audio_buffer.stopped", listener);
+    sessionProbe.emitStopped();
+
+    expect(sessionProbe.onOutputAudioBufferStopped).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[0]).not.toHaveBeenCalled();
+  });
+
+  it("disposes every remaining subscription once and stays inert afterward", () => {
+    const sessionProbe = makeSessionProbe();
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+    const firstListener = vi.fn<RawListener>(() => undefined);
+    const secondListener = vi.fn<RawListener>(() => undefined);
+
+    transport.on("output_audio_buffer.stopped", firstListener);
+    transport.on("output_audio_buffer.stopped", secondListener);
+    transport.dispose();
+    transport.dispose();
+    transport.on("output_audio_buffer.stopped", firstListener);
+    transport.off("output_audio_buffer.stopped", secondListener);
+
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[1]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.onOutputAudioBufferStopped).toHaveBeenCalledTimes(2);
+    expect(sessionProbe.listenerCount()).toBe(0);
+  });
+
+  it("isolates disposer failures and retries only failed disposers without raw errors", () => {
+    const attempts = [0, 0, 0];
+    const sessionProbe = makeSessionProbe((index, remove) =>
+      vi.fn(() => {
+        attempts[index] += 1;
+        if (index !== 1 && attempts[index] === 1) {
+          throw new Error("raw disposer failure");
+        }
+        remove();
+      }),
+    );
+    const transport = createPlaybackCompletionTransport(sessionProbe.session);
+
+    transport.on("output_audio_buffer.stopped", vi.fn<RawListener>(() => undefined));
+    transport.on("output_audio_buffer.stopped", vi.fn<RawListener>(() => undefined));
+    transport.on("output_audio_buffer.stopped", vi.fn<RawListener>(() => undefined));
+
+    let disposalError: unknown;
+    try {
+      transport.dispose();
+    } catch (error) {
+      disposalError = error;
+    }
+
+    expect(disposalError).toBeInstanceOf(PlaybackCompletionTransportDisposeError);
+    expect(disposalError).toMatchObject({
+      reason: "listener_dispose_failed",
+      count: 2,
+    });
+    expect(disposalError).not.toHaveProperty("cause");
+    expect(disposalError).not.toHaveProperty("errors");
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[1]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[2]).toHaveBeenCalledTimes(1);
+
+    expect(() => transport.dispose()).not.toThrow();
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(2);
+    expect(sessionProbe.disposers[1]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[2]).toHaveBeenCalledTimes(2);
+    expect(sessionProbe.listenerCount()).toBe(0);
+  });
+
+  it("cleans primary PlaybackCompletion through the session facade", async () => {
+    const sessionProbe = makeSessionProbe();
+    const schedulerProbe = makeSchedulerProbe();
+    const abortProbe = makeAbortProbe();
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
+    const analyser = {
+      readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
+    } satisfies PlaybackCompletionAnalyser;
+    const completion = createCompletion(
+      createPlaybackCompletionTransport(sessionProbe.session),
+      schedulerProbe,
+      eventSink,
+      analyser,
+      DEFAULT_COMPLETION_CONFIG,
+    );
+
+    const resultPromise = completion.waitForActualEnd(abortProbe.signal);
+    sessionProbe.emitStopped("provider-event");
+
+    await expect(resultPromise).resolves.toEqual({
+      source: "output_audio_buffer.stopped",
+    });
+    expect(sessionProbe.onOutputAudioBufferStopped).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.listenerCount()).toBe(0);
+  });
+
+  it("cleans abort PlaybackCompletion through the session facade", async () => {
+    const sessionProbe = makeSessionProbe();
+    const schedulerProbe = makeSchedulerProbe();
+    const abortProbe = makeAbortProbe();
+    const eventSink = vi.fn<PlaybackCompletionMetadataEventSink>(() => undefined);
+    const analyser = {
+      readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
+    } satisfies PlaybackCompletionAnalyser;
+    const completion = createCompletion(
+      createPlaybackCompletionTransport(sessionProbe.session),
+      schedulerProbe,
+      eventSink,
+      analyser,
+      DEFAULT_COMPLETION_CONFIG,
+    );
+
+    const resultPromise = completion.waitForActualEnd(abortProbe.signal);
+    abortProbe.abort();
+    sessionProbe.emitStopped("late-provider-event");
+
+    await expect(resultPromise).rejects.toMatchObject({ name: "AbortError" });
+    expect(sessionProbe.onOutputAudioBufferStopped).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.disposers[0]).toHaveBeenCalledTimes(1);
+    expect(sessionProbe.listenerCount()).toBe(0);
+    expect(eventSink).not.toHaveBeenCalled();
+  });
+
   it("settles once from the primary raw event and cleans every listener and timer", async () => {
     const transportProbe = makeTransportProbe();
     const schedulerProbe = makeSchedulerProbe();
@@ -203,7 +446,7 @@ describe("realtime playback completion", () => {
       readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
     } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
-      transportProbe,
+      transportProbe.transport,
       schedulerProbe,
       eventSink,
       analyser,
@@ -260,7 +503,7 @@ describe("realtime playback completion", () => {
         .mockReturnValueOnce(0),
     } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
-      transportProbe,
+      transportProbe.transport,
       schedulerProbe,
       eventSink,
       analyser,
@@ -319,7 +562,7 @@ describe("realtime playback completion", () => {
       readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0.8),
     } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
-      transportProbe,
+      transportProbe.transport,
       schedulerProbe,
       eventSink,
       analyser,
@@ -371,7 +614,7 @@ describe("realtime playback completion", () => {
       readPeakLevel: vi.fn<PlaybackCompletionAnalyser["readPeakLevel"]>(() => 0),
     } satisfies PlaybackCompletionAnalyser;
     const completion = createCompletion(
-      transportProbe,
+      transportProbe.transport,
       schedulerProbe,
       eventSink,
       analyser,
