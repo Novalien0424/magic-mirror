@@ -37,6 +37,8 @@ interface RegisteredIpc {
     readonly getEvents: ReturnType<typeof vi.fn>
   }
   readonly handleSimulator: ReturnType<typeof vi.fn>
+  readonly manualStart: ReturnType<typeof vi.fn>
+  readonly manualStop: ReturnType<typeof vi.fn>
   readonly consoleSender: Record<string, unknown>
   readonly consoleFrame: Record<string, unknown>
   readonly mirrorSender: Record<string, unknown>
@@ -152,9 +154,19 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     getEvents,
   }
   const handleSimulator = vi.fn(async () => ({ op: 'success' as const }))
+  const manualStart = vi.fn(async () => ({
+    status: 'success' as const,
+    reason: 'cause=manual_start_requested',
+  }))
+  const manualStop = vi.fn(async () => ({
+    status: 'degraded' as const,
+    reason: 'cause=manual_stop_requested',
+  }))
   const runtime = {
     snapshot: () => snapshot,
     handleSimulator,
+    manualStart,
+    manualStop,
     console: facade,
     ...serviceObjects,
   }
@@ -191,6 +203,8 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     events,
     facade,
     handleSimulator,
+    manualStart,
+    manualStop,
     consoleSender,
     consoleFrame,
     mirrorSender,
@@ -249,6 +263,61 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expect(serialize({ overview, events, snapshot, simulation })).not.toContain(TEST_SERVICE_SENTINEL)
   })
 
+  it('routes typed lifecycle controls through Main manual paths and returns metadata-only action outcomes', async () => {
+    const registered = makeHarness()
+    const event = authorizedEvent(registered)
+
+    expect(CONSOLE_IPC_CHANNELS).toEqual(expect.objectContaining({
+      startConversation: 'console:start-conversation',
+      disconnect: 'console:disconnect',
+    }))
+
+    const start = await getHandler(registered, 'console:start-conversation')(event)
+    const disconnect = await getHandler(registered, 'console:disconnect')(event)
+    const invalidStart = await getHandler(registered, 'console:start-conversation')(event, {
+      unexpected: TEST_PRIVATE_MEMORY_SENTINEL,
+    })
+
+    expect(start).toEqual({
+      ok: true,
+      value: {
+        action: 'start_conversation',
+        status: 'success',
+        reason: 'cause=manual_start_requested',
+      },
+    })
+    expect(disconnect).toEqual({
+      ok: true,
+      value: {
+        action: 'disconnect',
+        status: 'degraded',
+        reason: 'cause=manual_stop_requested',
+      },
+    })
+    expect(invalidStart).toEqual({
+      ok: false,
+      error: 'console_request_invalid',
+      reason: 'cause=payload_schema_invalid',
+    })
+    expect(registered.manualStart).toHaveBeenCalledTimes(1)
+    expect(registered.manualStop).toHaveBeenCalledTimes(1)
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'console_lifecycle_action',
+        status: 'success',
+        reason: expect.stringContaining('start_conversation'),
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'console_lifecycle_action',
+        status: 'degraded',
+        reason: expect.stringContaining('disconnect'),
+        source: 'runtime',
+      }),
+    ]))
+    expectNoSensitiveOutput({ start, disconnect, invalidStart, events: registered.events })
+  })
+
   it('requires the Console main frame and exact tracked webContents id for every 9A handler', async () => {
     const cases: readonly {
       name: string
@@ -293,6 +362,8 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       const event = testCase.event(registered)
       const overviewResult = await getHandler(registered, 'console:get-overview')(event)
       const eventsResult = await getHandler(registered, 'console:get-events')(event, { limit: 1 })
+      const startResult = await getHandler(registered, 'console:start-conversation')(event)
+      const disconnectResult = await getHandler(registered, 'console:disconnect')(event)
 
       expect(overviewResult, testCase.name).toEqual({
         ok: false,
@@ -304,9 +375,21 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
         error: 'console_request_rejected',
         reason: 'cause=sender_rejected',
       })
+      expect(startResult, testCase.name).toEqual({
+        ok: false,
+        error: 'console_request_rejected',
+        reason: 'cause=sender_rejected',
+      })
+      expect(disconnectResult, testCase.name).toEqual({
+        ok: false,
+        error: 'console_request_rejected',
+        reason: 'cause=sender_rejected',
+      })
       expect(registered.facade.getOverview, testCase.name).not.toHaveBeenCalled()
       expect(registered.facade.getEvents, testCase.name).not.toHaveBeenCalled()
       expect(registered.handleSimulator, testCase.name).not.toHaveBeenCalled()
+      expect(registered.manualStart, testCase.name).not.toHaveBeenCalled()
+      expect(registered.manualStop, testCase.name).not.toHaveBeenCalled()
       expect(registered.events, testCase.name).toEqual(expect.arrayContaining([
         expect.objectContaining({
           event: 'ipc_sender_rejected',
@@ -314,7 +397,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
           source: 'runtime',
         }),
       ]))
-      expectNoSensitiveOutput({ overviewResult, eventsResult, events: registered.events })
+      expectNoSensitiveOutput({ overviewResult, eventsResult, startResult, disconnectResult, events: registered.events })
     }
   })
 

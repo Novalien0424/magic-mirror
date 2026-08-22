@@ -49,8 +49,6 @@ const PRIVACY_SENTINELS = [
   '__TEST_CONFIGURED_VALUE_SENTINEL__',
 ] as const
 
-type ConsoleDataBridge = Pick<ConsoleBridge, 'getOverview' | 'getEvents' | 'simulate'>
-
 const BOUNDED_OVERVIEW_FIELDS = [
   'lifecycle',
   'identityStatus',
@@ -67,6 +65,11 @@ const EVENT_QUERY_FIELDS = [
   'source',
 ] as const satisfies readonly (keyof ConsoleEventsQuery)[]
 
+type ConsoleUiBridge = Pick<
+  ConsoleBridge,
+  'getOverview' | 'getEvents' | 'simulate' | 'startConversation' | 'disconnect'
+>
+
 /*
  * The server renderer used by this focused test does not run useEffect, and
  * this repository has no client renderer/test-DOM dependency. Keep the
@@ -78,7 +81,7 @@ const CONSOLE_APP_SOURCE = readFileSync(
   'utf8',
 )
 
-function bridgeCallSource(method: keyof ConsoleDataBridge): string {
+function bridgeCallSource(method: keyof ConsoleUiBridge): string {
   const methodPattern = new RegExp(
     `(?:\\bbridge|\\bmagicMirror|window\\.magicMirror)[^;\\n]{0,80}\\.${method}\\s*\\(`,
   )
@@ -95,7 +98,7 @@ function bridgeCallSource(method: keyof ConsoleDataBridge): string {
   )
 }
 
-function bridgeCallArguments(method: keyof ConsoleDataBridge): string {
+function bridgeCallArguments(method: keyof ConsoleUiBridge): string {
   const methodPattern = new RegExp(
     `(?:\\bbridge|\\bmagicMirror|window\\.magicMirror)[^;\\n]{0,80}\\.${method}\\s*\\(([\\s\\S]{0,600}?)\\)`,
   )
@@ -117,6 +120,12 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(CONSOLE_UI_CONTRACT).not.toHaveProperty('placeholders')
     expect(html).toContain('Task 10 owns demo execution and record production.')
     expect(html).not.toMatch(/Not implemented|reserved for later/i)
+  })
+
+  it('keeps the established Models panel present in the initial Console render', () => {
+    const html = renderConsole()
+
+    expect(html).toContain('aria-labelledby="console-models"')
   })
 
   it('shows mock simulator readiness and explicit unverified TCC copy on Overview', () => {
@@ -199,5 +208,18 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(argumentsSource).toMatch(/command|type|wake|cloud_failure/i)
     expect(CONSOLE_APP_SOURCE).not.toMatch(/realtime_ready/)
     expect(html).toMatch(/Developer Mode.*disabled/i)
+  })
+
+  it('exposes typed Start Conversation and Disconnect controls with metadata-only outcomes', () => {
+    const html = renderConsole()
+    const startSource = bridgeCallSource('startConversation')
+    const disconnectSource = bridgeCallSource('disconnect')
+
+    expect(CONSOLE_UI_CONTRACT.lifecycle.controls).toEqual(['Start Conversation', 'Disconnect'])
+    expect(html).toContain('Start Conversation')
+    expect(html).toContain('Disconnect')
+    expect(startSource).toMatch(/ok|error|reason/i)
+    expect(disconnectSource).toMatch(/ok|error|reason/i)
+    expect(CONSOLE_APP_SOURCE).toMatch(/console_lifecycle_action|Lifecycle action|action outcome/i)
   })
 })

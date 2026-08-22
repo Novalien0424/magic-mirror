@@ -22,8 +22,9 @@ process state that must survive implementation handoffs.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle,
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
-  accepted plan `82aa39c`. P1-U1 through P1-U6 are accepted, P1-U7 is next,
-  and P1-U8 is pending. Phases 2–7 do not advance early.
+  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A are accepted; P1-U7
+  remains in progress with Interrupt and the rest of its scope next, and P1-U8
+  is pending. Phases 2–7 do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -70,6 +71,43 @@ process state that must survive implementation handoffs.
 - Exactly one microphone owner exists at a time. Handoff is explicit
   release-then-acquire; failure is local Maintenance, not cloud OfflineLoop.
   A single adapter or audio failure cannot gate unrelated conversation.
+
+### P1-U7A accepted Console boundary (2026-08-22)
+
+- Console Start Conversation and Disconnect use typed, validated Console-only
+  IPC to the existing `manualStart`/`manualStop` actions and expose only
+  metadata-only action/status/reason. Simulate Cloud Failure is unchanged, and
+  R2's authoritative `handleSimulator` return shape is unchanged.
+- The exact nine changed source/test paths are
+  `src/main/ipc.ts`, `src/preload/console.ts`,
+  `src/renderer/console/App.tsx`, `src/shared/bridge.ts`,
+  `src/shared/console-types.ts`, `tests/integration/phase1-recovery.test.ts`,
+  `tests/unit/console-ipc.test.ts`, `tests/unit/console-ui.test.ts`, and
+  `tests/unit/realtime-privacy-cleanup.test.ts`.
+- Accepted evidence is `git diff --check` exit `0` with line-ending warnings,
+  four focused files passing `31/31` tests, and Node/web typechecks exiting
+  `0`. No full suite, build, or demo was run; this is not P1-U7 completion or
+  Phase 1 exit evidence.
+- Process evidence remains metadata-only: the initial worker timed out and
+  recovery completed the route; accidental untracked `pnpm` files were
+  removed, and `npm` is the verified command route. Current evidence identifies
+  no project-skill correction. No application, test, skill, or package change
+  belongs to this record update.
+
+### Human-intervention timing ledger
+
+- **P1-U7A:** none needed; mocks are sufficient for its bounded Console IPC
+  boundary and metadata-only status/reason path.
+- **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
+  temporary Persona instructions, a Voice choice, and operator observation of
+  P1-D1, P1-D2, and P1-D5 are still required.
+- **Later target-Mac evidence:** Keychain `safeStorage`, TCC mic/camera,
+  signing/entitlements, packaged workers, LaunchAgent restart, power policy,
+  and real-device/provider behavior.
+- **Later venue/product inputs:** wake corpus/keyword, avatar assets, scene
+  spells/presets, camera/identity, memory/profile, and hardware/adapter inputs.
+  Mocks support progress where accurate but cannot replace real Phase 1 exit
+  evidence.
 
 ### Config, model, and credential boundaries
 
@@ -169,6 +207,7 @@ process state that must survive implementation handoffs.
 | Task 10 | accepted | 10B `13/13`; 10C `8/8`; full `311`; typecheck/build, P0-D1–D5, ten smoke cycles, soak passed |
 | P1-U1–U5 | `4862383`, `5be5871`, `18461e5`, `cffd484`, `fb5e58f` | accepted |
 | P1-U6 | accepted; no self-referential hash | focused `32/32`; Node/web typecheck exit `0` |
+| P1-U7A | externally accepted 2026-08-22; integration commit represented by repository history | 9 changed source/test paths; focused `31/31`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules

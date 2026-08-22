@@ -32,6 +32,10 @@ type RendererRuntimeRecoveryMethodNames = Extract<
   BootRecoveryMethodNames,
   keyof RegisterIpcHandlersOptions['runtime']
 >
+type NonConsoleRendererRuntimeRecoveryMethodNames = Exclude<
+  RendererRuntimeRecoveryMethodNames,
+  'manualStart' | 'manualStop'
+>
 
 type Snapshot = Readonly<{
   configRevision: number
@@ -771,7 +775,7 @@ it('composes the recovery controller from the authoritative boot lifecycle actor
     expectMetadataOnly(result)
   }
   const rendererRuntimeExposesNoRecoveryMethods:
-    RendererRuntimeRecoveryMethodNames extends never ? true : false = true
+    NonConsoleRendererRuntimeRecoveryMethodNames extends never ? true : false = true
   expect(rendererRuntimeExposesNoRecoveryMethods).toBe(true)
 
   expect(recoveryFactoryCount).toBe(1)

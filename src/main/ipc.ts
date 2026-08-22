@@ -14,6 +14,8 @@ import type {
 } from '../shared/bridge'
 import type {
   ConsoleErrorCode,
+  ConsoleLifecycleAction,
+  ConsoleLifecycleActionResult,
   ConsoleReason,
   ConsoleResponse,
 } from '../shared/console-types'
@@ -32,6 +34,8 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   getSnapshot: 'console:get-snapshot',
   snapshot: 'console:snapshot',
   simulate: 'console:simulate',
+  startConversation: 'console:start-conversation',
+  disconnect: 'console:disconnect',
   overview: 'console:get-overview',
   events: 'console:get-events',
   config: 'console:get-config',
@@ -82,7 +86,7 @@ export type SenderRejectionReason =
 
 export interface RegisterIpcHandlersOptions {
   readonly ipcMain: IpcMainRegistrar
-  readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator'> & {
+  readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
     readonly console?: ConsoleDataPlane
     readonly requestRealtimeClientSecret?: () => Promise<ClientSecretIssueResult>
   }
@@ -124,6 +128,7 @@ export interface RealtimeIpcContract {
 
 const SAFE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/
 const SAFE_STATE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/
+const SAFE_REASON_PATTERN = /^[A-Za-z0-9_=;.%:+,/?-]{1,1024}$/
 const OP_STATUS_VALUES: ReadonlySet<OpStatus> = new Set(['success', 'degraded', 'failed'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -507,6 +512,71 @@ async function invokeSimulator(
   }
 }
 
+function lifecycleActionStatus(value: unknown): ConsoleLifecycleActionResult['status'] | null {
+  return value === 'success' || value === 'degraded' || value === 'failed'
+    ? value
+    : null
+}
+
+function lifecycleActionReason(value: unknown): string | null {
+  return typeof value === 'string' && SAFE_REASON_PATTERN.test(value) ? value : null
+}
+
+function projectLifecycleActionResult(
+  action: ConsoleLifecycleAction,
+  value: unknown,
+  telemetry: IpcEventSink,
+): ConsoleResponse<ConsoleLifecycleActionResult> {
+  const status = lifecycleActionStatus(readProperty(value, 'status'))
+  const reason = lifecycleActionReason(readProperty(value, 'reason'))
+  if (status === null || reason === null) {
+    const fallback: ConsoleLifecycleActionResult = {
+      action,
+      status: 'failed',
+      reason: 'cause=action_result_invalid',
+    }
+    emit(telemetry, {
+      module: 'app',
+      event: 'console_lifecycle_action',
+      status: 'failed',
+      error_code: 'console_lifecycle_action_failed',
+      reason: `action=${action};${fallback.reason}`,
+      source: 'runtime',
+    })
+    return { ok: true, value: fallback }
+  }
+
+  const result: ConsoleLifecycleActionResult = { action, status, reason }
+  emit(telemetry, {
+    module: 'app',
+    event: 'console_lifecycle_action',
+    status,
+    reason: `action=${action};${reason}`,
+    source: 'runtime',
+  })
+  return { ok: true, value: result }
+}
+
+async function invokeLifecycleAction(
+  action: ConsoleLifecycleAction,
+  operation: () => Promise<Record<string, unknown>>,
+  telemetry: IpcEventSink,
+): Promise<ConsoleResponse<ConsoleLifecycleActionResult>> {
+  try {
+    return projectLifecycleActionResult(action, await operation(), telemetry)
+  } catch {
+    emit(telemetry, {
+      module: 'app',
+      event: 'console_lifecycle_action',
+      status: 'failed',
+      error_code: 'console_lifecycle_action_failed',
+      reason: `action=${action};cause=runtime_action_failed`,
+      source: 'runtime',
+    })
+    return consoleFailure('console_lifecycle_action_failed', 'cause=runtime_action_failed')
+  }
+}
+
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
   const { ipcMain, runtime, windows, telemetry } = options
 
@@ -584,6 +654,32 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return rejectedSimulatorResult()
     }
     return invokeSimulator(runtime, validation.value, telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.startConversation, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeLifecycleAction('start_conversation', () => runtime.manualStart(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.disconnect, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeLifecycleAction('disconnect', () => runtime.manualStop(), telemetry)
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.overview, async (event, ...args) => {

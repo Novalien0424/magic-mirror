@@ -7,6 +7,7 @@ import type {
   ConsoleDraftTestResult,
   ConsoleEventsPage,
   ConsoleEventsQuery,
+  ConsoleLifecycleActionResult,
   ConsoleModelDraftInput,
   ConsoleModelsPayload,
   ConsoleOverviewPayload,
@@ -20,6 +21,8 @@ const READY_CHANNEL = 'boot:renderer-ready' as const
 const SNAPSHOT_CHANNEL = 'console:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'console:get-snapshot' as const
 const SIMULATE_CHANNEL = 'console:simulate' as const
+const START_CONVERSATION_CHANNEL = 'console:start-conversation' as const
+const DISCONNECT_CHANNEL = 'console:disconnect' as const
 const GET_OVERVIEW_CHANNEL = 'console:get-overview' as const
 const GET_EVENTS_CHANNEL = 'console:get-events' as const
 const GET_CONFIG_CHANNEL = 'console:get-config' as const
@@ -51,6 +54,14 @@ const bridge: ConsoleBridge = {
 
   simulate(command: SimulatorCommand): Promise<SimulatorResult> {
     return ipcRenderer.invoke(SIMULATE_CHANNEL, command) as Promise<SimulatorResult>
+  },
+
+  startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>> {
+    return ipcRenderer.invoke(START_CONVERSATION_CHANNEL) as Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
+  },
+
+  disconnect(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>> {
+    return ipcRenderer.invoke(DISCONNECT_CHANNEL) as Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   },
 
   getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>> {

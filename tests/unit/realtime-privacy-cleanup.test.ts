@@ -197,6 +197,8 @@ type ExistingConsoleIpcChannelKey =
   | 'getSnapshot'
   | 'snapshot'
   | 'simulate'
+  | 'startConversation'
+  | 'disconnect'
   | 'overview'
   | 'events'
   | 'config'

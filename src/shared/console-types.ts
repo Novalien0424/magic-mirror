@@ -34,6 +34,7 @@ export type ConsoleErrorCode =
   | 'console_config_refresh_failed'
   | 'console_model_test_failed'
   | 'console_phase_tests_read_failed'
+  | 'console_lifecycle_action_failed'
 
 export type ConsoleReason =
   | 'cause=developer_mode_disabled'
@@ -54,6 +55,16 @@ export type ConsoleReason =
   | 'cause=mock_probe_failed'
   | 'cause=reader_failed'
   | 'cause=record_invalid'
+  | 'cause=runtime_action_failed'
+  | 'cause=action_result_invalid'
+
+export type ConsoleLifecycleAction = 'start_conversation' | 'disconnect'
+
+export interface ConsoleLifecycleActionResult {
+  readonly action: ConsoleLifecycleAction
+  readonly status: 'success' | 'degraded' | 'failed'
+  readonly reason: string
+}
 
 export interface ConsoleFieldError {
   readonly path: string

@@ -6,6 +6,7 @@ import type {
   ConsoleEventsPage,
   ConsoleEventsQuery,
   ConsoleDraftTestResult,
+  ConsoleLifecycleActionResult,
   ConsoleModelDraftInput,
   ConsoleModelsPayload,
   ConsoleOverviewPayload,
@@ -48,6 +49,8 @@ export interface ConsoleChannelMap {
   readonly getSnapshot: 'console:get-snapshot'
   readonly snapshot: 'console:snapshot'
   readonly simulate: 'console:simulate'
+  readonly startConversation: 'console:start-conversation'
+  readonly disconnect: 'console:disconnect'
   readonly overview: 'console:get-overview'
   readonly events: 'console:get-events'
   readonly config: 'console:get-config'
@@ -76,6 +79,8 @@ export interface MirrorBridge extends SharedRendererBridge {
 
 export interface ConsoleBridge extends SharedRendererBridge {
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
+  startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
+  disconnect(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>>
   getEvents(request?: ConsoleEventsQuery): Promise<ConsoleResponse<ConsoleEventsPage>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>

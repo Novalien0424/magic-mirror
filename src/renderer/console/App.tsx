@@ -8,6 +8,7 @@ import type {
   ConsoleDiffConfirmation,
   ConsoleEventSummary,
   ConsoleEventsQuery,
+  ConsoleLifecycleActionResult,
   ConsoleModuleObservation,
   ConsoleOverviewPayload,
   ConsoleModelsPayload,
@@ -86,6 +87,10 @@ export const CONSOLE_UI_CONTRACT = {
     readinessLabel: 'Mock / simulator',
     tccLabel: 'TCC: not_checked',
   },
+  lifecycle: {
+    controls: ['Start Conversation', 'Disconnect'] as const,
+    outcomeCopy: 'Lifecycle action outcomes contain metadata only: action, status, and reason.',
+  },
   simulator: {
     disabledCopy: 'Developer Mode is disabled for simulator controls until Main authorizes them.',
     commands: SIMULATOR_COMMANDS,
@@ -150,6 +155,18 @@ type EventsState =
   | ({ readonly status: 'success' } & EventsStatePage)
   | ({ readonly status: 'failure' } & EventsStatePage & ConsoleFailure)
 
+type LifecycleActionName = 'startConversation' | 'disconnect'
+
+type LifecycleActionState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'loading'; readonly action: LifecycleActionName }
+  | {
+      readonly status: 'success'
+      readonly action: LifecycleActionName
+      readonly result: ConsoleLifecycleActionResult
+    }
+  | ({ readonly status: 'failure'; readonly action: LifecycleActionName } & ConsoleFailure)
+
 export type PhaseTestsViewState =
   | { readonly status: 'loading' }
   | { readonly status: 'success'; readonly value: ConsolePhaseTestsPayload }
@@ -190,6 +207,8 @@ function isConsoleBridge(value: unknown): value is ConsoleBridge {
     && typeof value.getSnapshot === 'function'
     && typeof value.onSnapshot === 'function'
     && typeof value.simulate === 'function'
+    && typeof value.startConversation === 'function'
+    && typeof value.disconnect === 'function'
     && typeof value.getOverview === 'function'
     && typeof value.getEvents === 'function'
     && typeof value.getConfig === 'function'
@@ -417,6 +436,62 @@ function OverviewPanel({ state }: { readonly state: OverviewState }): React.JSX.
           <ModuleCard key={module} module={module} observation={overview?.modules[module]} />
         ))}
       </ul>
+    </section>
+  )
+}
+
+function LifecycleControls({
+  bridgeAvailable,
+  state,
+  onStartConversation,
+  onDisconnect,
+}: {
+  readonly bridgeAvailable: boolean
+  readonly state: LifecycleActionState
+  readonly onStartConversation: () => void
+  readonly onDisconnect: () => void
+}): React.JSX.Element {
+  const controlsDisabled = !bridgeAvailable || state.status === 'loading'
+
+  return (
+    <section className="console__panel" aria-labelledby="console-lifecycle">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Conversation lifecycle</p>
+          <h2 id="console-lifecycle">Conversation Controls</h2>
+        </div>
+        <span className={bridgeAvailable ? 'console__status console__status--success' : 'console__status console__status--disabled'}>
+          {bridgeAvailable ? 'Ready' : 'Unavailable'}
+        </span>
+      </div>
+
+      <p className="console__muted">{CONSOLE_UI_CONTRACT.lifecycle.outcomeCopy}</p>
+      <div className="console__command-list" aria-label="Conversation lifecycle controls">
+        <button type="button" disabled={controlsDisabled} onClick={onStartConversation}>
+          Start Conversation
+        </button>
+        <button type="button" disabled={controlsDisabled} onClick={onDisconnect}>
+          Disconnect
+        </button>
+      </div>
+
+      {state.status === 'loading' ? (
+        <p className="console__result console__result--loading" role="status" aria-live="polite">
+          Running {state.action}…
+        </p>
+      ) : null}
+      {state.status === 'success' ? (
+        <div className="console__result console__result--success" role="status" aria-live="polite">
+          <strong>Lifecycle action: {state.result.action}</strong>
+          <span>Status: {state.result.status}</span>
+          <span>Reason: {state.result.reason}</span>
+        </div>
+      ) : null}
+      {state.status === 'failure' ? (
+        <p className="console__result console__result--failed" role="status" aria-live="polite">
+          Lifecycle action failed: {state.error}; {state.reason}
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -1088,6 +1163,7 @@ export function App(): React.JSX.Element {
     nextBeforeSequence: null,
   })
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
+  const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
@@ -1330,6 +1406,44 @@ export function App(): React.JSX.Element {
     })()
   }
 
+  const runLifecycleAction = (
+    action: LifecycleActionName,
+    request: (bridge: ConsoleBridge) => Promise<ConsoleResponse<ConsoleLifecycleActionResult>>,
+  ): void => {
+    const bridge = bridgeRef.current
+    if (bridge === null || !bridgeAvailable) {
+      setLifecycleActionState({ status: 'failure', action, ...BRIDGE_FAILURE })
+      return
+    }
+
+    setLifecycleActionState({ status: 'loading', action })
+    void (async () => {
+      try {
+        const response = await request(bridge)
+        if (!mountedRef.current) return
+        const failure = requestFailure(response)
+        if (failure) {
+          setLifecycleActionState({ status: 'failure', action, ...failure })
+          return
+        }
+        if (response.ok) {
+          setLifecycleActionState({ status: 'success', action, result: response.value })
+        }
+      } catch {
+        if (!mountedRef.current) return
+        setLifecycleActionState({ status: 'failure', action, ...BRIDGE_FAILURE })
+      }
+    })()
+  }
+
+  const startConversation = (): void => {
+    runLifecycleAction('startConversation', (bridge) => bridge.startConversation())
+  }
+
+  const disconnect = (): void => {
+    runLifecycleAction('disconnect', (bridge) => bridge.disconnect())
+  }
+
   const loadOlderEvents = (): void => {
     const bridge = bridgeRef.current
     const beforeSequence = eventsState.nextBeforeSequence
@@ -1352,6 +1466,13 @@ export function App(): React.JSX.Element {
       {bridgeError ? (
         <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
       ) : null}
+
+      <LifecycleControls
+        bridgeAvailable={bridgeAvailable}
+        state={lifecycleActionState}
+        onStartConversation={startConversation}
+        onDisconnect={disconnect}
+      />
 
       <nav className="console__tabs" aria-label="Console pages">
         {CONSOLE_UI_CONTRACT.tabs.map((page) => (
