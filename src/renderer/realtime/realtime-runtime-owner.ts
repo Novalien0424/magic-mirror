@@ -2,6 +2,7 @@ import type {
   RealtimeSessionIdentity,
   RealtimeSessionStartBundleValue,
 } from '../../../src/shared/bridge'
+import type { PlaybackCompletionResult } from './playback-completion'
 
 type MaybePromise<T> = T | PromiseLike<T>
 
@@ -11,6 +12,7 @@ export type RealtimeRuntimeState =
   | 'idle'
   | 'starting'
   | 'active'
+  | 'rolling_over'
   | 'stopping'
   | 'disposed'
 
@@ -18,11 +20,21 @@ export type RealtimeRuntimeCleanupBoundary =
   | 'close'
   | 'stop'
   | 'dispose'
+  | 'rollover'
   | 'offline_loop'
 
 export type RealtimeRuntimeStep =
   | 'playback_dispose'
   | 'audio_output_dispose'
+  | 'old_playback_dispose'
+  | 'old_audio_output_dispose'
+  | 'old_cleanup_run'
+  | 'next_connect'
+  | 'next_playback_dispose'
+  | 'next_audio_output_dispose'
+  | 'next_mic_release'
+  | 'next_session_close'
+  | 'next_cleanup_run'
   | 'mic_release'
   | 'cleanup_factory_create'
   | 'session_close'
@@ -31,6 +43,7 @@ export type RealtimeRuntimeStep =
 
 export interface RealtimeRuntimeAudioOutput {
   readonly audioElement: HTMLAudioElement
+  readonly analyser?: object
   readonly dispose: () => MaybePromise<void>
 }
 
@@ -44,10 +57,20 @@ export interface RealtimeRuntimeSession extends RealtimeSessionIdentity {
 export interface RealtimeRuntimeMicOwner {
   readonly acquire: (stream: MediaStream) => MaybePromise<void>
   readonly release: () => MaybePromise<void>
+  readonly rollover?: (
+    nextSession: RealtimeRuntimeSession,
+    reason: 'generation_rollover',
+  ) => MaybePromise<MediaStream>
 }
 
 export interface RealtimeRuntimePlaybackTransport {
   readonly dispose: () => MaybePromise<void>
+}
+
+export interface RealtimeRuntimePlaybackCompletion {
+  readonly waitForActualEnd: (
+    signal: AbortSignal,
+  ) => MaybePromise<PlaybackCompletionResult>
 }
 
 export interface RealtimeRuntimeCleanup {
@@ -73,6 +96,10 @@ export interface RealtimeRuntimeOwnerDependencies {
   readonly createCleanup: (
     session: RealtimeRuntimeSession | Readonly<RealtimeSessionIdentity>,
   ) => MaybePromise<RealtimeRuntimeCleanup>
+  readonly createPlaybackCompletion?: (
+    playbackTransport: RealtimeRuntimePlaybackTransport,
+    analyser: object,
+  ) => RealtimeRuntimePlaybackCompletion
   readonly eventSink?: RealtimeRuntimeEventSink
 }
 
@@ -82,16 +109,24 @@ export interface RealtimeRuntimeSnapshot {
 }
 
 export interface RealtimeRuntimeOutcome {
-  readonly status: 'success' | 'ignored' | 'failed'
-  readonly operation: 'start' | 'stop' | 'dispose' | 'interrupt'
+  readonly status: 'success' | 'ignored' | 'failed' | 'degraded'
+  readonly operation: 'start' | 'stop' | 'dispose' | 'interrupt' | 'rollover'
   readonly reason: string
   readonly cleanup?: 'attempted'
+  readonly playbackSource?: PlaybackCompletionResult['source']
+  readonly playbackReason?: Extract<
+    PlaybackCompletionResult,
+    { readonly source: 'bounded_analyser_fallback' }
+  >['reason']
   readonly attemptedSteps: readonly RealtimeRuntimeStep[]
   readonly failedSteps: readonly RealtimeRuntimeStep[]
 }
 
 export interface RealtimeRuntimeOwner {
   readonly start: (
+    bundle: Readonly<RealtimeSessionStartBundleValue>,
+  ) => Promise<RealtimeRuntimeOutcome>
+  readonly rollover: (
     bundle: Readonly<RealtimeSessionStartBundleValue>,
   ) => Promise<RealtimeRuntimeOutcome>
   readonly stop: (
@@ -135,8 +170,43 @@ interface StartControl {
   cancelled: boolean
 }
 
+interface RolloverControl {
+  readonly identity: Readonly<RealtimeSessionIdentity>
+  readonly abortController: AbortController
+  abortIntent?: 'stop' | 'dispose' | 'interrupt'
+  phase: RolloverPhase
+  handoffCompleted: boolean
+}
+
+type RolloverPhase =
+  | 'playback_wait'
+  | 'preparing'
+  | 'mic_handoff'
+  | 'post_handoff'
+
+interface PendingPreHandoffCleanup {
+  readonly oldIdentity: Readonly<RealtimeSessionIdentity>
+  readonly failedSteps: readonly RealtimeRuntimeStep[]
+  readonly nextAudioOutput?: RealtimeRuntimeAudioOutput
+  readonly nextSession?: RealtimeRuntimeSession
+  readonly nextPlaybackTransport?: RealtimeRuntimePlaybackTransport
+  readonly nextCleanup?: RealtimeRuntimeCleanup
+}
+
+interface PendingPostHandoffCleanup {
+  readonly oldIdentity: Readonly<RealtimeSessionIdentity>
+  readonly oldPlaybackTransport?: RealtimeRuntimePlaybackTransport
+  readonly oldAudioOutput?: RealtimeRuntimeAudioOutput
+  readonly oldCleanup?: RealtimeRuntimeCleanup
+}
+
 interface CleanupInFlight {
   readonly operation: 'stop' | 'dispose'
+  readonly promise: Promise<RealtimeRuntimeOutcome>
+}
+
+interface LifecycleAfterRolloverInFlight {
+  readonly operation: 'stop' | 'dispose' | 'interrupt'
   readonly promise: Promise<RealtimeRuntimeOutcome>
 }
 
@@ -181,6 +251,8 @@ function freezeOutcome(input: {
   readonly operation: RealtimeRuntimeOutcome['operation']
   readonly reason: string
   readonly cleanup?: RealtimeRuntimeOutcome['cleanup']
+  readonly playbackSource?: RealtimeRuntimeOutcome['playbackSource']
+  readonly playbackReason?: RealtimeRuntimeOutcome['playbackReason']
   readonly attemptedSteps?: readonly RealtimeRuntimeStep[]
   readonly failedSteps?: readonly RealtimeRuntimeStep[]
 }): RealtimeRuntimeOutcome {
@@ -191,6 +263,12 @@ function freezeOutcome(input: {
     operation: input.operation,
     reason: input.reason,
     ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
+    ...(input.playbackSource === undefined
+      ? {}
+      : { playbackSource: input.playbackSource }),
+    ...(input.playbackReason === undefined
+      ? {}
+      : { playbackReason: input.playbackReason }),
     attemptedSteps,
     failedSteps,
   })
@@ -207,7 +285,12 @@ export function createRealtimeRuntimeOwner(
   let inFlightIdentity: Readonly<RealtimeSessionIdentity> | undefined
   let inFlightStart: Promise<RealtimeRuntimeOutcome> | undefined
   let inFlightStartControl: StartControl | undefined
+  let inFlightRollover: Promise<RealtimeRuntimeOutcome> | undefined
+  let inFlightRolloverControl: RolloverControl | undefined
+  let pendingPreHandoffCleanup: PendingPreHandoffCleanup | undefined
+  let pendingPostHandoffCleanup: PendingPostHandoffCleanup | undefined
   let cleanupInFlight: CleanupInFlight | undefined
+  let lifecycleAfterRolloverInFlight: LifecycleAfterRolloverInFlight | undefined
   let pendingStartDispose: Promise<RealtimeRuntimeOutcome> | undefined
   let disposeAfterStop: Promise<RealtimeRuntimeOutcome> | undefined
   const reservedIdentityKeys = new Set<string>()
@@ -402,6 +485,159 @@ export function createRealtimeRuntimeOwner(
     }
   }
 
+  async function retryPendingPreHandoffCleanup(): Promise<CleanupReport> {
+    const pending = pendingPreHandoffCleanup
+    const attemptedSteps: RealtimeRuntimeStep[] = []
+    const failedSteps: RealtimeRuntimeStep[] = []
+
+    if (pending === undefined) {
+      return { succeeded: true, attemptedSteps, failedSteps }
+    }
+
+    let nextPlaybackTransport = pending.nextPlaybackTransport
+    let nextAudioOutput = pending.nextAudioOutput
+    let nextSession = pending.nextSession
+    let nextCleanup = pending.nextCleanup
+
+    if (nextPlaybackTransport !== undefined) {
+      const step: RealtimeRuntimeStep = 'next_playback_dispose'
+      attemptedSteps.push(step)
+      try {
+        await nextPlaybackTransport.dispose()
+        nextPlaybackTransport = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (nextAudioOutput !== undefined) {
+      const step: RealtimeRuntimeStep = 'next_audio_output_dispose'
+      attemptedSteps.push(step)
+      try {
+        await nextAudioOutput.dispose()
+        nextAudioOutput = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (nextSession !== undefined) {
+      const step: RealtimeRuntimeStep = 'next_session_close'
+      attemptedSteps.push(step)
+      try {
+        await nextSession.close('rollover_pre_handoff_failed')
+        nextSession = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (nextCleanup !== undefined) {
+      const step: RealtimeRuntimeStep = 'next_cleanup_run'
+      attemptedSteps.push(step)
+      try {
+        await nextCleanup.run('close')
+        nextCleanup = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (
+      nextPlaybackTransport === undefined &&
+      nextAudioOutput === undefined &&
+      nextSession === undefined &&
+      nextCleanup === undefined
+    ) {
+      pendingPreHandoffCleanup = undefined
+    } else {
+      pendingPreHandoffCleanup = Object.freeze({
+        oldIdentity: pending.oldIdentity,
+        failedSteps: Object.freeze([...failedSteps]),
+        ...(nextAudioOutput === undefined ? {} : { nextAudioOutput }),
+        ...(nextSession === undefined ? {} : { nextSession }),
+        ...(nextPlaybackTransport === undefined
+          ? {}
+          : { nextPlaybackTransport }),
+        ...(nextCleanup === undefined ? {} : { nextCleanup }),
+      })
+    }
+
+    return {
+      succeeded: pendingPreHandoffCleanup === undefined,
+      attemptedSteps,
+      failedSteps,
+    }
+  }
+
+  async function retryPendingPostHandoffCleanup(): Promise<CleanupReport> {
+    const pending = pendingPostHandoffCleanup
+    const attemptedSteps: RealtimeRuntimeStep[] = []
+    const failedSteps: RealtimeRuntimeStep[] = []
+
+    if (pending === undefined) {
+      return { succeeded: true, attemptedSteps, failedSteps }
+    }
+
+    let oldPlaybackTransport = pending.oldPlaybackTransport
+    let oldAudioOutput = pending.oldAudioOutput
+    let oldCleanup = pending.oldCleanup
+
+    if (oldPlaybackTransport !== undefined) {
+      const step: RealtimeRuntimeStep = 'old_playback_dispose'
+      attemptedSteps.push(step)
+      try {
+        await oldPlaybackTransport.dispose()
+        oldPlaybackTransport = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (oldAudioOutput !== undefined) {
+      const step: RealtimeRuntimeStep = 'old_audio_output_dispose'
+      attemptedSteps.push(step)
+      try {
+        await oldAudioOutput.dispose()
+        oldAudioOutput = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (oldCleanup !== undefined) {
+      const step: RealtimeRuntimeStep = 'old_cleanup_run'
+      attemptedSteps.push(step)
+      try {
+        await oldCleanup.run('rollover')
+        oldCleanup = undefined
+      } catch {
+        failedSteps.push(step)
+      }
+    }
+
+    if (
+      oldPlaybackTransport === undefined &&
+      oldAudioOutput === undefined &&
+      oldCleanup === undefined
+    ) {
+      pendingPostHandoffCleanup = undefined
+    } else {
+      pendingPostHandoffCleanup = Object.freeze({
+        oldIdentity: pending.oldIdentity,
+        ...(oldPlaybackTransport === undefined ? {} : { oldPlaybackTransport }),
+        ...(oldAudioOutput === undefined ? {} : { oldAudioOutput }),
+        ...(oldCleanup === undefined ? {} : { oldCleanup }),
+      })
+    }
+
+    return {
+      succeeded: pendingPostHandoffCleanup === undefined,
+      attemptedSteps,
+      failedSteps,
+    }
+  }
+
   async function performStart(
     bundle: Readonly<RealtimeSessionStartBundleValue>,
     control: StartControl,
@@ -510,6 +746,442 @@ export function createRealtimeRuntimeOwner(
     }
   }
 
+  async function performRollover(
+    bundle: Readonly<RealtimeSessionStartBundleValue>,
+    control: RolloverControl,
+    resources: OwnedResources,
+    oldIdentity: Readonly<RealtimeSessionIdentity>,
+  ): Promise<RealtimeRuntimeOutcome> {
+    const attemptedSteps: RealtimeRuntimeStep[] = []
+    const failedSteps: RealtimeRuntimeStep[] = []
+
+    let nextAudioOutput: RealtimeRuntimeAudioOutput | undefined
+    let nextSession: RealtimeRuntimeSession | undefined
+    let nextPlaybackTransport: RealtimeRuntimePlaybackTransport | undefined
+    let nextCleanup: RealtimeRuntimeCleanup | undefined
+    let nextOwnedResources: OwnedResources | undefined
+
+    const cleanupPreparedNextResources = async (): Promise<void> => {
+      if (nextPlaybackTransport !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_playback_dispose'
+        attemptedSteps.push(step)
+        try {
+          await nextPlaybackTransport.dispose()
+          nextPlaybackTransport = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (nextAudioOutput !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_audio_output_dispose'
+        attemptedSteps.push(step)
+        try {
+          await nextAudioOutput.dispose()
+          nextAudioOutput = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (nextSession !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_session_close'
+        attemptedSteps.push(step)
+        try {
+          await nextSession.close('rollover_pre_handoff_failed')
+          nextSession = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (nextCleanup !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_cleanup_run'
+        attemptedSteps.push(step)
+        try {
+          await nextCleanup.run('close')
+          nextCleanup = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (failedSteps.length === 0) {
+        pendingPreHandoffCleanup = undefined
+        return
+      }
+
+      pendingPreHandoffCleanup = Object.freeze({
+        oldIdentity: freezeIdentity(oldIdentity),
+        failedSteps: Object.freeze([...failedSteps]),
+        ...(nextAudioOutput === undefined ? {} : { nextAudioOutput }),
+        ...(nextSession === undefined ? {} : { nextSession }),
+        ...(nextPlaybackTransport === undefined
+          ? {}
+          : { nextPlaybackTransport }),
+        ...(nextCleanup === undefined ? {} : { nextCleanup }),
+      })
+    }
+
+    const cleanupTransferredNextResources = async (
+      transferredResources: OwnedResources,
+    ): Promise<boolean> => {
+      if (transferredResources.playbackTransport !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_playback_dispose'
+        attemptedSteps.push(step)
+        try {
+          await transferredResources.playbackTransport.dispose()
+          transferredResources.playbackTransport = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (transferredResources.audioOutput !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_audio_output_dispose'
+        attemptedSteps.push(step)
+        try {
+          await transferredResources.audioOutput.dispose()
+          transferredResources.audioOutput = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (transferredResources.micTeardown === 'acquired') {
+        const step: RealtimeRuntimeStep = 'next_mic_release'
+        attemptedSteps.push(step)
+        try {
+          if (transferredResources.micOwner === undefined) {
+            throw new Error('mic_owner_missing')
+          }
+          await transferredResources.micOwner.release()
+          transferredResources.micAcquired = false
+          transferredResources.micOwner = undefined
+          transferredResources.micTeardown = 'complete'
+          transferredResources.session = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      if (transferredResources.cleanup !== undefined) {
+        const step: RealtimeRuntimeStep = 'next_cleanup_run'
+        attemptedSteps.push(step)
+        try {
+          await transferredResources.cleanup.run('close')
+          transferredResources.cleanup = undefined
+          transferredResources.cleanupFactoryAttempted = false
+          transferredResources.cleanupFactoryFailed = false
+          transferredResources.cleanupFactoryTarget = undefined
+        } catch {
+          failedSteps.push(step)
+        }
+      }
+
+      return (
+        transferredResources.playbackTransport === undefined &&
+        transferredResources.audioOutput === undefined &&
+        transferredResources.micTeardown !== 'acquired' &&
+        transferredResources.cleanup === undefined
+      )
+    }
+
+    const throwIfAbortRequestedBeforeHandoff = (): void => {
+      if (control.abortIntent !== undefined && !control.handoffCompleted) {
+        throw new Error('rollover_aborted')
+      }
+    }
+
+    try {
+      const oldAudioOutput = resources.audioOutput
+      const oldSession = resources.session
+      const oldMicOwner = resources.micOwner
+      const oldPlaybackTransport = resources.playbackTransport
+      const oldCleanup = resources.cleanup
+      const analyser = oldAudioOutput?.analyser
+      const createPlaybackCompletion = dependencies.createPlaybackCompletion
+
+      if (
+        oldAudioOutput === undefined ||
+        oldSession === undefined ||
+        oldMicOwner?.rollover === undefined ||
+        oldPlaybackTransport === undefined ||
+        oldCleanup === undefined ||
+        analyser === undefined ||
+        createPlaybackCompletion === undefined
+      ) {
+        throw new Error('rollover_unavailable')
+      }
+
+      control.phase = 'playback_wait'
+      const playbackCompletion = createPlaybackCompletion(
+        oldPlaybackTransport,
+        analyser,
+      )
+      const playbackResult = await playbackCompletion.waitForActualEnd(
+        control.abortController.signal,
+      )
+      throwIfAbortRequestedBeforeHandoff()
+
+      control.phase = 'preparing'
+      nextAudioOutput = await dependencies.createAudioOutput()
+      throwIfAbortRequestedBeforeHandoff()
+      nextSession = await dependencies.createSession(
+        bundle,
+        resources.stream,
+        nextAudioOutput.audioElement,
+      )
+      throwIfAbortRequestedBeforeHandoff()
+      nextPlaybackTransport = await dependencies.createPlaybackTransport(
+        nextSession,
+      )
+      throwIfAbortRequestedBeforeHandoff()
+      nextCleanup = await dependencies.createCleanup(nextSession)
+      throwIfAbortRequestedBeforeHandoff()
+
+      control.phase = 'mic_handoff'
+      const returnedStream = await oldMicOwner.rollover(
+        nextSession,
+        'generation_rollover',
+      )
+      control.handoffCompleted = true
+      control.phase = 'post_handoff'
+      const originalStream = resources.stream
+
+      // micOwner.rollover closes the old session and transfers mic ownership.
+      // The old container must not remain a second closer after that boundary.
+      resources.session = undefined
+      resources.sessionCloseCompleted = true
+      resources.micOwner = undefined
+      resources.micAcquired = false
+      resources.micTeardown = 'complete'
+
+      nextOwnedResources = {
+        stream: originalStream,
+        audioOutput: nextAudioOutput,
+        session: nextSession,
+        micOwner: oldMicOwner,
+        micAcquired: true,
+        micTeardown: 'acquired',
+        playbackTransport: nextPlaybackTransport,
+        cleanup: nextCleanup,
+        cleanupFactoryAttempted: true,
+        cleanupFactoryFailed: false,
+        cleanupFactoryTarget: freezeIdentity(nextSession),
+      }
+      ownedResources = nextOwnedResources
+
+      const returnedStreamMismatch = returnedStream !== originalStream
+      let failedOldPlayback: RealtimeRuntimePlaybackTransport | undefined
+      let failedOldAudio: RealtimeRuntimeAudioOutput | undefined
+      let failedOldCleanup: RealtimeRuntimeCleanup | undefined
+
+      const oldPlaybackStep: RealtimeRuntimeStep = 'old_playback_dispose'
+      attemptedSteps.push(oldPlaybackStep)
+      try {
+        await oldPlaybackTransport.dispose()
+      } catch {
+        failedSteps.push(oldPlaybackStep)
+        failedOldPlayback = oldPlaybackTransport
+      }
+      resources.playbackTransport = undefined
+
+      const oldAudioStep: RealtimeRuntimeStep = 'old_audio_output_dispose'
+      attemptedSteps.push(oldAudioStep)
+      try {
+        await oldAudioOutput.dispose()
+      } catch {
+        failedSteps.push(oldAudioStep)
+        failedOldAudio = oldAudioOutput
+      }
+      resources.audioOutput = undefined
+
+      const oldCleanupStep: RealtimeRuntimeStep = 'old_cleanup_run'
+      attemptedSteps.push(oldCleanupStep)
+      try {
+        await oldCleanup.run('rollover')
+      } catch {
+        failedSteps.push(oldCleanupStep)
+        failedOldCleanup = oldCleanup
+      }
+      resources.cleanup = undefined
+
+      pendingPostHandoffCleanup =
+        failedOldPlayback === undefined &&
+        failedOldAudio === undefined &&
+        failedOldCleanup === undefined
+          ? undefined
+          : Object.freeze({
+              oldIdentity: freezeIdentity(oldIdentity),
+              ...(failedOldPlayback === undefined
+                ? {}
+                : { oldPlaybackTransport: failedOldPlayback }),
+              ...(failedOldAudio === undefined
+                ? {}
+                : { oldAudioOutput: failedOldAudio }),
+              ...(failedOldCleanup === undefined
+                ? {}
+                : { oldCleanup: failedOldCleanup }),
+            })
+
+      let failureReason: string | undefined
+      if (returnedStreamMismatch) {
+        failureReason = 'rollover_stream_mismatch'
+      } else if (pendingPostHandoffCleanup !== undefined) {
+        failureReason = 'rollover_post_handoff_failed'
+      } else {
+        const nextConnectStep: RealtimeRuntimeStep = 'next_connect'
+        attemptedSteps.push(nextConnectStep)
+        try {
+          await nextSession.connect()
+        } catch {
+          failedSteps.push(nextConnectStep)
+          failureReason = 'rollover_connect_failed'
+        }
+      }
+
+      if (failureReason !== undefined) {
+        const nextTeardownSucceeded = await cleanupTransferredNextResources(
+          nextOwnedResources,
+        )
+        if (nextTeardownSucceeded && pendingPostHandoffCleanup === undefined) {
+          ownedResources = undefined
+          setState('idle')
+        } else {
+          ownedResources = nextOwnedResources
+          setState('stopping', nextSession)
+        }
+
+        const outcome = freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: failureReason,
+          cleanup: 'attempted',
+          attemptedSteps,
+          failedSteps,
+        })
+        emit(outcome)
+        return outcome
+      }
+
+      setState('active', nextSession)
+
+      const fallback = playbackResult.source === 'bounded_analyser_fallback'
+      const outcome = freezeOutcome({
+        status: fallback ? 'degraded' : 'success',
+        operation: 'rollover',
+        reason: fallback ? 'rolled_over_with_fallback' : 'rolled_over',
+        cleanup: 'attempted',
+        playbackSource: playbackResult.source,
+        ...(fallback ? { playbackReason: playbackResult.reason } : {}),
+        attemptedSteps,
+        failedSteps,
+      })
+      emit(outcome)
+      return outcome
+    } catch {
+      if (!control.handoffCompleted && control.abortIntent !== undefined) {
+        if (control.phase !== 'playback_wait') {
+          await cleanupPreparedNextResources()
+        }
+        setState('active', oldIdentity)
+        const outcome = freezeOutcome({
+          status: 'ignored',
+          operation: 'rollover',
+          reason: `rollover_aborted_by_${control.abortIntent}`,
+          ...(control.phase === 'playback_wait'
+            ? {}
+            : { cleanup: 'attempted' as const }),
+          attemptedSteps,
+          failedSteps,
+        })
+        emit(outcome)
+        return outcome
+      }
+
+      if (control.handoffCompleted && nextOwnedResources !== undefined) {
+        const nextTeardownSucceeded = await cleanupTransferredNextResources(
+          nextOwnedResources,
+        )
+        if (nextTeardownSucceeded && pendingPostHandoffCleanup === undefined) {
+          ownedResources = undefined
+          setState('idle')
+        } else {
+          ownedResources = nextOwnedResources
+          setState('stopping', nextSession ?? oldIdentity)
+        }
+        const outcome = freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: 'rollover_post_handoff_failed',
+          cleanup: 'attempted',
+          attemptedSteps,
+          failedSteps,
+        })
+        emit(outcome)
+        return outcome
+      }
+
+      if (control.handoffCompleted) {
+        setState('stopping', currentIdentity ?? oldIdentity)
+        const outcome = freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: 'rollover_post_handoff_failed',
+          cleanup: 'attempted',
+          attemptedSteps,
+          failedSteps,
+        })
+        emit(outcome)
+        return outcome
+      }
+
+      if (control.phase === 'playback_wait') {
+        setState('active', oldIdentity)
+        const outcome = freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: 'rollover_playback_failed',
+        })
+        emit(outcome)
+        return outcome
+      }
+
+      await cleanupPreparedNextResources()
+      setState('active', oldIdentity)
+      const outcome = freezeOutcome({
+        status: 'failed',
+        operation: 'rollover',
+        reason:
+          control.phase === 'mic_handoff'
+            ? 'rollover_handoff_failed'
+            : 'rollover_prepare_failed',
+        cleanup: 'attempted',
+        attemptedSteps,
+        failedSteps,
+      })
+      emit(outcome)
+      return outcome
+    }
+  }
+
+  function combineCleanupReports(
+    ...reports: readonly CleanupReport[]
+  ): CleanupReport {
+    const attemptedSteps: RealtimeRuntimeStep[] = []
+    const failedSteps: RealtimeRuntimeStep[] = []
+    for (const report of reports) {
+      attemptedSteps.push(...report.attemptedSteps)
+      failedSteps.push(...report.failedSteps)
+    }
+    return {
+      succeeded: reports.every((report) => report.succeeded),
+      attemptedSteps,
+      failedSteps,
+    }
+  }
+
   function start(
     bundle: Readonly<RealtimeSessionStartBundleValue>,
   ): Promise<RealtimeRuntimeOutcome> {
@@ -538,6 +1210,15 @@ export function createRealtimeRuntimeOwner(
           status: 'ignored',
           operation: 'start',
           reason: 'active',
+        }),
+      )
+    }
+    if (state === 'rolling_over') {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'start',
+          reason: 'rollover_in_flight',
         }),
       )
     }
@@ -616,31 +1297,174 @@ export function createRealtimeRuntimeOwner(
     return promise
   }
 
+  function rollover(
+    bundle: Readonly<RealtimeSessionStartBundleValue>,
+  ): Promise<RealtimeRuntimeOutcome> {
+    const requestedIdentity = bundle.identity
+
+    if (
+      inFlightRollover !== undefined &&
+      inFlightRolloverControl !== undefined &&
+      sameIdentity(inFlightRolloverControl.identity, requestedIdentity)
+    ) {
+      return inFlightRollover
+    }
+
+    if (inFlightRollover !== undefined) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'rollover',
+          reason: 'rollover_in_flight',
+        }),
+      )
+    }
+
+    if (state !== 'active') {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'rollover',
+          reason: state === 'disposed' ? 'already_disposed' : 'not_active',
+        }),
+      )
+    }
+
+    const requestedGeneration = requestedIdentity.sessionGeneration
+    if (requestedGeneration < highestReservedGeneration) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'rollover',
+          reason: 'stale_generation',
+        }),
+      )
+    }
+    if (
+      requestedGeneration <= highestReservedGeneration ||
+      reservedIdentityKeys.has(identityKey(requestedIdentity))
+    ) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'rollover',
+          reason: 'duplicate_generation',
+        }),
+      )
+    }
+
+    if (
+      pendingPreHandoffCleanup !== undefined ||
+      pendingPostHandoffCleanup !== undefined
+    ) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: 'rollover_cleanup_pending',
+        }),
+      )
+    }
+
+    const resources = ownedResources
+    const analyser = resources?.audioOutput?.analyser
+    if (
+      resources === undefined ||
+      currentIdentity === undefined ||
+      resources.stream === undefined ||
+      resources.session === undefined ||
+      resources.audioOutput === undefined ||
+      typeof analyser !== 'object' ||
+      analyser === null ||
+      resources.micOwner === undefined ||
+      typeof resources.micOwner.rollover !== 'function' ||
+      resources.playbackTransport === undefined ||
+      resources.cleanup === undefined ||
+      typeof dependencies.createPlaybackCompletion !== 'function'
+    ) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'failed',
+          operation: 'rollover',
+          reason: 'rollover_unavailable',
+        }),
+      )
+    }
+
+    // Reserve synchronously before any rollover factory work so a higher
+    // generation cannot race this request into a second stream or session.
+    highestReservedGeneration = requestedGeneration
+    reservedIdentityKeys.add(identityKey(requestedIdentity))
+    setState('rolling_over', currentIdentity)
+
+    const control: RolloverControl = {
+      identity: freezeIdentity(requestedIdentity),
+      abortController: new AbortController(),
+      phase: 'playback_wait',
+      handoffCompleted: false,
+    }
+    inFlightRolloverControl = control
+    const promise = performRollover(bundle, control, resources, currentIdentity)
+    inFlightRollover = promise
+    void promise.then(
+      () => {
+        if (inFlightRollover === promise) {
+          inFlightRollover = undefined
+          inFlightRolloverControl = undefined
+        }
+      },
+      () => {
+        if (inFlightRollover === promise) {
+          inFlightRollover = undefined
+          inFlightRolloverControl = undefined
+        }
+      },
+    )
+    return promise
+  }
+
   async function performCleanup(
     operation: 'stop' | 'dispose',
     boundary: RealtimeRuntimeCleanupBoundary,
     terminalState: 'idle' | 'disposed',
   ): Promise<RealtimeRuntimeOutcome> {
+    const pendingPreReport =
+      pendingPreHandoffCleanup === undefined
+        ? { succeeded: true, attemptedSteps: [], failedSteps: [] }
+        : await retryPendingPreHandoffCleanup()
+    const pendingPostReport =
+      pendingPostHandoffCleanup === undefined
+        ? { succeeded: true, attemptedSteps: [], failedSteps: [] }
+        : await retryPendingPostHandoffCleanup()
     const resources = ownedResources
     const cleanupReport = await runCleanup(resources, boundary, false)
-    if (cleanupReport.succeeded) {
+    const combinedReport = combineCleanupReports(
+      pendingPreReport,
+      pendingPostReport,
+      cleanupReport,
+    )
+    if (combinedReport.succeeded) {
       ownedResources = undefined
       setState(terminalState)
     }
 
     const outcome = freezeOutcome({
-      status: cleanupReport.succeeded ? 'success' : 'failed',
+      status: combinedReport.succeeded ? 'success' : 'failed',
       operation,
-      reason: cleanupReport.succeeded
+      reason: combinedReport.succeeded
         ? terminalState === 'disposed'
           ? 'disposed'
           : 'stopped'
         : operation === 'dispose'
           ? 'dispose_failed'
           : 'stop_failed',
-      ...(resources === undefined ? {} : { cleanup: 'attempted' as const }),
-      attemptedSteps: cleanupReport.attemptedSteps,
-      failedSteps: cleanupReport.failedSteps,
+      ...(resources === undefined &&
+      pendingPreReport.attemptedSteps.length === 0 &&
+      pendingPostReport.attemptedSteps.length === 0
+        ? {}
+        : { cleanup: 'attempted' as const }),
+      attemptedSteps: combinedReport.attemptedSteps,
+      failedSteps: combinedReport.failedSteps,
     })
     emit(outcome)
     return outcome
@@ -764,9 +1588,175 @@ export function createRealtimeRuntimeOwner(
     return promise
   }
 
+  async function performLifecycleAfterRolloverCleanup(
+    operation: 'stop' | 'dispose',
+    boundary: RealtimeRuntimeCleanupBoundary,
+    terminalState: 'idle' | 'disposed',
+    rolloverPromise: Promise<RealtimeRuntimeOutcome>,
+    oldIdentity: Readonly<RealtimeSessionIdentity>,
+  ): Promise<RealtimeRuntimeOutcome> {
+    let rolloverFailed = false
+    try {
+      await rolloverPromise
+    } catch {
+      rolloverFailed = true
+    }
+
+    const pendingPreReport =
+      pendingPreHandoffCleanup === undefined
+        ? { succeeded: true, attemptedSteps: [], failedSteps: [] }
+        : await retryPendingPreHandoffCleanup()
+    const pendingPostReport =
+      pendingPostHandoffCleanup === undefined
+        ? { succeeded: true, attemptedSteps: [], failedSteps: [] }
+        : await retryPendingPostHandoffCleanup()
+    setState('stopping', currentIdentity ?? oldIdentity)
+    const resources = ownedResources
+    const cleanupReport = await runCleanup(resources, boundary, false)
+    const combinedReport = combineCleanupReports(
+      pendingPreReport,
+      pendingPostReport,
+      cleanupReport,
+    )
+    const succeeded = !rolloverFailed && combinedReport.succeeded
+    if (succeeded) {
+      ownedResources = undefined
+      setState(terminalState)
+    }
+
+    const outcome = freezeOutcome({
+      status: succeeded ? 'success' : 'failed',
+      operation,
+      reason: succeeded
+        ? terminalState === 'disposed'
+          ? 'disposed'
+          : 'stopped'
+        : operation === 'dispose'
+          ? 'dispose_failed'
+          : 'stop_failed',
+      ...(resources === undefined &&
+      pendingPreReport.attemptedSteps.length === 0 &&
+      pendingPostReport.attemptedSteps.length === 0
+        ? {}
+        : { cleanup: 'attempted' as const }),
+      attemptedSteps: combinedReport.attemptedSteps,
+      failedSteps: combinedReport.failedSteps,
+    })
+    emit(outcome)
+    return outcome
+  }
+
+  async function interruptActiveSession(): Promise<RealtimeRuntimeOutcome> {
+    if (state !== 'active' || ownedResources?.session === undefined) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'interrupt',
+          reason: 'not_active',
+        }),
+      )
+    }
+
+    try {
+      await ownedResources.session.interrupt()
+      const outcome = freezeOutcome({
+        status: 'success',
+        operation: 'interrupt',
+        reason: 'interrupted',
+      })
+      emit(outcome)
+      return outcome
+    } catch {
+      const outcome = freezeOutcome({
+        status: 'failed',
+        operation: 'interrupt',
+        reason: 'interrupt_failed',
+      })
+      emit(outcome)
+      return outcome
+    }
+  }
+
+  async function performInterruptAfterRollover(
+    rolloverPromise: Promise<RealtimeRuntimeOutcome>,
+  ): Promise<RealtimeRuntimeOutcome> {
+    try {
+      await rolloverPromise
+    } catch {
+      // The active-session guard below maps an unexpected rollover rejection
+      // to the existing metadata-only interrupt outcome.
+    }
+    return interruptActiveSession()
+  }
+
+  function beginLifecycleAfterRollover(
+    operation: 'stop' | 'dispose' | 'interrupt',
+    boundary: RealtimeRuntimeCleanupBoundary = 'stop',
+    terminalState: 'idle' | 'disposed' = 'idle',
+  ): Promise<RealtimeRuntimeOutcome> {
+    const rolloverPromise = inFlightRollover
+    const rolloverControl = inFlightRolloverControl
+    const oldIdentity = currentIdentity
+    if (
+      rolloverPromise === undefined ||
+      rolloverControl === undefined ||
+      oldIdentity === undefined
+    ) {
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation,
+          reason: 'lifecycle_in_flight',
+        }),
+      )
+    }
+
+    const promise =
+      operation === 'interrupt'
+        ? performInterruptAfterRollover(rolloverPromise)
+        : performLifecycleAfterRolloverCleanup(
+            operation,
+            boundary,
+            terminalState,
+            rolloverPromise,
+            oldIdentity,
+          )
+    lifecycleAfterRolloverInFlight = { operation, promise }
+    rolloverControl.abortIntent = operation
+    rolloverControl.abortController.abort()
+    void promise.then(
+      () => {
+        if (lifecycleAfterRolloverInFlight?.promise === promise) {
+          lifecycleAfterRolloverInFlight = undefined
+        }
+      },
+      () => {
+        if (lifecycleAfterRolloverInFlight?.promise === promise) {
+          lifecycleAfterRolloverInFlight = undefined
+        }
+      },
+    )
+    return promise
+  }
+
   function stop(
     boundary: RealtimeRuntimeCleanupBoundary = 'stop',
   ): Promise<RealtimeRuntimeOutcome> {
+    if (lifecycleAfterRolloverInFlight !== undefined) {
+      if (lifecycleAfterRolloverInFlight.operation === 'stop') {
+        return lifecycleAfterRolloverInFlight.promise
+      }
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'stop',
+          reason: 'lifecycle_in_flight',
+        }),
+      )
+    }
+    if (state === 'rolling_over' && inFlightRollover !== undefined) {
+      return beginLifecycleAfterRollover('stop', boundary, 'idle')
+    }
     if (pendingStartDispose !== undefined || disposeAfterStop !== undefined) {
       return resultPromise(
         freezeOutcome({
@@ -815,6 +1805,21 @@ export function createRealtimeRuntimeOwner(
   }
 
   function dispose(): Promise<RealtimeRuntimeOutcome> {
+    if (lifecycleAfterRolloverInFlight !== undefined) {
+      if (lifecycleAfterRolloverInFlight.operation === 'dispose') {
+        return lifecycleAfterRolloverInFlight.promise
+      }
+      return resultPromise(
+        freezeOutcome({
+          status: 'ignored',
+          operation: 'dispose',
+          reason: 'lifecycle_in_flight',
+        }),
+      )
+    }
+    if (state === 'rolling_over' && inFlightRollover !== undefined) {
+      return beginLifecycleAfterRollover('dispose', 'dispose', 'disposed')
+    }
     if (pendingStartDispose !== undefined) {
       return pendingStartDispose
     }
@@ -878,38 +1883,24 @@ export function createRealtimeRuntimeOwner(
   }
 
   async function interrupt(): Promise<RealtimeRuntimeOutcome> {
-    if (state !== 'active' || ownedResources?.session === undefined) {
+    if (lifecycleAfterRolloverInFlight !== undefined) {
       return resultPromise(
         freezeOutcome({
           status: 'ignored',
           operation: 'interrupt',
-          reason: 'not_active',
+          reason: 'lifecycle_in_flight',
         }),
       )
     }
-
-    try {
-      await ownedResources.session.interrupt()
-      const outcome = freezeOutcome({
-        status: 'success',
-        operation: 'interrupt',
-        reason: 'interrupted',
-      })
-      emit(outcome)
-      return outcome
-    } catch {
-      const outcome = freezeOutcome({
-        status: 'failed',
-        operation: 'interrupt',
-        reason: 'interrupt_failed',
-      })
-      emit(outcome)
-      return outcome
+    if (state === 'rolling_over' && inFlightRollover !== undefined) {
+      return beginLifecycleAfterRollover('interrupt')
     }
+    return interruptActiveSession()
   }
 
   return {
     start,
+    rollover,
     stop,
     dispose,
     interrupt,
