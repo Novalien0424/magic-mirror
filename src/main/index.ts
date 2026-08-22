@@ -6,7 +6,11 @@ import { bootSequence, type BootRuntime } from './boot'
 import { createCredentialStore, type CredentialEventSink, type SafeStorageAdapter } from './credential-store'
 import { createCrashRecovery } from './crash-recovery'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
-import { publishSnapshot, registerIpcHandlers } from './ipc'
+import {
+  dispatchMirrorRealtimeRuntimeCommand,
+  publishSnapshot,
+  registerIpcHandlers,
+} from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { applyPhase0UserDataPath } from './phase0-demo-runner'
 import { createClientSecretBroker } from './realtime/client-secret-broker'
@@ -365,6 +369,8 @@ void app.whenReady().then(() => {
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,
+    dispatchRealtimeRuntimeCommand: (command) =>
+      dispatchMirrorRealtimeRuntimeCommand(command, windows),
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime

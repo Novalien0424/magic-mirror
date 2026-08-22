@@ -33,7 +33,7 @@ function makeSessionBundle(sdkVersion = '0.16.1'): Record<string, unknown> {
     }),
     identity: Object.freeze({
       realtimeSessionId: SESSION_ID,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
     }),
     clientSecret: Object.freeze({
       value: CLIENT_SECRET,
@@ -321,7 +321,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         },
         identity: {
           realtimeSessionId: SESSION_ID,
-          sessionGeneration: 0,
+          sessionGeneration: 1,
         },
         clientSecret: CLIENT_SECRET,
         expiresAt: EXPIRY,
@@ -367,7 +367,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         },
         identity: {
           realtimeSessionId: SESSION_ID,
-          sessionGeneration: 0,
+          sessionGeneration: 1,
         },
         clientSecret: CLIENT_SECRET,
         expiresAt: EXPIRY,
@@ -391,7 +391,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     source.value.expiresAt = 0
 
     expect(returned.value.snapshot.voice).toBe('synthetic-voice')
-    expect(returned.value.identity.sessionGeneration).toBe(0)
+    expect(returned.value.identity.sessionGeneration).toBe(1)
     expect(returned.value.expiresAt).toBe(EXPIRY)
   })
 
@@ -451,7 +451,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         },
         identity: {
           realtimeSessionId: SESSION_ID,
-          sessionGeneration: 0,
+          sessionGeneration: 1,
         },
         clientSecret: CLIENT_SECRET,
         expiresAt: EXPIRY,

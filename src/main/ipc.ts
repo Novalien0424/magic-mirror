@@ -11,6 +11,7 @@ import type {
   MirrorWindowKind,
   RealtimeRuntimeCommand,
   RealtimeRuntimeOutcomeOperation,
+  RealtimeRuntimeOutcomeReport,
   RealtimeRuntimeOutcomeStatus,
   RealtimeSessionStartBundleValue,
   TransientRealtimeSecretInput,
@@ -97,6 +98,9 @@ export interface RegisterIpcHandlersOptions {
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
     readonly console?: ConsoleDataPlane
     readonly requestRealtimeClientSecret?: () => Promise<Readonly<RealtimeSessionStartBundle>>
+    readonly handleRealtimeRuntimeOutcome?: (
+      report: RealtimeRuntimeOutcomeReport,
+    ) => unknown
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -863,6 +867,32 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
         reason,
         source: 'runtime',
       })
+      const handleOutcome = runtime.handleRealtimeRuntimeOutcome
+      if (handleOutcome === undefined) return
+      try {
+        const result = handleOutcome(report as RealtimeRuntimeOutcomeReport)
+        if (isRecord(result) && typeof readProperty(result, 'then') === 'function') {
+          void Promise.resolve(result).catch(() => {
+            emit(telemetry, {
+              module: 'openai',
+              event: 'realtime_runtime_outcome_handler_failed',
+              status: 'failed',
+              error_code: 'realtime_runtime_outcome_handler_failed',
+              reason: 'cause=handler_failed',
+              source: 'runtime',
+            })
+          })
+        }
+      } catch {
+        emit(telemetry, {
+          module: 'openai',
+          event: 'realtime_runtime_outcome_handler_failed',
+          status: 'failed',
+          error_code: 'realtime_runtime_outcome_handler_failed',
+          reason: 'cause=handler_failed',
+          source: 'runtime',
+        })
+      }
     } catch {
       payloadRejected(telemetry)
     }

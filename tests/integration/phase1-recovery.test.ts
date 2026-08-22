@@ -1,8 +1,15 @@
 import { expect, it } from 'vitest'
 
 import { bootSequence, type BootRuntime as BaseBootRuntime } from '../../src/main/boot'
-import type { RegisterIpcHandlersOptions } from '../../src/main/ipc'
+import type {
+  RegisterIpcHandlersOptions,
+  RealtimeRuntimeCommandDispatchResult,
+} from '../../src/main/ipc'
 import { createLifecycleActor } from '../../src/main/lifecycle'
+import type {
+  RealtimeRuntimeCommand,
+  RealtimeRuntimeOutcomeReport,
+} from '../../src/shared/bridge'
 import {
   createRealtimeOutageRecoveryController,
   type RealtimeOutageRecoveryController,
@@ -13,6 +20,7 @@ type LifecycleState = ReturnType<ReturnType<typeof createLifecycleActor>['getSta
 
 type BootRuntime = BaseBootRuntime & {
   handleRealtimeFailure(input: RealtimeFailureInput): Promise<Record<string, unknown>>
+  handleRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): unknown
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
@@ -92,6 +100,152 @@ function sessionIdOf(record: Record<string, unknown>): unknown {
 async function drainMicrotasks(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
+}
+
+type RuntimeCommandBootOptions = Parameters<typeof bootSequence>[0] & {
+  readonly dispatchRealtimeRuntimeCommand: (
+    command: RealtimeRuntimeCommand,
+  ) => RealtimeRuntimeCommandDispatchResult
+}
+
+function bootWithRuntimeCommandSeam(options: RuntimeCommandBootOptions): BootRuntime {
+  return bootSequence(options as never) as BootRuntime
+}
+
+type BootFixture = Readonly<{
+  runtime: BootRuntime
+  commands: RealtimeRuntimeCommand[]
+  metadata: Array<Record<string, unknown>>
+}>
+
+function createBootFixture(
+  dispatchResult: RealtimeRuntimeCommandDispatchResult = {
+    status: 'success',
+    reason: 'runtime_command_delivered',
+  },
+  realtimeSessionId = 'synthetic-pending-session',
+): BootFixture {
+  const metadata: Array<Record<string, unknown>> = []
+  const commands: RealtimeRuntimeCommand[] = []
+  const config = {
+    configVersion: 7,
+    persona: { name: 'synthetic-persona', instructions: 'synthetic-instructions' },
+    voice: 'synthetic-voice',
+    idleSeconds: 300,
+    aiModels: {
+      realtimeDialogue: { modelId: 'synthetic-configured-model-id' },
+      inputTranscription: { modelId: 'synthetic-configured-model-id' },
+      memoryExtractor: { modelId: 'synthetic-configured-model-id' },
+    },
+    wake: { phrase: 'synthetic-wake-phrase', modelVersion: 'synthetic-wake-model' },
+    faceModel: {
+      detectorId: 'synthetic-face-detector',
+      recognizerId: 'synthetic-face-recognizer',
+    },
+    assets: {
+      offlineLoopVideo: 'synthetic/offline-loop.mp4',
+      avatarDir: 'synthetic/avatar',
+      musicDir: 'synthetic/music',
+    },
+    spells: [],
+    scenes: [],
+    adapters: { lighting: 'mock', fog: 'mock', music: 'mock' },
+  }
+  const modelSettings = {
+    slot: 'active',
+    configVersion: 7,
+    fingerprint: 'synthetic-config-fingerprint',
+    realtimeDialogue: 'synthetic-configured-model-id',
+    inputTranscription: 'synthetic-configured-model-id',
+    memoryExtractor: 'synthetic-configured-model-id',
+    voice: 'synthetic-voice',
+  }
+  const brokerResponse = Object.freeze({
+    value: 'ek_synthetic-client-secret',
+    expiresAt: 1_900_000_000_000,
+  })
+  const issueClientSecret = async () => brokerResponse
+  const clientSecretBroker = Object.assign(issueClientSecret, {
+    create: issueClientSecret,
+    createClientSecret: issueClientSecret,
+    issue: issueClientSecret,
+    mint: issueClientSecret,
+    mintClientSecret: issueClientSecret,
+    request: issueClientSecret,
+    requestClientSecret: issueClientSecret,
+  })
+  const telemetry = {
+    emit: (event: unknown) => {
+      metadata.push({ ...(event as Record<string, unknown>) })
+    },
+    readPage: () => ({ events: [], nextBeforeSequence: null }),
+    getStats: () => ({
+      telemetryDroppedCount: 0,
+      ramEvictedCount: 0,
+      rejectedEventCount: 0,
+      extraFieldStrippedCount: 0,
+      writerFailureCount: 0,
+      rotationFailureCount: 0,
+      schedulerFailureCount: 0,
+      ramEventCount: metadata.length,
+      queueDepth: 0,
+      closed: false,
+    }),
+    flush: async () => {},
+    close: async () => {},
+  }
+
+  const runtime = bootWithRuntimeCommandSeam({
+    appVersion: 'synthetic-app-version',
+    buildCommit: 'synthetic-build-commit',
+    createTelemetry: () => telemetry,
+    configService: {
+      initialize: async () => ({ active: config, draft: config, previous: config }),
+    },
+    clientSecretBroker: clientSecretBroker as never,
+    resolveModelSettings: () => ({
+      active: modelSettings,
+      draft: { ...modelSettings, slot: 'draft' },
+      previous: { ...modelSettings, slot: 'previous' },
+    }),
+    openSqlite: () => ({
+      ok: true,
+      value: {
+        health: () => ({
+          status: 'ready',
+          schemaVersion: 1,
+          journalMode: 'wal',
+          foreignKeys: true,
+          integrity: 'ok',
+          failure: null,
+        }),
+        close: () => ({ ok: true, value: undefined }),
+      },
+    }),
+    createMockModuleFactory: () => ({
+      create: () => ({ initialStatus: 'not_implemented', outcome: 'success' }),
+    }),
+    createModuleRegistry: () => ({
+      snapshot: () => ({}),
+      probe: async () => ({ status: 'ready' }),
+    }),
+    createActivationId: () => 'synthetic-manual-activation',
+    createRealtimeSessionId: () => realtimeSessionId,
+    dispatchRealtimeRuntimeCommand: (command: RealtimeRuntimeCommand) => {
+      commands.push(command)
+      return dispatchResult
+    },
+    now: () => '2026-08-21T00:00:00.000Z',
+  } as unknown as RuntimeCommandBootOptions)
+
+  return { runtime, commands, metadata }
+}
+
+async function deliverRuntimeOutcome(
+  runtime: BootRuntime,
+  report: RealtimeRuntimeOutcomeReport,
+): Promise<void> {
+  await Promise.resolve(runtime.handleRealtimeRuntimeOutcome(report))
 }
 
 it('routes manual realtime start and stop through Main lifecycle ownership', async () => {
@@ -801,4 +955,184 @@ it('composes the recovery controller from the authoritative boot lifecycle actor
     expectMetadataOnly(event)
   }
   expect(runtime.handleSimulator).toEqual(expect.any(Function))
+})
+
+it('starts a production boot runtime with one pending session and commits it on renderer success', async () => {
+  const fixture = createBootFixture()
+  const { runtime, commands, metadata } = fixture
+
+  await runtime.ready
+  expect(runtime.snapshot().lifecycle).toBe('dormant')
+
+  const startResult = await runtime.manualStart()
+  expect(runtime.snapshot().lifecycle).toBe('activating')
+  expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(startResult).toEqual(expect.objectContaining({
+    status: 'success',
+    reason: 'runtime_command_delivered',
+  }))
+  expectMetadataOnly(startResult)
+  expect(startResult).not.toHaveProperty('reason', 'recovery_controller_unavailable')
+
+  const pendingBundle = await runtime.requestRealtimeClientSecret()
+  expect(pendingBundle.identity).toEqual({
+    realtimeSessionId: 'synthetic-pending-session',
+    sessionGeneration: expect.any(Number),
+  })
+  expect(pendingBundle.identity.sessionGeneration).toBeGreaterThan(0)
+  expect(pendingBundle).toHaveProperty('clientSecret')
+
+  const duplicateStartResult = await runtime.manualStart()
+  expect(commands).toHaveLength(1)
+  expect(duplicateStartResult).toEqual(expect.objectContaining({
+    status: 'ignored',
+    reason: 'start_in_progress',
+  }))
+  expectMetadataOnly(duplicateStartResult)
+  const duplicateBundle = await runtime.requestRealtimeClientSecret()
+  expect(duplicateBundle.identity).toEqual(pendingBundle.identity)
+
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'active',
+    realtimeSessionId: pendingBundle.identity.realtimeSessionId,
+    sessionGeneration: pendingBundle.identity.sessionGeneration,
+  }))
+  expect(metadata.some((event) => event.reason === 'recovery_controller_unavailable')).toBe(false)
+  for (const event of metadata) expectMetadataOnly(event)
+})
+
+it('moves boot-sequence starts to OfflineLoop without leaking data on delivery or renderer failure', async () => {
+  const deliveryFailure = createBootFixture({
+    status: 'failed',
+    reason: 'mirror_window_missing',
+  }, 'synthetic-delivery-failure-session')
+  await deliveryFailure.runtime.ready
+
+  const deliveryResult = await deliveryFailure.runtime.manualStart()
+  expect(deliveryFailure.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'offlineLoop',
+    realtimeSessionId: null,
+  }))
+  expect(deliveryFailure.commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(deliveryResult).toEqual(expect.objectContaining({
+    status: 'failed',
+    reason: 'mirror_window_missing',
+  }))
+  expectMetadataOnly(deliveryResult)
+  expect([
+    deliveryResult.reason,
+    ...deliveryFailure.metadata.map((event) => event.reason),
+  ]).toContain('mirror_window_missing')
+  await expect(deliveryFailure.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+  for (const event of deliveryFailure.metadata) expectMetadataOnly(event)
+
+  const rendererFailure = createBootFixture(undefined, 'synthetic-renderer-failure-session')
+  await rendererFailure.runtime.ready
+  await rendererFailure.runtime.manualStart()
+  await deliverRuntimeOutcome(rendererFailure.runtime, {
+    status: 'failed',
+    operation: 'start',
+    reason: 'renderer_start_failed',
+  })
+
+  expect(rendererFailure.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'offlineLoop',
+    realtimeSessionId: null,
+  }))
+  await expect(rendererFailure.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+  expect(rendererFailure.metadata.some((event) => event.reason === 'renderer_start_failed')).toBe(true)
+  expect(rendererFailure.metadata.some((event) => event.error !== undefined)).toBe(false)
+  for (const event of rendererFailure.metadata) expectMetadataOnly(event)
+})
+
+it('stops an active boot-sequence session and ignores stop outcomes outside their state', async () => {
+  const success = createBootFixture(undefined, 'synthetic-stop-success-session')
+  await success.runtime.ready
+  await success.runtime.manualStart()
+  const activeBundle = await success.runtime.requestRealtimeClientSecret()
+  await deliverRuntimeOutcome(success.runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+  expect(success.runtime.snapshot()).toEqual(expect.objectContaining({ lifecycle: 'active' }))
+
+  const stopResult = await success.runtime.manualStop()
+  expect(success.runtime.snapshot().lifecycle).toBe('suspending')
+  expect(success.commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+    { operation: 'stop', reason: 'manual_stop' },
+  ])
+  expect(stopResult).toEqual(expect.objectContaining({
+    status: 'success',
+    reason: 'runtime_command_delivered',
+  }))
+  expectMetadataOnly(stopResult)
+
+  await deliverRuntimeOutcome(success.runtime, {
+    status: 'success',
+    operation: 'stop',
+    reason: 'renderer_stopped',
+  })
+  expect(success.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'dormant',
+    realtimeSessionId: null,
+  }))
+  await expect(success.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+  expect(activeBundle.identity.realtimeSessionId).toBe('synthetic-stop-success-session')
+
+  const stopFailure = createBootFixture(undefined, 'synthetic-stop-failure-session')
+  await stopFailure.runtime.ready
+  await stopFailure.runtime.manualStart()
+  await deliverRuntimeOutcome(stopFailure.runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+  await stopFailure.runtime.manualStop()
+  await deliverRuntimeOutcome(stopFailure.runtime, {
+    status: 'failed',
+    operation: 'stop',
+    reason: 'renderer_stop_failed',
+  })
+  expect(stopFailure.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'maintenance',
+    realtimeSessionId: null,
+  }))
+  expect(stopFailure.metadata.some((event) => event.reason === 'renderer_stop_failed')).toBe(true)
+  await expect(stopFailure.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+
+  const wrongState = createBootFixture(undefined, 'synthetic-wrong-state-session')
+  await wrongState.runtime.ready
+  await wrongState.runtime.manualStart()
+  const beforeIgnoredOutcome = wrongState.runtime.snapshot()
+  await deliverRuntimeOutcome(wrongState.runtime, {
+    status: 'success',
+    operation: 'stop',
+    reason: 'renderer_stopped',
+  })
+  expect(wrongState.runtime.snapshot()).toEqual(beforeIgnoredOutcome)
+  expect(wrongState.commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
+  expect(wrongState.metadata.some((event) => event.reason === 'outcome_ignored_wrong_state')).toBe(true)
+  for (const event of [
+    ...success.metadata,
+    ...stopFailure.metadata,
+    ...wrongState.metadata,
+  ]) {
+    expectMetadataOnly(event)
+  }
 })

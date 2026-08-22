@@ -438,7 +438,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 1,
+      sessionGeneration: 2,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -459,7 +459,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -471,7 +471,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 1,
+      sessionGeneration: 2,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -483,7 +483,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 1,
+      sessionGeneration: 2,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -499,7 +499,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -522,7 +522,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-1',
       realtimeSessionId: null,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -537,7 +537,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-42',
       realtimeSessionId: null,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -547,7 +547,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-42',
       realtimeSessionId: 'session-42',
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -557,7 +557,7 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-42',
       realtimeSessionId: null,
-      sessionGeneration: 0,
+      sessionGeneration: 1,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
@@ -569,10 +569,48 @@ describe('Main-owned lifecycle state machine', () => {
     expect(actor.getContext()).toEqual({
       activationId: 'activation-43',
       realtimeSessionId: null,
-      sessionGeneration: 1,
+      sessionGeneration: 3,
       activeProfileId: null,
       lastInteractionAt: '2026-08-17T00:00:00.000Z',
       sceneInvocationId: null,
+    });
+  });
+
+  it('increments session generation for each accepted wake and clears realtime sessions on Dormant', () => {
+    const { actor } = makeActor();
+
+    expect(actor.getContext()).toMatchObject({
+      realtimeSessionId: null,
+      sessionGeneration: 0,
+    });
+
+    actor.send({ type: 'LOCAL_READY' });
+    actor.send(wake('activation-1'));
+    expect(actor.getState()).toBe('activating');
+    expect(actor.getContext()).toMatchObject({
+      realtimeSessionId: null,
+      sessionGeneration: 1,
+    });
+
+    actor.send(realtimeReady('session-1'));
+    expect(actor.getContext()).toMatchObject({
+      realtimeSessionId: 'session-1',
+      sessionGeneration: 1,
+    });
+
+    actor.send({ type: 'SLEEP_REQUESTED' });
+    actor.send({ type: 'MEDIA_CLOSED' });
+    expect(actor.getState()).toBe('dormant');
+    expect(actor.getContext()).toMatchObject({
+      realtimeSessionId: null,
+      sessionGeneration: 1,
+    });
+
+    actor.send(wake('activation-2'));
+    expect(actor.getState()).toBe('activating');
+    expect(actor.getContext()).toMatchObject({
+      realtimeSessionId: null,
+      sessionGeneration: 2,
     });
   });
 

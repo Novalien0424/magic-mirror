@@ -263,6 +263,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       interrupt: 'mirror:interrupt',
+      realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       reportRealtimeRuntimeOutcome: MIRROR_RUNTIME_OUTCOME_CHANNEL,
       ready: 'boot:renderer-ready',
     })

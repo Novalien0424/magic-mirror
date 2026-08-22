@@ -15,6 +15,10 @@ import type {
   SimulatorResult,
 } from '../shared/types'
 import type {
+  RealtimeRuntimeCommand,
+  RealtimeRuntimeOutcomeReport,
+} from '../shared/bridge'
+import type {
   ConsoleRuntimeSnapshot,
   DeveloperModeDecision,
   PhaseTestRecordReader,
@@ -77,6 +81,7 @@ import {
 } from './realtime/session-start-bundle'
 import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
 import type { RealtimeFailureInput } from '../shared/realtime-recovery'
+import type { RealtimeRuntimeCommandDispatchResult } from './ipc'
 import { createConsoleConfigController } from './console-config'
 import type {
   ConsoleConfigControllerOptions,
@@ -213,6 +218,9 @@ export interface BootOptions {
     lifecycleActor: LifecycleActor
     metadataSink: (event: Record<string, unknown>) => void
   }) => RealtimeOutageRecoveryController
+  readonly dispatchRealtimeRuntimeCommand?: (
+    command: RealtimeRuntimeCommand,
+  ) => RealtimeRuntimeCommandDispatchResult
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
@@ -245,6 +253,7 @@ export interface BootRuntime {
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleRealtimeFailure(input: RealtimeFailureInput): Promise<Record<string, unknown>>
+  handleRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): Record<string, unknown>
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
@@ -631,6 +640,7 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
           ...context,
           activationId: event.activationId,
           lastInteractionAt: event.lastInteractionAt,
+          sessionGeneration: context.sessionGeneration + 1,
           realtimeSessionId: null,
           activeProfileId: null,
           sceneInvocationId: null,
@@ -748,6 +758,30 @@ function simulatorCommandOf(value: unknown): SimulatorCommand | null {
     : null
 }
 
+function normalizeRealtimeRuntimeCommandDispatchResult(
+  value: unknown,
+): RealtimeRuntimeCommandDispatchResult {
+  const status = readProperty(value, 'status')
+  const reason = readProperty(value, 'reason')
+  if (status === 'success' && reason === 'runtime_command_delivered') {
+    return Object.freeze({ status: 'success', reason: 'runtime_command_delivered' })
+  }
+  if (
+    status === 'failed'
+    && (
+      reason === 'mirror_window_missing'
+      || reason === 'mirror_window_destroyed'
+      || reason === 'runtime_command_send_failed'
+    )
+  ) {
+    return Object.freeze({
+      status: 'failed',
+      reason,
+    })
+  }
+  return Object.freeze({ status: 'failed', reason: 'runtime_command_send_failed' })
+}
+
 export function bootSequence(options: BootOptions = {}): BootRuntime {
   const appVersion = options.appVersion ?? 'unknown'
   const buildCommit = options.buildCommit ?? 'unknown'
@@ -771,6 +805,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       sceneInvocationId: null,
     },
   }
+  let pendingRealtimeSessionIdentity: Readonly<RealtimeSessionIdentity> | null = null
   let modules: Record<ModuleId, ModuleStatus> = { ...DEFAULT_MODULE_STATUSES }
   let configVersion: number | null = null
   let lastError: AppSnapshot['lastError'] = null
@@ -860,6 +895,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function sendLifecycle(event: LifecycleEvent): boolean {
+    const clearsPendingIdentity = event.type === 'REALTIME_READY'
+      || event.type === 'CLOUD_FAILED'
+      || event.type === 'LOCAL_AUDIO_FAILED'
+      || event.type === 'LOCAL_CORE_FAILED'
+      || event.type === 'MEDIA_CLOSED'
+    if (clearsPendingIdentity) pendingRealtimeSessionIdentity = null
     if (actor === null) return false
     try {
       actor.send(event)
@@ -881,6 +922,59 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       })
       return false
     }
+  }
+
+  function lifecycleState(): LifecycleState {
+    try {
+      return actor?.getState() ?? lifecycleView.state
+    } catch {
+      return lifecycleView.state
+    }
+  }
+
+  function emitRealtimeRuntimeResult(
+    operation: string,
+    status: 'success' | 'failed' | 'ignored',
+    reason: string,
+  ): Record<string, unknown> {
+    const result = Object.freeze({ status, reason })
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: `realtime_runtime_${safeCode(operation, 'unknown')}`,
+      status: status === 'success' ? 'success' : status === 'failed' ? 'failed' : 'info',
+      reason,
+      source: 'runtime',
+    })
+    return result
+  }
+
+  function recordRealtimeStartFailure(): void {
+    pendingRealtimeSessionIdentity = null
+    sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_start_failed' })
+    lastError = {
+      module: 'openai',
+      error_code: 'realtime_runtime_start_failed',
+      time: nowValue(now),
+    }
+    maintenance = null
+    refreshSnapshot()
+    notifyListeners()
+  }
+
+  function recordRealtimeStopFailure(): void {
+    pendingRealtimeSessionIdentity = null
+    sendLifecycle({ type: 'LOCAL_AUDIO_FAILED', errorCode: 'realtime_runtime_stop_failed' })
+    lastError = {
+      module: 'audio',
+      error_code: 'realtime_runtime_stop_failed',
+      time: nowValue(now),
+    }
+    maintenance = {
+      code: 'realtime_runtime_stop_failed',
+      detail: 'cause=renderer_outcome_failed',
+    }
+    refreshSnapshot()
+    notifyListeners()
   }
 
   let readySettled = false
@@ -1381,6 +1475,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function currentRealtimeSessionIdentity(): Readonly<RealtimeSessionIdentity> | null {
+    if (lifecycleView.state === 'activating' && pendingRealtimeSessionIdentity !== null) {
+      return pendingRealtimeSessionIdentity
+    }
     const { realtimeSessionId, sessionGeneration } = lifecycleView.context
     if (
       typeof realtimeSessionId !== 'string'
@@ -1446,18 +1543,178 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function manualStart(): Promise<Record<string, unknown>> {
     await ready
-    if (realtimeRecoveryController === null) {
-      return emitRealtimeRecoveryUnavailable()
+    if (realtimeRecoveryController !== null) {
+      return realtimeRecoveryController.manualStart()
     }
-    return realtimeRecoveryController.manualStart()
+
+    const dispatch = options.dispatchRealtimeRuntimeCommand
+    if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
+
+    const state = lifecycleState()
+    if (state !== 'dormant') {
+      return emitRealtimeRuntimeResult(
+        'start',
+        'ignored',
+        state === 'activating' && pendingRealtimeSessionIdentity !== null
+          ? 'start_in_progress'
+          : 'manual_start_requires_dormant',
+      )
+    }
+
+    let activationId: string
+    try {
+      activationId = createActivationId()
+    } catch {
+      return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+    }
+
+    if (!sendLifecycle({
+      type: 'WAKE_DETECTED',
+      activationId,
+      lastInteractionAt: nowValue(now),
+    })) {
+      return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+    }
+
+    const sessionGeneration = lifecycleView.context.sessionGeneration
+    let realtimeSessionId: string
+    try {
+      realtimeSessionId = createRealtimeSessionId()
+    } catch {
+      recordRealtimeStartFailure()
+      return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+    }
+    if (
+      safeIdentifier(realtimeSessionId) === null
+      || !Number.isSafeInteger(sessionGeneration)
+      || sessionGeneration < 1
+    ) {
+      recordRealtimeStartFailure()
+      return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+    }
+
+    pendingRealtimeSessionIdentity = Object.freeze({
+      realtimeSessionId,
+      sessionGeneration,
+    })
+
+    let dispatchResult: RealtimeRuntimeCommandDispatchResult
+    try {
+      dispatchResult = normalizeRealtimeRuntimeCommandDispatchResult(dispatch(Object.freeze({
+        operation: 'start',
+        reason: 'manual_start',
+      })))
+    } catch {
+      dispatchResult = Object.freeze({
+        status: 'failed',
+        reason: 'runtime_command_send_failed',
+      })
+    }
+
+    if (dispatchResult.status === 'failed') {
+      recordRealtimeStartFailure()
+    }
+    return emitRealtimeRuntimeResult('start', dispatchResult.status, dispatchResult.reason)
   }
 
   async function manualStop(): Promise<Record<string, unknown>> {
     await ready
-    if (realtimeRecoveryController === null) {
-      return emitRealtimeRecoveryUnavailable()
+    if (realtimeRecoveryController !== null) {
+      return realtimeRecoveryController.manualStop()
     }
-    return realtimeRecoveryController.manualStop()
+
+    const dispatch = options.dispatchRealtimeRuntimeCommand
+    if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
+
+    if (lifecycleState() !== 'active') {
+      return emitRealtimeRuntimeResult('stop', 'ignored', 'manual_stop_requires_active')
+    }
+
+    if (!sendLifecycle({ type: 'SLEEP_REQUESTED' })) {
+      recordRealtimeStopFailure()
+      return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
+    }
+
+    let dispatchResult: RealtimeRuntimeCommandDispatchResult
+    try {
+      dispatchResult = normalizeRealtimeRuntimeCommandDispatchResult(dispatch(Object.freeze({
+        operation: 'stop',
+        reason: 'manual_stop',
+      })))
+    } catch {
+      dispatchResult = Object.freeze({
+        status: 'failed',
+        reason: 'runtime_command_send_failed',
+      })
+    }
+
+    if (dispatchResult.status === 'failed') {
+      recordRealtimeStopFailure()
+    }
+    return emitRealtimeRuntimeResult('stop', dispatchResult.status, dispatchResult.reason)
+  }
+
+  function handleRealtimeRuntimeOutcome(
+    report: RealtimeRuntimeOutcomeReport,
+  ): Record<string, unknown> {
+    const operationValue = readProperty(report, 'operation')
+    const operation = operationValue === 'start' || operationValue === 'stop'
+      ? operationValue
+      : 'unknown'
+    const status = readProperty(report, 'status')
+    const reason = safeReason(readProperty(report, 'reason'), 'renderer_outcome_invalid')
+    const state = lifecycleState()
+
+    if (
+      operation === 'unknown'
+      || (operation === 'start' && (state !== 'activating' || pendingRealtimeSessionIdentity === null))
+      || (operation === 'stop' && state !== 'suspending')
+    ) {
+      return emitRealtimeRuntimeResult(operation, 'ignored', 'outcome_ignored_wrong_state')
+    }
+
+    if (operation === 'start') {
+      const pendingIdentity = pendingRealtimeSessionIdentity
+      if (pendingIdentity === null) {
+        return emitRealtimeRuntimeResult('start', 'ignored', 'outcome_ignored_wrong_state')
+      }
+      if (status === 'success') {
+        const committed = sendLifecycle({
+          type: 'REALTIME_READY',
+          realtimeSessionId: pendingIdentity.realtimeSessionId,
+        })
+        if (!committed || lifecycleState() !== 'active') {
+          recordRealtimeStartFailure()
+          return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+        }
+        pendingRealtimeSessionIdentity = null
+        lastError = null
+        maintenance = null
+        refreshSnapshot()
+        notifyListeners()
+        return emitRealtimeRuntimeResult('start', 'success', reason)
+      }
+
+      recordRealtimeStartFailure()
+      return emitRealtimeRuntimeResult('start', 'failed', reason)
+    }
+
+    if (status === 'success') {
+      const closed = sendLifecycle({ type: 'MEDIA_CLOSED' })
+      if (!closed || lifecycleState() !== 'dormant') {
+        recordRealtimeStopFailure()
+        return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
+      }
+      pendingRealtimeSessionIdentity = null
+      lastError = null
+      maintenance = null
+      refreshSnapshot()
+      notifyListeners()
+      return emitRealtimeRuntimeResult('stop', 'success', reason)
+    }
+
+    recordRealtimeStopFailure()
+    return emitRealtimeRuntimeResult('stop', 'failed', reason)
   }
 
   async function rolloverAtSafeBoundary(): Promise<Record<string, unknown>> {
@@ -1532,6 +1789,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     createInitialRuntimeSnapshotsForTest: () => consoleDataPlane.createInitialRuntimeSnapshotsForTest(),
     snapshot: () => projectAppSnapshot(current),
     handleRealtimeFailure,
+    handleRealtimeRuntimeOutcome,
     scheduleRecoveryProbes,
     manualStart,
     manualStop,

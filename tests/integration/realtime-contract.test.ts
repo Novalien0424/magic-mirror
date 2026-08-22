@@ -22,7 +22,7 @@ const SESSION_START_BUNDLE: Readonly<RealtimeSessionStartBundle> = {
   },
   identity: {
     realtimeSessionId: "opaque-realtime-session",
-    sessionGeneration: 0,
+    sessionGeneration: 1,
   },
   clientSecret: {
     value: "ek_synthetic-client-secret",

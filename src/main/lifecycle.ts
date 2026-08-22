@@ -119,13 +119,14 @@ const lifecycleSetup = setup({
     events: {} as LifecycleEvent,
   },
   actions: {
-    assignWakeContext: assign(({ event }) => {
+    assignWakeContext: assign(({ context, event }) => {
       if (event.type !== 'WAKE_DETECTED') {
         return {};
       }
       return {
         activationId: event.activationId,
         lastInteractionAt: event.lastInteractionAt,
+        sessionGeneration: context.sessionGeneration + 1,
         realtimeSessionId: null,
         activeProfileId: null,
         sceneInvocationId: null,
