@@ -9,6 +9,7 @@ import type {
   ConsoleChannelMap,
   MirrorChannelMap,
   MirrorWindowKind,
+  RealtimeSessionStartBundleValue,
   TransientRealtimeSecretInput,
   TransientRealtimeSecretResult,
 } from '../shared/bridge'
@@ -21,7 +22,7 @@ import type {
 } from '../shared/console-types'
 import { projectAppSnapshot, type BootRuntime } from './boot'
 import type { ConsoleDataPlane } from './console-data'
-import type { ClientSecretIssueResult } from './realtime/client-secret-broker'
+import type { RealtimeSessionStartBundle } from './realtime/session-start-bundle'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
@@ -90,7 +91,7 @@ export interface RegisterIpcHandlersOptions {
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
     readonly console?: ConsoleDataPlane
-    readonly requestRealtimeClientSecret?: () => Promise<ClientSecretIssueResult>
+    readonly requestRealtimeClientSecret?: () => Promise<Readonly<RealtimeSessionStartBundle>>
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -115,7 +116,7 @@ export interface RealtimeIpcContractRequest {
 }
 
 export interface RealtimeIpcContractOptions {
-  readonly getTransientSecret: () => Promise<TransientRealtimeSecretInput>
+  readonly issueRealtimeSessionStartBundle: () => Promise<Readonly<RealtimeSessionStartBundle>>
 }
 
 export interface RealtimeIpcContract {
@@ -266,9 +267,114 @@ function invalidPayload(): SimulatorPayloadValidation {
 }
 
 function rejectedTransientSecret(
-  reason: 'unauthorized_sender' | 'broker_unavailable' | 'broker_failed' | 'invalid_payload',
+  reason:
+    | 'unauthorized_sender'
+    | 'broker_unavailable'
+    | 'broker_failed'
+    | 'session_unavailable'
+    | 'invalid_payload',
 ): TransientRealtimeSecretResult {
   return { status: 'rejected', reason }
+}
+
+const SESSION_SNAPSHOT_KEYS = [
+  'configVersion',
+  'fingerprint',
+  'sdkVersion',
+  'realtimeDialogue',
+  'inputTranscription',
+  'memoryExtractor',
+  'voice',
+  'reasoningEffort',
+  'turnDetectionProfile',
+  'takenAt',
+] as const
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+const INVALID_REALTIME_SESSION_START_BUNDLE_CODE = 'invalid_realtime_session_start_bundle' as const
+
+class InvalidRealtimeSessionStartBundleError extends Error {
+  readonly code = INVALID_REALTIME_SESSION_START_BUNDLE_CODE
+
+  constructor() {
+    super('Realtime session start bundle is invalid')
+    this.name = 'InvalidRealtimeSessionStartBundleError'
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+function isValidRealtimeSessionStartBundle(
+  value: unknown,
+): value is RealtimeSessionStartBundle {
+  if (!isRecord(value) || !exactKeys(value, ['snapshot', 'identity', 'clientSecret'])) return false
+
+  const snapshot = readProperty(value, 'snapshot')
+  if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
+  if (
+    typeof readProperty(snapshot, 'configVersion') !== 'number'
+    || !Number.isSafeInteger(readProperty(snapshot, 'configVersion'))
+    || (readProperty(snapshot, 'configVersion') as number) < 1
+    || !nonEmptyString(readProperty(snapshot, 'sdkVersion'))
+  ) {
+    return false
+  }
+  for (const key of SESSION_SNAPSHOT_KEYS) {
+    if (key === 'configVersion' || key === 'sdkVersion') continue
+    if (!nonEmptyString(readProperty(snapshot, key))) return false
+  }
+
+  const identity = readProperty(value, 'identity')
+  if (
+    !isRecord(identity)
+    || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])
+    || !nonEmptyString(readProperty(identity, 'realtimeSessionId'))
+    || typeof readProperty(identity, 'sessionGeneration') !== 'number'
+    || !Number.isSafeInteger(readProperty(identity, 'sessionGeneration'))
+    || (readProperty(identity, 'sessionGeneration') as number) < 0
+  ) {
+    return false
+  }
+
+  const clientSecret = readProperty(value, 'clientSecret')
+  if (!isRecord(clientSecret)) return false
+  const hasExpiry = exactKeys(clientSecret, ['value', 'expiresAt'])
+  if (!hasExpiry && !exactKeys(clientSecret, ['value'])) return false
+  const secretValue = readProperty(clientSecret, 'value')
+  if (typeof secretValue !== 'string' || !secretValue.startsWith('ek_') || secretValue.length <= 3) {
+    return false
+  }
+  const expiresAt = readProperty(clientSecret, 'expiresAt')
+  return !hasExpiry || (
+    typeof expiresAt === 'number'
+    && Number.isSafeInteger(expiresAt)
+  )
+}
+
+function mapRealtimeSessionStartBundle(
+  bundle: unknown,
+): TransientRealtimeSecretResult {
+  if (!isValidRealtimeSessionStartBundle(bundle)) {
+    throw new InvalidRealtimeSessionStartBundleError()
+  }
+
+  const clientSecret = readProperty(bundle, 'clientSecret') as Record<string, unknown>
+  const mappedValue: RealtimeSessionStartBundleValue = {
+    snapshot: readProperty(bundle, 'snapshot') as RealtimeSessionStartBundleValue['snapshot'],
+    identity: readProperty(bundle, 'identity') as RealtimeSessionStartBundleValue['identity'],
+    clientSecret: readProperty(clientSecret, 'value') as TransientRealtimeSecretInput,
+  }
+  const expiresAt = readProperty(clientSecret, 'expiresAt')
+  const value = expiresAt === undefined
+    ? Object.freeze(mappedValue)
+    : Object.freeze({ ...mappedValue, expiresAt: expiresAt as number })
+  return {
+    status: 'accepted',
+    reason: 'mirror_authorized',
+    value,
+  }
 }
 
 export function createRealtimeIpcContract(
@@ -277,15 +383,21 @@ export function createRealtimeIpcContract(
   const handleTransientSecretRequest = async (
     request: RealtimeIpcContractRequest,
   ): Promise<TransientRealtimeSecretResult> => {
-    if (request.sender.identity !== 'mirror') return rejectedTransientSecret('unauthorized_sender')
+    if (readProperty(readProperty(request, 'sender'), 'identity') !== 'mirror') {
+      return rejectedTransientSecret('unauthorized_sender')
+    }
     try {
-      const issued = await options.getTransientSecret()
-      return {
-        status: 'accepted',
-        reason: 'mirror_authorized',
-        value: issued,
+      return mapRealtimeSessionStartBundle(await options.issueRealtimeSessionStartBundle())
+    } catch (error) {
+      if (
+        error instanceof InvalidRealtimeSessionStartBundleError
+        && readProperty(error, 'code') === INVALID_REALTIME_SESSION_START_BUNDLE_CODE
+      ) {
+        return rejectedTransientSecret('invalid_payload')
       }
-    } catch {
+      if (readProperty(error, 'code') === 'realtime_session_unavailable') {
+        return rejectedTransientSecret('session_unavailable')
+      }
       return rejectedTransientSecret('broker_failed')
     }
   }
@@ -612,6 +724,13 @@ function dispatchMirrorInterrupt(windows: TrackedWindows): Record<string, unknow
 
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
   const { ipcMain, runtime, windows, telemetry } = options
+  const realtimeIpcContract = createRealtimeIpcContract({
+    issueRealtimeSessionStartBundle: () => {
+      const issue = runtime.requestRealtimeClientSecret
+      if (issue === undefined) return Promise.reject(new Error('realtime_client_secret_unavailable'))
+      return issue()
+    },
+  })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.requestRealtimeClientSecret, async (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
@@ -627,22 +746,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     const issue = runtime.requestRealtimeClientSecret
     if (issue === undefined) return rejectedTransientSecret('broker_unavailable')
 
-    try {
-      const result = await issue()
-      if (typeof result.value !== 'string' || result.value.length === 0) {
-        return rejectedTransientSecret('broker_failed')
-      }
-      const response = {
-        status: 'accepted' as const,
-        reason: 'mirror_authorized' as const,
-        value: result.value as TransientRealtimeSecretInput,
-      }
-      return typeof result.expiresAt === 'number' && Number.isSafeInteger(result.expiresAt)
-        ? { ...response, expiresAt: result.expiresAt }
-        : response
-    } catch {
-      return rejectedTransientSecret('broker_failed')
-    }
+    return realtimeIpcContract.handleTransientSecretRequest({
+      sender: { identity: 'mirror' },
+    })
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSnapshot, (event, ...args) => {

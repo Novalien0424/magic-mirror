@@ -726,12 +726,16 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
+      interrupt: 'mirror:interrupt',
       ready: 'boot:renderer-ready',
     })
     expect(CONSOLE_IPC_CHANNELS).toEqual({
       getSnapshot: 'console:get-snapshot',
       snapshot: 'console:snapshot',
       simulate: 'console:simulate',
+      startConversation: 'console:start-conversation',
+      disconnect: 'console:disconnect',
+      interrupt: 'console:interrupt',
       overview: 'console:get-overview',
       events: 'console:get-events',
       config: 'console:get-config',
@@ -958,5 +962,81 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(serialize(runtime.snapshot())).not.toContain('profileId')
     expect(serialize(runtime.snapshot())).not.toContain('candidateProfileId')
     expect(serialize(runtime.snapshot())).not.toContain('guestId')
+  })
+
+  it('delivers the Main session-start bundle through the existing Mirror handler', async () => {
+    const events: MetadataEvent[] = []
+    const mirrorFrame = {}
+    const consoleFrame = {}
+    const mirrorSender = {
+      id: 601,
+      mainFrame: mirrorFrame,
+      isDestroyed: () => false,
+      send: () => {},
+    }
+    const consoleSender = {
+      id: 602,
+      mainFrame: consoleFrame,
+      isDestroyed: () => false,
+      send: () => {},
+    }
+    const windows = {
+      mirror: { webContents: mirrorSender, webContentsId: 601 },
+      console: { webContents: consoleSender, webContentsId: 602 },
+    }
+    const runtime = {
+      ready: Promise.resolve(),
+      snapshot: startingSnapshot,
+      handleSimulator: async () => ({ op: 'success' as const }),
+      requestRealtimeClientSecret: async () => ({
+        snapshot: {
+          configVersion: 7,
+          fingerprint: 'synthetic-config-fingerprint',
+          sdkVersion: '0.16.1',
+          realtimeDialogue: 'synthetic-realtime-model',
+          inputTranscription: 'synthetic-transcription-model',
+          memoryExtractor: 'synthetic-memory-model',
+          voice: 'synthetic-voice',
+          reasoningEffort: 'low',
+          turnDetectionProfile: 'semantic-vad',
+          takenAt: FIXED_TIME,
+        },
+        identity: {
+          realtimeSessionId: 'synthetic-realtime-session',
+          sessionGeneration: 0,
+        },
+        clientSecret: {
+          value: 'ek_synthetic-client-secret',
+          expiresAt: 1_800_000_000,
+        },
+      }),
+    }
+    const registered = registerTestIpcHandlers(runtime, windows, events)
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.requestRealtimeClientSecret) as IpcHandler
+
+    await expect(handler({ sender: mirrorSender, senderFrame: mirrorFrame })).resolves.toEqual({
+      status: 'accepted',
+      reason: 'mirror_authorized',
+      value: {
+        snapshot: {
+          configVersion: 7,
+          fingerprint: 'synthetic-config-fingerprint',
+          sdkVersion: '0.16.1',
+          realtimeDialogue: 'synthetic-realtime-model',
+          inputTranscription: 'synthetic-transcription-model',
+          memoryExtractor: 'synthetic-memory-model',
+          voice: 'synthetic-voice',
+          reasoningEffort: 'low',
+          turnDetectionProfile: 'semantic-vad',
+          takenAt: FIXED_TIME,
+        },
+        identity: {
+          realtimeSessionId: 'synthetic-realtime-session',
+          sessionGeneration: 0,
+        },
+        clientSecret: 'ek_synthetic-client-secret',
+        expiresAt: 1_800_000_000,
+      },
+    })
   })
 })

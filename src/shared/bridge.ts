@@ -1,4 +1,9 @@
-import type { AppSnapshot, SimulatorCommand, SimulatorResult } from './types'
+import type {
+  AppSnapshot,
+  SessionModelSnapshot,
+  SimulatorCommand,
+  SimulatorResult,
+} from './types'
 import type {
   ConsoleConfigDraftInput,
   ConsoleConfigPayload,
@@ -21,16 +26,33 @@ export type TransientRealtimeSecretInput = string & {
   readonly [transientRealtimeSecretBrand]: true
 }
 
+export interface RealtimeSessionIdentity {
+  readonly realtimeSessionId: string
+  readonly sessionGeneration: number
+}
+
+/** The single atomic value crossing the existing Mirror IPC channel. */
+export interface RealtimeSessionStartBundleValue {
+  readonly snapshot: Readonly<SessionModelSnapshot>
+  readonly identity: Readonly<RealtimeSessionIdentity>
+  readonly clientSecret: TransientRealtimeSecretInput
+  readonly expiresAt?: number
+}
+
 export type TransientRealtimeSecretResult =
   | {
     readonly status: 'accepted'
     readonly reason: 'mirror_authorized'
-    readonly value: TransientRealtimeSecretInput
-    readonly expiresAt?: number
+    readonly value: RealtimeSessionStartBundleValue
   }
   | {
     readonly status: 'rejected'
-    readonly reason: 'unauthorized_sender' | 'broker_unavailable' | 'broker_failed' | 'invalid_payload'
+    readonly reason:
+      | 'unauthorized_sender'
+      | 'broker_unavailable'
+      | 'broker_failed'
+      | 'session_unavailable'
+      | 'invalid_payload'
   }
 
 export type MirrorWindowKind = 'mirror' | 'console'

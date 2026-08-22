@@ -52,6 +52,7 @@ import {
   type ConfigSlots,
 } from './config-service'
 import {
+  createSessionModelSnapshot,
   resolveModelSettings as defaultResolveModelSettings,
   type ModelSettingsResolution,
 } from './model-settings'
@@ -68,8 +69,12 @@ import {
 } from './console-data'
 import type {
   ClientSecretBroker,
-  ClientSecretIssueResult,
 } from './realtime/client-secret-broker'
+import {
+  createRealtimeSessionStartBundleIssuer,
+  type RealtimeSessionIdentity,
+  type RealtimeSessionStartBundle,
+} from './realtime/session-start-bundle'
 import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
 import type { RealtimeFailureInput } from '../shared/realtime-recovery'
 import { createConsoleConfigController } from './console-config'
@@ -217,6 +222,16 @@ export interface BootOptions {
   readonly createRealtimeSessionId?: () => string
 }
 
+export class RealtimeSessionUnavailableError extends Error {
+  readonly code = 'realtime_session_unavailable' as const
+
+  constructor() {
+    super('Realtime session identity is unavailable')
+    this.name = 'RealtimeSessionUnavailableError'
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
 export interface BootSubscription {
   unsubscribe(): void
 }
@@ -225,7 +240,7 @@ export interface BootRuntime {
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
-  requestRealtimeClientSecret(): Promise<ClientSecretIssueResult>
+  requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
@@ -1365,14 +1380,38 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return simulatorResult(status)
   }
 
-  async function requestRealtimeClientSecret(): Promise<ClientSecretIssueResult> {
+  function currentRealtimeSessionIdentity(): Readonly<RealtimeSessionIdentity> | null {
+    const { realtimeSessionId, sessionGeneration } = lifecycleView.context
+    if (
+      typeof realtimeSessionId !== 'string'
+      || realtimeSessionId.length === 0
+      || !Number.isSafeInteger(sessionGeneration)
+      || sessionGeneration < 0
+    ) {
+      return null
+    }
+    return Object.freeze({ realtimeSessionId, sessionGeneration })
+  }
+
+  async function requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>> {
     await ready
+
+    const identity = currentRealtimeSessionIdentity()
+    if (identity === null) throw new RealtimeSessionUnavailableError()
+
     const broker = options.clientSecretBroker
     const activeModelSettings = resolvedModelSettings?.active
     if (broker === undefined || activeModelSettings === undefined) {
       throw new Error('realtime_client_secret_unavailable')
     }
-    return broker.issue({ modelId: activeModelSettings.realtimeDialogue })
+
+    const snapshot = createSessionModelSnapshot(activeModelSettings, nowValue(now))
+    const issuer = createRealtimeSessionStartBundleIssuer({
+      getPublishedSessionModelSnapshot: () => snapshot,
+      getRealtimeSessionIdentity: () => identity,
+      broker,
+    })
+    return issuer.issue()
   }
 
   function emitRealtimeRecoveryUnavailable(): Record<string, unknown> {

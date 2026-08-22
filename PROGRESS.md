@@ -2,9 +2,11 @@
 
 **Current dashboard — Status as of 2026-08-22 — Phase 1 — Realtime Voice: IN PROGRESS.** The active branch is
 `phase1-realtime-voice`; Phase 0 is accepted at local tag `phase0-v0.3.1` on
-`9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A is accepted, while
-P1-U7B1/B2 transport is also accepted, while end-to-end interrupt composition
-and the rest of P1-U7 remain next; P1-U8 is pending. Phases 2–7 remain
+`9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
+transport, and P1-U7C1/C2 credential/DTO boundaries are accepted;
+P1-U7C3 renderer runtime owner (session/transport/mic/audio/
+cleanup), then App/Console interrupt composition and remaining lifecycle/
+recovery/timer work remain next; P1-U8 is pending. Phases 2–7 remain
 sequential and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-22)
@@ -20,7 +22,7 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A and P1-U7B1/B2 accepted, end-to-end interrupt composition and remainder next | pending |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, and P1-U7C1/C2 accepted; C3 renderer runtime owner, then App/Console interrupt composition and remaining lifecycle/recovery/timers next | pending |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -112,11 +114,36 @@ remain next; no Phase 1 exit is claimed.
 This record update makes no source, test, skill, or package change and records
 no private values, commit, or invented hash.
 
-P1-U7 must still compose the accepted transcript, interruption transport and
-cleanup, realtime recovery, audio-event, cleanup-boundary, and authorized
-Console seams into the default runtime. P1-U8 owns deterministic/real demos,
-Phase Test records, the full regression/privacy scan, final exit acceptance,
-and the local `phase1-v0.3.1` tag.
+### P1-U7C1/C2 — atomic credential issuer and renderer-safe DTO (externally accepted 2026-08-22)
+
+C1's atomic issuer/600-second credential expiry is committed and pushed at
+`cc8c34f`. Before credential await it synchronously copies/freezes the Published
+model snapshot and Main realtime identity, mints for
+`snapshot.realtimeDialogue`, then copies/freezes the result. Focused evidence
+was 3 test files/9 tests and a green Node typecheck; the Windows-only platform
+limitation remains.
+
+C2 is externally accepted on the current uncommitted integration diff; no
+future commit hash is recorded. The existing
+`mirror:request-realtime-client-secret` channel/method returns one
+renderer-safe atomic DTO. Boot uses the C1 issuer with current Published active
+settings and existing Main lifecycle identity; missing identity is explicit
+`session_unavailable` with no broker call, malformed data is
+`invalid_payload`, and preload structurally validates, sanitizes, copies, and
+freezes the exact DTO. The old direct secret-only path is absent.
+
+Fresh C2 evidence was 6 test files/45 tests passing, Node/web typechecks
+exiting `0`, and `git diff --check` exiting `0` with line-ending warnings; the
+prior exact negative scan exited `1` with empty output as expected. No full
+suite, build, demo, or target-Mac/provider field verification belongs to this
+unit. C1/C2 surveys found no concrete defect in the four required Magic Mirror
+skills; no skill edit is needed.
+
+P1-U7 next work is C3 renderer runtime owner (session/transport/mic/audio/
+cleanup), then App/Console interrupt composition and remaining lifecycle,
+recovery, and timer work. P1-U8 owns deterministic/real demos, Phase Test
+records, the full regression/privacy scan, final exit acceptance, and the local
+`phase1-v0.3.1` tag. No Phase 1 exit is claimed.
 
 ## Human-intervention ledger
 
@@ -124,6 +151,7 @@ and the local `phase1-v0.3.1` tag.
 |---|---|---|
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
 | P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
+| P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
 | Phase 1 exit | Real OpenAI credential, account, and network; a PoC microphone/output path; temporary Persona instructions; a Voice choice; and operator observation for P1-D1, P1-D2, and P1-D5. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity inputs, memory/profile inputs, and hardware/adapter inputs. | Later venue-specific work |

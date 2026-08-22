@@ -22,9 +22,11 @@ process state that must survive implementation handoffs.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle,
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
-  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2 are accepted;
-  P1-U7 remains in progress with end-to-end interrupt composition and the rest
-  of its scope next, and P1-U8 is pending. Phases 2–7 do not advance early.
+  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2 are
+  accepted; P1-U7 remains in progress with C3 renderer runtime owner,
+  then App/Console interrupt composition and the remaining lifecycle,
+  recovery, and timer work next, and P1-U8 is pending. Phases 2–7 do not
+  advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -117,12 +119,39 @@ process state that must survive implementation handoffs.
 - This record update makes no source, test, skill, or package change and
   records no private values, commit, or invented hash.
 
+### P1-U7C1/C2 accepted atomic credential/DTO boundary (2026-08-22)
+
+- C1's atomic issuer/600-second credential expiry is committed and pushed at
+  `cc8c34f`. Before credential await it synchronously copies/freezes the
+  Published model snapshot and Main realtime identity, mints for
+  `snapshot.realtimeDialogue`, then copies/freezes the result. Focused evidence
+  was 3 test files/9 tests and a green Node typecheck; the Windows-only platform
+  limitation remains.
+- C2 is externally accepted on the current uncommitted integration diff; no
+  future commit hash is recorded. The existing
+  `mirror:request-realtime-client-secret` channel/method returns one
+  renderer-safe atomic DTO. Boot uses the C1 issuer with current Published
+  active settings and existing Main lifecycle identity; missing identity is
+  explicit `session_unavailable` with no broker call, malformed data is
+  `invalid_payload`, and preload structurally validates, sanitizes, copies,
+  and freezes the exact DTO. The old direct secret-only path is absent.
+- Fresh C2 evidence was 6 test files/45 tests passing, Node/web typechecks
+  exiting `0`, and `git diff --check` exiting `0` with line-ending warnings;
+  the prior exact negative scan exited `1` with empty output as expected. No
+  full suite, build, demo, or target-Mac/provider field verification belongs
+  to this unit.
+- C1/C2 surveys found no concrete defect in `mm-phase-workflow`,
+  `mm-invariants`, `mm-electron-foundation`, or `mm-realtime-voice`; no skill
+  edit is needed.
+
 ### Human-intervention timing ledger
 
 - **P1-U7A:** none needed; mocks are sufficient for its bounded Console IPC
   boundary and metadata-only status/reason path.
 - **P1-U7B1/B2 transport:** none needed; bounded mock/test evidence is
   sufficient for the payload-free Main-to-Mirror dispatch boundary.
+- **P1-U7C1/C2:** none needed for C1/C2 engineering and mock/static
+  acceptance.
 - **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
   temporary Persona instructions, a Voice choice, and operator observation of
   P1-D1, P1-D2, and P1-D5 are still required.
@@ -234,6 +263,8 @@ process state that must survive implementation handoffs.
 | P1-U6 | accepted; no self-referential hash | focused `32/32`; Node/web typecheck exit `0` |
 | P1-U7A | externally accepted 2026-08-22; integration commit represented by repository history | 9 changed source/test paths; focused `31/31`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
 | P1-U7B1/B2 | externally accepted 2026-08-22; no invented hash recorded | 8 changed source/test paths; focused `45/45`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
+| P1-U7C1 | externally accepted 2026-08-22; committed and pushed at `cc8c34f` | 3 test files / 9 tests; Node typecheck green; Windows-only platform limitation remains |
+| P1-U7C2 | externally accepted 2026-08-22 on the current uncommitted integration diff; no future commit hash recorded | 6 test files / 45 tests; Node/web typechecks exit `0`; `git diff --check` exit `0` with line-ending warnings; prior exact negative scan exit `1` with empty output; no full suite/build/demo or target-Mac/provider field verification |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules
