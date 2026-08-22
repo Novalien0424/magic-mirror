@@ -80,7 +80,10 @@ import {
   type RealtimeSessionStartBundle,
 } from './realtime/session-start-bundle'
 import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
-import type { RealtimeFailureInput } from '../shared/realtime-recovery'
+import {
+  REALTIME_ROLLOVER_AFTER_MS,
+  type RealtimeFailureInput,
+} from '../shared/realtime-recovery'
 import type { RealtimeRuntimeCommandDispatchResult } from './ipc'
 import { createConsoleConfigController } from './console-config'
 import type {
@@ -221,6 +224,8 @@ export interface BootOptions {
   readonly dispatchRealtimeRuntimeCommand?: (
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
+  readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => unknown
+  readonly cancelRealtimeTimer?: (handle: unknown) => void
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
@@ -806,6 +811,16 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     },
   }
   let pendingRealtimeSessionIdentity: Readonly<RealtimeSessionIdentity> | null = null
+  let pendingRealtimeRolloverSessionIdentity: Readonly<RealtimeSessionIdentity> | null = null
+  let realtimeRolloverTimerHandle: unknown = null
+  let realtimeRolloverTimerOwned = false
+  let realtimeRolloverTimerToken = 0
+  const scheduleRealtimeTimer = options.scheduleRealtimeTimer
+    ?? ((callback: () => void, delayMs: number): unknown => setTimeout(callback, delayMs))
+  const cancelRealtimeTimer = options.cancelRealtimeTimer
+    ?? ((handle: unknown): void => {
+      clearTimeout(handle as ReturnType<typeof setTimeout>)
+    })
   let modules: Record<ModuleId, ModuleStatus> = { ...DEFAULT_MODULE_STATUSES }
   let configVersion: number | null = null
   let lastError: AppSnapshot['lastError'] = null
@@ -894,13 +909,107 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
   }
 
+  function emitRealtimeRolloverTimerMetadata(
+    status: 'failed' | 'info',
+    reason: string,
+  ): void {
+    emitMetadata(telemetry, {
+      module: 'openai',
+      event: 'realtime_rollover_timer',
+      status,
+      reason,
+      source: 'runtime',
+    })
+  }
+
+  function cancelRealtimeRolloverTimer(): void {
+    const wasOwned = realtimeRolloverTimerOwned
+    const handle = realtimeRolloverTimerHandle
+    realtimeRolloverTimerOwned = false
+    realtimeRolloverTimerHandle = null
+    realtimeRolloverTimerToken += 1
+    if (!wasOwned) return
+
+    try {
+      cancelRealtimeTimer(handle)
+    } catch {
+      emitRealtimeRolloverTimerMetadata('failed', 'timer_cancel_failed')
+    }
+  }
+
+  function authoritativeRealtimeSessionIdentity(): Readonly<RealtimeSessionIdentity> | null {
+    const { realtimeSessionId, sessionGeneration } = lifecycleView.context
+    const safeRealtimeSessionId = safeIdentifier(realtimeSessionId)
+    if (
+      safeRealtimeSessionId === null
+      || !Number.isSafeInteger(sessionGeneration)
+      || sessionGeneration < 0
+    ) {
+      return null
+    }
+    return Object.freeze({
+      realtimeSessionId: safeRealtimeSessionId,
+      sessionGeneration,
+    })
+  }
+
+  function armRealtimeRolloverTimer(): void {
+    cancelRealtimeRolloverTimer()
+    if (lifecycleState() !== 'active' || authoritativeRealtimeSessionIdentity() === null) {
+      emitRealtimeRolloverTimerMetadata('info', 'timer_arm_requires_active')
+      return
+    }
+
+    const token = realtimeRolloverTimerToken + 1
+    realtimeRolloverTimerToken = token
+    realtimeRolloverTimerOwned = true
+    const callback = (): void => {
+      if (!realtimeRolloverTimerOwned || realtimeRolloverTimerToken !== token) return
+      void rolloverAtSafeBoundary().catch(() => {
+        emitRealtimeRolloverTimerMetadata('failed', 'timer_callback_failed')
+      })
+    }
+
+    let handle: unknown
+    try {
+      handle = scheduleRealtimeTimer(callback, REALTIME_ROLLOVER_AFTER_MS)
+    } catch {
+      if (realtimeRolloverTimerToken === token) {
+        realtimeRolloverTimerOwned = false
+        realtimeRolloverTimerHandle = null
+        realtimeRolloverTimerToken += 1
+      }
+      emitRealtimeRolloverTimerMetadata('failed', 'timer_schedule_failed')
+      return
+    }
+
+    if (realtimeRolloverTimerToken !== token || !realtimeRolloverTimerOwned) {
+      try {
+        cancelRealtimeTimer(handle)
+      } catch {
+        emitRealtimeRolloverTimerMetadata('failed', 'timer_cancel_failed')
+      }
+      return
+    }
+    realtimeRolloverTimerHandle = handle
+  }
+
   function sendLifecycle(event: LifecycleEvent): boolean {
     const clearsPendingIdentity = event.type === 'REALTIME_READY'
       || event.type === 'CLOUD_FAILED'
       || event.type === 'LOCAL_AUDIO_FAILED'
       || event.type === 'LOCAL_CORE_FAILED'
       || event.type === 'MEDIA_CLOSED'
+    const clearsRollover = event.type === 'CLOUD_FAILED'
+      || event.type === 'LOCAL_AUDIO_FAILED'
+      || event.type === 'LOCAL_CORE_FAILED'
+      || event.type === 'MEDIA_CLOSED'
+      || event.type === 'SLEEP_REQUESTED'
     if (clearsPendingIdentity) pendingRealtimeSessionIdentity = null
+    if (clearsRollover) {
+      pendingRealtimeRolloverSessionIdentity = null
+      cancelRealtimeRolloverTimer()
+    }
     if (actor === null) return false
     try {
       actor.send(event)
@@ -950,6 +1059,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   function recordRealtimeStartFailure(): void {
     pendingRealtimeSessionIdentity = null
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
     sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_start_failed' })
     lastError = {
       module: 'openai',
@@ -963,6 +1074,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   function recordRealtimeStopFailure(): void {
     pendingRealtimeSessionIdentity = null
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
     sendLifecycle({ type: 'LOCAL_AUDIO_FAILED', errorCode: 'realtime_runtime_stop_failed' })
     lastError = {
       module: 'audio',
@@ -973,6 +1086,21 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       code: 'realtime_runtime_stop_failed',
       detail: 'cause=renderer_outcome_failed',
     }
+    refreshSnapshot()
+    notifyListeners()
+  }
+
+  function recordRealtimeRolloverFailure(): void {
+    pendingRealtimeSessionIdentity = null
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
+    sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_rollover_failed' })
+    lastError = {
+      module: 'openai',
+      error_code: 'realtime_runtime_rollover_failed',
+      time: nowValue(now),
+    }
+    maintenance = null
     refreshSnapshot()
     notifyListeners()
   }
@@ -1287,6 +1415,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function shutdown(): Promise<void> {
     if (shutdownPromise !== null) return shutdownPromise
 
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
     shutdownPromise = (async () => {
       try {
         await ready
@@ -1478,16 +1608,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     if (lifecycleView.state === 'activating' && pendingRealtimeSessionIdentity !== null) {
       return pendingRealtimeSessionIdentity
     }
-    const { realtimeSessionId, sessionGeneration } = lifecycleView.context
-    if (
-      typeof realtimeSessionId !== 'string'
-      || realtimeSessionId.length === 0
-      || !Number.isSafeInteger(sessionGeneration)
-      || sessionGeneration < 0
-    ) {
-      return null
+    if (lifecycleView.state === 'active' && pendingRealtimeRolloverSessionIdentity !== null) {
+      return pendingRealtimeRolloverSessionIdentity
     }
-    return Object.freeze({ realtimeSessionId, sessionGeneration })
+    return authoritativeRealtimeSessionIdentity()
   }
 
   async function requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>> {
@@ -1630,6 +1754,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       return emitRealtimeRuntimeResult('stop', 'ignored', 'manual_stop_requires_active')
     }
 
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
     if (!sendLifecycle({ type: 'SLEEP_REQUESTED' })) {
       recordRealtimeStopFailure()
       return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
@@ -1658,7 +1784,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     report: RealtimeRuntimeOutcomeReport,
   ): Record<string, unknown> {
     const operationValue = readProperty(report, 'operation')
-    const operation = operationValue === 'start' || operationValue === 'stop'
+    const operation = operationValue === 'start' || operationValue === 'stop' || operationValue === 'rollover'
       ? operationValue
       : 'unknown'
     const status = readProperty(report, 'status')
@@ -1669,8 +1795,37 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       operation === 'unknown'
       || (operation === 'start' && (state !== 'activating' || pendingRealtimeSessionIdentity === null))
       || (operation === 'stop' && state !== 'suspending')
+      || (operation === 'rollover' && (state !== 'active' || pendingRealtimeRolloverSessionIdentity === null))
     ) {
       return emitRealtimeRuntimeResult(operation, 'ignored', 'outcome_ignored_wrong_state')
+    }
+
+    if (operation === 'rollover') {
+      const pendingIdentity = pendingRealtimeRolloverSessionIdentity
+      if (pendingIdentity === null) {
+        return emitRealtimeRuntimeResult('rollover', 'ignored', 'outcome_ignored_wrong_state')
+      }
+      if (status === 'success') {
+        const committed = sendLifecycle({
+          type: 'REALTIME_SESSION_REPLACED',
+          realtimeSessionId: pendingIdentity.realtimeSessionId,
+          sessionGeneration: pendingIdentity.sessionGeneration,
+        })
+        if (!committed || lifecycleState() !== 'active') {
+          recordRealtimeRolloverFailure()
+          return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+        }
+        pendingRealtimeRolloverSessionIdentity = null
+        lastError = null
+        maintenance = null
+        refreshSnapshot()
+        notifyListeners()
+        if (realtimeRecoveryController === null) armRealtimeRolloverTimer()
+        return emitRealtimeRuntimeResult('rollover', 'success', reason)
+      }
+
+      recordRealtimeRolloverFailure()
+      return emitRealtimeRuntimeResult('rollover', 'failed', reason)
     }
 
     if (operation === 'start') {
@@ -1692,6 +1847,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         maintenance = null
         refreshSnapshot()
         notifyListeners()
+        if (realtimeRecoveryController === null) armRealtimeRolloverTimer()
         return emitRealtimeRuntimeResult('start', 'success', reason)
       }
 
@@ -1720,7 +1876,63 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function rolloverAtSafeBoundary(): Promise<Record<string, unknown>> {
     await ready
     if (realtimeRecoveryController === null) {
-      return emitRealtimeRecoveryUnavailable()
+      const dispatch = options.dispatchRealtimeRuntimeCommand
+      const state = lifecycleState()
+      if (state !== 'active') {
+        return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_requires_active')
+      }
+      if (pendingRealtimeRolloverSessionIdentity !== null) {
+        return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_in_progress')
+      }
+      if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
+
+      const authoritativeIdentity = authoritativeRealtimeSessionIdentity()
+      if (authoritativeIdentity === null) {
+        recordRealtimeRolloverFailure()
+        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+      }
+
+      let realtimeSessionId: string
+      try {
+        realtimeSessionId = createRealtimeSessionId()
+      } catch {
+        recordRealtimeRolloverFailure()
+        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+      }
+      const sessionGeneration = authoritativeIdentity.sessionGeneration + 1
+      if (
+        safeIdentifier(realtimeSessionId) === null
+        || realtimeSessionId === authoritativeIdentity.realtimeSessionId
+        || !Number.isSafeInteger(sessionGeneration)
+        || sessionGeneration < 1
+      ) {
+        recordRealtimeRolloverFailure()
+        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+      }
+
+      pendingRealtimeRolloverSessionIdentity = Object.freeze({
+        realtimeSessionId,
+        sessionGeneration,
+      })
+      cancelRealtimeRolloverTimer()
+
+      let dispatchResult: RealtimeRuntimeCommandDispatchResult
+      try {
+        dispatchResult = normalizeRealtimeRuntimeCommandDispatchResult(dispatch(Object.freeze({
+          operation: 'rollover',
+          reason: 'session_limit',
+        })))
+      } catch {
+        dispatchResult = Object.freeze({
+          status: 'failed',
+          reason: 'runtime_command_send_failed',
+        })
+      }
+
+      if (dispatchResult.status === 'failed') {
+        recordRealtimeRolloverFailure()
+      }
+      return emitRealtimeRuntimeResult('rollover', dispatchResult.status, dispatchResult.reason)
     }
     return realtimeRecoveryController.rolloverAtSafeBoundary()
   }

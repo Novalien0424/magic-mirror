@@ -14,7 +14,10 @@ import {
   createRealtimeOutageRecoveryController,
   type RealtimeOutageRecoveryController,
 } from '../../src/main/realtime/outage-recovery'
-import type { RealtimeFailureInput } from '../../src/shared/realtime-recovery'
+import {
+  REALTIME_ROLLOVER_AFTER_MS,
+  type RealtimeFailureInput,
+} from '../../src/shared/realtime-recovery'
 
 type LifecycleState = ReturnType<ReturnType<typeof createLifecycleActor>['getState']>
 
@@ -106,11 +109,22 @@ type RuntimeCommandBootOptions = Parameters<typeof bootSequence>[0] & {
   readonly dispatchRealtimeRuntimeCommand: (
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
+  readonly scheduleRealtimeTimer: (callback: () => void, delayMs: number) => number
+  readonly cancelRealtimeTimer: (handle: number) => void
 }
 
 function bootWithRuntimeCommandSeam(options: RuntimeCommandBootOptions): BootRuntime {
   return bootSequence(options as never) as BootRuntime
 }
+
+type BootFixtureOptions = Readonly<{
+  readonly createRealtimeSessionId?: () => string
+  readonly dispatchResultForCommand?: (
+    command: RealtimeRuntimeCommand,
+  ) => RealtimeRuntimeCommandDispatchResult
+  readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => number
+  readonly cancelRealtimeTimer?: (handle: number) => void
+}>
 
 type BootFixture = Readonly<{
   runtime: BootRuntime
@@ -124,6 +138,7 @@ function createBootFixture(
     reason: 'runtime_command_delivered',
   },
   realtimeSessionId = 'synthetic-pending-session',
+  fixtureOptions: BootFixtureOptions = {},
 ): BootFixture {
   const metadata: Array<Record<string, unknown>> = []
   const commands: RealtimeRuntimeCommand[] = []
@@ -195,6 +210,19 @@ function createBootFixture(
     close: async () => {},
   }
 
+  const createRealtimeSessionId = fixtureOptions.createRealtimeSessionId
+    ?? (() => realtimeSessionId)
+  const dispatchRealtimeRuntimeCommand = (
+    command: RealtimeRuntimeCommand,
+  ): RealtimeRuntimeCommandDispatchResult => {
+    commands.push(command)
+    return fixtureOptions.dispatchResultForCommand?.(command) ?? dispatchResult
+  }
+  const scheduleRealtimeTimer = fixtureOptions.scheduleRealtimeTimer
+    ?? ((_callback: () => void, _delayMs: number): number => 0)
+  const cancelRealtimeTimer = fixtureOptions.cancelRealtimeTimer
+    ?? ((_handle: number): void => {})
+
   const runtime = bootWithRuntimeCommandSeam({
     appVersion: 'synthetic-app-version',
     buildCommit: 'synthetic-build-commit',
@@ -230,15 +258,55 @@ function createBootFixture(
       probe: async () => ({ status: 'ready' }),
     }),
     createActivationId: () => 'synthetic-manual-activation',
-    createRealtimeSessionId: () => realtimeSessionId,
-    dispatchRealtimeRuntimeCommand: (command: RealtimeRuntimeCommand) => {
-      commands.push(command)
-      return dispatchResult
-    },
+    createRealtimeSessionId,
+    dispatchRealtimeRuntimeCommand,
+    scheduleRealtimeTimer,
+    cancelRealtimeTimer,
     now: () => '2026-08-21T00:00:00.000Z',
   } as unknown as RuntimeCommandBootOptions)
 
   return { runtime, commands, metadata }
+}
+
+type FakeRealtimeTimer = {
+  readonly handle: number
+  readonly callback: () => void
+  readonly delayMs: number
+  canceled: boolean
+}
+
+type FakeRealtimeTimerHarness = Readonly<{
+  timers: FakeRealtimeTimer[]
+  cancelCalls: number[]
+  scheduleRealtimeTimer: (callback: () => void, delayMs: number) => number
+  cancelRealtimeTimer: (handle: number) => void
+  invoke: (timer: FakeRealtimeTimer) => void
+}>
+
+function createFakeRealtimeTimerHarness(): FakeRealtimeTimerHarness {
+  const timers: FakeRealtimeTimer[] = []
+  const cancelCalls: number[] = []
+  let nextHandle = 1
+
+  const scheduleRealtimeTimer = (callback: () => void, delayMs: number): number => {
+    const handle = nextHandle
+    nextHandle += 1
+    timers.push({ handle, callback, delayMs, canceled: false })
+    return handle
+  }
+
+  const cancelRealtimeTimer = (handle: number): void => {
+    const timer = timers.find((candidate) => candidate.handle === handle)
+    if (timer === undefined) throw new Error(`unknown fake timer handle: ${handle}`)
+    cancelCalls.push(handle)
+    timer.canceled = true
+  }
+
+  const invoke = (timer: FakeRealtimeTimer): void => {
+    if (!timer.canceled) timer.callback()
+  }
+
+  return { timers, cancelCalls, scheduleRealtimeTimer, cancelRealtimeTimer, invoke }
 }
 
 async function deliverRuntimeOutcome(
@@ -1132,6 +1200,308 @@ it('stops an active boot-sequence session and ignores stop outcomes outside thei
     ...success.metadata,
     ...stopFailure.metadata,
     ...wrongState.metadata,
+  ]) {
+    expectMetadataOnly(event)
+  }
+})
+
+it('owns the 60-minute rollover timer through a pending commit transaction', async () => {
+  const oldRealtimeSessionId = 'synthetic-rollover-old-session'
+  const newRealtimeSessionId = 'synthetic-rollover-new-session'
+  const sessionIds = [oldRealtimeSessionId, newRealtimeSessionId]
+  let sessionIdIndex = 0
+  const timerHarness = createFakeRealtimeTimerHarness()
+  const fixture = createBootFixture(undefined, oldRealtimeSessionId, {
+    createRealtimeSessionId: (): string => {
+      const sessionId = sessionIds[sessionIdIndex]
+      sessionIdIndex += 1
+      if (sessionId === undefined) throw new Error('synthetic session id exhausted')
+      return sessionId
+    },
+    scheduleRealtimeTimer: timerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: timerHarness.cancelRealtimeTimer,
+  })
+  const { runtime, commands, metadata } = fixture
+
+  await runtime.ready
+  const startResult = await runtime.manualStart()
+  expect(startResult).toEqual({ status: 'success', reason: 'runtime_command_delivered' })
+  expectMetadataOnly(startResult)
+  expect(timerHarness.timers).toHaveLength(0)
+  const startBundle = await runtime.requestRealtimeClientSecret()
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started',
+  })
+
+  const activeGeneration = startBundle.identity.sessionGeneration
+  expect(activeGeneration).toBeGreaterThan(0)
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'active',
+    realtimeSessionId: oldRealtimeSessionId,
+    sessionGeneration: activeGeneration,
+  }))
+  expect(timerHarness.timers).toHaveLength(1)
+  const initialTimer = timerHarness.timers[0]
+  if (initialTimer === undefined) throw new Error('expected initial rollover timer')
+  expect(initialTimer.delayMs).toBe(REALTIME_ROLLOVER_AFTER_MS)
+
+  timerHarness.invoke(initialTimer)
+  await drainMicrotasks()
+
+  expect(commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+    { operation: 'rollover', reason: 'session_limit' },
+  ])
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'active',
+    realtimeSessionId: oldRealtimeSessionId,
+    sessionGeneration: activeGeneration,
+  }))
+  const pendingBundle = await runtime.requestRealtimeClientSecret()
+  expect(pendingBundle.identity).toEqual({
+    realtimeSessionId: newRealtimeSessionId,
+    sessionGeneration: activeGeneration + 1,
+  })
+  expect(pendingBundle).toHaveProperty('clientSecret')
+
+  const duplicateRollover = await runtime.rolloverAtSafeBoundary()
+  expect(duplicateRollover).toEqual({ status: 'ignored', reason: 'rollover_in_progress' })
+  expect(commands).toHaveLength(2)
+  expect(timerHarness.timers).toHaveLength(1)
+
+  const commitResult = runtime.handleRealtimeRuntimeOutcome({
+    status: 'success',
+    operation: 'rollover',
+    reason: 'renderer_rolled_over',
+  }) as Record<string, unknown>
+  expect(commitResult).toEqual({ status: 'success', reason: 'renderer_rolled_over' })
+  expectMetadataOnly(commitResult)
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'active',
+    realtimeSessionId: newRealtimeSessionId,
+    sessionGeneration: activeGeneration + 1,
+  }))
+  expect(timerHarness.timers).toHaveLength(2)
+  const replacementTimer = timerHarness.timers[1]
+  if (replacementTimer === undefined) throw new Error('expected replacement rollover timer')
+  expect(replacementTimer.delayMs).toBe(REALTIME_ROLLOVER_AFTER_MS)
+  expect(replacementTimer.canceled).toBe(false)
+
+  const duplicateOutcome = runtime.handleRealtimeRuntimeOutcome({
+    status: 'success',
+    operation: 'rollover',
+    reason: 'renderer_rolled_over',
+  }) as Record<string, unknown>
+  expect(duplicateOutcome).toEqual({
+    status: 'ignored',
+    reason: 'outcome_ignored_wrong_state',
+  })
+  expectMetadataOnly(duplicateOutcome)
+  expect(commands).toHaveLength(2)
+  expect(timerHarness.timers).toHaveLength(2)
+  expect(sessionIdIndex).toBe(2)
+  for (const event of metadata) expectMetadataOnly(event)
+})
+
+it('clears pending rollover state and enters OfflineLoop on renderer or command failure', async () => {
+  const completeManualStart = async (fixture: BootFixture): Promise<void> => {
+    await fixture.runtime.ready
+    const startResult = await fixture.runtime.manualStart()
+    expect(startResult).toEqual(expect.objectContaining({
+      status: 'success',
+      reason: 'runtime_command_delivered',
+    }))
+    const startBundle = await fixture.runtime.requestRealtimeClientSecret()
+    expect(startBundle.identity.sessionGeneration).toBeGreaterThan(0)
+    await deliverRuntimeOutcome(fixture.runtime, {
+      status: 'success',
+      operation: 'start',
+      reason: 'renderer_started',
+    })
+    expect(fixture.runtime.snapshot()).toEqual(expect.objectContaining({ lifecycle: 'active' }))
+  }
+
+  const rendererTimerHarness = createFakeRealtimeTimerHarness()
+  const rendererSessionIds = [
+    'synthetic-renderer-failure-old-session',
+    'synthetic-renderer-failure-new-session',
+  ]
+  const rendererOldRealtimeSessionId = rendererSessionIds[0]
+  const rendererNewRealtimeSessionId = rendererSessionIds[1]
+  if (rendererOldRealtimeSessionId === undefined || rendererNewRealtimeSessionId === undefined) {
+    throw new Error('expected renderer failure session ids')
+  }
+  let rendererSessionIdIndex = 0
+  const rendererFailure = createBootFixture(undefined, rendererOldRealtimeSessionId, {
+    createRealtimeSessionId: (): string => {
+      const sessionId = rendererSessionIds[rendererSessionIdIndex]
+      rendererSessionIdIndex += 1
+      if (sessionId === undefined) throw new Error('synthetic renderer session id exhausted')
+      return sessionId
+    },
+    scheduleRealtimeTimer: rendererTimerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: rendererTimerHarness.cancelRealtimeTimer,
+  })
+  await completeManualStart(rendererFailure)
+  const rendererTimer = rendererTimerHarness.timers[0]
+  if (rendererTimer === undefined) throw new Error('expected renderer failure timer')
+  rendererTimerHarness.invoke(rendererTimer)
+  await drainMicrotasks()
+  const pendingRendererBundle = await rendererFailure.runtime.requestRealtimeClientSecret()
+  expect(pendingRendererBundle.identity).toEqual({
+    realtimeSessionId: rendererNewRealtimeSessionId,
+    sessionGeneration: 2,
+  })
+
+  const rendererFailureResult = rendererFailure.runtime.handleRealtimeRuntimeOutcome({
+    status: 'failed',
+    operation: 'rollover',
+    reason: 'renderer_rollover_failed',
+  }) as Record<string, unknown>
+  expect(rendererFailureResult).toEqual({
+    status: 'failed',
+    reason: 'renderer_rollover_failed',
+  })
+  expectMetadataOnly(rendererFailureResult)
+  expect(rendererFailure.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'offlineLoop',
+    realtimeSessionId: null,
+  }))
+  expect(rendererTimer.canceled).toBe(true)
+  expect(rendererTimerHarness.cancelCalls).toContain(rendererTimer.handle)
+  await expect(rendererFailure.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+  expect(rendererFailure.metadata.some((event) => event.reason === 'renderer_rollover_failed')).toBe(true)
+  for (const event of rendererFailure.metadata) expectMetadataOnly(event)
+
+  const commandTimerHarness = createFakeRealtimeTimerHarness()
+  const commandFailureOldRealtimeSessionId = 'synthetic-command-failure-old-session'
+  const commandFailureNewRealtimeSessionId = 'synthetic-command-failure-new-session'
+  const commandFailureRealtimeSessionIds = [
+    commandFailureOldRealtimeSessionId,
+    commandFailureNewRealtimeSessionId,
+  ] as const
+  let commandFailureRealtimeSessionIdIndex = 0
+  const createCommandFailureRealtimeSessionId = (): string => {
+    const sessionId = commandFailureRealtimeSessionIds[commandFailureRealtimeSessionIdIndex]
+    if (sessionId === undefined) {
+      throw new Error('synthetic command-failure session ID exhaustion')
+    }
+    commandFailureRealtimeSessionIdIndex += 1
+    return sessionId
+  }
+  const commandFailure = createBootFixture(undefined, commandFailureOldRealtimeSessionId, {
+    dispatchResultForCommand: (command: RealtimeRuntimeCommand) => command.operation === 'rollover'
+      ? { status: 'failed', reason: 'mirror_window_missing' }
+      : { status: 'success', reason: 'runtime_command_delivered' },
+    createRealtimeSessionId: createCommandFailureRealtimeSessionId,
+    scheduleRealtimeTimer: commandTimerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: commandTimerHarness.cancelRealtimeTimer,
+  })
+  await completeManualStart(commandFailure)
+  const commandTimer = commandTimerHarness.timers[0]
+  if (commandTimer === undefined) throw new Error('expected command failure timer')
+  const commandFailureResult = await commandFailure.runtime.rolloverAtSafeBoundary()
+  expect(commandFailureResult).toEqual({ status: 'failed', reason: 'mirror_window_missing' })
+  expectMetadataOnly(commandFailureResult)
+  expect(commandFailure.commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+    { operation: 'rollover', reason: 'session_limit' },
+  ])
+  expect(commandFailure.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'offlineLoop',
+    realtimeSessionId: null,
+  }))
+  expect(commandTimer.canceled).toBe(true)
+  expect(commandTimerHarness.cancelCalls).toContain(commandTimer.handle)
+  await expect(commandFailure.runtime.requestRealtimeClientSecret()).rejects.toMatchObject({
+    code: 'realtime_session_unavailable',
+  })
+  expect(commandFailure.metadata.some((event) => event.reason === 'mirror_window_missing')).toBe(true)
+  for (const event of commandFailure.metadata) expectMetadataOnly(event)
+})
+
+it('cancels the owned rollover timer on stop and shutdown without dispatching stale callbacks', async () => {
+  const completeManualStart = async (fixture: BootFixture): Promise<void> => {
+    await fixture.runtime.ready
+    await fixture.runtime.manualStart()
+    const startBundle = await fixture.runtime.requestRealtimeClientSecret()
+    expect(startBundle.identity.sessionGeneration).toBeGreaterThan(0)
+    await deliverRuntimeOutcome(fixture.runtime, {
+      status: 'success',
+      operation: 'start',
+      reason: 'renderer_started',
+    })
+  }
+
+  const stopTimerHarness = createFakeRealtimeTimerHarness()
+  const stopOrder: string[] = []
+  const stopFixture = createBootFixture(undefined, 'synthetic-stop-timer-session', {
+    dispatchResultForCommand: (command: RealtimeRuntimeCommand) => {
+      stopOrder.push(`dispatch:${command.operation}`)
+      return { status: 'success', reason: 'runtime_command_delivered' }
+    },
+    scheduleRealtimeTimer: (callback: () => void, delayMs: number): number => {
+      stopOrder.push(`schedule:${delayMs}`)
+      return stopTimerHarness.scheduleRealtimeTimer(callback, delayMs)
+    },
+    cancelRealtimeTimer: (handle: number): void => {
+      stopOrder.push(`cancel:${handle}`)
+      stopTimerHarness.cancelRealtimeTimer(handle)
+    },
+  })
+  await completeManualStart(stopFixture)
+  const stopTimer = stopTimerHarness.timers[0]
+  if (stopTimer === undefined) throw new Error('expected stop timer')
+  const stopResult = await stopFixture.runtime.manualStop()
+  expect(stopResult).toEqual({ status: 'success', reason: 'runtime_command_delivered' })
+  expectMetadataOnly(stopResult)
+  const stopCancellationIndex = stopOrder.indexOf(`cancel:${stopTimer.handle}`)
+  const stopDispatchIndex = stopOrder.indexOf('dispatch:stop')
+  expect(stopCancellationIndex).toBeGreaterThanOrEqual(0)
+  expect(stopDispatchIndex).toBeGreaterThan(stopCancellationIndex)
+
+  await deliverRuntimeOutcome(stopFixture.runtime, {
+    status: 'success',
+    operation: 'stop',
+    reason: 'renderer_stopped',
+  })
+  expect(stopFixture.runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'dormant',
+    realtimeSessionId: null,
+  }))
+  expect(stopFixture.commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+    { operation: 'stop', reason: 'manual_stop' },
+  ])
+  expect(stopTimerHarness.timers).toHaveLength(1)
+  stopTimerHarness.invoke(stopTimer)
+  await drainMicrotasks()
+  expect(stopFixture.commands).toHaveLength(2)
+
+  const shutdownTimerHarness = createFakeRealtimeTimerHarness()
+  const shutdownFixture = createBootFixture(undefined, 'synthetic-shutdown-timer-session', {
+    scheduleRealtimeTimer: shutdownTimerHarness.scheduleRealtimeTimer,
+    cancelRealtimeTimer: shutdownTimerHarness.cancelRealtimeTimer,
+  })
+  await completeManualStart(shutdownFixture)
+  const shutdownTimer = shutdownTimerHarness.timers[0]
+  if (shutdownTimer === undefined) throw new Error('expected shutdown timer')
+  await shutdownFixture.runtime.shutdown()
+  await shutdownFixture.runtime.shutdown()
+  expect(shutdownTimerHarness.cancelCalls).toEqual([shutdownTimer.handle])
+  expect(shutdownTimer.canceled).toBe(true)
+  shutdownTimerHarness.invoke(shutdownTimer)
+  await drainMicrotasks()
+  expect(shutdownFixture.commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+  ])
+  for (const event of [
+    ...stopFixture.metadata,
+    ...shutdownFixture.metadata,
   ]) {
     expectMetadataOnly(event)
   }
