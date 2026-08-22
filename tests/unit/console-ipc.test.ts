@@ -15,6 +15,13 @@ const TEST_IMAGE_SENTINEL = '__TEST_IMAGE_SENTINEL__'
 const TEST_EMBEDDING_SENTINEL = '__TEST_EMBEDDING_SENTINEL__'
 const TEST_CONFIGURED_VALUE_SENTINEL = '__TEST_CONFIGURED_VALUE_SENTINEL__'
 const TEST_SERVICE_SENTINEL = '__TEST_SERVICE_SENTINEL__'
+const TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL = '__TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL__'
+const TEST_RUNTIME_FAILED_STEPS_SENTINEL = '__TEST_RUNTIME_FAILED_STEPS_SENTINEL__'
+const TEST_RUNTIME_ERROR_SENTINEL = '__TEST_RUNTIME_ERROR_SENTINEL__'
+const TEST_RUNTIME_MESSAGE_SENTINEL = '__TEST_RUNTIME_MESSAGE_SENTINEL__'
+const TEST_RUNTIME_STACK_SENTINEL = '__TEST_RUNTIME_STACK_SENTINEL__'
+
+const MIRROR_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
 
 const PRIVACY_SENTINELS = [
   TEST_TRANSCRIPT_SENTINEL,
@@ -25,6 +32,11 @@ const PRIVACY_SENTINELS = [
   TEST_EMBEDDING_SENTINEL,
   TEST_CONFIGURED_VALUE_SENTINEL,
   TEST_SERVICE_SENTINEL,
+  TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL,
+  TEST_RUNTIME_FAILED_STEPS_SENTINEL,
+  TEST_RUNTIME_ERROR_SENTINEL,
+  TEST_RUNTIME_MESSAGE_SENTINEL,
+  TEST_RUNTIME_STACK_SENTINEL,
 ] as const
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
@@ -226,6 +238,13 @@ function authorizedEvent(registered: RegisteredIpc): Record<string, unknown> {
   }
 }
 
+function authorizedMirrorEvent(registered: RegisteredIpc): Record<string, unknown> {
+  return {
+    sender: registered.mirrorSender,
+    senderFrame: registered.mirrorFrame,
+  }
+}
+
 describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
   it('registers the 9A Console channels while preserving Task 8 snapshot, simulate, ready, and Mirror contracts', async () => {
     const registered = makeHarness()
@@ -244,6 +263,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       interrupt: 'mirror:interrupt',
+      reportRealtimeRuntimeOutcome: MIRROR_RUNTIME_OUTCOME_CHANNEL,
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)
@@ -497,5 +517,231 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       }),
     ]))
     expectNoSensitiveOutput({ extraOverviewArgument, extraEventsArguments, unknownQueryKey, events: registered.events })
+  })
+})
+
+describe('Mirror runtime outcome reporting', () => {
+  type MirrorRuntimeOutcomeReport = Readonly<{
+    status: 'success' | 'failed' | 'ignored' | 'degraded'
+    operation: 'start' | 'stop' | 'dispose' | 'interrupt' | 'rollover'
+    reason: string
+  }>
+
+  const validReports: readonly {
+    readonly report: MirrorRuntimeOutcomeReport
+    readonly expectedStatus: 'success' | 'failed' | 'info'
+  }[] = [
+    {
+      report: { status: 'success', operation: 'start', reason: 'started' },
+      expectedStatus: 'success',
+    },
+    {
+      report: { status: 'failed', operation: 'start', reason: 'start_failed' },
+      expectedStatus: 'failed',
+    },
+    {
+      report: { status: 'ignored', operation: 'start', reason: 'already_active' },
+      expectedStatus: 'info',
+    },
+    {
+      report: { status: 'success', operation: 'stop', reason: 'stopped' },
+      expectedStatus: 'success',
+    },
+    {
+      report: { status: 'failed', operation: 'stop', reason: 'stop_failed' },
+      expectedStatus: 'failed',
+    },
+    {
+      report: { status: 'ignored', operation: 'stop', reason: 'not_active' },
+      expectedStatus: 'info',
+    },
+    {
+      report: { status: 'success', operation: 'dispose', reason: 'disposed' },
+      expectedStatus: 'success',
+    },
+    {
+      report: { status: 'failed', operation: 'dispose', reason: 'dispose_failed' },
+      expectedStatus: 'failed',
+    },
+    {
+      report: { status: 'ignored', operation: 'dispose', reason: 'already_disposed' },
+      expectedStatus: 'info',
+    },
+    {
+      report: { status: 'success', operation: 'interrupt', reason: 'interrupted' },
+      expectedStatus: 'success',
+    },
+    {
+      report: { status: 'failed', operation: 'interrupt', reason: 'interrupt_failed' },
+      expectedStatus: 'failed',
+    },
+    {
+      report: { status: 'ignored', operation: 'interrupt', reason: 'not_active' },
+      expectedStatus: 'info',
+    },
+    {
+      report: { status: 'success', operation: 'rollover', reason: 'rolled_over' },
+      expectedStatus: 'success',
+    },
+    {
+      report: {
+        status: 'degraded',
+        operation: 'rollover',
+        reason: 'rolled_over_with_fallback',
+      },
+      expectedStatus: 'info',
+    },
+    {
+      report: { status: 'ignored', operation: 'rollover', reason: 'stale_generation' },
+      expectedStatus: 'info',
+    },
+  ]
+
+  it('registers a dedicated Mirror-to-Main channel and maps the closed DTO to metadata-only telemetry', async () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_RUNTIME_OUTCOME_CHANNEL)
+
+    expect(MIRROR_IPC_CHANNELS).toEqual(expect.objectContaining({
+      reportRealtimeRuntimeOutcome: MIRROR_RUNTIME_OUTCOME_CHANNEL,
+    }))
+
+    for (const { report: payload } of validReports) {
+      await report(authorizedMirrorEvent(registered), payload)
+    }
+
+    expect(registered.events).toEqual(validReports.map(({ report: payload, expectedStatus }) => ({
+      module: 'openai',
+      event: `realtime_runtime_${payload.operation}`,
+      status: expectedStatus,
+      reason: payload.reason,
+      source: 'runtime',
+    })))
+    for (const event of registered.events) {
+      expect(Object.keys(event).sort()).toEqual([
+        'event',
+        'module',
+        'reason',
+        'source',
+        'status',
+      ])
+    }
+    expectNoSensitiveOutput(registered.events)
+  })
+
+  it('accepts a 96-character lowercase reason and rejects a 97-character reason', async () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_RUNTIME_OUTCOME_CHANNEL)
+    const validReason = 'a'.repeat(96)
+    const invalidReason = 'a'.repeat(97)
+
+    await report(authorizedMirrorEvent(registered), {
+      status: 'success',
+      operation: 'start',
+      reason: validReason,
+    })
+    await report(authorizedMirrorEvent(registered), {
+      status: 'success',
+      operation: 'start',
+      reason: invalidReason,
+    })
+
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'realtime_runtime_start',
+        status: 'success',
+        reason: validReason,
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_payload_invalid',
+        status: 'failed',
+        reason: 'payload_schema_invalid',
+        source: 'runtime',
+      }),
+    ]))
+    expect(registered.events.filter((event) => event.event === 'realtime_runtime_start')).toHaveLength(1)
+    expectNoSensitiveOutput(registered.events)
+  })
+
+  it('rejects malformed, extra-argument, and unauthorized reports without entering telemetry or gating unrelated IPC', async () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_RUNTIME_OUTCOME_CHANNEL)
+    const validReport: MirrorRuntimeOutcomeReport = {
+      status: 'success',
+      operation: 'interrupt',
+      reason: 'interrupted',
+    }
+    const rawReport = {
+      ...validReport,
+      attemptedSteps: [TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL],
+      failedSteps: [TEST_RUNTIME_FAILED_STEPS_SENTINEL],
+      error: TEST_RUNTIME_ERROR_SENTINEL,
+      message: TEST_RUNTIME_MESSAGE_SENTINEL,
+      stack: TEST_RUNTIME_STACK_SENTINEL,
+      profileId: TEST_PRIVATE_MEMORY_SENTINEL,
+      guestId: TEST_PRIVATE_MEMORY_SENTINEL,
+      candidateProfileId: TEST_PRIVATE_MEMORY_SENTINEL,
+      transcript: TEST_TRANSCRIPT_SENTINEL,
+      audio: TEST_AUDIO_SENTINEL,
+      memory: TEST_PRIVATE_MEMORY_SENTINEL,
+      credentials: TEST_CREDENTIAL_SENTINEL,
+      model: TEST_CONFIGURED_VALUE_SENTINEL,
+    }
+
+    await report(authorizedMirrorEvent(registered), rawReport)
+    await report(
+      authorizedMirrorEvent(registered),
+      validReport,
+      TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL,
+    )
+    await report(authorizedMirrorEvent(registered), {
+      ...validReport,
+      operation: 'not-authorized',
+    })
+    await report(authorizedMirrorEvent(registered), {
+      ...validReport,
+      status: 'degraded',
+    })
+    await report(authorizedMirrorEvent(registered), {
+      ...validReport,
+      reason: TEST_RUNTIME_ERROR_SENTINEL,
+    })
+    await report({
+      sender: registered.consoleSender,
+      senderFrame: registered.consoleFrame,
+    }, validReport)
+    await report({
+      sender: registered.mirrorSender,
+      senderFrame: {},
+    }, validReport)
+
+    const unrelated = await getHandler(registered, CONSOLE_IPC_CHANNELS.overview)(authorizedEvent(registered))
+
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'ipc_payload_invalid',
+        status: 'failed',
+        reason: 'payload_schema_invalid',
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        status: 'failed',
+        reason: 'web_contents_mismatch',
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        status: 'failed',
+        reason: 'sender_frame_invalid',
+        source: 'runtime',
+      }),
+    ]))
+    expect(registered.events.filter((event) => event.event === 'realtime_runtime_interrupt')).toHaveLength(0)
+    expect(serialize(registered.events)).not.toContain(TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL)
+    expect(serialize(registered.events)).not.toContain(TEST_RUNTIME_FAILED_STEPS_SENTINEL)
+    expectNoSensitiveOutput(registered.events)
+    expect(unrelated).toEqual(registered.facade.getOverview.mock.results[0]?.value)
+    expect(registered.facade.getOverview).toHaveBeenCalledTimes(1)
   })
 })

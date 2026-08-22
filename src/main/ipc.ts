@@ -9,6 +9,8 @@ import type {
   ConsoleChannelMap,
   MirrorChannelMap,
   MirrorWindowKind,
+  RealtimeRuntimeOutcomeOperation,
+  RealtimeRuntimeOutcomeStatus,
   RealtimeSessionStartBundleValue,
   TransientRealtimeSecretInput,
   TransientRealtimeSecretResult,
@@ -29,6 +31,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   snapshot: 'mirror:snapshot',
   requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
   interrupt: 'mirror:interrupt',
+  reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
   ready: 'boot:renderer-ready',
 })
 
@@ -133,6 +136,27 @@ const SAFE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/
 const SAFE_STATE_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/
 const SAFE_REASON_PATTERN = /^[A-Za-z0-9_=;.%:+,/?-]{1,1024}$/
 const OP_STATUS_VALUES: ReadonlySet<OpStatus> = new Set(['success', 'degraded', 'failed'])
+const REALTIME_RUNTIME_OUTCOME_STATUS_VALUES: ReadonlySet<RealtimeRuntimeOutcomeStatus> = new Set([
+  'success',
+  'degraded',
+  'failed',
+  'ignored',
+])
+const REALTIME_RUNTIME_OUTCOME_OPERATION_VALUES: ReadonlySet<RealtimeRuntimeOutcomeOperation> = new Set([
+  'start',
+  'stop',
+  'dispose',
+  'interrupt',
+  'rollover',
+])
+const REALTIME_RUNTIME_OUTCOME_ALLOWED_STATUSES: Readonly<Record<RealtimeRuntimeOutcomeOperation, ReadonlySet<RealtimeRuntimeOutcomeStatus>>> = {
+  start: new Set(['success', 'failed', 'ignored']),
+  stop: new Set(['success', 'failed', 'ignored']),
+  dispose: new Set(['success', 'failed', 'ignored']),
+  interrupt: new Set(['success', 'failed', 'ignored']),
+  rollover: new Set(['success', 'degraded', 'failed', 'ignored']),
+}
+const REALTIME_RUNTIME_OUTCOME_REASON_PATTERN = /^[a-z][a-z0-9_]{0,95}$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -260,6 +284,34 @@ function exactKeys(value: unknown, expected: readonly string[]): boolean {
   } catch {
     return false
   }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false
+  try {
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+  } catch {
+    return false
+  }
+}
+
+function isValidRealtimeRuntimeOutcomeReport(value: unknown): boolean {
+  if (!isPlainObject(value) || !exactKeys(value, ['status', 'operation', 'reason'])) return false
+  const status = readProperty(value, 'status')
+  const operation = readProperty(value, 'operation')
+  const reason = readProperty(value, 'reason')
+  return (
+    typeof status === 'string'
+    && typeof operation === 'string'
+    && REALTIME_RUNTIME_OUTCOME_STATUS_VALUES.has(status as RealtimeRuntimeOutcomeStatus)
+    && REALTIME_RUNTIME_OUTCOME_OPERATION_VALUES.has(operation as RealtimeRuntimeOutcomeOperation)
+    && REALTIME_RUNTIME_OUTCOME_ALLOWED_STATUSES[operation as RealtimeRuntimeOutcomeOperation]?.has(
+      status as RealtimeRuntimeOutcomeStatus,
+    ) === true
+    && typeof reason === 'string'
+    && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(reason)
+  )
 }
 
 function invalidPayload(): SimulatorPayloadValidation {
@@ -749,6 +801,34 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     return realtimeIpcContract.handleTransientSecretRequest({
       sender: { identity: 'mirror' },
     })
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeRuntimeOutcome, (event, ...args) => {
+    try {
+      const authorization = authorizeSender(event, 'mirror', windows)
+      if (!authorization.ok) {
+        senderRejected(telemetry, authorization.reason)
+        return
+      }
+      if (args.length !== 1 || !isValidRealtimeRuntimeOutcomeReport(args[0])) {
+        payloadRejected(telemetry)
+        return
+      }
+
+      const report = args[0]
+      const status = readProperty(report, 'status') as RealtimeRuntimeOutcomeStatus
+      const operation = readProperty(report, 'operation') as RealtimeRuntimeOutcomeOperation
+      const reason = readProperty(report, 'reason') as string
+      emit(telemetry, {
+        module: 'openai',
+        event: `realtime_runtime_${operation}`,
+        status: status === 'success' ? 'success' : status === 'failed' ? 'failed' : 'info',
+        reason,
+        source: 'runtime',
+      })
+    } catch {
+      payloadRejected(telemetry)
+    }
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSnapshot, (event, ...args) => {

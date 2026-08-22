@@ -65,6 +65,7 @@ export interface MirrorChannelMap {
   readonly snapshot: 'mirror:snapshot'
   readonly requestRealtimeClientSecret: 'mirror:request-realtime-client-secret'
   readonly interrupt: 'mirror:interrupt'
+  readonly reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome'
   readonly ready: BootChannel
 }
 
@@ -99,6 +100,7 @@ interface SharedRendererBridge {
 
 export interface MirrorBridge extends SharedRendererBridge {
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
+  reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
   onInterrupt(listener: () => void): () => void
 }
 
@@ -128,4 +130,30 @@ declare global {
     /** Absent when the preload failed; renderers must keep a visible fallback. */
     readonly magicMirror?: BootBridge
   }
+}
+export const REALTIME_RUNTIME_OUTCOME_STATUSES = [
+  'success',
+  'degraded',
+  'failed',
+  'ignored',
+] as const
+
+export type RealtimeRuntimeOutcomeStatus =
+  (typeof REALTIME_RUNTIME_OUTCOME_STATUSES)[number]
+
+export const REALTIME_RUNTIME_OUTCOME_OPERATIONS = [
+  'start',
+  'stop',
+  'dispose',
+  'interrupt',
+  'rollover',
+] as const
+
+export type RealtimeRuntimeOutcomeOperation =
+  (typeof REALTIME_RUNTIME_OUTCOME_OPERATIONS)[number]
+
+export type RealtimeRuntimeOutcomeReport = {
+  readonly status: RealtimeRuntimeOutcomeStatus
+  readonly operation: RealtimeRuntimeOutcomeOperation
+  readonly reason: string
 }

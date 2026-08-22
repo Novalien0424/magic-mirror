@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot } from '../shared/types'
 import type {
   MirrorBridge,
+  RealtimeRuntimeOutcomeReport,
   RealtimeSessionStartBundleValue,
   SnapshotListener,
   TransientRealtimeSecretResult,
@@ -17,6 +18,7 @@ const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
 const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
 const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
+const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -190,6 +192,15 @@ const bridge: MirrorBridge = {
   async requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult> {
     const result: unknown = await ipcRenderer.invoke(REQUEST_REALTIME_CLIENT_SECRET_CHANNEL)
     return validateRealtimeSecretResult(result)
+  },
+
+  reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void {
+    const dto = Object.freeze({
+      status: readProperty(report, 'status'),
+      operation: readProperty(report, 'operation'),
+      reason: readProperty(report, 'reason'),
+    })
+    ipcRenderer.send(REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL, dto)
   },
 
   onInterrupt(listener: () => void): () => void {

@@ -15,6 +15,9 @@ import { ErrorBoundary } from '../../src/renderer/shared/ErrorBoundary'
 
 const RAW_ERROR_MESSAGE = 'synthetic-render-error-message'
 const RAW_ERROR_STACK = 'synthetic-render-error-stack'
+const RAW_ATTEMPTED_STEP = 'synthetic-attempted-step'
+const RAW_FAILED_STEP = 'synthetic-failed-step'
+const RAW_CREDENTIAL = 'synthetic-credential'
 const RAW_TRANSCRIPT = 'synthetic-transcript-content'
 const RAW_AUDIO = 'synthetic-audio-content'
 const RAW_MEMORY = 'synthetic-memory-value'
@@ -285,6 +288,97 @@ describe('Mirror preload interrupt bridge contract', () => {
       expect(removals).toHaveLength(1)
       expect(removals[0]?.channel).toBe('mirror:interrupt')
       expect(removals[0]?.listener).toBe(registration?.listener)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
+  })
+})
+
+describe('Mirror runtime outcome reporting', () => {
+  type MirrorRuntimeOutcomeReport = Readonly<{
+    status: 'success' | 'failed' | 'ignored' | 'degraded'
+    operation: 'start' | 'stop' | 'dispose' | 'interrupt' | 'rollover'
+    reason: string
+  }>
+
+  it('sends exactly one frozen DTO with only the closed runtime outcome fields', async () => {
+    type IpcSend = (channel: string, ...payload: unknown[]) => void
+
+    const sends: Array<{ channel: string; payload: unknown[] }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: () => undefined,
+        removeListener: () => undefined,
+        send: ((channel: string, ...payload: unknown[]) => {
+          sends.push({ channel, payload })
+        }) as IpcSend,
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+
+      const bridge = exposedBridge as {
+        reportRealtimeRuntimeOutcome(value: unknown): void
+      }
+      bridge.reportRealtimeRuntimeOutcome({
+        status: 'failed',
+        operation: 'interrupt',
+        reason: 'interrupt_failed',
+        attemptedSteps: [RAW_ATTEMPTED_STEP],
+        failedSteps: [RAW_FAILED_STEP],
+        error: RAW_ERROR_MESSAGE,
+        message: RAW_ERROR_MESSAGE,
+        stack: RAW_ERROR_STACK,
+        profileId: RAW_PROFILE_ID,
+        guestId: RAW_GUEST_ID,
+        candidateProfileId: RAW_CANDIDATE_ID,
+        transcript: RAW_TRANSCRIPT,
+        audio: RAW_AUDIO,
+        memory: RAW_MEMORY,
+        credentials: RAW_CREDENTIAL,
+        model: RAW_MODEL_ID,
+      } as MirrorRuntimeOutcomeReport)
+
+      expect(sends).toHaveLength(1)
+      expect(sends[0]?.channel).toBe('mirror:report-realtime-runtime-outcome')
+      expect(sends[0]?.payload).toHaveLength(1)
+
+      const dto = sends[0]?.payload[0]
+      expect(dto).toEqual({
+        status: 'failed',
+        operation: 'interrupt',
+        reason: 'interrupt_failed',
+      })
+      expect(Object.keys(dto as Record<string, unknown>).sort()).toEqual([
+        'operation',
+        'reason',
+        'status',
+      ])
+      expect(Object.isFrozen(dto)).toBe(true)
+      expect(collectKeys(dto).some((key) =>
+        /attempted|failed|error|message|stack|profile|guest|candidate|transcript|audio|memory|credential|model/i.test(key),
+      )).toBe(false)
+      expectNoForbiddenContent(dto)
+      for (const rawValue of [
+        RAW_ATTEMPTED_STEP,
+        RAW_FAILED_STEP,
+        RAW_ERROR_MESSAGE,
+        RAW_ERROR_STACK,
+        RAW_CREDENTIAL,
+      ]) {
+        expect(serialized(dto)).not.toContain(rawValue)
+      }
     } finally {
       vi.doUnmock('electron')
       vi.resetModules()

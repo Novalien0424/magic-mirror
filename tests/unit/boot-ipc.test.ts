@@ -723,6 +723,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
 
   it('keeps exact Mirror and Console channel allowlists', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
+      reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
