@@ -234,6 +234,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       getSnapshot: 'console:get-snapshot',
       snapshot: 'console:snapshot',
       simulate: 'console:simulate',
+      interrupt: 'console:interrupt',
       overview: 'console:get-overview',
       events: 'console:get-events',
       ready: 'boot:renderer-ready',
@@ -242,6 +243,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
+      interrupt: 'mirror:interrupt',
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)
@@ -316,6 +318,58 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       }),
     ]))
     expectNoSensitiveOutput({ start, disconnect, invalidStart, events: registered.events })
+  })
+
+  it('dispatches an authorized zero-argument interrupt to the tracked Mirror without a payload', async () => {
+    const registered = makeHarness()
+    const interrupt = getHandler(registered, 'console:interrupt')
+
+    const dispatched = await interrupt(authorizedEvent(registered))
+    const unauthorized = await interrupt({
+      sender: registered.mirrorSender,
+      senderFrame: registered.mirrorFrame,
+    })
+    const invalid = await interrupt(authorizedEvent(registered), { unexpected: TEST_PRIVATE_MEMORY_SENTINEL })
+
+    expect(dispatched).toEqual({
+      ok: true,
+      value: {
+        action: 'interrupt',
+        status: 'success',
+        reason: 'cause=interrupt_dispatched',
+      },
+    })
+    expect(unauthorized).toEqual({
+      ok: false,
+      error: 'console_request_rejected',
+      reason: 'cause=sender_rejected',
+    })
+    expect(invalid).toEqual({
+      ok: false,
+      error: 'console_request_invalid',
+      reason: 'cause=payload_schema_invalid',
+    })
+    expect(registered.mirrorSender.send).toHaveBeenCalledTimes(1)
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith('mirror:interrupt')
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'console_lifecycle_action',
+        status: 'success',
+        reason: 'action=interrupt;cause=interrupt_dispatched',
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        reason: 'web_contents_mismatch',
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_payload_invalid',
+        reason: 'payload_schema_invalid',
+        source: 'runtime',
+      }),
+    ]))
+    expectNoSensitiveOutput({ dispatched, unauthorized, invalid, events: registered.events })
   })
 
   it('requires the Console main frame and exact tracked webContents id for every 9A handler', async () => {

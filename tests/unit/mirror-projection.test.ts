@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   MIRROR_STATE_COPY,
@@ -223,5 +223,64 @@ describe('Mirror ErrorBoundary stable failure contract', () => {
     expect(encoded).toContain('render_exception')
     expect(encoded).not.toContain(RAW_ERROR_MESSAGE)
     expect(encoded).not.toContain(RAW_ERROR_STACK)
+  })
+})
+
+describe('Mirror preload interrupt bridge contract', () => {
+  it('subscribes to mirror:interrupt with no payload and disposes the exact wrapper', async () => {
+    type IpcListener = (event: unknown, ...payload: unknown[]) => void
+
+    const registrations: Array<{ channel: string; listener: IpcListener }> = []
+    const removals: Array<{ channel: string; listener: IpcListener }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: (channel: string, listener: IpcListener) => {
+          registrations.push({ channel, listener })
+        },
+        removeListener: (channel: string, listener: IpcListener) => {
+          removals.push({ channel, listener })
+        },
+        send: () => undefined,
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+
+      const bridge = exposedBridge as {
+        onInterrupt(listener: () => void): () => void
+      }
+      const listener = vi.fn<() => void>()
+
+      const dispose = bridge.onInterrupt(listener)
+      const registration = registrations[0]
+
+      expect(registrations).toHaveLength(1)
+      expect(registration?.channel).toBe('mirror:interrupt')
+      expect(registration?.listener).toBeTypeOf('function')
+
+      registration?.listener({ type: 'synthetic-event' }, { unexpected: 'synthetic-payload' })
+
+      expect(listener).toHaveBeenCalledTimes(1)
+      expect(listener).toHaveBeenCalledWith()
+
+      dispose()
+
+      expect(removals).toHaveLength(1)
+      expect(removals[0]?.channel).toBe('mirror:interrupt')
+      expect(removals[0]?.listener).toBe(registration?.listener)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
   })
 })

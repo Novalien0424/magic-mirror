@@ -27,6 +27,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
   snapshot: 'mirror:snapshot',
   requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
+  interrupt: 'mirror:interrupt',
   ready: 'boot:renderer-ready',
 })
 
@@ -36,6 +37,7 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   simulate: 'console:simulate',
   startConversation: 'console:start-conversation',
   disconnect: 'console:disconnect',
+  interrupt: 'console:interrupt',
   overview: 'console:get-overview',
   events: 'console:get-events',
   config: 'console:get-config',
@@ -56,7 +58,7 @@ interface WebContentsLike {
   readonly id: number
   readonly mainFrame: unknown
   readonly isDestroyed?: () => boolean
-  readonly send: (channel: string, payload: unknown) => void
+  readonly send: (channel: string, ...payload: readonly unknown[]) => void
 }
 
 interface TrackedWindowLike {
@@ -577,6 +579,37 @@ async function invokeLifecycleAction(
   }
 }
 
+function dispatchMirrorInterrupt(windows: TrackedWindows): Record<string, unknown> {
+  const tracked = getTrackedWindow(windows, 'mirror')
+  if (tracked === null || isTrackedWindowDestroyed(tracked)) {
+    return {
+      status: 'failed',
+      reason: 'cause=interrupt_dispatch_failed',
+    }
+  }
+
+  const sender = readProperty(tracked, 'webContents')
+  if (!isWebContentsLike(sender)) {
+    return {
+      status: 'failed',
+      reason: 'cause=interrupt_dispatch_failed',
+    }
+  }
+
+  try {
+    sender.send(MIRROR_IPC_CHANNELS.interrupt)
+    return {
+      status: 'success',
+      reason: 'cause=interrupt_dispatched',
+    }
+  } catch {
+    return {
+      status: 'failed',
+      reason: 'cause=interrupt_dispatch_failed',
+    }
+  }
+}
+
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
   const { ipcMain, runtime, windows, telemetry } = options
 
@@ -680,6 +713,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     return invokeLifecycleAction('disconnect', () => runtime.manualStop(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.interrupt, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeLifecycleAction('interrupt', async () => dispatchMirrorInterrupt(windows), telemetry)
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.overview, async (event, ...args) => {

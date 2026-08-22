@@ -15,6 +15,7 @@ const READY_CHANNEL = 'boot:renderer-ready' as const
 const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
 const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
+const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
 
 const bridge: MirrorBridge = {
   notifyReady(): void {
@@ -27,6 +28,14 @@ const bridge: MirrorBridge = {
 
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult> {
     return ipcRenderer.invoke(REQUEST_REALTIME_CLIENT_SECRET_CHANNEL) as Promise<TransientRealtimeSecretResult>
+  },
+
+  onInterrupt(listener: () => void): () => void {
+    const handler = (_event: IpcRendererEvent): void => {
+      listener()
+    }
+    ipcRenderer.on(INTERRUPT_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(INTERRUPT_CHANNEL, handler)
   },
 
   onSnapshot(listener: SnapshotListener): () => void {

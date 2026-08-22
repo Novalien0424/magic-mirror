@@ -23,6 +23,7 @@ const GET_SNAPSHOT_CHANNEL = 'console:get-snapshot' as const
 const SIMULATE_CHANNEL = 'console:simulate' as const
 const START_CONVERSATION_CHANNEL = 'console:start-conversation' as const
 const DISCONNECT_CHANNEL = 'console:disconnect' as const
+const INTERRUPT_CHANNEL = 'console:interrupt' as const
 const GET_OVERVIEW_CHANNEL = 'console:get-overview' as const
 const GET_EVENTS_CHANNEL = 'console:get-events' as const
 const GET_CONFIG_CHANNEL = 'console:get-config' as const
@@ -62,6 +63,10 @@ const bridge: ConsoleBridge = {
 
   disconnect(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>> {
     return ipcRenderer.invoke(DISCONNECT_CHANNEL) as Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
+  },
+
+  interrupt(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>> {
+    return ipcRenderer.invoke(INTERRUPT_CHANNEL) as Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   },
 
   getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>> {

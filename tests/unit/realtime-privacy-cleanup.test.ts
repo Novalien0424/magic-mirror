@@ -199,6 +199,7 @@ type ExistingConsoleIpcChannelKey =
   | 'simulate'
   | 'startConversation'
   | 'disconnect'
+  | 'interrupt'
   | 'overview'
   | 'events'
   | 'config'

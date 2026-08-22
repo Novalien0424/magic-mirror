@@ -22,9 +22,9 @@ process state that must survive implementation handoffs.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle,
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
-  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A are accepted; P1-U7
-  remains in progress with Interrupt and the rest of its scope next, and P1-U8
-  is pending. Phases 2–7 do not advance early.
+  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2 are accepted;
+  P1-U7 remains in progress with end-to-end interrupt composition and the rest
+  of its scope next, and P1-U8 is pending. Phases 2–7 do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -94,10 +94,35 @@ process state that must survive implementation handoffs.
   no project-skill correction. No application, test, skill, or package change
   belongs to this record update.
 
+### P1-U7B1/B2 accepted Console interrupt transport (2026-08-22)
+
+- An authorized zero-argument Console interrupt dispatches payload-free through
+  Main to the exact `mirror:interrupt` channel on the tracked Mirror
+  `webContents`; dispatch exposes only metadata-only `status`/`reason`.
+  Mirror preload exposes typed `onInterrupt(listener)` with an exact disposer
+  and drops the event payload.
+- No Console UI, Mirror App consumer, `TurnController` call, renderer
+  acknowledgment, or interruption-completion claim exists yet.
+- The exact eight changed source/test paths are
+  `src/main/ipc.ts`, `src/preload/console.ts`, `src/preload/mirror.ts`,
+  `src/shared/bridge.ts`, `src/shared/console-types.ts`,
+  `tests/unit/console-ipc.test.ts`, `tests/unit/mirror-projection.test.ts`,
+  and `tests/unit/realtime-privacy-cleanup.test.ts`.
+- Accepted evidence is `git diff --check` exit `0` with line-ending warnings,
+  five focused files passing `45/45` tests, and Node/web typechecks exiting
+  `0`. No full suite, build, or demo was run.
+- No human input was needed for this transport boundary. Current evidence
+  identifies no project-skill correction. End-to-end interrupt composition and
+  the remaining P1-U7 scope are next; this is not Phase 1 exit evidence.
+- This record update makes no source, test, skill, or package change and
+  records no private values, commit, or invented hash.
+
 ### Human-intervention timing ledger
 
 - **P1-U7A:** none needed; mocks are sufficient for its bounded Console IPC
   boundary and metadata-only status/reason path.
+- **P1-U7B1/B2 transport:** none needed; bounded mock/test evidence is
+  sufficient for the payload-free Main-to-Mirror dispatch boundary.
 - **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
   temporary Persona instructions, a Voice choice, and operator observation of
   P1-D1, P1-D2, and P1-D5 are still required.
@@ -208,6 +233,7 @@ process state that must survive implementation handoffs.
 | P1-U1–U5 | `4862383`, `5be5871`, `18461e5`, `cffd484`, `fb5e58f` | accepted |
 | P1-U6 | accepted; no self-referential hash | focused `32/32`; Node/web typecheck exit `0` |
 | P1-U7A | externally accepted 2026-08-22; integration commit represented by repository history | 9 changed source/test paths; focused `31/31`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
+| P1-U7B1/B2 | externally accepted 2026-08-22; no invented hash recorded | 8 changed source/test paths; focused `45/45`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules

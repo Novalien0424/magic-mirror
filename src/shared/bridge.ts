@@ -42,6 +42,7 @@ export interface MirrorChannelMap {
   readonly getSnapshot: 'mirror:get-snapshot'
   readonly snapshot: 'mirror:snapshot'
   readonly requestRealtimeClientSecret: 'mirror:request-realtime-client-secret'
+  readonly interrupt: 'mirror:interrupt'
   readonly ready: BootChannel
 }
 
@@ -51,6 +52,7 @@ export interface ConsoleChannelMap {
   readonly simulate: 'console:simulate'
   readonly startConversation: 'console:start-conversation'
   readonly disconnect: 'console:disconnect'
+  readonly interrupt: 'console:interrupt'
   readonly overview: 'console:get-overview'
   readonly events: 'console:get-events'
   readonly config: 'console:get-config'
@@ -75,12 +77,14 @@ interface SharedRendererBridge {
 
 export interface MirrorBridge extends SharedRendererBridge {
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
+  onInterrupt(listener: () => void): () => void
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
   startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   disconnect(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
+  interrupt(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   getOverview(): Promise<ConsoleResponse<ConsoleOverviewPayload>>
   getEvents(request?: ConsoleEventsQuery): Promise<ConsoleResponse<ConsoleEventsPage>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>

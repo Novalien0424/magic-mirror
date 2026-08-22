@@ -3,8 +3,9 @@
 **Current dashboard — Status as of 2026-08-22 — Phase 1 — Realtime Voice: IN PROGRESS.** The active branch is
 `phase1-realtime-voice`; Phase 0 is accepted at local tag `phase0-v0.3.1` on
 `9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A is accepted, while
-Interrupt and the rest of P1-U7 remain next; P1-U8 is pending. Phases 2–7
-remain sequential and have not started.
+P1-U7B1/B2 transport is also accepted, while end-to-end interrupt composition
+and the rest of P1-U7 remain next; P1-U8 is pending. Phases 2–7 remain
+sequential and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-22)
 
@@ -19,7 +20,7 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A accepted, Interrupt and remainder next | pending |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A and P1-U7B1/B2 accepted, end-to-end interrupt composition and remainder next | pending |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -81,17 +82,48 @@ completed the route; accidental untracked `pnpm` files were removed, and
 project-skill correction. This record update changes no application, test,
 skill, or package file.
 
-P1-U7 must still compose the accepted transcript, interruption, cleanup,
-realtime recovery, audio-event, cleanup-boundary, and authorized Console seams
-into the default runtime. P1-U8 owns deterministic/real demos, Phase Test
-records, the full regression/privacy scan, final exit acceptance, and the local
-`phase1-v0.3.1` tag.
+### P1-U7B1/B2 — Console interrupt transport (externally accepted 2026-08-22)
+
+An authorized zero-argument Console interrupt dispatches payload-free through
+Main to the exact `mirror:interrupt` channel on the tracked Mirror
+`webContents`, with metadata-only dispatch `status`/`reason`. Mirror preload
+exposes typed `onInterrupt(listener)` with an exact disposer and drops the
+event payload. No Console UI, Mirror App consumer, `TurnController` call,
+renderer acknowledgment, or interruption-completion claim exists yet.
+
+The exact eight changed source/test paths were:
+
+- `src/main/ipc.ts`
+- `src/preload/console.ts`
+- `src/preload/mirror.ts`
+- `src/shared/bridge.ts`
+- `src/shared/console-types.ts`
+- `tests/unit/console-ipc.test.ts`
+- `tests/unit/mirror-projection.test.ts`
+- `tests/unit/realtime-privacy-cleanup.test.ts`
+
+Accepted evidence was `git diff --check` exit `0` with line-ending warnings,
+five focused files passing `45/45` tests, and Node/web typechecks exiting `0`.
+No full suite, build, or demo was run. No human input was needed for this
+transport boundary, and current evidence identifies no project-skill
+correction. End-to-end interrupt composition and the remaining P1-U7 scope
+remain next; no Phase 1 exit is claimed.
+
+This record update makes no source, test, skill, or package change and records
+no private values, commit, or invented hash.
+
+P1-U7 must still compose the accepted transcript, interruption transport and
+cleanup, realtime recovery, audio-event, cleanup-boundary, and authorized
+Console seams into the default runtime. P1-U8 owns deterministic/real demos,
+Phase Test records, the full regression/privacy scan, final exit acceptance,
+and the local `phase1-v0.3.1` tag.
 
 ## Human-intervention ledger
 
 | Boundary | Human intervention or evidence | Timing/status |
 |---|---|---|
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
+| P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
 | Phase 1 exit | Real OpenAI credential, account, and network; a PoC microphone/output path; temporary Persona instructions; a Voice choice; and operator observation for P1-D1, P1-D2, and P1-D5. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity inputs, memory/profile inputs, and hardware/adapter inputs. | Later venue-specific work |

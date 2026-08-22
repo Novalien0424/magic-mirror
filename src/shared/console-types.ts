@@ -58,7 +58,7 @@ export type ConsoleReason =
   | 'cause=runtime_action_failed'
   | 'cause=action_result_invalid'
 
-export type ConsoleLifecycleAction = 'start_conversation' | 'disconnect'
+export type ConsoleLifecycleAction = 'start_conversation' | 'disconnect' | 'interrupt'
 
 export interface ConsoleLifecycleActionResult {
   readonly action: ConsoleLifecycleAction
