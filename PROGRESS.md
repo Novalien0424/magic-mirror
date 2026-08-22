@@ -5,8 +5,8 @@
 `9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
 transport, P1-U7C1/C2 credential/DTO boundaries, and P1-U7C3 renderer
 runtime owner and generation-safe Realtime session rollover, and P1-U7D/U7E1/U7E2
-are accepted; P1-U7F is the next and only planned boundary, followed by the
-remaining lifecycle/recovery work; P1-U8 is pending. Phases 2–7 remain
+are accepted; P1-U7F1 and P1-U7F2A are accepted; P1-U7 remains in progress
+with P1-U7F2B next, followed by P1-U7F3; P1-U8 is pending. Phases 2–7 remain
 sequential and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-23)
@@ -22,7 +22,7 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, P1-U7C3, P1-U7D, P1-U7E1, and P1-U7E2 accepted; P1-U7F is next and only planned for the runtime boundary | `4b2b6fa`, `4636b17`, `f4e5103`; U7F planned |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, P1-U7C3, P1-U7D, P1-U7E1, P1-U7E2, P1-U7F1, and P1-U7F2A accepted; P1-U7F2B next | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400` |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -164,9 +164,48 @@ final exit acceptance, and the local `phase1-v0.3.1` tag. This does not mark
 real Realtime, microphone, or target-Mac evidence complete, and no Phase 1
 exit is claimed.
 
-### P1-U7D/U7E1/U7E2 accepted; P1-U7F externally reviewed boundary (2026-08-23)
+### P1-U7F1/U7F2A — command transport and Main-owned manual transactions accepted (2026-08-23)
 
-P1-U7D App interrupt composition is accepted at `4b2b6fa`, P1-U7E1 metadata-only Mirror-to-Main runtime outcomes are accepted at `4636b17`, and P1-U7E2 browser runtime dependencies are accepted and pushed at `f4e5103`. U7E2 evidence is `48/48` files and `500/500` tests; Node/web typechecks and the Electron Vite build each exited `0`; known `npm --run` and `DEP0190` warnings remain. No human intervention was required, and no skill correction was found. U7F is next and only planned: a tagged Main-to-Mirror runtime command boundary plus exactly one browser runtime host/cleanup/outcome composition for manual start/stop/interrupt and 60-minute rollover. `sessionGeneration` 0 is Main's no-active-session sentinel, start bundles require an active identity, renderer session generations are positive, and `realtimeSessionId` remains stale-event authority. The accepted Phase 1 plan lines `960–962` retain 300-second idle/wake/sleep as Phase 2 because it is a non-goal. No U7F implementation or real, macOS, demo, or Phase 1 exit evidence is claimed.
+P1-U7F1 is accepted and pushed at `105db2f`: a frozen typed Main-to-Mirror
+start/stop/rollover command DTO, Mirror preload subscription/disposer, exact
+tracked-Mirror dispatch with stable metadata-only outcomes, and strictly
+positive renderer bundle generations.
+
+P1-U7F2A is accepted, committed, and pushed at `b81d400`. Main keeps one
+pending start identity; wake increments generation; a request bundle may use
+the pending identity only while Activating; renderer success commits that
+exact ID; delivery/renderer start failure reaches OfflineLoop and clears
+pending identity. Active stop transitions through Suspending to Dormant on
+renderer success or Maintenance on failure; wrong-state outcomes are ignored
+with metadata-only reasons. Legacy explicitly injected recovery-controller
+behavior is preserved. Production index dispatches through the tracked Mirror,
+and IPC reconciles outcome reports non-throwingly.
+
+Strict TDD recovered RED with 4 existing tests passing and exactly 3 new
+transaction tests failing for the intended missing behavior; lifecycle
+generation evidence was `32/32` green, and the focused candidate later passed
+`90/90`. After test-fixture corrections, the final gate was Node typecheck
+`0`, web typecheck `0`, `npm test` `48/48` files and `515/515` tests, and
+`npm run build` `0`; `DEP0190` remains a nonblocking tooling warning. The
+regression investigation found no production defect: test-only corrections
+replaced stale bundle generation `0` (Main's no-session sentinel), restored
+the accepted command channel in two exact Mirror maps, and typed one fixture
+callback while retaining strict zero-rejection coverage.
+
+The broad U7F survey timed out, its narrowed retry succeeded, and bounded
+U7F2A RED-writer/combined-RED-tester/first-implementer timeouts were recovered
+with artifacts where applicable; these were harness events, not product
+failures. Scoped survey and root review found no concrete defect or missing
+invariant/behavior in the four routed skills; no skill change is warranted.
+
+Next is P1-U7F2B: the pending 60-minute rollover transaction plus bounded
+outage recovery/retry probes, preserving the active authoritative identity
+until renderer rollover success. P1-U7F3 then mounts the single renderer
+runtime host/cleanup/outcome composition. P1-U8 owns deterministic/real demos,
+Phase Test records, regression/privacy scan, Phase 1 exit, and the local
+`phase1-v0.3.1` tag. The accepted 300-second idle/wake/sleep timer remains a
+Phase 2 non-goal. No Phase 1 exit or real OpenAI, mic/output, macOS, or
+operator evidence is claimed.
 
 ## Human-intervention ledger
 
@@ -175,7 +214,7 @@ P1-U7D App interrupt composition is accepted at `4b2b6fa`, P1-U7E1 metadata-only
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
 | P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
 | P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
-| P1-U7D/U7E1/U7E2 + P1-U7F survey | None now; the first broad U7F survey timed out, and the narrowed retry completed without human action; no skill correction was needed. | Complete; no human intervention |
+| P1-U7D/U7E1/U7E2/U7F1/U7F2A | No human intervention; the broad U7F survey timed out, its narrowed retry succeeded, and bounded U7F2A worker/tester timeouts were recovered with artifacts where applicable; no skill correction was needed. | Complete; no human intervention |
 | P1-U7C3 Electron launch | Earlier launch failure cleared without intervention and did not reproduce in the 3-file/29-test focused rerun or full gate; local `electron.cmd` and direct binary were `v43.4.1`; no install/reinstall or human action was required. Existing `DEP0190` child-process shell warning remains. | Cleared; no action required |
 | Phase 1 exit | Real OpenAI credential/account/network; PoC mic/output; temporary Persona; Voice choice; and operator observation of P1-D1/D2/D5. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |

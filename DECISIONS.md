@@ -23,9 +23,9 @@ process state that must survive implementation handoffs.
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
   accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2/C3
-  are accepted, as are P1-U7D/U7E1/U7E2; P1-U7 remains in progress with
-  P1-U7F next and only planned, and P1-U8 pending. Phases 2–7 do not advance
-  early.
+  are accepted, as are P1-U7D/U7E1/U7E2/U7F1/U7F2A; P1-U7 remains in
+  progress with P1-U7F2B next, P1-U7F3 following, and P1-U8 pending. Phases
+  2–7 do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -164,26 +164,46 @@ process state that must survive implementation handoffs.
   microphone, or target-Mac evidence complete, and is not Phase 1 exit
   evidence.
 
-### P1-U7D/U7E1/U7E2 accepted; P1-U7F externally reviewed boundary (2026-08-23)
+### P1-U7D/U7E1/U7E2/U7F1/U7F2A accepted boundaries (2026-08-23)
 
 - P1-U7D App interrupt composition is accepted at `4b2b6fa`; P1-U7E1
   metadata-only Mirror-to-Main runtime outcomes are accepted at `4636b17`; and
   P1-U7E2 browser runtime dependencies are accepted and pushed at `f4e5103`.
-  U7E2 evidence is `48/48` files and `500/500` tests; Node/web typechecks and
-  the Electron Vite build each exited `0`; known `npm --run` and `DEP0190`
-  warnings remain. No human intervention was required and no skill correction
-  was found.
-- P1-U7F is the next and only planned Phase 1 boundary. It owns a tagged
-  Main-to-Mirror runtime command boundary plus exactly one browser runtime
-  host/cleanup/outcome composition for manual start/stop/interrupt and
-  60-minute rollover. `sessionGeneration` 0 is Main's no-active-session
-  sentinel, start bundles require an active identity, renderer session
-  generations are positive, and `realtimeSessionId` remains stale-event
-  authority.
-- The accepted Phase 1 plan lines `960–962` retain 300-second idle/wake/sleep
-  as Phase 2 because it is a non-goal. U7F has no implementation or Phase 1
-  exit claim; P1-U8 owns the demos, Phase Test records, regression/privacy
-  scan, final exit acceptance, and `phase1-v0.3.1` tag.
+  U7E2 retained `48/48` files and `500/500` tests with Node/web typechecks and
+  the Electron Vite build at `0`; known `npm --run` and `DEP0190` warnings
+  remain.
+- P1-U7F1 is accepted and pushed at `105db2f`. The selected contract is a
+  frozen typed Main-to-Mirror start/stop/rollover command DTO, Mirror preload
+  subscription/disposer, exact tracked-Mirror dispatch with stable
+  metadata-only outcomes, and strictly positive renderer bundle generations.
+- P1-U7F2A is accepted, committed, and pushed at `b81d400`. Main owns one
+  pending start identity; wake increments generation; a request bundle may use
+  that identity only while Activating; renderer success commits the exact ID;
+  delivery/renderer start failure reaches OfflineLoop and clears pending
+  identity. Active stop is Suspending then Dormant on renderer success or
+  Maintenance on failure; wrong-state outcomes are metadata-only ignored.
+  Legacy explicitly injected recovery-controller behavior remains preserved;
+  production index dispatches through the tracked Mirror, and IPC reconciles
+  outcome reports non-throwingly.
+- Strict TDD recovered RED with 4 existing tests passing and exactly 3 new
+  transaction tests failing for intended missing behavior; lifecycle generation
+  evidence was `32/32` green and the focused candidate later passed `90/90`.
+  Final corrected acceptance was Node typecheck `0`, web typecheck `0`,
+  `npm test` `48/48` files and `515/515` tests, and `npm run build` `0`.
+  Test-only fixture corrections addressed stale generation `0`, two exact
+  Mirror maps missing the accepted command channel, and one untyped callback;
+  no production defect was found and strict zero-rejection coverage remained.
+- The broad U7F survey, U7F2A RED-writer, combined RED-tester, and first
+  implementer each had a bounded launcher timeout at some point; narrowed
+  retries/review/testing completed with artifacts where applicable. These were
+  harness events, not product failures. The four routed skills need no change.
+- P1-U7F2B is next: pending 60-minute rollover plus bounded outage
+  recovery/retry probes, preserving active authoritative identity until
+  renderer rollover success. P1-U7F3 then mounts the single renderer runtime
+  host/cleanup/outcome composition. P1-U8 owns demos, Phase Test records,
+  regression/privacy scan, Phase 1 exit, and `phase1-v0.3.1`. The accepted
+  300-second idle/wake/sleep timer remains Phase 2; no Phase 1 exit or real
+  OpenAI, mic/output, macOS, or operator evidence is claimed.
 
 ### Human-intervention timing ledger
 
@@ -193,9 +213,10 @@ process state that must survive implementation handoffs.
   sufficient for the payload-free Main-to-Mirror dispatch boundary.
 - **P1-U7C1/C2:** none needed for C1/C2 engineering and mock/static
   acceptance.
-- **P1-U7D/U7E1/U7E2 + P1-U7F survey:** none now; the first broad U7F survey
-  timed out, and the narrowed retry completed without human action. No skill
-  correction was needed.
+- **P1-U7D/U7E1/U7E2/U7F1/U7F2A:** no human intervention; the broad U7F
+  survey timed out, its narrowed retry succeeded, and bounded U7F2A
+  implementer/tester timeouts were recovered with artifacts where applicable.
+  No skill correction was needed.
 - **P1-U7C3 Electron launch — cleared; no action required:** an earlier launch
   failure cleared without intervention and did not reproduce in the
   3-file/29-test focused rerun or full gate; local `electron.cmd` and direct
@@ -315,6 +336,11 @@ process state that must survive implementation handoffs.
 | P1-U7C1 | externally accepted 2026-08-22; committed and pushed at `cc8c34f` | 3 test files / 9 tests; Node typecheck green; Windows-only platform limitation remains |
 | P1-U7C2 | externally accepted 2026-08-22 on the current uncommitted integration diff; no future commit hash recorded | 6 test files / 45 tests; Node/web typechecks exit `0`; `git diff --check` exit `0` with line-ending warnings; prior exact negative scan exit `1` with empty output; no full suite/build/demo or target-Mac/provider field verification |
 | P1-U7C3 | externally accepted 2026-08-22 at `24bccfd` | 47/47 test files and 478/478 tests; Node/web typechecks and build exit `0`; stale Mirror interrupt expectation corrected; Electron launch cleared with no action; `DEP0190` remains |
+| P1-U7D | `4b2b6fa` | App interrupt composition accepted |
+| P1-U7E1 | `4636b17` | metadata-only Mirror-to-Main runtime outcomes accepted |
+| P1-U7E2 | `f4e5103` | 48/48 files; 500/500 tests; Node/web/build exit `0`; warnings nonblocking |
+| P1-U7F1 | `105db2f` | typed command transport, preload subscription/disposer, tracked dispatch, positive renderer generations accepted |
+| P1-U7F2A | `b81d400` | Main-owned start/stop transactions; 48/48 files; 515/515 tests; Node/web/build exit `0` after test-only fixture corrections |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules
