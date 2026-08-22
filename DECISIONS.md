@@ -23,9 +23,9 @@ process state that must survive implementation handoffs.
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
   accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2/C3
-  are accepted; P1-U7 remains in progress with P1-U7D App/Console interrupt
-  composition next, then the remaining lifecycle, recovery, and timer work,
-  and P1-U8 pending. Phases 2–7 do not advance early.
+  are accepted, as are P1-U7D/U7E1/U7E2; P1-U7 remains in progress with
+  P1-U7F next and only planned, and P1-U8 pending. Phases 2–7 do not advance
+  early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -164,6 +164,27 @@ process state that must survive implementation handoffs.
   microphone, or target-Mac evidence complete, and is not Phase 1 exit
   evidence.
 
+### P1-U7D/U7E1/U7E2 accepted; P1-U7F externally reviewed boundary (2026-08-23)
+
+- P1-U7D App interrupt composition is accepted at `4b2b6fa`; P1-U7E1
+  metadata-only Mirror-to-Main runtime outcomes are accepted at `4636b17`; and
+  P1-U7E2 browser runtime dependencies are accepted and pushed at `f4e5103`.
+  U7E2 evidence is `48/48` files and `500/500` tests; Node/web typechecks and
+  the Electron Vite build each exited `0`; known `npm --run` and `DEP0190`
+  warnings remain. No human intervention was required and no skill correction
+  was found.
+- P1-U7F is the next and only planned Phase 1 boundary. It owns a tagged
+  Main-to-Mirror runtime command boundary plus exactly one browser runtime
+  host/cleanup/outcome composition for manual start/stop/interrupt and
+  60-minute rollover. `sessionGeneration` 0 is Main's no-active-session
+  sentinel, start bundles require an active identity, renderer session
+  generations are positive, and `realtimeSessionId` remains stale-event
+  authority.
+- The accepted Phase 1 plan lines `960–962` retain 300-second idle/wake/sleep
+  as Phase 2 because it is a non-goal. U7F has no implementation or Phase 1
+  exit claim; P1-U8 owns the demos, Phase Test records, regression/privacy
+  scan, final exit acceptance, and `phase1-v0.3.1` tag.
+
 ### Human-intervention timing ledger
 
 - **P1-U7A:** none needed; mocks are sufficient for its bounded Console IPC
@@ -172,14 +193,17 @@ process state that must survive implementation handoffs.
   sufficient for the payload-free Main-to-Mirror dispatch boundary.
 - **P1-U7C1/C2:** none needed for C1/C2 engineering and mock/static
   acceptance.
+- **P1-U7D/U7E1/U7E2 + P1-U7F survey:** none now; the first broad U7F survey
+  timed out, and the narrowed retry completed without human action. No skill
+  correction was needed.
 - **P1-U7C3 Electron launch — cleared; no action required:** an earlier launch
   failure cleared without intervention and did not reproduce in the
   3-file/29-test focused rerun or full gate; local `electron.cmd` and direct
   binary were `v43.4.1`; no install/reinstall or human action was required.
   Existing `DEP0190` child-process shell warning remains.
 - **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
-  temporary Persona instructions, a Voice choice, and operator observation of
-  P1-D1, P1-D2, and P1-D5 are still required.
+  temporary Persona, a Voice choice, and operator observation of P1-D1/D2/D5
+  are still required.
 - **Later target-Mac evidence:** Keychain `safeStorage`, TCC mic/camera,
   signing/entitlements, packaged workers, LaunchAgent restart, power policy,
   and real-device/provider behavior.
