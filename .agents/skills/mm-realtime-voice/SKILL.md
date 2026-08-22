@@ -120,9 +120,13 @@ backups, telemetry, or debug logs, even temporarily for debugging.
 - VAD interruption is automatic on WebRTC; use `session.interrupt()` for manual
   interruption such as spell-response cutoff. It emits `audio_interrupted`.
 - `audio_stopped` means generation done, not speaker-out done. True playback
-  end on WebRTC is raw `output_audio_buffer.stopped` via
-  `session.transport.on(...)`. Use that boundary for Speaking -> Listening,
-  the 300 s idle timer, and safe rollover (Spec section 8.3).
+  end consumes the exact raw `output_audio_buffer.stopped` boundary through
+  `RealtimeSessionHandle.onOutputAudioBufferStopped` via
+  `createPlaybackCompletionTransport(session)`; never use a private
+  `session.transport` path. Use `PlaybackCompletion.waitForActualEnd(signal)`
+  for Speaking -> Listening, the 300 s idle timer, and safe rollover so
+  listener, abort, and analyser-fallback cleanup remains owned by the accepted
+  component (Spec section 8.3).
 - Web Audio: the SDK audio element (ours, unmuted) is the only audible path
   (Spec section 8.2). The analyser is a silent tap:
   `audioCtx.createMediaStreamSource(audioElement.srcObject)` -> AnalyserNode,
