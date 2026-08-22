@@ -725,6 +725,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
   it('keeps exact Mirror and Console channel allowlists', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
+      reportRealtimeFailure: 'mirror:report-realtime-failure',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',

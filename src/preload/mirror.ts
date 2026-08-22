@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot } from '../shared/types'
 import type {
   MirrorBridge,
+  RealtimeFailureReport,
   RealtimeRuntimeCommand,
   RealtimeRuntimeCommandListener,
   RealtimeRuntimeOutcomeReport,
@@ -22,6 +23,7 @@ const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-s
 const REALTIME_RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command' as const
 const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
 const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
+const REPORT_REALTIME_FAILURE_CHANNEL = 'mirror:report-realtime-failure' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -220,6 +222,15 @@ const bridge: MirrorBridge = {
       reason: readProperty(report, 'reason'),
     })
     ipcRenderer.send(REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL, dto)
+  },
+
+  reportRealtimeFailure(report: RealtimeFailureReport): void {
+    const dto = Object.freeze({
+      kind: readProperty(report, 'kind'),
+      realtimeSessionId: readProperty(report, 'realtimeSessionId'),
+      reason: readProperty(report, 'reason'),
+    })
+    ipcRenderer.send(REPORT_REALTIME_FAILURE_CHANNEL, dto)
   },
 
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void {

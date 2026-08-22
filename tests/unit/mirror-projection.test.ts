@@ -564,6 +564,85 @@ describe('Mirror runtime outcome reporting', () => {
   })
 })
 
+describe('Mirror realtime failure report transport', () => {
+  it('sends one fresh frozen exact-key DTO on the failure channel without returning a payload', async () => {
+    type IpcSend = (channel: string, ...payload: unknown[]) => unknown
+
+    const sends: Array<{ channel: string; payload: unknown[] }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: () => undefined,
+        removeListener: () => undefined,
+        send: ((channel: string, ...payload: unknown[]) => {
+          sends.push({ channel, payload })
+          return 'synthetic-return-payload'
+        }) as IpcSend,
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+
+      const bridge = exposedBridge as unknown as {
+        reportRealtimeFailure?: (value: unknown) => unknown
+      }
+      expect(bridge.reportRealtimeFailure).toBeTypeOf('function')
+      if (typeof bridge.reportRealtimeFailure !== 'function') return
+
+      const sourceReport = {
+        kind: 'ice',
+        realtimeSessionId: 'opaque-realtime-session-42',
+        reason: 'ice_failed',
+        error: RAW_ERROR_MESSAGE,
+        profileId: RAW_PROFILE_ID,
+        guestId: RAW_GUEST_ID,
+        transcript: RAW_TRANSCRIPT,
+        audio: RAW_AUDIO,
+        memory: RAW_MEMORY,
+        credentials: RAW_CREDENTIAL,
+      }
+      const result = bridge.reportRealtimeFailure(sourceReport)
+
+      expect(result).toBeUndefined()
+      expect(sends).toHaveLength(1)
+      expect(sends[0]?.channel).toBe('mirror:report-realtime-failure')
+      expect(sends[0]?.payload).toHaveLength(1)
+
+      const dto = sends[0]?.payload[0]
+      expect(dto).toEqual({
+        kind: 'ice',
+        realtimeSessionId: 'opaque-realtime-session-42',
+        reason: 'ice_failed',
+      })
+      expect(dto).not.toBe(sourceReport)
+      expect(Object.keys(dto as Record<string, unknown>).sort()).toEqual([
+        'kind',
+        'realtimeSessionId',
+        'reason',
+      ])
+      expect(Object.isFrozen(dto)).toBe(true)
+      expect(collectKeys(dto).some((key) =>
+        /error|profile|guest|transcript|audio|memory|credential/i.test(key),
+      )).toBe(false)
+      expectNoForbiddenContent(dto)
+      expect(serialized(dto)).not.toContain(RAW_ERROR_MESSAGE)
+      expect(serialized(dto)).not.toContain(RAW_CREDENTIAL)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
+  })
+})
+
 describe('Mirror App interrupt composition', () => {
   type InterruptHandler = () => void
 

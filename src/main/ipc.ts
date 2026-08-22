@@ -13,6 +13,7 @@ import type {
   RealtimeRuntimeOutcomeOperation,
   RealtimeRuntimeOutcomeReport,
   RealtimeRuntimeOutcomeStatus,
+  RealtimeFailureReport,
   RealtimeSessionStartBundleValue,
   TransientRealtimeSecretInput,
   TransientRealtimeSecretResult,
@@ -27,6 +28,7 @@ import type {
 import { projectAppSnapshot, type BootRuntime } from './boot'
 import type { ConsoleDataPlane } from './console-data'
 import type { RealtimeSessionStartBundle } from './realtime/session-start-bundle'
+import type { RealtimeFailureKind } from '../shared/realtime-recovery'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
@@ -35,6 +37,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
   interrupt: 'mirror:interrupt',
   reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
+  reportRealtimeFailure: 'mirror:report-realtime-failure',
   ready: 'boot:renderer-ready',
 })
 
@@ -101,6 +104,9 @@ export interface RegisterIpcHandlersOptions {
     readonly handleRealtimeRuntimeOutcome?: (
       report: RealtimeRuntimeOutcomeReport,
     ) => unknown
+    readonly handleRealtimeFailure?: (
+      report: RealtimeFailureReport,
+    ) => unknown | PromiseLike<unknown>
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -163,6 +169,11 @@ const REALTIME_RUNTIME_OUTCOME_ALLOWED_STATUSES: Readonly<Record<RealtimeRuntime
   rollover: new Set(['success', 'degraded', 'failed', 'ignored']),
 }
 const REALTIME_RUNTIME_OUTCOME_REASON_PATTERN = /^[a-z][a-z0-9_]{0,95}$/
+const REALTIME_FAILURE_KIND_VALUES: ReadonlySet<RealtimeFailureKind> = new Set([
+  'connect',
+  'ice',
+  'active_disconnect',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -315,6 +326,21 @@ function isValidRealtimeRuntimeOutcomeReport(value: unknown): boolean {
     && REALTIME_RUNTIME_OUTCOME_ALLOWED_STATUSES[operation as RealtimeRuntimeOutcomeOperation]?.has(
       status as RealtimeRuntimeOutcomeStatus,
     ) === true
+    && typeof reason === 'string'
+    && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(reason)
+  )
+}
+
+function isValidRealtimeFailureReport(value: unknown): boolean {
+  if (!isPlainObject(value) || !exactKeys(value, ['kind', 'realtimeSessionId', 'reason'])) return false
+  const kind = readProperty(value, 'kind')
+  const realtimeSessionId = readProperty(value, 'realtimeSessionId')
+  const reason = readProperty(value, 'reason')
+  return (
+    typeof kind === 'string'
+    && REALTIME_FAILURE_KIND_VALUES.has(kind as RealtimeFailureKind)
+    && typeof realtimeSessionId === 'string'
+    && SAFE_ID_PATTERN.test(realtimeSessionId)
     && typeof reason === 'string'
     && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(reason)
   )
@@ -889,6 +915,64 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
           event: 'realtime_runtime_outcome_handler_failed',
           status: 'failed',
           error_code: 'realtime_runtime_outcome_handler_failed',
+          reason: 'cause=handler_failed',
+          source: 'runtime',
+        })
+      }
+    } catch {
+      payloadRejected(telemetry)
+    }
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeFailure, (event, ...args) => {
+    try {
+      const authorization = authorizeSender(event, 'mirror', windows)
+      if (!authorization.ok) {
+        senderRejected(telemetry, authorization.reason)
+        return
+      }
+      if (args.length !== 1 || !isValidRealtimeFailureReport(args[0])) {
+        payloadRejected(telemetry)
+        return
+      }
+
+      const source = args[0]
+      const report: RealtimeFailureReport = Object.freeze({
+        kind: readProperty(source, 'kind') as RealtimeFailureKind,
+        realtimeSessionId: readProperty(source, 'realtimeSessionId') as string,
+        reason: readProperty(source, 'reason') as string,
+      })
+      emit(telemetry, {
+        module: 'openai',
+        event: 'realtime_failure_reported',
+        status: 'failed',
+        reason: `failure_kind=${report.kind};cause=${report.reason}`,
+        source: 'runtime',
+        session_id: report.realtimeSessionId,
+      })
+
+      const handleFailure = runtime.handleRealtimeFailure
+      if (handleFailure === undefined) return
+      try {
+        const result = handleFailure(report)
+        if (isRecord(result) && typeof readProperty(result, 'then') === 'function') {
+          void Promise.resolve(result).catch(() => {
+            emit(telemetry, {
+              module: 'openai',
+              event: 'realtime_failure_handler_failed',
+              status: 'failed',
+              error_code: 'realtime_failure_handler_failed',
+              reason: 'cause=handler_failed',
+              source: 'runtime',
+            })
+          })
+        }
+      } catch {
+        emit(telemetry, {
+          module: 'openai',
+          event: 'realtime_failure_handler_failed',
+          status: 'failed',
+          error_code: 'realtime_failure_handler_failed',
           reason: 'cause=handler_failed',
           source: 'runtime',
         })

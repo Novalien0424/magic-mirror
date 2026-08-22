@@ -22,6 +22,7 @@ const TEST_RUNTIME_MESSAGE_SENTINEL = '__TEST_RUNTIME_MESSAGE_SENTINEL__'
 const TEST_RUNTIME_STACK_SENTINEL = '__TEST_RUNTIME_STACK_SENTINEL__'
 
 const MIRROR_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
+const MIRROR_REALTIME_FAILURE_CHANNEL = 'mirror:report-realtime-failure' as const
 
 const PRIVACY_SENTINELS = [
   TEST_TRANSCRIPT_SENTINEL,
@@ -49,6 +50,7 @@ interface RegisteredIpc {
     readonly getEvents: ReturnType<typeof vi.fn>
   }
   readonly handleSimulator: ReturnType<typeof vi.fn>
+  readonly handleRealtimeFailure: ReturnType<typeof vi.fn>
   readonly manualStart: ReturnType<typeof vi.fn>
   readonly manualStop: ReturnType<typeof vi.fn>
   readonly consoleSender: Record<string, unknown>
@@ -166,6 +168,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     getEvents,
   }
   const handleSimulator = vi.fn(async () => ({ op: 'success' as const }))
+  const handleRealtimeFailure = vi.fn(() => undefined)
   const manualStart = vi.fn(async () => ({
     status: 'success' as const,
     reason: 'cause=manual_start_requested',
@@ -177,6 +180,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
   const runtime = {
     snapshot: () => snapshot,
     handleSimulator,
+    handleRealtimeFailure,
     manualStart,
     manualStop,
     console: facade,
@@ -215,6 +219,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     events,
     facade,
     handleSimulator,
+    handleRealtimeFailure,
     manualStart,
     manualStop,
     consoleSender,
@@ -265,6 +270,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       interrupt: 'mirror:interrupt',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       reportRealtimeRuntimeOutcome: MIRROR_RUNTIME_OUTCOME_CHANNEL,
+      reportRealtimeFailure: MIRROR_REALTIME_FAILURE_CHANNEL,
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)
@@ -741,6 +747,161 @@ describe('Mirror runtime outcome reporting', () => {
     expect(registered.events.filter((event) => event.event === 'realtime_runtime_interrupt')).toHaveLength(0)
     expect(serialize(registered.events)).not.toContain(TEST_RUNTIME_ATTEMPTED_STEPS_SENTINEL)
     expect(serialize(registered.events)).not.toContain(TEST_RUNTIME_FAILED_STEPS_SENTINEL)
+    expectNoSensitiveOutput(registered.events)
+    expect(unrelated).toEqual(registered.facade.getOverview.mock.results[0]?.value)
+    expect(registered.facade.getOverview).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Mirror realtime failure report transport', () => {
+  type MirrorRealtimeFailureReport = Readonly<{
+    kind: 'connect' | 'ice' | 'active_disconnect'
+    realtimeSessionId: string
+    reason: string
+  }>
+
+  const validReport: MirrorRealtimeFailureReport = {
+    kind: 'ice',
+    realtimeSessionId: 'opaque-realtime-session-42',
+    reason: 'ice_failed',
+  }
+
+  it('registers the exact Mirror channel, delivers the closed DTO, and emits metadata only', () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_REALTIME_FAILURE_CHANNEL)
+
+    expect(MIRROR_IPC_CHANNELS).toEqual(expect.objectContaining({
+      reportRealtimeFailure: MIRROR_REALTIME_FAILURE_CHANNEL,
+    }))
+
+    const result = report(authorizedMirrorEvent(registered), validReport)
+
+    expect(result).toBeUndefined()
+    expect(registered.handleRealtimeFailure).toHaveBeenCalledTimes(1)
+    expect(registered.handleRealtimeFailure).toHaveBeenCalledWith(validReport)
+
+    const delivered = registered.handleRealtimeFailure.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(delivered).toEqual(validReport)
+    expect(Object.keys(delivered).sort()).toEqual([
+      'kind',
+      'realtimeSessionId',
+      'reason',
+    ])
+    expect(registered.events).toEqual([{
+      module: 'openai',
+      event: 'realtime_failure_reported',
+      status: 'failed',
+      reason: 'failure_kind=ice;cause=ice_failed',
+      source: 'runtime',
+      session_id: validReport.realtimeSessionId,
+    }])
+    expectNoSensitiveOutput({ delivered, events: registered.events })
+  })
+
+  it('swallows sync throws and async rejections from the runtime handler with stable metadata', async () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_REALTIME_FAILURE_CHANNEL)
+    registered.handleRealtimeFailure
+      .mockImplementationOnce(() => {
+        throw new Error(TEST_RUNTIME_ERROR_SENTINEL)
+      })
+      .mockRejectedValueOnce(new Error(TEST_RUNTIME_ERROR_SENTINEL))
+
+    expect(report(authorizedMirrorEvent(registered), validReport)).toBeUndefined()
+    expect(report(authorizedMirrorEvent(registered), {
+      ...validReport,
+      kind: 'connect',
+      reason: 'connect_failed',
+    })).toBeUndefined()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const unrelated = await getHandler(registered, CONSOLE_IPC_CHANNELS.overview)(
+      authorizedEvent(registered),
+    )
+
+    expect(registered.handleRealtimeFailure).toHaveBeenCalledTimes(2)
+    const handlerFailures = registered.events.filter((event) => (
+      event.event === 'realtime_failure_handler_failed'
+    ))
+    expect(handlerFailures).toHaveLength(2)
+    for (const event of handlerFailures) {
+      expect(event).toEqual({
+        module: 'openai',
+        event: 'realtime_failure_handler_failed',
+        status: 'failed',
+        error_code: 'realtime_failure_handler_failed',
+        reason: 'cause=handler_failed',
+        source: 'runtime',
+      })
+      expect(Object.keys(event).sort()).toEqual([
+        'error_code',
+        'event',
+        'module',
+        'reason',
+        'source',
+        'status',
+      ])
+    }
+    expectNoSensitiveOutput(registered.events)
+    expect(unrelated).toEqual(registered.facade.getOverview.mock.results[0]?.value)
+    expect(registered.facade.getOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects malformed, extra, invalid, and non-Mirror reports without calling runtime or gating Console IPC', async () => {
+    const registered = makeHarness()
+    const report = getHandler(registered, MIRROR_REALTIME_FAILURE_CHANNEL)
+    const invalidReports: readonly unknown[] = [
+      null,
+      [],
+      { kind: 'ice', realtimeSessionId: validReport.realtimeSessionId },
+      { ...validReport, privateContext: TEST_PRIVATE_MEMORY_SENTINEL },
+      { ...validReport, kind: 'other' },
+      { ...validReport, realtimeSessionId: 'opaque realtime session' },
+      { ...validReport, reason: 'ICE_FAILED' },
+      { ...validReport, reason: 'a'.repeat(97) },
+    ]
+
+    for (const invalidReport of invalidReports) {
+      await report(authorizedMirrorEvent(registered), invalidReport)
+    }
+    await report(
+      authorizedMirrorEvent(registered),
+      validReport,
+      TEST_PRIVATE_MEMORY_SENTINEL,
+    )
+    await report({
+      sender: registered.consoleSender,
+      senderFrame: registered.consoleFrame,
+    }, validReport)
+    await report({
+      sender: { id: 303, mainFrame: {}, send: vi.fn() },
+      senderFrame: {},
+    }, validReport)
+
+    const unrelated = await getHandler(registered, CONSOLE_IPC_CHANNELS.overview)(
+      authorizedEvent(registered),
+    )
+
+    expect(registered.handleRealtimeFailure).not.toHaveBeenCalled()
+    expect(registered.events.filter((event) => event.event === 'ipc_payload_invalid'))
+      .toHaveLength(invalidReports.length + 1)
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        status: 'failed',
+        reason: 'web_contents_mismatch',
+        source: 'runtime',
+      }),
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        status: 'failed',
+        reason: 'unknown_sender',
+        source: 'runtime',
+      }),
+    ]))
+    expect(registered.events.filter((event) => event.event === 'realtime_failure_reported'))
+      .toHaveLength(0)
     expectNoSensitiveOutput(registered.events)
     expect(unrelated).toEqual(registered.facade.getOverview.mock.results[0]?.value)
     expect(registered.facade.getOverview).toHaveBeenCalledTimes(1)

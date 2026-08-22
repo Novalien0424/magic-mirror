@@ -19,6 +19,7 @@ import type {
   ConsoleResponse,
   ConsoleRuntimeSnapshotResult,
 } from './console-types'
+import type { RealtimeFailureInput } from './realtime-recovery'
 
 declare const transientRealtimeSecretBrand: unique symbol
 
@@ -57,6 +58,8 @@ export type TransientRealtimeSecretResult =
 
 export type MirrorWindowKind = 'mirror' | 'console'
 
+export type RealtimeFailureReport = RealtimeFailureInput
+
 export type BootChannel = 'boot:renderer-ready'
 export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready'
 
@@ -67,6 +70,7 @@ export interface MirrorChannelMap {
   readonly realtimeRuntimeCommand: 'mirror:realtime-runtime-command'
   readonly interrupt: 'mirror:interrupt'
   readonly reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome'
+  readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
   readonly ready: BootChannel
 }
 
@@ -109,6 +113,7 @@ interface SharedRendererBridge {
 export interface MirrorBridge extends SharedRendererBridge {
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
   reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
+  reportRealtimeFailure(report: RealtimeFailureReport): void
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
 }
