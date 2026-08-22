@@ -7,6 +7,7 @@ export const REALTIME_METADATA_EVENT_NAMES = Object.freeze([
   'realtime_connect_failed',
   'realtime_stale_event',
   'realtime_disconnect',
+  'realtime_observer_event',
 ] as const)
 
 export type RealtimeMetadataEventName =
@@ -24,6 +25,8 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'stale_realtime_session',
   'unknown_turn_detection_profile',
   'user_requested',
+  'output_playback_listener_failed',
+  'output_playback_subscription_closed',
 ] as const)
 
 export type RealtimeMetadataReason = (typeof REALTIME_METADATA_REASONS)[number]

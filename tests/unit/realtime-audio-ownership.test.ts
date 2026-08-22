@@ -43,6 +43,9 @@ function makeSession(
     close: vi.fn<RealtimeSessionHandle["close"]>(async (reason) => {
       await close(reason);
     }),
+    onOutputAudioBufferStopped: vi.fn<RealtimeSessionHandle["onOutputAudioBufferStopped"]>(
+      () => () => undefined,
+    ),
   };
 }
 

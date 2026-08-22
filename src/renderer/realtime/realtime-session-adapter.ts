@@ -18,6 +18,11 @@ import {
 } from './realtime-transport'
 
 type SessionEventListener = (...args: unknown[]) => void
+type OutputAudioBufferStoppedListener = () => void
+
+interface OutputAudioBufferStoppedSubscription {
+  readonly listener: OutputAudioBufferStoppedListener
+}
 
 interface SessionLike {
   connect(options: { readonly apiKey: string }): void | PromiseLike<void>
@@ -49,6 +54,7 @@ export interface RealtimeSessionHandle {
   connect(): Promise<void>
   interrupt(): Promise<void>
   close(reason: string): Promise<void>
+  onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
 }
 
 export class RealtimeSessionAdapterError extends Error {
@@ -245,6 +251,7 @@ export function createRealtimeSession(
   let failureReported = false
   let connectPromise: Promise<void> | null = null
   let transientClientSecret: string | null = input.clientSecret
+  const outputAudioBufferStoppedSubscriptions = new Set<OutputAudioBufferStoppedSubscription>()
 
   const emitReady = (reason: RealtimeMetadataReason): void => {
     if (closed || readyEmitted || failureReported) return
@@ -290,6 +297,24 @@ export function createRealtimeSession(
       sessionGeneration,
       createdAt,
     )
+  }
+
+  const notifyOutputAudioBufferStopped = (): void => {
+    if (closed) return
+    for (const { listener } of [...outputAudioBufferStoppedSubscriptions]) {
+      try {
+        listener()
+      } catch {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'output_playback_listener_failed',
+          sessionGeneration,
+          createdAt,
+        )
+      }
+    }
   }
 
   const closeLegacySession = (): void => {
@@ -350,6 +375,10 @@ export function createRealtimeSession(
         'failed',
         'cause=transport_error',
       )
+      return
+    }
+    if (type === 'output_audio_buffer.stopped') {
+      notifyOutputAudioBufferStopped()
       return
     }
     if (type === 'connection_change' && rawEventStatus(event) === 'disconnected') {
@@ -449,6 +478,7 @@ export function createRealtimeSession(
   async function close(reason: string): Promise<void> {
     if (closed) return
     closed = true
+    outputAudioBufferStoppedSubscriptions.clear()
     let closeFailed = false
     try {
       await session.close()
@@ -459,11 +489,36 @@ export function createRealtimeSession(
     emitDisconnected(closeFailed ? 'cause=close_failed' : disconnectReason)
   }
 
+  function onOutputAudioBufferStopped(
+    listener: OutputAudioBufferStoppedListener,
+  ): () => void {
+    if (closed) {
+      emitMetadata(
+        input,
+        'realtime_observer_event',
+        'info',
+        'output_playback_subscription_closed',
+        sessionGeneration,
+        createdAt,
+      )
+      return () => {}
+    }
+    const subscription: OutputAudioBufferStoppedSubscription = { listener }
+    outputAudioBufferStoppedSubscriptions.add(subscription)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      outputAudioBufferStoppedSubscriptions.delete(subscription)
+    }
+  }
+
   return Object.freeze({
     realtimeSessionId: input.sessionId,
     sessionGeneration,
     connect,
     interrupt,
     close,
+    onOutputAudioBufferStopped,
   })
 }

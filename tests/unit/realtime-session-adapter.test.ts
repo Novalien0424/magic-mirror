@@ -215,4 +215,151 @@ describe("realtime session adapter", () => {
       expect(serialized).not.toContain(clientSecret);
     }
   });
+
+  it("delivers only exact playback-stop events and disposes only its own listener", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    const firstListener = vi.fn<() => void>();
+    const secondListener = vi.fn<() => void>();
+    const disposeFirst = handle.onOutputAudioBufferStopped(firstListener);
+    const disposeSecond = handle.onOutputAudioBufferStopped(secondListener);
+    const rawProviderPayload = "opaque-output-audio-provider-payload";
+
+    probe.emit("transport_event", {
+      type: "audio_stopped",
+      realtimeSessionId: handle.realtimeSessionId,
+      content: rawProviderPayload,
+    });
+    expect(firstListener).not.toHaveBeenCalled();
+    expect(secondListener).not.toHaveBeenCalled();
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: handle.realtimeSessionId,
+      content: rawProviderPayload,
+    });
+    expect(firstListener).toHaveBeenCalledTimes(1);
+    expect(secondListener).toHaveBeenCalledTimes(1);
+    expect(firstListener.mock.calls[0]).toHaveLength(0);
+    expect(secondListener.mock.calls[0]).toHaveLength(0);
+
+    disposeFirst();
+    disposeFirst();
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: handle.realtimeSessionId,
+      content: rawProviderPayload,
+    });
+
+    expect(firstListener).toHaveBeenCalledTimes(1);
+    expect(secondListener).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(eventSink.mock.calls)).not.toContain(rawProviderPayload);
+
+    disposeSecond();
+  });
+
+  it("suppresses stale playback-stop events while retaining the stale metadata reason", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    const listener = vi.fn<() => void>();
+    handle.onOutputAudioBufferStopped(listener);
+    eventSink.mockClear();
+    const rawProviderPayload = "opaque-stale-output-audio-provider-payload";
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "old-realtime-session",
+      content: rawProviderPayload,
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(eventSink).toHaveBeenCalledTimes(1);
+    expect(eventSink.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        event: "realtime_stale_event",
+        reason: "stale_realtime_session",
+      }),
+    );
+    expect(JSON.stringify(eventSink.mock.calls[0]?.[0])).not.toContain(rawProviderPayload);
+  });
+
+  it("reports playback listener failures as observer degradation without failing the session", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const onFailure = vi.fn();
+    const handle = createRealtimeSession({
+      ...makeSessionInput(makeSnapshot(), eventSink, probe),
+      onFailure,
+    });
+    const thrownValue = "opaque-listener-error";
+    const failingListener = vi.fn<() => void>(() => {
+      throw new Error(thrownValue);
+    });
+    const siblingListener = vi.fn<() => void>();
+    handle.onOutputAudioBufferStopped(failingListener);
+    handle.onOutputAudioBufferStopped(siblingListener);
+    eventSink.mockClear();
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: handle.realtimeSessionId,
+      content: "opaque-output-audio-provider-payload",
+    });
+
+    expect(failingListener).toHaveBeenCalledTimes(1);
+    expect(siblingListener).toHaveBeenCalledTimes(1);
+    expect(eventSink).toHaveBeenCalledTimes(1);
+    const failureMetadata = eventSink.mock.calls[0]?.[0];
+    expect(failureMetadata).toEqual(
+      expect.objectContaining({
+        event: "realtime_observer_event",
+        status: "degraded",
+        reason: "output_playback_listener_failed",
+      }),
+    );
+    expect(eventSink.mock.calls.map(([event]) => event.event)).not.toContain(
+      "realtime_connect_failed",
+    );
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(probe.close).not.toHaveBeenCalled();
+    expect(JSON.stringify(failureMetadata)).not.toContain(thrownValue);
+    expect(JSON.stringify(failureMetadata)).not.toContain(
+      "opaque-output-audio-provider-payload",
+    );
+  });
+
+  it("reports late playback-stop subscriptions as closed no-ops", async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    await handle.close("user_requested");
+    eventSink.mockClear();
+
+    const lateListener = vi.fn<() => void>();
+    const disposeLate = handle.onOutputAudioBufferStopped(lateListener);
+
+    expect(eventSink).toHaveBeenCalledTimes(1);
+    expect(eventSink.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        event: "realtime_observer_event",
+        status: "info",
+        reason: "output_playback_subscription_closed",
+      }),
+    );
+    disposeLate();
+    disposeLate();
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: handle.realtimeSessionId,
+      content: "opaque-late-output-audio-provider-payload",
+    });
+
+    expect(lateListener).not.toHaveBeenCalled();
+    expect(eventSink).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(eventSink.mock.calls)).not.toContain(
+      "opaque-late-output-audio-provider-payload",
+    );
+  });
 });
