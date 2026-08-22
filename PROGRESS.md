@@ -3,11 +3,11 @@
 **Current dashboard — Status as of 2026-08-23 — Phase 1 — Realtime Voice: IN PROGRESS.** The active branch is
 `phase1-realtime-voice`; Phase 0 is accepted at local tag `phase0-v0.3.1` on
 `9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
-transport, P1-U7C1/C2 credential/DTO boundaries, and P1-U7C3 renderer
+transport, P1-U7C1/C2 credential/DTO boundaries, P1-U7C3 renderer
 runtime owner and generation-safe Realtime session rollover, and P1-U7D/U7E1/U7E2
-are accepted; P1-U7F1 and P1-U7F2A are accepted; P1-U7 remains in progress
-with P1-U7F2B next, followed by P1-U7F3; P1-U8 is pending. Phases 2–7 remain
-sequential and have not started.
+are accepted; P1-U7F1 and P1-U7F2A/B1/B2a/B2b are accepted; P1-U7 remains
+in progress with P1-U7F3 next; P1-U8 is pending. Phases 2–7 remain pending,
+sequential, and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-23)
 
@@ -22,7 +22,10 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, P1-U7C3, P1-U7D, P1-U7E1, P1-U7E2, P1-U7F1, and P1-U7F2A accepted; P1-U7F2B next | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400` |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, P1-U7C3, P1-U7D, P1-U7E1, P1-U7E2, P1-U7F1, and P1-U7F2A/B1/B2a/B2b accepted; P1-U7F3 next | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400`, `5e8b66d`, `c427670`, `b4abd76` |
+| P1-U7F2B1 — Main-owned pending rollover + exact 60-minute timer | accepted | `5e8b66d` |
+| P1-U7F2B2a — Mirror-to-Main realtime failure report transport | accepted | `c427670` |
+| P1-U7F2B2b — visible OfflineLoop recovery probes and stale-identity handling | accepted | `b4abd76` |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -157,12 +160,10 @@ reproduce in the 3-file/29-test focused rerun or the full gate. Local
 human action was required. The existing `DEP0190` child-process shell warning
 remains.
 
-P1-U7 remains in progress. P1-U7D App/Console interrupt composition is next,
-followed by remaining lifecycle, recovery, and timer work; P1-U8 owns
-deterministic/real demos, Phase Test records, the full regression/privacy scan,
-final exit acceptance, and the local `phase1-v0.3.1` tag. This does not mark
-real Realtime, microphone, or target-Mac evidence complete, and no Phase 1
-exit is claimed.
+P1-U7 remains in progress. P1-U8 owns deterministic/real demos, Phase Test
+records, the full regression/privacy scan, final exit acceptance, and the local
+`phase1-v0.3.1` tag. This does not mark real Realtime, microphone, or target-Mac
+evidence complete, and no Phase 1 exit is claimed.
 
 ### P1-U7F1/U7F2A — command transport and Main-owned manual transactions accepted (2026-08-23)
 
@@ -198,14 +199,38 @@ with artifacts where applicable; these were harness events, not product
 failures. Scoped survey and root review found no concrete defect or missing
 invariant/behavior in the four routed skills; no skill change is warranted.
 
-Next is P1-U7F2B: the pending 60-minute rollover transaction plus bounded
-outage recovery/retry probes, preserving the active authoritative identity
-until renderer rollover success. P1-U7F3 then mounts the single renderer
-runtime host/cleanup/outcome composition. P1-U8 owns deterministic/real demos,
+P1-U7F2B1/B2a/B2b are accepted below. P1-U7F3 single renderer runtime host,
+cleanup, and outcome composition is next. P1-U8 owns deterministic/real demos,
 Phase Test records, regression/privacy scan, Phase 1 exit, and the local
 `phase1-v0.3.1` tag. The accepted 300-second idle/wake/sleep timer remains a
 Phase 2 non-goal. No Phase 1 exit or real OpenAI, mic/output, macOS, or
 operator evidence is claimed.
+
+### P1-U7F2B1/B2a/B2b — rollover and recovery boundaries accepted (2026-08-23)
+
+- **P1-U7F2B1** is accepted and pushed at `5e8b66d`: Main-owned pending
+  rollover and an exact 60-minute timer; `48/48` files and `518/518` tests;
+  Node/web typechecks and the production build are green.
+- **P1-U7F2B2a** is accepted and pushed at `c427670`: exact Mirror-to-Main
+  realtime failure-report transport; the accepted telemetry allowlist is
+  preserved by encoding failure kind in a bounded reason; `48/48` files and
+  `522/522` tests; Node/web typechecks and the production build are green.
+- **P1-U7F2B2b** is accepted and pushed at `b4abd76`: stale identity is
+  ignored without disturbing active ownership; accepted active/connect/ICE
+  failure visibly enters OfflineLoop; one deduplicated lightweight probe
+  schedule runs at exact `5/15/30/60` seconds through the Main-owned
+  ephemeral-secret broker and discards returned material RAM-only. First
+  success or exhaustion returns Dormant; there is no automatic full Realtime
+  session/reconnect; Manual Start remains the only next-session owner; shutdown
+  cancels probes. The focused gate was `4` files/`52` tests with Node/web
+  typechecks green; the full gate was `48/48` files and `525/525` tests with
+  the production build green. `DEP0190` remains a nonblocking tooling warning.
+- B2b harness history is one monolithic implementer first-write timeout and
+  one split Part A post-write-idle timeout; the preserved artifact was
+  root-reviewed and completed by Part B. These were harness events, not
+  product defects, and no human intervention was needed. No routed
+  project-skill defect was found; no skill edit is warranted at this
+  checkpoint.
 
 ## Human-intervention ledger
 
@@ -214,7 +239,7 @@ operator evidence is claimed.
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
 | P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
 | P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
-| P1-U7D/U7E1/U7E2/U7F1/U7F2A | No human intervention; the broad U7F survey timed out, its narrowed retry succeeded, and bounded U7F2A worker/tester timeouts were recovered with artifacts where applicable; no skill correction was needed. | Complete; no human intervention |
+| P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b | No human intervention; the broad U7F survey and bounded U7F2A worker/tester timeouts were recovered with artifacts where applicable, and B2b had one monolithic implementer first-write timeout plus one split Part A post-write-idle timeout before preserved-artifact review and Part B completion. These were harness events, not product defects; no skill correction was needed. | Complete; no human intervention |
 | P1-U7C3 Electron launch | Earlier launch failure cleared without intervention and did not reproduce in the 3-file/29-test focused rerun or full gate; local `electron.cmd` and direct binary were `v43.4.1`; no install/reinstall or human action was required. Existing `DEP0190` child-process shell warning remains. | Cleared; no action required |
 | Phase 1 exit | Real OpenAI credential/account/network; PoC mic/output; temporary Persona; Voice choice; and operator observation of P1-D1/D2/D5. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
@@ -299,7 +324,7 @@ embeddings, credentials, or other private content.
 
 ## Privacy, platform, and remaining-risk register
 
-`.env` metadata is limited to exists `true`, ignored by `.gitignore` line `9`,
+`.env` metadata is limited to exists `true`, ignored by `.gitignore` line `10`,
 Git tracked `false` (untracked), content/value accessed `false`, and validity
 checked `false`. Its value was not read and is never recorded. It is provisioning
 input only; Main `safeStorage` and short-lived renderer credentials remain the

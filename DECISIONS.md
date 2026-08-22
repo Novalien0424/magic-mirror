@@ -23,9 +23,9 @@ process state that must survive implementation handoffs.
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
   accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2/C3
-  are accepted, as are P1-U7D/U7E1/U7E2/U7F1/U7F2A; P1-U7 remains in
-  progress with P1-U7F2B next, P1-U7F3 following, and P1-U8 pending. Phases
-  2–7 do not advance early.
+  are accepted, as are P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b;
+  P1-U7 remains in progress with P1-U7F3 next and P1-U8 pending. Phases 2–7
+  remain pending and do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -158,11 +158,8 @@ process state that must survive implementation handoffs.
   `electron.cmd` and the direct binary were `v43.4.1`; no install/reinstall or
   human action was required. The existing `DEP0190` child-process shell
   warning remains.
-- P1-U7 remains in progress. The next bounded unit is P1-U7D App/Console
-  interrupt composition, followed by the remaining lifecycle, recovery, and
-  timer work; then P1-U8 demos/records/exit. This does not mark real Realtime,
-  microphone, or target-Mac evidence complete, and is not Phase 1 exit
-  evidence.
+- P1-U7 remains in progress. This does not mark real Realtime, microphone, or
+  target-Mac evidence complete, and is not Phase 1 exit evidence.
 
 ### P1-U7D/U7E1/U7E2/U7F1/U7F2A accepted boundaries (2026-08-23)
 
@@ -193,17 +190,41 @@ process state that must survive implementation handoffs.
   Test-only fixture corrections addressed stale generation `0`, two exact
   Mirror maps missing the accepted command channel, and one untyped callback;
   no production defect was found and strict zero-rejection coverage remained.
+- P1-U7F2B1 is accepted and pushed at `5e8b66d`: Main-owned pending rollover
+  with an exact 60-minute timer. Its acceptance evidence is `48/48` files,
+  `518/518` tests, and green Node/web typechecks plus production build. This
+  preserves Main ownership of pending/authoritative identity and bounded
+  rollover/credential handling (`3`, `8`, `9`, `10`, `12`).
+- P1-U7F2B2a is accepted and pushed at `c427670`: exact Mirror-to-Main
+  realtime failure-report transport, with failure kind encoded in a bounded
+  reason so the accepted telemetry allowlist is unchanged. Its acceptance
+  evidence is `48/48` files, `522/522` tests, and green Node/web typechecks plus
+  production build; the bounded metadata-only report preserves privacy and
+  visible degradation (`1`, `9`, `10`, `12`).
+- P1-U7F2B2b is accepted and pushed at `b4abd76`: stale identity is ignored
+  without disturbing active ownership; active/connect/ICE failure visibly
+  enters OfflineLoop; one deduplicated lightweight probe schedule runs at
+  exact `5/15/30/60` seconds through the Main-owned ephemeral-secret broker,
+  discarding returned material RAM-only. First success or exhaustion returns
+  Dormant; no automatic full Realtime session/reconnect is added; Manual Start
+  remains the only next-session owner; shutdown cancels probes. The focused gate
+  is `4` files/`52` tests with Node/web typechecks green; the full gate is
+  `48/48` files/`525/525` tests with production build green. `DEP0190` remains
+  a nonblocking tooling warning. This preserves stale-event ownership,
+  visible failure/degrade behavior, configured-model discipline, mic ownership,
+  and Main-only credentials (`1`, `3`, `8`, `9`, `10`, `11`, `12`).
 - The broad U7F survey, U7F2A RED-writer, combined RED-tester, and first
-  implementer each had a bounded launcher timeout at some point; narrowed
-  retries/review/testing completed with artifacts where applicable. These were
-  harness events, not product failures. The four routed skills need no change.
-- P1-U7F2B is next: pending 60-minute rollover plus bounded outage
-  recovery/retry probes, preserving active authoritative identity until
-  renderer rollover success. P1-U7F3 then mounts the single renderer runtime
-  host/cleanup/outcome composition. P1-U8 owns demos, Phase Test records,
-  regression/privacy scan, Phase 1 exit, and `phase1-v0.3.1`. The accepted
-  300-second idle/wake/sleep timer remains Phase 2; no Phase 1 exit or real
-  OpenAI, mic/output, macOS, or operator evidence is claimed.
+  implementer each had a bounded launcher timeout; B2b additionally had one
+  monolithic implementer first-write timeout and one split Part A post-write-
+  idle timeout. Narrowed retries, preserved-artifact review, and Part B
+  completion recovered the work. These were harness events, not product
+  failures, and no human intervention was needed. No routed project-skill
+  defect was found; no skill edit is warranted at this checkpoint.
+- P1-U7F3 single renderer runtime host, cleanup, and outcome composition is
+  next. P1-U8 owns demos, Phase Test records, regression/privacy scan, Phase 1
+  exit, and `phase1-v0.3.1`. The accepted 300-second idle/wake/sleep timer
+  remains Phase 2; no Phase 1 exit or real OpenAI, mic/output, macOS, or
+  operator evidence is claimed.
 
 ### Human-intervention timing ledger
 
@@ -213,10 +234,11 @@ process state that must survive implementation handoffs.
   sufficient for the payload-free Main-to-Mirror dispatch boundary.
 - **P1-U7C1/C2:** none needed for C1/C2 engineering and mock/static
   acceptance.
-- **P1-U7D/U7E1/U7E2/U7F1/U7F2A:** no human intervention; the broad U7F
-  survey timed out, its narrowed retry succeeded, and bounded U7F2A
-  implementer/tester timeouts were recovered with artifacts where applicable.
-  No skill correction was needed.
+- **P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b:** no human
+  intervention; the broad U7F survey and bounded U7F2A timeouts were recovered
+  with artifacts where applicable, and B2b's monolithic first-write timeout plus
+  split Part A post-write-idle timeout were recovered through preserved-artifact
+  review and Part B completion. No skill correction was needed.
 - **P1-U7C3 Electron launch — cleared; no action required:** an earlier launch
   failure cleared without intervention and did not reproduce in the
   3-file/29-test focused rerun or full gate; local `electron.cmd` and direct
@@ -341,6 +363,9 @@ process state that must survive implementation handoffs.
 | P1-U7E2 | `f4e5103` | 48/48 files; 500/500 tests; Node/web/build exit `0`; warnings nonblocking |
 | P1-U7F1 | `105db2f` | typed command transport, preload subscription/disposer, tracked dispatch, positive renderer generations accepted |
 | P1-U7F2A | `b81d400` | Main-owned start/stop transactions; 48/48 files; 515/515 tests; Node/web/build exit `0` after test-only fixture corrections |
+| P1-U7F2B1 | `5e8b66d` | accepted/pushed; Main-owned pending rollover and exact 60-minute timer; 48/48 files; 518/518 tests; Node/web/build green |
+| P1-U7F2B2a | `c427670` | accepted/pushed; exact Mirror-to-Main realtime failure report with bounded failure-kind reason; 48/48 files; 522/522 tests; Node/web/build green |
+| P1-U7F2B2b | `b4abd76` | accepted/pushed; focused 4 files/52 tests and Node/web typechecks green; full 48/48 files/525 tests and production build green; DEP0190 nonblocking |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules
@@ -353,7 +378,7 @@ process state that must survive implementation handoffs.
   ignore/drop/fallback/degrade has visitor-visible or metadata-only reason;
   failures degrade without gating; model IDs remain config-only without silent
   fallback; and credentials remain Main-owned through `safeStorage`.
-- `.env` metadata is only exists `true`, ignored by `.gitignore` line `9`,
+- `.env` metadata is only exists `true`, ignored by `.gitignore` line `10`,
   Git tracked `false` (untracked), content/value accessed `false`, and validity
   checked `false`. No value was read, recorded, or inspected. The user-owned
   `scripts/install-node-lts.ps1` and
