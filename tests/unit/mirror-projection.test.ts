@@ -3,7 +3,14 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   MIRROR_STATE_COPY,
   projectMirrorSnapshot,
+  subscribeMirrorInterrupt,
 } from '../../src/renderer/mirror/App'
+import type { MirrorBridge } from '../../src/shared/bridge'
+import type {
+  RealtimeRuntimeEventSink,
+  RealtimeRuntimeOutcome,
+  RealtimeRuntimeOwner,
+} from '../../src/renderer/realtime/realtime-runtime-owner'
 import { ErrorBoundary } from '../../src/renderer/shared/ErrorBoundary'
 
 const RAW_ERROR_MESSAGE = 'synthetic-render-error-message'
@@ -282,5 +289,194 @@ describe('Mirror preload interrupt bridge contract', () => {
       vi.doUnmock('electron')
       vi.resetModules()
     }
+  })
+})
+
+describe('Mirror App interrupt composition', () => {
+  type InterruptHandler = () => void
+
+  function createInterruptBridge(): {
+    bridge: Pick<MirrorBridge, 'onInterrupt'>
+    handlers: InterruptHandler[]
+    removals: InterruptHandler[]
+    disposers: Array<ReturnType<typeof vi.fn>>
+  } {
+    const handlers: InterruptHandler[] = []
+    const removals: InterruptHandler[] = []
+    const disposers: Array<ReturnType<typeof vi.fn>> = []
+
+    const bridge: Pick<MirrorBridge, 'onInterrupt'> = {
+      onInterrupt: (listener) => {
+        handlers.push(listener)
+        const dispose = vi.fn(() => {
+          removals.push(listener)
+        })
+        disposers.push(dispose)
+        return dispose
+      },
+    }
+
+    return { bridge, handlers, removals, disposers }
+  }
+
+  function interruptOutcome(
+    status: 'success' | 'failed',
+    reason: 'interrupted' | 'interrupt_failed',
+  ): RealtimeRuntimeOutcome {
+    return Object.freeze({
+      status,
+      operation: 'interrupt',
+      reason,
+      attemptedSteps: Object.freeze([]),
+      failedSteps: Object.freeze([]),
+    })
+  }
+
+  async function flushInterruptCompletion(): Promise<void> {
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  function expectContainedInterruptFailure(value: unknown): void {
+    expect(value).toBeTypeOf('object')
+    expect(value).not.toBeNull()
+
+    const outcome = value as RealtimeRuntimeOutcome
+    expect(outcome).toEqual({
+      status: 'failed',
+      operation: 'interrupt',
+      reason: 'interrupt_failed',
+      attemptedSteps: [],
+      failedSteps: [],
+    })
+    expect(Object.keys(outcome).sort()).toEqual([
+      'attemptedSteps',
+      'failedSteps',
+      'operation',
+      'reason',
+      'status',
+    ])
+    expect(Object.isFrozen(outcome)).toBe(true)
+    expect(Object.isFrozen(outcome.attemptedSteps)).toBe(true)
+    expect(Object.isFrozen(outcome.failedSteps)).toBe(true)
+    expect(collectKeys(outcome).some((key) =>
+      /error|message|stack|private|credential|profile|guest|model|transcript|audio|memory/i.test(key),
+    )).toBe(false)
+    expectNoForbiddenContent(outcome)
+    expect(serialized(outcome)).not.toContain(RAW_ERROR_MESSAGE)
+    expect(serialized(outcome)).not.toContain(RAW_ERROR_STACK)
+  }
+
+  it('dispatches one payload-free bridge event and forwards the exact typed outcome once', async () => {
+    const { bridge, handlers } = createInterruptBridge()
+    const outcome = interruptOutcome('success', 'interrupted')
+    const interrupt = vi.fn<() => Promise<RealtimeRuntimeOutcome>>().mockResolvedValue(outcome)
+    const target: Pick<RealtimeRuntimeOwner, 'interrupt'> = { interrupt }
+    const sink = vi.fn<RealtimeRuntimeEventSink>()
+
+    const cleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    handlers[0]?.()
+    await flushInterruptCompletion()
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(interrupt).toHaveBeenCalledWith()
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledWith(outcome)
+    expect(sink.mock.calls[0]?.[0]).toBe(outcome)
+    expectNoForbiddenContent(sink.mock.calls[0]?.[0])
+
+    cleanup()
+  })
+
+  it('supports StrictMode-style setup/cleanup/setup with only the active wrapper delivering', async () => {
+    const { bridge, handlers, removals, disposers } = createInterruptBridge()
+    const outcome = interruptOutcome('success', 'interrupted')
+    const interrupt = vi.fn<() => Promise<RealtimeRuntimeOutcome>>().mockResolvedValue(outcome)
+    const target: Pick<RealtimeRuntimeOwner, 'interrupt'> = { interrupt }
+    const sink = vi.fn<RealtimeRuntimeEventSink>()
+
+    const firstCleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    const staleHandler = handlers[0]
+    expect(staleHandler).toBeTypeOf('function')
+
+    firstCleanup()
+    firstCleanup()
+    expect(disposers[0]).toHaveBeenCalledTimes(1)
+    expect(removals[0]).toBe(staleHandler)
+
+    const secondCleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    const activeHandler = handlers[1]
+    expect(activeHandler).toBeTypeOf('function')
+
+    staleHandler?.()
+    activeHandler?.()
+    await flushInterruptCompletion()
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(sink.mock.calls[0]?.[0]).toBe(outcome)
+
+    secondCleanup()
+    secondCleanup()
+    expect(disposers[1]).toHaveBeenCalledTimes(1)
+    expect(removals).toEqual([staleHandler, activeHandler])
+  })
+
+  it('allows a pre-cleanup completion to report to the lifecycle-independent sink', async () => {
+    const { bridge, handlers } = createInterruptBridge()
+    const outcome = interruptOutcome('success', 'interrupted')
+    let resolveInterrupt!: (value: RealtimeRuntimeOutcome) => void
+    const pendingInterrupt = new Promise<RealtimeRuntimeOutcome>((resolve) => {
+      resolveInterrupt = resolve
+    })
+    const interrupt = vi.fn<() => Promise<RealtimeRuntimeOutcome>>().mockReturnValue(pendingInterrupt)
+    const target: Pick<RealtimeRuntimeOwner, 'interrupt'> = { interrupt }
+    const sink = vi.fn<RealtimeRuntimeEventSink>()
+
+    const cleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    handlers[0]?.()
+    expect(interrupt).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    resolveInterrupt(outcome)
+    await flushInterruptCompletion()
+
+    expect(sink).toHaveBeenCalledTimes(1)
+    expect(sink.mock.calls[0]?.[0]).toBe(outcome)
+  })
+
+  it('contains synchronous throws as a frozen metadata-only failure outcome', async () => {
+    const { bridge, handlers } = createInterruptBridge()
+    const interrupt = vi.fn<() => Promise<RealtimeRuntimeOutcome>>().mockImplementation(() => {
+      throw new Error(RAW_ERROR_MESSAGE)
+    })
+    const target: Pick<RealtimeRuntimeOwner, 'interrupt'> = { interrupt }
+    const sink = vi.fn<RealtimeRuntimeEventSink>()
+
+    const cleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    expect(() => handlers[0]?.()).not.toThrow()
+    await flushInterruptCompletion()
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledTimes(1)
+    expectContainedInterruptFailure(sink.mock.calls[0]?.[0])
+    cleanup()
+  })
+
+  it('contains rejected promises as a frozen metadata-only failure outcome', async () => {
+    const { bridge, handlers } = createInterruptBridge()
+    const interrupt = vi.fn<() => Promise<RealtimeRuntimeOutcome>>()
+      .mockRejectedValue(new Error(RAW_ERROR_MESSAGE))
+    const target: Pick<RealtimeRuntimeOwner, 'interrupt'> = { interrupt }
+    const sink = vi.fn<RealtimeRuntimeEventSink>()
+
+    const cleanup = subscribeMirrorInterrupt(bridge, target, sink)
+    expect(() => handlers[0]?.()).not.toThrow()
+    await flushInterruptCompletion()
+
+    expect(interrupt).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledTimes(1)
+    expectContainedInterruptFailure(sink.mock.calls[0]?.[0])
+    cleanup()
   })
 })

@@ -1,5 +1,79 @@
 import { useEffect, useState } from 'react'
+import type { MirrorBridge } from '../../shared/bridge'
 import type { AppSnapshot, LifecycleState } from '../../shared/types'
+import type {
+  RealtimeRuntimeEventSink,
+  RealtimeRuntimeOutcome,
+  RealtimeRuntimeOwner,
+} from '../realtime/realtime-runtime-owner'
+
+type MirrorInterruptBridge = Pick<MirrorBridge, 'onInterrupt'>
+type MirrorInterruptTarget = Pick<RealtimeRuntimeOwner, 'interrupt'>
+
+export interface MirrorInterruptComposition {
+  readonly target: MirrorInterruptTarget
+  readonly sink: RealtimeRuntimeEventSink
+}
+
+export interface AppProps {
+  readonly interruptComposition?: MirrorInterruptComposition
+}
+
+const INTERRUPT_FAILED_OUTCOME: RealtimeRuntimeOutcome = Object.freeze({
+  status: 'failed',
+  operation: 'interrupt',
+  reason: 'interrupt_failed',
+  attemptedSteps: Object.freeze([]),
+  failedSteps: Object.freeze([]),
+})
+
+export function subscribeMirrorInterrupt(
+  bridge: MirrorInterruptBridge,
+  target: MirrorInterruptTarget,
+  sink: RealtimeRuntimeEventSink,
+): () => void {
+  let disposed = false
+
+  const report = (outcome: RealtimeRuntimeOutcome): void => {
+    try {
+      const result = sink(outcome)
+      if (result !== undefined) {
+        void Promise.resolve(result).catch(() => undefined)
+      }
+    } catch {
+      // Sink failures must not change interrupt delivery or create a rejection.
+    }
+  }
+
+  const onInterrupt = (): void => {
+    if (disposed) return
+
+    let interruptPromise: Promise<RealtimeRuntimeOutcome>
+    try {
+      interruptPromise = target.interrupt()
+    } catch {
+      report(INTERRUPT_FAILED_OUTCOME)
+      return
+    }
+
+    void Promise.resolve(interruptPromise).then(
+      (outcome) => report(outcome),
+      () => report(INTERRUPT_FAILED_OUTCOME),
+    )
+  }
+
+  const unsubscribe = bridge.onInterrupt(onInterrupt)
+
+  return () => {
+    if (disposed) return
+    disposed = true
+    try {
+      unsubscribe()
+    } catch {
+      // Disposal is terminal even if the bridge cannot remove its listener.
+    }
+  }
+}
 
 export const MIRROR_STATE_COPY: Readonly<Record<LifecycleState, { readonly title: string; readonly detail: string }>> = Object.freeze({
   starting: Object.freeze({ title: 'Starting', detail: 'Preparing the local mirror.' }),
@@ -134,7 +208,7 @@ function OfflineLoopScreen(): React.JSX.Element {
   )
 }
 
-export function App(): React.JSX.Element {
+export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const view = projectMirrorSnapshot(snapshot)
@@ -169,6 +243,23 @@ export function App(): React.JSX.Element {
       unsubscribe?.()
     }
   }, [])
+
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (
+      bridge === undefined ||
+      interruptComposition === undefined ||
+      !('onInterrupt' in bridge)
+    ) {
+      return
+    }
+
+    return subscribeMirrorInterrupt(
+      bridge,
+      interruptComposition.target,
+      interruptComposition.sink,
+    )
+  }, [interruptComposition])
 
   if (bridgeMissing) {
     return (
