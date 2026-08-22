@@ -22,11 +22,10 @@ process state that must survive implementation handoffs.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle,
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
-  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2 are
-  accepted; P1-U7 remains in progress with C3 renderer runtime owner,
-  then App/Console interrupt composition and the remaining lifecycle,
-  recovery, and timer work next, and P1-U8 is pending. Phases 2–7 do not
-  advance early.
+  accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2/C3
+  are accepted; P1-U7 remains in progress with P1-U7D App/Console interrupt
+  composition next, then the remaining lifecycle, recovery, and timer work,
+  and P1-U8 pending. Phases 2–7 do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
 
@@ -114,8 +113,7 @@ process state that must survive implementation handoffs.
   five focused files passing `45/45` tests, and Node/web typechecks exiting
   `0`. No full suite, build, or demo was run.
 - No human input was needed for this transport boundary. Current evidence
-  identifies no project-skill correction. End-to-end interrupt composition and
-  the remaining P1-U7 scope are next; this is not Phase 1 exit evidence.
+  identifies no project-skill correction. This is not Phase 1 exit evidence.
 - This record update makes no source, test, skill, or package change and
   records no private values, commit, or invented hash.
 
@@ -143,6 +141,28 @@ process state that must survive implementation handoffs.
 - C1/C2 surveys found no concrete defect in `mm-phase-workflow`,
   `mm-invariants`, `mm-electron-foundation`, or `mm-realtime-voice`; no skill
   edit is needed.
+- P1-U7C3 is accepted below. P1-U8 owns deterministic/real demos, Phase Test
+  records, the full regression/privacy scan, final exit acceptance, and the
+  local `phase1-v0.3.1` tag. No Phase 1 exit is claimed.
+
+### P1-U7C3 accepted renderer runtime owner and generation-safe Realtime session rollover (2026-08-22)
+
+- The renderer runtime owner for session, transport, microphone, audio, and
+  cleanup, including generation-safe Realtime session rollover, is externally
+  accepted at `24bccfd`. Evidence was `47/47` test files and `478/478` tests
+  passing; `npm run typecheck:node`,
+  `npm run typecheck:web`, and `npm run build` each exited `0`. One stale
+  Mirror interrupt expectation was corrected.
+- An earlier Electron launch failure cleared without intervention and did not
+  reproduce in the 3-file/29-test focused rerun or the full gate. Local
+  `electron.cmd` and the direct binary were `v43.4.1`; no install/reinstall or
+  human action was required. The existing `DEP0190` child-process shell
+  warning remains.
+- P1-U7 remains in progress. The next bounded unit is P1-U7D App/Console
+  interrupt composition, followed by the remaining lifecycle, recovery, and
+  timer work; then P1-U8 demos/records/exit. This does not mark real Realtime,
+  microphone, or target-Mac evidence complete, and is not Phase 1 exit
+  evidence.
 
 ### Human-intervention timing ledger
 
@@ -152,6 +172,11 @@ process state that must survive implementation handoffs.
   sufficient for the payload-free Main-to-Mirror dispatch boundary.
 - **P1-U7C1/C2:** none needed for C1/C2 engineering and mock/static
   acceptance.
+- **P1-U7C3 Electron launch — cleared; no action required:** an earlier launch
+  failure cleared without intervention and did not reproduce in the
+  3-file/29-test focused rerun or full gate; local `electron.cmd` and direct
+  binary were `v43.4.1`; no install/reinstall or human action was required.
+  Existing `DEP0190` child-process shell warning remains.
 - **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
   temporary Persona instructions, a Voice choice, and operator observation of
   P1-D1, P1-D2, and P1-D5 are still required.
@@ -265,6 +290,7 @@ process state that must survive implementation handoffs.
 | P1-U7B1/B2 | externally accepted 2026-08-22; no invented hash recorded | 8 changed source/test paths; focused `45/45`; Node/web typechecks `0`; `git diff --check` `0` with line-ending warnings; no full suite/build/demo |
 | P1-U7C1 | externally accepted 2026-08-22; committed and pushed at `cc8c34f` | 3 test files / 9 tests; Node typecheck green; Windows-only platform limitation remains |
 | P1-U7C2 | externally accepted 2026-08-22 on the current uncommitted integration diff; no future commit hash recorded | 6 test files / 45 tests; Node/web typechecks exit `0`; `git diff --check` exit `0` with line-ending warnings; prior exact negative scan exit `1` with empty output; no full suite/build/demo or target-Mac/provider field verification |
+| P1-U7C3 | externally accepted 2026-08-22 at `24bccfd` | 47/47 test files and 478/478 tests; Node/web typechecks and build exit `0`; stale Mirror interrupt expectation corrected; Electron launch cleared with no action; `DEP0190` remains |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules

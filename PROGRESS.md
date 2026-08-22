@@ -3,11 +3,11 @@
 **Current dashboard — Status as of 2026-08-22 — Phase 1 — Realtime Voice: IN PROGRESS.** The active branch is
 `phase1-realtime-voice`; Phase 0 is accepted at local tag `phase0-v0.3.1` on
 `9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
-transport, and P1-U7C1/C2 credential/DTO boundaries are accepted;
-P1-U7C3 renderer runtime owner (session/transport/mic/audio/
-cleanup), then App/Console interrupt composition and remaining lifecycle/
-recovery/timer work remain next; P1-U8 is pending. Phases 2–7 remain
-sequential and have not started.
+transport, P1-U7C1/C2 credential/DTO boundaries, and P1-U7C3 renderer
+runtime owner and generation-safe Realtime session rollover are accepted;
+P1-U7D App/Console interrupt composition is next,
+followed by remaining lifecycle/recovery/timer work; P1-U8 is pending. Phases
+2–7 remain sequential and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-22)
 
@@ -22,7 +22,7 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, and P1-U7C1/C2 accepted; C3 renderer runtime owner, then App/Console interrupt composition and remaining lifecycle/recovery/timers next | pending |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, and P1-U7C3 renderer runtime owner and generation-safe Realtime session rollover accepted; P1-U7D App/Console interrupt composition is next, followed by remaining lifecycle/recovery/timers | pending |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -108,8 +108,7 @@ Accepted evidence was `git diff --check` exit `0` with line-ending warnings,
 five focused files passing `45/45` tests, and Node/web typechecks exiting `0`.
 No full suite, build, or demo was run. No human input was needed for this
 transport boundary, and current evidence identifies no project-skill
-correction. End-to-end interrupt composition and the remaining P1-U7 scope
-remain next; no Phase 1 exit is claimed.
+correction. No Phase 1 exit is claimed.
 
 This record update makes no source, test, skill, or package change and records
 no private values, commit, or invented hash.
@@ -139,11 +138,31 @@ suite, build, demo, or target-Mac/provider field verification belongs to this
 unit. C1/C2 surveys found no concrete defect in the four required Magic Mirror
 skills; no skill edit is needed.
 
-P1-U7 next work is C3 renderer runtime owner (session/transport/mic/audio/
-cleanup), then App/Console interrupt composition and remaining lifecycle,
-recovery, and timer work. P1-U8 owns deterministic/real demos, Phase Test
+P1-U7C3 is accepted below. P1-U8 owns deterministic/real demos, Phase Test
 records, the full regression/privacy scan, final exit acceptance, and the local
 `phase1-v0.3.1` tag. No Phase 1 exit is claimed.
+
+### P1-U7C3 — renderer runtime owner and generation-safe Realtime session rollover (externally accepted 2026-08-22 at `24bccfd`)
+
+The renderer runtime owner for session, transport, microphone, audio, and
+cleanup, including generation-safe Realtime session rollover, is externally
+accepted at `24bccfd`. Evidence was `47/47` test files
+and `478/478` tests passing; `npm run typecheck:node`,
+`npm run typecheck:web`, and `npm run build` each exited `0`. One stale Mirror
+interrupt expectation was corrected.
+
+An earlier Electron launch failure cleared without intervention and did not
+reproduce in the 3-file/29-test focused rerun or the full gate. Local
+`electron.cmd` and the direct binary were `v43.4.1`; no install/reinstall or
+human action was required. The existing `DEP0190` child-process shell warning
+remains.
+
+P1-U7 remains in progress. P1-U7D App/Console interrupt composition is next,
+followed by remaining lifecycle, recovery, and timer work; P1-U8 owns
+deterministic/real demos, Phase Test records, the full regression/privacy scan,
+final exit acceptance, and the local `phase1-v0.3.1` tag. This does not mark
+real Realtime, microphone, or target-Mac evidence complete, and no Phase 1
+exit is claimed.
 
 ## Human-intervention ledger
 
@@ -152,6 +171,7 @@ records, the full regression/privacy scan, final exit acceptance, and the local
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
 | P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
 | P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
+| P1-U7C3 Electron launch | Earlier launch failure cleared without intervention and did not reproduce in the 3-file/29-test focused rerun or full gate; local `electron.cmd` and direct binary were `v43.4.1`; no install/reinstall or human action was required. Existing `DEP0190` child-process shell warning remains. | Cleared; no action required |
 | Phase 1 exit | Real OpenAI credential, account, and network; a PoC microphone/output path; temporary Persona instructions; a Voice choice; and operator observation for P1-D1, P1-D2, and P1-D5. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity inputs, memory/profile inputs, and hardware/adapter inputs. | Later venue-specific work |
