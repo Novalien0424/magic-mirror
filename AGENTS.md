@@ -25,9 +25,13 @@ When instructions conflict, use this order:
 3. Product sources: `docs/Magic_Mirror_PRD_v0.3.md`,
    `docs/Magic_Mirror_Tech_Spec_v0.3.md`,
    `docs/Magic_Mirror_Implementation_Plan_v0.3.md`, and
-   `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`.
+   `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`, except that the
+   dated personal-build credential ruling recorded in `DECISIONS.md` and
+   mirrored below supersedes conflicting credential-provisioning wording for
+   this build.
 4. The migrated project skills under `.agents/skills/`, loaded only when
-   relevant to the bounded unit.
+   relevant to the bounded unit and subject to the same personal-build
+   credential ruling.
 5. `PROGRESS.md`, `DECISIONS.md`, and the ignored SDD ledger as process state.
 6. The immutable historical harness and its seven source-skill documents as
    reference input only.
@@ -73,11 +77,29 @@ contract.
 - U8-B deterministic engineering is accepted/pushed at `d1d5364`.
 - The fresh U8-B gate recorded `49/49` files and `570/570` tests, plus node
   and web typechecks, the Electron Vite build, and diff check exit `0`.
+- P1-U9 credential-source closure is accepted in product commit `b246521`;
+  focused validation recorded `5/5` and `npm run typecheck:node` exit `0`.
 - P1-D3/D4/D6 are deterministic `mock_passed`; P1-D1/D2/D5 remain
   `real-demo not_executed`.
 - Phase 1 exit/tag is not accepted. No target-Mac, provider, device, or
   operator evidence is claimed. Phases 2–7 remain sequential and have not
   started.
+
+## Personal-build credential boundary — 2026-08-23
+
+This personal/non-commercial build has one credential source: the ignored
+local root `.env` file's `OPENAI_API_KEY`. Electron Main alone may load it at
+runtime. Console provisioning, Electron `safeStorage`, macOS Keychain, Windows
+DPAPI, and every alternate credential fallback are excluded from the runtime
+path. Missing, empty, and read failures remain visible as metadata-only
+reasons.
+
+The master key never enters renderer IPC/data, logs, telemetry, exports, tests,
+worker evidence, or committed files. Agents and workers do not inspect or
+output `.env` values, even though runtime Main may load them. This dated ruling
+supersedes conflicting older credential wording in product sources and
+migrated skills for this personal build; future work must not restore Console
+or `safeStorage` provisioning. Invariants 1–11 remain unchanged.
 
 ## Default workflow and gates
 
@@ -116,14 +138,16 @@ IDs, package versions, domain facts, safety rules, and all 12 invariants.
 The project workflow is npm-only. The user-owned
 `scripts/install-node-lts.ps1` and
 `docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` remain unchanged.
-`.env` is metadata only: it exists, is ignored, is
-untracked, and its content/value is never read; validity is not checked and no
-record may claim its value was inspected.
+The credential boundary above is runtime policy: the ignored root `.env` with
+`OPENAI_API_KEY` is Main-only, and no Console provisioning, `safeStorage`,
+Keychain, DPAPI, or alternate fallback may be restored. Missing, empty, and
+read failures remain metadata-only reasons; the key is excluded from renderer
+IPC/data, logs, telemetry, exports, tests, worker evidence, and committed
+files. Agents/workers must not inspect or output `.env` values.
 
-Windows development uses Electron `safeStorage` backed by DPAPI; the target
-Mac uses Keychain plus TCC, signing, and entitlement paths. Windows results do
-not field-verify target-Mac Keychain/TCC/signing/entitlements,
-packaged-worker, or LaunchAgent behavior. The target's sole restart owner is
+The target Mac uses TCC, signing, and entitlement paths. Windows results do
+not field-verify target-Mac TCC/signing/entitlements, packaged-worker, or
+LaunchAgent behavior. The target's sole restart owner is
 the user LaunchAgent `KeepAlive={SuccessfulExit=false}` (plist form
 `KeepAlive = { SuccessfulExit = false }`). In-app recovery may recreate a
 failed renderer once, then exits with code `1` for LaunchAgent restart. Never
@@ -201,8 +225,14 @@ Workers preserve and report the applicable IDs among all 12 invariants:
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Model IDs come only from versioned configuration; a failed configured ID
    never silently substitutes another ID.
-12. Credentials are read by Main through `safeStorage`; keys never enter
-   renderer data, logs, telemetry, or exports.
+12. For this personal/non-commercial build, the ignored local root `.env` with
+   `OPENAI_API_KEY` is the sole master-key source, and Electron Main alone
+   loads it at runtime. No Console provisioning, `safeStorage`, Keychain,
+   DPAPI, or alternate credential fallback is in the runtime path. Missing,
+   empty, and read failures remain visible as metadata-only reasons. The
+   master key never enters renderer IPC/data, logs, telemetry, exports, tests,
+   worker evidence, or committed files; agents/workers do not inspect or
+   output `.env` values.
 
 No worker may weaken, rename, or omit an applicable invariant. Product safety,
 privacy, and runtime model IDs outrank convenience wording in a skill.
