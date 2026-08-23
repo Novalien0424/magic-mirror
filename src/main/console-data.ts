@@ -15,6 +15,7 @@ import type {
   ConsoleRuntimeSnapshot,
   ConsoleRuntimeSnapshotResult,
   DeveloperModeDecision,
+  PhaseTestPhase,
 } from '../shared/console-types'
 import type { ConsoleConfigController } from './console-config'
 import type {
@@ -103,7 +104,7 @@ export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
   publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
-  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getCurrentSessionTranscripts(): Promise<ConsoleResponse<ConsoleCurrentSessionTranscriptProjection | null>>
   /** Main-only deterministic fixture seam; never registered as IPC. */
   createInitialRuntimeSnapshotsForTest(): Promise<ConsoleRuntimeSnapshot>
@@ -713,7 +714,7 @@ export function createConsoleDataPlane(
     publish: (confirmation) => invokeConfig((controller) => controller.publish(confirmation)),
     rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),
     createNextRuntimeSnapshots: () => invokeConfig((controller) => controller.createNextRuntimeSnapshots()),
-    getPhaseTests: () => phaseTestsController.get(),
+    getPhaseTests: (phase) => phaseTestsController.get(phase),
     getCurrentSessionTranscripts,
     createInitialRuntimeSnapshotsForTest: async () => {
       let controller: ConsoleConfigController | null = null

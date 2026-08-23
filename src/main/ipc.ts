@@ -27,6 +27,7 @@ import type {
   ConsoleLifecycleActionResult,
   ConsoleReason,
   ConsoleResponse,
+  PhaseTestPhase,
 } from '../shared/console-types'
 import { projectAppSnapshot, type BootRuntime } from './boot'
 import type { ConsoleDataPlane } from './console-data'
@@ -685,6 +686,10 @@ function eventArgsAreEmpty(args: readonly unknown[]): boolean {
   return args.length === 0
 }
 
+function isPhaseTestPhase(value: unknown): value is PhaseTestPhase {
+  return value === '0' || value === '1'
+}
+
 function cloneProjectedSnapshot(value: unknown): AppSnapshot {
   return projectAppSnapshot(value)
 }
@@ -1294,11 +1299,15 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       senderRejected(telemetry, authorization.reason)
       return consoleFailure('console_request_rejected', 'cause=sender_rejected')
     }
-    if (!eventArgsAreEmpty(args)) {
+    const phase = args[0]
+    if (args.length === 0) {
+      return invokeConsole(consoleFacade(options), (facade) => facade.getPhaseTests(), telemetry)
+    }
+    if (args.length !== 1 || !isPhaseTestPhase(phase)) {
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
-    return invokeConsole(consoleFacade(options), (facade) => facade.getPhaseTests(), telemetry)
+    return invokeConsole(consoleFacade(options), (facade) => facade.getPhaseTests(phase), telemetry)
   })
 
   ipcMain.on(CONSOLE_IPC_CHANNELS.ready, (event, ...args) => {

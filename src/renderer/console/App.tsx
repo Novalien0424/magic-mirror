@@ -15,6 +15,8 @@ import type {
   ConsoleModelDraftInput,
   ConsolePhaseTestsPayload,
   ConsoleResponse,
+  PhaseTestPhase,
+  PhaseTestRecord,
 } from '../../shared/console-types'
 import type {
   MirrorEvent,
@@ -101,12 +103,13 @@ export const CONSOLE_UI_CONTRACT = {
     pagination: ['beforeSequence', 'nextBeforeSequence'] as const,
   },
   phaseTests: {
-    emptyCopy: 'No Phase 0 records yet — Task 10 owns demo execution and record production.',
-    ownershipCopy: 'Task 10 owns demo execution and record production.',
+    emptyCopy: 'No records yet for the selected phase.',
+    ownershipCopy: 'Phase exit owns demo execution and record production.',
     resultLabels: {
-      passed: 'Passed',
+      passed: 'Passed (real evidence)',
       failed: 'Failed',
       mock_passed: 'Mock passed',
+      not_executed: 'Not executed',
     },
   },
   config: {
@@ -315,17 +318,26 @@ function OverviewField({
 function MetadataEntry({
   name,
   value,
+  valueClassName,
 }: {
   readonly name: string
   readonly value: string | number | undefined
+  readonly valueClassName?: string
 }): React.JSX.Element | null {
   if (value === undefined) return null
   return (
     <div>
       <dt>{name}</dt>
-      <dd>{String(value)}</dd>
+      <dd className={valueClassName}>{String(value)}</dd>
     </div>
   )
+}
+
+function phaseTestResultClass(result: PhaseTestRecord['result']): string {
+  if (result === 'passed') return 'console__success'
+  if (result === 'failed') return 'console__status console__status--failed'
+  if (result === 'mock_passed') return 'console__status console__status--mock'
+  return 'console__muted console__status--not-executed'
 }
 
 function BoundedSummary({ summary }: { readonly summary: ConsoleEventSummary }): React.JSX.Element {
@@ -699,11 +711,14 @@ function EventsPanel({
 
 export function PhaseTestsPanel({
   state,
+  selectedPhase,
 }: {
   readonly state: PhaseTestsViewState
+  readonly selectedPhase?: PhaseTestPhase
 }): React.JSX.Element {
   const payload = state.status === 'success' ? state.value : null
   const latest = payload?.latest ?? null
+  const phase = payload?.phase ?? selectedPhase ?? '1'
 
   return (
     <section className="console__panel" aria-labelledby="console-phase-tests">
@@ -716,6 +731,7 @@ export function PhaseTestsPanel({
       </div>
 
       <p className="console__muted">{CONSOLE_UI_CONTRACT.phaseTests.ownershipCopy}</p>
+      <p className="console__muted">Selected phase: Phase {phase}</p>
       {state.status === 'loading' ? (
         <p className="console__request-state" aria-live="polite">Loading Phase Tests…</p>
       ) : null}
@@ -725,18 +741,20 @@ export function PhaseTestsPanel({
         </p>
       ) : null}
       {state.status === 'success' && latest === null ? (
-        <p className="console__notice" role="status">{CONSOLE_UI_CONTRACT.phaseTests.emptyCopy}</p>
+        <p className="console__notice" role="status">No Phase {phase} records yet.</p>
       ) : null}
       {latest !== null ? (
         <div className="console__phase-test-record" role="status">
-          <p className="console__success">Latest validated Phase 0 record</p>
+          <p className="console__muted">Latest validated Phase {phase} record</p>
           <dl className="console__summary-fields">
+            <MetadataEntry name="phase" value={latest.phase} />
             <MetadataEntry name="demoId" value={latest.demoId} />
             <MetadataEntry name="build" value={latest.build} />
             <MetadataEntry name="time" value={latest.time} />
             <MetadataEntry
               name="result"
               value={CONSOLE_UI_CONTRACT.phaseTests.resultLabels[latest.result]}
+              valueClassName={phaseTestResultClass(latest.result)}
             />
             <MetadataEntry name="note" value={latest.note} />
           </dl>
@@ -1162,6 +1180,7 @@ export function App(): React.JSX.Element {
     events: [],
     nextBeforeSequence: null,
   })
+  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('1')
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
@@ -1175,6 +1194,7 @@ export function App(): React.JSX.Element {
   const didNotifyReadyRef = useRef(false)
   const didLoadOverviewRef = useRef(false)
   const eventsRequestIdRef = useRef(0)
+  const phaseTestsRequestIdRef = useRef(0)
 
   useEffect(() => {
     mountedRef.current = true
@@ -1276,20 +1296,35 @@ export function App(): React.JSX.Element {
     }
   }
 
-  const requestPhaseTests = async (bridge: ConsoleBridge): Promise<void> => {
+  const requestPhaseTests = async (bridge: ConsoleBridge, requestedPhase: PhaseTestPhase): Promise<void> => {
     if (!mountedRef.current) return
+    const requestId = phaseTestsRequestIdRef.current + 1
+    phaseTestsRequestIdRef.current = requestId
     setPhaseTestsState({ status: 'loading' })
     try {
-      const response = await bridge.getPhaseTests()
-      if (!mountedRef.current) return
+      const response = await bridge.getPhaseTests(requestedPhase)
+      const current = phaseTestsRequestIdRef.current
+      if (!mountedRef.current || current !== requestId) return
       const failure = requestFailure(response)
       if (failure) {
         setPhaseTestsState({ status: 'failure', ...failure })
         return
       }
-      if (response.ok) setPhaseTestsState({ status: 'success', value: response.value })
+      if (response.ok) {
+        if (response.value.phase !== requestedPhase) {
+          setPhaseTestsState({
+            status: 'failure',
+            error: 'console_request_invalid',
+            reason: 'cause=phase_payload_mismatch',
+          })
+          return
+        }
+        setPhaseTestsState({ status: 'success', value: response.value })
+      }
     } catch {
-      if (mountedRef.current) setPhaseTestsState({ status: 'failure', ...BRIDGE_FAILURE })
+      const current = phaseTestsRequestIdRef.current
+      if (!mountedRef.current || current !== requestId) return
+      setPhaseTestsState({ status: 'failure', ...BRIDGE_FAILURE })
     }
   }
 
@@ -1339,6 +1374,7 @@ export function App(): React.JSX.Element {
     if (bridge === null) {
       bridgeRef.current = null
       eventsRequestIdRef.current += 1
+      phaseTestsRequestIdRef.current += 1
       setBridgeAvailable(false)
       setBridgeError(BRIDGE_FAILURE)
       setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
@@ -1369,10 +1405,15 @@ export function App(): React.JSX.Element {
 
     const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter)
     void requestEvents(bridge, query, false)
-    void requestPhaseTests(bridge)
     void requestConfig(bridge)
     void requestModels(bridge)
   }, [moduleFilter, sourceFilter, statusFilter])
+
+  useEffect(() => {
+    const bridge = bridgeRef.current
+    if (bridge === null || !bridgeAvailable) return
+    void requestPhaseTests(bridge, selectedPhase)
+  }, [bridgeAvailable, selectedPhase])
 
   const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
 
@@ -1511,7 +1552,25 @@ export function App(): React.JSX.Element {
             bridgeAvailable={bridgeAvailable}
           />
         </div>
-        <div hidden={activePage !== 'Phase Tests'}><PhaseTestsPanel state={phaseTestsState} /></div>
+        <div hidden={activePage !== 'Phase Tests'}>
+          <label htmlFor="console-phase-selector">Phase
+            <select
+              id="console-phase-selector"
+              value={selectedPhase}
+              onChange={(event) => {
+                const nextPhase = event.currentTarget.value
+                if (nextPhase === '0' || nextPhase === '1') setSelectedPhase(nextPhase)
+              }}
+            >
+              <option value="1">Phase 1</option>
+              <option value="0">Phase 0</option>
+            </select>
+          </label>
+          <PhaseTestsPanel
+            state={phaseTestsState}
+            selectedPhase={selectedPhase}
+          />
+        </div>
         <div hidden={activePage !== 'Config'}>
           <ConfigPanel
             state={configState}

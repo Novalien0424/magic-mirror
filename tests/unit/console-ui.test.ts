@@ -3,9 +3,14 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { App, CONSOLE_UI_CONTRACT } from '../../src/renderer/console/App'
+import { App, CONSOLE_UI_CONTRACT, PhaseTestsPanel } from '../../src/renderer/console/App'
 import type { ConsoleBridge } from '../../src/shared/bridge'
-import type { ConsoleEventsQuery, ConsoleOverviewPayload } from '../../src/shared/console-types'
+import type {
+  ConsoleEventsQuery,
+  ConsoleOverviewPayload,
+  ConsolePhaseTestsPayload,
+  PhaseTestRecord,
+} from '../../src/shared/console-types'
 
 const EXPECTED_TABS = [
   'Overview',
@@ -67,8 +72,48 @@ const EVENT_QUERY_FIELDS = [
 
 type ConsoleUiBridge = Pick<
   ConsoleBridge,
-  'getOverview' | 'getEvents' | 'simulate' | 'startConversation' | 'disconnect'
+  'getOverview' | 'getEvents' | 'simulate' | 'startConversation' | 'disconnect' | 'getPhaseTests'
 >
+
+const PHASE_RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
+const CANONICAL_PHASE_0_TIME = '2026-08-22T00:00:00.000Z'
+const CANONICAL_PHASE_1_TIME = '2026-08-23T00:00:00.000Z'
+
+const P1_D1_NOT_EXECUTED = {
+  phase: '1',
+  demoId: 'P1-D1',
+  build: 'phase1-build-canonical',
+  time: CANONICAL_PHASE_1_TIME,
+  result: 'not_executed',
+  note: 'live_evidence_not_executed',
+} as const satisfies PhaseTestRecord
+
+const P1_D1_MOCK_PASSED = {
+  phase: '1',
+  demoId: 'P1-D1',
+  build: 'phase1-build-canonical',
+  time: CANONICAL_PHASE_1_TIME,
+  result: 'mock_passed',
+  note: 'mock_evidence_only',
+} as const satisfies PhaseTestRecord
+
+const P0_D1_PASSED = {
+  phase: '0',
+  demoId: 'P0-D1',
+  build: 'phase0-build-canonical',
+  time: CANONICAL_PHASE_0_TIME,
+  result: 'passed',
+  note: 'real_evidence',
+} as const satisfies PhaseTestRecord
+
+const P0_D2_FAILED = {
+  phase: '0',
+  demoId: 'P0-D2',
+  build: 'phase0-build-canonical',
+  time: CANONICAL_PHASE_0_TIME,
+  result: 'failed',
+  note: 'real_evidence_failed',
+} as const satisfies PhaseTestRecord
 
 /*
  * The server renderer used by this focused test does not run useEffect, and
@@ -109,8 +154,58 @@ function renderConsole(): string {
   return renderToStaticMarkup(createElement(App))
 }
 
+function phaseTestsPanelSource(): string {
+  const start = CONSOLE_APP_SOURCE.indexOf('export function PhaseTestsPanel')
+  const end = CONSOLE_APP_SOURCE.indexOf('\nfunction safeDraftFromConfig', start)
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(start)
+  return CONSOLE_APP_SOURCE.slice(start, end)
+}
+
+function phaseTestsRequestSource(): string {
+  const start = CONSOLE_APP_SOURCE.indexOf('const requestPhaseTests =')
+  const end = CONSOLE_APP_SOURCE.indexOf('\n  const requestConfig', start)
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(start)
+  return CONSOLE_APP_SOURCE.slice(start, end)
+}
+
+function phaseSelectorSource(): string {
+  const selectBlocks = [...CONSOLE_APP_SOURCE.matchAll(/<select\b[\s\S]*?<\/select>/g)]
+  const phaseSelector = selectBlocks.find((match) => /Phase 1/.test(match[0]) && /Phase 0/.test(match[0]))
+  expect(phaseSelector, 'Phase Tests must expose a selector for both phases').toBeDefined()
+  return phaseSelector?.[0] ?? ''
+}
+
+function phaseTestsPayload(record: PhaseTestRecord): ConsolePhaseTestsPayload {
+  expect(Object.keys(record)).toEqual(PHASE_RECORD_KEYS)
+  return {
+    phase: record.phase,
+    source: 'reader',
+    latest: record,
+    records: [record],
+  }
+}
+
+function renderPhaseRecord(record: PhaseTestRecord): string {
+  return renderToStaticMarkup(createElement(PhaseTestsPanel, {
+    state: { status: 'success', value: phaseTestsPayload(record) },
+  }))
+}
+
+function resultMarkup(html: string, label: string): string {
+  const index = html.indexOf(label)
+  expect(index, `Phase Tests must render result label ${label}`).toBeGreaterThanOrEqual(0)
+  return html.slice(Math.max(0, index - 180), Math.min(html.length, index + label.length + 180))
+}
+
+function classTokens(markup: string): string[] {
+  return [...markup.matchAll(/class="([^"]*)"/g)]
+    .flatMap((match) => (match[1] ?? '').split(/\s+/).filter(Boolean))
+}
+
 describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
-  it('renders exactly the six Console tabs and exposes the Task 10 Phase Tests ownership sentence', () => {
+  it('renders exactly the six Console tabs and exposes the phase-exit Phase Tests ownership sentence', () => {
     const html = renderConsole()
 
     expect(CONSOLE_UI_CONTRACT.tabs).toEqual(EXPECTED_TABS)
@@ -118,7 +213,8 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
       expect(html).toContain(tab)
     }
     expect(CONSOLE_UI_CONTRACT).not.toHaveProperty('placeholders')
-    expect(html).toContain('Task 10 owns demo execution and record production.')
+    expect(html).toContain('Phase exit owns demo execution and record production.')
+    expect(html).not.toContain('Task 10 owns demo execution and record production.')
     expect(html).not.toMatch(/Not implemented|reserved for later/i)
   })
 
@@ -221,5 +317,84 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(startSource).toMatch(/ok|error|reason/i)
     expect(disconnectSource).toMatch(/ok|error|reason/i)
     expect(CONSOLE_APP_SOURCE).toMatch(/console_lifecycle_action|Lifecycle action|action outcome/i)
+  })
+
+  it('defaults Phase Tests to controlled Phase 1, requests it once, and renders pending P1-D1 metadata', () => {
+    const html = renderPhaseRecord(P1_D1_NOT_EXECUTED)
+    const panelSource = phaseTestsPanelSource()
+    const selectorSource = phaseSelectorSource()
+    const phaseTestCalls = CONSOLE_APP_SOURCE.match(/(?:\bbridge|\bmagicMirror|window\.magicMirror)\.getPhaseTests\s*\(/g) ?? []
+
+    expect(CONSOLE_APP_SOURCE).toMatch(/useState<PhaseTestPhase>\(\s*['"]1['"]\s*\)/)
+    expect(phaseTestCalls).toHaveLength(1)
+    expect(bridgeCallArguments('getPhaseTests')).toMatch(/(?:selectedPhase|requestedPhase|phase)/i)
+    expect(selectorSource).toMatch(/value=\{[^}]+\}/)
+    expect(selectorSource).toMatch(/onChange=/)
+
+    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?1/i)
+    expect(html).toMatch(/Latest validated Phase 1 record/i)
+    expect(html).toContain(P1_D1_NOT_EXECUTED.demoId)
+    expect(html).toContain(P1_D1_NOT_EXECUTED.build)
+    expect(html).toContain(P1_D1_NOT_EXECUTED.time)
+    expect(html).toContain(P1_D1_NOT_EXECUTED.note)
+    expect(html).toContain('Not executed')
+    expect(html).not.toMatch(/Phase 0|Task 10 owns/i)
+    expect(panelSource).not.toMatch(/Latest validated Phase 0|Task 10 owns|No Phase 0/i)
+
+    const notExecutedMarkup = resultMarkup(html, 'Not executed')
+    expect(notExecutedMarkup).not.toMatch(/console__success|console__status--success/)
+    expect(notExecutedMarkup).toMatch(/console__muted|console__notice|console__status--disabled|console__status--not-executed/)
+  })
+
+  it('exposes exactly Phase 1 and Phase 0, switches to phase 0, and renders real P0-D1 evidence', () => {
+    const selectorSource = phaseSelectorSource()
+    const html = renderPhaseRecord(P0_D1_PASSED)
+
+    expect(selectorSource.match(/<option\b/g) ?? []).toHaveLength(2)
+    expect(selectorSource).toMatch(/<option\s+value=["']1["']\s*>\s*Phase 1\s*<\/option>/)
+    expect(selectorSource).toMatch(/<option\s+value=["']0["']\s*>\s*Phase 0\s*<\/option>/)
+    expect(selectorSource).toMatch(/value=\{[^}]*phase[^}]*\}/i)
+    expect(selectorSource).toMatch(/onChange=\{[\s\S]{0,300}(?:setSelectedPhase|setPhase|currentTarget\.value)/i)
+    expect(bridgeCallArguments('getPhaseTests')).toMatch(/(?:selectedPhase|requestedPhase|phase)/i)
+
+    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?0/i)
+    expect(html).toMatch(/Latest validated Phase 0 record/i)
+    expect(html).toContain(P0_D1_PASSED.demoId)
+    expect(html).toContain(P0_D1_PASSED.build)
+    expect(html).toContain(P0_D1_PASSED.time)
+    expect(html).toContain(P0_D1_PASSED.note)
+    expect(html).toContain('Passed (real evidence)')
+  })
+
+  it('gives passed, failed, mock_passed, and not_executed distinct visible result labels and styles', () => {
+    const passedHtml = renderPhaseRecord(P0_D1_PASSED)
+    const failedHtml = renderPhaseRecord(P0_D2_FAILED)
+    const mockPassedHtml = renderPhaseRecord(P1_D1_MOCK_PASSED)
+    const notExecutedHtml = renderPhaseRecord(P1_D1_NOT_EXECUTED)
+
+    const passedMarkup = resultMarkup(passedHtml, 'Passed (real evidence)')
+    const failedMarkup = resultMarkup(failedHtml, 'Failed')
+    const mockPassedMarkup = resultMarkup(mockPassedHtml, 'Mock passed')
+    const notExecutedMarkup = resultMarkup(notExecutedHtml, 'Not executed')
+    const labels = ['Passed (real evidence)', 'Failed', 'Mock passed', 'Not executed']
+
+    expect(new Set(labels)).toHaveLength(4)
+    expect(passedMarkup).toMatch(/console__success/)
+    expect(failedMarkup).toMatch(/console__fault|console__status--failed/)
+    expect(mockPassedMarkup).toMatch(/console__status--mock|console__mock|console__notice/)
+    expect(notExecutedMarkup).not.toMatch(/console__success|console__status--success/)
+    expect(classTokens(failedMarkup)).not.toEqual(classTokens(passedMarkup))
+    expect(classTokens(mockPassedMarkup)).not.toEqual(classTokens(passedMarkup))
+    expect(classTokens(mockPassedMarkup)).not.toEqual(classTokens(notExecutedMarkup))
+    expect(classTokens(notExecutedMarkup)).not.toEqual(classTokens(passedMarkup))
+  })
+
+  it('guards Phase Tests from stale Phase 1 responses and payloads with the wrong requested phase', () => {
+    const source = phaseTestsRequestSource()
+
+    expect(source).toMatch(/requestId/)
+    expect(source).toMatch(/current\s*!==\s*requestId/)
+    expect(source).toMatch(/response\.value\.phase\s*!==\s*(?:requestedPhase|selectedPhase|phase)/)
+    expect(source).toMatch(/response\.value\.phase\s*!==\s*(?:requestedPhase|selectedPhase|phase)[\s\S]{0,240}return/)
   })
 })

@@ -48,6 +48,7 @@ interface RegisteredIpc {
   readonly facade: {
     readonly getOverview: ReturnType<typeof vi.fn>
     readonly getEvents: ReturnType<typeof vi.fn>
+    readonly getPhaseTests: ReturnType<typeof vi.fn>
   }
   readonly handleSimulator: ReturnType<typeof vi.fn>
   readonly handleRealtimeFailure: ReturnType<typeof vi.fn>
@@ -141,6 +142,40 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
       nextBeforeSequence: null,
     },
   }
+  const phase0Record = {
+    phase: '0',
+    demoId: 'P0-D1',
+    build: 'synthetic-p0-build',
+    time: '2026-08-23T00:00:00.000Z',
+    result: 'passed',
+    note: 'synthetic P0-D1 fixture',
+  }
+  const phase1Record = {
+    phase: '1',
+    demoId: 'P1-D1',
+    build: 'synthetic-p1-build',
+    time: '2026-08-23T00:00:00.000Z',
+    result: 'not_executed',
+    note: 'synthetic P1-D1 fixture',
+  }
+  const phase0Response = {
+    ok: true,
+    value: {
+      phase: '0',
+      source: 'reader',
+      latest: phase0Record,
+      records: [phase0Record],
+    },
+  }
+  const phase1Response = {
+    ok: true,
+    value: {
+      phase: '1',
+      source: 'reader',
+      latest: phase1Record,
+      records: [phase1Record],
+    },
+  }
   const serviceObjects = {
     configService: { marker: TEST_SERVICE_SENTINEL },
     telemetry: { marker: TEST_SERVICE_SENTINEL },
@@ -162,10 +197,12 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     }
     return eventsResponse
   })
+  const getPhaseTests = vi.fn((phase?: unknown) => phase === '1' ? phase1Response : phase0Response)
   const facade = {
     ...serviceObjects,
     getOverview,
     getEvents,
+    getPhaseTests,
   }
   const handleSimulator = vi.fn(async () => ({ op: 'success' as const }))
   const handleRealtimeFailure = vi.fn(() => undefined)
@@ -525,6 +562,122 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       }),
     ]))
     expectNoSensitiveOutput({ extraOverviewArgument, extraEventsArguments, unknownQueryKey, events: registered.events })
+  })
+})
+
+describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () => {
+  it('preserves the no-argument Phase 0 call and forwards exact 0/1 selectors with one-phase payloads', async () => {
+    const registered = makeHarness()
+    const event = authorizedEvent(registered)
+    const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
+
+    expect(CONSOLE_IPC_CHANNELS.phaseTests).toBe('console:get-phase-tests')
+    const defaultPhase = await phaseTests(event)
+    const selectedPhase0 = await phaseTests(event, '0')
+    const selectedPhase1 = await phaseTests(event, '1')
+
+    expect(defaultPhase).toEqual({
+      ok: true,
+      value: {
+        phase: '0',
+        source: 'reader',
+        latest: {
+          phase: '0',
+          demoId: 'P0-D1',
+          build: 'synthetic-p0-build',
+          time: '2026-08-23T00:00:00.000Z',
+          result: 'passed',
+          note: 'synthetic P0-D1 fixture',
+        },
+        records: [{
+          phase: '0',
+          demoId: 'P0-D1',
+          build: 'synthetic-p0-build',
+          time: '2026-08-23T00:00:00.000Z',
+          result: 'passed',
+          note: 'synthetic P0-D1 fixture',
+        }],
+      },
+    })
+    expect(selectedPhase0).toEqual(defaultPhase)
+    expect(selectedPhase1).toEqual({
+      ok: true,
+      value: {
+        phase: '1',
+        source: 'reader',
+        latest: {
+          phase: '1',
+          demoId: 'P1-D1',
+          build: 'synthetic-p1-build',
+          time: '2026-08-23T00:00:00.000Z',
+          result: 'not_executed',
+          note: 'synthetic P1-D1 fixture',
+        },
+        records: [{
+          phase: '1',
+          demoId: 'P1-D1',
+          build: 'synthetic-p1-build',
+          time: '2026-08-23T00:00:00.000Z',
+          result: 'not_executed',
+          note: 'synthetic P1-D1 fixture',
+        }],
+      },
+    })
+    expect(registered.facade.getPhaseTests).toHaveBeenCalledTimes(3)
+    expect(registered.facade.getPhaseTests.mock.calls).toEqual([[], ['0'], ['1']])
+    expectNoSensitiveOutput({ defaultPhase, selectedPhase0, selectedPhase1 })
+  })
+
+  it('rejects invalid selectors and extra arguments with no phase facade invocation', async () => {
+    const registered = makeHarness()
+    const event = authorizedEvent(registered)
+    const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
+
+    const invalidString = await phaseTests(event, '2')
+    const invalidNumber = await phaseTests(event, 0)
+    const extraArgument = await phaseTests(event, '0', TEST_CONFIGURED_VALUE_SENTINEL)
+
+    for (const result of [invalidString, invalidNumber, extraArgument]) {
+      expect(result).toEqual({
+        ok: false,
+        error: 'console_request_invalid',
+        reason: 'cause=payload_schema_invalid',
+      })
+    }
+    expect(registered.facade.getPhaseTests).not.toHaveBeenCalled()
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'ipc_payload_invalid',
+        reason: 'payload_schema_invalid',
+        source: 'runtime',
+      }),
+    ]))
+    expectNoSensitiveOutput({ invalidString, invalidNumber, extraArgument, events: registered.events })
+  })
+
+  it('rejects a non-Console sender through the stable sender path without invoking the phase facade', async () => {
+    const registered = makeHarness()
+    const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
+
+    const result = await phaseTests({
+      sender: registered.mirrorSender,
+      senderFrame: registered.mirrorFrame,
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'console_request_rejected',
+      reason: 'cause=sender_rejected',
+    })
+    expect(registered.facade.getPhaseTests).not.toHaveBeenCalled()
+    expect(registered.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'ipc_sender_rejected',
+        reason: 'web_contents_mismatch',
+        source: 'runtime',
+      }),
+    ]))
+    expectNoSensitiveOutput({ result, events: registered.events })
   })
 })
 

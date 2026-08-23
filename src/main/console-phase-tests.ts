@@ -3,14 +3,17 @@ import type {
   ConsolePhaseTestsPayload,
   ConsoleResponse,
   PhaseTestRecord,
+  PhaseTestPhase,
   PhaseTestRecordReader,
 } from '../shared/console-types'
 
 const MAX_RECORDS = 20
 const MAX_METADATA_LENGTH = 2048
 const RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
-const DEMO_IDS: ReadonlySet<string> = new Set(['P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5'])
-const RESULTS: ReadonlySet<string> = new Set(['passed', 'failed', 'mock_passed'])
+const PHASE_0_DEMO_IDS: ReadonlySet<string> = new Set(['P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5'])
+const PHASE_1_DEMO_IDS: ReadonlySet<string> = new Set(['P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'])
+const PHASE_0_RESULTS: ReadonlySet<string> = new Set(['passed', 'failed', 'mock_passed'])
+const PHASE_1_RESULTS: ReadonlySet<string> = new Set(['passed', 'failed', 'mock_passed', 'not_executed'])
 const CANONICAL_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
 type PhaseTestsFailureReason = 'cause=reader_failed' | 'cause=record_invalid'
@@ -23,7 +26,7 @@ export interface ConsolePhaseTestsDependencies {
 }
 
 export interface ConsolePhaseTestsController {
-  get(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  get(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,7 +67,7 @@ function isCanonicalTime(value: unknown): value is string {
   }
 }
 
-function cloneRecord(record: PhaseTestRecord): PhaseTestRecord {
+function cloneRecord<T extends PhaseTestRecord>(record: T): T {
   return {
     phase: record.phase,
     demoId: record.demoId,
@@ -72,10 +75,10 @@ function cloneRecord(record: PhaseTestRecord): PhaseTestRecord {
     time: record.time,
     result: record.result,
     note: record.note,
-  }
+  } as T
 }
 
-function validateRecord(value: unknown): PhaseTestRecord | null {
+function validateRecord(value: unknown, selectedPhase: PhaseTestPhase): PhaseTestRecord | null {
   if (!isRecord(value) || !hasExactRecordKeys(value)) return null
 
   const phase = readProperty(value, 'phase')
@@ -85,26 +88,41 @@ function validateRecord(value: unknown): PhaseTestRecord | null {
   const result = readProperty(value, 'result')
   const note = readProperty(value, 'note')
   if (
-    phase !== '0'
+    phase !== selectedPhase
     || typeof demoId !== 'string'
-    || !DEMO_IDS.has(demoId)
     || !isBoundedMetadata(build)
     || !isCanonicalTime(time)
     || typeof result !== 'string'
-    || !RESULTS.has(result)
     || !isBoundedMetadata(note)
   ) {
     return null
   }
 
-  return {
-    phase,
-    demoId: demoId as PhaseTestRecord['demoId'],
-    build,
-    time,
-    result: result as PhaseTestRecord['result'],
-    note,
+  if (selectedPhase === '0') {
+    if (!PHASE_0_DEMO_IDS.has(demoId) || !PHASE_0_RESULTS.has(result)) return null
+    return {
+      phase: '0',
+      demoId: demoId as Extract<PhaseTestRecord, { readonly phase: '0' }>['demoId'],
+      build,
+      time,
+      result: result as Extract<PhaseTestRecord, { readonly phase: '0' }>['result'],
+      note,
+    }
   }
+
+  if (selectedPhase === '1') {
+    if (!PHASE_1_DEMO_IDS.has(demoId) || !PHASE_1_RESULTS.has(result)) return null
+    return {
+      phase: '1',
+      demoId: demoId as Extract<PhaseTestRecord, { readonly phase: '1' }>['demoId'],
+      build,
+      time,
+      result: result as Extract<PhaseTestRecord, { readonly phase: '1' }>['result'],
+      note,
+    }
+  }
+
+  return null
 }
 
 function failed(
@@ -133,10 +151,11 @@ function failed(
 export function createConsolePhaseTests(
   dependencies: ConsolePhaseTestsDependencies,
 ): ConsolePhaseTestsController {
-  async function get(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>> {
+  async function get(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>> {
+    const selectedPhase = phase ?? '0'
     let rawRecords: unknown
     try {
-      rawRecords = await Promise.resolve(dependencies.reader.read('0'))
+      rawRecords = await Promise.resolve(dependencies.reader.read(selectedPhase))
     } catch {
       return failed(dependencies.emit, 'cause=reader_failed')
     }
@@ -148,7 +167,7 @@ export function createConsolePhaseTests(
       }
 
       for (const rawRecord of rawRecords) {
-        const record = validateRecord(rawRecord)
+        const record = validateRecord(rawRecord, selectedPhase)
         if (record === null) return failed(dependencies.emit, 'cause=record_invalid')
         records.push(record)
       }
@@ -166,7 +185,7 @@ export function createConsolePhaseTests(
       return {
         ok: true,
         value: {
-          phase: '0',
+          phase: selectedPhase,
           source: 'empty',
           latest: null,
           records: [],
@@ -180,7 +199,7 @@ export function createConsolePhaseTests(
     return {
       ok: true,
       value: {
-        phase: '0',
+        phase: selectedPhase,
         source: 'reader',
         latest: cloneRecord(latest),
         records: clonedRecords,

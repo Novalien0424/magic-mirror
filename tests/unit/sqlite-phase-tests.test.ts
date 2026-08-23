@@ -19,14 +19,24 @@ import type { Result } from '../../src/shared/types'
 const BASELINE_DDL =
   'CREATE TABLE app_migrations (version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)'
 const BASELINE_ROW = { version: 1, name: 'foundation_baseline' } as const
-const PHASE_TEST_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } as const
+const V2_PHASE_TEST_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } as const
+const V3_PHASE_TEST_MIGRATION_ROW = { version: 3, name: 'phase_test_records_v3' } as const
+const V2_PHASE_TEST_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase = '0'), demo_id TEXT NOT NULL CHECK (demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'mock_passed')), note TEXT NOT NULL)"
+const V3_PHASE_TEST_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase = '1' AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
 const FIXED_TIME = '2026-08-19T00:00:00.000Z'
 const DEMO_IDS = ['P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5'] as const
+const PHASE1_DEMO_IDS = ['P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'] as const
 const RESULT_VALUES = ['passed', 'failed', 'mock_passed'] as const
+const PHASE1_RESULT_VALUES = ['passed', 'failed', 'mock_passed', 'not_executed'] as const
 const MAX_METADATA_LENGTH = 2048
 
 const SYNTHETIC_PRIVATE_MARKER = 'synthetic-private-marker'
 const SYNTHETIC_DRIVER_FAILURE = 'synthetic-driver-failure'
+
+type Phase0TestRecord = Extract<PhaseTestRecord, { phase: '0' }>
+type Phase1TestRecord = Extract<PhaseTestRecord, { phase: '1' }>
 
 type PhaseTestFailure = {
   readonly code: string
@@ -40,8 +50,8 @@ type PhaseTestService = SqliteService & {
   ): Result<readonly PhaseTestRecord[], PhaseTestFailure>
 }
 
-type PhaseDriverFailure = 'insert' | 'prune' | 'commit'
-type PhaseDriverOperation = 'begin' | 'insert' | 'prune' | 'commit' | 'rollback'
+type PhaseDriverFailure = 'migration-copy' | 'insert' | 'prune' | 'commit'
+type PhaseDriverOperation = 'begin' | 'migration-copy' | 'insert' | 'prune' | 'commit' | 'rollback'
 
 interface PhaseDriverHarness {
   readonly factory: SqliteDatabaseDriverFactory
@@ -199,9 +209,41 @@ async function seedMigrationHistory(
       insert.run(BASELINE_ROW.version, BASELINE_ROW.name)
     } else if (kind === 'gap') {
       insert.run(1, BASELINE_ROW.name)
-      insert.run(3, 'gap_migration')
+      insert.run(3, V3_PHASE_TEST_MIGRATION_ROW.name)
     } else {
-      insert.run(3, 'future_migration')
+      insert.run(4, 'future_migration')
+    }
+    return dbPath
+  } finally {
+    database.close()
+  }
+}
+
+async function seedExactV2PhaseDatabase(
+  rows: readonly { readonly sequence: number; readonly record: Phase0TestRecord }[],
+): Promise<string> {
+  const dbPath = await makeTemporaryDatabasePath()
+  const database = new DatabaseSync(dbPath)
+  try {
+    database.exec(BASELINE_DDL)
+    database.exec(V2_PHASE_TEST_DDL)
+    const insertMigration = database.prepare('INSERT INTO app_migrations (version, name) VALUES (?, ?)')
+    insertMigration.run(BASELINE_ROW.version, BASELINE_ROW.name)
+    insertMigration.run(V2_PHASE_TEST_MIGRATION_ROW.version, V2_PHASE_TEST_MIGRATION_ROW.name)
+
+    const insertRecord = database.prepare(
+      'INSERT INTO phase_test_records (sequence, phase, demo_id, build, time, result, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    for (const row of rows) {
+      insertRecord.run(
+        row.sequence,
+        row.record.phase,
+        row.record.demoId,
+        row.record.build,
+        row.record.time,
+        row.record.result,
+        row.record.note,
+      )
     }
     return dbPath
   } finally {
@@ -214,6 +256,7 @@ function phaseOperation(sql: string): PhaseDriverOperation | null {
   if (statement === 'begin immediate') return 'begin'
   if (statement === 'commit') return 'commit'
   if (statement === 'rollback') return 'rollback'
+  if (statement.includes('phase_test_records') && statement.includes(' select ')) return 'migration-copy'
   if (statement.includes('insert into phase_test_records')) return 'insert'
   if (statement.includes('delete from phase_test_records')) return 'prune'
   return null
@@ -344,7 +387,7 @@ function expectNoPrivateContent(value: unknown): void {
   expect(serialized).not.toMatch(/(?:guest|candidate|profile|credential|transcript|audio|embedding|memory)/i)
 }
 
-function expectRecordShape(value: unknown): asserts value is PhaseTestRecord {
+function expectRecordShape(value: unknown): asserts value is Phase0TestRecord {
   expect(value).toBeTypeOf('object')
   if (typeof value !== 'object' || value === null) {
     throw new Error('expected a phase-test record')
@@ -361,7 +404,7 @@ function expectRecordShape(value: unknown): asserts value is PhaseTestRecord {
   expectNoPrivateContent(value)
 }
 
-function validRecord(overrides: Partial<PhaseTestRecord> = {}): PhaseTestRecord {
+function validRecord(overrides: Partial<Phase0TestRecord> = {}): Phase0TestRecord {
   return {
     phase: '0',
     demoId: 'P0-D1',
@@ -373,11 +416,38 @@ function validRecord(overrides: Partial<PhaseTestRecord> = {}): PhaseTestRecord 
   }
 }
 
-function readRecords(service: PhaseTestService): readonly PhaseTestRecord[] {
-  const result = service.readPhaseTestRecords('0')
+function validPhase1Record(overrides: Partial<Phase1TestRecord> = {}): Phase1TestRecord {
+  return {
+    phase: '1',
+    demoId: 'P1-D1',
+    build: 'phase1-build-abc123',
+    time: FIXED_TIME,
+    result: 'passed',
+    note: 'phase1-check',
+    ...overrides,
+  }
+}
+
+function readRecordsForPhase(
+  service: PhaseTestService,
+  phase: '0',
+): readonly Phase0TestRecord[]
+function readRecordsForPhase(
+  service: PhaseTestService,
+  phase: '1',
+): readonly Phase1TestRecord[]
+function readRecordsForPhase(
+  service: PhaseTestService,
+  phase: '0' | '1',
+): readonly PhaseTestRecord[] {
+  const result = service.readPhaseTestRecords(phase)
   expect(result.ok).toBe(true)
   if (!result.ok) throw new Error('expected phase-test records')
   return result.value
+}
+
+function readRecords(service: PhaseTestService): readonly Phase0TestRecord[] {
+  return readRecordsForPhase(service, '0')
 }
 
 function makeBootActor(): Record<string, unknown> {
@@ -463,13 +533,13 @@ function makeBootOptions(
   }
 }
 
-function makeBootSqliteFake(record: PhaseTestRecord): BootSqliteFake {
+function makeBootSqliteFake(record: Phase0TestRecord): BootSqliteFake {
   const readCalls: string[] = []
   let closeCalls = 0
   const service = {
     health: () => ({
       status: 'ready',
-      schemaVersion: 2,
+      schemaVersion: SQLITE_SCHEMA_VERSION,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -696,16 +766,17 @@ afterEach(async () => {
 })
 
 describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
-  it('uses schema v2, applies ordered migrations, and creates the exact phase table contract', async () => {
+  it('uses schema v3, applies ordered migrations, and creates the exact phase table contract', async () => {
     const dbPath = await makeTemporaryDatabasePath()
     const opened = openPhaseService(dbPath)
     const service = requireService(opened)
 
-    expect(SQLITE_SCHEMA_VERSION).toBe(2)
-    expect(service.health().schemaVersion).toBe(2)
+    expect(SQLITE_SCHEMA_VERSION).toBe(3)
+    expect(service.health().schemaVersion).toBe(3)
     expect(inspectDatabase(dbPath).migrations).toEqual([
       BASELINE_ROW,
-      PHASE_TEST_MIGRATION_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+      V3_PHASE_TEST_MIGRATION_ROW,
     ])
 
     const snapshot = inspectDatabase(dbPath)
@@ -740,9 +811,11 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     ])
 
     const ddl = normalizeSql(String(snapshot.phaseTable.sql))
-    expect(ddl).toMatch(/phase\s+text\s+not null\s+check\s*\(\s*phase\s*=\s*'0'\s*\)/)
-    expect(ddl).toMatch(/demo_id\s+text\s+not null\s+check\s*\(\s*demo_id\s+in\s*\('p0-d1',\s*'p0-d2',\s*'p0-d3',\s*'p0-d4',\s*'p0-d5'\)\s*\)/)
-    expect(ddl).toMatch(/result\s+text\s+not null\s+check\s*\(\s*result\s+in\s*\('passed',\s*'failed',\s*'mock_passed'\)\s*\)/)
+    expect(ddl).toBe(normalizeSql(V3_PHASE_TEST_DDL))
+    expect(ddl).toContain("check (phase in ('0', '1'))")
+    expect(ddl).toContain("check ((phase = '0' and demo_id in ('p0-d1', 'p0-d2', 'p0-d3', 'p0-d4', 'p0-d5')) or (phase = '1' and demo_id in ('p1-d1', 'p1-d2', 'p1-d3', 'p1-d4', 'p1-d5', 'p1-d6')))")
+    expect(ddl).toContain("check ((phase = '0' and result in ('passed', 'failed', 'mock_passed')) or (phase = '1' and result in ('passed', 'failed', 'mock_passed', 'not_executed')))")
+    expect(snapshot.objects.some((row) => String(row.name).includes('temp'))).toBe(false)
     expectNoPrivateContent(snapshot)
   })
 
@@ -751,12 +824,137 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     const opened = openPhaseService(dbPath)
     const service = requireService(opened)
 
-    expect(service.health().schemaVersion).toBe(2)
+    expect(service.health().schemaVersion).toBe(3)
     expect(inspectDatabase(dbPath).migrations).toEqual([
       BASELINE_ROW,
-      PHASE_TEST_MIGRATION_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+      V3_PHASE_TEST_MIGRATION_ROW,
     ])
     expect(inspectDatabase(dbPath).phaseTable).toBeDefined()
+    expectNoPrivateContent(opened.telemetry.events)
+  })
+
+  it('migrates an exact v2 database while preserving nonconsecutive sequences, append order, and reopen state', async () => {
+    const firstSeed = {
+      sequence: 2,
+      record: validRecord({
+        demoId: 'P0-D2',
+        build: 'v2-build-sequence-2',
+        note: 'v2-sequence-2',
+      }),
+    } as const
+    const secondSeed = {
+      sequence: 9,
+      record: validRecord({
+        demoId: 'P0-D3',
+        build: 'v2-build-sequence-9',
+        result: 'failed',
+        note: 'v2-sequence-9',
+      }),
+    } as const
+    const dbPath = await seedExactV2PhaseDatabase([firstSeed, secondSeed])
+
+    const seededSnapshot = inspectDatabase(dbPath)
+    expect(seededSnapshot.migrations).toEqual([
+      BASELINE_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+    ])
+    expect(normalizeSql(String(seededSnapshot.phaseTable?.sql))).toBe(normalizeSql(V2_PHASE_TEST_DDL))
+
+    const opened = openPhaseService(dbPath)
+    const service = requireService(opened)
+    expect(service.health().schemaVersion).toBe(3)
+    expect(inspectDatabase(dbPath).phaseRows).toEqual([
+      {
+        sequence: 2,
+        phase: '0',
+        demo_id: 'P0-D2',
+        build: 'v2-build-sequence-2',
+        time: FIXED_TIME,
+        result: 'passed',
+        note: 'v2-sequence-2',
+      },
+      {
+        sequence: 9,
+        phase: '0',
+        demo_id: 'P0-D3',
+        build: 'v2-build-sequence-9',
+        time: FIXED_TIME,
+        result: 'failed',
+        note: 'v2-sequence-9',
+      },
+    ])
+    expect(readRecords(service)).toEqual([secondSeed.record, firstSeed.record])
+
+    const appended = validRecord({
+      demoId: 'P0-D4',
+      build: 'v3-build-after-copy',
+      note: 'v3-after-copy',
+    })
+    expect(service.appendPhaseTestRecord(appended)).toEqual({ ok: true, value: undefined })
+    const afterAppend = inspectDatabase(dbPath)
+    expect(afterAppend.phaseRows.at(-1)).toEqual({
+      sequence: 10,
+      phase: '0',
+      demo_id: 'P0-D4',
+      build: 'v3-build-after-copy',
+      time: FIXED_TIME,
+      result: 'passed',
+      note: 'v3-after-copy',
+    })
+    expect(afterAppend.migrations).toEqual([
+      BASELINE_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+      V3_PHASE_TEST_MIGRATION_ROW,
+    ])
+
+    const beforeReopen = inspectDatabase(dbPath)
+    expect(service.close()).toEqual({ ok: true, value: undefined })
+    const reopened = requireService(openPhaseService(dbPath))
+    expect(reopened.health().schemaVersion).toBe(3)
+    expect(inspectDatabase(dbPath)).toEqual(beforeReopen)
+    expect(readRecords(reopened)).toEqual([appended, secondSeed.record, firstSeed.record])
+    expectNoPrivateContent(beforeReopen)
+    expectNoPrivateContent(opened.telemetry.events)
+  })
+
+  it('rolls back an injected v3 copy failure with the exact v2 rows and schema intact', async () => {
+    const firstSeed = {
+      sequence: 3,
+      record: validRecord({ demoId: 'P0-D1', build: 'v2-copy-build-3', note: 'v2-copy-3' }),
+    } as const
+    const secondSeed = {
+      sequence: 8,
+      record: validRecord({ demoId: 'P0-D5', build: 'v2-copy-build-8', note: 'v2-copy-8' }),
+    } as const
+    const dbPath = await seedExactV2PhaseDatabase([firstSeed, secondSeed])
+    const before = inspectDatabase(dbPath)
+    const harness = makePhaseDriverHarness('migration-copy')
+    harness.arm()
+
+    const opened = openPhaseService(dbPath, harness.factory)
+
+    expect(opened.result).toEqual({
+      ok: false,
+      error: { code: 'sqlite_migration_failed', reason: 'migration_transaction_failed' },
+    })
+    expect(harness.operations).toContain('begin')
+    expect(harness.operations).toContain('migration-copy')
+    expect(harness.operations).toContain('rollback')
+    expect(harness.operations).not.toContain('commit')
+
+    const after = inspectDatabase(dbPath)
+    expect(after).toEqual(before)
+    expect(after.migrations).toEqual([
+      BASELINE_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+    ])
+    expect(after.objects.map((row) => row.name)).toEqual([
+      'app_migrations',
+      'phase_test_records',
+    ])
+    expect(after.objects.some((row) => String(row.name).includes('temp'))).toBe(false)
+    expectNoPrivateContent(after)
     expectNoPrivateContent(opened.telemetry.events)
   })
 
@@ -765,18 +963,21 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
       label: 'malformed',
       kind: 'malformed' as const,
       failure: { code: 'sqlite_schema_invalid', reason: 'schema_ddl_invalid' },
+      expectedMigrations: [],
     },
     {
       label: 'gapped',
       kind: 'gap' as const,
       failure: { code: 'sqlite_schema_invalid', reason: 'schema_gap' },
+      expectedMigrations: [BASELINE_ROW, V3_PHASE_TEST_MIGRATION_ROW],
     },
     {
       label: 'future',
       kind: 'future' as const,
       failure: { code: 'sqlite_schema_too_new', reason: 'schema_future_version' },
+      expectedMigrations: [{ version: 4, name: 'future_migration' }],
     },
-  ])('rejects $label migration histories with stable metadata and no repair', async ({ kind, failure }) => {
+  ])('rejects $label migration histories with stable metadata and no repair', async ({ kind, failure, expectedMigrations }) => {
     const dbPath = await seedMigrationHistory(kind)
     const opened = openPhaseService(dbPath)
 
@@ -790,7 +991,7 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
       }),
     ]))
     expectNoPrivateContent(opened.telemetry.events)
-    expect(inspectDatabase(dbPath).migrations).not.toContainEqual(PHASE_TEST_MIGRATION_ROW)
+    expect(inspectDatabase(dbPath).migrations).toEqual(expectedMigrations)
   })
 
   it('rejects invalid record shapes before BEGIN IMMEDIATE and never returns input content in errors', async () => {
@@ -803,27 +1004,90 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     const base = validRecord()
     const recordWithoutNote = { ...base }
     Reflect.deleteProperty(recordWithoutNote, 'note')
-    const invalidRecords: readonly unknown[] = [
-      { ...base, phase: 0 },
-      { ...base, phase: '1' },
-      { ...base, demoId: 'P0-D6' },
-      { ...base, result: 'unknown' },
-      { ...base, time: '2026-08-19T00:00:00Z' },
-      { ...base, build: 'build\nunsafe' },
-      { ...base, build: 'b'.repeat(MAX_METADATA_LENGTH + 1) },
-      { ...base, note: 'note\nunsafe' },
-      { ...base, note: 'n'.repeat(MAX_METADATA_LENGTH + 1) },
-      recordWithoutNote,
-      { ...base, guestId: SYNTHETIC_PRIVATE_MARKER },
-      { ...base, profileId: SYNTHETIC_PRIVATE_MARKER },
-      { ...base, note: 'profileId=synthetic-id' },
+    const invalidRecords: readonly {
+      readonly record: unknown
+      readonly failure: PhaseTestFailure
+    }[] = [
+      {
+        record: { ...base, phase: 0 },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'phase_invalid' },
+      },
+      {
+        record: { ...base, phase: '2' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'phase_invalid' },
+      },
+      {
+        record: { ...base, phase: '1' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, demoId: 'P1-D1', result: 'not_executed' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...validPhase1Record({ result: 'not_executed' }), demoId: 'P0-D1' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, result: 'not_executed' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...validPhase1Record(), demoId: 'P1-D7' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, result: 'unknown' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, time: '2026-08-19T00:00:00Z' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, build: 'build\nunsafe' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, build: 'b'.repeat(MAX_METADATA_LENGTH + 1) },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, note: 'note\nunsafe' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, note: 'n'.repeat(MAX_METADATA_LENGTH + 1) },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: recordWithoutNote,
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, extra: 'unexpected' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, guestId: SYNTHETIC_PRIVATE_MARKER },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, profileId: SYNTHETIC_PRIVATE_MARKER },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
+      {
+        record: { ...base, note: 'profileId=synthetic-id' },
+        failure: { code: 'sqlite_phase_record_invalid', reason: 'record_invalid' },
+      },
     ]
 
     for (const invalidRecord of invalidRecords) {
       const before = harness.operations.length
-      const first = service.appendPhaseTestRecord(invalidRecord)
+      const first = service.appendPhaseTestRecord(invalidRecord.record)
       const firstFailure = requireFailure(first)
-      const second = service.appendPhaseTestRecord(invalidRecord)
+      expect(firstFailure).toEqual(invalidRecord.failure)
+      const second = service.appendPhaseTestRecord(invalidRecord.record)
       expect(second).toEqual(first)
       expect(harness.operations.slice(before)).not.toContain('begin')
       expectNoPrivateContent(firstFailure)
@@ -874,6 +1138,41 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     ])
     expectNoPrivateContent(snapshot)
     expectNoPrivateContent(opened.telemetry.events)
+  })
+
+  it('round-trips P1-D1 through P1-D6 including not_executed and isolates phase reads', async () => {
+    const dbPath = await makeTemporaryDatabasePath()
+    const service = requireService(openPhaseService(dbPath))
+    const phase0Record = validRecord({
+      demoId: 'P0-D5',
+      build: 'phase0-isolated-build',
+      note: 'phase0-isolated',
+    })
+    const phase1Records: readonly Phase1TestRecord[] = PHASE1_DEMO_IDS.map((demoId, index) => {
+      const result = PHASE1_RESULT_VALUES[index % PHASE1_RESULT_VALUES.length]
+      if (result === undefined) throw new Error('expected phase-one result fixture')
+      return validPhase1Record({
+        demoId,
+        build: `phase1-build-${index + 1}`,
+        result,
+        note: `phase1-${index + 1}`,
+      })
+    })
+
+    expect(service.appendPhaseTestRecord(phase0Record)).toEqual({ ok: true, value: undefined })
+    for (const record of phase1Records) {
+      expect(service.appendPhaseTestRecord(record)).toEqual({ ok: true, value: undefined })
+    }
+
+    const phase1Read = readRecordsForPhase(service, '1')
+    expect(phase1Read).toEqual([...phase1Records].reverse())
+    expect(phase1Read).toContainEqual(expect.objectContaining({
+      demoId: 'P1-D4',
+      result: 'not_executed',
+    }))
+    expect(readRecordsForPhase(service, '0')).toEqual([phase0Record])
+    expectNoPrivateContent(phase1Read)
+    expectNoPrivateContent(readRecordsForPhase(service, '0'))
   })
 
   it.each(['insert', 'prune', 'commit'] as const)('rolls back an append when $failure fails', async (failure) => {

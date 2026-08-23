@@ -18,6 +18,7 @@ import type {
   ConsolePhaseTestsPayload,
   ConsoleResponse,
   ConsoleRuntimeSnapshotResult,
+  PhaseTestPhase,
 } from './console-types'
 import type { RealtimeFailureInput } from './realtime-recovery'
 
@@ -152,7 +153,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   publish(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
-  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

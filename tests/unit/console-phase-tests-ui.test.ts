@@ -15,7 +15,9 @@ import type {
   ConsoleResponse,
 } from '../../src/shared/console-types'
 
-const EXACT_EMPTY_COPY = 'No Phase 0 records yet — Task 10 owns demo execution and record production.'
+const EXACT_EMPTY_COPY = 'No Phase 0 records yet.'
+const EXACT_CONTRACT_EMPTY_COPY = 'No records yet for the selected phase.'
+const EXACT_OWNERSHIP_COPY = 'Phase exit owns demo execution and record production.'
 const EXACT_FAILURE_COPY = 'Phase Tests failed: console_phase_tests_read_failed; cause=reader_failed'
 
 const PRIVACY_SENTINELS = [
@@ -113,9 +115,11 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
 
     expect(CONSOLE_UI_CONTRACT.tabs).toContain('Phase Tests')
     expect(contract).toEqual(expect.objectContaining({
-      emptyCopy: EXACT_EMPTY_COPY,
+      emptyCopy: EXACT_CONTRACT_EMPTY_COPY,
+      ownershipCopy: EXACT_OWNERSHIP_COPY,
     }))
     expect(html).toContain(EXACT_EMPTY_COPY)
+    expect(html).toContain(EXACT_OWNERSHIP_COPY)
     expect(html).not.toContain('passed')
     expectNoSensitiveOutput({ html, contract })
   })
@@ -126,9 +130,10 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
 
     expect(contract).toEqual(expect.objectContaining({
       resultLabels: expect.objectContaining({
-        passed: 'Passed',
+        passed: 'Passed (real evidence)',
         failed: 'Failed',
         mock_passed: 'Mock passed',
+        not_executed: 'Not executed',
       }),
     }))
     expect(html).toContain('P0-D5')
@@ -157,7 +162,7 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
 
     const bridgeSource = sourceSection('function isConsoleBridge', ['function readConsoleBridge'])
     expect(bridgeSource).toMatch(/getPhaseTests/)
-    expect(CONSOLE_APP_SOURCE).toMatch(/bridge\.getPhaseTests\s*\(\)/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/bridge\.getPhaseTests\s*\(\s*(?:selectedPhase|requestedPhase)\s*\)/)
   })
 
   it('keeps Phase Tests read-only, non-fabricating, and free of model-bearing actions', () => {
@@ -170,7 +175,7 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
     ])
 
     expect(html).not.toMatch(/<button\b/i)
-    expect(html).not.toMatch(/\b(?:Run|Write|Exit|Tag)\b/i)
+    expect(html).not.toMatch(/\b(?:Run|Write|Tag)\b/i)
     expect(html).not.toMatch(/runDemo|executeDemo|writeRecord|persistRecord|checkExit|tagPhase/i)
     expect(phaseTestsSource).not.toMatch(/runDemo|executeDemo|writeRecord|persistRecord|checkExit|tagPhase/i)
     expect(phaseTestsSource).not.toMatch(MODEL_BEARING_KEY_PATTERN)
@@ -181,7 +186,7 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
     const html = renderToStaticMarkup(createElement(App))
 
     expect(html).toContain('Phase Tests')
-    expect(html).toContain('Task 10 owns demo execution and record production.')
+    expect(html).toContain(EXACT_OWNERSHIP_COPY)
     expect(html).not.toContain('P0-D1')
     expect(html).not.toContain('P0-D2')
     expect(html).not.toContain('P0-D3')

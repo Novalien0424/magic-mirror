@@ -26,11 +26,14 @@ const BASELINE_DDL =
 const BASELINE_DDL_WITH_IF_NOT_EXISTS =
   'CREATE TABLE IF NOT EXISTS app_migrations (version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)'
 const BASELINE_ROW = { version: 1, name: 'foundation_baseline' } as const
-const PHASE_TEST_DDL =
+const PHASE_TEST_V2_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase = '0'), demo_id TEXT NOT NULL CHECK (demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'mock_passed')), note TEXT NOT NULL)"
-const PHASE_TEST_DDL_WITH_IF_NOT_EXISTS =
+const PHASE_TEST_V2_DDL_WITH_IF_NOT_EXISTS =
   "CREATE TABLE IF NOT EXISTS phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase = '0'), demo_id TEXT NOT NULL CHECK (demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'mock_passed')), note TEXT NOT NULL)"
-const PHASE_TEST_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } as const
+const PHASE_TEST_V3_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase = '1' AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
+const PHASE_TEST_V2_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } as const
+const PHASE_TEST_V3_MIGRATION_ROW = { version: 3, name: 'phase_test_records_v3' } as const
 const PHASE_TEST_COLUMNS = [
   { cid: 0, name: 'sequence', type: 'INTEGER', notnull: 0, dflt_value: null, pk: 1 },
   { cid: 1, name: 'phase', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
@@ -94,6 +97,7 @@ type DriverOperation =
   | 'create_phase_records'
   | 'insert_baseline'
   | 'insert_phase_migration'
+  | 'copy_phase_records'
   | 'commit'
   | 'rollback'
   | 'integrity_check'
@@ -278,7 +282,7 @@ function assertTelemetryPrivacy(events: readonly TelemetryEventInput[], dbPath?:
       if (event.status === 'success') {
         expect(event.error_code).toBeUndefined()
         expect(event.reason).toBe(
-          'schema_version=2;foreign_keys=on;journal_mode=wal;integrity=ok',
+          'schema_version=3;foreign_keys=on;journal_mode=wal;integrity=ok',
         )
       } else {
         const causes = OPEN_FAILURE_CAUSES[event.error_code ?? '']
@@ -291,7 +295,7 @@ function assertTelemetryPrivacy(events: readonly TelemetryEventInput[], dbPath?:
     } else if (event.event === 'sqlite_migration') {
       if (event.status === 'success') {
         expect(event.error_code).toBeUndefined()
-        expect(event.reason).toBe('version=2;name=phase_test_records')
+        expect(event.reason).toBe('version=3;name=phase_test_records_v3')
       } else {
         expect(event.error_code).toBe('sqlite_migration_failed')
         expect(event.reason).toBe('cause=migration_transaction_failed')
@@ -363,7 +367,7 @@ function expectSuccessfulOpen(
     module: 'sqlite',
     source: 'runtime',
     status: 'success',
-    reason: 'schema_version=2;foreign_keys=on;journal_mode=wal;integrity=ok',
+    reason: 'schema_version=3;foreign_keys=on;journal_mode=wal;integrity=ok',
   })
   assertTelemetryPrivacy(events, dbPath)
 }
@@ -422,15 +426,16 @@ async function seedPersistentDatabase(dbPath: string, kind: SeedKind): Promise<v
     const insert = database.prepare('INSERT INTO app_migrations (version, name) VALUES (?, ?)')
     if (kind === 'exact') {
       insert.run(BASELINE_ROW.version, BASELINE_ROW.name)
-      database.exec(PHASE_TEST_DDL)
-      insert.run(PHASE_TEST_MIGRATION_ROW.version, PHASE_TEST_MIGRATION_ROW.name)
+      database.exec(PHASE_TEST_V3_DDL)
+      insert.run(PHASE_TEST_V2_MIGRATION_ROW.version, PHASE_TEST_V2_MIGRATION_ROW.name)
+      insert.run(PHASE_TEST_V3_MIGRATION_ROW.version, PHASE_TEST_V3_MIGRATION_ROW.name)
     } else if (kind === 'gap') {
       insert.run(1, BASELINE_ROW.name)
       insert.run(3, 'gap_marker')
     } else if (kind === 'unknown') {
       insert.run(1, 'unknown_migration')
     } else if (kind === 'future') {
-      insert.run(3, 'future_migration')
+      insert.run(4, 'future_migration')
     }
   } finally {
     database.close()
@@ -478,11 +483,11 @@ function makeFakeDriverHarness(
   let factoryCalls = 0
   let closeCalls = 0
   let tableExists = false
-  let phaseTableExists = false
+  let phaseTableVersion: 'v2' | 'v3' | null = null
   let migrationRows: SqliteDatabaseRow[] = []
   let transactionSnapshot: {
     tableExists: boolean
-    phaseTableExists: boolean
+    phaseTableVersion: 'v2' | 'v3' | null
     migrationRows: SqliteDatabaseRow[]
   } | null = null
 
@@ -492,12 +497,12 @@ function makeFakeDriverHarness(
     tbl_name: 'app_migrations',
     sql: BASELINE_DDL,
   }
-  const phaseMasterRow: SqliteDatabaseRow = {
+  const makePhaseMasterRow = (): SqliteDatabaseRow => ({
     type: 'table',
     name: 'phase_test_records',
     tbl_name: 'phase_test_records',
-    sql: PHASE_TEST_DDL,
-  }
+    sql: phaseTableVersion === 'v2' ? PHASE_TEST_V2_DDL : PHASE_TEST_V3_DDL,
+  })
   const columnRows: readonly SqliteDatabaseRow[] = [
     { cid: 0, name: 'version', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 1 },
     { cid: 1, name: 'name', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
@@ -510,14 +515,6 @@ function makeFakeDriverHarness(
   }
   const recordForbiddenOperation = (sql: string): boolean => {
     const statement = normalized(sql)
-    if (statement.includes('drop ')) {
-      operations.push('drop')
-      return true
-    }
-    if (statement.includes('alter ')) {
-      operations.push('alter')
-      return true
-    }
     if (statement.includes('delete ')) {
       operations.push('delete')
       return true
@@ -532,11 +529,17 @@ function makeFakeDriverHarness(
       operations.push('insert_baseline')
       migration = { ...BASELINE_ROW }
     } else if (
-      version === PHASE_TEST_MIGRATION_ROW.version
-      && name === PHASE_TEST_MIGRATION_ROW.name
+      version === PHASE_TEST_V2_MIGRATION_ROW.version
+      && name === PHASE_TEST_V2_MIGRATION_ROW.name
     ) {
       operations.push('insert_phase_migration')
-      migration = { ...PHASE_TEST_MIGRATION_ROW }
+      migration = { ...PHASE_TEST_V2_MIGRATION_ROW }
+    } else if (
+      version === PHASE_TEST_V3_MIGRATION_ROW.version
+      && name === PHASE_TEST_V3_MIGRATION_ROW.name
+    ) {
+      operations.push('insert_phase_migration')
+      migration = { ...PHASE_TEST_V3_MIGRATION_ROW }
     } else {
       operations.push('other_run')
       return
@@ -574,7 +577,7 @@ function makeFakeDriverHarness(
         }
         transactionSnapshot = {
           tableExists,
-          phaseTableExists,
+          phaseTableVersion,
           migrationRows: migrationRows.map((row) => ({ ...row })),
         }
         return
@@ -587,12 +590,35 @@ function makeFakeDriverHarness(
         tableExists = true
         return
       }
-      if (statement.includes(normalizeSql(PHASE_TEST_DDL_WITH_IF_NOT_EXISTS))) {
+      if (
+        statement.includes(normalizeSql(PHASE_TEST_V2_DDL))
+        || statement.includes(normalizeSql(PHASE_TEST_V2_DDL_WITH_IF_NOT_EXISTS))
+      ) {
         operations.push('create_phase_records')
         if (options.migration === 'ddl') {
           fail()
         }
-        phaseTableExists = true
+        phaseTableVersion = 'v2'
+        return
+      }
+      if (statement.includes(normalizeSql(PHASE_TEST_V3_DDL))) {
+        operations.push('create_phase_records')
+        if (options.migration === 'ddl') {
+          fail()
+        }
+        phaseTableVersion = 'v3'
+        return
+      }
+      if (statement.startsWith('alter table phase_test_records rename to phase_test_records_v2')) {
+        operations.push('alter')
+        return
+      }
+      if (statement.includes('insert into phase_test_records') && statement.includes(' select ')) {
+        operations.push('copy_phase_records')
+        return
+      }
+      if (statement.startsWith('drop table phase_test_records_v2')) {
+        operations.push('drop')
         return
       }
       if (statement.includes('insert into app_migrations')) {
@@ -613,7 +639,7 @@ function makeFakeDriverHarness(
         }
         if (transactionSnapshot !== null) {
           tableExists = transactionSnapshot.tableExists
-          phaseTableExists = transactionSnapshot.phaseTableExists
+          phaseTableVersion = transactionSnapshot.phaseTableVersion
           migrationRows = transactionSnapshot.migrationRows.map((row) => ({ ...row }))
         }
         transactionSnapshot = null
@@ -642,13 +668,13 @@ function makeFakeDriverHarness(
       }
       if (statement.includes('from sqlite_master')) {
         if (statement.includes("where name = 'phase_test_records'")) {
-          return phaseTableExists ? phaseMasterRow : undefined
+          return phaseTableVersion === null ? undefined : makePhaseMasterRow()
         }
         return tableExists ? masterRow : undefined
       }
       if (statement.includes('pragma table_info')) {
         if (statement.includes("'phase_test_records'")) {
-          return phaseTableExists ? phaseColumnRows[0] : undefined
+          return phaseTableVersion === null ? undefined : phaseColumnRows[0]
         }
         return tableExists ? columnRows[0] : undefined
       }
@@ -681,13 +707,13 @@ function makeFakeDriverHarness(
       }
       if (statement.includes('from sqlite_master')) {
         if (statement.includes("where name = 'phase_test_records'")) {
-          return phaseTableExists ? [phaseMasterRow] : []
+          return phaseTableVersion === null ? [] : [makePhaseMasterRow()]
         }
         return tableExists ? [masterRow] : []
       }
       if (statement.includes('pragma table_info')) {
         if (statement.includes("'phase_test_records'")) {
-          return phaseTableExists ? phaseColumnRows : []
+          return phaseTableVersion === null ? [] : phaseColumnRows
         }
         return tableExists ? columnRows : []
       }
@@ -749,7 +775,7 @@ function expectOnlyAppMigrationsObject(snapshot: PersistentSnapshot): void {
   )).toBe(false)
 }
 
-function expectOnlySchemaV2Objects(snapshot: PersistentSnapshot): void {
+function expectOnlySchemaV3Objects(snapshot: PersistentSnapshot): void {
   expect(snapshot.objects).toHaveLength(2)
   expect(snapshot.objects.map((row) => row.name)).toEqual([
     'app_migrations',
@@ -771,7 +797,7 @@ function expectExactPhaseTable(snapshot: PersistentSnapshot): void {
   const phaseTable = snapshot.objects.find((row) => row.name === 'phase_test_records')
   expect(phaseTable).toBeDefined()
   if (phaseTable === undefined) return
-  expect(normalizeSql(phaseTable.sql as string)).toBe(normalizeSql(PHASE_TEST_DDL))
+  expect(normalizeSql(phaseTable.sql as string)).toBe(normalizeSql(PHASE_TEST_V3_DDL))
   expect(snapshot.phaseColumns).toEqual(PHASE_TEST_COLUMNS)
   expect(snapshot.phaseIndexes).toEqual([])
   expect(snapshot.phaseForeignKeys).toEqual([])
@@ -781,10 +807,11 @@ function expectExactValidSchema(
   snapshot: PersistentSnapshot,
   rows: Array<Record<string, unknown>> = [
     { ...BASELINE_ROW },
-    { ...PHASE_TEST_MIGRATION_ROW },
+    { ...PHASE_TEST_V2_MIGRATION_ROW },
+    { ...PHASE_TEST_V3_MIGRATION_ROW },
   ],
 ): void {
-  expectOnlySchemaV2Objects(snapshot)
+  expectOnlySchemaV3Objects(snapshot)
   expect(normalizeSql(snapshot.objects[0].sql as string)).toBe(normalizeSql(BASELINE_DDL))
   expect(snapshot.columns).toEqual([
     { cid: 0, name: 'version', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 1 },
@@ -818,8 +845,17 @@ function expectUnchangedV1Fixture(
   expect(snapshot.integrity).toEqual([{ integrity_check: 'ok' }])
 }
 
-function expectNoForbiddenDriverOperations(operations: readonly DriverOperation[]): void {
-  expect(operations).not.toEqual(expect.arrayContaining(['drop', 'alter', 'delete']))
+function expectNoUnapprovedDriverOperations(operations: readonly DriverOperation[]): void {
+  expect(operations).not.toEqual(expect.arrayContaining(['delete', 'other_exec', 'other_run']))
+}
+
+function expectV3MigrationSwap(operations: readonly DriverOperation[]): void {
+  expect(operations).toEqual(expect.arrayContaining([
+    'alter',
+    'create_phase_records',
+    'copy_phase_records',
+    'drop',
+  ]))
 }
 
 afterEach(async () => {
@@ -844,7 +880,7 @@ describe('SQLite service public contract', () => {
     const options: SqliteServiceOptions = { dbPath, telemetry: telemetry.telemetry }
     const result: Result<SqlitePhaseTestService, SqliteFailure> = openTracked(options)
 
-    expect(SQLITE_SCHEMA_VERSION).toBe(2)
+    expect(SQLITE_SCHEMA_VERSION).toBe(3)
     expect(Object.keys(result).sort()).toEqual(['ok', 'value'])
     expect(result.ok).toBe(true)
     if (!result.ok) {
@@ -870,7 +906,7 @@ describe('SQLite service public contract', () => {
     assertTelemetryPrivacy(telemetry.events, dbPath)
   })
 
-  it('opens a persistent file with the exact schema-v2 contract and required metadata', async () => {
+  it('opens a persistent file with the exact schema-v3 contract and required metadata', async () => {
     const { directory, dbPath } = await makeTemporaryDatabasePath()
     const telemetry = makeTelemetryHarness()
     const result = openTracked({ dbPath, telemetry: telemetry.telemetry })
@@ -884,7 +920,7 @@ describe('SQLite service public contract', () => {
     expect(existsSync(join(directory, 'alternate.sqlite'))).toBe(false)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'success',
-      reason: 'version=2;name=phase_test_records',
+      reason: 'version=3;name=phase_test_records_v3',
     })
     expectEvent(telemetry.events, 'sqlite_integrity_check', {
       status: 'success',
@@ -897,7 +933,7 @@ describe('SQLite service public contract', () => {
     assertTelemetryPrivacy(telemetry.events, dbPath)
   })
 
-  it('reopens the same persistent file without duplicating or recreating schema-v2 objects', async () => {
+  it('reopens the same persistent file without duplicating or recreating schema-v3 objects', async () => {
     const { dbPath } = await makeTemporaryDatabasePath()
     const firstTelemetry = makeTelemetryHarness()
     const first = openTracked({ dbPath, telemetry: firstTelemetry.telemetry })
@@ -917,7 +953,7 @@ describe('SQLite service public contract', () => {
     expect(secondTelemetry.events.some((event) => event.event === 'sqlite_migration')).toBe(false)
     expectEvent(secondTelemetry.events, 'sqlite_open', {
       status: 'success',
-      reason: 'schema_version=2;foreign_keys=on;journal_mode=wal;integrity=ok',
+      reason: 'schema_version=3;foreign_keys=on;journal_mode=wal;integrity=ok',
     })
     expect(second.value.close()).toEqual({ ok: true, value: undefined })
 
@@ -945,7 +981,7 @@ describe('SQLite service public contract', () => {
     readyCopy.schemaVersion = 99
     expect(result.value.health()).toEqual({
       status: 'ready',
-      schemaVersion: 2,
+      schemaVersion: 3,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -967,7 +1003,7 @@ describe('SQLite service public contract', () => {
     failedCopy.failure.reason = 'driver_close_failed'
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 2,
+      schemaVersion: 3,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -982,7 +1018,7 @@ describe('SQLite service public contract', () => {
 })
 
 describe('SQLite persistent schema and migration contract', () => {
-  it('migrates an existing empty v1 table to the schema-v2 contract', async () => {
+  it('migrates an existing empty v1 table through the schema-v3 contract', async () => {
     const { dbPath } = await makeTemporaryDatabasePath()
     await seedPersistentDatabase(dbPath, 'empty')
     const telemetry = makeTelemetryHarness()
@@ -995,7 +1031,7 @@ describe('SQLite persistent schema and migration contract', () => {
     expectReadyHealth(result.value, dbPath)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'success',
-      reason: 'version=2;name=phase_test_records',
+      reason: 'version=3;name=phase_test_records_v3',
     })
     expect(result.value.close()).toEqual({ ok: true, value: undefined })
 
@@ -1004,7 +1040,7 @@ describe('SQLite persistent schema and migration contract', () => {
     assertTelemetryPrivacy(telemetry.events, dbPath)
   })
 
-  it('accepts an already exact seeded schema-v2 database without applying migrations again', async () => {
+  it('accepts an already exact seeded schema-v3 database without applying migrations again', async () => {
     const { dbPath } = await makeTemporaryDatabasePath()
     await seedPersistentDatabase(dbPath, 'exact')
     const telemetry = makeTelemetryHarness()
@@ -1076,7 +1112,7 @@ describe('SQLite persistent schema and migration contract', () => {
     expectUnchangedV1Fixture(snapshot, [{ version: 1, name: 'unknown_migration' }])
   })
 
-  it('rejects true future version 3 without downgrading it', async () => {
+  it('rejects true future version 4 without downgrading it', async () => {
     const { dbPath } = await makeTemporaryDatabasePath()
     await seedPersistentDatabase(dbPath, 'future')
     const telemetry = makeTelemetryHarness()
@@ -1088,7 +1124,7 @@ describe('SQLite persistent schema and migration contract', () => {
     })
     expectPrimaryOpenFailure(telemetry.events, failure, dbPath)
     const snapshot = await inspectPersistentDatabase(dbPath)
-    expectUnchangedV1Fixture(snapshot, [{ version: 3, name: 'future_migration' }])
+    expectUnchangedV1Fixture(snapshot, [{ version: 4, name: 'future_migration' }])
   })
 
   it('maps a real missing-parent open failure without creating the parent or an alternate file', async () => {
@@ -1219,7 +1255,8 @@ describe('SQLite deterministic failure contract', () => {
     expect(fake.operations).toContain('rollback')
     expect(fake.operations.indexOf('begin_immediate')).toBeLessThan(fake.operations.indexOf('rollback'))
     expect(fake.closeCalls).toBe(1)
-    expectNoForbiddenDriverOperations(fake.operations)
+    expectNoUnapprovedDriverOperations(fake.operations)
+    if (migration === 'commit') expectV3MigrationSwap(fake.operations)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'failed',
       error_code: 'sqlite_migration_failed',
@@ -1241,7 +1278,7 @@ describe('SQLite deterministic failure contract', () => {
     expect(fake.operations).toContain('begin_immediate')
     expect(fake.operations).toContain('rollback')
     expect(fake.closeCalls).toBe(1)
-    expectNoForbiddenDriverOperations(fake.operations)
+    expectNoUnapprovedDriverOperations(fake.operations)
     expectPrimaryOpenFailure(telemetry.events, failure, dbPath)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'failed',
@@ -1269,7 +1306,8 @@ describe('SQLite deterministic failure contract', () => {
     expect(fake.operations).toContain('integrity_check')
     expect(fake.operations).not.toContain('rollback')
     expect(fake.closeCalls).toBe(1)
-    expectNoForbiddenDriverOperations(fake.operations)
+    expectNoUnapprovedDriverOperations(fake.operations)
+    expectV3MigrationSwap(fake.operations)
     expectEvent(telemetry.events, 'sqlite_integrity_check', {
       status: 'failed',
       error_code: 'sqlite_integrity_failed',
@@ -1308,6 +1346,7 @@ describe('SQLite deterministic failure contract', () => {
       throw new Error('expected fake driver open')
     }
     expectReadyHealth(result.value, dbPath)
+    expectV3MigrationSwap(fake.operations)
     const firstClose = result.value.close()
     expect(firstClose).toEqual({
       ok: false,
@@ -1316,7 +1355,7 @@ describe('SQLite deterministic failure contract', () => {
     expect(Object.keys(firstClose).sort()).toEqual(['error', 'ok'])
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 2,
+      schemaVersion: 3,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -1351,7 +1390,7 @@ describe('SQLite telemetry isolation and privacy', () => {
     expect(() => result.value.close()).not.toThrow()
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 2,
+      schemaVersion: 3,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',

@@ -14,6 +14,7 @@ import type {
   ConsolePhaseTestsPayload,
   ConsoleResponse,
   ConsoleRuntimeSnapshotResult,
+  PhaseTestPhase,
 } from '../shared/console-types'
 import type { ConsoleBridge, SnapshotListener } from '../shared/bridge'
 
@@ -109,8 +110,11 @@ const bridge: ConsoleBridge = {
     return ipcRenderer.invoke(NEXT_RUNTIME_CHANNEL) as Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   },
 
-  getPhaseTests(): Promise<ConsoleResponse<ConsolePhaseTestsPayload>> {
-    return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>> {
+    if (phase === undefined) {
+      return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+    }
+    return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL, phase) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   },
 }
 
