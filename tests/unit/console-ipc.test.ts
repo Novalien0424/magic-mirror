@@ -271,6 +271,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       reportRealtimeRuntimeOutcome: MIRROR_RUNTIME_OUTCOME_CHANNEL,
       reportRealtimeFailure: MIRROR_REALTIME_FAILURE_CHANNEL,
+      reportRealtimeMetadata: 'mirror:report-realtime-metadata',
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)

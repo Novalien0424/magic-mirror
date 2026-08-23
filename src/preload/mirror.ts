@@ -3,6 +3,7 @@ import type { AppSnapshot } from '../shared/types'
 import type {
   MirrorBridge,
   RealtimeFailureReport,
+  RealtimeRendererMetadataReport,
   RealtimeRuntimeCommand,
   RealtimeRuntimeCommandListener,
   RealtimeRuntimeOutcomeReport,
@@ -24,6 +25,7 @@ const REALTIME_RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command' as co
 const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
 const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
 const REPORT_REALTIME_FAILURE_CHANNEL = 'mirror:report-realtime-failure' as const
+const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -48,6 +50,20 @@ function readProperty(value: unknown, key: string): unknown {
   if (!isRecord(value)) return undefined
   try {
     return Reflect.get(value, key)
+  } catch {
+    return undefined
+  }
+}
+
+function readMetadataScalar(value: unknown, key: string): unknown {
+  try {
+    const property = readProperty(value, key)
+    return property === null
+      || typeof property === 'string'
+      || typeof property === 'number'
+      || typeof property === 'boolean'
+      ? property
+      : undefined
   } catch {
     return undefined
   }
@@ -231,6 +247,19 @@ const bridge: MirrorBridge = {
       reason: readProperty(report, 'reason'),
     })
     ipcRenderer.send(REPORT_REALTIME_FAILURE_CHANNEL, dto)
+  },
+
+  reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void {
+    const dto: Record<string, unknown> = {
+      kind: readMetadataScalar(report, 'kind'),
+      status: readMetadataScalar(report, 'status'),
+      reason: readMetadataScalar(report, 'reason'),
+    }
+    const durationMs = readMetadataScalar(report, 'durationMs')
+    if (durationMs !== undefined) dto.durationMs = durationMs
+    const sessionId = readMetadataScalar(report, 'sessionId')
+    if (sessionId !== undefined) dto.sessionId = sessionId
+    ipcRenderer.send(REPORT_REALTIME_METADATA_CHANNEL, Object.freeze(dto))
   },
 
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void {

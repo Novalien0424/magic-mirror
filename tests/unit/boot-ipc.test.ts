@@ -30,6 +30,17 @@ const CANDIDATE_ID_SENTINEL = 'synthetic-candidate-profile-id'
 const ACTIVATION_ID_SENTINEL = 'synthetic-activation-id'
 const REALTIME_SESSION_ID_SENTINEL = 'synthetic-realtime-session-id'
 const FIXED_TIME = '2026-08-19T00:00:00.000Z'
+const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as const
+
+type RendererMetadataKind = 'session' | 'mic' | 'playback' | 'transcript' | 'cleanup'
+type RendererMetadataStatus = 'success' | 'degraded' | 'failed' | 'info'
+type RendererMetadataReport = {
+  readonly kind: RendererMetadataKind
+  readonly status: RendererMetadataStatus
+  readonly reason: string
+  readonly durationMs?: number
+  readonly sessionId?: string
+}
 
 type MetadataEvent = Record<string, unknown>
 type ModuleStatuses = Partial<Record<ModuleId, ModuleStatus>>
@@ -462,6 +473,7 @@ function registerTestIpcHandlers(
   runtime: BootRuntimeLike,
   windows: unknown,
   events: MetadataEvent[],
+  emit: (event: MetadataEvent) => void = (event) => events.push({ ...event }),
 ): RegisteredIpcHarness {
   const registered = makeIpcMainRegistrar()
   const register = registerIpcHandlers as unknown as (options: {
@@ -474,9 +486,62 @@ function registerTestIpcHandlers(
     ipcMain: registered.ipcMain,
     runtime,
     windows,
-    telemetry: { emit: (event) => events.push({ ...event }) },
+    telemetry: { emit },
   })
   return registered
+}
+
+function makeTrackedRendererWindows() {
+  const mirrorFrame = {}
+  const consoleFrame = {}
+  const mirrorSender = {
+    id: 801,
+    mainFrame: mirrorFrame,
+    isDestroyed: () => false,
+    send: () => {},
+  }
+  const consoleSender = {
+    id: 802,
+    mainFrame: consoleFrame,
+    isDestroyed: () => false,
+    send: () => {},
+  }
+  return {
+    windows: {
+      mirror: { webContents: mirrorSender, webContentsId: 801 },
+      console: { webContents: consoleSender, webContentsId: 802 },
+    },
+    mirrorFrame,
+    consoleFrame,
+    mirrorSender,
+    consoleSender,
+  }
+}
+
+function makeLifecycleNeutralMetadataRuntime(
+  calls: string[],
+  snapshot: Record<string, unknown>,
+) {
+  return {
+    ready: Promise.resolve(),
+    snapshot: () => snapshot,
+    handleSimulator: () => {
+      calls.push('simulator')
+      return { op: 'success' as const }
+    },
+    manualStart: () => {
+      calls.push('manual_start')
+    },
+    manualStop: () => {
+      calls.push('manual_stop')
+    },
+    handleRealtimeRuntimeOutcome: () => {
+      calls.push('realtime_outcome')
+    },
+    handleRealtimeFailure: () => {
+      calls.push('realtime_failure')
+    },
+  }
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
@@ -726,6 +791,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       reportRealtimeFailure: 'mirror:report-realtime-failure',
+      reportRealtimeMetadata: REPORT_REALTIME_METADATA_CHANNEL,
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
@@ -752,6 +818,388 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       rollback: 'console:rollback',
       nextRuntime: 'console:create-next-runtime',
       ready: 'boot:renderer-ready',
+    })
+    expect(CONSOLE_IPC_CHANNELS as unknown as Record<string, unknown>).not.toHaveProperty(
+      'reportRealtimeMetadata',
+    )
+  })
+
+  describe('P1-U7F3 Mirror renderer realtime metadata transport', () => {
+    const validReports: ReadonlyArray<{
+      readonly report: RendererMetadataReport
+      readonly event: string
+    }> = [
+      {
+        report: {
+          kind: 'session',
+          status: 'success',
+          reason: 'session_started',
+          durationMs: 42,
+          sessionId: 'session-7',
+        },
+        event: 'realtime_session_metadata',
+      },
+      {
+        report: {
+          kind: 'mic',
+          status: 'degraded',
+          reason: 'handoff_degraded',
+        },
+        event: 'realtime_mic_metadata',
+      },
+      {
+        report: {
+          kind: 'playback',
+          status: 'failed',
+          reason: 'playback_failed',
+        },
+        event: 'realtime_playback_metadata',
+      },
+      {
+        report: {
+          kind: 'transcript',
+          status: 'info',
+          reason: 'transcript_unavailable',
+        },
+        event: 'realtime_transcript_metadata',
+      },
+      {
+        report: {
+          kind: 'cleanup',
+          status: 'success',
+          reason: 'cleanup_completed',
+        },
+        event: 'realtime_cleanup_metadata',
+      },
+    ]
+
+    it('keeps the metadata channel and method Mirror-only', () => {
+      expect(MIRROR_IPC_CHANNELS as unknown as Record<string, unknown>).toHaveProperty(
+        'reportRealtimeMetadata',
+        REPORT_REALTIME_METADATA_CHANNEL,
+      )
+      expect(CONSOLE_IPC_CHANNELS as unknown as Record<string, unknown>).not.toHaveProperty(
+        'reportRealtimeMetadata',
+      )
+    })
+
+    it.each(validReports)(
+      'registers and normalizes $report.kind metadata without lifecycle callbacks',
+      async ({ report, event }) => {
+        const events: MetadataEvent[] = []
+        const calls: string[] = []
+        const snapshot = startingSnapshot()
+        const snapshotBefore = serialize(snapshot)
+        const fixtures = makeTrackedRendererWindows()
+        const runtime = makeLifecycleNeutralMetadataRuntime(calls, snapshot)
+        const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
+        const handler = registered.handlers.get(REPORT_REALTIME_METADATA_CHANNEL) as IpcHandler
+
+        expect(handler).toBeTypeOf('function')
+        await Promise.resolve(handler(
+          { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame },
+          report,
+        ))
+
+        const expectedEvent: MetadataEvent = {
+          module: 'openai',
+          event,
+          status: report.status,
+          reason: report.reason,
+          source: 'runtime',
+          ...(report.durationMs === undefined ? {} : { duration_ms: report.durationMs }),
+          ...(report.sessionId === undefined ? {} : { session_id: report.sessionId }),
+        }
+        expect(events).toEqual([expectedEvent])
+        expect(calls).toEqual([])
+        expect(serialize(runtime.snapshot())).toBe(snapshotBefore)
+        expectNoPrivateSentinels({ events, report })
+        expectNoRealtimeSessionSentinel({ events, report })
+      },
+    )
+
+    it('rejects unauthorized senders and malformed payloads with only stable IPC metadata', async () => {
+      const validReport: RendererMetadataReport = {
+        kind: 'session',
+        status: 'success',
+        reason: 'session_started',
+      }
+      const cases: ReadonlyArray<{
+        readonly label: string
+        readonly sender: 'console' | 'unknown' | 'wrong-frame' | 'mirror'
+        readonly args: unknown[]
+        readonly expected: MetadataEvent
+      }> = [
+        {
+          label: 'Console sender',
+          sender: 'console',
+          args: [validReport],
+          expected: {
+            module: 'app',
+            event: 'ipc_sender_rejected',
+            status: 'failed',
+            reason: 'web_contents_mismatch',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'unknown sender',
+          sender: 'unknown',
+          args: [validReport],
+          expected: {
+            module: 'app',
+            event: 'ipc_sender_rejected',
+            status: 'failed',
+            reason: 'unknown_sender',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'wrong-frame sender',
+          sender: 'wrong-frame',
+          args: [validReport],
+          expected: {
+            module: 'app',
+            event: 'ipc_sender_rejected',
+            status: 'failed',
+            reason: 'sender_frame_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'extra payload argument',
+          sender: 'mirror',
+          args: [validReport, 'unexpected'],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'missing payload argument',
+          sender: 'mirror',
+          args: [],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'extra payload key',
+          sender: 'mirror',
+          args: [{ ...validReport, extra: 'discarded' }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'bad kind',
+          sender: 'mirror',
+          args: [{ ...validReport, kind: 'unknown' }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'bad status',
+          sender: 'mirror',
+          args: [{ ...validReport, status: 'ignored' }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'unsafe reason',
+          sender: 'mirror',
+          args: [{ ...validReport, reason: 'unsafe reason' }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'too-long reason',
+          sender: 'mirror',
+          args: [{ ...validReport, reason: 'r'.repeat(1025) }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'unsafe session ID',
+          sender: 'mirror',
+          args: [{ ...validReport, sessionId: 'session id' }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'too-long session ID',
+          sender: 'mirror',
+          args: [{ ...validReport, sessionId: 's'.repeat(65) }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'noninteger duration',
+          sender: 'mirror',
+          args: [{ ...validReport, durationMs: 1.5 }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'nonfinite duration',
+          sender: 'mirror',
+          args: [{ ...validReport, durationMs: Number.POSITIVE_INFINITY }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'negative duration',
+          sender: 'mirror',
+          args: [{ ...validReport, durationMs: -1 }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+        {
+          label: 'overbound duration',
+          sender: 'mirror',
+          args: [{ ...validReport, durationMs: 86_400_001 }],
+          expected: {
+            module: 'app',
+            event: 'ipc_payload_invalid',
+            status: 'failed',
+            error_code: 'ipc_payload_invalid',
+            reason: 'payload_schema_invalid',
+            source: 'runtime',
+          },
+        },
+      ]
+
+      for (const testCase of cases) {
+        const events: MetadataEvent[] = []
+        const calls: string[] = []
+        const snapshot = startingSnapshot()
+        const snapshotBefore = serialize(snapshot)
+        const fixtures = makeTrackedRendererWindows()
+        const unknownFrame = {}
+        const unknownSender = {
+          id: 803,
+          mainFrame: unknownFrame,
+          isDestroyed: () => false,
+          send: () => {},
+        }
+        const runtime = makeLifecycleNeutralMetadataRuntime(calls, snapshot)
+        const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
+        const handler = registered.handlers.get(REPORT_REALTIME_METADATA_CHANNEL) as IpcHandler
+        const event = testCase.sender === 'console'
+          ? { sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }
+          : testCase.sender === 'unknown'
+            ? { sender: unknownSender, senderFrame: unknownFrame }
+            : testCase.sender === 'wrong-frame'
+              ? { sender: fixtures.mirrorSender, senderFrame: {} }
+              : { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+
+        expect(handler, testCase.label).toBeTypeOf('function')
+        await Promise.resolve(handler(event, ...testCase.args))
+
+        expect(events, testCase.label).toEqual([testCase.expected])
+        expect(events.some((entry) => entry.module === 'openai'), testCase.label).toBe(false)
+        expect(calls, testCase.label).toEqual([])
+        expect(serialize(runtime.snapshot()), testCase.label).toBe(snapshotBefore)
+        expectNoPrivateSentinels({ events, report: testCase.args })
+        expectNoRealtimeSessionSentinel({ events, report: testCase.args })
+      }
+    })
+
+    it('does not gate the renderer when the telemetry sink throws', async () => {
+      const calls: string[] = []
+      const snapshot = startingSnapshot()
+      const snapshotBefore = serialize(snapshot)
+      const fixtures = makeTrackedRendererWindows()
+      const runtime = makeLifecycleNeutralMetadataRuntime(calls, snapshot)
+      const registered = registerTestIpcHandlers(
+        runtime,
+        fixtures.windows,
+        [],
+        () => {
+          throw new Error()
+        },
+      )
+      const handler = registered.handlers.get(REPORT_REALTIME_METADATA_CHANNEL) as IpcHandler
+
+      expect(handler).toBeTypeOf('function')
+      await expect(Promise.resolve(handler(
+        { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame },
+        {
+          kind: 'session',
+          status: 'success',
+          reason: 'session_started',
+        },
+      ))).resolves.toBeUndefined()
+      expect(calls).toEqual([])
+      expect(serialize(runtime.snapshot())).toBe(snapshotBefore)
     })
   })
 

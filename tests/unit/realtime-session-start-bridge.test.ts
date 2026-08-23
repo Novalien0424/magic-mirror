@@ -203,6 +203,7 @@ function makeContract(issue: () => Promise<unknown>): ReturnType<typeof createRe
 
 const electronHarness = vi.hoisted(() => ({
   invoke: vi.fn(),
+  send: vi.fn(),
   bridge: undefined as unknown,
 }))
 
@@ -214,7 +215,7 @@ vi.mock('electron', () => ({
   },
   ipcRenderer: {
     invoke: (...args: unknown[]) => electronHarness.invoke(...args),
-    send: vi.fn(),
+    send: (...args: unknown[]) => electronHarness.send(...args),
     on: vi.fn(),
     removeListener: vi.fn(),
   },
@@ -222,6 +223,7 @@ vi.mock('electron', () => ({
 
 type MirrorBridgeLike = {
   requestRealtimeClientSecret(): Promise<unknown>
+  reportRealtimeMetadata(report: unknown): void
 }
 
 let mirrorBridgePromise: Promise<MirrorBridgeLike> | null = null
@@ -464,6 +466,63 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     expect(electronHarness.invoke).toHaveBeenCalledTimes(1)
     expect(electronHarness.invoke).toHaveBeenCalledWith('mirror:request-realtime-client-secret')
   })
+
+  it.each([
+    {
+      label: 'required-only',
+      report: {
+        kind: 'session',
+        status: 'success',
+        reason: 'session_started',
+        extra: 'discarded',
+      },
+      expected: {
+        kind: 'session',
+        status: 'success',
+        reason: 'session_started',
+      },
+    },
+    {
+      label: 'with optional fields',
+      report: {
+        kind: 'mic',
+        status: 'degraded',
+        reason: 'handoff_degraded',
+        durationMs: 42,
+        sessionId: 'session-7',
+        extra: 'discarded',
+      },
+      expected: {
+        kind: 'mic',
+        status: 'degraded',
+        reason: 'handoff_degraded',
+        durationMs: 42,
+        sessionId: 'session-7',
+      },
+    },
+  ])(
+    'exposes Mirror realtime metadata reporting for $label with an exact frozen DTO',
+    async ({ report, expected }) => {
+      const bridge = await mirrorBridge()
+      expect(typeof bridge.reportRealtimeMetadata).toBe('function')
+
+      electronHarness.send.mockClear()
+      bridge.reportRealtimeMetadata(report)
+
+      expect(electronHarness.send).toHaveBeenCalledTimes(1)
+      expect(electronHarness.send).toHaveBeenCalledWith(
+        'mirror:report-realtime-metadata',
+        expect.any(Object),
+      )
+      const sent = electronHarness.send.mock.calls[0]?.[1] as Record<string, unknown>
+      expect(sent).not.toBe(report)
+      expect(sent).toEqual(expected)
+      expect(Object.keys(sent).sort()).toEqual(Object.keys(expected).sort())
+      expect(Object.isFrozen(sent)).toBe(true)
+      expect(Object.prototype.hasOwnProperty.call(sent, 'extra')).toBe(false)
+      expect(electronHarness.send.mock.calls[0]?.[1]).not.toBe(report)
+    },
+  )
 
   it.each([
     { status: 'accepted', reason: 'mirror_authorized', value: CLIENT_SECRET },

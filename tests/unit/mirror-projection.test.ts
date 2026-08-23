@@ -3,9 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   MIRROR_STATE_COPY,
   projectMirrorSnapshot,
+  reportMirrorRealtimeMetadata,
   subscribeMirrorInterrupt,
+  subscribeMirrorRealtimeRuntime,
 } from '../../src/renderer/mirror/App'
-import type { MirrorBridge } from '../../src/shared/bridge'
+import type {
+  MirrorBridge,
+  RealtimeRendererMetadataKind,
+  RealtimeRendererMetadataReport,
+  RealtimeRuntimeCommand,
+  RealtimeRuntimeOutcomeReport,
+  RealtimeSessionStartBundleValue,
+  TransientRealtimeSecretInput,
+  TransientRealtimeSecretResult,
+} from '../../src/shared/bridge'
 import type {
   RealtimeRuntimeEventSink,
   RealtimeRuntimeOutcome,
@@ -192,6 +203,273 @@ describe('Mirror seven-state projection contract', () => {
     expect(view.className).toBe('screen screen--active')
     expect(String(view.title).trim().length).toBeGreaterThan(0)
     expect(String(view.detail).trim().length).toBeGreaterThan(0)
+  })
+})
+
+describe('Mirror realtime metadata projection', () => {
+  type MetadataBridge = Pick<MirrorBridge, 'reportRealtimeMetadata'>
+
+  function createMetadataBridge(): {
+    readonly bridge: MetadataBridge
+    readonly reportRealtimeMetadata: ReturnType<typeof vi.fn>
+  } {
+    const reportRealtimeMetadata = vi.fn()
+    return {
+      bridge: { reportRealtimeMetadata },
+      reportRealtimeMetadata,
+    }
+  }
+
+  it('maps five lower-level event kinds into fresh bounded DTOs exactly once', () => {
+    const { bridge, reportRealtimeMetadata } = createMetadataBridge()
+    const cases: ReadonlyArray<{
+      readonly kind: RealtimeRendererMetadataKind
+      readonly event: Record<string, unknown>
+      readonly expected: RealtimeRendererMetadataReport
+    }> = [
+      {
+        kind: 'session',
+        event: {
+          event: 'realtime_stale_event',
+          realtimeSessionId: 'synthetic-session-stale',
+          sessionGeneration: 4,
+          configVersion: 9,
+          fingerprint: 'synthetic-fingerprint',
+          sdkVersion: 'synthetic-sdk-version',
+          realtimeDialogue: 'synthetic-dialogue-metadata',
+          inputTranscription: 'synthetic-input-transcription-model',
+          memoryExtractor: 'synthetic-memory-extractor-model',
+          voice: 'synthetic-voice',
+          reasoningEffort: 'synthetic-reasoning-effort',
+          turnDetectionProfile: 'synthetic-turn-detection-profile',
+          status: 'info',
+          reason: 'stale_realtime_session',
+        duration_ms: 12,
+        },
+        expected: {
+          kind: 'session',
+          status: 'info',
+          reason: 'stale_realtime_session',
+      durationMs: 12,
+          sessionId: 'synthetic-session-stale',
+        },
+      },
+      {
+        kind: 'mic',
+        event: {
+          event: 'mic_handoff_failed',
+          owner: 'realtime',
+          status: 'failed',
+          reason: 'track_stop_failed',
+          count: 1,
+          track_count: 2,
+          stopped_count: 1,
+          classification: 'Maintenance',
+        },
+        expected: {
+          kind: 'mic',
+          status: 'failed',
+          reason: 'track_stop_failed',
+        },
+      },
+      {
+        kind: 'playback',
+        event: {
+          event: 'playback_completion_fallback',
+          source: 'bounded_analyser_fallback',
+          duration_ms: 750,
+          status: 'degraded',
+          reason: 'fallback_bound_reached',
+          count: 1,
+        },
+        expected: {
+          kind: 'playback',
+          status: 'degraded',
+          reason: 'fallback_bound_reached',
+          durationMs: 750,
+        },
+      },
+      {
+        kind: 'transcript',
+        event: {
+          event: 'transcript_unavailable',
+          realtimeSessionId: 'synthetic-session-transcript',
+          itemId: 'synthetic-item-id',
+          turnId: 'synthetic-turn-id',
+          itemCount: 0,
+          turnCount: 0,
+          transcript: RAW_TRANSCRIPT,
+          status: 'info',
+          reason: 'cause=stale_realtime_session',
+        },
+        expected: {
+          kind: 'transcript',
+          status: 'info',
+          reason: 'cause=stale_realtime_session',
+          sessionId: 'synthetic-session-transcript',
+        },
+      },
+      {
+        kind: 'cleanup',
+        event: {
+          event: 'cleanup_failed',
+          boundary: 'manual_stop',
+          session_id: 'synthetic-session-cleanup',
+          count: 2,
+          status: 'failed',
+          reason: 'cleanup_failed',
+        },
+        expected: {
+          kind: 'cleanup',
+          status: 'failed',
+          reason: 'cleanup_failed',
+          sessionId: 'synthetic-session-cleanup',
+        },
+      },
+    ]
+
+    for (const [index, testCase] of cases.entries()) {
+      reportMirrorRealtimeMetadata(bridge, testCase.kind, testCase.event)
+
+      expect(reportRealtimeMetadata).toHaveBeenCalledTimes(index + 1)
+      const report = reportRealtimeMetadata.mock.calls[index]?.[0]
+      expect(report).toEqual(testCase.expected)
+      expect(report).not.toBe(testCase.event)
+      expect(Object.keys(report ?? {}).sort()).toEqual(
+        Object.keys(testCase.expected).sort(),
+      )
+      expect(
+        Object.values(report ?? {}).every(
+          (value) =>
+            typeof value === 'string'
+            || (typeof value === 'number' && Number.isFinite(value)),
+        ),
+      ).toBe(true)
+    }
+  })
+
+  it('does not cross extra, private-shaped, nested, model, or config metadata', () => {
+    const { bridge, reportRealtimeMetadata } = createMetadataBridge()
+    const event = {
+      event: 'transcript_available',
+      realtimeSessionId: 'synthetic-session-private-shape',
+      status: 'success',
+      reason: 'cause=transcript_available',
+      duration_ms: 20,
+      count: 1,
+      owner: 'realtime',
+      boundary: 'renderer_restart',
+      transcript: RAW_TRANSCRIPT,
+      credential: RAW_CREDENTIAL,
+      privateContext: RAW_PRIVATE_CONTEXT,
+      model: RAW_MODEL_ID,
+      configVersion: 11,
+      config: {
+        model: RAW_MODEL_ID,
+        credential: RAW_CREDENTIAL,
+        privateContext: RAW_PRIVATE_CONTEXT,
+        transcript: RAW_TRANSCRIPT,
+      },
+      nested: {
+        sentinel: RAW_TRANSCRIPT,
+      },
+    }
+
+    reportMirrorRealtimeMetadata(bridge, 'transcript', event)
+
+    expect(reportRealtimeMetadata).toHaveBeenCalledTimes(1)
+    const report = reportRealtimeMetadata.mock.calls[0]?.[0]
+    expect(report).toEqual({
+      kind: 'transcript',
+      status: 'success',
+      reason: 'cause=transcript_available',
+      durationMs: 20,
+      sessionId: 'synthetic-session-private-shape',
+    })
+    expect(report).not.toBe(event)
+    expectNoForbiddenContent(report)
+    expect(serialized(report)).not.toContain(RAW_CREDENTIAL)
+    expect(serialized(report)).not.toContain(RAW_PRIVATE_CONTEXT)
+    expect(serialized(report)).not.toContain(RAW_TRANSCRIPT)
+    expect(serialized(report)).not.toContain(RAW_MODEL_ID)
+    expect(collectKeys(report)).not.toContain('config')
+    expect(collectKeys(report)).not.toContain('nested')
+  })
+
+  it('reports one fixed failed DTO for missing, invalid, or throwing event access', () => {
+    const { bridge, reportRealtimeMetadata } = createMetadataBridge()
+    const throwingEvent = new Proxy<Record<string, unknown>>({}, {
+      get() {
+        throw new Error('synthetic-metadata-event-access-failed')
+      },
+    })
+    const invalidEvents: readonly unknown[] = [
+      undefined,
+      null,
+      'synthetic-non-record-event',
+      {},
+      { status: 'failed' },
+      { reason: 'synthetic-missing-status' },
+      { status: 'synthetic-invalid-status', reason: 'synthetic-reason' },
+      { status: 'failed', reason: 42 },
+      { status: 'failed', reason: '' },
+      throwingEvent,
+    ]
+
+    for (const event of invalidEvents) {
+      expect(() => {
+        reportMirrorRealtimeMetadata(bridge, 'session', event)
+      }).not.toThrow()
+    }
+
+    expect(reportRealtimeMetadata).toHaveBeenCalledTimes(invalidEvents.length)
+    for (const [index, call] of reportRealtimeMetadata.mock.calls.entries()) {
+      expect(call[0]).toEqual({
+        kind: 'session',
+        status: 'failed',
+        reason: 'metadata_event_invalid',
+      })
+      expect(Object.keys(call[0] ?? {}).sort()).toEqual(['kind', 'reason', 'status'])
+      expect(Object.is(call[0], invalidEvents[index])).toBe(false)
+    }
+  })
+
+  it('contains throwing and rejecting bridge reports without retrying or duplicating', async () => {
+    const event = {
+      status: 'failed',
+      reason: 'synthetic-bridge-report-test',
+    }
+    const throwingReportRealtimeMetadata = vi.fn(() => {
+      throw new Error('synthetic-bridge-report-threw')
+    })
+    const throwingBridge: MetadataBridge = {
+      reportRealtimeMetadata: throwingReportRealtimeMetadata,
+    }
+    let throwingReturn: unknown
+
+    expect(() => {
+      throwingReturn = reportMirrorRealtimeMetadata(throwingBridge, 'session', event)
+    }).not.toThrow()
+    expect(throwingReturn).toBeUndefined()
+    expect(throwingReportRealtimeMetadata).toHaveBeenCalledTimes(1)
+
+    const rejectedReport = Promise.reject<void>(
+      new Error('synthetic-bridge-report-rejected'),
+    )
+    const rejectingReportRealtimeMetadata = vi.fn(() => rejectedReport)
+    const rejectingBridge: MetadataBridge = {
+      reportRealtimeMetadata: rejectingReportRealtimeMetadata,
+    }
+    let rejectingReturn: unknown
+
+    expect(() => {
+      rejectingReturn = reportMirrorRealtimeMetadata(rejectingBridge, 'mic', event)
+    }).not.toThrow()
+    expect(rejectingReturn).toBeUndefined()
+    expect(rejectingReportRealtimeMetadata).toHaveBeenCalledTimes(1)
+
+    await Promise.resolve()
+    expect(rejectingReportRealtimeMetadata).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -829,5 +1107,447 @@ describe('Mirror App interrupt composition', () => {
     expect(sink).toHaveBeenCalledTimes(1)
     expectContainedInterruptFailure(sink.mock.calls[0]?.[0])
     cleanup()
+  })
+})
+
+describe('Mirror App realtime runtime composition', () => {
+  type RuntimeCompositionBridge = Pick<
+    MirrorBridge,
+    | 'requestRealtimeClientSecret'
+    | 'reportRealtimeRuntimeOutcome'
+    | 'onRealtimeRuntimeCommand'
+    | 'onInterrupt'
+  >
+  type CommandHandler = (command: RealtimeRuntimeCommand) => void
+  type InterruptHandler = () => void
+
+  const SYNTHETIC_RUNTIME_SECRET = 'ek_synthetic-runtime-client-secret'
+
+  function syntheticBundle(sessionGeneration: number): RealtimeSessionStartBundleValue {
+    return {
+      snapshot: {
+        configVersion: 7,
+        fingerprint: 'synthetic-runtime-config-fingerprint',
+        sdkVersion: '0.16.1',
+        realtimeDialogue: 'synthetic-realtime-model',
+        inputTranscription: 'synthetic-transcription-model',
+        memoryExtractor: 'synthetic-memory-model',
+        voice: 'synthetic-voice',
+        reasoningEffort: 'low',
+        turnDetectionProfile: 'semantic-vad',
+        takenAt: '2026-08-19T00:00:00.000Z',
+      },
+      identity: {
+        realtimeSessionId: `synthetic-runtime-session-${sessionGeneration}`,
+        sessionGeneration,
+      },
+      clientSecret: SYNTHETIC_RUNTIME_SECRET as unknown as TransientRealtimeSecretInput,
+      expiresAt: 1_800_000_000 + sessionGeneration,
+    } as unknown as RealtimeSessionStartBundleValue
+  }
+
+  function acceptedSecret(
+    value: RealtimeSessionStartBundleValue,
+  ): TransientRealtimeSecretResult {
+    return Object.freeze({
+      status: 'accepted',
+      reason: 'mirror_authorized',
+      value,
+    })
+  }
+
+  function rejectedSecret(
+    reason: Extract<TransientRealtimeSecretResult, { status: 'rejected' }>['reason'],
+  ): TransientRealtimeSecretResult {
+    return Object.freeze({ status: 'rejected', reason })
+  }
+
+  function runtimeOutcome(
+    operation: RealtimeRuntimeOutcome['operation'],
+    reason: string,
+    status: RealtimeRuntimeOutcome['status'] = 'success',
+  ): RealtimeRuntimeOutcome {
+    return Object.freeze({
+      status,
+      operation,
+      reason,
+      attemptedSteps: Object.freeze([]),
+      failedSteps: Object.freeze([]),
+    })
+  }
+
+  function createRuntimeBridge(events: string[] = []) {
+    const commandHandlers: CommandHandler[] = []
+    const interruptHandlers: InterruptHandler[] = []
+    const commandUnsubscribers: Array<ReturnType<typeof vi.fn>> = []
+    const interruptUnsubscribers: Array<ReturnType<typeof vi.fn>> = []
+    const requestRealtimeClientSecret = vi.fn<RuntimeCompositionBridge['requestRealtimeClientSecret']>()
+    const reportRealtimeRuntimeOutcome = vi.fn<RuntimeCompositionBridge['reportRealtimeRuntimeOutcome']>()
+
+    const onRealtimeRuntimeCommand: RuntimeCompositionBridge['onRealtimeRuntimeCommand'] =
+      (listener) => {
+        commandHandlers.push(listener)
+        const unsubscribe = vi.fn<() => void>()
+        unsubscribe.mockImplementation(() => {
+          events.push('command_unsubscribe')
+        })
+        commandUnsubscribers.push(unsubscribe)
+        return unsubscribe
+      }
+    const onInterrupt: RuntimeCompositionBridge['onInterrupt'] = (listener) => {
+      interruptHandlers.push(listener)
+      const unsubscribe = vi.fn<() => void>()
+      unsubscribe.mockImplementation(() => {
+        events.push('interrupt_unsubscribe')
+      })
+      interruptUnsubscribers.push(unsubscribe)
+      return unsubscribe
+    }
+
+    return {
+      bridge: {
+        requestRealtimeClientSecret,
+        reportRealtimeRuntimeOutcome,
+        onRealtimeRuntimeCommand,
+        onInterrupt,
+      },
+      commandHandlers,
+      interruptHandlers,
+      commandUnsubscribers,
+      interruptUnsubscribers,
+      requestRealtimeClientSecret,
+      reportRealtimeRuntimeOutcome,
+    }
+  }
+
+  function createRuntimeOwner() {
+    const start = vi.fn<RealtimeRuntimeOwner['start']>()
+      .mockResolvedValue(runtimeOutcome('start', 'started'))
+    const rollover = vi.fn<RealtimeRuntimeOwner['rollover']>()
+      .mockResolvedValue(runtimeOutcome('rollover', 'rolled_over'))
+    const stop = vi.fn<RealtimeRuntimeOwner['stop']>()
+      .mockResolvedValue(runtimeOutcome('stop', 'stopped'))
+    const interrupt = vi.fn<RealtimeRuntimeOwner['interrupt']>()
+      .mockResolvedValue(runtimeOutcome('interrupt', 'interrupted'))
+    const dispose = vi.fn<RealtimeRuntimeOwner['dispose']>()
+      .mockResolvedValue(runtimeOutcome('dispose', 'disposed'))
+
+    return {
+      owner: { start, rollover, stop, interrupt, dispose },
+      start,
+      rollover,
+      stop,
+      interrupt,
+      dispose,
+    }
+  }
+
+  async function flushRuntimeComposition(): Promise<void> {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  function expectBoundedReport(
+    value: unknown,
+    expected: RealtimeRuntimeOutcomeReport,
+  ): void {
+    expect(value).toEqual(expected)
+    expect(Object.keys(value as Record<string, unknown>).sort()).toEqual([
+      'operation',
+      'reason',
+      'status',
+    ])
+    expect(collectKeys(value).some((key) =>
+      /attempted|failed|error|message|stack|credential|clientSecret|profile|guest|candidate|transcript|audio|memory|private|model|snapshot/i.test(key),
+    )).toBe(false)
+    expectNoForbiddenContent(value)
+    expect(serialized(value)).not.toContain(SYNTHETIC_RUNTIME_SECRET)
+    expect(serialized(value)).not.toContain(RAW_ERROR_MESSAGE)
+  }
+
+  it('requests one bundle for start and rollover, passes each exact value, and reports bounded outcomes', async () => {
+    const bridgeState = createRuntimeBridge()
+    const ownerState = createRuntimeOwner()
+    const startBundle = syntheticBundle(1)
+    const rolloverBundle = syntheticBundle(2)
+    const startOutcome = runtimeOutcome('start', 'started')
+    const rolloverOutcome = runtimeOutcome('rollover', 'rolled_over')
+
+    bridgeState.requestRealtimeClientSecret
+      .mockResolvedValueOnce(acceptedSecret(startBundle))
+      .mockResolvedValueOnce(acceptedSecret(rolloverBundle))
+    ownerState.start.mockResolvedValueOnce(startOutcome)
+    ownerState.rollover.mockResolvedValueOnce(rolloverOutcome)
+
+    const cleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, ownerState.owner)
+    bridgeState.commandHandlers[0]?.({ operation: 'start', reason: 'manual_start' })
+    bridgeState.commandHandlers[0]?.({ operation: 'rollover', reason: 'session_limit' })
+    await flushRuntimeComposition()
+
+    expect(bridgeState.requestRealtimeClientSecret).toHaveBeenCalledTimes(2)
+    expect(ownerState.start).toHaveBeenCalledTimes(1)
+    expect(ownerState.start.mock.calls[0]?.[0]).toBe(startBundle)
+    expect(ownerState.rollover).toHaveBeenCalledTimes(1)
+    expect(ownerState.rollover.mock.calls[0]?.[0]).toBe(rolloverBundle)
+    expect(bridgeState.reportRealtimeRuntimeOutcome).toHaveBeenCalledTimes(2)
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[0]?.[0], {
+      status: 'success',
+      operation: 'start',
+      reason: 'started',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[1]?.[0], {
+      status: 'success',
+      operation: 'rollover',
+      reason: 'rolled_over',
+    })
+
+    cleanup()
+    await flushRuntimeComposition()
+  })
+
+  it('stops without credentials and routes manual stop to the runtime stop boundary plus payload-free interrupt to the same owner', async () => {
+    const bridgeState = createRuntimeBridge()
+    const ownerState = createRuntimeOwner()
+    const cleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, ownerState.owner)
+
+    bridgeState.commandHandlers[0]?.({ operation: 'stop', reason: 'manual_stop' })
+    bridgeState.interruptHandlers[0]?.()
+    await flushRuntimeComposition()
+
+    expect(bridgeState.requestRealtimeClientSecret).not.toHaveBeenCalled()
+    expect(ownerState.stop).toHaveBeenCalledTimes(1)
+    expect(ownerState.stop).toHaveBeenCalledWith('stop')
+    expect(ownerState.interrupt).toHaveBeenCalledTimes(1)
+    expect(ownerState.interrupt).toHaveBeenCalledWith()
+    expect(bridgeState.reportRealtimeRuntimeOutcome).toHaveBeenCalledTimes(2)
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[0]?.[0], {
+      status: 'success',
+      operation: 'stop',
+      reason: 'stopped',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[1]?.[0], {
+      status: 'success',
+      operation: 'interrupt',
+      reason: 'interrupted',
+    })
+
+    cleanup()
+    await flushRuntimeComposition()
+  })
+
+  it('contains credential rejection, synchronous request throws, and rejected requests without invoking lifecycle methods', async () => {
+    const bridgeState = createRuntimeBridge()
+    const ownerState = createRuntimeOwner()
+    bridgeState.requestRealtimeClientSecret
+      .mockResolvedValueOnce(rejectedSecret('broker_failed'))
+      .mockImplementationOnce(() => {
+        throw new Error(RAW_ERROR_MESSAGE)
+      })
+      .mockRejectedValueOnce(new Error(RAW_ERROR_MESSAGE))
+      .mockRejectedValueOnce(new Error(RAW_ERROR_MESSAGE))
+
+    const cleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, ownerState.owner)
+    bridgeState.commandHandlers[0]?.({ operation: 'start', reason: 'manual_start' })
+    await flushRuntimeComposition()
+    expect(() => {
+      bridgeState.commandHandlers[0]?.({ operation: 'rollover', reason: 'session_limit' })
+    }).not.toThrow()
+    await flushRuntimeComposition()
+    bridgeState.commandHandlers[0]?.({ operation: 'start', reason: 'manual_start' })
+    await flushRuntimeComposition()
+    bridgeState.commandHandlers[0]?.({ operation: 'rollover', reason: 'session_limit' })
+    await flushRuntimeComposition()
+
+    expect(ownerState.start).not.toHaveBeenCalled()
+    expect(ownerState.rollover).not.toHaveBeenCalled()
+    expect(bridgeState.reportRealtimeRuntimeOutcome).toHaveBeenCalledTimes(4)
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[0]?.[0], {
+      status: 'failed',
+      operation: 'start',
+      reason: 'broker_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[1]?.[0], {
+      status: 'failed',
+      operation: 'rollover',
+      reason: 'credential_request_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[2]?.[0], {
+      status: 'failed',
+      operation: 'start',
+      reason: 'credential_request_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[3]?.[0], {
+      status: 'failed',
+      operation: 'rollover',
+      reason: 'credential_request_failed',
+    })
+
+    cleanup()
+    await flushRuntimeComposition()
+  })
+
+  it('contains synchronous owner throws and rejected owner promises with stable bounded failures', async () => {
+    const bridgeState = createRuntimeBridge()
+    const ownerState = createRuntimeOwner()
+    const startBundle = syntheticBundle(3)
+    const rolloverBundle = syntheticBundle(4)
+    bridgeState.requestRealtimeClientSecret
+      .mockResolvedValueOnce(acceptedSecret(startBundle))
+      .mockResolvedValueOnce(acceptedSecret(rolloverBundle))
+    ownerState.start.mockImplementationOnce(() => {
+      throw new Error(RAW_ERROR_MESSAGE)
+    })
+    ownerState.rollover.mockRejectedValueOnce(new Error(RAW_ERROR_MESSAGE))
+    ownerState.stop.mockImplementationOnce(() => {
+      throw new Error(RAW_ERROR_MESSAGE)
+    })
+    ownerState.interrupt.mockRejectedValueOnce(new Error(RAW_ERROR_MESSAGE))
+    ownerState.dispose.mockImplementationOnce(() => {
+      throw new Error(RAW_ERROR_MESSAGE)
+    })
+
+    const cleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, ownerState.owner)
+    expect(() => {
+      bridgeState.commandHandlers[0]?.({ operation: 'start', reason: 'manual_start' })
+    }).not.toThrow()
+    await flushRuntimeComposition()
+    bridgeState.commandHandlers[0]?.({ operation: 'rollover', reason: 'session_limit' })
+    await flushRuntimeComposition()
+    expect(() => {
+      bridgeState.commandHandlers[0]?.({ operation: 'stop', reason: 'manual_stop' })
+    }).not.toThrow()
+    await flushRuntimeComposition()
+    expect(() => bridgeState.interruptHandlers[0]?.()).not.toThrow()
+    await flushRuntimeComposition()
+    cleanup()
+    await flushRuntimeComposition()
+
+    expect(bridgeState.reportRealtimeRuntimeOutcome).toHaveBeenCalledTimes(5)
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[0]?.[0], {
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[1]?.[0], {
+      status: 'failed',
+      operation: 'rollover',
+      reason: 'rollover_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[2]?.[0], {
+      status: 'failed',
+      operation: 'stop',
+      reason: 'stop_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[3]?.[0], {
+      status: 'failed',
+      operation: 'interrupt',
+      reason: 'interrupt_failed',
+    })
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[4]?.[0], {
+      status: 'failed',
+      operation: 'dispose',
+      reason: 'dispose_failed',
+    })
+  })
+
+  it('unsubscribes both listeners before disposing exactly once and reports bounded disposal', async () => {
+    const events: string[] = []
+    const bridgeState = createRuntimeBridge(events)
+    const ownerState = createRuntimeOwner()
+    const disposeOutcome = runtimeOutcome('dispose', 'disposed')
+    ownerState.dispose.mockImplementationOnce(() => {
+      events.push('dispose')
+      return Promise.resolve(disposeOutcome)
+    })
+
+    const cleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, ownerState.owner)
+    cleanup()
+    cleanup()
+    await flushRuntimeComposition()
+
+    expect(events).toEqual([
+      'command_unsubscribe',
+      'interrupt_unsubscribe',
+      'dispose',
+    ])
+    expect(bridgeState.commandUnsubscribers[0]).toHaveBeenCalledTimes(1)
+    expect(bridgeState.interruptUnsubscribers[0]).toHaveBeenCalledTimes(1)
+    expect(ownerState.dispose).toHaveBeenCalledTimes(1)
+    expect(bridgeState.reportRealtimeRuntimeOutcome).toHaveBeenCalledTimes(1)
+    expectBoundedReport(bridgeState.reportRealtimeRuntimeOutcome.mock.calls[0]?.[0], {
+      status: 'success',
+      operation: 'dispose',
+      reason: 'disposed',
+    })
+  })
+
+  it('ignores stale callbacks and late credentials while StrictMode-style setup/dispose/setup isolates owners', async () => {
+    const bridgeState = createRuntimeBridge()
+    const firstOwner = createRuntimeOwner()
+    const secondOwner = createRuntimeOwner()
+    const firstBundle = syntheticBundle(5)
+    const secondBundle = syntheticBundle(6)
+    let resolveFirstCredentials!: (value: TransientRealtimeSecretResult) => void
+    const firstCredentials = new Promise<TransientRealtimeSecretResult>((resolve) => {
+      resolveFirstCredentials = resolve
+    })
+    bridgeState.requestRealtimeClientSecret
+      .mockReturnValueOnce(firstCredentials)
+      .mockResolvedValueOnce(acceptedSecret(secondBundle))
+
+    const firstCleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, firstOwner.owner)
+    const staleStart = bridgeState.commandHandlers[0]
+    const staleInterrupt = bridgeState.interruptHandlers[0]
+    staleStart?.({ operation: 'start', reason: 'manual_start' })
+    expect(bridgeState.requestRealtimeClientSecret).toHaveBeenCalledTimes(1)
+
+    firstCleanup()
+
+    const secondCleanup = subscribeMirrorRealtimeRuntime(bridgeState.bridge, secondOwner.owner)
+    const activeStart = bridgeState.commandHandlers[1]
+    const activeInterrupt = bridgeState.interruptHandlers[1]
+    staleStart?.({ operation: 'start', reason: 'manual_start' })
+    staleInterrupt?.()
+    activeStart?.({ operation: 'start', reason: 'manual_start' })
+    activeInterrupt?.()
+    resolveFirstCredentials(acceptedSecret(firstBundle))
+    await flushRuntimeComposition()
+
+    expect(firstOwner.start).not.toHaveBeenCalled()
+    expect(firstOwner.rollover).not.toHaveBeenCalled()
+    expect(firstOwner.stop).not.toHaveBeenCalled()
+    expect(firstOwner.interrupt).not.toHaveBeenCalled()
+    expect(firstOwner.dispose).toHaveBeenCalledTimes(1)
+    expect(secondOwner.start).toHaveBeenCalledTimes(1)
+    expect(secondOwner.start.mock.calls[0]?.[0]).toBe(secondBundle)
+    expect(secondOwner.interrupt).toHaveBeenCalledTimes(1)
+    expect(bridgeState.requestRealtimeClientSecret).toHaveBeenCalledTimes(2)
+
+    secondCleanup()
+    await flushRuntimeComposition()
+    expect(secondOwner.dispose).toHaveBeenCalledTimes(1)
+    const reports = bridgeState.reportRealtimeRuntimeOutcome.mock.calls.map((call) => call[0])
+    expect(reports).toHaveLength(4)
+    expect(reports).toContainEqual({
+      status: 'success',
+      operation: 'dispose',
+      reason: 'disposed',
+    })
+    expect(reports).toContainEqual({
+      status: 'success',
+      operation: 'start',
+      reason: 'started',
+    })
+    expect(reports).toContainEqual({
+      status: 'success',
+      operation: 'interrupt',
+      reason: 'interrupted',
+    })
+    expect(reports.filter((report) => report?.operation === 'dispose')).toHaveLength(2)
+    for (const report of reports) {
+      expectBoundedReport(report, report as RealtimeRuntimeOutcomeReport)
+    }
   })
 })

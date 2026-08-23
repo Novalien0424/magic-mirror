@@ -1100,6 +1100,7 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
     expect(MIRROR_IPC_CHANNELS).toEqual({
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       reportRealtimeFailure: 'mirror:report-realtime-failure',
+      reportRealtimeMetadata: 'mirror:report-realtime-metadata',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',

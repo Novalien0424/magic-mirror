@@ -1,14 +1,355 @@
 import { useEffect, useState } from 'react'
-import type { MirrorBridge } from '../../shared/bridge'
-import type { AppSnapshot, LifecycleState } from '../../shared/types'
 import type {
+  MirrorBridge,
+  RealtimeRendererMetadataKind,
+  RealtimeRendererMetadataReport,
+  RealtimeRendererMetadataStatus,
+  RealtimeRuntimeCommand,
+  RealtimeRuntimeOutcomeReport,
+  RealtimeSessionIdentity,
+  TransientRealtimeSecretResult,
+} from '../../shared/bridge'
+import type { AppSnapshot, LifecycleState } from '../../shared/types'
+import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-dependencies'
+import type { PlaybackCompletionScheduler } from '../realtime/playback-completion'
+import { createSessionCleanup, type SessionCleanupBoundary } from '../realtime/session-cleanup'
+import { TranscriptBuffer } from '../realtime/transcript-buffer'
+import type {
+  RealtimeRuntimeCleanup,
+  RealtimeRuntimeCleanupBoundary,
   RealtimeRuntimeEventSink,
   RealtimeRuntimeOutcome,
   RealtimeRuntimeOwner,
+  RealtimeRuntimeSession,
 } from '../realtime/realtime-runtime-owner'
 
 type MirrorInterruptBridge = Pick<MirrorBridge, 'onInterrupt'>
 type MirrorInterruptTarget = Pick<RealtimeRuntimeOwner, 'interrupt'>
+type MirrorRealtimeRuntimeBridge = Pick<
+  MirrorBridge,
+  | 'requestRealtimeClientSecret'
+  | 'reportRealtimeRuntimeOutcome'
+  | 'reportRealtimeMetadata'
+  | 'reportRealtimeFailure'
+  | 'onRealtimeRuntimeCommand'
+  | 'onInterrupt'
+>
+type MirrorRealtimeMetadataBridge = Pick<MirrorBridge, 'reportRealtimeMetadata'>
+type MirrorRealtimeRuntimeOwner = Pick<
+  RealtimeRuntimeOwner,
+  'start' | 'rollover' | 'stop' | 'interrupt' | 'dispose'
+>
+
+const REALTIME_TRANSCRIPT_BUFFER_MAX_ENTRIES = 200
+
+// PoC tail detection: allow the primary event first, then bound silent sampling.
+const REALTIME_PLAYBACK_FALLBACK_AFTER_MS = 500
+const REALTIME_PLAYBACK_SAMPLE_INTERVAL_MS = 50
+const REALTIME_PLAYBACK_MAX_FALLBACK_MS = 2_000
+const REALTIME_PLAYBACK_SILENCE_THRESHOLD = 0.02
+const REALTIME_PLAYBACK_SILENT_SAMPLES_REQUIRED = 3
+const REALTIME_METADATA_MAX_DURATION_MS = 86_400_000
+
+const RUNTIME_TO_SESSION_CLEANUP_BOUNDARY: Readonly<
+  Record<RealtimeRuntimeCleanupBoundary, SessionCleanupBoundary>
+> = Object.freeze({
+  close: 'close',
+  stop: 'manual_stop',
+  dispose: 'renderer_restart',
+  rollover: 'rollover',
+  offline_loop: 'offline_loop',
+})
+
+function failedRuntimeOutcome(
+  operation: RealtimeRuntimeOutcomeReport['operation'],
+  reason: string,
+): RealtimeRuntimeOutcomeReport {
+  return Object.freeze({
+    status: 'failed',
+    operation,
+    reason,
+  })
+}
+
+function boundedRuntimeOutcome(
+  outcome: RealtimeRuntimeOutcome,
+  fallbackOperation: RealtimeRuntimeOutcomeReport['operation'],
+  fallbackReason: string,
+): RealtimeRuntimeOutcomeReport {
+  try {
+    return Object.freeze({
+      status: outcome.status,
+      operation: outcome.operation,
+      reason: outcome.reason,
+    })
+  } catch {
+    return failedRuntimeOutcome(fallbackOperation, fallbackReason)
+  }
+}
+
+function createNonthrowingOutcomeReporter(
+  bridge: Pick<MirrorBridge, 'reportRealtimeRuntimeOutcome'>,
+): (report: RealtimeRuntimeOutcomeReport) => void {
+  return (report): void => {
+    try {
+      void Promise.resolve(bridge.reportRealtimeRuntimeOutcome(report)).catch(() => undefined)
+    } catch {
+      // Reporting cannot change runtime ownership or create a rejection.
+    }
+  }
+}
+
+export function subscribeMirrorRealtimeRuntime(
+  bridge: Pick<
+    MirrorBridge,
+    | 'requestRealtimeClientSecret'
+    | 'reportRealtimeRuntimeOutcome'
+    | 'onRealtimeRuntimeCommand'
+    | 'onInterrupt'
+  >,
+  owner: MirrorRealtimeRuntimeOwner,
+): () => void {
+  let disposed = false
+  let commandUnsubscribe: (() => void) | undefined
+  let interruptUnsubscribe: (() => void) | undefined
+
+  const report = createNonthrowingOutcomeReporter(bridge)
+
+  const reportFailure = (
+    operation: RealtimeRuntimeOutcomeReport['operation'],
+    reason: string,
+  ): void => {
+    report(failedRuntimeOutcome(operation, reason))
+  }
+
+  const invokeOwner = (
+    operation: RealtimeRuntimeOutcomeReport['operation'],
+    invoke: () => Promise<RealtimeRuntimeOutcome>,
+    failureReason: string,
+    reportAfterDispose = false,
+  ): void => {
+    if (disposed && !reportAfterDispose) return
+
+    let result: Promise<RealtimeRuntimeOutcome>
+    try {
+      result = invoke()
+    } catch {
+      if (!disposed || reportAfterDispose) reportFailure(operation, failureReason)
+      return
+    }
+
+    void Promise.resolve(result).then(
+      (outcome) => {
+        if (!disposed || reportAfterDispose) {
+          report(boundedRuntimeOutcome(outcome, operation, failureReason))
+        }
+      },
+      () => {
+        if (!disposed || reportAfterDispose) reportFailure(operation, failureReason)
+      },
+    )
+  }
+
+  const invokeWithCredential = (
+    operation: 'start' | 'rollover',
+    failureReason: 'start_failed' | 'rollover_failed',
+  ): void => {
+    if (disposed) return
+
+    let request: Promise<TransientRealtimeSecretResult>
+    try {
+      request = bridge.requestRealtimeClientSecret()
+    } catch {
+      reportFailure(operation, 'credential_request_failed')
+      return
+    }
+
+    void Promise.resolve(request).then(
+      (result) => {
+        if (disposed) return
+
+        try {
+          if (result.status === 'rejected') {
+            reportFailure(operation, result.reason)
+            return
+          }
+          if (result.status !== 'accepted') {
+            reportFailure(operation, 'credential_request_failed')
+            return
+          }
+
+          invokeOwner(
+            operation,
+            () => owner[operation](result.value),
+            failureReason,
+          )
+        } catch {
+          if (!disposed) reportFailure(operation, 'credential_request_failed')
+        }
+      },
+      () => {
+        if (!disposed) reportFailure(operation, 'credential_request_failed')
+      },
+    )
+  }
+
+  const onCommand = (command: RealtimeRuntimeCommand): void => {
+    if (disposed) return
+
+    switch (command.operation) {
+      case 'start':
+        invokeWithCredential('start', 'start_failed')
+        return
+      case 'rollover':
+        invokeWithCredential('rollover', 'rollover_failed')
+        return
+      case 'stop':
+        invokeOwner('stop', () => owner.stop('stop'), 'stop_failed')
+        return
+    }
+  }
+
+  const onInterrupt = (): void => {
+    if (disposed) return
+    invokeOwner('interrupt', () => owner.interrupt(), 'interrupt_failed')
+  }
+
+  const safeUnsubscribe = (unsubscribe: (() => void) | undefined): void => {
+    try {
+      unsubscribe?.()
+    } catch {
+      // Listener removal is best effort; terminal disposal still continues.
+    }
+  }
+
+  const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+
+    const registeredCommandUnsubscribe = commandUnsubscribe
+    commandUnsubscribe = undefined
+    safeUnsubscribe(registeredCommandUnsubscribe)
+
+    const registeredInterruptUnsubscribe = interruptUnsubscribe
+    interruptUnsubscribe = undefined
+    safeUnsubscribe(registeredInterruptUnsubscribe)
+
+    invokeOwner('dispose', () => owner.dispose(), 'dispose_failed', true)
+  }
+
+  try {
+    const registeredCommandUnsubscribe = bridge.onRealtimeRuntimeCommand(onCommand)
+    if (disposed) {
+      safeUnsubscribe(registeredCommandUnsubscribe)
+      return dispose
+    }
+    commandUnsubscribe = registeredCommandUnsubscribe
+
+    const registeredInterruptUnsubscribe = bridge.onInterrupt(onInterrupt)
+    if (disposed) {
+      safeUnsubscribe(registeredInterruptUnsubscribe)
+      return dispose
+    }
+    interruptUnsubscribe = registeredInterruptUnsubscribe
+  } catch {
+    dispose()
+  }
+
+  return dispose
+}
+
+function hasMirrorRealtimeRuntimeBridge(
+  bridge: typeof window.magicMirror,
+): bridge is MirrorBridge {
+  if (bridge === undefined) return false
+
+  try {
+    const candidate = bridge as Partial<MirrorRealtimeRuntimeBridge>
+    return (
+      typeof candidate.requestRealtimeClientSecret === 'function' &&
+      typeof candidate.reportRealtimeRuntimeOutcome === 'function' &&
+      typeof candidate.reportRealtimeMetadata === 'function' &&
+      typeof candidate.reportRealtimeFailure === 'function' &&
+      typeof candidate.onRealtimeRuntimeCommand === 'function' &&
+      typeof candidate.onInterrupt === 'function'
+    )
+  } catch {
+    return false
+  }
+}
+
+function createBrowserPlaybackScheduler(): PlaybackCompletionScheduler {
+  return {
+    now: () => performance.now(),
+    setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
+    clearTimeout: (handle) => window.clearTimeout(handle),
+  }
+}
+
+function mapCleanupBoundary(
+  boundary: RealtimeRuntimeCleanupBoundary,
+): SessionCleanupBoundary {
+  return RUNTIME_TO_SESSION_CLEANUP_BOUNDARY[boundary]
+}
+
+function createMirrorRuntimeCleanup(
+  bridge: MirrorRealtimeMetadataBridge,
+  session: RealtimeRuntimeSession | Readonly<RealtimeSessionIdentity>,
+): RealtimeRuntimeCleanup {
+  const transcriptBuffer = new TranscriptBuffer({
+    realtimeSessionId: session.realtimeSessionId,
+    maxEntries: REALTIME_TRANSCRIPT_BUFFER_MAX_ENTRIES,
+    eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'transcript', event),
+  })
+  const cleanup = createSessionCleanup({
+    currentRealtimeSessionId: session.realtimeSessionId,
+    transcriptBuffer,
+    clearCurrentTranscriptView: () => {
+      // The transcript view clear remains local renderer RAM, not bridge metadata.
+    },
+    metadataSink: (event) => reportMirrorRealtimeMetadata(bridge, 'cleanup', event),
+  })
+
+  return Object.freeze({
+    run: (boundary: RealtimeRuntimeCleanupBoundary): Promise<void> =>
+      cleanup.run(mapCleanupBoundary(boundary)),
+  })
+}
+
+function createMirrorRealtimeRuntimeOwner(
+  bridge: MirrorRealtimeRuntimeBridge,
+): RealtimeRuntimeOwner {
+  const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
+    // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
+  }
+
+  const reportFailure = (
+    failure: Parameters<MirrorBridge['reportRealtimeFailure']>[0],
+  ): void => {
+    try {
+      void Promise.resolve(bridge.reportRealtimeFailure(failure)).catch(() => undefined)
+    } catch {
+      // Failure visibility cannot create an unhandled rejection or gate setup.
+    }
+  }
+
+  return createBrowserRealtimeRuntimeOwner({
+    eventSink: ignoreDuplicateRuntimeOutcome,
+    sessionEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'session', event),
+    micEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'mic', event),
+    createCleanup: (session) => createMirrorRuntimeCleanup(bridge, session),
+    onFailure: reportFailure,
+    playbackCompletion: {
+      scheduler: createBrowserPlaybackScheduler(),
+      fallbackAfterMs: REALTIME_PLAYBACK_FALLBACK_AFTER_MS,
+      sampleIntervalMs: REALTIME_PLAYBACK_SAMPLE_INTERVAL_MS,
+      maxFallbackMs: REALTIME_PLAYBACK_MAX_FALLBACK_MS,
+      silenceThreshold: REALTIME_PLAYBACK_SILENCE_THRESHOLD,
+      silentSamplesRequired: REALTIME_PLAYBACK_SILENT_SAMPLES_REQUIRED,
+      eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
+    },
+  })
+}
 
 export interface MirrorInterruptComposition {
   readonly target: MirrorInterruptTarget
@@ -117,6 +458,89 @@ function readProperty(value: unknown, key: string): unknown {
     return Reflect.get(value, key)
   } catch {
     return undefined
+  }
+}
+
+function isRealtimeRendererMetadataStatus(
+  value: unknown,
+): value is RealtimeRendererMetadataStatus {
+  return value === 'success'
+    || value === 'degraded'
+    || value === 'failed'
+    || value === 'info'
+}
+
+function invalidMirrorRealtimeMetadataReport(
+  kind: RealtimeRendererMetadataKind,
+): RealtimeRendererMetadataReport {
+  return Object.freeze({
+    kind,
+    status: 'failed',
+    reason: 'metadata_event_invalid',
+  })
+}
+
+function createMirrorRealtimeMetadataReport(
+  kind: RealtimeRendererMetadataKind,
+  event: unknown,
+): RealtimeRendererMetadataReport {
+  try {
+    if (!isRecord(event)) return invalidMirrorRealtimeMetadataReport(kind)
+
+    const status = readProperty(event, 'status')
+    const reason = readProperty(event, 'reason')
+    if (
+      !isRealtimeRendererMetadataStatus(status)
+      || typeof reason !== 'string'
+      || reason.length === 0
+    ) {
+      return invalidMirrorRealtimeMetadataReport(kind)
+    }
+
+    const report: {
+      kind: RealtimeRendererMetadataKind
+      status: RealtimeRendererMetadataStatus
+      reason: string
+      durationMs?: number
+      sessionId?: string
+    } = { kind, status, reason }
+
+    const durationMs = readProperty(event, 'duration_ms')
+    if (
+      typeof durationMs === 'number'
+      && Number.isFinite(durationMs)
+      && Number.isSafeInteger(durationMs)
+      && durationMs >= 0
+      && durationMs <= REALTIME_METADATA_MAX_DURATION_MS
+    ) {
+      report.durationMs = durationMs
+    }
+
+    const realtimeSessionId = readProperty(event, 'realtimeSessionId')
+    const sessionId = readProperty(event, 'session_id')
+    if (typeof realtimeSessionId === 'string' && realtimeSessionId.length > 0) {
+      report.sessionId = realtimeSessionId
+    } else if (typeof sessionId === 'string' && sessionId.length > 0) {
+      report.sessionId = sessionId
+    }
+
+    return Object.freeze(report)
+  } catch {
+    return invalidMirrorRealtimeMetadataReport(kind)
+  }
+}
+
+export function reportMirrorRealtimeMetadata(
+  bridge: MirrorRealtimeMetadataBridge,
+  kind: RealtimeRendererMetadataKind,
+  event: unknown,
+): void {
+  const report = createMirrorRealtimeMetadataReport(kind, event)
+  try {
+    const result = bridge.reportRealtimeMetadata(report)
+    void Promise.resolve(result).catch(() => undefined)
+  } catch {
+    // Metadata delivery is one-shot and must not gate runtime or create a rejection.
   }
 }
 
@@ -243,6 +667,25 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       unsubscribe?.()
     }
   }, [])
+
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (
+      bridge === undefined ||
+      interruptComposition !== undefined ||
+      !hasMirrorRealtimeRuntimeBridge(bridge)
+    ) {
+      return
+    }
+
+    try {
+      const owner = createMirrorRealtimeRuntimeOwner(bridge)
+      return subscribeMirrorRealtimeRuntime(bridge, owner)
+    } catch {
+      // Setup failure must not gate the existing snapshot or fallback UI path.
+      return
+    }
+  }, [interruptComposition])
 
   useEffect(() => {
     const bridge = window.magicMirror

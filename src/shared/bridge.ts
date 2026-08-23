@@ -60,6 +60,23 @@ export type MirrorWindowKind = 'mirror' | 'console'
 
 export type RealtimeFailureReport = RealtimeFailureInput
 
+export type RealtimeRendererMetadataKind =
+  | 'session'
+  | 'mic'
+  | 'playback'
+  | 'transcript'
+  | 'cleanup'
+
+export type RealtimeRendererMetadataStatus = 'success' | 'degraded' | 'failed' | 'info'
+
+export interface RealtimeRendererMetadataReport {
+  readonly kind: RealtimeRendererMetadataKind
+  readonly status: RealtimeRendererMetadataStatus
+  readonly reason: string
+  readonly durationMs?: number
+  readonly sessionId?: string
+}
+
 export type BootChannel = 'boot:renderer-ready'
 export const BOOT_RENDERER_READY_CHANNEL: BootChannel = 'boot:renderer-ready'
 
@@ -71,6 +88,7 @@ export interface MirrorChannelMap {
   readonly interrupt: 'mirror:interrupt'
   readonly reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome'
   readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
+  readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
   readonly ready: BootChannel
 }
 
@@ -114,6 +132,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
   reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
   reportRealtimeFailure(report: RealtimeFailureReport): void
+  reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
 }

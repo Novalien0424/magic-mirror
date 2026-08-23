@@ -14,6 +14,9 @@ import type {
   RealtimeRuntimeOutcomeReport,
   RealtimeRuntimeOutcomeStatus,
   RealtimeFailureReport,
+  RealtimeRendererMetadataKind,
+  RealtimeRendererMetadataReport,
+  RealtimeRendererMetadataStatus,
   RealtimeSessionStartBundleValue,
   TransientRealtimeSecretInput,
   TransientRealtimeSecretResult,
@@ -38,6 +41,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   interrupt: 'mirror:interrupt',
   reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
   reportRealtimeFailure: 'mirror:report-realtime-failure',
+  reportRealtimeMetadata: 'mirror:report-realtime-metadata',
   ready: 'boot:renderer-ready',
 })
 
@@ -174,6 +178,26 @@ const REALTIME_FAILURE_KIND_VALUES: ReadonlySet<RealtimeFailureKind> = new Set([
   'ice',
   'active_disconnect',
 ])
+const REALTIME_RENDERER_METADATA_KIND_VALUES: ReadonlySet<RealtimeRendererMetadataKind> = new Set([
+  'session',
+  'mic',
+  'playback',
+  'transcript',
+  'cleanup',
+])
+const REALTIME_RENDERER_METADATA_STATUS_VALUES: ReadonlySet<RealtimeRendererMetadataStatus> = new Set([
+  'success',
+  'degraded',
+  'failed',
+  'info',
+])
+const REALTIME_RENDERER_METADATA_EVENTS: Readonly<Record<RealtimeRendererMetadataKind, string>> = Object.freeze({
+  session: 'realtime_session_metadata',
+  mic: 'realtime_mic_metadata',
+  playback: 'realtime_playback_metadata',
+  transcript: 'realtime_transcript_metadata',
+  cleanup: 'realtime_cleanup_metadata',
+})
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -343,6 +367,42 @@ function isValidRealtimeFailureReport(value: unknown): boolean {
     && SAFE_ID_PATTERN.test(realtimeSessionId)
     && typeof reason === 'string'
     && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(reason)
+  )
+}
+
+function isValidRealtimeRendererMetadataReport(
+  value: unknown,
+): value is RealtimeRendererMetadataReport {
+  if (!isPlainObject(value)) return false
+
+  const hasRequiredKeys = exactKeys(value, ['kind', 'status', 'reason'])
+  const hasDuration = exactKeys(value, ['kind', 'status', 'reason', 'durationMs'])
+  const hasSessionId = exactKeys(value, ['kind', 'status', 'reason', 'sessionId'])
+  const hasBothOptionals = exactKeys(value, ['kind', 'status', 'reason', 'durationMs', 'sessionId'])
+  if (!hasRequiredKeys && !hasDuration && !hasSessionId && !hasBothOptionals) return false
+
+  const kind = readProperty(value, 'kind')
+  const status = readProperty(value, 'status')
+  const reason = readProperty(value, 'reason')
+  const durationMs = readProperty(value, 'durationMs')
+  const sessionId = readProperty(value, 'sessionId')
+  return (
+    typeof kind === 'string'
+    && REALTIME_RENDERER_METADATA_KIND_VALUES.has(kind as RealtimeRendererMetadataKind)
+    && typeof status === 'string'
+    && REALTIME_RENDERER_METADATA_STATUS_VALUES.has(status as RealtimeRendererMetadataStatus)
+    && typeof reason === 'string'
+    && SAFE_REASON_PATTERN.test(reason)
+    && (!hasDuration
+      && !hasBothOptionals
+      || typeof durationMs === 'number'
+        && Number.isSafeInteger(durationMs)
+        && durationMs >= 0
+        && durationMs <= 86_400_000)
+    && (!hasSessionId
+      && !hasBothOptionals
+      || typeof sessionId === 'string'
+        && SAFE_ID_PATTERN.test(sessionId))
   )
 }
 
@@ -919,6 +979,38 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
           source: 'runtime',
         })
       }
+    } catch {
+      payloadRejected(telemetry)
+    }
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
+    try {
+      const authorization = authorizeSender(event, 'mirror', windows)
+      if (!authorization.ok) {
+        senderRejected(telemetry, authorization.reason)
+        return
+      }
+      if (args.length !== 1 || !isValidRealtimeRendererMetadataReport(args[0])) {
+        payloadRejected(telemetry)
+        return
+      }
+
+      const report = args[0]
+      const kind = readProperty(report, 'kind') as RealtimeRendererMetadataKind
+      const status = readProperty(report, 'status') as RealtimeRendererMetadataStatus
+      const reason = readProperty(report, 'reason') as string
+      const durationMs = readProperty(report, 'durationMs')
+      const sessionId = readProperty(report, 'sessionId')
+      emit(telemetry, {
+        module: 'openai',
+        event: REALTIME_RENDERER_METADATA_EVENTS[kind],
+        status,
+        reason,
+        source: 'runtime',
+        ...(durationMs === undefined ? {} : { duration_ms: durationMs as number }),
+        ...(sessionId === undefined ? {} : { session_id: sessionId as string }),
+      })
     } catch {
       payloadRejected(telemetry)
     }
