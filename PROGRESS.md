@@ -1,8 +1,9 @@
 # Magic Mirror — Progress
 
 **Current dashboard — 2026-08-23 — Phase 1, Realtime Voice: IN PROGRESS.**
-Branch `phase1-realtime-voice` is pushed through `d1d5364`. Phase 0 is accepted
-and tagged `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
+Branch `phase1-realtime-voice` is at pre-handoff tip `195b622`; the worktree
+was clean and synchronized before this record. Phase 0 is accepted and tagged
+`phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
 `82aa39c`; P1-U1 through P1-U7 are accepted, with U7 tip `426f52c`.
 P1-U8-A is accepted/pushed at `fd78a28`; the phase-evidence skill correction
 was accepted at `d8ca7de`; deterministic P1-U8-B engineering is
@@ -10,6 +11,28 @@ accepted/pushed at `d1d5364`. Phase 1 exit/tag is **not accepted**. Phases 2–7
 remain sequential and have not started. Canonical invariants 1–12 remain
 authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
+
+## Clock-out handoff — 2026-08-23
+
+- Resume at `phase1-realtime-voice`, pre-handoff tip `195b622`. P1-D3/P1-D4/P1-D6
+  are deterministic `mock_passed` only; real P1-D1/P1-D2/P1-D5 remain
+  `not_executed`. Phase 1 exit/tag is not accepted. Phase 2 has not started and
+  must not advance until the Phase 1 real gate passes.
+- The real-gate intervention checklist is not a completion claim: provision the
+  OpenAI credential through Electron Main `safeStorage` without inspecting or
+  recording it; provide network, physical microphone/output, a temporary
+  Persona, and the built-in Voice; observe analyser/output behavior; run 20 real
+  P1-D1 turns, 10 real P1-D2 interruptions, real P1-D5
+  Draft/Publish/new-session/invalid-Draft checks, and real metadata-only Console
+  records.
+- Next-session order: finish the P1 real demos; complete Phase 1
+  regression/exit/tag; perform the exact-path Phase 2 survey; implement bounded
+  TDD units for keyword artifact, wake worker, exclusive mic handoff,
+  lifecycle, idle-sleep, and Console corpus; then run P2 real demos/tuning,
+  platform evidence, regression, and tag.
+- Applicable invariant boundary: `1, 8, 9, 10, 11, 12`. No transcript, audio,
+  private context, credential, or other user content is recorded in this
+  handoff.
 
 ## Phase 1 — accepted unit ledger
 
@@ -89,19 +112,10 @@ failure never silently substitutes another ID.
 
 ## Pending work — exact order
 
-1. Run real P1-D1/D2/D5 only when the required OpenAI account/credential/network,
-   physical microphone/output, temporary Persona, Voice choice, analyser tuning,
-   and operator observation are available; record them as real evidence.
-2. Complete the Phase 1 regression/exit record and accept/tag Phase 1 only after
-   those required real results. The deterministic artifact cannot substitute.
-3. Start Phase 2 Wake Lifecycle, including customizable wake-word artifact
-   generation, metadata/safe fallback, and tuning evidence. The accepted
-   300-second idle/wake/sleep timer remains a Phase 2 non-goal.
-4. Proceed sequentially through Phase 3 Avatar/Audio, Phase 4 Scenes, Phase 5
-   Identity/Profiles, Phase 6 Memory, and Phase 7 Field Hardening.
-5. Later target-Mac/field evidence must cover Keychain `safeStorage`, TCC
-   mic/camera, signing/entitlements, packaged workers, LaunchAgent restart,
-   power policy, and real-device/provider behavior.
+The 2026-08-23 clock-out handoff above is authoritative. The P1 real gate,
+Phase 1 regression/exit/tag, exact-path Phase 2 survey, bounded Phase 2 TDD,
+and later Phase 2 real/tuning/platform/regression/tag work remain pending in
+that order; subsequent phases remain sequential.
 
 ## Human-intervention ledger
 
@@ -111,7 +125,7 @@ failure never silently substitutes another ID.
 | P1-U7 harness incidents | Worker/launcher timeouts, stale test expectations, and smoke timeout were recovered with preserved artifacts; they were harness/test events, not product failures. | Complete; no human intervention |
 | P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
-| Phase 1 exit | Real OpenAI/provider, physical mic/output, temporary Persona, Voice choice, analyser tuning, and operator-observed P1-D1/D2/D5 are required. | Pending human intervention/evidence |
+| Phase 1 exit | Exact real-demo intervention checklist is recorded in the 2026-08-23 clock-out handoff; credential remains safeStorage-only and records remain metadata-only. | Pending; P1-D1/D2/D5 `not_executed` |
 | Target Mac | Keychain, TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
 

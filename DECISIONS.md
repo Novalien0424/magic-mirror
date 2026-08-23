@@ -19,6 +19,21 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Windows development uses Electron `safeStorage` backed by DPAPI; Windows firewall and packaging results are development evidence only. Target Mac Keychain plus TCC, signing, entitlements, packaged workers, and field behavior require Mac evidence. The user LaunchAgent with `KeepAlive={SuccessfulExit=false}` (plist form `KeepAlive = { SuccessfulExit = false }`) is the sole restart owner. In-app recovery may recreate one failed renderer, then exits `1`; never call `app.relaunch()` or add a second restart owner.
 - The wake phrase remains customizable and is a Phase 2 requirement: editable phrase/config/raw keyword input must produce a versioned detector artifact with metadata, visible safe fallback, and later tuning evidence. Runtime model IDs come only from versioned configuration; one bounded retry of the same configured ID is not fallback, and exhausted options visibly enter OfflineLoop.
 
+## Phase 2 wake decision — verified 2026-08-23
+
+- Use sherpa-onnx open-vocabulary phrase encoding for the customizable wake
+  phrase; do not train a new neural model. Baseline `sherpa-onnx-node >=1.13.5`
+  with `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`.
+- Generate `keywords.txt` from `keywords_raw.txt` with
+  `sherpa-onnx-cli text2token`, using the selected model's own `tokens.txt` and
+  `ppinyin`. Use `16 kHz` and `featureDim 80`, and reset after each detection.
+  Project defaults are score `1.0`, threshold `0.45`, and trailing blanks `2`.
+- Tune with a positive corpus and a 30-minute ambient/TV negative run. Make no
+  per-event confidence claim. Target-Mac evidence remains required.
+- Verification gaps remain for the official `pypinyin` dependency and full
+  Node camelCase tuning exposure.
+- Primary sources already verified: [official KWS documentation](https://k2-fsa.github.io/sherpa/onnx/kws/index.html), [pretrained-model documentation](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html), [issue #3791](https://github.com/k2-fsa/sherpa-onnx/issues/3791), and [release v1.13.5](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.5).
+
 ## Foundation and Phase 0 durable design
 
 - Phase 0 task order is fixed and accepted: 1 scaffold/two windows/never-black-screen boot; 2 lifecycle state machine; 3 ConfigService and credentials; 4 metadata-only non-blocking telemetry; 5 SQLite and migrations; 6 Main module registry and mocks; 7 model-settings resolver and snapshots; 8 boot wiring, IPC, Mirror UI, and OfflineLoop; 9 six-page Console UI; 10 demo runner, exit criteria, and tag. Tasks 1–10 are accepted under `phase0-v0.3.1`; P0-D1–D5 and the Phase 0 exit are accepted; later historical wording that says otherwise is superseded.
