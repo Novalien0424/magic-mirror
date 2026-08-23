@@ -10,17 +10,9 @@ description: Use when implementing or tuning the sherpa-onnx Chinese wake-word w
 Verified **2026-08-16**. Baseline stack: `sherpa-onnx-node@1.13.5` or newer + `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` (int8) + `decibri` capture, in a worker process owned by Electron Main. Re-verify versions when Phase 2 pins the lockfile.
 
 ## Codex routing
-
+Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
+Applicable invariant IDs: 8, 9, 10, 12.
 For wake-word or microphone-handoff work, follow `AGENTS.md` together with
-`.agents/skills/mm-phase-workflow/SKILL.md` and
-`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
-applicable invariant IDs `8, 9, 10, 12`. Use the default route of one bounded
-fresh implementer, focused RED/GREEN for behavior changes, one independent
-tester, and external root acceptance; a correction or extra gate needs a
-concrete root finding or escalation trigger. Keep the exact scope,
-metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
-
-Use `apply_patch` for writes. In particular, preserve the explicit
 release-then-acquire microphone handoff, visitor-visible or metadata-only
 degradation reasons, non-gating failure behavior, and Main `safeStorage`
 credential boundary described by invariants `8, 9, 10, 12`.

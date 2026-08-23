@@ -1,370 +1,152 @@
 # Magic Mirror — Progress
 
-**Current dashboard — Status as of 2026-08-23 — Phase 1 — Realtime Voice: IN PROGRESS.** The active branch is
-`phase1-realtime-voice`; Phase 0 is accepted at local tag `phase0-v0.3.1` on
-`9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
-transport, P1-U7C1/C2 credential/DTO boundaries, P1-U7C3 renderer
-runtime owner and generation-safe Realtime session rollover, and P1-U7D/U7E1/U7E2
-are accepted; P1-U7 is accepted at `426f52c`; Phase 1 remains in progress
-with P1-U8 next. Phases 2–7 remain pending,
-sequential, and have not started.
+**Current dashboard — 2026-08-23 — Phase 1, Realtime Voice: IN PROGRESS.**
+Branch `phase1-realtime-voice` is pushed through `d1d5364`. Phase 0 is accepted
+and tagged `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
+`82aa39c`; P1-U1 through P1-U7 are accepted, with U7 tip `426f52c`.
+P1-U8-A is accepted/pushed at `fd78a28`; the phase-evidence skill correction
+was accepted at `d8ca7de`; deterministic P1-U8-B engineering is
+accepted/pushed at `d1d5364`. Phase 1 exit/tag is **not accepted**. Phases 2–7
+remain sequential and have not started. Canonical invariants 1–12 remain
+authoritative; control-plane rules and current authority are in
+[`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 
-## Phase 1 — Realtime Voice checkpoint (2026-08-23)
+## Phase 1 — accepted unit ledger
 
-P1-U1 through P1-U6 are accepted. Phase 1 remains in progress; no Phase 1
-demo, exit, or tag is claimed.
-
-| Unit | State | Accepted record |
+| Unit | Accepted record | Material boundary/evidence retained |
 |---|---|---|
-| P1-U1 — SDK lockstep + versioned voice/session snapshots | accepted | `4862383` |
-| P1-U2 — Main safeStorage credential import + ephemeral client-secret broker | accepted | `5be5871` |
-| P1-U3 — deterministic RealtimeSession/WebRTC adapter + official ScriptedRealtimeTransport | accepted | `18461e5` |
-| P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
-| P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
-| P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | accepted at `426f52c` | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400`, `5e8b66d`, `c427670`, `b4abd76`, `426f52c` |
-| P1-U7F2B1 — Main-owned pending rollover + exact 60-minute timer | accepted | `5e8b66d` |
-| P1-U7F2B2a — Mirror-to-Main realtime failure report transport | accepted | `c427670` |
-| P1-U7F2B2b — visible OfflineLoop recovery probes and stale-identity handling | accepted | `b4abd76` |
-| P1-U7F3 — single browser Realtime runtime owner, cleanup, playback completion, and metadata-only outcomes | accepted | `426f52c` |
-| P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
+| P1-U1 | `4862383` | SDK lockstep and versioned voice/session snapshots |
+| P1-U2 | `5be5871` | Main `safeStorage` import and ephemeral client-secret broker |
+| P1-U3 | `18461e5` | Deterministic `RealtimeSession`/WebRTC adapter and official scripted transport |
+| P1-U4 | `cffd484` | One microphone owner, one audible output, playback completion |
+| P1-U5 | `fb5e58f` | Lifecycle outage, OfflineLoop, recovery, manual wake, rollover |
+| P1-U6 | accepted; no self-referential hash recorded | RAM-only transcript/interruption mapping and cleanup; focused `32/32`, Node/web typechecks `0` |
+| P1-U7 | accepted at `426f52c`; record set `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400`, `5e8b66d`, `c427670`, `b4abd76`, `426f52c` | Console voice controls, persona/credential/model controls, RAM transcript view, runtime ownership and recovery |
+| P1-U8-A | accepted/pushed at `fd78a28`; phase-evidence correction `d8ca7de` | Deterministic demo/record/privacy/regression checkpoint; no real-demo promotion |
+| P1-U8-B | deterministic engineering accepted/pushed at `d1d5364` | Fresh gate: `49/49` test files, `570/570` tests, Node/web typechecks, Electron Vite build, and `git diff --check` all exit `0` |
 
-### P1-U6 scope and evidence
+### P1-U7 accepted subunits and gates
 
-The exact eight application/test paths were:
+| Scope | Record/status | Retained validation or limitation |
+|---|---|---|
+| U7A | accepted | `31/31` focused tests in four files; Node/web typechecks and diff check `0` (line-ending warnings); no full suite/build/demo |
+| U7B1/B2 | accepted | Payload-free Main-to-Mirror interrupt transport; `45/45` focused tests in five files; Node/web typechecks and diff check `0` (line-ending warnings); no UI/consumer/completion claim, full suite/build/demo |
+| U7C1 | committed/pushed at `cc8c34f` | Atomic issuer/600-second expiry; three files/`9` tests and Node typecheck green; Windows-only platform limitation |
+| U7C2 | accepted on the uncommitted integration diff; no future hash recorded | Renderer-safe atomic DTO; six files/`45` tests, Node/web typechecks and diff check `0`; negative scan exit `1` with empty output as expected; no full suite/build/demo/target-Mac/provider field verification |
+| U7C3 | accepted at `24bccfd` | `47/47` files and `478/478` tests; Node/web/build `0`; stale interrupt expectation corrected; Electron `43.4.1` launch issue cleared without intervention |
+| U7F1/U7F2A | accepted; F1 `105db2f`, F2A `b81d400` | Frozen command DTO and Main-owned manual transactions; focused candidate `90/90`; final `48/48` files and `515/515` tests; Node/web/build `0`; stale fixtures corrected without a production defect |
+| U7F2B1 | accepted/pushed at `5e8b66d` | `48/48` files and `518/518` tests; Node/web/build green; Main-owned rollover and exact 60-minute timer |
+| U7F2B2a | accepted/pushed at `c427670` | `48/48` files and `522/522` tests; Node/web/build green; bounded failure-report transport |
+| U7F2B2b | accepted/pushed at `b4abd76` | Focused four files/`52` tests and full `48/48` files/`525/525` tests; Node/web/build green; exact `5/15/30/60` probe schedule, no automatic full reconnect |
+| U7F3 | accepted/pushed at `426f52c` | Focused seven files/`141` tests; final `48/48` files/`545/545` tests; Node/web/build and diff check green; actual-output playback and metadata-only outcomes |
+| U7D/U7E1/U7E2 | accepted in the U7 record | No separate hash beyond the accepted U7 record set above |
 
-- `src/renderer/realtime/transcript-buffer.ts`
-- `src/renderer/realtime/turn-controller.ts`
-- `src/renderer/realtime/session-cleanup.ts`
-- `src/shared/console-types.ts`
-- `src/main/console-data.ts`
-- `tests/unit/realtime-transcript-buffer.test.ts`
-- `tests/unit/realtime-interruption.test.ts`
-- `tests/unit/realtime-privacy-cleanup.test.ts`
+U6 remains bounded to current-session RAM projection: stale/invalid input,
+interrupts, and cleanup degrade with metadata-only outcomes; transcription does
+not gate Voice/new turns; stop/offline/rollover/restart/close clear RAM. U7F3
+analyser values are PoC only: fallback delay `500ms`, sample interval `50ms`,
+bound `2000ms`, silence threshold `0.02`, and `3` samples. Real mic/output
+tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
+10, 11, 12`; canonical invariants `1–12` remain preserved.
 
-The bounded current-session transcript projection is RAM-only. Invalid or stale
-input degrades with stable metadata; VAD/manual interruption stops audible gain
-and coalesces duplicate interrupt signals; Voice and new-turn progress are not
-gated by transcription. Stop, offline, rollover, restart, and close boundaries
-clear RAM. No transcript persistence, telemetry, or export path was added.
+## Current verification and evidence
 
-The tester gate passed `32/32` focused tests; `npm run typecheck:node` exited
-`0`; and `npm run typecheck:web` exited `0`. Directly checked invariant IDs
-`1, 4, 5, 6, 9, 10, 11, 12`; canonical invariants `1–12` remain preserved.
-The historical checkpoint recorded the user-owned paths
-`docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` and
-`scripts/install-node-lts.ps1` with content unchanged. The user's explicit
-2026-08-22 instruction authorizes tracking both in the integration commit. No
-`.env` content/value was read or validity checked.
+| Evidence | Status and truth boundary |
+|---|---|
+| Fresh U8-B deterministic gate | `49/49` files, `570/570` tests, `npm run typecheck:node`, `npm run typecheck:web`, `npm run build`, and `git diff --check`: all exit `0` |
+| Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real demo not_executed`. It is not a real demo and is not a tracked repo file. |
+| Phase 1 exit | Not accepted; no Phase 1 release tag. Real/provider/device/operator evidence is not claimed. |
+| Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
-### P1-U7A — Console start/disconnect controls (externally accepted 2026-08-22)
+### Phase 0 accepted ledger — 2026-08-20
 
-Console Start Conversation and Disconnect use typed, validated Console-only
-IPC to the existing `manualStart`/`manualStop` actions and surface only
-metadata-only action/status/reason. Simulate Cloud Failure is unchanged, and
-R2's authoritative `handleSimulator` return shape is unchanged.
+| Task order | Accepted record | Material validation retained |
+|---|---|---|
+| 1 — scaffold, two windows, never-black-screen boot | done/reviewed; in `phase0-v0.3.1` | Historical typecheck; four files/`20` tests |
+| 2 — lifecycle state machine | integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985` | `31` focused; five files/`51` tests; Node typecheck `0` |
+| 3 — ConfigService + credentials | `0270686`; correction/integration tip `835c92d` | Seven files/`92` tests; Node/web typecheck and Electron Vite build `0` |
+| 4 — metadata-only, non-blocking telemetry | integrated at `dca1327` | Focused `21/21`; eight files/`113` tests; typecheck/build `0` |
+| 5 — SQLite + migrations | integrated at `a8f0355` | Focused `32/32`; full `145/145`; typecheck/build `0` |
+| 6 — Main module registry + mocks | accepted/integrated at `5b95a94`; plan gate `83be86b` | Focused `16/16`; full `161/161`; typecheck/build green |
+| 7 — model settings resolver + snapshots | plan `6214b6c`; implementation `5e24bdc` | Focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
+| 8 — boot wiring, IPC, Mirror UI + OfflineLoop | accepted | Accepted application task |
+| 9 — Console UI — six pages | accepted | Accepted application task |
+| 10 — demo runner, exit criteria, tag | done/accepted | 10B `13/13`; 10C `8/8`; full `311` |
 
-The exact nine changed source/test paths were:
+Phase 0 also retained: ten bounded smoke cycles; the exact real-time 30-minute
+OfflineLoop soak with samples at `0`, `300000`, `600000`, `900000`, `1200000`,
+`1500000`, and `1800000` ms; every sample nonblack/playing; memory growth below
+`134217728` bytes. Privacy, negative runtime-model/fallback, Windows unpacked
+packaging, fixed-asset hash/length/decode, no-relaunch, exact-whitespace, and
+status-scope gates passed. Electron `43.4.1` and electron-builder `26.15.3`
+remain the accepted baseline. The sole restart owner is the user LaunchAgent
+`KeepAlive={SuccessfulExit=false}`; in-app recovery recreates one failed
+renderer then exits `1`; `app.relaunch()` is never used. Windows evidence covers
+DPAPI-backed `safeStorage` and local packaging only, not target-Mac Keychain,
+TCC, signing, entitlements, packaged workers, LaunchAgent, real-device, or
+provider/account behavior. Configured model IDs remain versioned-config-only;
+failure never silently substitutes another ID.
 
-- `src/main/ipc.ts`
-- `src/preload/console.ts`
-- `src/renderer/console/App.tsx`
-- `src/shared/bridge.ts`
-- `src/shared/console-types.ts`
-- `tests/integration/phase1-recovery.test.ts`
-- `tests/unit/console-ipc.test.ts`
-- `tests/unit/console-ui.test.ts`
-- `tests/unit/realtime-privacy-cleanup.test.ts`
+## Pending work — exact order
 
-Accepted evidence was `git diff --check` exit `0` with line-ending warnings,
-four focused files passing `31/31` tests, and Node/web typechecks exiting `0`.
-No full suite, build, or demo was run. This accepts P1-U7A only; P1-U7
-remains in progress, with Interrupt and the rest of its scope next, and no
-Phase 1 exit is claimed.
-
-Process evidence is metadata-only: the initial worker timed out and recovery
-completed the route; accidental untracked `pnpm` files were removed, and
-`npm` is the verified command route. Current evidence identifies no
-project-skill correction. This record update changes no application, test,
-skill, or package file.
-
-### P1-U7B1/B2 — Console interrupt transport (externally accepted 2026-08-22)
-
-An authorized zero-argument Console interrupt dispatches payload-free through
-Main to the exact `mirror:interrupt` channel on the tracked Mirror
-`webContents`, with metadata-only dispatch `status`/`reason`. Mirror preload
-exposes typed `onInterrupt(listener)` with an exact disposer and drops the
-event payload. No Console UI, Mirror App consumer, `TurnController` call,
-renderer acknowledgment, or interruption-completion claim exists yet.
-
-The exact eight changed source/test paths were:
-
-- `src/main/ipc.ts`
-- `src/preload/console.ts`
-- `src/preload/mirror.ts`
-- `src/shared/bridge.ts`
-- `src/shared/console-types.ts`
-- `tests/unit/console-ipc.test.ts`
-- `tests/unit/mirror-projection.test.ts`
-- `tests/unit/realtime-privacy-cleanup.test.ts`
-
-Accepted evidence was `git diff --check` exit `0` with line-ending warnings,
-five focused files passing `45/45` tests, and Node/web typechecks exiting `0`.
-No full suite, build, or demo was run. No human input was needed for this
-transport boundary, and current evidence identifies no project-skill
-correction. No Phase 1 exit is claimed.
-
-This record update makes no source, test, skill, or package change and records
-no private values, commit, or invented hash.
-
-### P1-U7C1/C2 — atomic credential issuer and renderer-safe DTO (externally accepted 2026-08-22)
-
-C1's atomic issuer/600-second credential expiry is committed and pushed at
-`cc8c34f`. Before credential await it synchronously copies/freezes the Published
-model snapshot and Main realtime identity, mints for
-`snapshot.realtimeDialogue`, then copies/freezes the result. Focused evidence
-was 3 test files/9 tests and a green Node typecheck; the Windows-only platform
-limitation remains.
-
-C2 is externally accepted on the current uncommitted integration diff; no
-future commit hash is recorded. The existing
-`mirror:request-realtime-client-secret` channel/method returns one
-renderer-safe atomic DTO. Boot uses the C1 issuer with current Published active
-settings and existing Main lifecycle identity; missing identity is explicit
-`session_unavailable` with no broker call, malformed data is
-`invalid_payload`, and preload structurally validates, sanitizes, copies, and
-freezes the exact DTO. The old direct secret-only path is absent.
-
-Fresh C2 evidence was 6 test files/45 tests passing, Node/web typechecks
-exiting `0`, and `git diff --check` exiting `0` with line-ending warnings; the
-prior exact negative scan exited `1` with empty output as expected. No full
-suite, build, demo, or target-Mac/provider field verification belongs to this
-unit. C1/C2 surveys found no concrete defect in the four required Magic Mirror
-skills; no skill edit is needed.
-
-P1-U7C3 is accepted below. P1-U8 owns deterministic/real demos, Phase Test
-records, the full regression/privacy scan, final exit acceptance, and the local
-`phase1-v0.3.1` tag. No Phase 1 exit is claimed.
-
-### P1-U7C3 — renderer runtime owner and generation-safe Realtime session rollover (externally accepted 2026-08-22 at `24bccfd`)
-
-The renderer runtime owner for session, transport, microphone, audio, and
-cleanup, including generation-safe Realtime session rollover, is externally
-accepted at `24bccfd`. Evidence was `47/47` test files
-and `478/478` tests passing; `npm run typecheck:node`,
-`npm run typecheck:web`, and `npm run build` each exited `0`. One stale Mirror
-interrupt expectation was corrected.
-
-An earlier Electron launch failure cleared without intervention and did not
-reproduce in the 3-file/29-test focused rerun or the full gate. Local
-`electron.cmd` and the direct binary were `v43.4.1`; no install/reinstall or
-human action was required. The existing `DEP0190` child-process shell warning
-remains.
-
-P1-U7 is accepted at `426f52c`; P1-U8 owns the remaining deterministic/real demos, Phase Test
-records, the full regression/privacy scan, final exit acceptance, and the local
-`phase1-v0.3.1` tag. This does not mark real Realtime, microphone, or target-Mac
-evidence complete, and no Phase 1 exit is claimed.
-
-### P1-U7F1/U7F2A — command transport and Main-owned manual transactions accepted (2026-08-23)
-
-P1-U7F1 is accepted and pushed at `105db2f`: a frozen typed Main-to-Mirror
-start/stop/rollover command DTO, Mirror preload subscription/disposer, exact
-tracked-Mirror dispatch with stable metadata-only outcomes, and strictly
-positive renderer bundle generations.
-
-P1-U7F2A is accepted, committed, and pushed at `b81d400`. Main keeps one
-pending start identity; wake increments generation; a request bundle may use
-the pending identity only while Activating; renderer success commits that
-exact ID; delivery/renderer start failure reaches OfflineLoop and clears
-pending identity. Active stop transitions through Suspending to Dormant on
-renderer success or Maintenance on failure; wrong-state outcomes are ignored
-with metadata-only reasons. Legacy explicitly injected recovery-controller
-behavior is preserved. Production index dispatches through the tracked Mirror,
-and IPC reconciles outcome reports non-throwingly.
-
-Strict TDD recovered RED with 4 existing tests passing and exactly 3 new
-transaction tests failing for the intended missing behavior; lifecycle
-generation evidence was `32/32` green, and the focused candidate later passed
-`90/90`. After test-fixture corrections, the final gate was Node typecheck
-`0`, web typecheck `0`, `npm test` `48/48` files and `515/515` tests, and
-`npm run build` `0`; `DEP0190` remains a nonblocking tooling warning. The
-regression investigation found no production defect: test-only corrections
-replaced stale bundle generation `0` (Main's no-session sentinel), restored
-the accepted command channel in two exact Mirror maps, and typed one fixture
-callback while retaining strict zero-rejection coverage.
-
-The broad U7F survey, U7F2A RED-writer, combined RED-tester, and first
-implementer each had a bounded launcher timeout; B2b additionally had one
-monolithic implementer first-write timeout and one split Part A post-write-idle
-timeout. Narrowed retries, preserved-artifact review, and Part B completion
-recovered the work. These were harness events, not product failures, and no
-human intervention was needed. Scoped survey and root review found no concrete
-defect or missing invariant/behavior in the four routed skills; no skill change
-is warranted.
-
-P1-U7F2B1/B2a/B2b/U7F3 are accepted below. P1-U8 owns deterministic/real demos,
-Phase Test records, regression/privacy scan, Phase 1 exit, and the local
-`phase1-v0.3.1` tag. The accepted 300-second idle/wake/sleep timer remains a
-Phase 2 non-goal. No Phase 1 exit or real OpenAI, mic/output, macOS, or
-operator evidence is claimed.
-
-### P1-U7F2B1/B2a/B2b — rollover and recovery boundaries accepted (2026-08-23)
-
-- **P1-U7F2B1** is accepted and pushed at `5e8b66d`: Main-owned pending
-  rollover and an exact 60-minute timer; `48/48` files and `518/518` tests;
-  Node/web typechecks and the production build are green.
-- **P1-U7F2B2a** is accepted and pushed at `c427670`: exact Mirror-to-Main
-  realtime failure-report transport; the accepted telemetry allowlist is
-  preserved by encoding failure kind in a bounded reason; `48/48` files and
-  `522/522` tests; Node/web typechecks and the production build are green.
-- **P1-U7F2B2b** is accepted and pushed at `b4abd76`: stale identity is
-  ignored without disturbing active ownership; accepted active/connect/ICE
-  failure visibly enters OfflineLoop; one deduplicated lightweight probe
-  schedule runs at exact `5/15/30/60` seconds through the Main-owned
-  ephemeral-secret broker and discards returned material RAM-only. First
-  success or exhaustion returns Dormant; there is no automatic full Realtime
-  session/reconnect; Manual Start remains the only next-session owner; shutdown
-  cancels probes. The focused gate was `4` files/`52` tests with Node/web
-  typechecks green; the full gate was `48/48` files and `525/525` tests with
-  the production build green. `DEP0190` remains a nonblocking tooling warning.
-- B2b harness history is one monolithic implementer first-write timeout and
-  one split Part A post-write-idle timeout; the preserved artifact was
-  root-reviewed and completed by Part B. These were harness events, not
-  product defects, and no human intervention was needed. No routed
-  project-skill defect was found; no skill edit is warranted at this
-  checkpoint.
-- **P1-U7F3** is accepted and pushed at `426f52c`: Mirror mounts one browser
-  Realtime runtime owner for start/rollover/stop/interrupt/dispose; per-session
-  transcripts remain RAM-only and cleanup maps close/stop/dispose/rollover/
-  offline_loop. Playback completion uses actual-output events with a bounded
-  analyser fallback. Renderer metadata kinds `session`, `mic`, `playback`,
-  `transcript`, and `cleanup` cross a Mirror-only exact DTO containing only
-  kind/status/reason plus optional integer duration/session ID into Main-owned
-  metadata-only telemetry, with no lifecycle callback; the invariant-9
-  silent-drop defect is corrected. Focused evidence is `7` files/`141` tests
-  plus green Node/web typechecks; final evidence is `48/48` files, `545/545`
-  tests, production build, and `git diff --check` green. `DEP0190` and
-  LF-to-CRLF warnings are nonblocking. Analyser thresholds are PoC values:
-  `500ms` fallback delay, `50ms` sample interval, `2000ms` bound, `0.02`
-  silence threshold, and `3` samples; real mic/output tuning remains required.
-- U7F3 harness history: broad/combined U7 surveys and one App GREEN worker timed
-  out; artifacts and narrow retries recovered them. The first full gate
-  exposed two stale exact Mirror-map expectations and a smoke timeout; isolated
-  smoke passed, and only those expectations plus a hostile-Proxy matcher
-  artifact were corrected. An evidence-only rerun supplied complete streams.
-  No human intervention occurred; no project-skill defect was found and no
-  skill edit was made.
+1. Run real P1-D1/D2/D5 only when the required OpenAI account/credential/network,
+   physical microphone/output, temporary Persona, Voice choice, analyser tuning,
+   and operator observation are available; record them as real evidence.
+2. Complete the Phase 1 regression/exit record and accept/tag Phase 1 only after
+   those required real results. The deterministic artifact cannot substitute.
+3. Start Phase 2 Wake Lifecycle, including customizable wake-word artifact
+   generation, metadata/safe fallback, and tuning evidence. The accepted
+   300-second idle/wake/sleep timer remains a Phase 2 non-goal.
+4. Proceed sequentially through Phase 3 Avatar/Audio, Phase 4 Scenes, Phase 5
+   Identity/Profiles, Phase 6 Memory, and Phase 7 Field Hardening.
+5. Later target-Mac/field evidence must cover Keychain `safeStorage`, TCC
+   mic/camera, signing/entitlements, packaged workers, LaunchAgent restart,
+   power policy, and real-device/provider behavior.
 
 ## Human-intervention ledger
 
-| Boundary | Human intervention or evidence | Timing/status |
+| Boundary | Record | Status |
 |---|---|---|
-| P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
-| P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
-| P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
-| P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b | No human intervention; the broad U7F survey and bounded U7F2A timeouts were recovered with artifacts where applicable, and B2b had one monolithic implementer first-write timeout plus one split Part A post-write-idle timeout before preserved-artifact review and Part B completion. These were harness events, not product defects; no skill correction was needed. | Complete; no human intervention |
-| P1-U7F3 | No human intervention; broad/combined U7 surveys and one App GREEN worker timed out, with artifacts and narrow retries recovered. The first full gate exposed two stale exact Mirror-map expectations and a smoke timeout; isolated smoke passed, only those expectations plus a hostile-Proxy matcher artifact were corrected, and an evidence-only rerun supplied complete streams. These were harness/test events, not product or project-skill defects; no skill edit was needed. | Complete; no human intervention |
-| P1-U7C3 Electron launch | Earlier launch failure cleared without intervention and did not reproduce in the 3-file/29-test focused rerun or full gate; local `electron.cmd` and direct binary were `v43.4.1`; no install/reinstall or human action was required. Existing `DEP0190` child-process shell warning remains. | Cleared; no action required |
-| Phase 1 exit | Real OpenAI credential/account/network; PoC mic/output; temporary Persona; Voice choice; and operator observation of P1-D1/D2/D5. U7F3 analyser values (`500ms` fallback delay, `50ms` sample interval, `2000ms` bound, `0.02` silence threshold, `3` samples) are PoC thresholds requiring real mic/output tuning. | Required later, before exit |
-| Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
-| Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity inputs, memory/profile inputs, and hardware/adapter inputs. | Later venue-specific work |
+| P1-U7 engineering | No human intervention was needed for the accepted bounded/mock/static gates recorded for U7. | Complete |
+| P1-U7 harness incidents | Worker/launcher timeouts, stale test expectations, and smoke timeout were recovered with preserved artifacts; they were harness/test events, not product failures. | Complete; no human intervention |
+| P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
+| P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
+| Phase 1 exit | Real OpenAI/provider, physical mic/output, temporary Persona, Voice choice, analyser tuning, and operator-observed P1-D1/D2/D5 are required. | Pending human intervention/evidence |
+| Target Mac | Keychain, TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later. | Pending |
+| Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
 
-Mocks allow progress where the boundary permits, but cannot replace the real
-OpenAI, mic/output, and operator-observed evidence required for Phase 1 exit.
+## Harness, environment, warnings, and privacy register
 
-## Phase 0 — accepted ledger (2026-08-20)
+- H6/H9 process facts are frozen: root alone orchestrates and performs external
+  acceptance; fresh profile-backed workers use exact bounded scopes, one of the
+  implementer/surveyor/tester roles, and no recursive delegation. Evidence is
+  metadata-only; raw JSON event streams stay suppressed and only the latest
+  nonempty agent message is forwarded. Launcher hardening culminated
+  at `5818830`; frozen suite `15/15` and a real profile-backed probe passed;
+  deadlines remain first-write `480s`, post-write `120s`, overall `600s`.
+- This is an npm-only project. Development Node is `v24.19.0` (prerequisite
+  `>=22.22.2` or `>=24.15.0`); `398` packages were installed, `399` audited,
+  zero vulnerabilities recorded. The unrelated Node `DEP0190` child-process
+  shell warning and nonblocking LF-to-CRLF warnings remain. Windows firewall
+  evidence is development-only; script-fix commit `3e93936` supplied the
+  persistent Private-profile rule names `MagicMirror.Development.Electron.TCP`
+  and `MagicMirror.Development.Electron.UDP`.
+- `.env` exists, is ignored/untracked metadata only; its content/value was not accessed and validity was not checked.
+  tracked `false`/untracked, content/value accessed `false`, validity checked
+  `false`. Its value was not read and is never recorded; Main `safeStorage` and
+  short-lived renderer credentials are authoritative.
+- User-owned `scripts/install-node-lts.ps1` and
+  `docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` remain unchanged;
+  the explicit 2026-08-22 instruction authorizes tracking both in the
+  integration commit.
+- Diagnostics and evidence remain metadata-only: IDs, enums, counts, timings,
+  statuses, reasons, hashes, paths, and exit codes only. Transcripts, audio,
+  private context, extracted memory values, credentials, images, embeddings,
+  and prompts remain out of files, telemetry, exports, and logs. The current
+  record does not promote mock evidence, invent a status, or claim target-Mac,
+  provider, device, or operator completion.
 
-| Task | State and accepted record | Validation retained |
-|---|---|---|
-| 1 — scaffold, two windows, never-black-screen boot | done + reviewed; included in `phase0-v0.3.1` | historical typecheck; 4 files / 20 tests |
-| 2 — lifecycle state machine | done + reviewed + locally integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985` | 31 focused; merged 5 files / 51 tests; Node typecheck `0` |
-| 3 — ConfigService + credentials | done + reviewed + integrated at `0270686`, correction/integration tip `835c92d` | 7 files / 92 tests; Node/web typecheck and Electron Vite build `0` |
-| 4 — metadata-only, non-blocking telemetry | done + reviewed + integrated at `dca1327` | focused `21/21`; 8 files / 113 tests; typecheck/build `0` |
-| 5 — SQLite + migrations | done + reviewed + integrated at `a8f0355` | focused `32/32`; full `145/145`; typecheck/build `0` |
-| 6 — Main module registry + mocks | done + reviewed + accepted + integrated at `5b95a94`; plan gate `83be86b` | focused `16/16`; full `161/161`; typecheck/build green |
-| 7 — model settings resolver + snapshots | done + reviewed + accepted; plan `6214b6c`, implementation `5e24bdc` | focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
-| 8 — boot wiring, IPC, Mirror UI + OfflineLoop | accepted | accepted application task |
-| 9 — Console UI — 6 pages | accepted | accepted application task |
-| 10 — P0 demo runner, exit criteria, tag | done + accepted | Task 10B `13/13`; Task 10C `8/8`; full `311` |
-
-### Phase 0 acceptance evidence
-
-P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failure cases.
-Node/web typechecks and the Electron Vite build passed; ten bounded smoke cycles
-passed; and the exact real-time 30-minute OfflineLoop soak passed with seven
-samples at elapsed `0`, `300000`, `600000`, `900000`, `1200000`, `1500000`, and
-`1800000` ms. Every sample was nonblack and playing, and memory growth stayed
-below the accepted `134217728`-byte allowance.
-
-The privacy scan, negative runtime model/fallback scan, Windows unpacked
-packaging, fixed asset hash/length/decode, no-relaunch, exact-whitespace, and
-status-scope gates passed. Task 10 uses the preserved Electron `43.4.1` and
-electron-builder `26.15.3` facts. The LaunchAgent
-`KeepAlive={SuccessfulExit=false}` remains the sole restart owner; in-app
-recovery recreates a failed renderer once and then exits with code `1`;
-`app.relaunch()` is never used.
-
-Windows development evidence validates DPAPI-backed `safeStorage` and local
-packaging only. It does not field-verify target-macOS Keychain, TCC, signing,
-entitlements, packaged-worker, LaunchAgent, real-device, or provider/account
-behavior. Model IDs remain versioned-config-only; a failed configured ID is
-never silently substituted. Canonical invariants `1–12` remain authoritative:
-diagnostics are metadata-only, private values stay RAM-only, mic ownership is
-single, degradation is visible, failures do not gate unrelated behavior, and
-credentials remain Main-owned through `safeStorage`.
-
-## Harness and environment checkpoint
-
-Launcher hardening through H9 culminated at `5818830`; the frozen harness suite
-passed `15/15`, and a real profile-backed probe passed. Fixed deadlines remain
-first-write `480` seconds, post-write `120` seconds, and overall `600` seconds.
-Raw JSON event streams remain suppressed and only the latest nonempty agent
-message is forwarded.
-
-Dependency materialization recorded `398` packages installed, `399` audited,
-and zero vulnerabilities. Preserve Electron `43.4.1`, electron-builder
-`26.15.3`, and development Node `v24.19.0`, which satisfies the prerequisite
-`>=22.22.2` or `>=24.15.0`. The existing unrelated Node `DEP0190` warning
-remains a recorded risk. Windows firewall setup is development-only evidence;
-script-fix commit `3e93936` supplied noninteractive display names for the
-persistent Private-profile rules `MagicMirror.Development.Electron.TCP` and
-`MagicMirror.Development.Electron.UDP`.
-
-## Current verification and how-to
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | electron-vite development Mirror plus hidden Console |
-| `npm run build` | production bundles into `out/` |
-| `npm run typecheck` | Node and web TypeScript checks |
-| `npm test` | Vitest, including spawned boot smoke runs |
-
-Smoke metadata uses `MIRROR_SMOKE_MS=<n>`; exit `0` requires both windows loaded
-and lifecycle `dormant` or `maintenance`, while invalid smoke input exits `2`.
-`MIRROR_FORCE_RENDERER_FAIL=1` tests the unavailable-bridge path and
-`MIRROR_FORCE_RENDERER_CRASH=<n>` tests bounded renderer recovery. Boot markers
-are metadata-only: never transcripts, audio, prompts, memory values, images,
-embeddings, credentials, or other private content.
-
-## Privacy, platform, and remaining-risk register
-
-`.env` metadata is limited to exists `true`, ignored by `.gitignore` line `10`,
-Git tracked `false` (untracked), content/value accessed `false`, and validity
-checked `false`. Its value was not read and is never recorded. It is provisioning
-input only; Main `safeStorage` and short-lived renderer credentials remain the
-authoritative credential path.
-
-The customizable wake word remains a Phase 2 requirement. The editable
-phrase/config/raw keyword source must generate a versioned detector keyword
-artifact with metadata and safe fallback, followed by tuning evidence; this
-implementation and tuning have not started. The user-owned
-`scripts/install-node-lts.ps1` and
-`docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` have content that
-remains unchanged; the user's explicit 2026-08-22 instruction authorizes
-tracking both in the integration commit.
-
-Historical pre-acceptance records that say Phase 0 is in progress, Phase 1 is
-blocked, or Tasks 8–10 are next/unimplemented are superseded and retained only
-as traceability. They do not override this dashboard. Harness-migration Task
-labels are process records and are distinct from application Tasks 1–10.
+Historical pre-acceptance wording that said Phase 0 was in progress, Phase 1
+was blocked, or Tasks 8–10 were next is superseded and retained here only as a
+status note; harness-migration task labels remain process records distinct from
+application Tasks 1–10.

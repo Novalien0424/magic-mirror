@@ -13,17 +13,9 @@ Candidate scan runs ~2-3 s during Activating only; runtime frames are never
 persisted.
 
 ## Codex routing
-
-For face-worker or identity-flow work, follow `AGENTS.md` together with
-`.agents/skills/mm-phase-workflow/SKILL.md` and
-`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
-applicable invariant IDs `1, 2, 9, 10`; `2` and `10` are required for
+Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
+Applicable invariant IDs: 1, 2, 9, 10.
 candidate confirmation or camera degradation. Use the default route of one
-bounded fresh implementer, focused RED/GREEN for behavior changes, one
-independent tester, and external root acceptance; a correction or extra gate
-needs a concrete root finding or escalation trigger. Keep exact scope,
-metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
-
 Use `apply_patch` for writes. Preserve the face privacy boundary: evidence is
 metadata-only, and no transcript, audio, memory value, private context,
 credential, image, embedding, or user-content prompt enters evidence, logs,

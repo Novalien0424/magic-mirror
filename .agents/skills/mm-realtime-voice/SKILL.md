@@ -18,11 +18,11 @@ disagree, fix this file.
 For Realtime work, follow `AGENTS.md` together with
 `.agents/skills/mm-phase-workflow/SKILL.md` and
 `.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
-applicable invariant IDs `1, 4, 5, 6, 8, 9, 10, 11, 12`. Use the default route
-of one bounded fresh implementer, focused RED/GREEN for behavior changes, one
-independent tester, and external root acceptance; a correction or extra gate
-needs a concrete root finding or an escalation trigger. Keep exact scope,
-metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
+applicable invariant IDs `1, 4, 5, 6, 8, 9, 10, 11, 12`. Worker model/effort,
+fresh-worker, TDD/tester, exact-scope, metadata-only evidence, no-recursion,
+correction-gate, and external root-review mechanics follow
+[AGENTS.md](../../../AGENTS.md) and
+[.agents/H6_WORKER_PROTOCOL.md](../../H6_WORKER_PROTOCOL.md).
 
 Use `apply_patch` for writes. Preserve the domain's privacy boundary: worker
 evidence and examples use only metadata, never transcript text, audio,

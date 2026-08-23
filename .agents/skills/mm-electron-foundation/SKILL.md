@@ -114,17 +114,9 @@ block anonymous Voice startup (Spec Section 13.3).
   back to the built-in Maintenance still, never black (Spec Section 9.3).
 
 ## Codex routing
-
+Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
+Applicable invariant IDs: 1, 3, 8, 9, 10, 11, 12.
 For Electron-foundation work, follow `AGENTS.md` together with
-`.agents/skills/mm-phase-workflow/SKILL.md` and
-`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
-applicable invariant IDs `1, 3, 8, 9, 10, 11, 12`. Use the default route of
-one bounded fresh implementer, focused RED/GREEN for behavior changes, one
-independent tester, and external root acceptance; naturally coupled work is
-combined only when its boundary is jointly reviewable. Keep the exact scope,
-metadata-only evidence, no-recursion, and root-review rules from `AGENTS.md`.
-
-Use `apply_patch` for writes. Preserve this skill's source-grounded facts,
 pins, dependencies, platform distinctions, failure paths, safety boundaries,
 and prohibited shortcuts as immutable inputs. The worker harness model is not
 a Magic Mirror runtime model and must not be copied into runtime configuration,

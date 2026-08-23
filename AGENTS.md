@@ -2,32 +2,26 @@
 
 ## Authority and ownership
 
-The root Codex thread is the sole orchestrator and reviewer. It breaks work
-into bounded units, dispatches workers, reads returned artifacts and evidence,
-and makes the external root review decision. The root thread does not
-implement changes, perform exploratory repository survey or research, or
-execute tests or validation commands. It may read authoritative source and
-worker evidence for routing and review.
+The interactive root Codex thread is the sole orchestrator and external
+reviewer. It breaks work into bounded units, dispatches workers, reads their
+artifacts and evidence, and makes the root acceptance decision. The root does
+not implement changes, perform exploratory repository survey or research, or
+execute tests or validation commands.
 
-Treat the current interactive Codex thread as the sole root. Treat a fresh
-profile-backed CLI process launched with an explicit `implementer`,
-`surveyor`, or `tester` envelope as that worker, not another root. Execute
-only the bounded task directly; do not delegate, spawn, or dispatch a child,
-create a review gate, or claim root review. Only the current interactive root
-launches workers and performs external review.
+A fresh profile-backed CLI process launched with an explicit
+`implementer`, `surveyor`, or `tester` envelope is a worker, not another root.
+It executes only its bounded task: no delegation, recursion, child worker,
+review worker, review gate, or root-review claim. Worker self-review and root
+review are separate gates; every worker self-review and every root plan
+self-review are capped at three passes, and a follow-up keeps the same role and
+cap.
 
-No separate review role or review worker exists. Worker self-review and root
-review are different gates: root review is external to worker self-review.
-Every current and future plan self-review and every worker self-review is
-capped at three passes. A requested follow-up keeps the same bounded role and
-does not create a review worker or increase that worker's self-review limit.
+## Authority order
 
-## Authority order and preserved process state
-
-Use this order when instructions conflict:
+When instructions conflict, use this order:
 
 1. The user's current request and explicit Codex routing policy.
-2. This root `AGENTS.md` contract.
+2. This root contract.
 3. Product sources: `docs/Magic_Mirror_PRD_v0.3.md`,
    `docs/Magic_Mirror_Tech_Spec_v0.3.md`,
    `docs/Magic_Mirror_Implementation_Plan_v0.3.md`, and
@@ -35,203 +29,116 @@ Use this order when instructions conflict:
 4. The migrated project skills under `.agents/skills/`, loaded only when
    relevant to the bounded unit.
 5. `PROGRESS.md`, `DECISIONS.md`, and the ignored SDD ledger as process state.
-6. The immutable historical harness document and its seven source skill
-   documents as reference input only.
+6. The immutable historical harness and its seven source-skill documents as
+   reference input only.
 
-Use `mm-phase-workflow` for phase planning, bounded execution, demos, and exit
-review. Use `mm-invariants` for every implementation, review, test, debugging,
-or behavior-touching survey; include only the applicable canonical IDs in the
-worker prompt. Add one matching domain skill for domain work. Skill authoring
-or migration validation is conditional on actually changing a skill; it is not
-a prerequisite for unrelated product work.
+Detailed ledger ownership belongs to `PROGRESS.md`; durable rulings belong to
+`DECISIONS.md`. Do not copy their long historical narrative into this file.
 
-The following process rulings remain active: R1 is completed historical
-in-place work through local integration on `phase0-foundation`; R2 keeps the
-authoritative `handleSimulator` return shape; R5 keeps Tasks 3–5 sequential;
-and R3/R4 are superseded by the user's current Codex policy. Phase 0 Tasks
-1–10 are accepted at the recorded boundaries and local tag
-`phase0-v0.3.1` at `9237dc7`. Task 2 is integrated at
-`a7d74b14771de4f527762c30171ad2e68fc3d985`; Task 3 is at `0270686` with
-correction/integration tip `835c92d`; Task 4 is at `dca1327`; Task 5 is at
-`a8f0355`; Task 6 is at `5b95a94` with plan gate `83be86b`; and Task 7 has
-plan `6214b6c` and implementation `5e24bdc`. Tasks 8 and 9 are accepted.
-Task 10 acceptance retains Task 10B `13/13`, Task 10C `8/8`, full `311`,
-P0-D1–D5, ten smoke cycles, and the 30-minute OfflineLoop soak.
+## Skill routes, in order
 
-Phase 1 is current and in progress on `phase1-realtime-voice` under plan
-`82aa39c`. P1-U1 through P1-U6 are accepted at `4862383`,
-`5be5871`, `18461e5`, `cffd484`, `fb5e58f`, and no self-referential U6 hash;
-P1-U7 is next and P1-U8 is pending. Phases 2–7 remain sequential and have
-not started. Do not change application task order or status.
+1. `mm-phase-workflow`: phase planning, bounded slicing and dispatch,
+   execution, demos, and phase-exit decisions.
+2. `mm-invariants`: every implementation, review, test, debugging task, or
+   behavior-touching survey; name only the applicable canonical IDs.
+3. `mm-electron-foundation`: Electron Main/lifecycle, windows, IPC, SQLite,
+   config, credentials, auto-start, crash recovery, or worker spawning.
+4. `mm-realtime-voice`: Agents SDK RealtimeSession, WebRTC voice, ephemeral
+   credentials, transcription, barge-in, rollover, `updateAgent`, or the
+   Responses memory extractor.
+5. `mm-wake-word`: sherpa-onnx Chinese wake word, keyword encoding, capture,
+   false-wake tuning, or wake-to-Realtime microphone handoff.
+6. `mm-live2d-avatar`: Live2D/Cubism, MotionSync, actual-output-audio lip
+   sync, avatar state/motion, Web Audio, or designer assets.
+7. `mm-face-identity`: YuNet/SFace detection and embeddings, candidate
+   matching, enrollment quality, rebuild/rollback, or Python camera access.
 
-The H9 harness checkpoint is `5818830`; its frozen suite passed `15/15`.
-Fixed deadlines remain `480`/`120`/`600` seconds. Development Node
-`v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`; the user-owned
-`scripts/install-node-lts.ps1` content remains unchanged; the user's explicit
-2026-08-22 instruction authorizes tracking it and the user-owned adversarial
-review `docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md`, whose
-content also remains unchanged, in the integration commit. `.env` is metadata
-only:
-exists true, ignored by `.gitignore` line 9, untracked, content/value not
-accessed, and validity not checked; its value was never read. Windows
-development does not field-verify target-Mac Keychain, TCC, signing,
-entitlements, packaged-worker, or LaunchAgent behavior. The customizable
-wake word remains a Phase 2 requirement needing keyword artifact generation
-and tuning evidence. The LaunchAgent `KeepAlive={SuccessfulExit=false}` is
-the sole target restart owner; no `app.relaunch()` is used.
+Migration or revalidation of the seven skill routes proceeds in this listed
+order. The next skill is not accepted until root accepts source-preservation,
+frontmatter/metadata, trigger/retrieval, and required-behavior evidence for the
+prior one.
 
-Active efficiency ruling (2026-08-22): the default workflow is one in-thread
-root plan review with no plan artifact by default -> one bounded fresh
-implementer -> implementer-owned focused RED/GREEN for behavior changes -> one
-independent tester -> external root acceptance -> authorized root commit/push.
-The root plan review is a root decision, not a plan worker. By default there
-is no separate plan file, plan worker, survey, review worker, demo, regression,
-or full-suite gate. Naturally coupled units may be combined only when they are
-jointly reviewable and have one clear boundary.
+Load the phase route first for phase work, the invariant route for all product
+behavior work, and then the one matching domain route. Before every worker
+launch, read [`.agents/H6_WORKER_PROTOCOL.md`](.agents/H6_WORKER_PROTOCOL.md)
+fully. The reference is conditional launcher detail, not a relaxation of this
+contract.
+
+## Current process checkpoint
+
+- Branch: `phase1-realtime-voice`.
+- Phase 0 is accepted and tagged `phase0-v0.3.1`.
+- P1-U1 through P1-U7 are accepted; the U7 tip is `426f52c`.
+- U8-A is accepted/pushed at `fd78a28`.
+- U8-B deterministic engineering is accepted/pushed at `d1d5364`.
+- The fresh U8-B gate recorded `49/49` files and `570/570` tests, plus node
+  and web typechecks, the Electron Vite build, and diff check exit `0`.
+- P1-D3/D4/D6 are deterministic `mock_passed`; P1-D1/D2/D5 remain
+  `real-demo not_executed`.
+- Phase 1 exit/tag is not accepted. No target-Mac, provider, device, or
+  operator evidence is claimed. Phases 2–7 remain sequential and have not
+  started.
+
+## Default workflow and gates
+
+The default is one in-thread root plan review with no plan artifact, one
+bounded fresh implementer, implementer-owned focused RED/GREEN for behavior
+changes, one independent tester, external root acceptance, and an authorized
+root commit/push. There is no separate plan worker, review worker, demo,
+regression, or full-suite gate by default. Naturally coupled work may share a
+worker only when its boundary is clear and jointly reviewable.
 
 Use the smallest command set that proves the changed boundary. Full suite,
-build, demo, or regression evidence is required for phase exit or when the
-affected risk demands it, not for every unit. Surveys are read-only and allowed
-only when exact scope or evidence cannot be established from authoritative
-sources. A correction follow-up is allowed only for a concrete root finding.
-Escalate when the boundary involves privacy/identity/profile, credentials,
-runtime model IDs, microphone ownership, restart ownership,
-schema/destructive migrations, dependencies/packaging, launcher/protocol,
-failed evidence, or phase exit; an escalation may add a survey, focused
-validation, or full regression as justified.
+build, demo, regression, or a survey is conditional on phase exit, affected
+risk, missing scope/evidence, or a concrete root finding. Escalate for
+privacy/identity/profile, credentials, runtime model IDs, microphone or
+restart ownership, schema/destructive migrations, dependencies/packaging,
+launcher/protocol, failed evidence, or phase exit.
 
-For behavior changes, the implementer owns the focused TDD RED/GREEN sequence
-and reports it; the independent tester owns fresh acceptance validation.
-Documentation/configuration-only changes use static checks without ceremonial
-application tests. This policy does not relax any mandatory authority, role,
-profile, model, effort, scope, evidence, privacy/invariant, freshness, or
-external-root-review requirement. The canonical launcher argv, profile, model,
-reasoning effort, protocol, deadlines, and output cap remain unchanged. After
-acceptance, root may commit and push when the user has authorized it.
-The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
-credential presence is recorded only as ignored metadata; its content and
-value are never read, and process records must not claim that its value was
-inspected. The customizable wake word remains a Phase 2 requirement and later
-requires keyword artifact generation plus tuning evidence.
+Behavior changes use focused TDD owned by the implementer: one failing test,
+observed RED, smallest change, observed GREEN, then refactor only while green.
+The independent tester owns fresh acceptance validation; root performs neither
+role's commands. Documentation/configuration-only work uses strict static
+checks and no ceremonial application tests. Root acceptance remains external
+to worker self-review.
 
-## Immutable and product boundaries
+## Immutable, product, and platform boundaries
 
-Treat the historical harness document and its seven source skill documents as
-immutable byte-level inputs. The migrated `.agents/skills/` files are distinct
-control-plane artifacts and may change only when an exact task scope names
-them. Do not change product documents, application source, tests, package
-files, dependencies, runtime model configuration, or application behavior in a
-harness migration. The worker model is a harness route and must never be
-copied into runtime configuration, source code, `active.json`, telemetry, or
-product artifacts. Preserve all pinned product model IDs, package versions,
-domain facts, safety rules, and the 12 invariants in the migrated skill
-content.
+The historical harness and seven source-skill inputs are immutable byte-level
+inputs. Migrated `.agents/skills/` files are distinct control-plane artifacts
+and may change only when an exact task scope names them. A harness migration
+does not change product documents, application source/tests, package files,
+dependencies, runtime model configuration, or application behavior. The
+worker model is a harness route and never belongs in runtime configuration,
+`active.json`, telemetry, or product artifacts. Preserve pinned product model
+IDs, package versions, domain facts, safety rules, and all 12 invariants.
 
-Keep the Windows-development/macOS-target distinction explicit. Windows
-development uses the same Electron `safeStorage` API backed by DPAPI; the
-target Mac uses Keychain and its TCC, signing, and entitlement paths. Windows
-results do not field-verify target macOS Keychain/TCC/signing/entitlements/
-packaged-worker/LaunchAgent paths. The target's only restart owner is the user
-LaunchAgent with `KeepAlive = { SuccessfulExit = false }`.
-In-app recovery may recreate a failed renderer once, then exits with code 1 so
-the LaunchAgent restarts the app. Never call `app.relaunch()` and never add a
-second restart owner.
+The project workflow is npm-only. The user-owned
+`scripts/install-node-lts.ps1` and
+`docs/Magic_Mirror_Phase0_Adversarial_Review_2026-08-19.md` remain unchanged.
+`.env` is metadata only: it exists, is ignored, is
+untracked, and its content/value is never read; validity is not checked and no
+record may claim its value was inspected.
 
-## Dispatch contract
+Windows development uses Electron `safeStorage` backed by DPAPI; the target
+Mac uses Keychain plus TCC, signing, and entitlement paths. Windows results do
+not field-verify target-Mac Keychain/TCC/signing/entitlements,
+packaged-worker, or LaunchAgent behavior. The target's sole restart owner is
+the user LaunchAgent `KeepAlive={SuccessfulExit=false}` (plist form
+`KeepAlive = { SuccessfulExit = false }`). In-app recovery may recreate a
+failed renderer once, then exits with code `1` for LaunchAgent restart. Never
+call `app.relaunch()` or add a second restart owner.
 
-For every post-plan implementation, repository survey or research, and
-test/validation worker, the interactive root uses
-`scripts/invoke-codex-worker.ps1`, which resolves `codex` from PATH unless its
-test-only `-CodexCommandPath` seam is supplied. PowerShell 7 (`pwsh`) is the
-required outer host for this launcher; Windows PowerShell 5.1
-(`powershell.exe`) is not a supported outer host because its parameter binder
-can fail before the launcher's metadata preflight. The root writes the prompt
-to a temporary file and supplies its path with `-PromptPath`; the launcher
-prepends the exact role-specific H6 worker-context preamble (CRLF UTF-8
-without a BOM), then appends the original prompt bytes unchanged after the
-`--- BEGIN ORIGINAL PROMPT ---` delimiter and streams the combined bytes to
-Codex stdin, never to argv. If launcher entry sees the exact inherited
-`MIRROR_CODEX_WORKER_ACTIVE=1` sentinel, it exits 2 with
-`codex_worker_launcher stage=preflight status=failed reason=recursive_invocation`
-before reading or launching Codex; only the Codex child environment receives
-the sentinel. The H6 preamble carries, in fixed order, global
-`subagent-stop`, quiet reads, `read_scope_enforcement: "exact_only"`,
-`source_body_output: "forbidden_unless_evidence_requires"`,
-`terminal_read_output: "metadata_only"`,
-`repository_wide_discovery: "forbidden"`, fixed
-`first_write_deadline_seconds: 480`, fixed
-`post_write_idle_deadline_seconds: 120`, and
-`max_read_output_lines: 200`. Workers read only exact targeted paths; broad
-discovery and source/skill bodies are suppressed unless exact evidence
-requires a bounded excerpt.
+The customizable wake word remains a Phase 2 requirement: keyword artifact
+generation and tuning evidence are still required. Runtime model IDs come
+only from versioned configuration; a failed configured ID never silently
+substitutes another ID.
 
-The launcher passes documented Codex `--json` immediately before the final
-stdin `-`. It captures raw stdout and stderr only for a combined raw byte cap;
-neither raw stream is forwarded. It parses bounded UTF-8 JSONL and pins only
-the local compatibility fields `type: "item.completed"` plus
-`item.type: "file_change"` for an implementer write, and
-`type: "item.completed"` plus `item.type: "agent_message"` with string
-`item.text` for the final message. These event fields are the locally tested
-Codex 0.148.0 compatibility contract, not an official universal schema
-guarantee; Codex `--json` itself is documented. Valid progress, file-change,
-and stderr payloads remain suppressed. After a zero-exit child and valid
-completed protocol, only the latest nonempty agent message is written once to
-parent stdout without framing or a newline. Malformed/non-object/nonconforming
-JSONL exits 2 with
-`codex_worker_launcher stage=protocol status=failed reason=invalid_jsonl`;
-zero-exit output without a nonempty final message uses
-`codex_worker_launcher stage=protocol status=failed reason=missing_final_message`.
-Implementers enforce the structured first-write deadline before the first
-file-change event, then arm/reset the post-write idle deadline on valid events;
-surveyor and tester runs have neither deadline. Human `patch: completed` lines
-never satisfy first-write. Live deadline, output, and supervision failures
-terminate and confirm the exact descendant process tree, using
-`tree_termination_failed` when confirmation fails. Post-exit protocol failures
-report the stable `invalid_jsonl` or `missing_final_message` markers without
-inventing tree evidence. The output cap marker remains
-`codex_worker_launcher stage=output status=failed reason=limit_exceeded`, and
-post-write expiry is
-`codex_worker_launcher stage=post_write status=failed reason=deadline_exceeded`.
-These are context and execution bounds, not a claim that advice can force
-model completion. Use this one compact canonical invocation from the
-repository root:
+## Dispatch skeleton
 
-```powershell
-pwsh -NoLogo -NoProfile -NonInteractive -File scripts/invoke-codex-worker.ps1 -Role <role> -PromptPath <path> -TimeoutSeconds 600 -MaxOutputBytes 4194304
-```
-
-The launcher pins this exact child argv, in this order; documented `--json`
-immediately precedes the final `-`, which selects stdin for the prompt:
-
-```text
-exec --profile nova-auto --ephemeral --cd C:\Project\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" --json -
-```
-
-The bounded H6 worker harness uses three separate PowerShell command boundaries for prompt creation, launcher invocation, and exact prompt cleanup.
-Create a temporary UTF-8 file outside the repository. Pass its exact resolved path to the launcher; use the exact resolved path only after the worker completes for exact prompt cleanup.
-Never combine prompt creation, launcher invocation, and prompt cleanup in one shell expression.
-An already-launched worker executes directly and must not recursively invoke Codex or the launcher.
-Read only targeted files and required skill sections.
-Do not dump unrelated source or skill content or flood worker output. Source
-and skill bodies remain suppressed unless exact evidence requires them.
-Keep source/skill reads separate from validation commands; never combine source or skill dumps with validation in one shell command. Returned validation evidence still includes complete stdout/stderr and exit codes for the named commands.
-Tester workers include complete stdout/stderr and exit codes for every named
-command in the final agent message so the H6 launcher can forward that evidence
-without forwarding raw process streams. The launcher captures at most the
-combined raw byte cap for stdout and stderr (`-MaxOutputBytes`) and uses
-metadata-only markers; timeout and output-limit failures exit 2:
-`codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded`
-and `codex_worker_launcher stage=output status=failed reason=limit_exceeded`.
-It terminates and confirms the exact descendant process tree before reporting
-either failure.
-
-Do not use JavaScript template literals, shell command reconstruction, or a
-prompt argument. Every CLI discovery or dry-run still carries
-`--profile nova-auto`, `--ephemeral`, `-m gpt-5.6-luna`, and
-`-c model_reasoning_effort="max"` through this launcher. Preserve the literal
-Windows repository path `C:\Project\magic-mirror`.
-
-Every task prompt must repeat these fields and values:
+Every post-plan implementation, survey/research, or test/validation dispatch
+uses `scripts/invoke-codex-worker.ps1` with the exact H6 protocol in the linked
+reference. Every prompt repeats these fields:
 
 ```text
 model: "gpt-5.6-luna"
@@ -240,6 +147,7 @@ role: exactly one of "implementer", "surveyor", or "tester"
 fresh_worker: true
 task: one bounded unit with explicit non-goals
 write_scope: exact named files; read-only unless the named scope grants a write
+read_scope: exact named files only
 skills: relevant .agents/skills paths
 self_invariants: relevant canonical IDs; use IDs 1–12 for product behavior
 evidence: exact changed files, diff summary, complete command output and exit codes, and risks
@@ -247,48 +155,31 @@ self_review: read the own diff/output; no more than 3 passes
 root_review: external root gate after return; not part of self-review
 ```
 
-The dispatch must name the exact files, relevant skills, invariant IDs, read or
-write scope, and evidence format. Do not infer a role from a request or rely
-on the project backstop for model or effort. Every Codex CLI discovery or
-dry-run uses `--profile nova-auto`, `--ephemeral`, explicit
-`gpt-5.6-luna`, and explicit `max`. Profile-less collaboration calls may
-coordinate context only; they have no profile field and are not execution
-substitutes. A missing profile, model, effort, role, scope, skill, invariant,
-or evidence field is a dispatch failure.
+The dispatch names exact files, skills, invariant IDs, read/write scope, and
+evidence format. A missing field, including `read_scope`, is a dispatch
+failure. The implementer writes
+only exact named paths with `apply_patch`; the surveyor is read-only; the
+tester runs only named commands and may write only a named ignored evidence
+artifact. No worker widens scope, edits immutable inputs, creates a review
+worker, or silently chooses another model. Profile-less collaboration is not
+an execution substitute. The H6 reference contains the fixed launcher argv,
+prompt transport, deadlines, protocol markers, and role semantics.
 
-The implementer may write only the exact bounded paths named in its prompt and
-must use `apply_patch` for every write. The surveyor is read-only. The tester
-may run only the named validation commands and may write only the named
-ignored evidence artifact. No worker may widen its scope, modify immutable
-sources, create a review worker, or silently choose another model.
+## Metadata-only evidence and privacy
 
-## Worker evidence and privacy
+Use only IDs, enums, counts, timings, statuses, reasons, hashes, paths, and
+exit codes in artifacts, logs, telemetry, reports, and worker output. Never
+place transcripts, audio, extracted memory values, private context,
+credentials, images, embeddings, or prompts containing user content there.
+Survey/research findings cite primary-source URLs and label each `verified` or
+`unverified`. Every worker returns exact changed files, a concise diff summary,
+complete stdout/stderr and exit codes for every named command, and unresolved
+risks. A tester returns complete output even when a command fails or is
+unavailable.
 
-Use metadata-only artifacts and examples: IDs, enums, counts, timings,
-statuses, reasons, hashes, paths, and exit codes. Never place transcripts,
-audio, extracted memory values, private context, credentials, images,
-embeddings, prompts containing user content, or secrets in source, logs,
-reports, telemetry, or worker output. Survey/research findings must cite
-primary-source URLs and label each finding `verified` or `unverified`.
-Every worker returns exact files changed, a concise diff summary, complete
-stdout/stderr for every command with exit codes, and unresolved risks. A
-tester returns complete output even for a failed or unavailable command.
+## TDD and canonical invariants
 
-## TDD and verification
-
-For behavior or application-code work, the implementer routes through focused
-TDD: write one failing test, observe the expected failure, implement the
-smallest change, observe the green result, then refactor only while green.
-The implementer reports that RED/GREEN evidence; an independent tester owns
-fresh acceptance validation, and the root does not execute either role's
-commands. Configuration or documentation-only work uses strict static checks
-and does not add application tests merely for ceremony. Before any completion
-claim, the responsible worker reports complete output and exit codes for its
-named commands; root acceptance relies on that fresh evidence.
-
-## Canonical invariants
-
-Workers preserve all 12 canonical invariants and report the IDs they checked:
+Workers preserve and report the applicable IDs among all 12 invariants:
 
 1. Final transcripts, conversation audio, extracted memory values, and
    injected private context remain RAM-only; diagnostics contain metadata.
@@ -313,7 +204,5 @@ Workers preserve all 12 canonical invariants and report the IDs they checked:
 12. Credentials are read by Main through `safeStorage`; keys never enter
    renderer data, logs, telemetry, or exports.
 
-No worker may weaken, rename, or omit an applicable invariant. Product safety
-and runtime model IDs outrank convenience wording in a skill. Root review
-checks the returned diff, evidence, privacy posture, scope, and the maximum
-three-pass limit before accepting a worker result.
+No worker may weaken, rename, or omit an applicable invariant. Product safety,
+privacy, and runtime model IDs outrank convenience wording in a skill.
