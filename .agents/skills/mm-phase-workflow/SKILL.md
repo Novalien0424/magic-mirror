@@ -145,8 +145,12 @@ exit criteria: `docs/Magic_Mirror_Implementation_Plan_v0.3.md`.
    created.
 6. At phase exit, run the required product demo, record the build/time/result
    in Console Phase Tests and `PROGRESS.md`, run the required prior-phase
-   regression smoke, and tag a recoverable phase release. These are not
-   per-unit gates unless affected risk justifies them.
+   regression smoke, and tag a recoverable phase release. Console Phase Tests
+   records preserve earlier phases, identify the authoritative phase and its
+   phase-versioned demo ID, distinguish deterministic/mock evidence from real
+   evidence, and keep unavailable required real evidence explicitly
+   pending/not-executed; mark passed only after the required evidence actually
+   ran. These are not per-unit gates unless affected risk justifies them.
 7. If exit evidence fails, the phase does not advance. Exit criteria are not
    runtime gates.
 
@@ -174,6 +178,7 @@ fail.
 | Unit too big? | Split until 0.5-2 days; each still demos something visible |
 | New dependency? | Only if stdlib/existing modules can't do it; name the story it serves |
 | Exit criteria failing? | Phase does not advance; exit criteria are not runtime gates |
+| Required real demo evidence unavailable? | Record pending/not-executed; never synthesize a pass |
 | 72h soak / 100-cycle? | Phase 7 only, never per-commit |
 | External call fails in a user action? | Max one bounded retry, then explicit fallback - no retry mazes |
 | Hardware absent? | Mock/adapter contract completes the unit; real device becomes a Phase 7 blocker note |
