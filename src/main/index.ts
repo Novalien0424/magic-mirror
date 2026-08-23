@@ -1,11 +1,12 @@
 import { basename, join, resolve } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, safeStorage, type WebContents } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { bootSequence, type BootRuntime } from './boot'
-import { createCredentialStore, type CredentialEventSink, type SafeStorageAdapter } from './credential-store'
+import type { CredentialEventSink } from './credential-store'
 import { createCrashRecovery } from './crash-recovery'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
+import { createEnvironmentCredentialSource } from './environment-credential-source'
 import {
   dispatchMirrorRealtimeRuntimeCommand,
   publishSnapshot,
@@ -342,19 +343,9 @@ void app.whenReady().then(() => {
   }
 
   const deferredCredentialEvents = createDeferredCredentialEventSink()
-  const safeStorageAdapter: SafeStorageAdapter = {
-    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-    encryptString: (plaintext) => safeStorage.encryptString(plaintext),
-    decryptString: (encrypted) => safeStorage.decryptString(encrypted),
-    shouldReEncrypt: () => false,
-  }
-  const credentialStore = createCredentialStore({
-    credentialPath: join(app.getPath('userData'), 'data', 'credentials', 'credential.blob'),
-    safeStorage: safeStorageAdapter,
-    events: deferredCredentialEvents.sink,
-  })
+  const credentialSource = createEnvironmentCredentialSource()
   const clientSecretBroker = createClientSecretBroker({
-    credentialStore,
+    credentialStore: credentialSource,
     events: deferredCredentialEvents.sink,
   })
 

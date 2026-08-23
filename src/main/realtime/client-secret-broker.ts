@@ -4,7 +4,7 @@ import type { MirrorEvent } from '../../shared/types'
 type MetadataEvent = Omit<MirrorEvent, 'time'>
 
 export interface ClientSecretBrokerOptions {
-  readonly credentialStore: CredentialStore
+  readonly credentialStore: Pick<CredentialStore, 'get'>
   readonly events: CredentialEventSink
 }
 
