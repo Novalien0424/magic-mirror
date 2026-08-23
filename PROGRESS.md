@@ -5,8 +5,8 @@
 `9237dc7`; the accepted Phase 1 plan is `82aa39c`; P1-U7A, P1-U7B1/B2
 transport, P1-U7C1/C2 credential/DTO boundaries, P1-U7C3 renderer
 runtime owner and generation-safe Realtime session rollover, and P1-U7D/U7E1/U7E2
-are accepted; P1-U7F1 and P1-U7F2A/B1/B2a/B2b are accepted; P1-U7 remains
-in progress with P1-U7F3 next; P1-U8 is pending. Phases 2–7 remain pending,
+are accepted; P1-U7 is accepted at `426f52c`; Phase 1 remains in progress
+with P1-U8 next. Phases 2–7 remain pending,
 sequential, and have not started.
 
 ## Phase 1 — Realtime Voice checkpoint (2026-08-23)
@@ -22,10 +22,11 @@ demo, exit, or tag is claimed.
 | P1-U4 — one microphone owner + one audible output + playback completion | accepted | `cffd484` |
 | P1-U5 — lifecycle outage/OfflineLoop/recovery/manual wake/rollover | accepted | `fb5e58f` |
 | P1-U6 — interruption/final-transcript RAM mapping and cleanup | accepted | no self-referential hash recorded |
-| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | in progress; P1-U7A, P1-U7B1/B2, P1-U7C1/C2, P1-U7C3, P1-U7D, P1-U7E1, P1-U7E2, P1-U7F1, and P1-U7F2A/B1/B2a/B2b accepted; P1-U7F3 next | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400`, `5e8b66d`, `c427670`, `b4abd76` |
+| P1-U7 — Console voice controls/persona/credential/model/RAM transcript view | accepted at `426f52c` | `4b2b6fa`, `4636b17`, `f4e5103`, `105db2f`, `b81d400`, `5e8b66d`, `c427670`, `b4abd76`, `426f52c` |
 | P1-U7F2B1 — Main-owned pending rollover + exact 60-minute timer | accepted | `5e8b66d` |
 | P1-U7F2B2a — Mirror-to-Main realtime failure report transport | accepted | `c427670` |
 | P1-U7F2B2b — visible OfflineLoop recovery probes and stale-identity handling | accepted | `b4abd76` |
+| P1-U7F3 — single browser Realtime runtime owner, cleanup, playback completion, and metadata-only outcomes | accepted | `426f52c` |
 | P1-U8 — deterministic demos/records/privacy/regression + real exit checkpoint | pending | pending |
 
 ### P1-U6 scope and evidence
@@ -160,7 +161,7 @@ reproduce in the 3-file/29-test focused rerun or the full gate. Local
 human action was required. The existing `DEP0190` child-process shell warning
 remains.
 
-P1-U7 remains in progress. P1-U8 owns deterministic/real demos, Phase Test
+P1-U7 is accepted at `426f52c`; P1-U8 owns the remaining deterministic/real demos, Phase Test
 records, the full regression/privacy scan, final exit acceptance, and the local
 `phase1-v0.3.1` tag. This does not mark real Realtime, microphone, or target-Mac
 evidence complete, and no Phase 1 exit is claimed.
@@ -193,14 +194,16 @@ replaced stale bundle generation `0` (Main's no-session sentinel), restored
 the accepted command channel in two exact Mirror maps, and typed one fixture
 callback while retaining strict zero-rejection coverage.
 
-The broad U7F survey timed out, its narrowed retry succeeded, and bounded
-U7F2A RED-writer/combined-RED-tester/first-implementer timeouts were recovered
-with artifacts where applicable; these were harness events, not product
-failures. Scoped survey and root review found no concrete defect or missing
-invariant/behavior in the four routed skills; no skill change is warranted.
+The broad U7F survey, U7F2A RED-writer, combined RED-tester, and first
+implementer each had a bounded launcher timeout; B2b additionally had one
+monolithic implementer first-write timeout and one split Part A post-write-idle
+timeout. Narrowed retries, preserved-artifact review, and Part B completion
+recovered the work. These were harness events, not product failures, and no
+human intervention was needed. Scoped survey and root review found no concrete
+defect or missing invariant/behavior in the four routed skills; no skill change
+is warranted.
 
-P1-U7F2B1/B2a/B2b are accepted below. P1-U7F3 single renderer runtime host,
-cleanup, and outcome composition is next. P1-U8 owns deterministic/real demos,
+P1-U7F2B1/B2a/B2b/U7F3 are accepted below. P1-U8 owns deterministic/real demos,
 Phase Test records, regression/privacy scan, Phase 1 exit, and the local
 `phase1-v0.3.1` tag. The accepted 300-second idle/wake/sleep timer remains a
 Phase 2 non-goal. No Phase 1 exit or real OpenAI, mic/output, macOS, or
@@ -231,6 +234,27 @@ operator evidence is claimed.
   product defects, and no human intervention was needed. No routed
   project-skill defect was found; no skill edit is warranted at this
   checkpoint.
+- **P1-U7F3** is accepted and pushed at `426f52c`: Mirror mounts one browser
+  Realtime runtime owner for start/rollover/stop/interrupt/dispose; per-session
+  transcripts remain RAM-only and cleanup maps close/stop/dispose/rollover/
+  offline_loop. Playback completion uses actual-output events with a bounded
+  analyser fallback. Renderer metadata kinds `session`, `mic`, `playback`,
+  `transcript`, and `cleanup` cross a Mirror-only exact DTO containing only
+  kind/status/reason plus optional integer duration/session ID into Main-owned
+  metadata-only telemetry, with no lifecycle callback; the invariant-9
+  silent-drop defect is corrected. Focused evidence is `7` files/`141` tests
+  plus green Node/web typechecks; final evidence is `48/48` files, `545/545`
+  tests, production build, and `git diff --check` green. `DEP0190` and
+  LF-to-CRLF warnings are nonblocking. Analyser thresholds are PoC values:
+  `500ms` fallback delay, `50ms` sample interval, `2000ms` bound, `0.02`
+  silence threshold, and `3` samples; real mic/output tuning remains required.
+- U7F3 harness history: broad/combined U7 surveys and one App GREEN worker timed
+  out; artifacts and narrow retries recovered them. The first full gate
+  exposed two stale exact Mirror-map expectations and a smoke timeout; isolated
+  smoke passed, and only those expectations plus a hostile-Proxy matcher
+  artifact were corrected. An evidence-only rerun supplied complete streams.
+  No human intervention occurred; no project-skill defect was found and no
+  skill edit was made.
 
 ## Human-intervention ledger
 
@@ -239,9 +263,10 @@ operator evidence is claimed.
 | P1-U7A | None needed; typed Console controls and metadata-only outcomes are accepted with the bounded mock/test evidence. | Complete |
 | P1-U7B1/B2 | None needed; the bounded payload-free Main-to-Mirror interrupt transport is accepted with mock/test evidence. | Complete |
 | P1-U7C1/C2 | None needed for C1/C2 engineering and mock/static acceptance. | Complete |
-| P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b | No human intervention; the broad U7F survey and bounded U7F2A worker/tester timeouts were recovered with artifacts where applicable, and B2b had one monolithic implementer first-write timeout plus one split Part A post-write-idle timeout before preserved-artifact review and Part B completion. These were harness events, not product defects; no skill correction was needed. | Complete; no human intervention |
+| P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b | No human intervention; the broad U7F survey and bounded U7F2A timeouts were recovered with artifacts where applicable, and B2b had one monolithic implementer first-write timeout plus one split Part A post-write-idle timeout before preserved-artifact review and Part B completion. These were harness events, not product defects; no skill correction was needed. | Complete; no human intervention |
+| P1-U7F3 | No human intervention; broad/combined U7 surveys and one App GREEN worker timed out, with artifacts and narrow retries recovered. The first full gate exposed two stale exact Mirror-map expectations and a smoke timeout; isolated smoke passed, only those expectations plus a hostile-Proxy matcher artifact were corrected, and an evidence-only rerun supplied complete streams. These were harness/test events, not product or project-skill defects; no skill edit was needed. | Complete; no human intervention |
 | P1-U7C3 Electron launch | Earlier launch failure cleared without intervention and did not reproduce in the 3-file/29-test focused rerun or full gate; local `electron.cmd` and direct binary were `v43.4.1`; no install/reinstall or human action was required. Existing `DEP0190` child-process shell warning remains. | Cleared; no action required |
-| Phase 1 exit | Real OpenAI credential/account/network; PoC mic/output; temporary Persona; Voice choice; and operator observation of P1-D1/D2/D5. | Required later, before exit |
+| Phase 1 exit | Real OpenAI credential/account/network; PoC mic/output; temporary Persona; Voice choice; and operator observation of P1-D1/D2/D5. U7F3 analyser values (`500ms` fallback delay, `50ms` sample interval, `2000ms` bound, `0.02` silence threshold, `3` samples) are PoC thresholds requiring real mic/output tuning. | Required later, before exit |
 | Target Mac | Keychain `safeStorage`, TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real-device/provider behavior. | Later target-Mac evidence |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity inputs, memory/profile inputs, and hardware/adapter inputs. | Later venue-specific work |
 

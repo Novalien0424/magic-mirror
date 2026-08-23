@@ -23,8 +23,9 @@ process state that must survive implementation handoffs.
   3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, and 7 Field
   Hardening. Phase 0 is accepted; Phase 1 is current and in progress under
   accepted plan `82aa39c`. P1-U1 through P1-U6 and P1-U7A/B1/B2/C1/C2/C3
-  are accepted, as are P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b;
-  P1-U7 remains in progress with P1-U7F3 next and P1-U8 pending. Phases 2–7
+  are accepted, as are P1-U7D/U7E1/U7E2/U7F1/U7F2A/U7F2B1/U7F2B2a/U7F2B2b/U7F3.
+  P1-U7 is accepted at `426f52c`; P1-U8 is next while Phase 1 remains in
+  progress. Phases 2–7
   remain pending and do not advance early.
 
 ## Active robust-POC efficiency decision (2026-08-22)
@@ -158,7 +159,7 @@ process state that must survive implementation handoffs.
   `electron.cmd` and the direct binary were `v43.4.1`; no install/reinstall or
   human action was required. The existing `DEP0190` child-process shell
   warning remains.
-- P1-U7 remains in progress. This does not mark real Realtime, microphone, or
+- At that checkpoint, P1-U7 remained in progress. This does not mark real Realtime, microphone, or
   target-Mac evidence complete, and is not Phase 1 exit evidence.
 
 ### P1-U7D/U7E1/U7E2/U7F1/U7F2A accepted boundaries (2026-08-23)
@@ -220,9 +221,29 @@ process state that must survive implementation handoffs.
   completion recovered the work. These were harness events, not product
   failures, and no human intervention was needed. No routed project-skill
   defect was found; no skill edit is warranted at this checkpoint.
-- P1-U7F3 single renderer runtime host, cleanup, and outcome composition is
-  next. P1-U8 owns demos, Phase Test records, regression/privacy scan, Phase 1
-  exit, and `phase1-v0.3.1`. The accepted 300-second idle/wake/sleep timer
+- P1-U7F3 is accepted and pushed at `426f52c`: Mirror mounts one browser
+  Realtime runtime owner for start/rollover/stop/interrupt/dispose; per-session
+  transcripts remain RAM-only and cleanup maps close/stop/dispose/rollover/
+  offline_loop. Playback completion uses actual-output events with a bounded
+  analyser fallback. Renderer metadata kinds `session`, `mic`, `playback`,
+  `transcript`, and `cleanup` cross a Mirror-only exact DTO containing only
+  kind/status/reason plus optional integer duration/session ID into Main-owned
+  metadata-only telemetry, with no lifecycle callback; the invariant-9
+  silent-drop defect is corrected. Focused evidence is `7` files/`141` tests
+  plus green Node/web typechecks; final evidence is `48/48` files, `545/545`
+  tests, production build, and `git diff --check` green. `DEP0190` and
+  LF-to-CRLF warnings are nonblocking. Analyser thresholds are PoC values:
+  `500ms` fallback delay, `50ms` sample interval, `2000ms` bound, `0.02`
+  silence threshold, and `3` samples; real mic/output tuning remains required.
+- U7F3 harness history: broad/combined U7 surveys and one App GREEN worker timed
+  out; artifacts and narrow retries recovered them. The first full gate
+  exposed two stale exact Mirror-map expectations and a smoke timeout; isolated
+  smoke passed, and only those expectations plus a hostile-Proxy matcher
+  artifact were corrected. An evidence-only rerun supplied complete streams.
+  No human intervention occurred; no project-skill defect was found and no
+  skill edit was made.
+- P1-U8 is next and owns demos, Phase Test records, regression/privacy scan,
+  Phase 1 exit, and `phase1-v0.3.1`. The accepted 300-second idle/wake/sleep timer
   remains Phase 2; no Phase 1 exit or real OpenAI, mic/output, macOS, or
   operator evidence is claimed.
 
@@ -239,6 +260,12 @@ process state that must survive implementation handoffs.
   with artifacts where applicable, and B2b's monolithic first-write timeout plus
   split Part A post-write-idle timeout were recovered through preserved-artifact
   review and Part B completion. No skill correction was needed.
+- **P1-U7F3:** no human intervention; broad/combined U7 surveys and one App
+  GREEN worker timed out, with artifacts and narrow retries recovered. The first
+  full gate exposed two stale exact Mirror-map expectations and a smoke timeout;
+  isolated smoke passed, only those expectations plus a hostile-Proxy matcher
+  artifact were corrected, and an evidence-only rerun supplied complete
+  streams. No project-skill defect or edit was found.
 - **P1-U7C3 Electron launch — cleared; no action required:** an earlier launch
   failure cleared without intervention and did not reproduce in the
   3-file/29-test focused rerun or full gate; local `electron.cmd` and direct
@@ -246,7 +273,9 @@ process state that must survive implementation handoffs.
   Existing `DEP0190` child-process shell warning remains.
 - **Phase 1 exit:** real OpenAI credential/account/network, PoC mic/output,
   temporary Persona, a Voice choice, and operator observation of P1-D1/D2/D5
-  are still required.
+  are still required. U7F3 analyser values (`500ms` fallback delay, `50ms`
+  sample interval, `2000ms` bound, `0.02` silence threshold, `3` samples) are
+  PoC thresholds requiring real mic/output tuning.
 - **Later target-Mac evidence:** Keychain `safeStorage`, TCC mic/camera,
   signing/entitlements, packaged workers, LaunchAgent restart, power policy,
   and real-device/provider behavior.
@@ -366,6 +395,7 @@ process state that must survive implementation handoffs.
 | P1-U7F2B1 | `5e8b66d` | accepted/pushed; Main-owned pending rollover and exact 60-minute timer; 48/48 files; 518/518 tests; Node/web/build green |
 | P1-U7F2B2a | `c427670` | accepted/pushed; exact Mirror-to-Main realtime failure report with bounded failure-kind reason; 48/48 files; 522/522 tests; Node/web/build green |
 | P1-U7F2B2b | `b4abd76` | accepted/pushed; focused 4 files/52 tests and Node/web typechecks green; full 48/48 files/525 tests and production build green; DEP0190 nonblocking |
+| P1-U7F3 | `426f52c` | accepted/pushed; Mirror mounts one browser Realtime runtime owner for start/rollover/stop/interrupt/dispose; per-session transcripts remain RAM-only and cleanup maps close/stop/dispose/rollover/offline_loop; playback completion uses actual-output events with bounded analyser fallback; renderer kinds `session`/`mic`/`playback`/`transcript`/`cleanup` cross a Mirror-only exact DTO containing only kind/status/reason plus optional integer duration/session ID into Main-owned metadata-only telemetry with no lifecycle callback; invariant-9 silent-drop defect corrected; focused 7 files/141 tests plus Node/web typechecks green; final 48/48 files, 545/545 tests, production build, and git diff --check green; DEP0190 and LF-to-CRLF warnings nonblocking; PoC analyser thresholds are 500ms fallback delay, 50ms sample interval, 2000ms bound, 0.02 silence threshold, 3 samples, requiring real mic/output tuning |
 | Harness H9 | `5818830` | frozen suite `15/15`; real profile-backed probe passed |
 
 ## Consolidated privacy, environment, and file-scope rules
