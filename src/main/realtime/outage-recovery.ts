@@ -520,6 +520,13 @@ export function createRealtimeOutageRecoveryController<T extends object>(
         )
         emit(event)
         await transition('offlineLoop')
+        const offlineEvent = metadataEvent(
+          'offline_loop_started',
+          'degraded',
+          'realtime_connect_failed',
+          { session_id: session.realtimeSessionId },
+        )
+        emit(offlineEvent)
         scheduleRecoveryProbes()
         return event
       }

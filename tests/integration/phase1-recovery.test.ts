@@ -1,4 +1,6 @@
-import { expect, it } from 'vitest'
+import { afterAll, expect, it } from 'vitest'
+
+import { recordPhase1DeterministicEvidence } from '../../scripts/phase1-demo-recorder'
 
 import { bootSequence, type BootRuntime as BaseBootRuntime } from '../../src/main/boot'
 import type {
@@ -19,6 +21,11 @@ import {
   REALTIME_ROLLOVER_AFTER_MS,
   type RealtimeFailureInput,
 } from '../../src/shared/realtime-recovery'
+
+let d3 = false
+let d4Audio = false
+let d4Recovery = false
+let d6 = false
 
 type LifecycleState = ReturnType<ReturnType<typeof createLifecycleActor>['getState']>
 
@@ -95,6 +102,11 @@ function expectMetadataOnly(record: Record<string, unknown>): void {
   for (const forbiddenKey of forbiddenKeys) {
     expect(record).not.toHaveProperty(forbiddenKey)
   }
+}
+
+function expectBoundedSafeReason(record: Record<string, unknown>): void {
+  expect(typeof record.reason).toBe('string')
+  expect(record.reason).toMatch(/^[A-Za-z0-9_=;.%:+,/?-]{1,1024}$/)
 }
 
 function sessionIdOf(record: Record<string, unknown>): unknown {
@@ -555,7 +567,362 @@ it('routes manual realtime start and stop through Main lifecycle ownership', asy
   expect(lifecycleEvents.some((event) => event.event === 'offline_loop_started')).toBe(false)
 })
 
-it('cleans up a current active session into OfflineLoop and ignores stale failures', async () => {
+it('P1-D3 turns a wake-time realtime connect rejection into visitor-visible OfflineLoop within 5000 ms', async () => {
+  const metadata: Array<Record<string, unknown>> = []
+  const lifecycleEvents: Array<Record<string, unknown>> = []
+  const order: string[] = []
+  const timerHarness = createFakeRealtimeTimerHarness()
+  const snapshot: Snapshot = Object.freeze({
+    configRevision: 20,
+    configFingerprint: 'fingerprint-wake-connect',
+    modelRoleIds: Object.freeze({
+      realtime: 'role-wake-connect-realtime',
+      transcription: 'role-wake-connect-transcription',
+    }),
+  })
+  const realtimeSessionId = 'realtime-session-wake-connect'
+  const callerOwnedMediaStream = Object.freeze({ kind: 'caller-owned-stream' })
+  const lifecycleActor = createLifecycleActor({
+    telemetry: {
+      emit: (event) => lifecycleEvents.push(event),
+    },
+  })
+  lifecycleActor.send({ type: 'LOCAL_READY' })
+
+  let nowMs = 1_000
+  let currentSession: TestSession | null = null
+  let ramSessionPresent = false
+  let microphoneAcquired = false
+
+  const controller = createRealtimeOutageRecoveryController({
+    lifecycle: {
+      get: () => lifecycleActor.getState(),
+      transition: (nextState: LifecycleState) => {
+        order.push(`transition:${nextState}`)
+        if (nextState === 'activating') {
+          lifecycleActor.send({
+            type: 'WAKE_DETECTED',
+            activationId: 'activation-p1-d3-wake-connect',
+            lastInteractionAt: '2026-08-21T00:03:00.000Z',
+          })
+          return
+        }
+        if (nextState === 'offlineLoop') {
+          lifecycleActor.send({ type: 'CLOUD_FAILED', errorCode: 'realtime_connect_failed' })
+          return
+        }
+        throw new Error(`unexpected P1-D3 transition: ${nextState}`)
+      },
+    },
+    getRealtimeSessionId: () => currentSession?.realtimeSessionId ?? null,
+    getCurrentSession: () => currentSession,
+    acquireMic: async () => {
+      order.push('acquire microphone')
+      microphoneAcquired = true
+      nowMs += 500
+      return callerOwnedMediaStream
+    },
+    getPublishedSnapshot: () => snapshot,
+    mintClientSecret: async () => {
+      order.push('mint client secret')
+      nowMs += 500
+      return Symbol('p1-d3-client-secret')
+    },
+    createRealtimeSession: ({
+      snapshot: sessionSnapshot,
+      mediaStream,
+    }: {
+      snapshot: Snapshot
+      mediaStream: typeof callerOwnedMediaStream
+    }) => {
+      expect(sessionSnapshot).toBe(snapshot)
+      expect(mediaStream).toBe(callerOwnedMediaStream)
+      const session: TestSession = {
+        realtimeSessionId,
+        snapshot: sessionSnapshot,
+        connect: async () => {
+          order.push('connect rejects')
+          nowMs += 1_000
+          throw new Error('synthetic_connect_rejection')
+        },
+      }
+      currentSession = session
+      ramSessionPresent = true
+      return session
+    },
+    closeSession: async (sessionId: string) => {
+      expect(sessionId).toBe(realtimeSessionId)
+      order.push('close rejected session')
+      currentSession = null
+      nowMs += 1_000
+    },
+    releaseMic: async () => {
+      order.push('release microphone')
+      microphoneAcquired = false
+      nowMs += 1_000
+    },
+    clearRamSession: () => {
+      order.push('clear RAM session')
+      ramSessionPresent = false
+      nowMs += 1_000
+    },
+    schedule: timerHarness.scheduleRealtimeTimer,
+    cancel: timerHarness.cancelRealtimeTimer,
+    now: () => nowMs,
+    metadataSink: (event: Record<string, unknown>) => {
+      metadata.push(event)
+    },
+  } as never)
+
+  const wakeStartedAt = nowMs
+  const result = await controller.manualStart()
+
+  expect(result).toEqual(expect.objectContaining({
+    event: 'manual_realtime_start',
+    status: 'failed',
+    reason: 'realtime_connect_failed',
+  }))
+  expectMetadataOnly(result)
+  expect(lifecycleActor.getState()).toBe('offlineLoop')
+  expect(lifecycleActor.getContext().realtimeSessionId).toBeNull()
+  expect(currentSession).toBeNull()
+  expect(ramSessionPresent).toBe(false)
+  expect(microphoneAcquired).toBe(false)
+  expect(nowMs - wakeStartedAt).toBeLessThanOrEqual(5_000)
+  expect(order).toEqual([
+    'transition:activating',
+    'acquire microphone',
+    'mint client secret',
+    'connect rejects',
+    'close rejected session',
+    'release microphone',
+    'clear RAM session',
+    'transition:offlineLoop',
+  ])
+  expect(metadata).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      event: 'manual_realtime_start',
+      status: 'failed',
+      reason: 'realtime_connect_failed',
+    }),
+    expect.objectContaining({
+      event: 'offline_loop_started',
+      status: 'degraded',
+      reason: 'realtime_connect_failed',
+    }),
+  ]))
+  for (const event of [...metadata, ...lifecycleEvents]) {
+    expectMetadataOnly(event)
+    expectBoundedSafeReason(event)
+  }
+  expect(timerHarness.timers.map((timer) => timer.delayMs)).toEqual([...RECOVERY_PROBE_DELAYS_MS])
+  d3 = true
+})
+
+it('P1-D6 freezes the published model snapshot per session across a mid-session publish', async () => {
+  const snapshotA: Snapshot = Object.freeze({
+    configRevision: 21,
+    configFingerprint: 'fingerprint-snapshot-a',
+    modelRoleIds: Object.freeze({
+      realtime: 'role-snapshot-a-realtime',
+      transcription: 'role-snapshot-a-transcription',
+      memory: 'role-snapshot-a-memory',
+    }),
+  })
+  const snapshotB: Snapshot = Object.freeze({
+    configRevision: 22,
+    configFingerprint: 'fingerprint-snapshot-b',
+    modelRoleIds: Object.freeze({
+      realtime: 'role-snapshot-b-realtime',
+      transcription: 'role-snapshot-b-transcription',
+      memory: 'role-snapshot-b-memory',
+    }),
+  })
+  const snapshotAValues = {
+    configRevision: snapshotA.configRevision,
+    configFingerprint: snapshotA.configFingerprint,
+    modelRoleIds: { ...snapshotA.modelRoleIds },
+  }
+  const metadata: Array<Record<string, unknown>> = []
+  const lifecycleEvents: Array<Record<string, unknown>> = []
+  const order: string[] = []
+  const callerOwnedMediaStream = Object.freeze({ kind: 'caller-owned-stream' })
+  const mintedSnapshots: Snapshot[] = []
+  const createdSnapshots: Snapshot[] = []
+  const authoritativeSession: { current: TestSession | null } = { current: null }
+  let publishedSnapshot: Snapshot = snapshotA
+  let currentSession: TestSession | null = null
+  let sessionNumber = 0
+
+  const lifecycleActor = createLifecycleActor({
+    telemetry: {
+      emit: (event) => lifecycleEvents.push(event),
+    },
+  })
+  lifecycleActor.send({ type: 'LOCAL_READY' })
+
+  const transition = (nextState: LifecycleState): void => {
+    order.push(`transition:${nextState}`)
+    if (nextState === 'activating') {
+      lifecycleActor.send({
+        type: 'WAKE_DETECTED',
+        activationId: `activation-p1-d6-${sessionNumber + 1}`,
+        lastInteractionAt: '2026-08-21T00:04:00.000Z',
+      })
+      return
+    }
+    if (nextState === 'active') {
+      const session = authoritativeSession.current
+      expect(session).not.toBeNull()
+      lifecycleActor.send({
+        type: 'REALTIME_READY',
+        realtimeSessionId: session!.realtimeSessionId,
+      })
+      return
+    }
+    if (nextState === 'suspending') {
+      lifecycleActor.send({ type: 'SLEEP_REQUESTED' })
+      return
+    }
+    if (nextState === 'dormant') {
+      lifecycleActor.send({ type: 'MEDIA_CLOSED' })
+      return
+    }
+    throw new Error(`unexpected P1-D6 transition: ${nextState}`)
+  }
+
+  const controller = createRealtimeOutageRecoveryController({
+    lifecycle: {
+      get: () => lifecycleActor.getState(),
+      transition,
+    },
+    getRealtimeSessionId: () => authoritativeSession.current?.realtimeSessionId ?? null,
+    getCurrentSession: () => currentSession,
+    acquireMic: async () => callerOwnedMediaStream,
+    getCallerOwnedMediaStream: () => callerOwnedMediaStream,
+    stopOutput: async () => {
+      order.push('stop output')
+    },
+    closeSession: async (sessionId: string) => {
+      expect(sessionId).toBe(currentSession?.realtimeSessionId)
+      order.push(`close:${sessionId}`)
+      currentSession = null
+    },
+    releaseMic: async () => {
+      order.push('release microphone')
+    },
+    clearRamSession: () => {
+      order.push('clear RAM session')
+      authoritativeSession.current = null
+    },
+    getPublishedSnapshot: () => publishedSnapshot,
+    mintClientSecret: async (snapshot: Snapshot) => {
+      mintedSnapshots.push(snapshot)
+      return Symbol(`p1-d6-client-secret-${mintedSnapshots.length}`)
+    },
+    createRealtimeSession: ({
+      snapshot,
+      mediaStream,
+    }: {
+      snapshot: Snapshot
+      mediaStream: typeof callerOwnedMediaStream
+    }) => {
+      expect(mediaStream).toBe(callerOwnedMediaStream)
+      createdSnapshots.push(snapshot)
+      sessionNumber += 1
+      const session: TestSession = {
+        realtimeSessionId: `realtime-session-p1-d6-${sessionNumber}`,
+        snapshot,
+        connect: async () => {
+          order.push(`connect:${sessionNumber}`)
+        },
+      }
+      currentSession = session
+      return session
+    },
+    setAuthoritativeSession: (session: TestSession) => {
+      authoritativeSession.current = session
+      currentSession = session
+    },
+    schedule: () => 1,
+    cancel: () => {},
+    now: () => 2_000,
+    metadataSink: (event: Record<string, unknown>) => {
+      metadata.push(event)
+    },
+  } as never) as unknown as ManualRecoveryController
+
+  const firstStart = await controller.manualStart()
+  expect(firstStart).toEqual(expect.objectContaining({
+    event: 'manual_realtime_start',
+    status: 'success',
+    reason: 'manual_start_ready',
+  }))
+  expect(lifecycleActor.getState()).toBe('active')
+  expect(authoritativeSession.current?.snapshot).toBe(snapshotA)
+  expect(mintedSnapshots[0]).toBe(snapshotA)
+  expect(createdSnapshots[0]).toBe(snapshotA)
+
+  publishedSnapshot = snapshotB
+  expect(authoritativeSession.current?.snapshot).toBe(snapshotA)
+  expect(authoritativeSession.current?.snapshot).toEqual(snapshotA)
+  expect(snapshotA).toEqual(snapshotAValues)
+
+  const stopResult = await controller.manualStop()
+  expect(stopResult).toEqual(expect.objectContaining({
+    event: 'manual_realtime_stop',
+    status: 'success',
+    reason: 'manual_stop_completed',
+  }))
+  expect(lifecycleActor.getState()).toBe('dormant')
+  expect(currentSession).toBeNull()
+  expect(authoritativeSession.current).toBeNull()
+
+  const secondStart = await controller.manualStart()
+  expect(secondStart).toEqual(expect.objectContaining({
+    event: 'manual_realtime_start',
+    status: 'success',
+    reason: 'manual_start_ready',
+  }))
+  expect(lifecycleActor.getState()).toBe('active')
+  expect(mintedSnapshots).toHaveLength(2)
+  expect(createdSnapshots).toHaveLength(2)
+  expect(mintedSnapshots[1]).toBe(snapshotB)
+  expect(createdSnapshots[1]).toBe(snapshotB)
+  expect(mintedSnapshots[1]).toBe(createdSnapshots[1])
+  expect(authoritativeSession.current?.snapshot).toBe(snapshotB)
+  expect(Object.isFrozen(snapshotB)).toBe(true)
+  expect(Object.isFrozen(snapshotB.modelRoleIds)).toBe(true)
+  expect(snapshotA).toEqual(snapshotAValues)
+  expect(snapshotB.modelRoleIds).toEqual({
+    realtime: 'role-snapshot-b-realtime',
+    transcription: 'role-snapshot-b-transcription',
+    memory: 'role-snapshot-b-memory',
+  })
+  expect(createdSnapshots[0]?.modelRoleIds).toEqual(snapshotA.modelRoleIds)
+  expect(createdSnapshots[1]?.modelRoleIds).not.toEqual(snapshotA.modelRoleIds)
+  expect(order).toEqual([
+    'transition:activating',
+    'connect:1',
+    'transition:active',
+    'transition:suspending',
+    'stop output',
+    'close:realtime-session-p1-d6-1',
+    'release microphone',
+    'clear RAM session',
+    'transition:dormant',
+    'transition:activating',
+    'connect:2',
+    'transition:active',
+  ])
+  for (const event of [...metadata, ...lifecycleEvents]) {
+    expectMetadataOnly(event)
+    expectBoundedSafeReason(event)
+  }
+  d6 = true
+})
+
+it('P1-D4 stops active audio before cleanup, enters OfflineLoop, and ignores stale failures', async () => {
   const oldRealtimeSessionId = 'realtime-session-old'
   const newRealtimeSessionId = 'realtime-session-new'
   const snapshot: Snapshot = Object.freeze({
@@ -571,6 +938,7 @@ it('cleans up a current active session into OfflineLoop and ignores stale failur
   const lifecycleEvents: Array<Record<string, unknown>> = []
   let nowMs = 1_000
   let ramSessionPresent = true
+  let audioPlaying = true
   let currentSession: TestSession | null = {
     realtimeSessionId: oldRealtimeSessionId,
     snapshot,
@@ -605,7 +973,9 @@ it('cleans up a current active session into OfflineLoop and ignores stale failur
     getRealtimeSessionId: () => lifecycleActor.getContext().realtimeSessionId,
     getCurrentSession: () => currentSession,
     stopOutput: async () => {
+      expect(audioPlaying).toBe(true)
       order.push('stop output')
+      audioPlaying = false
       nowMs += 1_000
     },
     closeSession: async (sessionId: string) => {
@@ -647,6 +1017,7 @@ it('cleans up a current active session into OfflineLoop and ignores stale failur
     'transition:offlineLoop',
   ])
   expect(ramSessionPresent).toBe(false)
+  expect(audioPlaying).toBe(false)
   expect(currentSession).toBeNull()
   expect(nowMs - failureStartedAt).toBeLessThanOrEqual(5_000)
   expect(lifecycleActor.getState()).toBe('offlineLoop')
@@ -705,6 +1076,7 @@ it('cleans up a current active session into OfflineLoop and ignores stale failur
   for (const event of lifecycleEvents) {
     expectMetadataOnly(event)
   }
+  d4Audio = true
 })
 
 it('enters Maintenance for local audio failures and atomically records a Main-owned session replacement', () => {
@@ -1512,7 +1884,7 @@ it('cancels the owned rollover timer on stop and shutdown without dispatching st
   }
 })
 
-it('uses the production fallback for an active disconnect and enters Dormant after the first probe succeeds', async () => {
+it('P1-D4 uses the production fallback for an active disconnect and recovers to a later Active session', async () => {
   const timerHarness = createFakeRealtimeTimerHarness()
   const activeRealtimeSessionId = 'synthetic-production-active-session'
   let brokerCallCount = 0
@@ -1561,6 +1933,8 @@ it('uses the production fallback for an active disconnect and enters Dormant aft
     lifecycle: 'offlineLoop',
     realtimeSessionId: null,
   }))
+  const offlineLoopEventIndex = metadata.findIndex((event) => event.event === 'offline_loop_started')
+  expect(offlineLoopEventIndex).toBeGreaterThanOrEqual(0)
   const probeTimers = timerHarness.timers.filter((timer) =>
     RECOVERY_PROBE_DELAYS_MS.some((delayMs) => delayMs === timer.delayMs),
   )
@@ -1579,10 +1953,38 @@ it('uses the production fallback for an active disconnect and enters Dormant aft
     lifecycle: 'dormant',
     realtimeSessionId: null,
   }))
+  const recoveryDormantEventIndex = metadata.findIndex((event) => event.event === 'recovery_dormant')
+  expect(recoveryDormantEventIndex).toBeGreaterThan(offlineLoopEventIndex)
   expect(probeTimers.slice(1).every((timer) => timer.canceled)).toBe(true)
   expect(commands).toEqual([{ operation: 'start', reason: 'manual_start' }])
   expect(brokerCallCount).toBe(2)
   expect(sessionIdCallCount).toBe(1)
+
+  const laterStartResult = await runtime.manualStart()
+  expect(laterStartResult).toEqual({ status: 'success', reason: 'runtime_command_delivered' })
+  expectMetadataOnly(laterStartResult)
+  expect(runtime.snapshot().lifecycle).toBe('activating')
+  const laterStartBundle = await runtime.requestRealtimeClientSecret()
+  expect(laterStartBundle.identity.realtimeSessionId).toBe(activeRealtimeSessionId)
+  expect(laterStartBundle.identity.sessionGeneration).toBeGreaterThan(
+    startBundle.identity.sessionGeneration,
+  )
+  await deliverRuntimeOutcome(runtime, {
+    status: 'success',
+    operation: 'start',
+    reason: 'renderer_started_after_recovery',
+  })
+  expect(runtime.snapshot()).toEqual(expect.objectContaining({
+    lifecycle: 'active',
+    realtimeSessionId: activeRealtimeSessionId,
+    sessionGeneration: laterStartBundle.identity.sessionGeneration,
+  }))
+  expect(commands).toEqual([
+    { operation: 'start', reason: 'manual_start' },
+    { operation: 'start', reason: 'manual_start' },
+  ])
+  expect(brokerCallCount).toBe(3)
+  expect(sessionIdCallCount).toBe(2)
   expect(metadata).toEqual(expect.arrayContaining([
     expect.objectContaining({
       event: 'realtime_failure_entered',
@@ -1605,8 +2007,9 @@ it('uses the production fallback for an active disconnect and enters Dormant aft
   ]))
   for (const event of metadata) {
     expectMetadataOnly(event)
-    expect(typeof event.reason).toBe('string')
+    expectBoundedSafeReason(event)
   }
+  d4Recovery = true
 })
 
 it('keeps OfflineLoop through four failed probes and enters Dormant only after exhaustion', async () => {
@@ -1786,5 +2189,24 @@ it('ignores stale failures, deduplicates recovery scheduling, and shuts down cap
   for (const event of metadata) {
     expectMetadataOnly(event)
     expect(typeof event.reason).toBe('string')
+  }
+})
+
+afterAll(async () => {
+  if (process.env.MM_PHASE1_RECORD_DETERMINISTIC !== '1') return
+
+  const result = await recordPhase1DeterministicEvidence({
+    dbPath: process.env.MM_PHASE1_RECORD_DB_PATH ?? '',
+    build: process.env.MM_PHASE1_RECORD_BUILD ?? '',
+    time: process.env.MM_PHASE1_RECORD_TIME ?? new Date().toISOString(),
+    d3,
+    d4: d4Audio && d4Recovery,
+    d6,
+  })
+  if (!result.ok) {
+    throw new Error(`phase1 deterministic evidence recording failed: ${result.error.reason}`)
+  }
+  if (result.value.length !== 6) {
+    throw new Error('phase1 deterministic evidence record count invalid')
   }
 })
