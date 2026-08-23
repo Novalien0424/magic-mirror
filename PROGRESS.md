@@ -20,15 +20,12 @@ authoritative; control-plane rules and current authority are in
   P1-D4/P1-D6 are deterministic `mock_passed` only; P1-D1/P1-D2/P1-D5 remain
   `real-demo not_executed`. Phase 1 exit/tag is not accepted. Phase 2 has not
   started and must not advance until the Phase 1 real gate passes.
-- The real-gate intervention checklist is not a completion claim: the ignored
+- The real-gate intervention checklist is not a completion claim. The ignored
   root `.env` `OPENAI_API_KEY` is loaded only by Electron Main at runtime;
   Console provisioning, `safeStorage`, Keychain, DPAPI, and alternate
   credential fallback are not runtime paths. Agents/workers do not inspect or
-  output `.env` values and no value is recorded. Provide network, physical
-  microphone/output, a temporary Persona, and the built-in Voice; observe
-  analyser/output behavior; run 20 real P1-D1 turns, 10 real P1-D2
-  interruptions, real P1-D5 Draft/Publish/new-session/invalid-Draft checks,
-  and real metadata-only Console records.
+  output `.env` values and no value is recorded. The ordered human
+  interventions and their pending/not-executed reasons are recorded below.
 - Next-session order: finish the P1 real demos; complete Phase 1
   regression/exit/tag; perform the exact-path Phase 2 survey; implement bounded
   TDD units for keyword artifact, wake worker, exclusive mic handoff,
@@ -83,7 +80,7 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 |---|---|
 | Fresh U8-B deterministic gate | `49/49` files, `570/570` tests, `npm run typecheck:node`, `npm run typecheck:web`, `npm run build`, and `git diff --check`: all exit `0` |
 | P1-U9 credential-source closure | Accepted product commit `b246521`; focused `5/5`, `npm run typecheck:node` exit `0`; no real API/provider/target-Mac run occurred |
-| Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real demo not_executed`. It is not a real demo and is not a tracked repo file. |
+| Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
 | Phase 1 exit | Not accepted; no Phase 1 release tag. Real/provider/device/operator evidence is not claimed. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
@@ -120,10 +117,12 @@ failure never silently substitutes another ID.
 
 ## Pending work — exact order
 
-The 2026-08-23 clock-out handoff above is authoritative. The P1 real gate,
-Phase 1 regression/exit/tag, exact-path Phase 2 survey, bounded Phase 2 TDD,
-and later Phase 2 real/tuning/platform/regression/tag work remain pending in
-that order; subsequent phases remain sequential.
+The 2026-08-23 clock-out handoff above is authoritative. The P1 real gate
+(P1-D1/P1-D2/P1-D5) remains `real-demo not_executed`; Phase 1
+regression/exit/tag remains pending and not accepted. The exact-path Phase 2
+survey, planning, implementation, demos, and tag are forbidden until the real
+Phase 1 gate passes under the accepted sequential workflow; subsequent phases
+remain sequential.
 
 ## Human-intervention ledger
 
@@ -133,9 +132,32 @@ that order; subsequent phases remain sequential.
 | P1-U7 harness incidents | Worker/launcher timeouts, stale test expectations, and smoke timeout were recovered with preserved artifacts; they were harness/test events, not product failures. | Complete; no human intervention |
 | P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
-| Phase 1 exit | Exact real-demo intervention checklist is recorded in the 2026-08-23 clock-out handoff; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending; P1-D1/D2/D5 `real-demo not_executed` |
+| Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
+
+### Autonomous Phase 1 exit audit — 2026-08-23 — pushed tip `f5a2d59`
+
+This autonomous audit was documentation-only: it made no tests, builds, demos,
+provider/network calls, or application validation, and it did not read `.env` or
+any credential value. It made no phase-status promotion. P1-D1/P1-D2/P1-D5
+remain `real-demo not_executed`, and Phase 1 exit/tag remains not accepted.
+
+The following ordered human interventions remain required:
+
+| # | Intervention | Status / reason |
+|---|---|---|
+| 1 | Run Main/Console provider/account/network readiness preflight without recording the key. | `pending/not_executed` — this audit made no provider/network call and did not read or record `.env`/key values. |
+| 2 | Confirm physical microphone/output acquisition, audible output, analyser signal, and no device-busy condition. | `pending/not_executed` — physical device confirmation was not run. |
+| 3 | Choose temporary Persona and built-in Voice using metadata identifiers only. | `pending/not_executed` — operator choice was not made and no session/demo was run. |
+| 4 | Perform P1-D1: 20 real spoken turns. | `real-demo not_executed` — no real application/demo run was made. |
+| 5 | Perform P1-D2: 10 real interruptions with observed output stop and continued answers. | `real-demo not_executed` — no real application/demo run was made. |
+| 6 | Perform P1-D5: real Draft/Publish/new-session/invalid-Draft sequence with metadata-only evidence. | `real-demo not_executed` — no application run was made and no evidence was recorded. |
+| 7 | After items 1–6 pass, run Phase 1 regression/exit review and create the release tag. | `pending/not_executed` — blocked until the real gate passes; no regression/exit review or release tag was run/created. |
+
+Phase 2 remains not started. Its survey, planning, implementation, demos, and
+tag are forbidden until the real Phase 1 gate passes under the accepted
+sequential workflow.
 
 ## Harness, environment, warnings, and privacy register
 
