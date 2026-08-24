@@ -20,6 +20,7 @@ const SMOKE_MS = 8_000
 const VITEST_TIMEOUT_MS = 60_000
 /** Kill before vitest's own timeout so a hang reports as a readable assertion. */
 const HARD_KILL_MS = 50_000
+const isWindows = process.platform === 'win32'
 
 interface SmokeRun {
   readonly code: number | null
@@ -30,18 +31,20 @@ interface SmokeRun {
 
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return
-  if (process.platform === 'win32') spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
+  if (isWindows) spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
   else process.kill(-pid, 'SIGKILL')
 }
 
 async function runSmoke(extraEnv: Record<string, string> = {}): Promise<SmokeRun> {
   return await new Promise<SmokeRun>((settle) => {
-    const child = spawn('npm', ['run', 'dev'], {
+    const command = isWindows ? process.env.ComSpec ?? 'cmd.exe' : 'npm'
+    const args = isWindows ? ['/d', '/s', '/c', 'npm.cmd', 'run', 'dev'] : ['run', 'dev']
+    const child = spawn(command, args, {
       cwd: repoRoot,
       env: { ...process.env, MIRROR_SMOKE_MS: String(SMOKE_MS), ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
-      detached: process.platform !== 'win32',
+      shell: false,
+      detached: !isWindows,
       windowsHide: true
     })
 
