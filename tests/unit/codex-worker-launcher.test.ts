@@ -507,29 +507,23 @@ describe('Codex worker launcher contract', () => {
       ['AGENTS.md', agents],
       ['.agents/skills/mm-phase-workflow/SKILL.md', phaseWorkflow]
     ] as const) {
-      expect(source, `${path} must name the canonical launcher`).toContain(
-        'scripts/invoke-codex-worker.ps1'
+      expect(source, `${path} must delegate launcher mechanics to H6`).toContain(
+        '.agents/H6_WORKER_PROTOCOL.md'
       )
-      expect(source, `${path} must retain the explicit profile flag`).toContain('--profile')
-      expect(source, `${path} must retain nova-auto`).toContain('nova-auto')
-      expect(source, `${path} must retain ephemeral execution`).toContain('--ephemeral')
-      expect(source, `${path} must retain the worker routing model`).toContain('gpt-5.6-luna')
-      expect(source, `${path} must retain max reasoning`).toContain('max')
       expect(source, `${path} must retain role routing requirements`).toContain('role')
       expect(source, `${path} must retain the exact write scope requirement`).toContain('write_scope')
       expect(source, `${path} must retain the evidence requirement`).toContain('evidence')
-      expect(source, `${path} must require the PowerShell 7 outer host`).toContain('PowerShell 7')
-      expect(source, `${path} must name the pwsh outer host`).toContain('pwsh')
-      expect(source, `${path} must retain the compact canonical outer invocation`).toContain(
-        canonicalOuterInvocation
-      )
-      expect(source, `${path} must reject Windows PowerShell 5.1 as the outer host`).toContain(
-        'Windows PowerShell 5.1'
-      )
-      expect(source, `${path} must not require an execution policy`).not.toContain(
-        '-ExecutionPolicy'
-      )
     }
+
+    expect(agents, 'AGENTS.md must name the canonical launcher').toContain(
+      'scripts/invoke-codex-worker.ps1'
+    )
+    expect(agents).toMatch(
+      /The H6 reference contains the fixed launcher argv,\s*prompt transport, deadlines, protocol markers, and role semantics\./
+    )
+    expect(phaseWorkflow).toMatch(
+      /\[\.agents\/H6_WORKER_PROTOCOL\.md\]\(\.\.\/\.\.\/H6_WORKER_PROTOCOL\.md\)\s+owns launcher, read\/output, deadline, and protocol mechanics\./
+    )
 
     expect(realtimeVoice, 'realtime package guidance must pin @openai/agents 0.16.1').toMatch(
       /@openai\/agents\s+\*\*0\.16\.1\*\*/
@@ -564,10 +558,9 @@ describe('Codex worker launcher contract', () => {
     ).not.toMatch(/\bopenai\b[^\r\n]{0,40}\b7\.4\.0\b/)
   })
 
-  it('documents the bounded H2 worker harness contract in both control-plane sources', async () => {
-    const [agents, phaseWorkflow, launcher] = await Promise.all([
-      readFile(resolve(repoRoot, 'AGENTS.md'), 'utf8'),
-      readFile(resolve(repoRoot, '.agents', 'skills', 'mm-phase-workflow', 'SKILL.md'), 'utf8'),
+  it('documents the bounded H6 worker harness contract in the canonical owners', async () => {
+    const [h6, launcher] = await Promise.all([
+      readFile(resolve(repoRoot, '.agents', 'H6_WORKER_PROTOCOL.md'), 'utf8'),
       readFile(resolve(repoRoot, 'scripts', 'invoke-codex-worker.ps1'), 'utf8')
     ])
 
@@ -578,38 +571,72 @@ describe('Codex worker launcher contract', () => {
       'prompt creation',
       'launcher invocation',
       'exact prompt cleanup',
-      'Never combine prompt creation, launcher invocation, and prompt cleanup in one shell expression.',
       'temporary UTF-8 file outside the repository',
       'exact resolved path only after the worker completes',
       'codex_worker_launcher stage=timeout status=failed reason=deadline_exceeded',
       'codex_worker_launcher stage=output status=failed reason=limit_exceeded',
       'first_write_deadline_seconds: 480',
       'exact descendant process tree',
-      'Read only targeted files and required skill sections.',
-      'Do not dump unrelated source or skill content or flood worker output.',
+      'Workers read only exact targeted paths.',
       'already-launched worker executes directly',
-      'must not recursively invoke Codex or the launcher'
     ]
 
     const staleH1Sentence =
-      'H1 launcher routing does not claim H2 timeout, output, or process-tree behavior.'
+      'H1 launcher routing does not claim H6 timeout, output, or process-tree behavior.'
 
-    for (const [path, source] of [
-      ['AGENTS.md', agents],
-      ['.agents/skills/mm-phase-workflow/SKILL.md', phaseWorkflow]
-    ] as const) {
-      for (const phrase of requiredDocumentationPhrases) {
-        expect(source, `${path} must contain exact phrase: ${phrase}`).toContain(phrase)
-      }
-      expect(source, `${path} must remove the stale H1-only sentence`).not.toContain(
-        staleH1Sentence
+    for (const phrase of requiredDocumentationPhrases) {
+      expect(h6, `.agents/H6_WORKER_PROTOCOL.md must contain exact phrase: ${phrase}`).toContain(
+        phrase
       )
     }
+    expect(h6).toMatch(
+      /Never combine prompt creation, launcher invocation, and prompt\s+cleanup in one shell expression\./
+    )
+    expect(h6).toMatch(
+      /Do\s+not dump unrelated source or skill content or flood worker output\./
+    )
+    expect(h6).toMatch(
+      /An already-launched worker executes directly and never\s+recursively invokes Codex or the launcher\./
+    )
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must remove the stale H1-only sentence').not.toContain(
+      staleH1Sentence
+    )
 
-    expect(
-      launcher,
-      'launcher must default first-write supervision to 480 seconds'
-    ).toContain('[int]$FirstWriteTimeoutSeconds = 480')
+    const requiredChildArgPhrases: readonly string[] = [
+      "'--profile'",
+      "'nova-auto'",
+      "'--ephemeral'",
+      "'gpt-5.6-luna'",
+      "'model_reasoning_effort=\"max\"'",
+      '[int]$TimeoutSeconds = 600',
+      '[int]$FirstWriteTimeoutSeconds = 480',
+      '[int]$PostWriteIdleTimeoutSeconds = 120',
+      '[long]$MaxOutputBytes = 4194304'
+    ]
+    for (const phrase of requiredChildArgPhrases) {
+      expect(launcher, `launcher must contain exact owned phrase: ${phrase}`).toContain(phrase)
+    }
+
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must retain the compact canonical outer invocation').toContain(
+      canonicalOuterInvocation
+    )
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must retain the exact child argv').toContain(
+      'exec --profile nova-auto --ephemeral --cd C:\\Project\\magic-mirror -m gpt-5.6-luna -c model_reasoning_effort="max" --json -'
+    )
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must require the PowerShell 7 outer host').toContain(
+      'PowerShell 7'
+    )
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must reject Windows PowerShell 5.1 as the outer host').toContain(
+      'Windows PowerShell 5.1'
+    )
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must name the pwsh outer host').toContain('pwsh')
+    expect(h6, '.agents/H6_WORKER_PROTOCOL.md must not require an execution policy').not.toContain(
+      '-ExecutionPolicy'
+    )
+
+    expect(launcher, 'launcher must default first-write supervision to 480 seconds').toContain(
+      '[int]$FirstWriteTimeoutSeconds = 480'
+    )
   })
 
   it('launches a matching tester envelope with exact argv and byte-preserved prompt stdin', async () => {

@@ -77,14 +77,25 @@ describe("realtime bridge and Main IPC contract", () => {
     expect(contract.mirror).not.toHaveProperty("ipcRenderer");
   });
 
-  it("composes the Main safeStorage credential broker into normal boot", () => {
+  it("composes the Main environment credential broker into normal boot", () => {
     const mainSource = readFileSync(
       new URL("../../src/main/index.ts", import.meta.url),
       "utf8",
     );
 
     expect(mainSource).toMatch(
-      /import[\s\S]*\bsafeStorage\b[\s\S]*from ["']electron["'][\s\S]*createCredentialStore\(\{[\s\S]*\bsafeStorage\b[\s\S]*\}\)[\s\S]*createClientSecretBroker\(\{[\s\S]*\bcredentialStore\b[\s\S]*\}\)[\s\S]*bootSequence\(\{[\s\S]*\bclientSecretBroker\b/,
+      /import\s+\{\s*createEnvironmentCredentialSource\s*\}\s+from ["']\.\/environment-credential-source["']/,
     );
+    expect(mainSource).toContain(
+      "const credentialSource = createEnvironmentCredentialSource()",
+    );
+    expect(mainSource).toMatch(
+      /createClientSecretBroker\(\{[\s\S]*credentialStore:\s*credentialSource/,
+    );
+    expect(mainSource).toMatch(
+      /bootSequence\(\{[\s\S]*\bclientSecretBroker\b/,
+    );
+    expect(mainSource).not.toContain("safeStorage");
+    expect(mainSource).not.toContain("createCredentialStore");
   });
 });
