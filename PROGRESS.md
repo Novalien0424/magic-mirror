@@ -9,9 +9,11 @@ P1-U8-A is accepted/pushed at `fd78a28`; the phase-evidence skill correction
 was accepted at `d8ca7de`; deterministic P1-U8-B engineering is
 accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted with
 focused `5/5` and `npm run typecheck:node` exit `0`; no real API/provider/
-target-Mac run occurred. Phase 1 exit/tag is **not accepted**. Phases 2–7
-remain sequential and have not started. Canonical invariants 1–12 remain
-authoritative; control-plane rules and current authority are in
+target-Mac run occurred. Phase 1 exit/tag is **not accepted**. Official phase
+order, runtime integration, demos, exit decisions, regression, release tags,
+and phase-status promotion remain sequential; Phases 2–7 have not started.
+The four authorized prep-only lanes below do not start or promote a phase.
+Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 
 ## Clock-out handoff — 2026-08-23
@@ -34,6 +36,28 @@ authoritative; control-plane rules and current authority are in
 - Applicable invariant boundary: `1, 8, 9, 10, 11, 12`. No transcript, audio,
   private context, credential, or other user content is recorded in this
   handoff.
+
+## Pre-Phase-1 prep authorization — 2026-08-24
+
+The user explicitly authorized prep-only parallel work for Phases 2, 3, 4,
+and 7 before Phase 1 exits. This does not change the official order or allow
+phase advancement: runtime integration, demos, exit decisions, regression,
+release tags, and phase-status promotion remain sequential, and direct
+predecessor gates remain mandatory before integration or exit.
+
+| Prep lane | Authorization/status | Boundary |
+|---|---|---|
+| Phase 2 — Wake Lifecycle | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
+| Phase 3 — Avatar/Audio | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
+| Phase 4 — Scenes | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
+| Phase 7 — Field Hardening | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
+
+Prep-only units may not perform runtime wiring, IPC/schema/dependency/config
+changes, credential access, network/device access, user-content processing,
+phase promotion, real/mock demo claims, exit claims, regression claims, or
+release tags. No implementation plan artifact or Phase 1 evidence change is
+allowed. Phases 5 and 6 remain unauthorized/not-started. No prep unit has run;
+no prep artifact or claim is recorded.
 
 ## Phase 1 — accepted unit ledger
 
@@ -120,9 +144,11 @@ failure never silently substitutes another ID.
 The 2026-08-23 clock-out handoff above is authoritative. The P1 real gate
 (P1-D1/P1-D2/P1-D5) remains `real-demo not_executed`; Phase 1
 regression/exit/tag remains pending and not accepted. The exact-path Phase 2
-survey, planning, implementation, demos, and tag are forbidden until the real
-Phase 1 gate passes under the accepted sequential workflow; subsequent phases
-remain sequential.
+survey, planning, implementation, runtime integration, demos, regression,
+exit/tag, and phase-status promotion are forbidden until the real Phase 1 gate
+passes under the accepted sequential workflow; only the separately listed
+prep-only lanes are authorized before that gate, and they do not count as phase
+starts. Subsequent phases remain sequential.
 
 ## Human-intervention ledger
 

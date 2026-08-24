@@ -82,8 +82,33 @@ contract.
 - P1-D3/D4/D6 are deterministic `mock_passed`; P1-D1/D2/D5 remain
   `real-demo not_executed`.
 - Phase 1 exit/tag is not accepted. No target-Mac, provider, device, or
-  operator evidence is claimed. Phases 2–7 remain sequential and have not
-  started.
+  operator evidence is claimed. Official phase order, runtime integration,
+  demos, exit decisions, regression, release tags, and phase-status promotion
+  remain sequential; Phases 2–7 have not started. The authorized prep-only
+  lanes below do not count as phase starts or phase-status promotion.
+
+## Pre-Phase-1 prep authorization — 2026-08-24
+
+The user explicitly authorized prep-only parallel work for Phases 2, 3, 4,
+and 7 before Phase 1 exits. This is a narrow preparation exception and does
+not reorder or start a phase. The official order remains `0 Foundation/Console
+-> 1 Realtime Voice -> 2 Wake Lifecycle -> 3 Avatar/Audio -> 4 Scenes ->
+5 Identity/Profiles -> 6 Memory -> 7 Field Hardening`; runtime integration,
+demos, exit decisions, regression, release tags, and phase-status promotion
+remain sequential.
+
+A prep-only unit must be explicitly labeled `prep-only`, use an exact named
+read/write scope, and produce only isolated synthetic/metadata-only artifacts.
+It may not perform runtime wiring, IPC/schema/dependency/config changes,
+credential access, network/device access, user-content processing, phase
+promotion, real/mock demo claims, exit claims, regression claims, or release
+tags. It does not alter Phase 1 evidence or create an implementation plan
+artifact. Phases 2, 3, 4, and 7 are authorized only within this boundary;
+Phases 5 and 6 remain unauthorized. Direct predecessor gates remain
+mandatory before any runtime integration or phase exit.
+
+All four authorized lanes remain `authorized/not-started` in `PROGRESS.md`;
+no prep unit has run or produced a claimed artifact.
 
 ## Personal-build credential boundary — 2026-08-23
 

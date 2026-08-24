@@ -11,6 +11,30 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Every post-plan dispatch uses `scripts/invoke-codex-worker.ps1` with model, max effort, `fresh_worker`, one role, bounded task/non-goals, exact `write_scope`/`read_scope`, skills, invariant IDs, evidence, self-review, and external root review. Escalate for privacy/identity, credentials, model IDs, mic/restart ownership, schema/destructive migration, dependencies/packaging, launcher/protocol, failed evidence, or phase exit.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phase 0 is accepted; Phase 1 engineering is accepted through deterministic U8-B, but Phase 1 exit/tag is not. Phases 2–7 remain sequential; status/evidence are in `PROGRESS.md`.
 
+## Pre-Phase-1 prep authorization — 2026-08-24
+
+- The user explicitly authorized prep-only parallel work for Phases 2, 3, 4,
+  and 7 before Phase 1 exits. This narrow preparation exception does not
+  reorder or start a phase: runtime integration, demos, exit decisions,
+  regression, release tags, and phase-status promotion remain sequential in
+  the official order 0 Foundation/Console -> 1 Realtime Voice -> 2 Wake
+  Lifecycle -> 3 Avatar/Audio -> 4 Scenes -> 5 Identity/Profiles -> 6 Memory
+  -> 7 Field Hardening.
+- The four authorized lanes are each `authorized/not-started`: Phase 2 Wake
+  Lifecycle prep, Phase 3 Avatar/Audio prep, Phase 4 Scenes prep, and Phase 7
+  Field Hardening prep. Phase 5 Identity/Profiles and Phase 6 Memory remain
+  unauthorized and not-started.
+- A permitted unit must be explicitly labeled `prep-only`, use an exact named
+  read/write scope, and produce only isolated synthetic/metadata-only artifacts.
+  It may not perform runtime wiring, IPC/schema/dependency/config changes,
+  credential access, network/device access, user-content processing, phase
+  promotion, real/mock demo claims, exit claims, regression claims, or release
+  tags. No implementation plan artifact or Phase 1 evidence change is allowed.
+  Direct predecessor gates remain mandatory before any runtime integration or
+  phase exit; prep artifacts cannot satisfy or bypass those gates.
+- No prep unit has run under this authorization, and no prep artifact, demo,
+  exit/regression claim, release tag, or phase-status promotion is recorded.
+
 ## Personal-build credential ruling — 2026-08-23 (current)
 
 - This personal/non-commercial build has one master-key source: the ignored local root `.env` file's `OPENAI_API_KEY`. Electron Main alone loads it at runtime.
