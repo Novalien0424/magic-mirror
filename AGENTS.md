@@ -107,8 +107,12 @@ artifact. Phases 2, 3, 4, and 7 are authorized only within this boundary;
 Phases 5 and 6 remain unauthorized. Direct predecessor gates remain
 mandatory before any runtime integration or phase exit.
 
-All four authorized lanes remain `authorized/not-started` in `PROGRESS.md`;
-no prep unit has run or produced a claimed artifact.
+The four authorized lanes have accepted prep-only units recorded in
+`PROGRESS.md`; official Phase 2/3/4/7 `phase_state` remains `not-started`.
+P2-PREP-W1, P3-PREP-A1, P4-PREP-S1, and P7-PREP-E1 are offline,
+deterministic, or empty metadata-only preparation; no detector, microphone,
+wake handoff, real audio/Web Audio/Cubism/assets, transcript pipeline,
+adapter/hardware, or field evidence is claimed.
 
 ## Personal-build credential boundary — 2026-08-23
 

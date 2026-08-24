@@ -47,17 +47,34 @@ predecessor gates remain mandatory before integration or exit.
 
 | Prep lane | Authorization/status | Boundary |
 |---|---|---|
-| Phase 2 — Wake Lifecycle | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
-| Phase 3 — Avatar/Audio | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
-| Phase 4 — Scenes | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
-| Phase 7 — Field Hardening | `authorized/not-started` | Explicitly labeled `prep-only`; isolated synthetic/metadata-only artifacts with an exact named read/write scope. |
+| Phase 2 — Wake Lifecycle | `prep-only accepted` | Official `phase_state: not-started`; isolated synthetic/metadata-only artifact with an exact named read/write scope. |
+| Phase 3 — Avatar/Audio | `prep-only accepted` | Official `phase_state: not-started`; isolated synthetic/metadata-only artifact with an exact named read/write scope. |
+| Phase 4 — Scenes | `prep-only accepted` | Official `phase_state: not-started`; isolated synthetic/metadata-only artifact with an exact named read/write scope. |
+| Phase 7 — Field Hardening | `prep-only accepted` | Official `phase_state: not-started`; isolated synthetic/metadata-only artifact with an exact named read/write scope. |
 
 Prep-only units may not perform runtime wiring, IPC/schema/dependency/config
 changes, credential access, network/device access, user-content processing,
 phase promotion, real/mock demo claims, exit claims, regression claims, or
 release tags. No implementation plan artifact or Phase 1 evidence change is
-allowed. Phases 5 and 6 remain unauthorized/not-started. No prep unit has run;
-no prep artifact or claim is recorded.
+allowed. Phases 5 and 6 remain unauthorized with `phase_state: not-started`. The four accepted
+prep-only units are ledgered below; they do not promote a phase or alter Phase 1
+evidence.
+
+### Accepted prep-only unit ledger — 2026-08-24
+
+These four units are accepted preparation only. They do not start or promote
+their official phase, and they do not provide runtime integration, demo, exit,
+regression, release-tag, or field evidence.
+
+| Unit | Accepted prep-only result | Independent validation | Explicit non-evidence | Exact artifact paths |
+| --- | --- | --- | --- | --- |
+| `P2-PREP-W1` | Offline keyword artifact and opaque synthetic corpus | `26/26` focused tests; node typecheck exit `0` | No detector, microphone, or wake-to-Realtime handoff evidence | `src/main/wake/keyword-artifact.ts`; `src/main/wake/fixtures/synthetic-keyword-corpus.ts`; `tests/main/wake/keyword-artifact.test.ts` |
+| `P3-PREP-A1` | Pure RMS/envelope math | `20/20` focused tests; web typecheck exit `0` | No real audio, Web Audio, Cubism, or asset evidence | `src/renderer/avatar/audio/lipSyncMath.ts`; `tests/renderer/avatar/audio/lipSyncMath.test.ts` |
+| `P4-PREP-S1` | Pure normalized exact spell trigger and one-turn guard | `19/19` focused tests; node typecheck exit `0` | No transcript pipeline, preset, adapter, or hardware evidence | `src/main/scenes/spell-trigger.ts`; `tests/main/scenes/spell-trigger.test.ts` |
+| `P7-PREP-E1` | Empty evidence template | Seven no-claim header sentinels; `19` pending rows; forbidden generic status scan returned expected no-match | No field evidence | `docs/Magic_Mirror_Phase7_Field_Hardening_Evidence_Template.md` |
+
+Initial H6 dispatch timeouts are resolved process history only; they are not
+human-intervention blockers.
 
 ## Phase 1 — accepted unit ledger
 
@@ -181,9 +198,26 @@ The following ordered human interventions remain required:
 | 6 | Perform P1-D5: real Draft/Publish/new-session/invalid-Draft sequence with metadata-only evidence. | `real-demo not_executed` — no application run was made and no evidence was recorded. |
 | 7 | After items 1–6 pass, run Phase 1 regression/exit review and create the release tag. | `pending/not_executed` — blocked until the real gate passes; no regression/exit review or release tag was run/created. |
 
-Phase 2 remains not started. Its survey, planning, implementation, demos, and
-tag are forbidden until the real Phase 1 gate passes under the accepted
-sequential workflow.
+### Future prep-only human interventions — lower priority than Phase 1
+
+The seven ordered Phase 1 interventions above remain the higher-priority work.
+After that gate, the remaining plain-language needs are:
+
+- Phase 2: choose the real wake phrase, then provide or approve a real corpus
+  and target microphone, TCC, model, and tooling evidence.
+- Phase 3: provide the final Live2D/Cubism assets, then observe actual-output-
+  audio behavior.
+- Phase 4: approve the final spells and presets, then connect and observe the
+  adapters and hardware.
+- Phase 7: provide target-Mac, operator, and device time for the 100-cycle and
+  soak, boot, power, signing, and TCC checks.
+
+Phase 2 official `phase_state` remains `not-started`. The accepted `P2-PREP-W1`
+artifact is prep-only preparation and does not start or promote Phase 2; the
+exception does not authorize general survey, planning, or implementation
+beyond that exact prep-only scope. Phase 2 runtime integration, demos,
+regression, exit/tag, and phase-status promotion remain forbidden until the
+real Phase 1 gate passes under the accepted sequential workflow.
 
 ## Harness, environment, warnings, and privacy register
 

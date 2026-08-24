@@ -20,9 +20,10 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   the official order 0 Foundation/Console -> 1 Realtime Voice -> 2 Wake
   Lifecycle -> 3 Avatar/Audio -> 4 Scenes -> 5 Identity/Profiles -> 6 Memory
   -> 7 Field Hardening.
-- The four authorized lanes are each `authorized/not-started`: Phase 2 Wake
-  Lifecycle prep, Phase 3 Avatar/Audio prep, Phase 4 Scenes prep, and Phase 7
-  Field Hardening prep. Phase 5 Identity/Profiles and Phase 6 Memory remain
+- The four authorized lanes have accepted prep-only units: P2-PREP-W1 for Wake
+  Lifecycle, P3-PREP-A1 for Avatar/Audio, P4-PREP-S1 for Scenes, and
+  P7-PREP-E1 for Field Hardening. Their official `phase_state` remains
+  `not-started`. Phase 5 Identity/Profiles and Phase 6 Memory remain
   unauthorized and not-started.
 - A permitted unit must be explicitly labeled `prep-only`, use an exact named
   read/write scope, and produce only isolated synthetic/metadata-only artifacts.
@@ -32,8 +33,38 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   tags. No implementation plan artifact or Phase 1 evidence change is allowed.
   Direct predecessor gates remain mandatory before any runtime integration or
   phase exit; prep artifacts cannot satisfy or bypass those gates.
-- No prep unit has run under this authorization, and no prep artifact, demo,
-  exit/regression claim, release tag, or phase-status promotion is recorded.
+- Before the accepted artifacts below, this authorization had not yet produced
+  a prep unit or artifact; the accepted ledger now records the four prep-only
+  units. No demo, exit/regression claim, release tag, or phase-status promotion
+  is recorded.
+
+## Accepted prep-only artifacts — 2026-08-24
+
+The four authorized prep-only units completed their isolated scopes and are
+accepted as metadata-only preparation. Official phase state remains
+`not-started`; none is runtime integration, a demo, an exit, regression, a
+release tag, or phase-status promotion.
+
+- `P2-PREP-W1` — accepted offline keyword artifact and opaque synthetic corpus.
+  Independent validation: `26/26` focused tests and node typecheck exit `0`.
+  No detector, microphone, or wake-to-Realtime handoff evidence. Artifacts:
+  `src/main/wake/keyword-artifact.ts`,
+  `src/main/wake/fixtures/synthetic-keyword-corpus.ts`,
+  `tests/main/wake/keyword-artifact.test.ts`.
+- `P3-PREP-A1` — accepted pure RMS/envelope math. Independent validation:
+  `20/20` focused tests and web typecheck exit `0`. No real audio, Web Audio,
+  Cubism, or asset evidence. Artifacts:
+  `src/renderer/avatar/audio/lipSyncMath.ts`,
+  `tests/renderer/avatar/audio/lipSyncMath.test.ts`.
+- `P4-PREP-S1` — accepted pure normalized exact spell trigger and one-turn
+  guard. Independent validation: `19/19` focused tests and node typecheck exit
+  `0`. No transcript pipeline, preset, adapter, or hardware evidence.
+  Artifacts: `src/main/scenes/spell-trigger.ts`,
+  `tests/main/scenes/spell-trigger.test.ts`.
+- `P7-PREP-E1` — accepted empty evidence template. Seven no-claim header
+  sentinels and `19` pending rows were validated; the forbidden generic status
+  scan returned the expected no-match. No field evidence. Artifact:
+  `docs/Magic_Mirror_Phase7_Field_Hardening_Evidence_Template.md`.
 
 ## Personal-build credential ruling — 2026-08-23 (current)
 
