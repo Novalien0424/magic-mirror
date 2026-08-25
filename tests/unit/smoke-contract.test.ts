@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -36,35 +38,49 @@ function killTree(pid: number | undefined): void {
 }
 
 async function runSmoke(extraEnv: Record<string, string> = {}): Promise<SmokeRun> {
-  return await new Promise<SmokeRun>((settle) => {
-    const command = isWindows ? process.env.ComSpec ?? 'cmd.exe' : 'npm'
-    const args = isWindows ? ['/d', '/s', '/c', 'npm.cmd', 'run', 'dev'] : ['run', 'dev']
-    const child = spawn(command, args, {
-      cwd: repoRoot,
-      env: { ...process.env, MIRROR_SMOKE_MS: String(SMOKE_MS), ...extraEnv },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
-      detached: !isWindows,
-      windowsHide: true
+  const userDataRoot = await mkdtemp(join(tmpdir(), 'magic-mirror-smoke-'))
+  const userDataDir = join(userDataRoot, 'user-data')
+  await mkdir(userDataDir)
+
+  try {
+    return await new Promise<SmokeRun>((settle) => {
+      const command = isWindows ? process.env.ComSpec ?? 'cmd.exe' : 'npm'
+      const args = isWindows ? ['/d', '/s', '/c', 'npm.cmd', 'run', 'dev'] : ['run', 'dev']
+      const child = spawn(command, args, {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          MIRROR_SMOKE_MS: String(SMOKE_MS),
+          ...extraEnv,
+          MIRROR_PHASE0_USER_DATA_ROOT: userDataRoot,
+          MIRROR_USER_DATA_DIR: userDataDir
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false,
+        detached: !isWindows,
+        windowsHide: true
+      })
+
+      let stdout = ''
+      let stderr = ''
+      let timedOut = false
+
+      child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
+      child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
+
+      const killer = setTimeout(() => {
+        timedOut = true
+        killTree(child.pid)
+      }, HARD_KILL_MS)
+
+      child.on('close', (code) => {
+        clearTimeout(killer)
+        settle({ code, stdout, stderr, timedOut })
+      })
     })
-
-    let stdout = ''
-    let stderr = ''
-    let timedOut = false
-
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
-
-    const killer = setTimeout(() => {
-      timedOut = true
-      killTree(child.pid)
-    }, HARD_KILL_MS)
-
-    child.on('close', (code) => {
-      clearTimeout(killer)
-      settle({ code, stdout, stderr, timedOut })
-    })
-  })
+  } finally {
+    await rm(userDataRoot, { recursive: true, force: true })
+  }
 }
 
 function report(run: SmokeRun): string {
@@ -79,6 +95,16 @@ describe('boot smoke contract', () => {
 
       expect(run.timedOut, `app never quit in smoke mode${report(run)}`).toBe(false)
       expect(run.stdout, `MAIN_READY marker missing${report(run)}`).toContain('MAIN_READY')
+      const smokeResult = run.stdout.split(/\r?\n/).find((line) => line.startsWith('SMOKE_RESULT '))
+      expect(smokeResult, `SMOKE_RESULT marker missing${report(run)}`).toMatch(
+        /(?:^|\s)lifecycle=dormant(?:\s|$)/
+      )
+      expect(smokeResult, `config readiness marker missing${report(run)}`).toMatch(
+        /(?:^|\s)config_status=ready(?:\s|$)/
+      )
+      expect(smokeResult, `maintenance marker missing${report(run)}`).toMatch(
+        /(?:^|\s)maintenance_code=none(?:\s|$)/
+      )
       expect(run.code, `expected clean smoke exit${report(run)}`).toBe(0)
     },
     VITEST_TIMEOUT_MS

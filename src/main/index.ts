@@ -268,7 +268,18 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
 
 function finishSmokeRun(): void {
   const verdict = evaluateSmoke(boot)
-  exitWithMarker('SMOKE_RESULT', { exit: verdict.exitCode, reason: verdict.reason }, verdict.exitCode)
+  const snapshot = bootRuntime?.snapshot()
+  exitWithMarker(
+    'SMOKE_RESULT',
+    {
+      exit: verdict.exitCode,
+      reason: verdict.reason,
+      lifecycle: snapshot?.lifecycle ?? 'starting',
+      config_status: snapshot?.modules.config ?? 'failed',
+      maintenance_code: snapshot?.maintenance?.code ?? 'none',
+    },
+    verdict.exitCode,
+  )
 }
 
 function emitDisplaySleepMetadata(
@@ -356,7 +367,9 @@ void app.whenReady().then(() => {
     developerModeOverride: process.env['MIRROR_DEVELOPER_MODE'],
     telemetryDirectory: join(app.getPath('userData'), 'telemetry'),
     configDir: join(app.getPath('userData'), 'config'),
-    defaultConfigPath: join(process.resourcesPath, 'config', 'default.json'),
+    defaultConfigPath: app.isPackaged
+      ? join(process.resourcesPath, 'config', 'default.json')
+      : join(app.getAppPath(), 'resources', 'config', 'default.json'),
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,

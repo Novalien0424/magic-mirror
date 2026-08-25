@@ -680,6 +680,7 @@ function makeMainIndexHarness(options: {
   const app = {
     whenReady: vi.fn(() => Promise.resolve()),
     getPath: vi.fn((_name: string) => userData),
+    getAppPath: vi.fn(() => resolve(__dirname, '../..')),
     getVersion: vi.fn(() => 'synthetic-version'),
     isPackaged: false,
     on: vi.fn((event: string, handler: MainIndexHandler) => {
