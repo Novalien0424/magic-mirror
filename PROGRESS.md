@@ -180,7 +180,11 @@ survey, planning, implementation, runtime integration, demos, regression,
 exit/tag, and phase-status promotion are forbidden until the real Phase 1 gate
 passes under the accepted sequential workflow; only the separately listed
 prep-only lanes are authorized before that gate, and they do not count as phase
-starts. Subsequent phases remain sequential.
+starts. The next bounded execution plan is
+[`docs/superpowers/plans/2026-08-27-phase1-physical-realtime-exit.md`](docs/superpowers/plans/2026-08-27-phase1-physical-realtime-exit.md);
+it folds the live-smoke config-provenance finding and only the applicable
+physical-timing lessons from the Realtime Voice implementation guide into the
+existing P1-D1/P1-D2/P1-D5 boundary. Subsequent phases remain sequential.
 
 ## Human-intervention ledger
 
