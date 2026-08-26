@@ -18,8 +18,9 @@ Canonical invariants 1–12 remain authoritative; control-plane rules and curren
 The new automated live harness launches the actual `npm run dev` /
 `electron-vite dev` path in an isolated temporary user-data environment, drives
 start-to-Active and stop-to-Dormant when the provider permits it, emits one fixed
-metadata-only marker, and supervises full process-tree cleanup. The fresh
-2026-08-26 real gate failed at the configured realtime model boundary; Phase 1
+metadata-only marker, and supervises full process-tree cleanup. The earlier and
+fresh 2026-08-26 exact-model live gates failed at the configured realtime model
+boundary; official model documentation verifies both spellings, and Phase 1
 exit/tag remains not accepted and untagged.
 
 ## Clock-out handoff — 2026-08-23
@@ -128,7 +129,10 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Fresh U8-B deterministic gate | `49/49` files, `570/570` tests, `npm run typecheck:node`, `npm run typecheck:web`, `npm run build`, and `git diff --check`: all exit `0` |
 | P1-U9 credential-source closure | Accepted product commit `b246521`; focused `5/5`, `npm run typecheck:node` exit `0`; no real API/provider/target-Mac run occurred |
 | Automated Phase 1 live harness | Actual `npm run dev` / `electron-vite dev` path in an isolated temporary user-data environment; start-to-Active and stop-to-Dormant when provider permits; one fixed metadata-only marker; full process-tree cleanup supervision |
-| Phase 1 live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` |
+| Earlier Phase 1 live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` |
+| Official Realtime model verification — 2026-08-26 | Official OpenAI model pages document `gpt-realtime-2.1` and `gpt-realtime-2.1-mini`; the official Realtime session-create schema lists both exact IDs. Both spellings are verified; spelling is ruled out. |
+| Fresh full-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1`; the failed actual connect is authoritative. |
+| Fresh mini-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1-mini`; this was a bounded verification attempt, not a baseline/config change. |
 | Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
 | Phase 1 exit | Not accepted; no Phase 1 release tag. The failed live gate is not product success or exit evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
@@ -184,7 +188,8 @@ starts. Subsequent phases remain sequential.
 | P1-U7 harness incidents | Worker/launcher timeouts, stale test expectations, and smoke timeout were recovered with preserved artifacts; they were harness/test events, not product failures. | Complete; no human intervention |
 | P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
-| P1 automated live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Provider/project access to the pinned configured model is the external prerequisite; after rerun, operator judgment of natural conversation and spoken barge-in remains. |
+| P1 automated live gate — 2026-08-26 (earlier attempt) | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Historical metadata-only observation; no model-spelling conclusion is drawn. |
+| P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Both official spellings were tried one at a time and rejected; provider/project access remains pending, and no more specific entitlement cause is established. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
@@ -208,7 +213,7 @@ The following ordered human interventions remain required:
 | 6 | Perform P1-D5: real Draft/Publish/new-session/invalid-Draft sequence with metadata-only evidence. | `real-demo not_executed` — no application run was made and no evidence was recorded. |
 | 7 | After items 1–6 pass, run Phase 1 regression/exit review and create the release tag. | `pending/not_executed` — blocked until the real gate passes; no regression/exit review or release tag was run/created. |
 
-### Automated Phase 1 live-gate evidence — 2026-08-26
+### Earlier automated Phase 1 live-gate evidence — 2026-08-26
 
 The new automated live harness launches the actual `npm run dev` /
 `electron-vite dev` path in an isolated temporary user-data environment. It
@@ -217,19 +222,53 @@ one fixed metadata-only marker, and supervises full process-tree cleanup. The
 current product configuration is realtime model `gpt-realtime-2.1`, input
 transcription `gpt-live-transcribe`, and voice `marin`, with no runtime fallback.
 
-The fresh real gate result is exactly:
+The earlier real gate result is retained exactly:
 
 `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`
 
-This proves the configured model is unavailable to the API project behind the
-local Main-only credential at the live provider/catalog boundary. It does not
-prove a product success, Phase 1 exit, target-Mac microphone/TCC, natural
-conversation, audible output, or spoken barge-in. Phase 1 remains unaccepted
-and untagged. Code must not silently substitute another model. Provider/project
-access to the pinned configured model is the external prerequisite before
-rerunning the automated gate; after that rerun, only operator judgment of
-natural conversation and spoken barge-in remains. Applicable invariant IDs:
-`1, 8, 9, 10, 11, 12`.
+This earlier marker is metadata-only historical evidence. Its
+`model_availability=unavailable` value is observational and does not establish
+that either model spelling is invalid. It does not prove a product success,
+Phase 1 exit, target-Mac microphone/TCC, natural conversation, audible output,
+or spoken barge-in. Phase 1 remains unaccepted and untagged. Code must not
+silently substitute another model.
+
+### Official model verification and fresh exact-model live attempts — 2026-08-26
+
+Verified official OpenAI sources:
+
+- `https://developers.openai.com/api/docs/models/gpt-realtime-2.1` documents
+  `gpt-realtime-2.1`.
+- `https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini`
+  documents `gpt-realtime-2.1-mini`.
+
+The official Realtime session-create schema lists both exact IDs. Both model
+spellings are officially valid, so spelling is ruled out. The final versioned
+baseline remains solely realtime model `gpt-realtime-2.1`, input transcription
+`gpt-live-transcribe`, and voice `marin`, with no runtime fallback. The mini
+model was a bounded one-model-at-a-time verification attempt and did not change
+the versioned baseline.
+
+Fresh full-model attempt, with only `gpt-realtime-2.1` configured:
+
+`PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=4259 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`
+
+Fresh mini-model attempt, with only `gpt-realtime-2.1-mini` configured:
+
+`PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=1686 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`
+
+Both exact one-model-at-a-time live connects were rejected and absent from the
+API project's bounded catalog view. An API key marked unrestricted controls key
+endpoint permissions but is not evidence that the project catalog exposes a
+model. `model_availability` is observational; the failed actual connect is
+authoritative. The evidence does not establish a more specific entitlement
+cause.
+
+Provider/project access remains pending. P1-D1/P1-D2/P1-D5 remain
+`real-demo not_executed`; target-Mac microphone/TCC, physical device behavior,
+natural conversation, audible output, spoken barge-in, and the remaining human
+checks are pending/not-executed. Phase 1 remains unaccepted and untagged.
+Applicable invariant IDs: `1, 8, 9, 10, 11, 12`.
 
 ### Future prep-only human interventions — lower priority than Phase 1
 

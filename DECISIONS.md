@@ -122,9 +122,9 @@ release tag, or phase-status promotion.
 - U8-B deterministic engineering is accepted/pushed at `d1d5364`. P1-D3/D4/D6 are `mock_passed`; P1-D1/D2/D5 are `real-demo not_executed` until real provider/device/operator evidence exists. The deterministic recorder never writes `passed` for a non-real result and uses the existing SQLite service. The artifact is not a real demo or Phase 1 exit evidence; Phase 1 exit and `phase1-v0.3.1` remain pending.
 - Real Phase 1 evidence still requires an OpenAI credential/account/network, physical mic/output, temporary Persona, Voice choice, analyser tuning, and operator observation. The earlier target-Mac Keychain/`safeStorage` requirement is superseded for this personal build; remaining target-Mac evidence covers TCC mic/camera, signing/entitlements, packaged workers, LaunchAgent restart, power policy, and real device/provider behavior. Wake corpus/keyword, avatar, scene, camera/identity, memory/profile, and hardware/adapter inputs remain later product work; mocks cannot replace real Phase 1 exit evidence.
 
-## Phase 1 automated live-gate boundary — verified 2026-08-26
+## Phase 1 automated live-gate boundary — verified 2026-08-26 (earlier attempt)
 
-- The new automated live harness launches the actual `npm run dev` /
+- The automated live harness launches the actual `npm run dev` /
   `electron-vite dev` path in an isolated temporary user-data environment,
   drives start-to-Active and stop-to-Dormant when the provider permits it,
   emits one fixed metadata-only marker, and supervises full process-tree
@@ -133,17 +133,42 @@ release tag, or phase-status promotion.
   input transcription `gpt-live-transcribe`, and voice `marin`, with no runtime
   fallback. Model IDs remain versioned-config-only; code must not silently
   substitute another model.
-- The fresh real gate result is exactly:
+- The earlier real gate result is retained exactly:
   `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
-- This proves the configured model is unavailable to the API project behind the
-  local Main-only credential at the live provider/catalog boundary. It does not
-  prove a product success, Phase 1 exit, target-Mac microphone/TCC, natural
-  conversation, audible output, or spoken barge-in.
-- Phase 1 remains unaccepted and untagged. Provider/project access to the
-  pinned configured model is the external prerequisite before rerunning the
-  automated gate; after that rerun, only operator judgment of natural
-  conversation and spoken barge-in remains. Applicable invariant IDs are
-  `1, 8, 9, 10, 11, 12`.
+- Its `model_availability=unavailable` value is observational historical
+  evidence and does not establish that either model spelling is invalid. It
+  does not prove product success, Phase 1 exit, target-Mac microphone/TCC,
+  natural conversation, audible output, or spoken barge-in. Phase 1 remains
+  unaccepted and untagged.
+
+## Phase 1 official model verification and fresh live attempts — verified 2026-08-26
+
+- Verified official OpenAI sources:
+  `https://developers.openai.com/api/docs/models/gpt-realtime-2.1` documents
+  `gpt-realtime-2.1`, and
+  `https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini` documents
+  `gpt-realtime-2.1-mini`. The official Realtime session-create schema lists
+  both exact IDs.
+- Both model spellings are officially valid, so spelling is ruled out. The
+  final versioned baseline remains solely realtime model `gpt-realtime-2.1`,
+  input transcription `gpt-live-transcribe`, and voice `marin`, with no
+  runtime fallback. The mini model was a bounded one-model-at-a-time
+  verification attempt and did not change the versioned baseline.
+- Fresh full-model attempt, with only `gpt-realtime-2.1` configured:
+  `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=4259 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
+- Fresh mini-model attempt, with only `gpt-realtime-2.1-mini` configured:
+  `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=1686 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
+- Both exact one-model-at-a-time live connects were rejected and absent from
+  the API project's bounded catalog view. An API key marked unrestricted
+  controls key endpoint permissions but is not evidence that the project
+  catalog exposes a model. `model_availability` is observational; the failed
+  actual connect is authoritative. The evidence does not establish a more
+  specific entitlement cause.
+- Provider/project access remains pending. P1-D1/P1-D2/P1-D5 remain
+  `real-demo not_executed`; target-Mac microphone/TCC, physical device
+  behavior, natural conversation, audible output, spoken barge-in, and the
+  remaining human checks are pending/not-executed. Phase 1 remains unaccepted
+  and untagged. Applicable invariant IDs are `1, 8, 9, 10, 11, 12`.
 
 ## Accepted identifiers (detailed validation remains in `PROGRESS.md`)
 
