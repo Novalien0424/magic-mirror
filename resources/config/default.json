@@ -5,16 +5,16 @@
     "name": "mock-persona-v1",
     "instructions": "mock-persona-instructions-v1"
   },
-  "voice": "mock-voice-v1",
+  "voice": "marin",
   "reasoningEffort": "low",
   "turnDetectionProfile": "semantic-vad-interruptible",
   "idleSeconds": 300,
   "aiModels": {
     "realtimeDialogue": {
-      "modelId": "mock-realtime-dialogue-v1"
+      "modelId": "gpt-realtime-2.1"
     },
     "inputTranscription": {
-      "modelId": "mock-input-transcription-v1"
+      "modelId": "gpt-live-transcribe"
     },
     "memoryExtractor": {
       "modelId": "mock-memory-extractor-v1"

@@ -1,6 +1,6 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-23 — Phase 1, Realtime Voice: IN PROGRESS.**
+**Current dashboard — 2026-08-26 — Phase 1, Realtime Voice: IN PROGRESS.**
 Branch `phase1-realtime-voice` has accepted product commit `b246521` for
 P1-U9. Phase 0 is accepted and tagged
 `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
@@ -15,6 +15,12 @@ and phase-status promotion remain sequential; Phases 2–7 have not started.
 The four authorized prep-only lanes below do not start or promote a phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
+The new automated live harness launches the actual `npm run dev` /
+`electron-vite dev` path in an isolated temporary user-data environment, drives
+start-to-Active and stop-to-Dormant when the provider permits it, emits one fixed
+metadata-only marker, and supervises full process-tree cleanup. The fresh
+2026-08-26 real gate failed at the configured realtime model boundary; Phase 1
+exit/tag remains not accepted and untagged.
 
 ## Clock-out handoff — 2026-08-23
 
@@ -121,8 +127,11 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 |---|---|
 | Fresh U8-B deterministic gate | `49/49` files, `570/570` tests, `npm run typecheck:node`, `npm run typecheck:web`, `npm run build`, and `git diff --check`: all exit `0` |
 | P1-U9 credential-source closure | Accepted product commit `b246521`; focused `5/5`, `npm run typecheck:node` exit `0`; no real API/provider/target-Mac run occurred |
+| Automated Phase 1 live harness | Actual `npm run dev` / `electron-vite dev` path in an isolated temporary user-data environment; start-to-Active and stop-to-Dormant when provider permits; one fixed metadata-only marker; full process-tree cleanup supervision |
+| Phase 1 live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` |
+| Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
-| Phase 1 exit | Not accepted; no Phase 1 release tag. Real/provider/device/operator evidence is not claimed. |
+| Phase 1 exit | Not accepted; no Phase 1 release tag. The failed live gate is not product success or exit evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
 ### Phase 0 accepted ledger — 2026-08-20
@@ -175,6 +184,7 @@ starts. Subsequent phases remain sequential.
 | P1-U7 harness incidents | Worker/launcher timeouts, stale test expectations, and smoke timeout were recovered with preserved artifacts; they were harness/test events, not product failures. | Complete; no human intervention |
 | P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
+| P1 automated live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Provider/project access to the pinned configured model is the external prerequisite; after rerun, operator judgment of natural conversation and spoken barge-in remains. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
@@ -197,6 +207,29 @@ The following ordered human interventions remain required:
 | 5 | Perform P1-D2: 10 real interruptions with observed output stop and continued answers. | `real-demo not_executed` — no real application/demo run was made. |
 | 6 | Perform P1-D5: real Draft/Publish/new-session/invalid-Draft sequence with metadata-only evidence. | `real-demo not_executed` — no application run was made and no evidence was recorded. |
 | 7 | After items 1–6 pass, run Phase 1 regression/exit review and create the release tag. | `pending/not_executed` — blocked until the real gate passes; no regression/exit review or release tag was run/created. |
+
+### Automated Phase 1 live-gate evidence — 2026-08-26
+
+The new automated live harness launches the actual `npm run dev` /
+`electron-vite dev` path in an isolated temporary user-data environment. It
+drives start-to-Active and stop-to-Dormant when the provider permits it, emits
+one fixed metadata-only marker, and supervises full process-tree cleanup. The
+current product configuration is realtime model `gpt-realtime-2.1`, input
+transcription `gpt-live-transcribe`, and voice `marin`, with no runtime fallback.
+
+The fresh real gate result is exactly:
+
+`PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`
+
+This proves the configured model is unavailable to the API project behind the
+local Main-only credential at the live provider/catalog boundary. It does not
+prove a product success, Phase 1 exit, target-Mac microphone/TCC, natural
+conversation, audible output, or spoken barge-in. Phase 1 remains unaccepted
+and untagged. Code must not silently substitute another model. Provider/project
+access to the pinned configured model is the external prerequisite before
+rerunning the automated gate; after that rerun, only operator judgment of
+natural conversation and spoken barge-in remains. Applicable invariant IDs:
+`1, 8, 9, 10, 11, 12`.
 
 ### Future prep-only human interventions — lower priority than Phase 1
 

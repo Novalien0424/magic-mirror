@@ -9,6 +9,90 @@ type MaybePromise<T> = T | PromiseLike<T>
 
 const START_FAILURE_CLOSE_REASON = 'start_failed'
 
+type RealtimeRuntimeStartStage =
+  | 'media_stream'
+  | 'audio_output'
+  | 'session_create'
+  | 'mic_owner_create'
+  | 'mic_acquire'
+  | 'playback_transport'
+  | 'cleanup_factory'
+  | 'connect'
+
+const START_FAILURE_REASON_BY_STAGE: Readonly<
+  Record<RealtimeRuntimeStartStage, string>
+> = Object.freeze({
+  media_stream: 'start_media_stream_failed',
+  audio_output: 'start_audio_output_failed',
+  session_create: 'start_session_create_failed',
+  mic_owner_create: 'start_mic_owner_create_failed',
+  mic_acquire: 'start_mic_acquire_failed',
+  playback_transport: 'start_playback_transport_failed',
+  cleanup_factory: 'start_cleanup_factory_failed',
+  connect: 'start_connect_failed',
+})
+
+const START_CONNECT_FAILURE_TOKENS = Object.freeze([
+  'start_connect_credential_missing',
+  'start_connect_ephemeral_key_required',
+  'start_connect_setup_closed',
+  'start_connect_sdp_offer_missing',
+  'start_connect_sdp_answer_failed',
+  'start_connect_model_mismatch',
+  'start_connect_model_access_denied',
+  'start_connect_model_missing',
+  'start_connect_model_unsupported',
+  'start_connect_reasoning_unsupported',
+  'start_connect_input_transcription_unsupported',
+  'start_connect_voice_unsupported',
+  'start_connect_turn_detection_unsupported',
+  'start_connect_audio_output_unsupported',
+  'start_connect_realtime_model_unsupported',
+  'start_connect_input_transcription_model_unsupported',
+  'start_connect_model_rejected',
+  'start_connect_bad_request_param_model',
+  'start_connect_bad_request_param_session_model',
+  'start_connect_bad_request_param_type',
+  'start_connect_bad_request_param_session_type',
+  'start_connect_bad_request_param_voice',
+  'start_connect_bad_request_param_session_voice',
+  'start_connect_bad_request_param_input_audio_transcription_model',
+  'start_connect_bad_request_param_session_input_audio_transcription_model',
+  'start_connect_bad_request_param_audio_input_transcription_model',
+  'start_connect_bad_request_param_session_audio_input_transcription_model',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime-2',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime-1.5',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1-mini',
+  'start_connect_realtime_model_unsupported_supported_gpt-realtime-mini',
+  'start_connect_realtime_model_unsupported_supported_gpt-4o-realtime-preview',
+  'start_connect_realtime_model_unsupported_supported_gpt-4o-mini-realtime-preview',
+  'start_connect_model_unsupported_mentions_gpt-realtime-2.1',
+  'start_connect_model_unsupported_mentions_gpt-realtime-2.1-mini',
+  'start_connect_model_unsupported_mentions_gpt-realtime-2',
+  'start_connect_model_unsupported_mentions_gpt-realtime-1.5',
+  'start_connect_model_unsupported_mentions_gpt-realtime',
+  'start_connect_model_unsupported_mentions_gpt-realtime-mini',
+  'start_connect_model_unsupported_mentions_gpt-realtime-2025-08-28',
+  'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview',
+  'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-10-01',
+  'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-12-17',
+  'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2025-06-03',
+  'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview',
+  'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview-2024-12-17',
+  'start_connect_sdp_rejected',
+  'start_connect_bad_request',
+  'start_connect_http_other',
+  'start_connect_auth_failed',
+  'start_connect_permission_failed',
+  'start_connect_rate_limited',
+  'start_connect_model_unavailable',
+  'start_connect_service_unavailable',
+  'start_connect_network_failed',
+  'start_connect_transport_failed',
+] as const)
+
 export type RealtimeRuntimeState =
   | 'idle'
   | 'starting'
@@ -49,6 +133,22 @@ export interface RealtimeRuntimeAudioOutput {
 }
 
 export type RealtimeRuntimeSession = RealtimeSessionHandle
+
+function readValidatedConnectFailureToken(
+  session: RealtimeRuntimeSession,
+): string | undefined {
+  try {
+    const getToken = session.getLastConnectFailureToken
+    if (typeof getToken !== 'function') return undefined
+    const token = getToken()
+    return typeof token === 'string' &&
+      (START_CONNECT_FAILURE_TOKENS as readonly string[]).includes(token)
+      ? token
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export interface RealtimeRuntimeMicOwner {
   readonly acquire: (stream: MediaStream) => MaybePromise<void>
@@ -641,8 +741,11 @@ export function createRealtimeRuntimeOwner(
     control: StartControl,
   ): Promise<RealtimeRuntimeOutcome> {
     let resources: OwnedResources | undefined
+    let startStage: RealtimeRuntimeStartStage = 'media_stream'
+    let connectFailureReason: string | undefined
 
     try {
+      startStage = 'media_stream'
       const stream = await dependencies.acquireMediaStream()
       resources = { stream }
       ownedResources = resources
@@ -650,12 +753,14 @@ export function createRealtimeRuntimeOwner(
         throw new Error('start_cancelled')
       }
 
+      startStage = 'audio_output'
       const audioOutput = await dependencies.createAudioOutput()
       resources.audioOutput = audioOutput
       if (control.cancelled) {
         throw new Error('start_cancelled')
       }
 
+      startStage = 'session_create'
       const session = await dependencies.createSession(
         bundle,
         resources.stream,
@@ -667,12 +772,14 @@ export function createRealtimeRuntimeOwner(
         throw new Error('start_cancelled')
       }
 
+      startStage = 'mic_owner_create'
       const micOwner = await dependencies.createMicOwner(session)
       resources.micOwner = micOwner
       if (control.cancelled) {
         throw new Error('start_cancelled')
       }
 
+      startStage = 'mic_acquire'
       await micOwner.acquire(resources.stream)
       resources.micAcquired = true
       resources.micTeardown = 'acquired'
@@ -680,12 +787,14 @@ export function createRealtimeRuntimeOwner(
         throw new Error('start_cancelled')
       }
 
+      startStage = 'playback_transport'
       const playbackTransport = await dependencies.createPlaybackTransport(session)
       resources.playbackTransport = playbackTransport
       if (control.cancelled) {
         throw new Error('start_cancelled')
       }
 
+      startStage = 'cleanup_factory'
       resources.cleanupFactoryAttempted = true
       try {
         resources.cleanup = await dependencies.createCleanup(session)
@@ -698,7 +807,13 @@ export function createRealtimeRuntimeOwner(
         throw new Error('start_cancelled')
       }
 
-      await session.connect()
+      startStage = 'connect'
+      try {
+        await session.connect()
+      } catch {
+        connectFailureReason = readValidatedConnectFailureToken(session)
+        throw new Error('connect_failed')
+      }
 
       if (control.cancelled || state === 'disposed') {
         throw new Error('start_cancelled')
@@ -734,7 +849,10 @@ export function createRealtimeRuntimeOwner(
       const outcome = freezeOutcome({
         status: 'failed',
         operation: 'start',
-        reason: 'start_failed',
+        reason:
+          control.cancelled || state === 'disposed'
+            ? START_FAILURE_CLOSE_REASON
+            : connectFailureReason ?? START_FAILURE_REASON_BY_STAGE[startStage],
         cleanup: 'attempted',
         attemptedSteps: cleanupReport.attemptedSteps,
         failedSteps: cleanupReport.failedSteps,

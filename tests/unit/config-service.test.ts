@@ -395,7 +395,7 @@ describe('ConfigService contract', () => {
     ).toBe(false)
   })
 
-  it('keeps the versioned resource mock-only and free of forbidden content fields', async () => {
+  it('keeps the versioned resource pin and free of forbidden content fields', async () => {
     const resourcePath = resolve(process.cwd(), 'resources/config/default.json')
     const resource = JSON.parse(await readFile(resourcePath, 'utf8')) as Record<string, unknown>
     expect(resource.schemaVersion).toBe(2)
@@ -407,12 +407,12 @@ describe('ConfigService contract', () => {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
       },
-      voice: 'mock-voice-v1',
+      voice: 'marin',
       ...V2_BASELINE,
       idleSeconds: 300,
       aiModels: {
-        realtimeDialogue: { modelId: 'mock-realtime-dialogue-v1' },
-        inputTranscription: { modelId: 'mock-input-transcription-v1' },
+        realtimeDialogue: { modelId: 'gpt-realtime-2.1' },
+        inputTranscription: { modelId: 'gpt-live-transcribe' },
         memoryExtractor: { modelId: 'mock-memory-extractor-v1' },
       },
       wake: {
@@ -457,8 +457,11 @@ describe('ConfigService contract', () => {
       }
     }
     walkKeys(resource)
-    const roleValues = Object.values(resource.aiModels as Record<string, { modelId: string }>)
-    expect(roleValues.every((role) => role.modelId.startsWith('mock-'))).toBe(true)
+    const aiModels = resource.aiModels as Record<string, { modelId: string }>
+    expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1')
+    expect(aiModels.realtimeDialogue.modelId).not.toMatch(/^mock-/)
+    expect(aiModels.inputTranscription.modelId).toBe('gpt-live-transcribe')
+    expect(aiModels.memoryExtractor.modelId).toBe('mock-memory-extractor-v1')
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),
       readFile(resolve(process.cwd(), 'src/main/credential-store.ts'), 'utf8'),

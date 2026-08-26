@@ -13,13 +13,25 @@ export interface ClientSecretIssueRequest {
   readonly fetchImpl?: typeof fetch
 }
 
+export interface ClientSecretModelAvailabilityRequest {
+  readonly modelId: string
+  readonly fetchImpl?: typeof fetch
+}
+
 export interface ClientSecretIssueResult {
   readonly value: string
   readonly expiresAt?: number
 }
 
+export interface ClientSecretModelAvailabilityResult {
+  readonly status: 'available' | 'unavailable'
+}
+
 export interface ClientSecretBroker {
   issue(request: ClientSecretIssueRequest): Promise<ClientSecretIssueResult>
+  probeModelAvailability(
+    request: ClientSecretModelAvailabilityRequest,
+  ): Promise<ClientSecretModelAvailabilityResult>
 }
 
 export type ClientSecretBrokerErrorCode =
@@ -30,6 +42,11 @@ export type ClientSecretBrokerErrorCode =
   | 'realtime_client_secret_http_failed'
   | 'realtime_client_secret_response_malformed'
   | 'realtime_client_secret_invalid_prefix'
+
+const MODEL_LIST_ENDPOINT = 'https://api.openai.com/v1/models'
+const MAX_MODEL_LIST_ITEMS = 256
+const MAX_MODEL_ID_LENGTH = 256
+const MAX_MODEL_RESPONSE_BYTES = 256 * 1024
 
 export class ClientSecretBrokerError extends Error {
   readonly code: ClientSecretBrokerErrorCode
@@ -57,6 +74,44 @@ function stableStatus(value: unknown): string {
 
 function stableExpiry(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
+function responseContentLengthIsOversized(response: Response): boolean {
+  const contentLength = response.headers?.get('content-length')
+  if (contentLength === null || contentLength === undefined) return false
+  const parsedLength = Number(contentLength)
+  return Number.isSafeInteger(parsedLength)
+    && parsedLength >= 0
+    && parsedLength > MAX_MODEL_RESPONSE_BYTES
+}
+
+async function readBoundedModelResponse(response: Response): Promise<unknown> {
+  if (typeof response.text === 'function') {
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > MAX_MODEL_RESPONSE_BYTES) {
+      throw new Error('oversized_model_response')
+    }
+    return JSON.parse(text) as unknown
+  }
+  return response.json()
+}
+
+function hasExactConfiguredModel(
+  body: unknown,
+  configuredModelId: string,
+): boolean {
+  if (!isRecord(body) || !Array.isArray(body.data) || body.data.length > MAX_MODEL_LIST_ITEMS) {
+    throw new Error('malformed_model_list')
+  }
+
+  let available = false
+  for (const item of body.data) {
+    if (!isRecord(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > MAX_MODEL_ID_LENGTH) {
+      throw new Error('malformed_model_list')
+    }
+    if (item.id === configuredModelId) available = true
+  }
+  return available
 }
 
 function emitBrokerEvent(
@@ -165,7 +220,7 @@ export function createClientSecretBroker(
 
       let body: unknown
       try {
-        body = await response.json()
+        body = await readBoundedModelResponse(response)
       } catch {
         credential = null
         return fail(
@@ -209,6 +264,101 @@ export function createClientSecretBroker(
       return expiresAt === undefined
         ? { value: body.value }
         : { value: body.value, expiresAt }
+    },
+    async probeModelAvailability(
+      request: ClientSecretModelAvailabilityRequest,
+    ): Promise<ClientSecretModelAvailabilityResult> {
+      if (typeof request.modelId !== 'string' || request.modelId.length === 0) {
+        return fail(
+          options.events,
+          'realtime_client_secret_model_invalid',
+          'cause=model_invalid',
+        )
+      }
+
+      let credential: string | null = null
+      try {
+        credential = await options.credentialStore.get()
+      } catch {
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_credential_read_failed',
+          'cause=credential_read_failed',
+        )
+      }
+
+      if (typeof credential !== 'string' || credential.length === 0) {
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_credential_missing',
+          'cause=credential_missing',
+        )
+      }
+
+      let response: Response
+      try {
+        const fetchImpl = request.fetchImpl ?? fetch
+        response = await fetchImpl(MODEL_LIST_ENDPOINT, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${credential}`,
+          },
+        })
+      } catch {
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_fetch_failed',
+          'cause=fetch_failed',
+        )
+      }
+
+      if (!response.ok) {
+        const status = stableStatus(response.status)
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_http_failed',
+          `http_status=${status}`,
+        )
+      }
+
+      if (responseContentLengthIsOversized(response)) {
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_response_malformed',
+          'cause=response_malformed',
+        )
+      }
+
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        credential = null
+        return fail(
+          options.events,
+          'realtime_client_secret_response_malformed',
+          'cause=response_malformed',
+        )
+      }
+      credential = null
+
+      let available: boolean
+      try {
+        available = hasExactConfiguredModel(body, request.modelId)
+      } catch {
+        return fail(
+          options.events,
+          'realtime_client_secret_response_malformed',
+          'cause=response_malformed',
+        )
+      }
+
+      return Object.freeze({ status: available ? 'available' : 'unavailable' })
     },
   }
 }

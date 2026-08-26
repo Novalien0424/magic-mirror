@@ -267,11 +267,13 @@ export interface BootRuntime {
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
   requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>>
+  probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleRealtimeFailure(input: RealtimeFailureInput): Promise<Record<string, unknown>>
   handleRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): Record<string, unknown>
+  getLastRealtimeRuntimeOutcomeReason(): string | null
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
@@ -839,6 +841,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let modules: Record<ModuleId, ModuleStatus> = { ...DEFAULT_MODULE_STATUSES }
   let configVersion: number | null = null
   let lastError: AppSnapshot['lastError'] = null
+  let lastRealtimeRuntimeOutcomeReason: string | null = null
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let configService: ConfigService | null = options.configService ?? null
@@ -874,6 +877,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         })
       }
     }
+  }
+
+  function getLastRealtimeRuntimeOutcomeReason(): string | null {
+    return lastRealtimeRuntimeOutcomeReason
   }
 
   function refreshSnapshot(): void {
@@ -1622,6 +1629,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function shutdown(): Promise<void> {
     if (shutdownPromise !== null) return shutdownPromise
 
+    lastRealtimeRuntimeOutcomeReason = null
     pendingRealtimeRolloverSessionIdentity = null
     cancelRecoveryProbeCycle()
     cancelRealtimeRolloverTimer()
@@ -1694,6 +1702,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       }
       if (activationFailureAfterWake) {
         activationFailureAfterWake = false
+        lastRealtimeRuntimeOutcomeReason = null
         if (!sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'cloud_unavailable' })) {
           return simulatorResult('failed')
         }
@@ -1717,7 +1726,18 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     if (type === 'cloud_failure') {
       const accepted = currentState === 'activating' || currentState === 'active'
-      if (!accepted || !sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'cloud_unavailable' })) {
+      if (!accepted) {
+        emitMetadata(telemetry, {
+          module: 'app',
+          event: 'simulator_command_ignored',
+          status: 'info',
+          reason: `state=${currentState};command=cloud_failure;cause=not_active`,
+          source: 'simulator',
+        })
+        return simulatorResult('degraded')
+      }
+      lastRealtimeRuntimeOutcomeReason = null
+      if (!sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'cloud_unavailable' })) {
         emitMetadata(telemetry, {
           module: 'app',
           event: 'simulator_command_ignored',
@@ -1843,6 +1863,21 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return issuer.issue()
   }
 
+  async function probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'> {
+    try {
+      await ready
+      const modelId = resolvedModelSettings?.active.realtimeDialogue
+      const broker = options.clientSecretBroker
+      if (broker === undefined || typeof modelId !== 'string' || modelId.length === 0) {
+        return 'probe_failed'
+      }
+      const result = await broker.probeModelAvailability({ modelId })
+      return result.status
+    } catch {
+      return 'probe_failed'
+    }
+  }
+
   function emitRealtimeRecoveryUnavailable(): Record<string, unknown> {
     emitMetadata(telemetry, sanitizeRealtimeRecoveryMetadata(realtimeRecoveryUnavailable))
     return realtimeRecoveryUnavailable
@@ -1852,6 +1887,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     input: RealtimeFailureInput,
   ): Promise<Record<string, unknown>> {
     await ready
+    lastRealtimeRuntimeOutcomeReason = null
     if (realtimeRecoveryController !== null) {
       return realtimeRecoveryController.handleRealtimeFailure(input)
     }
@@ -1891,6 +1927,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       `failure_kind=${kind};cause=${reportedReason}`,
       `failure_kind=${kind};cause=realtime_failure_unknown`,
     )
+    lastRealtimeRuntimeOutcomeReason = null
     cancelRecoveryProbeCycle()
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
@@ -1941,6 +1978,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function manualStart(): Promise<Record<string, unknown>> {
     await ready
+    lastRealtimeRuntimeOutcomeReason = null
     if (realtimeRecoveryController !== null) {
       return realtimeRecoveryController.manualStart()
     }
@@ -2018,6 +2056,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function manualStop(): Promise<Record<string, unknown>> {
     await ready
+    lastRealtimeRuntimeOutcomeReason = null
     if (realtimeRecoveryController !== null) {
       return realtimeRecoveryController.manualStop()
     }
@@ -2081,6 +2120,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return emitRealtimeRuntimeResult('rollover', 'ignored', 'outcome_ignored_wrong_state')
       }
       if (status === 'success') {
+        lastRealtimeRuntimeOutcomeReason = null
         const committed = sendLifecycle({
           type: 'REALTIME_SESSION_REPLACED',
           realtimeSessionId: pendingIdentity.realtimeSessionId,
@@ -2099,6 +2139,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return emitRealtimeRuntimeResult('rollover', 'success', reason)
       }
 
+      lastRealtimeRuntimeOutcomeReason = reason
       recordRealtimeRolloverFailure()
       return emitRealtimeRuntimeResult('rollover', 'failed', reason)
     }
@@ -2109,6 +2150,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return emitRealtimeRuntimeResult('start', 'ignored', 'outcome_ignored_wrong_state')
       }
       if (status === 'success') {
+        lastRealtimeRuntimeOutcomeReason = null
         const committed = sendLifecycle({
           type: 'REALTIME_READY',
           realtimeSessionId: pendingIdentity.realtimeSessionId,
@@ -2126,11 +2168,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return emitRealtimeRuntimeResult('start', 'success', reason)
       }
 
+      lastRealtimeRuntimeOutcomeReason = reason
       recordRealtimeStartFailure()
       return emitRealtimeRuntimeResult('start', 'failed', reason)
     }
 
     if (status === 'success') {
+      lastRealtimeRuntimeOutcomeReason = null
       const closed = sendLifecycle({ type: 'MEDIA_CLOSED' })
       if (!closed || lifecycleState() !== 'dormant') {
         recordRealtimeStopFailure()
@@ -2144,6 +2188,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       return emitRealtimeRuntimeResult('stop', 'success', reason)
     }
 
+    lastRealtimeRuntimeOutcomeReason = reason
     recordRealtimeStopFailure()
     return emitRealtimeRuntimeResult('stop', 'failed', reason)
   }
@@ -2268,6 +2313,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     ready,
     console: consoleDataPlane,
     requestRealtimeClientSecret,
+    probeConfiguredModelAvailability,
     shutdown,
     telemetry: {
       emit: (event) => emitMetadata(telemetry, event),
@@ -2277,6 +2323,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     snapshot: () => projectAppSnapshot(current),
     handleRealtimeFailure,
     handleRealtimeRuntimeOutcome,
+    getLastRealtimeRuntimeOutcomeReason,
     scheduleRecoveryProbes,
     manualStart,
     manualStop,

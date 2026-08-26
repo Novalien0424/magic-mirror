@@ -75,6 +75,7 @@ function makeFixture(
     readonly realtimeSessionId: string
     readonly sessionGeneration: number
     readonly connect: ReturnType<typeof vi.fn>
+    readonly getLastConnectFailureToken: ReturnType<typeof vi.fn>
     readonly interrupt: ReturnType<typeof vi.fn>
     readonly close: ReturnType<typeof vi.fn>
     readonly onOutputAudioBufferStopped: ReturnType<typeof vi.fn>
@@ -103,6 +104,7 @@ function makeFixture(
     connect: vi.fn(async () => {
       order.push('connect')
     }),
+    getLastConnectFailureToken: vi.fn(() => undefined),
     interrupt: vi.fn(async () => {
       order.push('interrupt')
     }),
@@ -206,6 +208,251 @@ describe('createRealtimeRuntimeOwner', () => {
       'connect',
     ])
     expect(fixture.dependencies.createCleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a fixed metadata-only reason when session connect fails', async () => {
+    const fixture = makeFixture()
+    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
+    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+
+    const result = await owner.start(makeBundle())
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_connect_failed',
+      cleanup: 'attempted',
+    })
+    expect(result).not.toHaveProperty('error')
+    expect(fixture.events[0]).toMatchObject({
+      operation: 'start',
+      reason: 'start_connect_failed',
+    })
+  })
+
+  it('uses a validated session connect token only for a connect-stage failure', async () => {
+    const connectFixture = makeFixture()
+    connectFixture.session.getLastConnectFailureToken.mockReturnValue(
+      'start_connect_auth_failed',
+    )
+    connectFixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
+    const connectOwner = createRealtimeRuntimeOwner(connectFixture.dependencies)
+
+    const connectResult = await connectOwner.start(makeBundle())
+
+    expect(connectResult).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_connect_auth_failed',
+    })
+    expect(connectFixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
+
+    const preConnectFixture = makeFixture()
+    preConnectFixture.session.getLastConnectFailureToken.mockReturnValue(
+      'start_connect_auth_failed',
+    )
+    vi.mocked(preConnectFixture.dependencies.createAudioOutput).mockRejectedValueOnce(
+      new Error('opaque'),
+    )
+    const preConnectOwner = createRealtimeRuntimeOwner(preConnectFixture.dependencies)
+
+    const preConnectResult = await preConnectOwner.start(makeBundle())
+
+    expect(preConnectResult).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_audio_output_failed',
+    })
+    expect(preConnectFixture.session.getLastConnectFailureToken).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'start_connect_ephemeral_key_required',
+    'start_connect_setup_closed',
+    'start_connect_sdp_offer_missing',
+    'start_connect_sdp_answer_failed',
+    'start_connect_model_mismatch',
+    'start_connect_model_access_denied',
+    'start_connect_model_missing',
+    'start_connect_model_unsupported',
+    'start_connect_reasoning_unsupported',
+    'start_connect_input_transcription_unsupported',
+    'start_connect_voice_unsupported',
+    'start_connect_turn_detection_unsupported',
+    'start_connect_audio_output_unsupported',
+    'start_connect_realtime_model_unsupported',
+    'start_connect_input_transcription_model_unsupported',
+    'start_connect_model_rejected',
+    'start_connect_bad_request_param_model',
+    'start_connect_bad_request_param_session_model',
+    'start_connect_bad_request_param_type',
+    'start_connect_bad_request_param_session_type',
+    'start_connect_bad_request_param_voice',
+    'start_connect_bad_request_param_session_voice',
+    'start_connect_bad_request_param_input_audio_transcription_model',
+    'start_connect_bad_request_param_session_input_audio_transcription_model',
+    'start_connect_bad_request_param_audio_input_transcription_model',
+    'start_connect_bad_request_param_session_audio_input_transcription_model',
+    'start_connect_sdp_rejected',
+    'start_connect_bad_request',
+    'start_connect_http_other',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-1.5',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1-mini',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-mini',
+    'start_connect_realtime_model_unsupported_supported_gpt-4o-realtime-preview',
+    'start_connect_realtime_model_unsupported_supported_gpt-4o-mini-realtime-preview',
+    'start_connect_model_unsupported_mentions_gpt-realtime-2.1',
+    'start_connect_model_unsupported_mentions_gpt-realtime-2.1-mini',
+    'start_connect_model_unsupported_mentions_gpt-realtime-2',
+    'start_connect_model_unsupported_mentions_gpt-realtime-1.5',
+    'start_connect_model_unsupported_mentions_gpt-realtime',
+    'start_connect_model_unsupported_mentions_gpt-realtime-mini',
+    'start_connect_model_unsupported_mentions_gpt-realtime-2025-08-28',
+    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview',
+    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-10-01',
+    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-12-17',
+    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2025-06-03',
+    'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview',
+    'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview-2024-12-17',
+  ])(
+    'accepts an adapter-produced connect token after connect rejection: %s',
+    async (token) => {
+      const fixture = makeFixture()
+      fixture.session.getLastConnectFailureToken.mockReturnValue(token)
+      fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
+      const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+
+      const result = await owner.start(makeBundle())
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        operation: 'start',
+        reason: token,
+      })
+      expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it.each([
+    'start_connect_bad_request_param_not_allowed',
+    'start_connect_realtime_model_unsupported_supported_unknown-model',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-3',
+    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2-extra',
+    'start_connect_model_unsupported_mentions_unknown-model',
+    'start_connect_model_unsupported_mentions_gpt-realtime-3',
+    'start_connect_model_unsupported_mentions_gpt-realtime-2.1-extra',
+    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2025-06-03-extra',
+  ])('rejects a non-closed supported-model token: %s', async (token) => {
+    const fixture = makeFixture()
+    fixture.session.getLastConnectFailureToken.mockReturnValue(token)
+    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
+    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+
+    const result = await owner.start(makeBundle())
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_connect_failed',
+    })
+    expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to the fixed connect failure reason for an arbitrary token', async () => {
+    const fixture = makeFixture()
+    fixture.session.getLastConnectFailureToken.mockReturnValue('start_connect_arbitrary')
+    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
+    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+
+    const result = await owner.start(makeBundle())
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason: 'start_connect_failed',
+    })
+    expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      name: 'media stream',
+      reason: 'start_media_stream_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.acquireMediaStream).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+    {
+      name: 'audio output',
+      reason: 'start_audio_output_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.createAudioOutput).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+    {
+      name: 'session creation',
+      reason: 'start_session_create_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.createSession).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+    {
+      name: 'mic owner creation',
+      reason: 'start_mic_owner_create_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.createMicOwner).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+    {
+      name: 'mic acquisition',
+      reason: 'start_mic_acquire_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        fixture.micOwner.acquire.mockRejectedValueOnce(new Error('opaque'))
+      },
+    },
+    {
+      name: 'playback transport creation',
+      reason: 'start_playback_transport_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.createPlaybackTransport).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+    {
+      name: 'cleanup factory creation',
+      reason: 'start_cleanup_factory_failed',
+      fail: (fixture: ReturnType<typeof makeFixture>) => {
+        vi.mocked(fixture.dependencies.createCleanup).mockRejectedValueOnce(
+          new Error('opaque'),
+        )
+      },
+    },
+  ])('reports a fixed reason for $name start failure', async ({ fail, reason }) => {
+    const fixture = makeFixture()
+    fail(fixture)
+    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+
+    const result = await owner.start(makeBundle())
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      operation: 'start',
+      reason,
+      cleanup: 'attempted',
+    })
+    expect(result).not.toHaveProperty('error')
   })
 
   it('rejects stale and duplicate generations and never replays a generation', async () => {

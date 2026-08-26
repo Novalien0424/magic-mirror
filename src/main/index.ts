@@ -14,6 +14,11 @@ import {
 } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { applyPhase0UserDataPath } from './phase0-demo-runner'
+import {
+  createPhase1LiveSmokeCoordinator,
+  type Phase1LiveSmokeCoordinator,
+  type Phase1LiveSmokeResult,
+} from './phase1-live-smoke'
 import { createClientSecretBroker } from './realtime/client-secret-broker'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
@@ -21,6 +26,12 @@ const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 /** Never let a stalled stdout pipe turn a smoke run into a hang. */
 const EXIT_FLUSH_TIMEOUT_MS = 500
+const phase1LiveSmokeEnabled = process.env['MIRROR_PHASE1_LIVE_SMOKE'] === '1'
+
+if (phase1LiveSmokeEnabled) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
 
 const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 const phase0UserDataPath = applyPhase0UserDataPath({
@@ -53,6 +64,7 @@ let mainLifecycle: LifecycleState = 'starting'
 let mirrorRendererReady = false
 let displaySleepBlocker: DisplaySleepBlocker | null = null
 let bootRuntime: BootRuntime | null = null
+let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
 let shutdownPromise: Promise<void> | null = null
 let willQuitHandled = false
 let quitResourcesStopped = false
@@ -282,6 +294,21 @@ function finishSmokeRun(): void {
   )
 }
 
+function finishPhase1LiveSmoke(result: Phase1LiveSmokeResult): void {
+  exitWithMarker(
+    'PHASE1_LIVE_RESULT',
+    {
+      status: result.status,
+      exit: result.exit,
+      stage: result.stage,
+      reason: result.reason,
+      duration_ms: result.duration_ms,
+      model_availability: result.modelAvailability,
+    },
+    result.exit,
+  )
+}
+
 function emitDisplaySleepMetadata(
   telemetry: BootRuntime['telemetry'],
   event: DisplaySleepBlockerEvent,
@@ -400,7 +427,10 @@ void app.whenReady().then(() => {
     telemetry: runtime.telemetry,
     onReady: (kind) => {
       const win = windows.get(kind)
-      if (win !== undefined && !win.isDestroyed()) onRendererReady(win.webContents)
+      if (win !== undefined && !win.isDestroyed()) {
+        onRendererReady(win.webContents)
+        if (kind === 'mirror') phase1LiveSmokeCoordinator?.onMirrorRendererReady()
+      }
     },
   })
   runtime.subscribe((snapshot) => {
@@ -409,6 +439,20 @@ void app.whenReady().then(() => {
     void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
     void publishSnapshot('console', snapshot, windows, runtime.telemetry)
   })
+
+  if (phase1LiveSmokeEnabled) {
+    phase1LiveSmokeCoordinator = createPhase1LiveSmokeCoordinator({
+      getSnapshot: () => runtime.snapshot(),
+      getLastRealtimeRuntimeOutcomeReason: () => runtime.getLastRealtimeRuntimeOutcomeReason(),
+      subscribe: (listener) => runtime.subscribe(listener),
+      probeConfiguredModelAvailability: runtime.probeConfiguredModelAvailability,
+      manualStart: () => runtime.manualStart(),
+      manualStop: () => runtime.manualStop(),
+      emitResult: finishPhase1LiveSmoke,
+    })
+    phase1LiveSmokeCoordinator.start()
+  }
+
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
