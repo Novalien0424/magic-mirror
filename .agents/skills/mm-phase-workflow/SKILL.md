@@ -7,17 +7,15 @@ description: Use when planning, dispatching, executing, or reviewing any Magic M
 
 ## Purpose and authority
 
-Each phase must produce a runnable mirror build with its own Console controls,
-mocks, independent demo, and recorded result. [AGENTS.md](../../../AGENTS.md)
-owns authority, roles, the canonical task envelope, privacy/evidence rules, and
-invariant IDs. [.agents/H6_WORKER_PROTOCOL.md](../../H6_WORKER_PROTOCOL.md)
-owns launcher, read/output, deadline, and protocol mechanics. This skill keeps
-the phase-specific plan, execution, evidence, and exit rules below.
+Each phase must produce a runnable mirror build with Console controls, mocks,
+an independent demo, and an honest recorded result. [AGENTS.md](../../../AGENTS.md)
+owns execution policy, privacy/evidence rules, and invariant IDs. This skill
+adds only phase-specific facts.
 
-The default unit path is: one in-thread root plan review -> one bounded fresh
-implementer -> focused RED/GREEN for behavior changes -> one independent tester
--> external root acceptance. Worker self-review and root acceptance remain
-separate gates; use the canonical limits and scope rules in AGENTS/H6.
+Direct in-thread execution and review are the default. Delegate only when
+parallel work or an independent high-risk check materially helps. A routine
+unit does not require a worker, tester, plan file, repeated review, or full
+suite.
 
 ## Phase order (never skip ahead)
 
@@ -29,31 +27,24 @@ criteria: [Magic Mirror Implementation Plan](../../../docs/Magic_Mirror_Implemen
 
 ## Unit cycle
 
-1. **Plan.** Slice one bounded unit from the current phase and review the plan
-   in-thread. A plan file or plan worker is not the default. For phase work,
-   load this route first, then mm-invariants, then the one matching domain
-   route when relevant.
+1. **Scope.** Identify one observable outcome in the current phase. A written
+   plan is needed only for multi-step or cross-cutting work.
 
-2. **Execute.** Dispatch one fresh implementer through the canonical AGENTS/H6
-   route with exact read/write scope. Keep the unit independently reviewable;
-   share an implementer only for naturally coupled work with one clear
-   boundary.
+2. **Execute.** Make the smallest direct change. Keep coupled changes together
+   when splitting them would add coordination without improving reviewability.
 
-3. **Implement behavior safely.** The implementer writes one focused failing
-   test, observes RED, makes the smallest change, observes GREEN, and refactors
-   only while green. Documentation/configuration-only work uses the named static
-   checks and no ceremonial application tests. At an adapter or device boundary,
-   mock first with a fixture proving the visitor path; wire real service/device
-   behavior only within the named scope.
+3. **Implement behavior safely.** For a durable behavior change, use one focused
+   failing test when practical, then make the smallest change. Investigation,
+   one-run diagnostics, and documentation/configuration work do not need a
+   ceremonial RED step. At an unavailable adapter or device boundary, use the
+   smallest fixture that proves the contract.
 
-4. **Accept the unit.** Dispatch one independent tester for the smallest fresh
-   command set that proves the changed boundary. Extra survey, correction,
-   focused gates, or full regression require missing evidence, a concrete root
-   finding, or an escalation trigger.
+4. **Verify the unit.** Run the smallest check that proves the changed boundary.
+   Use an independent tester, full regression, or device demo only when risk,
+   ambiguity, release/phase exit, or the user requires it.
 
-5. **Review externally.** The root checks the user-visible outcome, applicable
-   invariant IDs, failure visibility, and RAM-only privacy boundary. A correction
-   dispatch needs a concrete root finding and keeps the same bounded scope.
+5. **Self-check once.** Review the diff for the user-visible outcome,
+   applicable invariants, failure visibility, and RAM-only privacy boundary.
 
 6. **Exit the phase.** Run the required product demo, record build/time/result in
    Console Phase Tests and PROGRESS.md, run the required prior-phase regression
@@ -78,29 +69,27 @@ criteria: [Magic Mirror Implementation Plan](../../../docs/Magic_Mirror_Implemen
   real-versus-mock status.
 - Any ignore, drop, fallback, degrade, or failed adapter path remains
   visitor-visible or a metadata-only Console event with a reason. Use the
-  metadata-only evidence contract in AGENTS/H6.
+  metadata-only evidence contract in `AGENTS.md`.
 
-## Unit template (all six fields required)
+## Optional delegation brief
 
 ~~~text
-Task / user-visible outcome:
-write_scope: exact named read/write paths
-Explicit non-goals:
-Relevant skills / canonical invariant IDs:
-Focused tests or static checks:
-Metadata-only evidence:
+Outcome and done condition:
+Owned files or read-only question:
+Relevant invariant IDs:
+Focused evidence:
 ~~~
 
-Add Console controls, telemetry, demo, record, and phase-test fields only when
-the affected behavior or phase exit requires them. A boundary that can ignore,
-drop, degrade, or fail must still expose that outcome to the visitor or as a
-metadata-only Console event with a reason.
+Use this only when delegation is justified. Add Console controls, telemetry,
+demo, or phase-test fields only when the affected behavior or phase exit needs
+them. A boundary that can ignore, drop, degrade, or fail must still expose that
+outcome to the visitor or as a metadata-only Console event with a reason.
 
 ## Quick reference
 
 | Decision | Rule |
 |---|---|
-| Unit too big? | Split until roughly 0.5-2 days and each unit demos something visible. |
+| Unit too big? | Split only at cohesive, independently verifiable boundaries. |
 | New dependency? | Add one only when stdlib/existing modules cannot serve the named story. |
 | Exit criteria failing? | The phase does not advance; exit criteria are not runtime gates. |
 | Required real demo unavailable? | Record pending/not-executed; never synthesize a pass. |
@@ -111,10 +100,10 @@ metadata-only Console event with a reason.
 
 ## Common mistakes
 
-- Omitting invariant IDs from a dispatch prompt; include the applicable
-  canonical IDs and let the external root gate catch violations early.
+- Copying generic policy, entire skills, or product documents into a delegated
+  prompt instead of naming the relevant outcome and invariant IDs.
 - Wiring a real service before the mock visitor path demos; mock first.
 - Treating exit criteria as runtime gates and blocking unrelated features;
   degrade visibly instead.
-- Batching unrelated units into an unreviewable diff; keep one unit or make
-  the joint boundary explicit and jointly reviewable.
+- Adding worker, tester, plan, demo, or regression gates to a routine bounded
+  edit merely because those mechanisms exist.

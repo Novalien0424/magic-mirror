@@ -52,12 +52,10 @@ rollup `external` or it breaks the build.
 
 ## Credentials
 
-`safeStorage` (Keychain-backed on macOS); **keytar is archived -- never add
-it**. Call only after `app.ready`; prefer `encryptStringAsync`/
-`decryptStringAsync` (sync blocks on Keychain UI); handle `shouldReEncrypt`.
-Store the encrypted blob in local data, plaintext never crosses IPC
-(invariant #12). On the Windows dev machine safeStorage uses DPAPI -- same
-code path, no shim needed.
+For this personal build, Electron Main alone loads `OPENAI_API_KEY` from the
+ignored repository-root `.env`. Do not add Console provisioning, `safeStorage`,
+Keychain, DPAPI, inherited-environment, or alternate-key fallbacks. Only a
+short-lived Realtime credential may cross to the renderer (invariant #12).
 
 ## Kiosk Windows
 
@@ -114,10 +112,7 @@ block anonymous Voice startup (Spec Section 13.3).
   back to the built-in Maintenance still, never black (Spec Section 9.3).
 
 ## Codex routing
-Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
-Applicable invariant IDs: 1, 3, 8, 9, 10, 11, 12.
-For Electron-foundation work, follow `AGENTS.md` together with
-pins, dependencies, platform distinctions, failure paths, safety boundaries,
-and prohibited shortcuts as immutable inputs. The worker harness model is not
-a Magic Mirror runtime model and must not be copied into runtime configuration,
-source, telemetry, or product artifacts.
+
+Use [AGENTS.md](../../../AGENTS.md) for execution policy and load
+`mm-invariants` only for the IDs implicated by the change. This skill supplies
+Electron versions, platform distinctions, and failure-boundary facts only.

@@ -13,20 +13,10 @@ MotionSync plugin R2. Build the RMS/AnalyserNode -> ParamMouthOpenY path first
 
 ## Codex routing
 
-For Live2D, avatar, audio-lip-sync, or designer-asset work, follow `AGENTS.md`
-together with `.agents/skills/mm-phase-workflow/SKILL.md`,
-`.agents/skills/mm-invariants/SKILL.md`, and, when Realtime audio is touched,
-`.agents/skills/mm-realtime-voice/SKILL.md`; then add this domain skill. Check
-the applicable invariant IDs `1, 8, 9, 10, 11, 12`. Worker model/effort,
-fresh-worker, TDD/tester, exact-scope, metadata-only evidence, no-recursion,
-and external root-review mechanics follow [AGENTS.md](../../../AGENTS.md) and
-[.agents/H6_WORKER_PROTOCOL.md](../../H6_WORKER_PROTOCOL.md).
-
-Use `apply_patch` for every write. Preserve this skill's renderer/audio safety
-rules and the invariant meanings: RAM-only transcript/audio/private data,
-single-microphone release-then-acquire handoff, visible degradation, non-gating
-failures, config-only model IDs without silent substitution, and Main-owned
-`safeStorage` credentials.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy. Load `mm-invariants`
+for the IDs implicated by the change and `mm-realtime-voice` only when the
+Realtime boundary is touched. This skill supplies Live2D and audio-rendering
+facts only.
 
 ## SDK, renderer, and loading rules
 

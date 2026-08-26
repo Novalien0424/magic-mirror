@@ -3,7 +3,6 @@ import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type Web
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { bootSequence, type BootRuntime } from './boot'
-import type { CredentialEventSink } from './credential-store'
 import { createCrashRecovery } from './crash-recovery'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
@@ -19,7 +18,10 @@ import {
   type Phase1LiveSmokeCoordinator,
   type Phase1LiveSmokeResult,
 } from './phase1-live-smoke'
-import { createClientSecretBroker } from './realtime/client-secret-broker'
+import {
+  createClientSecretBroker,
+  type ClientSecretBrokerEventSink,
+} from './realtime/client-secret-broker'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
 const isDarwin = process.platform === 'darwin'
@@ -37,7 +39,7 @@ const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 const phase0UserDataPath = applyPhase0UserDataPath({
   app,
   demo: process.env['MIRROR_PHASE0_DEMO'],
-  smoke: smokeMode.kind === 'on',
+  smoke: smokeMode.kind === 'on' || phase1LiveSmokeEnabled,
   userDataRoot: process.env['MIRROR_PHASE0_USER_DATA_ROOT'],
   userDataDir: process.env['MIRROR_USER_DATA_DIR'],
 })
@@ -328,11 +330,11 @@ function emitDisplaySleepMetadata(
 }
 
 function createDeferredCredentialEventSink(): {
-  readonly sink: CredentialEventSink
-  readonly install: (target: CredentialEventSink) => void
+  readonly sink: ClientSecretBrokerEventSink
+  readonly install: (target: ClientSecretBrokerEventSink) => void
 } {
-  let target: CredentialEventSink | null = null
-  const pending: Parameters<CredentialEventSink['emit']>[0][] = []
+  let target: ClientSecretBrokerEventSink | null = null
+  const pending: Parameters<ClientSecretBrokerEventSink['emit']>[0][] = []
 
   return {
     sink: {

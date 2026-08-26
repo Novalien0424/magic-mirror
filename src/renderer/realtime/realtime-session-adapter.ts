@@ -20,72 +20,9 @@ import {
 type SessionEventListener = (...args: unknown[]) => void
 type OutputAudioBufferStoppedListener = () => void
 
-type PublicRealtimeModelId =
-  | 'gpt-realtime-2'
-  | 'gpt-realtime-1.5'
-  | 'gpt-realtime'
-  | 'gpt-realtime-2.1'
-  | 'gpt-realtime-2.1-mini'
-  | 'gpt-realtime-mini'
-  | 'gpt-4o-realtime-preview'
-  | 'gpt-4o-mini-realtime-preview'
-
-type SupportedRealtimeModelToken =
-  `start_connect_realtime_model_unsupported_supported_${PublicRealtimeModelId}`
-
-type PublicRealtimeModelMentionId =
-  | 'gpt-realtime-2.1'
-  | 'gpt-realtime-2.1-mini'
-  | 'gpt-realtime-2'
-  | 'gpt-realtime-1.5'
-  | 'gpt-realtime'
-  | 'gpt-realtime-mini'
-  | 'gpt-realtime-2025-08-28'
-  | 'gpt-4o-realtime-preview'
-  | 'gpt-4o-realtime-preview-2024-10-01'
-  | 'gpt-4o-realtime-preview-2024-12-17'
-  | 'gpt-4o-realtime-preview-2025-06-03'
-  | 'gpt-4o-mini-realtime-preview'
-  | 'gpt-4o-mini-realtime-preview-2024-12-17'
-
-type RealtimeConnectFailureModelMentionToken =
-  `start_connect_model_unsupported_mentions_${PublicRealtimeModelMentionId}`
-
-type RealtimeConnectFailureModelUnsupportedCategoryToken =
-  | 'start_connect_reasoning_unsupported'
-  | 'start_connect_input_transcription_unsupported'
-  | 'start_connect_voice_unsupported'
-  | 'start_connect_turn_detection_unsupported'
-  | 'start_connect_audio_output_unsupported'
-
-type RealtimeConnectFailureBadRequestParamField =
-  | 'model'
-  | 'session.model'
-  | 'type'
-  | 'session.type'
-  | 'voice'
-  | 'session.voice'
-  | 'input_audio_transcription.model'
-  | 'session.input_audio_transcription.model'
-  | 'audio.input.transcription.model'
-  | 'session.audio.input.transcription.model'
-
-type RealtimeConnectFailureBadRequestParamToken =
-  | 'start_connect_bad_request_param_model'
-  | 'start_connect_bad_request_param_session_model'
-  | 'start_connect_bad_request_param_type'
-  | 'start_connect_bad_request_param_session_type'
-  | 'start_connect_bad_request_param_voice'
-  | 'start_connect_bad_request_param_session_voice'
-  | 'start_connect_bad_request_param_input_audio_transcription_model'
-  | 'start_connect_bad_request_param_session_input_audio_transcription_model'
-  | 'start_connect_bad_request_param_audio_input_transcription_model'
-  | 'start_connect_bad_request_param_session_audio_input_transcription_model'
-
 interface OutputAudioBufferStoppedSubscription {
   readonly listener: OutputAudioBufferStoppedListener
 }
-
 interface SessionLike {
   connect(options: { readonly apiKey: string }): void | PromiseLike<void>
   interrupt(): void | PromiseLike<void>
@@ -97,286 +34,31 @@ type RealtimeConnectFailureToken =
   | 'start_connect_credential_missing'
   | 'start_connect_ephemeral_key_required'
   | 'start_connect_setup_closed'
-  | 'start_connect_sdp_offer_missing'
+  | 'start_connect_sdp_offer_failed'
   | 'start_connect_sdp_answer_failed'
-  | 'start_connect_model_mismatch'
-  | 'start_connect_model_access_denied'
-  | 'start_connect_model_missing'
-  | 'start_connect_model_unsupported'
-  | RealtimeConnectFailureModelUnsupportedCategoryToken
-  | 'start_connect_realtime_model_unsupported'
-  | 'start_connect_input_transcription_model_unsupported'
-  | 'start_connect_model_rejected'
-  | SupportedRealtimeModelToken
-  | RealtimeConnectFailureModelMentionToken
-  | RealtimeConnectFailureBadRequestParamToken
-  | 'start_connect_sdp_rejected'
   | 'start_connect_bad_request'
-  | 'start_connect_http_other'
   | 'start_connect_auth_failed'
   | 'start_connect_permission_failed'
+  | 'start_connect_not_found'
   | 'start_connect_rate_limited'
-  | 'start_connect_model_unavailable'
   | 'start_connect_service_unavailable'
   | 'start_connect_network_failed'
   | 'start_connect_transport_failed'
 
-const CONNECT_FAILURE_STATUS_CLASSIFICATIONS = Object.freeze([
-  { status: 0, token: 'start_connect_network_failed' },
-  { status: 400, token: 'start_connect_bad_request' },
-  { status: 401, token: 'start_connect_auth_failed' },
-  { status: 403, token: 'start_connect_permission_failed' },
-  { status: 404, token: 'start_connect_model_unavailable' },
-  { status: 408, token: 'start_connect_network_failed' },
-  { status: 429, token: 'start_connect_rate_limited' },
-  { status: 500, token: 'start_connect_service_unavailable' },
-  { status: 502, token: 'start_connect_service_unavailable' },
-  { status: 503, token: 'start_connect_service_unavailable' },
-  { status: 504, token: 'start_connect_service_unavailable' },
-] as const)
-
-const CONNECT_FAILURE_NETWORK_CODES = Object.freeze([
-  'EAI_AGAIN',
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'ENETUNREACH',
-  'ENOTFOUND',
-  'ETIMEDOUT',
-  'ERR_CONNECTION_CLOSED',
-  'ERR_CONNECTION_RESET',
-  'ERR_INTERNET_DISCONNECTED',
-  'ERR_NETWORK',
-  'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_SOCKET',
-] as const)
-
-const CONNECT_FAILURE_AUTH_VALUES = Object.freeze([
-  'authentication_error',
-  'invalid_api_key',
-  'invalid_credentials',
-  'unauthorized',
-] as const)
-
-const CONNECT_FAILURE_PERMISSION_VALUES = Object.freeze([
-  'forbidden',
-  'insufficient_permissions',
-  'permission_denied',
-  'permission_error',
-] as const)
-
-const CONNECT_FAILURE_RATE_VALUES = Object.freeze([
-  'rate_limit_error',
-  'rate_limit_exceeded',
-  'rate_limited',
-  'too_many_requests',
-] as const)
-
-const CONNECT_FAILURE_MODEL_VALUES = Object.freeze([
-  'invalid_model',
-  'model_not_available',
-  'model_not_found',
-  'model_not_supported',
-  'model_unavailable',
-] as const)
-
-const CONNECT_FAILURE_SERVICE_VALUES = Object.freeze([
-  'bad_gateway',
-  'gateway_timeout',
-  'internal_server_error',
-  'server_error',
-  'service_unavailable',
-] as const)
-
-const CONNECT_FAILURE_NETWORK_NAMES = Object.freeze([
-  'NetworkError',
-  'TypeError',
-] as const)
-
-const CONNECT_FAILURE_NETWORK_TYPES = Object.freeze([
-  'network',
-  'network_error',
-] as const)
-
-const CONNECT_FAILURE_NESTED_KEYS = Object.freeze([
-  'cause',
-  'error',
-  'response',
-] as const)
-
-const CONNECT_FAILURE_STRUCTURAL_KEYS = Object.freeze([
-  'code',
-  'name',
-  'type',
-] as const)
-
-const CONNECT_FAILURE_STATUS_KEYS = Object.freeze([
-  'status',
-  'statusCode',
-] as const)
-
-const CONNECT_FAILURE_MESSAGE_PREFIXES = Object.freeze({
-  ephemeralKeyRequired:
-    'Using the WebRTC connection in a browser environment requires an ephemeral client key.',
-  setupClosed: 'Connection closed before setup completed',
-  sessionConfigClosed: 'Connection closed before session config was acknowledged',
-  sdpOfferMissing: 'Failed to create offer',
-  signalingHttp: 'Realtime call request failed with status ',
-  sdpAnswerFailed: 'Failed to parse SessionDescription',
-} as const)
-
-const CONNECT_FAILURE_400_MODEL_DETAIL_MARKERS = Object.freeze([
-  'model',
-] as const)
-
-const CONNECT_FAILURE_400_MODEL_SUBREASONS = Object.freeze([
-  {
-    token: 'start_connect_model_mismatch',
-    sequences: [
-      ['mismatch'],
-      ['mismatched'],
-      ['mismatches'],
-      ['match'],
-      ['matched'],
-      ['matches'],
-      ['matching'],
-      ['unmatched'],
-    ],
-  },
-  {
-    token: 'start_connect_model_access_denied',
-    sequences: [
-      ['access'],
-      ['denied'],
-      ['permission'],
-      ['forbidden'],
-      ['verification'],
-      ['verify'],
-      ['verified'],
-      ['unauthorized'],
-      ['not', 'enabled'],
-    ],
-  },
-  {
-    token: 'start_connect_model_missing',
-    sequences: [
-      ['missing'],
-      ['required'],
-      ['no', 'such'],
-      ['not', 'found'],
-      ['not', 'available'],
-      ['unavailable'],
-    ],
-  },
-  {
-    token: 'start_connect_model_unsupported',
-    sequences: [['unsupported'], ['not', 'supported'], ['invalid']],
-  },
-] as const)
-
-const CONNECT_FAILURE_400_MODEL_UNSUPPORTED_CATEGORY_MATCHERS = Object.freeze([
-  {
-    token: 'start_connect_reasoning_unsupported',
-    sequences: [['reasoning'], ['effort']],
-  },
-  {
-    token: 'start_connect_input_transcription_unsupported',
-    sequences: [['input'], ['transcription'], ['transcribe']],
-  },
-  {
-    token: 'start_connect_voice_unsupported',
-    sequences: [['voice']],
-  },
-  {
-    token: 'start_connect_turn_detection_unsupported',
-    sequences: [['turn'], ['detection'], ['vad']],
-  },
-  {
-    token: 'start_connect_audio_output_unsupported',
-    sequences: [['audio', 'output'], ['output'], ['modalities']],
-  },
-] as const)
-
-const CONNECT_FAILURE_400_SDP_DETAIL_MARKERS = Object.freeze([
-  'sdp',
-  'session description',
-  'sessiondescription',
-  'offer',
-] as const)
-
-const CONNECT_FAILURE_400_PUBLIC_REALTIME_MODEL_IDS = Object.freeze([
-  'gpt-realtime-2',
-  'gpt-realtime-1.5',
-  'gpt-realtime',
-  'gpt-realtime-2.1',
-  'gpt-realtime-2.1-mini',
-  'gpt-realtime-mini',
-  'gpt-4o-realtime-preview',
-  'gpt-4o-mini-realtime-preview',
-] as const)
-
-const CONNECT_FAILURE_400_PUBLIC_REALTIME_MODEL_MENTION_IDS = Object.freeze([
-  'gpt-4o-realtime-preview-2025-06-03',
-  'gpt-4o-realtime-preview-2024-12-17',
-  'gpt-4o-realtime-preview-2024-10-01',
-  'gpt-4o-mini-realtime-preview-2024-12-17',
-  'gpt-realtime-2025-08-28',
-  'gpt-realtime-2.1-mini',
-  'gpt-4o-realtime-preview',
-  'gpt-4o-mini-realtime-preview',
-  'gpt-realtime-2.1',
-  'gpt-realtime-1.5',
-  'gpt-realtime-mini',
-  'gpt-realtime-2',
-  'gpt-realtime',
-] as const)
-
-const CONNECT_FAILURE_400_MODEL_FIELD_NAMES = Object.freeze([
-  'model',
-  'session.model',
-  'session.audio.input.transcription.model',
-] as const)
-
-const CONNECT_FAILURE_400_MODEL_DETAIL_MAX_LENGTH = 1024
-const CONNECT_FAILURE_400_MODEL_VALUE_MAX_LENGTH = 128
-const CONNECT_FAILURE_400_SUPPORTED_VALUES_MAX_LENGTH = 512
-const CONNECT_FAILURE_400_SUPPORTED_VALUES_MARKERS = Object.freeze([
-  'expected one of:',
-  'supported values are:',
-] as const)
-const CONNECT_FAILURE_400_MODEL_VALUE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const CONNECT_FAILURE_400_PARAM_JSON_MAX_LENGTH = 2048
-
-const CONNECT_FAILURE_400_PARAM_TOKENS: Readonly<
-  Record<
-    RealtimeConnectFailureBadRequestParamField,
-    RealtimeConnectFailureBadRequestParamToken
-  >
-> = Object.freeze({
-  model: 'start_connect_bad_request_param_model',
-  'session.model': 'start_connect_bad_request_param_session_model',
-  type: 'start_connect_bad_request_param_type',
-  'session.type': 'start_connect_bad_request_param_session_type',
-  voice: 'start_connect_bad_request_param_voice',
-  'session.voice': 'start_connect_bad_request_param_session_voice',
-  'input_audio_transcription.model':
-    'start_connect_bad_request_param_input_audio_transcription_model',
-  'session.input_audio_transcription.model':
-    'start_connect_bad_request_param_session_input_audio_transcription_model',
-  'audio.input.transcription.model':
-    'start_connect_bad_request_param_audio_input_transcription_model',
-  'session.audio.input.transcription.model':
-    'start_connect_bad_request_param_session_audio_input_transcription_model',
-})
-
-interface StrictConnectFailure400ModelDetail {
-  readonly rejectedValue: string
-  readonly supportedValues?: readonly PublicRealtimeModelId[]
-}
-
-interface ConnectFailureStructuralNode {
-  readonly value: unknown
-  readonly depth: number
-}
+const NETWORK_CODES = new Set([
+  'eai_again',
+  'econnrefused',
+  'econnreset',
+  'enetunreach',
+  'enotfound',
+  'etimedout',
+  'err_connection_closed',
+  'err_connection_reset',
+  'err_internet_disconnected',
+  'err_network',
+  'und_err_connect_timeout',
+  'und_err_socket',
+])
 
 export interface RealtimeSessionDependencies {
   readonly RealtimeAgent?: typeof RealtimeAgent
@@ -523,541 +205,95 @@ function rawEventStatus(event: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
 
-function readConnectFailureStructuralNodes(value: unknown): ConnectFailureStructuralNode[] {
-  const nodes: ConnectFailureStructuralNode[] = []
-  const pending: ConnectFailureStructuralNode[] = [{ value, depth: 0 }]
+function errorNodes(value: unknown): readonly unknown[] {
+  const nodes: unknown[] = []
+  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
   const visited = new Set<object>()
 
-  while (pending.length > 0) {
-    const node = pending.shift()
-    if (node === undefined || !isRecord(node.value)) continue
-    if (visited.has(node.value)) continue
-    visited.add(node.value)
-    nodes.push(node)
-
-    if (node.depth >= 3) continue
-    for (const key of CONNECT_FAILURE_NESTED_KEYS) {
-      const nested = readProperty(node.value, key)
-      if (isRecord(nested)) {
-        pending.push({ value: nested, depth: node.depth + 1 })
-      }
+  while (pending.length > 0 && nodes.length < 8) {
+    const current = pending.shift()
+    if (current === undefined) break
+    nodes.push(current.value)
+    if (!isRecord(current.value) || current.depth >= 2 || visited.has(current.value)) continue
+    visited.add(current.value)
+    for (const key of ['cause', 'error', 'response']) {
+      const nested = readProperty(current.value, key)
+      if (nested !== undefined) pending.push({ value: nested, depth: current.depth + 1 })
     }
   }
-
   return nodes
 }
 
-function readConnectFailureStatus(value: unknown): number | undefined {
-  for (const key of CONNECT_FAILURE_STATUS_KEYS) {
-    const status = readProperty(value, key)
-    if (typeof status !== 'number' || !Number.isSafeInteger(status)) continue
-    for (const classification of CONNECT_FAILURE_STATUS_CLASSIFICATIONS) {
-      if (classification.status === status) return classification.status
-    }
-  }
+function connectFailureMessage(value: unknown): string | undefined {
+  if (value instanceof Error) return value.message
+  const message = readProperty(value, 'message')
+  return typeof message === 'string' ? message : undefined
+}
+
+function tokenForStatus(status: number): RealtimeConnectFailureToken | undefined {
+  if (status === 0 || status === 408) return 'start_connect_network_failed'
+  if (status === 400) return 'start_connect_bad_request'
+  if (status === 401) return 'start_connect_auth_failed'
+  if (status === 403) return 'start_connect_permission_failed'
+  if (status === 404) return 'start_connect_not_found'
+  if (status === 429) return 'start_connect_rate_limited'
+  if (status >= 500 && status <= 599) return 'start_connect_service_unavailable'
   return undefined
 }
 
-function tokenForConnectFailureStatus(
-  status: number,
-): RealtimeConnectFailureToken | undefined {
-  for (const classification of CONNECT_FAILURE_STATUS_CLASSIFICATIONS) {
-    if (classification.status === status) {
-      return classification.token
-    }
-  }
-  return undefined
-}
+function classifyConnectFailure(value: unknown): RealtimeConnectFailureToken {
+  const nodes = errorNodes(value)
+  const message = nodes.map(connectFailureMessage).find((item) => item !== undefined)
 
-function includesStructuralValue(
-  values: readonly string[],
-  value: unknown,
-): value is string {
-  return typeof value === 'string' && values.includes(value)
-}
-
-function readConnectFailureMessage(value: unknown): string | undefined {
-  if (!(value instanceof Error)) return undefined
-  try {
-    return typeof value.message === 'string' ? value.message : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function parseStrictConnectFailure400SupportedValues(
-  segment: string,
-): readonly PublicRealtimeModelId[] | undefined {
-  if (
-    segment.length === 0 ||
-    segment.length > CONNECT_FAILURE_400_SUPPORTED_VALUES_MAX_LENGTH
-  ) {
-    return undefined
-  }
-
-  const entries = segment.split(', ')
-  if (
-    entries.length === 0 ||
-    entries.length > CONNECT_FAILURE_400_PUBLIC_REALTIME_MODEL_IDS.length
-  ) {
-    return undefined
-  }
-
-  const values: PublicRealtimeModelId[] = []
-  const seen = new Set<PublicRealtimeModelId>()
-  for (const entry of entries) {
-    if (entry.length < 3 || entry[0] !== "'" || entry.at(-1) !== "'") {
-      return undefined
-    }
-    const value = entry.slice(1, -1)
-    if (
-      value.length > CONNECT_FAILURE_400_MODEL_VALUE_MAX_LENGTH ||
-      !CONNECT_FAILURE_400_MODEL_VALUE_PATTERN.test(value)
-    ) {
-      return undefined
-    }
-    const publicModelId = CONNECT_FAILURE_400_PUBLIC_REALTIME_MODEL_IDS.find(
-      (candidate) => candidate === value,
-    )
-    if (publicModelId === undefined || seen.has(publicModelId)) return undefined
-    seen.add(publicModelId)
-    values.push(publicModelId)
-  }
-
-  return Object.freeze(values)
-}
-
-function parseStrictConnectFailure400ModelDetail(
-  detail: string,
-): StrictConnectFailure400ModelDetail | undefined {
-  if (
-    detail.length === 0 ||
-    detail.length > CONNECT_FAILURE_400_MODEL_DETAIL_MAX_LENGTH
-  ) {
-    return undefined
-  }
-
-  let providerDetail = detail
-  if (providerDetail.startsWith(' :: ')) {
-    providerDetail = providerDetail.slice(4)
-  } else if (providerDetail.startsWith(': ')) {
-    providerDetail = providerDetail.slice(2)
-  }
-
-  const match = /^Invalid (?:(?:'([^']+)')|value): '([^']+)'(?:\. (?:Expected one of|Supported values are): (.*))?$/.exec(
-    providerDetail,
-  )
-  if (match === null) return undefined
-
-  const fieldName = match[1]
-  if (
-    fieldName !== undefined &&
-    !(CONNECT_FAILURE_400_MODEL_FIELD_NAMES as readonly string[]).includes(fieldName)
-  ) {
-    return undefined
-  }
-
-  const rejectedValue = match[2]
-  if (
-    rejectedValue.length === 0 ||
-    rejectedValue.length > CONNECT_FAILURE_400_MODEL_VALUE_MAX_LENGTH ||
-    !CONNECT_FAILURE_400_MODEL_VALUE_PATTERN.test(rejectedValue)
-  ) {
-    return undefined
-  }
-
-  const supportedSegment = match[3]
-  if (supportedSegment === undefined) {
-    return { rejectedValue }
-  }
-
-  return {
-    rejectedValue,
-    supportedValues: parseStrictConnectFailure400SupportedValues(supportedSegment),
-  }
-}
-
-function tokenForConnectFailure400ModelMention(
-  detail: string,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureModelMentionToken | undefined {
-  const cappedDetail = detail.slice(0, CONNECT_FAILURE_400_MODEL_DETAIL_MAX_LENGTH)
-  const normalizedDetail = cappedDetail.toLowerCase()
-  const configuredModelIds = new Set(
-    [realtimeDialogueModel, inputTranscriptionModel]
-      .filter((model) => model.length > 0)
-      .map((model) => model.toLowerCase()),
-  )
-  let firstMention:
-    | { readonly modelId: PublicRealtimeModelMentionId; readonly occurrence: number }
-    | undefined
-
-  for (const modelId of CONNECT_FAILURE_400_PUBLIC_REALTIME_MODEL_MENTION_IDS) {
-    if (configuredModelIds.has(modelId)) continue
-
-    let searchFrom = 0
-    while (searchFrom < normalizedDetail.length) {
-      const occurrence = normalizedDetail.indexOf(modelId, searchFrom)
-      if (occurrence < 0) break
-      const precedingCharacter = normalizedDetail[occurrence - 1]
-      const followingCharacter = normalizedDetail[occurrence + modelId.length]
-      const hasExactBoundaries =
-        (precedingCharacter === undefined || !/[A-Za-z0-9._-]/.test(precedingCharacter)) &&
-        (followingCharacter === undefined || !/[A-Za-z0-9._-]/.test(followingCharacter))
-      if (hasExactBoundaries) {
-        if (firstMention === undefined || occurrence < firstMention.occurrence) {
-          firstMention = { modelId, occurrence }
-        }
-        break
-      }
-      searchFrom = occurrence + 1
-    }
-  }
-
-  return firstMention === undefined
-    ? undefined
-    : `start_connect_model_unsupported_mentions_${firstMention.modelId}`
-}
-
-function hasConnectFailure400SupportedValuesMarker(detail: string): boolean {
-  const normalizedDetail = detail
-    .slice(0, CONNECT_FAILURE_400_MODEL_DETAIL_MAX_LENGTH)
-    .toLowerCase()
-  return CONNECT_FAILURE_400_SUPPORTED_VALUES_MARKERS.some((marker) =>
-    normalizedDetail.includes(marker),
-  )
-}
-
-function tokenForConnectFailure400ExactConfiguredModel(
-  detail: string,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureToken | undefined {
-  const normalizedDetail = detail
-    .slice(0, CONNECT_FAILURE_400_MODEL_DETAIL_MAX_LENGTH)
-    .toLowerCase()
-  const configuredModels = [
-    {
-      model: realtimeDialogueModel,
-      token: 'start_connect_realtime_model_unsupported',
-    },
-    {
-      model: inputTranscriptionModel,
-      token: 'start_connect_input_transcription_model_unsupported',
-    },
-  ] as const
-  const matchingTokens: RealtimeConnectFailureToken[] = []
-
-  for (const configured of configuredModels) {
-    const normalizedModel = configured.model.toLowerCase()
-    if (normalizedModel.length === 0) continue
-
-    let searchFrom = 0
-    while (searchFrom < normalizedDetail.length) {
-      const occurrence = normalizedDetail.indexOf(normalizedModel, searchFrom)
-      if (occurrence < 0) break
-      const precedingCharacter = normalizedDetail[occurrence - 1]
-      const followingCharacter = normalizedDetail[
-        occurrence + normalizedModel.length
-      ]
-      const hasExactBoundaries =
-        (precedingCharacter === undefined ||
-          !/[A-Za-z0-9._-]/.test(precedingCharacter)) &&
-        (followingCharacter === undefined ||
-          !/[A-Za-z0-9._-]/.test(followingCharacter))
-      if (hasExactBoundaries) {
-        matchingTokens.push(configured.token)
-        break
-      }
-      searchFrom = occurrence + 1
-    }
-  }
-
-  return matchingTokens.length === 1 ? matchingTokens[0] : undefined
-}
-
-function tokenForConnectFailure400ParamDetail(
-  detail: string,
-): RealtimeConnectFailureBadRequestParamToken | undefined {
-  if (
-    detail.length === 0 ||
-    detail.length > CONNECT_FAILURE_400_PARAM_JSON_MAX_LENGTH
-  ) {
-    return undefined
-  }
-
-  let jsonText: string
-  if (detail.startsWith(' :: ')) {
-    jsonText = detail.slice(4)
-  } else if (detail.startsWith(': ')) {
-    jsonText = detail.slice(2)
-  } else {
-    return undefined
-  }
-  if (
-    jsonText.length === 0 ||
-    jsonText.length > CONNECT_FAILURE_400_PARAM_JSON_MAX_LENGTH
-  ) {
-    return undefined
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(jsonText)
-  } catch {
-    return undefined
-  }
-  if (!isRecord(parsed)) return undefined
-
-  const rootKeys = Object.keys(parsed)
-  if (rootKeys.length !== 1 || rootKeys[0] !== 'error') return undefined
-
-  const error = readProperty(parsed, 'error')
-  if (!isRecord(error)) return undefined
-  const param = readProperty(error, 'param')
-  if (typeof param !== 'string') return undefined
-
-  if (!Object.prototype.hasOwnProperty.call(CONNECT_FAILURE_400_PARAM_TOKENS, param)) {
-    return undefined
-  }
-  return CONNECT_FAILURE_400_PARAM_TOKENS[
-    param as RealtimeConnectFailureBadRequestParamField
-  ]
-}
-
-function tokenForStrictConnectFailure400ModelDetail(
-  detail: StrictConnectFailure400ModelDetail,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureToken {
-  const matchedRealtimeModel =
-    realtimeDialogueModel.length > 0 && detail.rejectedValue === realtimeDialogueModel
-  const matchedInputTranscriptionModel =
-    inputTranscriptionModel.length > 0 && detail.rejectedValue === inputTranscriptionModel
-
-  if (matchedRealtimeModel === matchedInputTranscriptionModel) {
-    return 'start_connect_model_unsupported'
-  }
-  if (matchedInputTranscriptionModel) {
-    return 'start_connect_input_transcription_model_unsupported'
-  }
-
-  const supportedModelId = detail.supportedValues?.[0]
-  if (supportedModelId !== undefined) {
-    return `start_connect_realtime_model_unsupported_supported_${supportedModelId}`
-  }
-  return 'start_connect_realtime_model_unsupported'
-}
-
-function tokenForConnectFailure400ModelDetail(
-  detail: string,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureToken | undefined {
-  const strictDetail = parseStrictConnectFailure400ModelDetail(detail)
-  const words = new Set(detail.toLowerCase().match(/[a-z0-9]+/g) ?? [])
-  const categoryWords = categoryWordsForConnectFailure400ModelDetail(
-    detail,
-    realtimeDialogueModel,
-    inputTranscriptionModel,
-  )
-  const hasSupportedValuesMarker = hasConnectFailure400SupportedValuesMarker(detail)
-  const hasModelMarker = CONNECT_FAILURE_400_MODEL_DETAIL_MARKERS.some((marker) =>
-    words.has(marker),
-  )
-
-  if (strictDetail !== undefined && (hasModelMarker || strictDetail.supportedValues !== undefined)) {
-    return tokenForStrictConnectFailure400ModelDetail(
-      strictDetail,
-      realtimeDialogueModel,
-      inputTranscriptionModel,
-    )
-  }
-  if (!hasModelMarker) return undefined
-  const modelMentionToken = tokenForConnectFailure400ModelMention(
-    detail,
-    realtimeDialogueModel,
-    inputTranscriptionModel,
-  )
-
-  for (const subreason of CONNECT_FAILURE_400_MODEL_SUBREASONS) {
-    if (
-      subreason.sequences.some((sequence) =>
-        sequence.every((word) => words.has(word)),
-      )
-    ) {
-      if (subreason.token === 'start_connect_model_unsupported') {
-        return (
-          tokenForConnectFailure400ModelUnsupportedCategory(categoryWords) ??
-          (hasSupportedValuesMarker
-            ? undefined
-            : tokenForConnectFailure400ExactConfiguredModel(
-                detail,
-                realtimeDialogueModel,
-                inputTranscriptionModel,
-              )) ??
-          modelMentionToken ??
-          subreason.token
-        )
-      }
-      return subreason.token
-    }
-  }
-
-  return modelMentionToken ?? 'start_connect_model_rejected'
-}
-
-function tokenForConnectFailure400ModelUnsupportedCategory(
-  words: ReadonlySet<string>,
-): RealtimeConnectFailureModelUnsupportedCategoryToken | undefined {
-  let matchingToken: RealtimeConnectFailureModelUnsupportedCategoryToken | undefined
-  let matchCount = 0
-
-  for (const category of CONNECT_FAILURE_400_MODEL_UNSUPPORTED_CATEGORY_MATCHERS) {
-    if (!category.sequences.some((sequence) => sequence.every((word) => words.has(word)))) {
-      continue
-    }
-    matchingToken = category.token
-    matchCount += 1
-  }
-
-  return matchCount === 1 ? matchingToken : undefined
-}
-
-function categoryWordsForConnectFailure400ModelDetail(
-  detail: string,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): ReadonlySet<string> {
-  let categorySource = detail
-  let jsonText: string | undefined
-  if (detail.startsWith(' :: ')) {
-    jsonText = detail.slice(4)
-  } else if (detail.startsWith(': ')) {
-    jsonText = detail.slice(2)
-  }
-
-  if (jsonText !== undefined) {
-    try {
-      const parsed: unknown = JSON.parse(jsonText)
-      const error = isRecord(parsed) ? readProperty(parsed, 'error') : undefined
-      const providerMessage = isRecord(error) ? readProperty(error, 'message') : undefined
-      categorySource = typeof providerMessage === 'string' ? providerMessage : ''
-    } catch {
-      // Keep non-JSON SDK detail available to the bounded word classifier.
-    }
-  }
-
-  for (const configuredModel of [realtimeDialogueModel, inputTranscriptionModel]) {
-    if (configuredModel.length > 0) {
-      categorySource = categorySource.split(configuredModel).join(' ')
-    }
-  }
-
-  return new Set(categorySource.toLowerCase().match(/[a-z0-9]+/g) ?? [])
-}
-
-function classifyConnectFailureMessage(
-  message: string,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureToken | undefined {
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.ephemeralKeyRequired)) {
+  if (message?.startsWith('Using the WebRTC connection in a browser environment requires an ephemeral client key.')) {
     return 'start_connect_ephemeral_key_required'
   }
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.setupClosed)) {
+  if (
+    message?.startsWith('Connection closed before setup completed')
+    || message?.startsWith('Connection closed before session config was acknowledged')
+  ) {
     return 'start_connect_setup_closed'
   }
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.sessionConfigClosed)) {
-    return 'start_connect_setup_closed'
-  }
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.sdpOfferMissing)) {
-    return 'start_connect_sdp_offer_missing'
-  }
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.signalingHttp)) {
-    const statusText = message.slice(
-      CONNECT_FAILURE_MESSAGE_PREFIXES.signalingHttp.length,
-      CONNECT_FAILURE_MESSAGE_PREFIXES.signalingHttp.length + 3,
-    )
-    if (!/^\d{3}$/.test(statusText)) return undefined
-    const status = Number(statusText)
-if (status === 400) {
-const detail = message
-.slice(CONNECT_FAILURE_MESSAGE_PREFIXES.signalingHttp.length + statusText.length)
-const paramToken = tokenForConnectFailure400ParamDetail(detail)
-if (paramToken !== undefined) return paramToken
-const detailLower = detail.toLowerCase()
-const modelToken = tokenForConnectFailure400ModelDetail(
-detail,
-realtimeDialogueModel,
-inputTranscriptionModel,
-)
-if (modelToken !== undefined) return modelToken
-if (CONNECT_FAILURE_400_SDP_DETAIL_MARKERS.some((marker) => detailLower.includes(marker))) {
-return 'start_connect_sdp_rejected'
-}
-      return 'start_connect_bad_request'
-    }
-    const token = tokenForConnectFailureStatus(status)
-    return token ?? 'start_connect_http_other'
-  }
-  if (message.startsWith(CONNECT_FAILURE_MESSAGE_PREFIXES.sdpAnswerFailed)) {
+  if (message?.startsWith('Failed to create offer')) return 'start_connect_sdp_offer_failed'
+  if (message?.startsWith('Failed to parse SessionDescription')) {
     return 'start_connect_sdp_answer_failed'
   }
-  return undefined
-}
 
-function classifyConnectFailure(
-  value: unknown,
-  realtimeDialogueModel: string,
-  inputTranscriptionModel: string,
-): RealtimeConnectFailureToken {
-  const message = readConnectFailureMessage(value)
-  if (message !== undefined) {
-    const messageToken = classifyConnectFailureMessage(
-      message,
-      realtimeDialogueModel,
-      inputTranscriptionModel,
-    )
-    if (messageToken !== undefined) return messageToken
+  const signalingStatus = message?.match(/^Realtime call request failed with status (\d{3})/)
+  if (signalingStatus !== undefined && signalingStatus !== null) {
+    const token = tokenForStatus(Number(signalingStatus[1]))
+    if (token !== undefined) return token
   }
 
-  const nodes = readConnectFailureStructuralNodes(value)
-
   for (const node of nodes) {
-    const status = readConnectFailureStatus(node.value)
-    if (status !== undefined) {
-      const token = tokenForConnectFailureStatus(status)
-      if (token !== undefined) return token
+    for (const key of ['status', 'statusCode']) {
+      const status = readProperty(node, key)
+      if (typeof status === 'number' && Number.isSafeInteger(status)) {
+        const token = tokenForStatus(status)
+        if (token !== undefined) return token
+      }
     }
   }
 
   for (const node of nodes) {
-    for (const key of CONNECT_FAILURE_STRUCTURAL_KEYS) {
-      const structuralValue = readProperty(node.value, key)
-      if (includesStructuralValue(CONNECT_FAILURE_NETWORK_CODES, structuralValue)) {
+    for (const key of ['code', 'type', 'name']) {
+      const raw = readProperty(node, key)
+      if (typeof raw !== 'string') continue
+      const value = raw.toLowerCase()
+      if (NETWORK_CODES.has(value) || value === 'networkerror' || value === 'network_error') {
         return 'start_connect_network_failed'
       }
-      if (key === 'name' && includesStructuralValue(CONNECT_FAILURE_NETWORK_NAMES, structuralValue)) {
-        return 'start_connect_network_failed'
-      }
-      if (key === 'type' && includesStructuralValue(CONNECT_FAILURE_NETWORK_TYPES, structuralValue)) {
-        return 'start_connect_network_failed'
-      }
-      if (includesStructuralValue(CONNECT_FAILURE_AUTH_VALUES, structuralValue)) {
+      if (value === 'typeerror' && node instanceof Error) return 'start_connect_network_failed'
+      if (value.includes('auth') || value === 'invalid_api_key' || value === 'unauthorized') {
         return 'start_connect_auth_failed'
       }
-      if (includesStructuralValue(CONNECT_FAILURE_PERMISSION_VALUES, structuralValue)) {
+      if (value.includes('permission') || value === 'forbidden') {
         return 'start_connect_permission_failed'
       }
-      if (includesStructuralValue(CONNECT_FAILURE_RATE_VALUES, structuralValue)) {
+      if (value.includes('rate_limit') || value === 'too_many_requests') {
         return 'start_connect_rate_limited'
       }
-      if (includesStructuralValue(CONNECT_FAILURE_MODEL_VALUES, structuralValue)) {
-        return 'start_connect_model_unavailable'
-      }
-      if (includesStructuralValue(CONNECT_FAILURE_SERVICE_VALUES, structuralValue)) {
+      if (value.includes('service_unavailable') || value.includes('server_error')) {
         return 'start_connect_service_unavailable'
       }
     }
@@ -1350,11 +586,7 @@ export function createRealtimeSession(
       latestConnectFailureToken = undefined
       if (!closed) emitReady('cause=connect_succeeded')
     } catch (error: unknown) {
-      latestConnectFailureToken = classifyConnectFailure(
-        error,
-        input.snapshot.realtimeDialogue,
-        input.snapshot.inputTranscription,
-      )
+      latestConnectFailureToken = classifyConnectFailure(error)
       if (!closed && !failureReported) {
         reportFailure(
           readyEmitted ? 'ice' : 'connect',

@@ -79,7 +79,6 @@ import {
   type RealtimeSessionIdentity,
   type RealtimeSessionStartBundle,
 } from './realtime/session-start-bundle'
-import type { RealtimeOutageRecoveryController } from './realtime/outage-recovery'
 import {
   RECOVERY_PROBE_DELAYS_MS,
   REALTIME_ROLLOVER_AFTER_MS,
@@ -230,10 +229,6 @@ export interface BootOptions {
   readonly createMockModuleFactory?: () => ModuleMockFactory
   readonly createModuleRegistry?: (options: ModuleRegistryOptions) => ModuleRegistry
   readonly createLifecycleActor?: (deps: { telemetry: { emit(event: MetadataEvent): void } }) => LifecycleActor
-  readonly createRealtimeRecoveryController?: (dependencies: {
-    lifecycleActor: LifecycleActor
-    metadataSink: (event: Record<string, unknown>) => void
-  }) => RealtimeOutageRecoveryController
   readonly dispatchRealtimeRuntimeCommand?: (
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
@@ -846,7 +841,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let configService: ConfigService | null = options.configService ?? null
   let sqliteService: SqlitePhaseTestService | null = null
-  let realtimeRecoveryController: RealtimeOutageRecoveryController | null = null
   const realtimeRecoveryUnavailable: Record<string, unknown> = Object.freeze({
     event: 'realtime_recovery_unavailable',
     status: 'failed',
@@ -1278,9 +1272,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenance = null
     refreshSnapshot()
     notifyListeners()
-    if (realtimeRecoveryController === null && lifecycleState() === 'offlineLoop') {
-      startRecoveryProbeCycle()
-    }
+    if (lifecycleState() === 'offlineLoop') startRecoveryProbeCycle()
   }
 
   function recordRealtimeStopFailure(): void {
@@ -1314,9 +1306,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenance = null
     refreshSnapshot()
     notifyListeners()
-    if (realtimeRecoveryController === null && lifecycleState() === 'offlineLoop') {
-      startRecoveryProbeCycle()
-    }
+    if (lifecycleState() === 'offlineLoop') startRecoveryProbeCycle()
   }
 
   let readySettled = false
@@ -1529,26 +1519,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       }
     }
     attachActor(createdActor)
-
-    const createRealtimeRecoveryController = options.createRealtimeRecoveryController
-    if (createRealtimeRecoveryController !== undefined) {
-      try {
-        realtimeRecoveryController = createRealtimeRecoveryController({
-          lifecycleActor: createdActor,
-          metadataSink: (event) => emitMetadata(telemetry, sanitizeRealtimeRecoveryMetadata(event)),
-        })
-      } catch {
-        realtimeRecoveryController = null
-        emitMetadata(telemetry, {
-          module: 'app',
-          event: 'recovery_controller_create_failed',
-          status: 'failed',
-          error_code: 'recovery_controller_create_failed',
-          reason: 'cause=create_failed',
-          source: 'runtime',
-        })
-      }
-    }
 
     const firstFailure = failures[0]
     if (firstFailure === undefined) {
@@ -1888,10 +1858,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   ): Promise<Record<string, unknown>> {
     await ready
     lastRealtimeRuntimeOutcomeReason = null
-    if (realtimeRecoveryController !== null) {
-      return realtimeRecoveryController.handleRealtimeFailure(input)
-    }
-
     const kindValue = readProperty(input, 'kind')
     const kind = kindValue === 'connect' || kindValue === 'ice' || kindValue === 'active_disconnect'
       ? kindValue
@@ -1962,13 +1928,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function scheduleRecoveryProbes(): void {
-    const invoke = (): void => {
-      if (realtimeRecoveryController === null) {
-        startRecoveryProbeCycle()
-        return
-      }
-      realtimeRecoveryController.scheduleRecoveryProbes()
-    }
+    const invoke = (): void => startRecoveryProbeCycle()
     if (readySettled) {
       invoke()
       return
@@ -1979,10 +1939,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function manualStart(): Promise<Record<string, unknown>> {
     await ready
     lastRealtimeRuntimeOutcomeReason = null
-    if (realtimeRecoveryController !== null) {
-      return realtimeRecoveryController.manualStart()
-    }
-
     const dispatch = options.dispatchRealtimeRuntimeCommand
     if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
 
@@ -2057,10 +2013,6 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function manualStop(): Promise<Record<string, unknown>> {
     await ready
     lastRealtimeRuntimeOutcomeReason = null
-    if (realtimeRecoveryController !== null) {
-      return realtimeRecoveryController.manualStop()
-    }
-
     const dispatch = options.dispatchRealtimeRuntimeCommand
     if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
 
@@ -2135,7 +2087,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         maintenance = null
         refreshSnapshot()
         notifyListeners()
-        if (realtimeRecoveryController === null) armRealtimeRolloverTimer()
+        armRealtimeRolloverTimer()
         return emitRealtimeRuntimeResult('rollover', 'success', reason)
       }
 
@@ -2164,7 +2116,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         maintenance = null
         refreshSnapshot()
         notifyListeners()
-        if (realtimeRecoveryController === null) armRealtimeRolloverTimer()
+        armRealtimeRolloverTimer()
         return emitRealtimeRuntimeResult('start', 'success', reason)
       }
 
@@ -2195,66 +2147,63 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function rolloverAtSafeBoundary(): Promise<Record<string, unknown>> {
     await ready
-    if (realtimeRecoveryController === null) {
-      const dispatch = options.dispatchRealtimeRuntimeCommand
-      const state = lifecycleState()
-      if (state !== 'active') {
-        return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_requires_active')
-      }
-      if (pendingRealtimeRolloverSessionIdentity !== null) {
-        return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_in_progress')
-      }
-      if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
-
-      const authoritativeIdentity = authoritativeRealtimeSessionIdentity()
-      if (authoritativeIdentity === null) {
-        recordRealtimeRolloverFailure()
-        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
-      }
-
-      let realtimeSessionId: string
-      try {
-        realtimeSessionId = createRealtimeSessionId()
-      } catch {
-        recordRealtimeRolloverFailure()
-        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
-      }
-      const sessionGeneration = authoritativeIdentity.sessionGeneration + 1
-      if (
-        safeIdentifier(realtimeSessionId) === null
-        || realtimeSessionId === authoritativeIdentity.realtimeSessionId
-        || !Number.isSafeInteger(sessionGeneration)
-        || sessionGeneration < 1
-      ) {
-        recordRealtimeRolloverFailure()
-        return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
-      }
-
-      pendingRealtimeRolloverSessionIdentity = Object.freeze({
-        realtimeSessionId,
-        sessionGeneration,
-      })
-      cancelRealtimeRolloverTimer()
-
-      let dispatchResult: RealtimeRuntimeCommandDispatchResult
-      try {
-        dispatchResult = normalizeRealtimeRuntimeCommandDispatchResult(dispatch(Object.freeze({
-          operation: 'rollover',
-          reason: 'session_limit',
-        })))
-      } catch {
-        dispatchResult = Object.freeze({
-          status: 'failed',
-          reason: 'runtime_command_send_failed',
-        })
-      }
-
-      if (dispatchResult.status === 'failed') {
-        recordRealtimeRolloverFailure()
-      }
-      return emitRealtimeRuntimeResult('rollover', dispatchResult.status, dispatchResult.reason)
+    const dispatch = options.dispatchRealtimeRuntimeCommand
+    const state = lifecycleState()
+    if (state !== 'active') {
+      return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_requires_active')
     }
-    return realtimeRecoveryController.rolloverAtSafeBoundary()
+    if (pendingRealtimeRolloverSessionIdentity !== null) {
+      return emitRealtimeRuntimeResult('rollover', 'ignored', 'rollover_in_progress')
+    }
+    if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
+
+    const authoritativeIdentity = authoritativeRealtimeSessionIdentity()
+    if (authoritativeIdentity === null) {
+      recordRealtimeRolloverFailure()
+      return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+    }
+
+    let realtimeSessionId: string
+    try {
+      realtimeSessionId = createRealtimeSessionId()
+    } catch {
+      recordRealtimeRolloverFailure()
+      return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+    }
+    const sessionGeneration = authoritativeIdentity.sessionGeneration + 1
+    if (
+      safeIdentifier(realtimeSessionId) === null
+      || realtimeSessionId === authoritativeIdentity.realtimeSessionId
+      || !Number.isSafeInteger(sessionGeneration)
+      || sessionGeneration < 1
+    ) {
+      recordRealtimeRolloverFailure()
+      return emitRealtimeRuntimeResult('rollover', 'failed', 'runtime_command_send_failed')
+    }
+
+    pendingRealtimeRolloverSessionIdentity = Object.freeze({
+      realtimeSessionId,
+      sessionGeneration,
+    })
+    cancelRealtimeRolloverTimer()
+
+    let dispatchResult: RealtimeRuntimeCommandDispatchResult
+    try {
+      dispatchResult = normalizeRealtimeRuntimeCommandDispatchResult(dispatch(Object.freeze({
+        operation: 'rollover',
+        reason: 'session_limit',
+      })))
+    } catch {
+      dispatchResult = Object.freeze({
+        status: 'failed',
+        reason: 'runtime_command_send_failed',
+      })
+    }
+
+    if (dispatchResult.status === 'failed') {
+      recordRealtimeRolloverFailure()
+    }
+    return emitRealtimeRuntimeResult('rollover', dispatchResult.status, dispatchResult.reason)
   }
 
   async function refreshConfig(): Promise<ConsoleConfigRefreshResult> {

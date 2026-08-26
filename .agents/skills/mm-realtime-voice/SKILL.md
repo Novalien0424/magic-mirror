@@ -15,26 +15,9 @@ disagree, fix this file.
 
 ## Codex routing
 
-For Realtime work, follow `AGENTS.md` together with
-`.agents/skills/mm-phase-workflow/SKILL.md` and
-`.agents/skills/mm-invariants/SKILL.md`, then add this domain skill. Check the
-applicable invariant IDs `1, 4, 5, 6, 8, 9, 10, 11, 12`. Worker model/effort,
-fresh-worker, TDD/tester, exact-scope, metadata-only evidence, no-recursion,
-correction-gate, and external root-review mechanics follow
-[AGENTS.md](../../../AGENTS.md) and
-[.agents/H6_WORKER_PROTOCOL.md](../../H6_WORKER_PROTOCOL.md).
-
-Use `apply_patch` for writes. Preserve the domain's privacy boundary: worker
-evidence and examples use only metadata, never transcript text, audio,
-extracted memory values, private context, credentials, images, embeddings, or
-user-content prompts. Never infer write permission from a Realtime concern or
-widen the named scope.
-
-## Runtime model IDs versus worker routing
-
-The worker route is a harness setting, not a Magic Mirror runtime setting.
-`gpt-5.6-luna` in the worker envelope with `reasoning_effort: "max"` must never
-replace a configured Realtime, transcription, or extractor model ID.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy and `mm-invariants`
+for applicable product constraints. This skill supplies Realtime-specific
+facts only. Evidence and examples remain metadata-only.
 
 Runtime model IDs come only from versioned configuration and frozen session/job
 snapshots. The configured extractor tiers include `gpt-5.6-luna` and
@@ -82,7 +65,7 @@ audio.
 
 ## Ephemeral credentials (Main-process only)
 
-`POST /v1/realtime/client_secrets` with the Keychain key and this body:
+`POST /v1/realtime/client_secrets` with the Main-only root `.env` key and this body:
 
 ```text
 { expires_after: { anchor: 'created_at', seconds: 600 },
@@ -93,10 +76,11 @@ The response `value` starts with `ek_`; hand that value to the renderer.
 `seconds` is 10-7200. Expiry gates session start, not session duration. Never
 use `useInsecureApiKey`.
 
-Credentials are read by Electron Main through `safeStorage` (Keychain on the
-target Mac; DPAPI on Windows development machines). Renderer code receives
-only the short-lived Realtime credential. Keys never enter renderer data,
-configuration, logs, telemetry, or exports.
+Electron Main alone loads `OPENAI_API_KEY` from the ignored repository-root
+`.env`. Renderer code receives only the short-lived Realtime credential. Do
+not add Console provisioning, `safeStorage`, Keychain, DPAPI, inherited-env,
+or alternate-key fallbacks. Keys never enter renderer data, configuration,
+logs, telemetry, exports, or agent evidence.
 
 ## Transcripts
 
@@ -225,8 +209,5 @@ behavior:
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Model IDs come from versioned config; a failed ID never silently
    substitutes another ID.
-12. Main reads credentials through `safeStorage`; keys never enter renderer
-   data, logs, telemetry, or exports.
-
-The worker harness route never overrides these product rules or any configured
-runtime ID.
+12. Main alone loads the ignored root `.env` `OPENAI_API_KEY`; keys never enter
+    renderer data, logs, telemetry, exports, or agent evidence.

@@ -10,12 +10,10 @@ description: Use when implementing or tuning the sherpa-onnx Chinese wake-word w
 Verified **2026-08-16**. Baseline stack: `sherpa-onnx-node@1.13.5` or newer + `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` (int8) + `decibri` capture, in a worker process owned by Electron Main. Re-verify versions when Phase 2 pins the lockfile.
 
 ## Codex routing
-Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
-Applicable invariant IDs: 8, 9, 10, 12.
-For wake-word or microphone-handoff work, follow `AGENTS.md` together with
-release-then-acquire microphone handoff, visitor-visible or metadata-only
-degradation reasons, non-gating failure behavior, and Main `safeStorage`
-credential boundary described by invariants `8, 9, 10, 12`.
+
+Use [AGENTS.md](../../../AGENTS.md) for execution policy. Apply invariants 8,
+9, and 10 when the microphone or failure boundary changes. This skill supplies
+wake-word and handoff facts only.
 
 ## Critical Version Pin
 

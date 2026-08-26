@@ -97,5 +97,8 @@ describe("realtime bridge and Main IPC contract", () => {
     );
     expect(mainSource).not.toContain("safeStorage");
     expect(mainSource).not.toContain("createCredentialStore");
+    expect(mainSource).toContain(
+      "smoke: smokeMode.kind === 'on' || phase1LiveSmokeEnabled",
+    );
   });
 });

@@ -13,14 +13,11 @@ Candidate scan runs ~2-3 s during Activating only; runtime frames are never
 persisted.
 
 ## Codex routing
-Follow AGENTS.md and .agents/H6_WORKER_PROTOCOL.md for generic routing, TDD, evidence, recursion, and root-review requirements.
-Applicable invariant IDs: 1, 2, 9, 10.
-candidate confirmation or camera degradation. Use the default route of one
-Use `apply_patch` for writes. Preserve the face privacy boundary: evidence is
-metadata-only, and no transcript, audio, memory value, private context,
-credential, image, embedding, or user-content prompt enters evidence, logs,
-telemetry, or reports. Face recognition proposes a candidate; only explicit
-verbal confirmation authorizes identity and private-memory use.
+
+Use [AGENTS.md](../../../AGENTS.md) for execution policy. Apply invariants 1,
+2, 9, and 10 when candidate confirmation, privacy, or camera degradation is in
+scope. This skill supplies face-pipeline facts only; evidence remains
+metadata-only and recognition never authorizes identity by itself.
 
 ## Versions and models - pin the pair
 

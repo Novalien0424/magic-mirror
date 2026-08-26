@@ -1,27 +1,28 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-26 — Phase 1, Realtime Voice: IN PROGRESS.**
+**Current dashboard — 2026-08-27 — Phase 1, Realtime Voice: IN PROGRESS.**
 Branch `phase1-realtime-voice` has accepted product commit `b246521` for
 P1-U9. Phase 0 is accepted and tagged
 `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
 `82aa39c`; P1-U1 through P1-U7 are accepted, with U7 tip `426f52c`.
 P1-U8-A is accepted/pushed at `fd78a28`; the phase-evidence skill correction
 was accepted at `d8ca7de`; deterministic P1-U8-B engineering is
-accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted with
-focused `5/5` and `npm run typecheck:node` exit `0`; no real API/provider/
-target-Mac run occurred. Phase 1 exit/tag is **not accepted**. Official phase
+accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted. A
+corrected real provider smoke now passes with the configured `gpt-realtime-2.1`;
+physical mic/output and target-Mac evidence have not occurred. Phase 1 exit/tag
+is **not accepted**. Official phase
 order, runtime integration, demos, exit decisions, regression, release tags,
 and phase-status promotion remain sequential; Phases 2–7 have not started.
 The four authorized prep-only lanes below do not start or promote a phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
-The new automated live harness launches the actual `npm run dev` /
+The automated live harness launches the actual `npm run dev` /
 `electron-vite dev` path in an isolated temporary user-data environment, drives
 start-to-Active and stop-to-Dormant when the provider permits it, emits one fixed
-metadata-only marker, and supervises full process-tree cleanup. The earlier and
-fresh 2026-08-26 exact-model live gates failed at the configured realtime model
-boundary; official model documentation verifies both spellings, and Phase 1
-exit/tag remains not accepted and untagged.
+metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
+failures were caused by the live flag not selecting isolated `userData`, which
+allowed a local mock model ID to leak into the run. The 2026-08-27 correction
+passes the real provider path; Phase 1 exit/tag remains not accepted and untagged.
 
 ## Clock-out handoff — 2026-08-23
 
@@ -129,13 +130,14 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Fresh U8-B deterministic gate | `49/49` files, `570/570` tests, `npm run typecheck:node`, `npm run typecheck:web`, `npm run build`, and `git diff --check`: all exit `0` |
 | P1-U9 credential-source closure | Accepted product commit `b246521`; focused `5/5`, `npm run typecheck:node` exit `0`; no real API/provider/target-Mac run occurred |
 | Automated Phase 1 live harness | Actual `npm run dev` / `electron-vite dev` path in an isolated temporary user-data environment; start-to-Active and stop-to-Dormant when provider permits; one fixed metadata-only marker; full process-tree cleanup supervision |
+| Corrected real provider smoke — 2026-08-27 | Fresh verification: `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=5381 model_availability=available cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`; this proves provider connection and cleanup, not the remaining physical human demos |
 | Earlier Phase 1 live gate — 2026-08-26 | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` |
 | Official Realtime model verification — 2026-08-26 | Official OpenAI model pages document `gpt-realtime-2.1` and `gpt-realtime-2.1-mini`; the official Realtime session-create schema lists both exact IDs. Both spellings are verified; spelling is ruled out. |
 | Fresh full-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1`; the failed actual connect is authoritative. |
 | Fresh mini-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1-mini`; this was a bounded verification attempt, not a baseline/config change. |
 | Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
-| Phase 1 exit | Not accepted; no Phase 1 release tag. The failed live gate is not product success or exit evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
+| Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
 ### Phase 0 accepted ledger — 2026-08-20
@@ -171,7 +173,7 @@ failure never silently substitutes another ID.
 
 ## Pending work — exact order
 
-The 2026-08-23 clock-out handoff above is authoritative. The P1 real gate
+The P1 real gate
 (P1-D1/P1-D2/P1-D5) remains `real-demo not_executed`; Phase 1
 regression/exit/tag remains pending and not accepted. The exact-path Phase 2
 survey, planning, implementation, runtime integration, demos, regression,
@@ -189,7 +191,7 @@ starts. Subsequent phases remain sequential.
 | P1-U8-A/U8-B deterministic engineering | No human intervention was needed. Recent worker timeouts during harness compaction were clean harness-service/process incidents, not product failures. | Complete; no human intervention |
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
 | P1 automated live gate — 2026-08-26 (earlier attempt) | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Historical metadata-only observation; no model-spelling conclusion is drawn. |
-| P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Both official spellings were tried one at a time and rejected; provider/project access remains pending, and no more specific entitlement cause is established. |
+| P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Superseded diagnosis: these runs loaded a local mock model from non-isolated user data; the 2026-08-27 corrected run proves provider/project access. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
@@ -205,7 +207,7 @@ The following ordered human interventions remain required:
 
 | # | Intervention | Status / reason |
 |---|---|---|
-| 1 | Run Main/Console provider/account/network readiness preflight without recording the key. | `pending/not_executed` — this audit made no provider/network call and did not read or record `.env`/key values. |
+| 1 | Run Main/Console provider/account/network readiness preflight without recording the key. | `complete` — the configured model was retrieved, a Realtime client secret was minted, and the corrected automated provider smoke passed without recording key values. |
 | 2 | Confirm physical microphone/output acquisition, audible output, analyser signal, and no device-busy condition. | `pending/not_executed` — physical device confirmation was not run. |
 | 3 | Choose temporary Persona and built-in Voice using metadata identifiers only. | `pending/not_executed` — operator choice was not made and no session/demo was run. |
 | 4 | Perform P1-D1: 20 real spoken turns. | `real-demo not_executed` — no real application/demo run was made. |
@@ -264,11 +266,47 @@ model. `model_availability` is observational; the failed actual connect is
 authoritative. The evidence does not establish a more specific entitlement
 cause.
 
-Provider/project access remains pending. P1-D1/P1-D2/P1-D5 remain
-`real-demo not_executed`; target-Mac microphone/TCC, physical device behavior,
-natural conversation, audible output, spoken barge-in, and the remaining human
-checks are pending/not-executed. Phase 1 remains unaccepted and untagged.
-Applicable invariant IDs: `1, 8, 9, 10, 11, 12`.
+That provider/project-access conclusion is superseded by the corrected
+2026-08-27 run below. P1-D1/P1-D2/P1-D5 remain `real-demo not_executed` because
+target-Mac microphone/TCC, physical device behavior, natural conversation,
+audible output, spoken barge-in, and the remaining human checks are still
+pending. Phase 1 remains unaccepted and untagged. Applicable invariant IDs:
+`1, 8, 9, 10, 11, 12`.
+
+### Corrected automated provider smoke — 2026-08-27
+
+The Phase 1 live flag previously did not select the harness's isolated Electron
+`userData` directory. A normal-user `active.json` therefore supplied
+`mock-realtime-dialogue-v1`, and the provider rejected that test-only ID. The
+Main bootstrap now isolates `userData` for both smoke flags. With the configured
+`gpt-realtime-2.1`, the actual application path produced:
+
+`PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=5381 model_availability=available cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`
+
+This closes the credential/project/model-access question. It does not replace
+the physical mic/output and operator evidence required by P1-D1/P1-D2/P1-D5.
+
+### Phase 0/1 home-PoC simplification audit — 2026-08-27
+
+- Retired the external H6 worker protocol/launcher and removed mandatory
+  worker/tester/review gates from all seven repository skills. Direct execution
+  plus proportional verification is the default.
+- Removed the superseded `safeStorage` credential store and its tests; the
+  ignored root `.env` Main-only source remains the sole runtime path.
+- Removed the unused injected outage-recovery controller and its duplicate test
+  stack. The production Main probe schedule remains the sole recovery path.
+- Reduced the renderer runtime owner to one ownership/cleanup model and replaced
+  provider-prose/model-name parsing with bounded generic transport/status
+  categories. Runtime model IDs remain config-only with no silent substitution.
+- Review against the Phase 0/1 PRD and implementation-plan boundaries found no
+  remaining duplicate Realtime state machine, alternate credential path,
+  mandatory process gate, or runtime model catalog. Larger Foundation modules
+  remain because they implement accepted Console/config/SQLite composition;
+  file size alone is not a reason to risk a broad refactor in this PoC.
+- Verification: both TypeScript targets and production build exited `0`; all
+  `51` test files / `611` tests passed; seven skills and all control-plane TOML,
+  PowerShell, and checksum files validated; the fresh real-provider smoke above
+  passed with cleanup and zero orphan processes.
 
 ### Future prep-only human interventions — lower priority than Phase 1
 
@@ -293,13 +331,11 @@ real Phase 1 gate passes under the accepted sequential workflow.
 
 ## Harness, environment, warnings, and privacy register
 
-- H6/H9 process facts are frozen: root alone orchestrates and performs external
-  acceptance; fresh profile-backed workers use exact bounded scopes, one of the
-  implementer/surveyor/tester roles, and no recursive delegation. Evidence is
-  metadata-only; raw JSON event streams stay suppressed and only the latest
-  nonempty agent message is forwarded. Launcher hardening culminated
-  at `5818830`; frozen suite `15/15` and a real profile-backed probe passed;
-  deadlines remain first-write `480s`, post-write `120s`, overall `600s`.
+- H6/H9 launcher facts are retained as history only. The external worker
+  launcher and prompt-envelope protocol are retired; current work executes
+  directly under `AGENTS.md`, with optional built-in roles only when delegation
+  materially helps. Repository skills contain domain facts, not mandatory
+  orchestration gates.
 - This is an npm-only project. Development Node is `v24.19.0` (prerequisite
   `>=22.22.2` or `>=24.15.0`); `398` packages were installed, `399` audited,
   zero vulnerabilities recorded. The unrelated Node `DEP0190` child-process

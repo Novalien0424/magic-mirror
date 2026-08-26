@@ -1,11 +1,18 @@
-import type { CredentialEventSink, CredentialStore } from '../credential-store'
 import type { MirrorEvent } from '../../shared/types'
 
 type MetadataEvent = Omit<MirrorEvent, 'time'>
 
+export interface RealtimeCredentialSource {
+  get(): Promise<string | null>
+}
+
+export interface ClientSecretBrokerEventSink {
+  emit(event: MetadataEvent): void
+}
+
 export interface ClientSecretBrokerOptions {
-  readonly credentialStore: Pick<CredentialStore, 'get'>
-  readonly events: CredentialEventSink
+  readonly credentialStore: RealtimeCredentialSource
+  readonly events: ClientSecretBrokerEventSink
 }
 
 export interface ClientSecretIssueRequest {
@@ -115,7 +122,7 @@ function hasExactConfiguredModel(
 }
 
 function emitBrokerEvent(
-  events: CredentialEventSink,
+  events: ClientSecretBrokerEventSink,
   event: 'realtime_client_secret_issued' | 'realtime_client_secret_failed',
   status: 'success' | 'failed',
   reason: string,
@@ -137,7 +144,7 @@ function emitBrokerEvent(
 }
 
 function fail(
-  events: CredentialEventSink,
+  events: ClientSecretBrokerEventSink,
   code: ClientSecretBrokerErrorCode,
   reason: string,
 ): never {

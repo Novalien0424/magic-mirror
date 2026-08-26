@@ -464,7 +464,7 @@ describe('ConfigService contract', () => {
     expect(aiModels.memoryExtractor.modelId).toBe('mock-memory-extractor-v1')
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),
-      readFile(resolve(process.cwd(), 'src/main/credential-store.ts'), 'utf8'),
+      readFile(resolve(process.cwd(), 'src/main/environment-credential-source.ts'), 'utf8'),
     ])
     const productionText = production.join('\n')
     expect(productionText).not.toMatch(/modelId\s*:\s*['"]/)

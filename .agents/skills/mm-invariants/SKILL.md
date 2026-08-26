@@ -7,22 +7,14 @@ description: Use when implementing, reviewing, testing, or debugging any Magic M
 
 ## Scope and acceptance
 
-Use [AGENTS.md](../../../AGENTS.md) for canonical ownership, routing, privacy,
-evidence, and invariant-reporting mechanics. Use
-[.agents/H6_WORKER_PROTOCOL.md](../../H6_WORKER_PROTOCOL.md) for worker
-read/output and envelope mechanics. This file is the product-behavior
-contract: use it for every Magic Mirror implementation, review, test, or
-debugging task. Violating an applicable invariant fails review.
-
-At dispatch and acceptance, name only the IDs that apply using this contract.
-External root acceptance checks the user-visible outcome, applicable IDs,
-failure visibility, and the RAM-only privacy boundary. Worker self-review and
-root acceptance remain separate gates; a correction keeps the same bounded
-scope and requires a concrete root finding.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy. This file contains
+only product-behavior constraints. Apply the IDs implicated by the changed
+boundary; do not turn unrelated IDs into workflow gates.
 
 ## Applicability and domain route
 
-Name only canonical IDs applicable to the exact changed behavior; this cross-cutting contract touches IDs 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, and 12, and cross-cutting work names every applicable ID. After AGENTS.md, mm-phase-workflow, and mm-invariants, load only the matching domain route from AGENTS.md's ordered route.
+Name only canonical IDs applicable to the exact changed behavior. Load one
+matching domain skill when its non-obvious facts are needed.
 
 ## The 12 invariants
 
@@ -39,7 +31,7 @@ Name only canonical IDs applicable to the exact changed behavior; this cross-cut
 | 9 | No silent failure: every ignore, drop, fallback, or degrade produces a visitor-visible state or a Console event with a reason. Metadata-only event schema: {time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?}. Repeated identical errors may collapse into a counter on the same card; collapse, never discard. Catching an error is fine; swallowing it is not. | Spec Section 6.3, Section 14.1 |
 | 10 | Failures degrade, never gate: camera, extractor, or one adapter failing must not block conversation or other adapters. Cloud failure -> OfflineLoop; local core failure -> Maintenance. A black screen is never acceptable. | PRD Section 5.1, Spec Section 14 |
 | 11 | Model IDs come only from versioned config (active.json). No source-code model literals and no silent fallback to a different model when the configured one fails; fail visibly instead. One bounded retry of the same configured ID is allowed, at most once per user action; when configured options are exhausted, use OfflineLoop rather than substitution. | Impl Plan Section 5 Phase 0 Scope+Exit, Section 1 principle 3, Phase 1 Exit |
-| 12 | API credentials live in the OS keystore through Electron safeStorage (Keychain on the target Mac; DPAPI on Windows development machines-the same API), read by Main only. Renderer gets short-lived Realtime credentials. Keys never appear in config, logs, telemetry, or exports. | Spec Section 13.4 |
+| 12 | For this personal build, Electron Main alone loads `OPENAI_API_KEY` from the ignored repository-root `.env`. There is no Console provisioning, keystore, inherited-environment fallback, or alternate key. The renderer receives only a short-lived Realtime credential. Values never enter config, logs, telemetry, exports, or agent evidence. | DECISIONS current personal-build credential ruling |
 
 ## Privacy boundary
 
@@ -93,5 +85,5 @@ and clears on dormant/restart.
 - Backup rotation may retain deleted-profile data until it ages out; Phase 1
   claims no privacy-grade erasure.
 
-No worker may weaken, rename, or omit an applicable invariant. Product safety,
-privacy, and runtime model IDs outrank convenience wording in a skill.
+Product safety, privacy, and runtime model IDs outrank convenience wording in
+a skill.

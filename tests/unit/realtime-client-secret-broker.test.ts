@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { CredentialStore } from '../../src/main/credential-store'
-import { createClientSecretBroker } from '../../src/main/realtime/client-secret-broker'
+import {
+  createClientSecretBroker,
+  type RealtimeCredentialSource,
+} from '../../src/main/realtime/client-secret-broker'
 
 const CONFIGURED_MODEL_ID = 'configured-realtime-model'
 const LONG_CREDENTIAL = 'synthetic-long-credential-for-test-only'
@@ -31,11 +33,9 @@ const ALLOWED_EVENT_FIELDS = new Set([
   'source',
 ])
 
-function makeCredentialStore(value: string | null): CredentialStore {
+function makeCredentialStore(value: string | null): RealtimeCredentialSource {
   return {
     get: vi.fn(async () => value),
-    set: vi.fn(async () => {}),
-    clear: vi.fn(async () => {}),
   }
 }
 
@@ -92,7 +92,7 @@ function assertMetadataOnly(events: readonly MetadataEvent[], forbidden: readonl
 }
 
 describe('P1-U2 Main-only Realtime client-secret broker RED contract', () => {
-  it('uses the safeStorage credential only in Main and posts the configured model with provider expiry metadata', async () => {
+  it('uses the Main-only credential source and posts the configured model with provider expiry metadata', async () => {
     const { events } = makeEvents()
     const { mock, fetchImpl } = makeFetchMock({
       value: SHORT_CLIENT_SECRET,
@@ -158,7 +158,7 @@ describe('P1-U2 Main-only Realtime client-secret broker RED contract', () => {
     assertMetadataOnly(events, [LONG_CREDENTIAL, SHORT_CLIENT_SECRET])
   })
 
-  it('fails visibly without calling the provider when Main has no safeStorage credential', async () => {
+  it('fails visibly without calling the provider when Main has no configured credential', async () => {
     const { events } = makeEvents()
     const { mock, fetchImpl } = makeFetchMock({ value: SHORT_CLIENT_SECRET })
     const broker = makeBroker(null, events)

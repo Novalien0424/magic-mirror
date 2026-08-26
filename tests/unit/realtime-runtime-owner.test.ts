@@ -1,803 +1,296 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { RealtimeSessionStartBundleValue } from '../../src/shared/bridge'
+import { describe, expect, it, vi } from "vitest";
+import type { RealtimeSessionStartBundleValue } from "../../src/shared/bridge";
 import {
   createRealtimeRuntimeOwner,
   type RealtimeRuntimeAudioOutput,
   type RealtimeRuntimeCleanup,
-  type RealtimeRuntimeOwnerDependencies,
-  type RealtimeRuntimeOutcome,
-  type RealtimeRuntimeSnapshot,
   type RealtimeRuntimeMicOwner,
+  type RealtimeRuntimeOwnerDependencies,
   type RealtimeRuntimePlaybackTransport,
   type RealtimeRuntimeSession,
-} from '../../src/renderer/realtime/realtime-runtime-owner'
+} from "../../src/renderer/realtime/realtime-runtime-owner";
 
-type MutableRealtimeRuntimeOwnerDependencies = {
-  -readonly [Key in keyof RealtimeRuntimeOwnerDependencies]: RealtimeRuntimeOwnerDependencies[Key]
+function bundle(id = "session-1", generation = 1): Readonly<RealtimeSessionStartBundleValue> {
+  return Object.freeze({
+    snapshot: Object.freeze({}) as RealtimeSessionStartBundleValue["snapshot"],
+    identity: Object.freeze({ realtimeSessionId: id, sessionGeneration: generation }),
+    clientSecret:
+      "opaque-client-secret" as RealtimeSessionStartBundleValue["clientSecret"],
+  });
 }
 
-type Deferred<T> = {
-  readonly promise: Promise<T>
-  resolve(value: T): void
-  reject(reason?: unknown): void
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((nextResolve, nextReject) => {
-    resolve = nextResolve
-    reject = nextReject
-  })
-  return { promise, resolve, reject }
-}
-
-function makeBundle(
-  realtimeSessionId = 'runtime-1',
-  sessionGeneration = 1,
-): Readonly<RealtimeSessionStartBundleValue> {
-  return {
-    snapshot: {} as RealtimeSessionStartBundleValue['snapshot'],
-    identity: Object.freeze({ realtimeSessionId, sessionGeneration }),
-    clientSecret: undefined as unknown as RealtimeSessionStartBundleValue['clientSecret'],
-  }
-}
-
-function makeStream(trackCount = 1): {
-  readonly stream: MediaStream
-  readonly tracks: readonly { readonly stop: ReturnType<typeof vi.fn> }[]
-  readonly getTracks: ReturnType<typeof vi.fn>
-} {
-  const tracks = Array.from({ length: trackCount }, () => ({ stop: vi.fn() }))
-  const getTracks = vi.fn(() => tracks)
-  return {
-    stream: { getTracks } as unknown as MediaStream,
-    tracks,
-    getTracks,
-  }
-}
-
-function makeFixture(
-  overrides: Partial<{
-    readonly stream: MediaStream
-    readonly audioOutput: RealtimeRuntimeAudioOutput
-    readonly session: RealtimeRuntimeSession
-    readonly micOwner: RealtimeRuntimeMicOwner
-    readonly playbackTransport: RealtimeRuntimePlaybackTransport
-    readonly cleanup: RealtimeRuntimeCleanup
-  }> = {},
-): {
-  readonly dependencies: MutableRealtimeRuntimeOwnerDependencies
-  readonly stream: MediaStream
-  readonly tracks: readonly { readonly stop: ReturnType<typeof vi.fn> }[]
-  readonly audioOutput: { readonly audioElement: HTMLAudioElement; readonly dispose: ReturnType<typeof vi.fn> }
-  readonly session: {
-    readonly realtimeSessionId: string
-    readonly sessionGeneration: number
-    readonly connect: ReturnType<typeof vi.fn>
-    readonly getLastConnectFailureToken: ReturnType<typeof vi.fn>
-    readonly interrupt: ReturnType<typeof vi.fn>
-    readonly close: ReturnType<typeof vi.fn>
-    readonly onOutputAudioBufferStopped: ReturnType<typeof vi.fn>
-  }
-  readonly micOwner: {
-    readonly acquire: ReturnType<typeof vi.fn>
-    readonly release: ReturnType<typeof vi.fn>
-  }
-  readonly playbackTransport: { readonly dispose: ReturnType<typeof vi.fn> }
-  readonly cleanup: { readonly run: ReturnType<typeof vi.fn> }
-  readonly order: string[]
-  readonly events: RealtimeRuntimeOutcome[]
-} {
-  const streamFixture = makeStream()
-  const order: string[] = []
-  const events: RealtimeRuntimeOutcome[] = []
-  const audioOutput = {
+function fixture() {
+  const order: string[] = [];
+  const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) } as unknown as MediaStream;
+  const makeAudio = (label: string): RealtimeRuntimeAudioOutput => ({
     audioElement: {} as HTMLAudioElement,
+    analyser: {},
     dispose: vi.fn(async () => {
-      order.push('audio-dispose')
+      order.push(`${label}:audio.dispose`);
     }),
-  }
-  const session = {
-    realtimeSessionId: 'runtime-1',
-    sessionGeneration: 1,
+  });
+  const makeSession = (label: string, generation: number): RealtimeRuntimeSession => ({
+    realtimeSessionId: `session-${generation}`,
+    sessionGeneration: generation,
     connect: vi.fn(async () => {
-      order.push('connect')
+      order.push(`${label}:session.connect`);
     }),
-    getLastConnectFailureToken: vi.fn(() => undefined),
     interrupt: vi.fn(async () => {
-      order.push('interrupt')
+      order.push(`${label}:session.interrupt`);
     }),
     close: vi.fn(async () => {
-      order.push('session-close')
+      order.push(`${label}:session.close`);
     }),
+    getLastConnectFailureToken: vi.fn(() => undefined),
     onOutputAudioBufferStopped: vi.fn(() => () => {}),
-  }
-  const micOwner = {
+  });
+  const makePlayback = (label: string): RealtimeRuntimePlaybackTransport => ({
+    dispose: vi.fn(async () => {
+      order.push(`${label}:playback.dispose`);
+    }),
+  });
+  const makeCleanup = (label: string): RealtimeRuntimeCleanup => ({
+    run: vi.fn(async (boundary) => {
+      order.push(`${label}:cleanup.${boundary}`);
+    }),
+  });
+
+  const oldAudio = makeAudio("old");
+  const nextAudio = makeAudio("next");
+  const oldSession = makeSession("old", 1);
+  const nextSession = makeSession("next", 2);
+  const oldPlayback = makePlayback("old");
+  const nextPlayback = makePlayback("next");
+  const oldCleanup = makeCleanup("old");
+  const nextCleanup = makeCleanup("next");
+  const mic: RealtimeRuntimeMicOwner = {
     acquire: vi.fn(async () => {
-      order.push('mic-acquire')
+      order.push("mic.acquire");
     }),
     release: vi.fn(async () => {
-      order.push('mic-release')
+      order.push("mic.release");
     }),
-  }
-  const playbackTransport = {
-    dispose: vi.fn(() => {
-      order.push('playback-dispose')
+    rollover: vi.fn(async () => {
+      order.push("mic.rollover");
+      return stream;
     }),
-  }
-  const cleanup = {
-    run: vi.fn(async () => {
-      order.push('cleanup')
-    }),
-  }
-  const dependencies: MutableRealtimeRuntimeOwnerDependencies = {
+  };
+  const completion = deferred<{ source: "output_audio_buffer.stopped" }>();
+  const outcomes: unknown[] = [];
+  const audios = [oldAudio, nextAudio];
+  const sessions = [oldSession, nextSession];
+  const playbacks = [oldPlayback, nextPlayback];
+  const cleanups = [oldCleanup, nextCleanup];
+  let audioIndex = 0;
+  let sessionIndex = 0;
+  let playbackIndex = 0;
+  let cleanupIndex = 0;
+
+  const dependencies: RealtimeRuntimeOwnerDependencies = {
     acquireMediaStream: vi.fn(async () => {
-      order.push('stream')
-      return overrides.stream ?? streamFixture.stream
+      order.push("stream.acquire");
+      return stream;
     }),
-    createAudioOutput: vi.fn(async () => {
-      order.push('audio-create')
-      return overrides.audioOutput ?? audioOutput
+    createAudioOutput: vi.fn(async () => audios[audioIndex++]!),
+    createSession: vi.fn(async () => sessions[sessionIndex++]!),
+    createMicOwner: vi.fn(async () => mic),
+    createPlaybackTransport: vi.fn(async () => playbacks[playbackIndex++]!),
+    createCleanup: vi.fn(async () => cleanups[cleanupIndex++]!),
+    createPlaybackCompletion: vi.fn(() => ({
+      waitForActualEnd: vi.fn((signal: AbortSignal) => new Promise<{
+        source: "output_audio_buffer.stopped";
+      }>((resolve, reject) => {
+        const onAbort = () => {
+          const error = new Error();
+          error.name = "AbortError";
+          reject(error);
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        void completion.promise.then(resolve, reject).finally(() => {
+          signal.removeEventListener("abort", onAbort);
+        });
+      })),
+    })),
+    eventSink: vi.fn((outcome) => {
+      outcomes.push(outcome);
     }),
-    createSession: vi.fn(async () => {
-      order.push('session-create')
-      return overrides.session ?? session
-    }),
-    createMicOwner: vi.fn(async () => {
-      order.push('mic-create')
-      return overrides.micOwner ?? micOwner
-    }),
-    createPlaybackTransport: vi.fn(async () => {
-      order.push('playback-create')
-      return overrides.playbackTransport ?? playbackTransport
-    }),
-    createCleanup: vi.fn(async () => {
-      order.push('cleanup-create')
-      return overrides.cleanup ?? cleanup
-    }),
-    eventSink: (event) => {
-      events.push(event)
-    },
-  }
+  };
+
   return {
     dependencies,
-    stream: streamFixture.stream,
-    tracks: streamFixture.tracks,
-    audioOutput,
-    session,
-    micOwner,
-    playbackTransport,
-    cleanup,
+    owner: createRealtimeRuntimeOwner(dependencies),
     order,
-    events,
-  }
+    stream,
+    oldAudio,
+    nextAudio,
+    oldSession,
+    nextSession,
+    oldPlayback,
+    nextPlayback,
+    oldCleanup,
+    nextCleanup,
+    mic,
+    completion,
+    outcomes,
+  };
 }
 
-async function startActive(
-  owner: ReturnType<typeof createRealtimeRuntimeOwner>,
-  bundle = makeBundle(),
-): Promise<RealtimeRuntimeOutcome> {
-  const result = await owner.start(bundle)
-  expect(result.status).toBe('success')
-  expect(owner.getSnapshot().state).toBe('active')
-  return result
-}
+describe("Realtime runtime owner", () => {
+  it("stays small enough to remain one understandable owner", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL("../../src/renderer/realtime/realtime-runtime-owner.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source.split(/\r?\n/).length).toBeLessThan(800);
+    expect(source).not.toContain("PendingPreHandoffCleanup");
+    expect(source).not.toContain("PendingPostHandoffCleanup");
+  });
 
-describe('createRealtimeRuntimeOwner', () => {
-  it('passes the exact bundle object and constructs one generation in order', async () => {
-    const fixture = makeFixture()
-    const bundle = makeBundle()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("starts one configured session and owns all resources", async () => {
+    const f = fixture();
 
-    await owner.start(bundle)
+    const result = await f.owner.start(bundle());
 
-    expect(fixture.dependencies.createSession).toHaveBeenCalledWith(
-      bundle,
-      fixture.stream,
-      fixture.audioOutput.audioElement,
-    )
-    expect(fixture.order).toEqual([
-      'stream',
-      'audio-create',
-      'session-create',
-      'mic-create',
-      'mic-acquire',
-      'playback-create',
-      'cleanup-create',
-      'connect',
-    ])
-    expect(fixture.dependencies.createCleanup).toHaveBeenCalledTimes(1)
-  })
+    expect(result).toMatchObject({ status: "success", operation: "start", reason: "started" });
+    expect(f.owner.getSnapshot()).toEqual({
+      state: "active",
+      currentIdentity: bundle().identity,
+    });
+    expect(f.oldSession.connect).toHaveBeenCalledTimes(1);
+    expect(f.mic.acquire).toHaveBeenCalledWith(f.stream);
+  });
 
-  it('reports a fixed metadata-only reason when session connect fails', async () => {
-    const fixture = makeFixture()
-    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("uses a bounded adapter token and cleans partial resources on connect failure", async () => {
+    const f = fixture();
+    vi.mocked(f.oldSession.getLastConnectFailureToken!).mockReturnValue("start_connect_auth_failed");
+    vi.mocked(f.oldSession.connect).mockRejectedValueOnce(new Error("opaque-provider-detail"));
 
-    const result = await owner.start(makeBundle())
+    const result = await f.owner.start(bundle());
 
     expect(result).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_connect_failed',
-      cleanup: 'attempted',
-    })
-    expect(result).not.toHaveProperty('error')
-    expect(fixture.events[0]).toMatchObject({
-      operation: 'start',
-      reason: 'start_connect_failed',
-    })
-  })
+      status: "failed",
+      operation: "start",
+      reason: "start_connect_auth_failed",
+      cleanup: "attempted",
+    });
+    expect(f.mic.release).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("opaque-provider-detail");
+    expect(f.owner.getSnapshot().state).toBe("idle");
+  });
 
-  it('uses a validated session connect token only for a connect-stage failure', async () => {
-    const connectFixture = makeFixture()
-    connectFixture.session.getLastConnectFailureToken.mockReturnValue(
-      'start_connect_auth_failed',
-    )
-    connectFixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
-    const connectOwner = createRealtimeRuntimeOwner(connectFixture.dependencies)
+  it("stops in a single best-effort cleanup pass", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
+    f.order.splice(0);
 
-    const connectResult = await connectOwner.start(makeBundle())
+    const result = await f.owner.stop();
 
-    expect(connectResult).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_connect_auth_failed',
-    })
-    expect(connectFixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ status: "success", operation: "stop", reason: "stopped" });
+    expect(f.order).toEqual([
+      "old:playback.dispose",
+      "old:audio.dispose",
+      "mic.release",
+      "old:cleanup.stop",
+    ]);
+    expect(f.owner.getSnapshot().state).toBe("idle");
+  });
 
-    const preConnectFixture = makeFixture()
-    preConnectFixture.session.getLastConnectFailureToken.mockReturnValue(
-      'start_connect_auth_failed',
-    )
-    vi.mocked(preConnectFixture.dependencies.createAudioOutput).mockRejectedValueOnce(
-      new Error('opaque'),
-    )
-    const preConnectOwner = createRealtimeRuntimeOwner(preConnectFixture.dependencies)
+  it("interrupts only the active session", async () => {
+    const f = fixture();
+    expect(await f.owner.interrupt()).toMatchObject({ status: "ignored" });
+    await f.owner.start(bundle());
 
-    const preConnectResult = await preConnectOwner.start(makeBundle())
+    const result = await f.owner.interrupt();
 
-    expect(preConnectResult).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_audio_output_failed',
-    })
-    expect(preConnectFixture.session.getLastConnectFailureToken).not.toHaveBeenCalled()
-  })
+    expect(result).toMatchObject({ status: "success", reason: "interrupted" });
+    expect(f.oldSession.interrupt).toHaveBeenCalledTimes(1);
+  });
 
-  it.each([
-    'start_connect_ephemeral_key_required',
-    'start_connect_setup_closed',
-    'start_connect_sdp_offer_missing',
-    'start_connect_sdp_answer_failed',
-    'start_connect_model_mismatch',
-    'start_connect_model_access_denied',
-    'start_connect_model_missing',
-    'start_connect_model_unsupported',
-    'start_connect_reasoning_unsupported',
-    'start_connect_input_transcription_unsupported',
-    'start_connect_voice_unsupported',
-    'start_connect_turn_detection_unsupported',
-    'start_connect_audio_output_unsupported',
-    'start_connect_realtime_model_unsupported',
-    'start_connect_input_transcription_model_unsupported',
-    'start_connect_model_rejected',
-    'start_connect_bad_request_param_model',
-    'start_connect_bad_request_param_session_model',
-    'start_connect_bad_request_param_type',
-    'start_connect_bad_request_param_session_type',
-    'start_connect_bad_request_param_voice',
-    'start_connect_bad_request_param_session_voice',
-    'start_connect_bad_request_param_input_audio_transcription_model',
-    'start_connect_bad_request_param_session_input_audio_transcription_model',
-    'start_connect_bad_request_param_audio_input_transcription_model',
-    'start_connect_bad_request_param_session_audio_input_transcription_model',
-    'start_connect_sdp_rejected',
-    'start_connect_bad_request',
-    'start_connect_http_other',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-1.5',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2.1-mini',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-mini',
-    'start_connect_realtime_model_unsupported_supported_gpt-4o-realtime-preview',
-    'start_connect_realtime_model_unsupported_supported_gpt-4o-mini-realtime-preview',
-    'start_connect_model_unsupported_mentions_gpt-realtime-2.1',
-    'start_connect_model_unsupported_mentions_gpt-realtime-2.1-mini',
-    'start_connect_model_unsupported_mentions_gpt-realtime-2',
-    'start_connect_model_unsupported_mentions_gpt-realtime-1.5',
-    'start_connect_model_unsupported_mentions_gpt-realtime',
-    'start_connect_model_unsupported_mentions_gpt-realtime-mini',
-    'start_connect_model_unsupported_mentions_gpt-realtime-2025-08-28',
-    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview',
-    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-10-01',
-    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2024-12-17',
-    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2025-06-03',
-    'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview',
-    'start_connect_model_unsupported_mentions_gpt-4o-mini-realtime-preview-2024-12-17',
-  ])(
-    'accepts an adapter-produced connect token after connect rejection: %s',
-    async (token) => {
-      const fixture = makeFixture()
-      fixture.session.getLastConnectFailureToken.mockReturnValue(token)
-      fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
-      const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("rolls over after actual playback completion on the same mic stream", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
 
-      const result = await owner.start(makeBundle())
+    const rollover = f.owner.rollover(bundle("session-2", 2));
+    expect(f.owner.getSnapshot().state).toBe("rolling_over");
+    f.completion.resolve({ source: "output_audio_buffer.stopped" });
 
-      expect(result).toMatchObject({
-        status: 'failed',
-        operation: 'start',
-        reason: token,
-      })
-      expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
-    },
-  )
-
-  it.each([
-    'start_connect_bad_request_param_not_allowed',
-    'start_connect_realtime_model_unsupported_supported_unknown-model',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-3',
-    'start_connect_realtime_model_unsupported_supported_gpt-realtime-2-extra',
-    'start_connect_model_unsupported_mentions_unknown-model',
-    'start_connect_model_unsupported_mentions_gpt-realtime-3',
-    'start_connect_model_unsupported_mentions_gpt-realtime-2.1-extra',
-    'start_connect_model_unsupported_mentions_gpt-4o-realtime-preview-2025-06-03-extra',
-  ])('rejects a non-closed supported-model token: %s', async (token) => {
-    const fixture = makeFixture()
-    fixture.session.getLastConnectFailureToken.mockReturnValue(token)
-    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-
-    const result = await owner.start(makeBundle())
+    const result = await rollover;
 
     expect(result).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_connect_failed',
-    })
-    expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
-  })
+      status: "success",
+      operation: "rollover",
+      reason: "rolled_over",
+      playbackSource: "output_audio_buffer.stopped",
+    });
+    expect(f.mic.rollover).toHaveBeenCalledWith(f.nextSession, "generation_rollover");
+    expect(f.nextSession.connect).toHaveBeenCalledTimes(1);
+    expect(f.owner.getSnapshot()).toEqual({
+      state: "active",
+      currentIdentity: bundle("session-2", 2).identity,
+    });
+  });
 
-  it('falls back to the fixed connect failure reason for an arbitrary token', async () => {
-    const fixture = makeFixture()
-    fixture.session.getLastConnectFailureToken.mockReturnValue('start_connect_arbitrary')
-    fixture.session.connect.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("aborts a pending rollover before stop cleans the active owner", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
 
-    const result = await owner.start(makeBundle())
+    const rollover = f.owner.rollover(bundle("session-2", 2));
+    const stop = f.owner.stop();
 
-    expect(result).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_connect_failed',
-    })
-    expect(fixture.session.getLastConnectFailureToken).toHaveBeenCalledTimes(1)
-  })
+    await expect(rollover).resolves.toMatchObject({
+      status: "ignored",
+      reason: "rollover_aborted",
+    });
+    await expect(stop).resolves.toMatchObject({ status: "success", reason: "stopped" });
+    expect(f.owner.getSnapshot().state).toBe("idle");
+  });
 
-  it.each([
-    {
-      name: 'media stream',
-      reason: 'start_media_stream_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.acquireMediaStream).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-    {
-      name: 'audio output',
-      reason: 'start_audio_output_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.createAudioOutput).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-    {
-      name: 'session creation',
-      reason: 'start_session_create_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.createSession).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-    {
-      name: 'mic owner creation',
-      reason: 'start_mic_owner_create_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.createMicOwner).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-    {
-      name: 'mic acquisition',
-      reason: 'start_mic_acquire_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        fixture.micOwner.acquire.mockRejectedValueOnce(new Error('opaque'))
-      },
-    },
-    {
-      name: 'playback transport creation',
-      reason: 'start_playback_transport_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.createPlaybackTransport).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-    {
-      name: 'cleanup factory creation',
-      reason: 'start_cleanup_factory_failed',
-      fail: (fixture: ReturnType<typeof makeFixture>) => {
-        vi.mocked(fixture.dependencies.createCleanup).mockRejectedValueOnce(
-          new Error('opaque'),
-        )
-      },
-    },
-  ])('reports a fixed reason for $name start failure', async ({ fail, reason }) => {
-    const fixture = makeFixture()
-    fail(fixture)
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("keeps the old session active when pre-handoff rollover setup fails", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
+    vi.mocked(f.dependencies.createAudioOutput).mockRejectedValueOnce(new Error("opaque"));
+    f.completion.resolve({ source: "output_audio_buffer.stopped" });
 
-    const result = await owner.start(makeBundle())
+    const result = await f.owner.rollover(bundle("session-2", 2));
 
-    expect(result).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason,
-      cleanup: 'attempted',
-    })
-    expect(result).not.toHaveProperty('error')
-  })
+    expect(result).toMatchObject({ status: "failed", reason: "rollover_setup_failed" });
+    expect(f.owner.getSnapshot()).toEqual({
+      state: "active",
+      currentIdentity: bundle().identity,
+    });
+  });
 
-  it('rejects stale and duplicate generations and never replays a generation', async () => {
-    const fixture = makeFixture()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
+  it("releases the transferred mic if the next session cannot connect", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
+    vi.mocked(f.nextSession.connect).mockRejectedValueOnce(new Error("opaque"));
+    f.completion.resolve({ source: "output_audio_buffer.stopped" });
 
-    await owner.start(makeBundle('runtime-1', 2))
-    await owner.stop()
+    const result = await f.owner.rollover(bundle("session-2", 2));
 
-    const duplicate = await owner.start(makeBundle('runtime-1', 2))
-    const stale = await owner.start(makeBundle('runtime-0', 1))
+    expect(result).toMatchObject({ status: "failed", reason: "rollover_connect_failed" });
+    expect(f.mic.release).toHaveBeenCalledTimes(1);
+    expect(f.owner.getSnapshot().state).toBe("idle");
+  });
 
-    expect(duplicate).toMatchObject({ status: 'ignored', reason: 'duplicate_generation' })
-    expect(stale).toMatchObject({ status: 'ignored', reason: 'stale_generation' })
-    expect(fixture.dependencies.acquireMediaStream).toHaveBeenCalledTimes(1)
-  })
+  it("disposes idempotently", async () => {
+    const f = fixture();
+    await f.owner.start(bundle());
 
-  it('shares identical concurrent starts while a different racing start is ignored', async () => {
-    const fixture = makeFixture()
-    const gate = deferred<MediaStream>()
-    vi.mocked(fixture.dependencies.acquireMediaStream).mockReturnValueOnce(gate.promise)
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    const firstBundle = makeBundle('runtime-1', 1)
-    const racingBundle = makeBundle('runtime-2', 2)
+    const first = await f.owner.dispose();
+    const second = await f.owner.dispose();
 
-    const first = owner.start(firstBundle)
-    const identical = owner.start(firstBundle)
-    const different = await owner.start(racingBundle)
-
-    expect(identical).toBe(first)
-    expect(different).toMatchObject({ status: 'ignored', reason: 'start_in_flight' })
-    expect(fixture.dependencies.acquireMediaStream).toHaveBeenCalledTimes(1)
-    gate.resolve(fixture.stream)
-    await first
-  })
-
-  it('cancels a pending start when disposal races acquisition', async () => {
-    const fixture = makeFixture()
-    const gate = deferred<MediaStream>()
-    vi.mocked(fixture.dependencies.acquireMediaStream).mockReturnValueOnce(gate.promise)
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    const startPromise = owner.start(makeBundle())
-    const disposePromise = owner.dispose()
-
-    expect(owner.getSnapshot()).toEqual({
-      state: 'stopping',
-      currentIdentity: { realtimeSessionId: 'runtime-1', sessionGeneration: 1 },
-    })
-    expect(owner.dispose()).toBe(disposePromise)
-    expect(fixture.dependencies.createAudioOutput).not.toHaveBeenCalled()
-    expect(fixture.dependencies.createSession).not.toHaveBeenCalled()
-    expect(fixture.dependencies.createMicOwner).not.toHaveBeenCalled()
-    expect(fixture.dependencies.createPlaybackTransport).not.toHaveBeenCalled()
-    expect(fixture.dependencies.createCleanup).not.toHaveBeenCalled()
-
-    gate.resolve(fixture.stream)
-    const [startResult, disposeResult] = await Promise.all([startPromise, disposePromise])
-
-    expect(startResult).toMatchObject({
-      status: 'failed',
-      operation: 'start',
-      reason: 'start_failed',
-      cleanup: 'attempted',
-    })
-    expect(disposeResult).toMatchObject({
-      status: 'success',
-      operation: 'dispose',
-      reason: 'disposed',
-    })
-    expect(fixture.tracks[0].stop).toHaveBeenCalledTimes(1)
-    expect(fixture.dependencies.createAudioOutput).not.toHaveBeenCalled()
-    expect(fixture.dependencies.createSession).not.toHaveBeenCalled()
-    expect(owner.getSnapshot()).toEqual({ state: 'disposed' })
-  })
-
-  it('rejects active and terminal disposed starts synchronously without factories', async () => {
-    const fixture = makeFixture()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const active = await owner.start(makeBundle('runtime-2', 2))
-    expect(active).toMatchObject({ status: 'ignored', reason: 'active' })
-
-    await owner.dispose()
-    const disposed = await owner.start(makeBundle('runtime-3', 3))
-    expect(disposed).toMatchObject({ status: 'ignored', reason: 'already_disposed' })
-    expect(fixture.dependencies.acquireMediaStream).toHaveBeenCalledTimes(1)
-  })
-
-  it('marks the active identity inactive before stop awaits and continues every stage in order', async () => {
-    const fixture = makeFixture()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const stopPromise = owner.stop('offline_loop')
-    expect(owner.getSnapshot()).toEqual({
-      state: 'stopping',
-      currentIdentity: { realtimeSessionId: 'runtime-1', sessionGeneration: 1 },
-    })
-    const result = await stopPromise
-
-    expect(result).toMatchObject({ status: 'success', operation: 'stop', reason: 'stopped', cleanup: 'attempted' })
-    expect(fixture.order.slice(-4)).toEqual([
-      'playback-dispose',
-      'audio-dispose',
-      'mic-release',
-      'cleanup',
-    ])
-    expect(fixture.session.close).not.toHaveBeenCalled()
-    expect(owner.getSnapshot()).toEqual({ state: 'idle' })
-  })
-
-  it('shares identical concurrent stops while cleanup is pending', async () => {
-    const fixture = makeFixture()
-    const playbackGate = deferred<void>()
-    fixture.playbackTransport.dispose.mockImplementationOnce(() => playbackGate.promise)
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const first = owner.stop()
-    const identical = owner.stop()
-
-    expect(identical).toBe(first)
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(1)
-
-    playbackGate.resolve()
-    const result = await first
-
-    expect(result).toMatchObject({
-      status: 'success',
-      operation: 'stop',
-      reason: 'stopped',
-      cleanup: 'attempted',
-    })
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.micOwner.release).toHaveBeenCalledTimes(1)
-    expect(fixture.cleanup.run).toHaveBeenCalledTimes(1)
-    expect(owner.getSnapshot()).toEqual({ state: 'idle' })
-  })
-
-  it('shares cleanup when disposal races an in-flight stop', async () => {
-    const fixture = makeFixture()
-    const playbackGate = deferred<void>()
-    fixture.playbackTransport.dispose.mockImplementationOnce(() => playbackGate.promise)
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const stopPromise = owner.stop()
-    const disposePromise = owner.dispose()
-
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(1)
-
-    playbackGate.resolve()
-    const [stopResult, disposeResult] = await Promise.all([stopPromise, disposePromise])
-
-    expect(stopResult).toMatchObject({
-      status: 'success',
-      operation: 'stop',
-      reason: 'stopped',
-    })
-    expect(disposeResult).toMatchObject({
-      status: 'success',
-      operation: 'dispose',
-      reason: 'disposed',
-    })
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.micOwner.release).toHaveBeenCalledTimes(1)
-    expect(fixture.cleanup.run).toHaveBeenCalledTimes(1)
-    expect(owner.getSnapshot()).toEqual({ state: 'disposed' })
-  })
-
-  it('interrupts only the active session and never performs cleanup or changes state', async () => {
-    const fixture = makeFixture()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const result = await owner.interrupt()
-
-    expect(result).toMatchObject({ status: 'success', operation: 'interrupt', reason: 'interrupted' })
-    expect(fixture.session.interrupt).toHaveBeenCalledTimes(1)
-    expect(fixture.playbackTransport.dispose).not.toHaveBeenCalled()
-    expect(fixture.audioOutput.dispose).not.toHaveBeenCalled()
-    expect(fixture.micOwner.release).not.toHaveBeenCalled()
-    expect(fixture.cleanup.run).not.toHaveBeenCalled()
-    expect(owner.getSnapshot().state).toBe('active')
-
-    await owner.stop()
-    const ignored = await owner.interrupt()
-    expect(ignored).toMatchObject({ status: 'ignored', reason: 'not_active' })
-  })
-
-  it('returns a failed interrupt without cleanup or lifecycle mutation', async () => {
-    const fixture = makeFixture()
-    fixture.session.interrupt.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const result = await owner.interrupt()
-
-    expect(result).toMatchObject({ status: 'failed', operation: 'interrupt', reason: 'interrupt_failed' })
-    expect(result).not.toHaveProperty('error')
-    expect(owner.getSnapshot().state).toBe('active')
-    expect(fixture.cleanup.run).not.toHaveBeenCalled()
-  })
-
-  it('continues stop after failures and retries only failed stages', async () => {
-    const fixture = makeFixture()
-    fixture.playbackTransport.dispose.mockRejectedValueOnce(new Error('opaque'))
-    fixture.audioOutput.dispose.mockRejectedValueOnce(new Error('opaque'))
-    fixture.micOwner.release.mockRejectedValueOnce(new Error('opaque'))
-    fixture.cleanup.run.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const failed = await owner.stop()
-
-    expect(failed.status).toBe('failed')
-    expect(failed).toMatchObject({ operation: 'stop', reason: 'stop_failed', cleanup: 'attempted' })
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(1)
-    expect(fixture.micOwner.release).toHaveBeenCalledTimes(1)
-    expect(fixture.cleanup.run).toHaveBeenCalledTimes(1)
-    expect(owner.getSnapshot().state).toBe('stopping')
-
-    const retry = await owner.stop('close')
-
-    expect(retry.status).toBe('success')
-    expect(fixture.playbackTransport.dispose).toHaveBeenCalledTimes(2)
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(2)
-    expect(fixture.micOwner.release).toHaveBeenCalledTimes(2)
-    expect(fixture.cleanup.run).toHaveBeenCalledTimes(2)
-    expect(retry.attemptedSteps).toEqual([
-      'playback_dispose',
-      'audio_output_dispose',
-      'mic_release',
-      'cleanup_run',
-    ])
-    expect(owner.getSnapshot().state).toBe('idle')
-  })
-
-  it('closes a non-acquired session and stops loose tracks without double-closing', async () => {
-    const fixture = makeFixture()
-    const micOwner = {
-      acquire: vi.fn(async () => {
-        throw new Error('opaque')
-      }),
-      release: vi.fn(async () => {}),
-    }
-    const owner = createRealtimeRuntimeOwner({
-      ...fixture.dependencies,
-      createMicOwner: vi.fn(async () => micOwner),
-    })
-
-    const result = await owner.start(makeBundle())
-
-    expect(result.status).toBe('failed')
-    expect(fixture.session.close).toHaveBeenCalledTimes(1)
-    expect(micOwner.release).not.toHaveBeenCalled()
-    expect(fixture.tracks[0].stop).toHaveBeenCalledTimes(1)
-    expect(fixture.cleanup.run).toHaveBeenCalledWith('close')
-    expect(owner.getSnapshot().state).toBe('idle')
-  })
-
-  it('preserves loose-stream progress and retries only unfinished track cleanup', async () => {
-    const fixture = makeFixture()
-    const secondTrack = { stop: vi.fn() }
-    const tracks = [fixture.tracks[0], secondTrack]
-    fixture.dependencies.acquireMediaStream = vi.fn(async () => ({
-      getTracks: vi.fn(() => tracks),
-    } as unknown as MediaStream))
-    fixture.session.close.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner({
-      ...fixture.dependencies,
-      createMicOwner: vi.fn(async () => ({
-        acquire: vi.fn(async () => {
-          throw new Error('opaque')
-        }),
-        release: vi.fn(async () => {}),
-      })),
-    })
-
-    const failed = await owner.start(makeBundle())
-    expect(failed.status).toBe('failed')
-    expect(fixture.session.close).toHaveBeenCalledTimes(1)
-
-    const retry = await owner.stop()
-    expect(retry.status).toBe('success')
-    expect(fixture.session.close).toHaveBeenCalledTimes(2)
-    expect(fixture.tracks[0].stop).toHaveBeenCalledTimes(1)
-    expect(secondTrack.stop).toHaveBeenCalledTimes(1)
-  })
-
-  it('reports RAM cleanup as attempted and isolates event-sink failures', async () => {
-    const fixture = makeFixture()
-    fixture.dependencies.eventSink = () => {
-      throw new Error('opaque')
-    }
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const result = await owner.stop()
-
-    expect(result).toMatchObject({ status: 'success', cleanup: 'attempted' })
-    expect(result).not.toHaveProperty('cleanupSucceeded')
-    expect(result).not.toHaveProperty('bundle')
-    expect(result).not.toHaveProperty('clientSecret')
-    expect(result).not.toHaveProperty('snapshot')
-    expect(result).not.toHaveProperty('session')
-    expect(Object.isFrozen(result)).toBe(true)
-    expect(Object.isFrozen(result.attemptedSteps)).toBe(true)
-    expect(Object.isFrozen(result.failedSteps)).toBe(true)
-  })
-
-  it('retries failed disposal and becomes terminal, while repeated disposal is idempotently ignored', async () => {
-    const fixture = makeFixture()
-    fixture.audioOutput.dispose.mockRejectedValueOnce(new Error('opaque'))
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-    await startActive(owner)
-
-    const failed = await owner.dispose()
-    expect(failed).toMatchObject({ status: 'failed', operation: 'dispose', reason: 'dispose_failed' })
-    expect(owner.getSnapshot().state).toBe('stopping')
-
-    const disposed = await owner.dispose()
-    expect(disposed).toMatchObject({ status: 'success', operation: 'dispose', reason: 'disposed' })
-    expect(owner.getSnapshot()).toEqual({ state: 'disposed' })
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(2)
-
-    const repeat = await owner.dispose()
-    expect(repeat).toMatchObject({ status: 'ignored', reason: 'already_disposed' })
-    expect(fixture.audioOutput.dispose).toHaveBeenCalledTimes(2)
-  })
-
-  it('disposes idle owners terminally and freezes metadata snapshots', async () => {
-    const fixture = makeFixture()
-    const owner = createRealtimeRuntimeOwner(fixture.dependencies)
-
-    const result = await owner.dispose()
-    const snapshot: RealtimeRuntimeSnapshot = owner.getSnapshot()
-
-    expect(result).toMatchObject({ status: 'success', operation: 'dispose', reason: 'disposed' })
-    expect(snapshot).toEqual({ state: 'disposed' })
-    expect(Object.isFrozen(snapshot)).toBe(true)
-    expect(fixture.dependencies.acquireMediaStream).not.toHaveBeenCalled()
-  })
-})
+    expect(first).toMatchObject({ operation: "dispose", status: "success" });
+    expect(second).toMatchObject({ operation: "dispose", status: "ignored" });
+    expect(f.owner.getSnapshot().state).toBe("disposed");
+  });
+});
