@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createPhase1LiveSmokeCoordinator,
+  matchesPhase1LiveSmokeProvenance,
   type Phase1LiveSmokeResult,
 } from '../../src/main/phase1-live-smoke'
 
@@ -9,6 +10,64 @@ function flushPromises(): Promise<void> {
 }
 
 describe('phase 1 live smoke coordinator', () => {
+  it('requires an exact safe provenance snapshot', () => {
+    const snapshot = {
+      userDataDir: 'isolated-user-data',
+      configVersion: 1,
+      fingerprint: 'a'.repeat(64),
+      sdkVersion: '0.16.1',
+      realtimeDialogue: 'configured-realtime-model',
+      inputTranscription: 'configured-transcription-model',
+      memoryExtractor: 'configured-memory-model',
+      voice: 'marin',
+      reasoningEffort: 'low',
+      turnDetectionProfile: 'semantic-vad-interruptible',
+    }
+
+    expect(matchesPhase1LiveSmokeProvenance(snapshot, snapshot)).toBe(true)
+    expect(matchesPhase1LiveSmokeProvenance({ ...snapshot, realtimeDialogue: 'other' }, snapshot)).toBe(false)
+    expect(matchesPhase1LiveSmokeProvenance({ ...snapshot, unexpected: true }, snapshot)).toBe(false)
+  })
+
+  it('fails provenance before probing or starting the provider path', async () => {
+    const calls: string[] = []
+    const results: Phase1LiveSmokeResult[] = []
+    const coordinator = createPhase1LiveSmokeCoordinator({
+      getSnapshot: () => ({ lifecycle: 'dormant' }),
+      subscribe: () => ({ unsubscribe() {} }),
+      checkProvenance: async () => {
+        calls.push('provenance')
+        return false
+      },
+      probeConfiguredModelAvailability: async () => {
+        calls.push('probe')
+        return 'available'
+      },
+      manualStart: async () => {
+        calls.push('manual_start')
+        return { status: 'success', reason: 'runtime_command_delivered' }
+      },
+      manualStop: async () => ({ status: 'success', reason: 'runtime_command_delivered' }),
+      emitResult: (result) => results.push(result),
+      stageTimeoutMs: 1_000,
+    })
+
+    coordinator.start()
+    coordinator.onMirrorRendererReady()
+    await flushPromises()
+
+    expect(calls).toEqual(['provenance'])
+    expect(results).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        stage: 'renderer_ready',
+        reason: 'config_provenance_mismatch',
+        exit: 1,
+        provenance: 'failed',
+      }),
+    ])
+  })
+
   it('starts only after mirror readiness, stops after active, and completes at dormant', async () => {
     let lifecycle = 'dormant'
     const listeners = new Set<(snapshot: { lifecycle: string }) => void>()

@@ -10,6 +10,43 @@ export type Phase1LiveSmokeStage =
   | 'dormant'
 
 export type Phase1LiveSmokeModelAvailability = 'available' | 'unavailable' | 'probe_failed'
+export type Phase1LiveSmokeProvenance = 'passed' | 'failed'
+
+export interface Phase1LiveSmokeProvenanceSnapshot {
+  readonly userDataDir: string
+  readonly configVersion: number
+  readonly fingerprint: string
+  readonly sdkVersion: string
+  readonly realtimeDialogue: string
+  readonly inputTranscription: string
+  readonly memoryExtractor: string
+  readonly voice: string
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
+}
+
+const PROVENANCE_FIELDS = Object.freeze([
+  'userDataDir',
+  'configVersion',
+  'fingerprint',
+  'sdkVersion',
+  'realtimeDialogue',
+  'inputTranscription',
+  'memoryExtractor',
+  'voice',
+  'reasoningEffort',
+  'turnDetectionProfile',
+] as const)
+
+export function matchesPhase1LiveSmokeProvenance(
+  expected: unknown,
+  actual: Phase1LiveSmokeProvenanceSnapshot,
+): boolean {
+  if (typeof expected !== 'object' || expected === null || Array.isArray(expected)) return false
+  const candidate = expected as Record<string, unknown>
+  if (Object.keys(candidate).length !== PROVENANCE_FIELDS.length) return false
+  return PROVENANCE_FIELDS.every((field) => candidate[field] === actual[field])
+}
 
 export interface Phase1LiveSmokeResult {
   readonly status: 'passed' | 'failed'
@@ -18,6 +55,7 @@ export interface Phase1LiveSmokeResult {
   readonly reason: string
   readonly duration_ms: number
   readonly modelAvailability: Phase1LiveSmokeModelAvailability
+  readonly provenance: Phase1LiveSmokeProvenance
 }
 
 export interface Phase1LiveSmokeCoordinator {
@@ -29,6 +67,7 @@ export interface Phase1LiveSmokeCoordinatorOptions {
   readonly getSnapshot: () => Phase1LiveSmokeSnapshot
   readonly getLastRealtimeRuntimeOutcomeReason?: () => string | null
   readonly subscribe: (listener: (snapshot: Phase1LiveSmokeSnapshot) => void) => { unsubscribe(): void }
+  readonly checkProvenance?: () => boolean | Promise<boolean>
   readonly probeConfiguredModelAvailability?: () => Promise<unknown>
   readonly manualStart: () => Promise<Record<string, unknown>>
   readonly manualStop: () => Promise<Record<string, unknown>>
@@ -54,12 +93,15 @@ export function createPhase1LiveSmokeCoordinator(
     ?? ((handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>))
 
   let started = false
+  let initialized = false
   let finished = false
+  let rendererReady = false
   let startTime = 0
   let stage: Phase1LiveSmokeStage = 'renderer_ready'
   let timeoutHandle: unknown = null
   let subscription: { unsubscribe(): void } | null = null
   let modelAvailability: Phase1LiveSmokeModelAvailability = 'probe_failed'
+  let provenance: Phase1LiveSmokeProvenance = options.checkProvenance === undefined ? 'passed' : 'failed'
   let modelProbePending = false
   let modelProbeTimeoutHandle: unknown = null
   let modelProbeWaiter: Promise<void> | null = null
@@ -190,6 +232,7 @@ export function createPhase1LiveSmokeCoordinator(
       options.emitResult(Object.freeze({
         ...terminalLifecycleResult,
         modelAvailability,
+        provenance,
       }))
     }
     if (modelProbePending && modelProbeWaiter !== null) {
@@ -311,10 +354,9 @@ export function createPhase1LiveSmokeCoordinator(
     }
   }
 
-  function start(): void {
-    if (started || finished) return
-    started = true
-    startTime = safeNow()
+  function initializeAfterProvenance(): void {
+    if (finished) return
+    initialized = true
     startModelAvailabilityProbe()
     if (finished) return
     armTimeout('renderer_ready_timeout')
@@ -342,12 +384,48 @@ export function createPhase1LiveSmokeCoordinator(
     } catch {
       fail('renderer_ready', 'snapshot_unavailable')
     }
+
+    if (rendererReady) requestStartAfterRendererReady()
+  }
+
+  async function verifyProvenance(): Promise<void> {
+    const checkProvenance = options.checkProvenance
+    if (checkProvenance === undefined) {
+      initializeAfterProvenance()
+      return
+    }
+
+    let matches = false
+    try {
+      matches = await checkProvenance()
+    } catch {
+      matches = false
+    }
+    if (finished) return
+    if (!matches) {
+      fail('renderer_ready', 'config_provenance_mismatch')
+      return
+    }
+    provenance = 'passed'
+    initializeAfterProvenance()
+  }
+
+  function start(): void {
+    if (started || finished) return
+    started = true
+    startTime = safeNow()
+    void verifyProvenance()
+  }
+
+  function requestStartAfterRendererReady(): void {
+    if (!started || !initialized || finished || stage !== 'renderer_ready') return
+    setStage('start', 'start_request_timeout')
+    void requestStart()
   }
 
   function onMirrorRendererReady(): void {
-    if (!started || finished || stage !== 'renderer_ready') return
-    setStage('start', 'start_request_timeout')
-    void requestStart()
+    rendererReady = true
+    requestStartAfterRendererReady()
   }
 
   return {

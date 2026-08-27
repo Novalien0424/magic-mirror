@@ -7,6 +7,7 @@ export type Phase1LiveStage =
   | 'runner'
 
 export type Phase1LiveSmokeModelAvailability = 'available' | 'unavailable' | 'probe_failed'
+export type Phase1LiveSmokeProvenance = 'passed' | 'failed'
 
 export interface Phase1LiveSmokeOptions {
   timeoutMs?: number
@@ -29,6 +30,7 @@ export interface Phase1LiveSmokeResult {
   outputMarkerCount: number
   orphanCount: number
   modelAvailability: Phase1LiveSmokeModelAvailability
+  provenance: Phase1LiveSmokeProvenance
 }
 
 export declare const PHASE1_LIVE_RESULT_PREFIX: 'PHASE1_LIVE_RESULT '

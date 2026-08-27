@@ -23,6 +23,7 @@ describe('phase 1 live smoke runner', () => {
       expect(result.exitCode).toBe(0)
       expect(result.markerCount).toBe(1)
       expect(result.modelAvailability).toBe(modelAvailability)
+      expect(result.provenance).toBe('passed')
       expect(result.cleanup).toBe('passed')
       await expect(access(result.temporaryRoot)).rejects.toThrow()
     },
@@ -45,7 +46,12 @@ describe('phase 1 live smoke runner', () => {
     await expect(access(result.temporaryRoot)).rejects.toThrow()
   })
 
-  it.each(['missing_model_availability', 'invalid_model_availability'] as const)(
+  it.each([
+    'missing_model_availability',
+    'invalid_model_availability',
+    'missing_provenance',
+    'invalid_provenance',
+  ] as const)(
     'rejects a child marker with %s',
     async (mode) => {
       const result = await runPhase1LiveSmoke({
@@ -107,5 +113,6 @@ describe('phase 1 live smoke runner', () => {
     expect(marker).toContain('model_availability=probe_failed')
     expect(marker).not.toContain('model_availability=available')
     expect(marker).not.toContain('model_availability=unavailable')
+    expect(marker).toContain('provenance=failed')
   })
 })

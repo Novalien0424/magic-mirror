@@ -2,9 +2,18 @@ import { spawn } from 'node:child_process'
 
 const mode = process.env.PHASE1_LIVE_FIXTURE_MODE ?? 'pass'
 
-function marker(status, stage, reason, exit, modelAvailability, includeModelAvailability = true) {
+function marker(
+  status,
+  stage,
+  reason,
+  exit,
+  modelAvailability,
+  includeModelAvailability = true,
+  provenance = 'passed',
+) {
   const modelField = includeModelAvailability ? ` model_availability=${modelAvailability}` : ''
-  process.stdout.write(`PHASE1_LIVE_RESULT status=${status} stage=${stage} reason=${reason} exit=${exit} duration_ms=1${modelField}\n`)
+  const provenanceField = provenance === null ? '' : ` provenance=${provenance}`
+  process.stdout.write(`PHASE1_LIVE_RESULT status=${status} stage=${stage} reason=${reason} exit=${exit} duration_ms=1${modelField}${provenanceField}\n`)
 }
 
 if (mode === 'pass') {
@@ -35,6 +44,16 @@ if (mode === 'missing_model_availability') {
 
 if (mode === 'invalid_model_availability') {
   marker('passed', 'dormant', 'completed', 0, 'unknown')
+  process.exit(0)
+}
+
+if (mode === 'missing_provenance') {
+  marker('passed', 'dormant', 'completed', 0, 'available', true, null)
+  process.exit(0)
+}
+
+if (mode === 'invalid_provenance') {
+  marker('passed', 'dormant', 'completed', 0, 'available', true, 'unknown')
   process.exit(0)
 }
 

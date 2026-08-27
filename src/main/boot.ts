@@ -11,6 +11,7 @@ import type {
   MirrorEvent,
   OpStatus,
   Result,
+  SessionModelSnapshot,
   SimulatorCommand,
   SimulatorResult,
 } from '../shared/types'
@@ -262,6 +263,8 @@ export interface BootRuntime {
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
   requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>>
+  /** Main-only live-smoke provenance seam; never exposed through renderer IPC. */
+  getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>>
   probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
@@ -1833,6 +1836,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return issuer.issue()
   }
 
+  async function getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>> {
+    await ready
+    const activeModelSettings = resolvedModelSettings?.active
+    if (activeModelSettings === undefined) throw new Error('model_settings_unavailable')
+    return createSessionModelSnapshot(activeModelSettings, nowValue(now))
+  }
+
   async function probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'> {
     try {
       await ready
@@ -2262,6 +2272,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     ready,
     console: consoleDataPlane,
     requestRealtimeClientSecret,
+    getPublishedSessionModelSnapshotForDiagnostics,
     probeConfiguredModelAvailability,
     shutdown,
     telemetry: {

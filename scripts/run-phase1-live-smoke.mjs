@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { access, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +15,7 @@ const isWindows = process.platform === 'win32'
 
 const RESULT_STAGES = new Set(['renderer_ready', 'start', 'active', 'stop', 'dormant', 'runner'])
 const MODEL_AVAILABILITIES = new Set(['available', 'unavailable', 'probe_failed'])
+const PROVENANCE_RESULTS = new Set(['passed', 'failed'])
 
 function safeToken(value, fallback) {
   return typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/u.test(value) ? value : fallback
@@ -35,9 +37,48 @@ function safeModelAvailability(value, fallback = 'probe_failed') {
   return MODEL_AVAILABILITIES.has(value) ? value : fallback
 }
 
+function safeProvenance(value, fallback = 'failed') {
+  return PROVENANCE_RESULTS.has(value) ? value : fallback
+}
+
 function positiveInteger(value, fallback, maximum) {
   if (!Number.isFinite(value) || value <= 0) return fallback
   return Math.min(maximum, Math.max(1, Math.floor(value)))
+}
+
+function stableConfigValue(value) {
+  if (Array.isArray(value)) return value.map(stableConfigValue)
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, stableConfigValue(value[key])]),
+  )
+}
+
+async function createExpectedProvenance(userDataDir) {
+  const defaultConfig = JSON.parse(
+    await readFile(join(REPOSITORY_ROOT, 'resources', 'config', 'default.json'), 'utf8'),
+  )
+  const packageManifest = JSON.parse(
+    await readFile(join(REPOSITORY_ROOT, 'package.json'), 'utf8'),
+  )
+  const config = { ...defaultConfig }
+  delete config.schemaVersion
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(stableConfigValue(config)), 'utf8')
+    .digest('hex')
+
+  return Object.freeze({
+    userDataDir: resolve(userDataDir),
+    configVersion: config.configVersion,
+    fingerprint,
+    sdkVersion: packageManifest.dependencies?.['@openai/agents-realtime'],
+    realtimeDialogue: config.aiModels?.realtimeDialogue?.modelId,
+    inputTranscription: config.aiModels?.inputTranscription?.modelId,
+    memoryExtractor: config.aiModels?.memoryExtractor?.modelId,
+    voice: config.voice,
+    reasoningEffort: config.reasoningEffort,
+    turnDetectionProfile: config.turnDetectionProfile,
+  })
 }
 
 function defaultCommandAndArgs() {
@@ -67,6 +108,7 @@ function parsePhase1LiveMarker(line) {
   const exitCode = Number(fields.get('exit'))
   const durationMs = Number(fields.get('duration_ms'))
   const modelAvailability = fields.get('model_availability')
+  const provenance = fields.get('provenance')
   if (
     (status !== 'passed' && status !== 'failed')
     || typeof stage !== 'string'
@@ -79,6 +121,7 @@ function parsePhase1LiveMarker(line) {
     || !Number.isSafeInteger(durationMs)
     || durationMs < 0
     || !MODEL_AVAILABILITIES.has(modelAvailability)
+    || !PROVENANCE_RESULTS.has(provenance)
   ) {
     return { found: true, marker: null }
   }
@@ -92,6 +135,7 @@ function parsePhase1LiveMarker(line) {
       exitCode,
       durationMs,
       modelAvailability,
+      provenance,
     },
   }
 }
@@ -202,7 +246,8 @@ export function formatPhase1LiveResult(result) {
   const outputMarkerCount = Math.max(1, safeCount(result?.outputMarkerCount))
   const orphanCount = safeCount(result?.orphanCount)
   const modelAvailability = safeModelAvailability(result?.modelAvailability)
-  return `${PHASE1_LIVE_RESULT_PREFIX}status=${status} stage=${stage} reason=${reason} exit=${exitCode} duration_ms=${durationMs} model_availability=${modelAvailability} cleanup=${cleanup} marker_count=${markerCount} output_marker_count=${outputMarkerCount} orphan_count=${orphanCount}\n`
+  const provenance = safeProvenance(result?.provenance)
+  return `${PHASE1_LIVE_RESULT_PREFIX}status=${status} stage=${stage} reason=${reason} exit=${exitCode} duration_ms=${durationMs} model_availability=${modelAvailability} provenance=${provenance} cleanup=${cleanup} marker_count=${markerCount} output_marker_count=${outputMarkerCount} orphan_count=${orphanCount}\n`
 }
 
 export async function runPhase1LiveSmoke(options = {}) {
@@ -229,6 +274,7 @@ export async function runPhase1LiveSmoke(options = {}) {
   const markers = []
   let invalidMarker = false
   let modelAvailability = 'probe_failed'
+  let provenance = 'failed'
   let child = null
 
   const requestTermination = (failureReason) => {
@@ -250,6 +296,7 @@ export async function runPhase1LiveSmoke(options = {}) {
     temporaryRoot = await mkdtemp(join(tmpdir(), 'magic-mirror-phase1-live-'))
     userDataDir = join(temporaryRoot, 'user-data')
     await mkdir(userDataDir)
+    const expectedProvenance = await createExpectedProvenance(userDataDir)
 
     const env = {
       ...process.env,
@@ -259,6 +306,7 @@ export async function runPhase1LiveSmoke(options = {}) {
       MIRROR_USER_DATA_DIR: userDataDir,
       MIRROR_PHASE1_LIVE_SMOKE_ROOT: temporaryRoot,
       MIRROR_PHASE1_LIVE_USER_DATA_DIR: userDataDir,
+      MIRROR_PHASE1_EXPECTED_PROVENANCE: JSON.stringify(expectedProvenance),
     }
 
     try {
@@ -370,10 +418,12 @@ export async function runPhase1LiveSmoke(options = {}) {
       reason = 'child_exit_mismatch'
     } else if (marker.status === 'passed' && actualExitCode === 0) {
       modelAvailability = marker.modelAvailability
+      provenance = marker.provenance
       status = 'passed'
       exitCode = 0
     } else {
       modelAvailability = marker.modelAvailability
+      provenance = marker.provenance
       exitCode = actualExitCode
     }
   }
@@ -400,6 +450,7 @@ export async function runPhase1LiveSmoke(options = {}) {
     outputMarkerCount,
     orphanCount,
     modelAvailability: safeModelAvailability(modelAvailability),
+    provenance: safeProvenance(provenance),
   }
 }
 

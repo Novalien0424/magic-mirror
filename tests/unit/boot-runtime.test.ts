@@ -25,10 +25,15 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
     } as never,
     resolveModelSettings: () => ({
       active: {
+        slot: 'active',
         configVersion: 1,
-        ...(options.realtimeDialogue === undefined
-          ? {}
-          : { realtimeDialogue: options.realtimeDialogue }),
+        fingerprint: 'a'.repeat(64),
+        realtimeDialogue: options.realtimeDialogue,
+        inputTranscription: 'configured-transcription-model',
+        memoryExtractor: 'configured-memory-model',
+        voice: 'marin',
+        reasoningEffort: 'low',
+        turnDetectionProfile: 'semantic-vad-interruptible',
       },
     } as never),
     clientSecretBroker: options.clientSecretBroker as never,
@@ -94,6 +99,22 @@ describe('BootRuntime realtime runtime outcome reason', () => {
 })
 
 describe('BootRuntime configured model availability probe', () => {
+  it('publishes the validated Main-only session model snapshot after ready', async () => {
+    const runtime = createTestRuntime({ realtimeDialogue: 'configured-realtime-model' })
+
+    const snapshot = await runtime.getPublishedSessionModelSnapshotForDiagnostics()
+
+    expect(snapshot).toEqual(expect.objectContaining({
+      configVersion: 1,
+      fingerprint: 'a'.repeat(64),
+      sdkVersion: '0.16.1',
+      realtimeDialogue: 'configured-realtime-model',
+      inputTranscription: 'configured-transcription-model',
+      voice: 'marin',
+    }))
+    expect(Object.isFrozen(snapshot)).toBe(true)
+  })
+
   it('waits for ready, probes the validated active model, and returns available unchanged', async () => {
     let releaseInitialize!: () => void
     const initializeGate = new Promise<void>((resolve) => {

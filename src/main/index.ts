@@ -15,6 +15,7 @@ import { formatMarker, marker, type MarkerFields } from './log'
 import { applyPhase0UserDataPath } from './phase0-demo-runner'
 import {
   createPhase1LiveSmokeCoordinator,
+  matchesPhase1LiveSmokeProvenance,
   type Phase1LiveSmokeCoordinator,
   type Phase1LiveSmokeResult,
 } from './phase1-live-smoke'
@@ -306,6 +307,7 @@ function finishPhase1LiveSmoke(result: Phase1LiveSmokeResult): void {
       reason: result.reason,
       duration_ms: result.duration_ms,
       model_availability: result.modelAvailability,
+      provenance: result.provenance,
     },
     result.exit,
   )
@@ -447,6 +449,29 @@ void app.whenReady().then(() => {
       getSnapshot: () => runtime.snapshot(),
       getLastRealtimeRuntimeOutcomeReason: () => runtime.getLastRealtimeRuntimeOutcomeReason(),
       subscribe: (listener) => runtime.subscribe(listener),
+      checkProvenance: async () => {
+        const encodedExpected = process.env['MIRROR_PHASE1_EXPECTED_PROVENANCE']
+        if (encodedExpected === undefined) return false
+        let expected: unknown
+        try {
+          expected = JSON.parse(encodedExpected) as unknown
+        } catch {
+          return false
+        }
+        const snapshot = await runtime.getPublishedSessionModelSnapshotForDiagnostics()
+        return matchesPhase1LiveSmokeProvenance(expected, {
+          userDataDir: resolve(app.getPath('userData')),
+          configVersion: snapshot.configVersion,
+          fingerprint: snapshot.fingerprint,
+          sdkVersion: snapshot.sdkVersion,
+          realtimeDialogue: snapshot.realtimeDialogue,
+          inputTranscription: snapshot.inputTranscription,
+          memoryExtractor: snapshot.memoryExtractor,
+          voice: snapshot.voice,
+          reasoningEffort: snapshot.reasoningEffort,
+          turnDetectionProfile: snapshot.turnDetectionProfile,
+        })
+      },
       probeConfiguredModelAvailability: runtime.probeConfiguredModelAvailability,
       manualStart: () => runtime.manualStart(),
       manualStop: () => runtime.manualStop(),
