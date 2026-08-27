@@ -16,10 +16,13 @@ order for human evidence, exit decisions, release tags, and phase-status
 promotion remains sequential. The user authorized Phase 2 runtime engineering
 to start from a frozen Phase 1 candidate while away. The Windows engineering
 candidate now implements the replaceable wake package, isolated worker,
-exclusive mic handoff, idle/sleep lifecycle, Console evidence, and target-Mac
-corpus evaluator. Its package remains intentionally `unselected` until the
-Windows candidate comparison is run. The Mac mini M4 port and target-specific
-revalidation are deferred until PC development is complete. Neither phase is
+exclusive mic handoff, idle/sleep lifecycle, Console evidence, and current-host
+corpus evaluator. The evaluator and package import now support the current
+`win32-x64` development host as well as the later `darwin-arm64` port. A real
+sherpa Windows package candidate exists, but runtime remains intentionally
+`unselected` until the approved Windows candidate comparison is run. The Mac
+mini M4 port and target-specific revalidation are deferred until PC development
+is complete. Neither phase is
 accepted or tagged, and Phases 3–7 have not started. The four earlier
 prep-only lanes below do not start or promote another phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
@@ -145,8 +148,9 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Fresh mini-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1-mini`; this was a bounded verification attempt, not a baseline/config change. |
 | Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
-| Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
+| Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; Windows microphone/output, natural conversation, audible output, and spoken barge-in are not claimed. Target-Mac checks are deferred to the later port. |
 | Phase 2 Windows engineering candidate | Commits `52cb13b` through `7c55436` plus final package-validation/harness closure; default phrase `魔鏡阿魔鏡`; real target package remains `unselected`. Full candidate verification is recorded below. |
+| Phase 2 sherpa Windows package candidate | Commit `693edef`; official WenetSpeech 3.3M epoch-12/avg-2 artifacts, custom `魔鏡阿魔鏡` token encoding, hashes, provenance, and trailing-blank tuning are recorded in `sherpa-magic-mirror-win-v1`. The production Node adapter passed the official documented known-WAV baseline; the custom package processed seven official non-target clips with zero detections and zero failures. This is native-plumbing evidence only; `corpusResultId` remains `not-evaluated` and runtime remains `unselected`. |
 | Phase 2 Windows wake candidate selection | `not_executed`; no Windows Porcupine `.ppn` or sherpa package has been selected. Compare false rejects, false accepts, latency, CPU, and stability on this PC before publishing the Windows development candidate; repeat/revalidate on the M4 during the later port. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
@@ -203,6 +207,17 @@ failure never silently substitutes another ID.
   --check` exited `0`. Provider smoke passed before the final package-validator
   and harness-only closure:
   `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=6035 model_availability=available provenance=passed cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
+- Windows package/tooling closure at `693edef`: explicit `win32-x64`/
+  `darwin-arm64` import and evaluation, immutable sherpa
+  `numTrailingBlanks`, and the unselected official-model candidate. Fresh
+  verification: `61/61` test files and `667/667` tests, both typechecks, build,
+  and diff check exited `0`; canonical Windows packaging exited `0`. The
+  canonical automated provider smoke passed with
+  `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=5424 model_availability=available provenance=passed cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`;
+  packaged `Magic Mirror.exe` boot/auto-quit exited `0` with isolated user data.
+  The candidate evaluator processed seven official non-target WAVs with zero
+  detections and zero failures. These checks do not claim physical wake
+  quality.
 - M4/native quality, packaged macOS worker/TCC/signing, real microphone, and
   human evidence were not run and are not claimed. P2-D1..D5 remain
   `real-demo not_executed`; no Phase 2 tag exists.
@@ -393,6 +408,12 @@ exit/tag, and promotion remain sequential after the Phase 1 physical gate.
   Later canonical Electron runs proceed without another prompt; recheck only
   after that path/install changes or rule lookup fails. Per-worktree Electron
   execution/rules remain forbidden because program scope is an exact path.
+  During the 2026-08-27 canonical Phase 2 smoke, dependency/package preparation
+  left the pinned development Electron binary absent; running its pinned
+  `install.js` restored Electron `43.4.1` at the same canonical path. The rule
+  still matched exactly, no firewall prompt was needed, and the subsequent
+  live and packaged smokes passed. Future runtime runs verify the executable
+  exists after dependency/package operations; they do not add another rule.
 - `.env` exists and is ignored/untracked. For this personal build it is the sole
   runtime master-key source, loaded only by Electron Main; missing, empty, and
   read failures remain metadata-only reasons. Agents/workers do not inspect or
