@@ -1,6 +1,7 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-27 — Phase 1, Realtime Voice: IN PROGRESS.**
+**Current dashboard — 2026-08-27 — Phase 1 physical exit pending; Phase 2 Wake
+Lifecycle engineering overlap authorized.**
 Branch `phase1-realtime-voice` has accepted product commit `b246521` for
 P1-U9. Phase 0 is accepted and tagged
 `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
@@ -11,9 +12,11 @@ accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted. A
 corrected real provider smoke now passes with the configured `gpt-realtime-2.1`;
 physical mic/output and target-Mac evidence have not occurred. Phase 1 exit/tag
 is **not accepted**. Official phase
-order, runtime integration, demos, exit decisions, regression, release tags,
-and phase-status promotion remain sequential; Phases 2–7 have not started.
-The four authorized prep-only lanes below do not start or promote a phase.
+order for human evidence, exit decisions, regression, release tags, and
+phase-status promotion remains sequential. The user authorized Phase 2 runtime
+engineering to start from a frozen Phase 1 candidate while away; neither phase
+is accepted or tagged, and Phases 3–7 have not started. The four earlier
+prep-only lanes below do not start or promote another phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 The automated live harness launches the actual `npm run dev` /
