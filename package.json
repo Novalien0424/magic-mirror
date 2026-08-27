@@ -17,7 +17,8 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "test:phase1:live": "node scripts/run-phase1-live-smoke.mjs"
+    "test:phase1:live": "node scripts/run-phase1-live-smoke.mjs",
+    "evaluate:wake": "node scripts/evaluate-wake-models.mjs"
   },
   "dependencies": {
     "@openai/agents": "0.16.1",

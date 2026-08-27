@@ -13,6 +13,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
           'wake-worker': resolve(__dirname, 'src/main/wake/worker.ts'),
+          'wake-evaluator': resolve(__dirname, 'src/main/wake/evaluate-cli.ts'),
         }
       }
     }
