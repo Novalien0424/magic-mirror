@@ -6,7 +6,7 @@ build/
 *.tsbuildinfo
 resources/generated/
 
-# Local environment & secrets — credentials live in the OS keystore, never in the repo
+# Local environment & secrets — Electron Main alone loads the ignored root .env
 .env
 .env.*
 *.local.json

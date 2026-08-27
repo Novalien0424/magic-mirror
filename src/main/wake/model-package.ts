@@ -29,6 +29,7 @@ const wakeModelPackageSchema = z.object({
     sensitivity: z.number().min(0).max(1).optional(),
     threshold: z.number().min(0).max(1).optional(),
     score: z.number().positive().max(100).optional(),
+    numTrailingBlanks: z.number().int().min(1).max(100).optional(),
   }).strict(),
   provenance: z.object({
     method: z.enum(['picovoice-console', 'sherpa-text2token', 'icefall-training']),

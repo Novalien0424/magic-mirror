@@ -7,6 +7,7 @@ import { createConfiguredPorcupineDetector } from './porcupine-detector'
 import { createConfiguredSherpaDetector } from './sherpa-detector'
 import { loadWakeModelPackage } from './model-package'
 import type { WakeWorkerPackage } from './protocol'
+import { resolveWakeRuntimePlatform } from './runtime-platform'
 
 function argumentsFor(name: string): string[] {
   const values: string[] = []
@@ -50,7 +51,8 @@ function pcm16Mono16k(buffer: Buffer): Int16Array {
 }
 
 async function main(): Promise<void> {
-  if (`${process.platform}-${process.arch}` !== 'darwin-arm64') throw new Error('wake_evaluation_requires_target_mac')
+  const runtimePlatform = resolveWakeRuntimePlatform(process.platform, process.arch)
+  if (runtimePlatform === null) throw new Error('wake_evaluation_platform_unsupported')
   const corpusPath = argumentsFor('corpus')[0]
   const packageIds = argumentsFor('package')
   const outputPath = argumentsFor('output')[0]
@@ -85,7 +87,7 @@ async function main(): Promise<void> {
     const modelVersion = manifest['modelVersion']
     if (typeof phrase !== 'string' || typeof modelVersion !== 'string') throw new Error('wake_package_manifest_invalid')
     const wake = { phrase, modelVersion, packageId }
-    const loaded = await loadWakeModelPackage({ rootDirectory: modelRoot, wake, platform: 'darwin-arm64' })
+    const loaded = await loadWakeModelPackage({ rootDirectory: modelRoot, wake, platform: runtimePlatform })
     if (!loaded.ok) throw new Error(loaded.reason)
     const tuning = loaded.manifest.tuning
     const workerPackage: WakeWorkerPackage = {
@@ -100,6 +102,7 @@ async function main(): Promise<void> {
         ...(tuning.sensitivity === undefined ? {} : { sensitivity: tuning.sensitivity }),
         ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
         ...(tuning.score === undefined ? {} : { score: tuning.score }),
+        ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
       },
     }
     candidates.push({
@@ -114,7 +117,7 @@ async function main(): Promise<void> {
   const result = {
     ...aggregate,
     corpusResultId: createHash('sha256').update(JSON.stringify(aggregate)).digest('hex').slice(0, 24),
-    platform: 'darwin-arm64',
+    platform: runtimePlatform,
   }
   const serialized = `${JSON.stringify(result, null, 2)}\n`
   if (outputPath !== undefined) await writeFile(resolve(outputPath), serialized, { encoding: 'utf8', flag: 'wx' })

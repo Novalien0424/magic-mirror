@@ -25,6 +25,8 @@ const engine = argument('engine')
 const engineVersion = argument('engine-version')
 const modelVersion = argument('model-version')
 const phrase = argument('phrase')
+const platform = argument('platform')
+const outputRoot = argument('output-root')
 const method = argument('method')
 const sourceId = argument('source-id')
 const corpusResultId = argument('corpus-result-id') ?? 'not-evaluated'
@@ -38,6 +40,8 @@ if (
   || typeof engineVersion !== 'string' || engineVersion.trim() === ''
   || typeof modelVersion !== 'string' || modelVersion.trim() === ''
   || typeof phrase !== 'string' || phrase.trim() === ''
+  || typeof platform !== 'string' || !/^[a-z0-9]+-[a-z0-9]+$/u.test(platform)
+  || (outputRoot !== undefined && outputRoot.trim() === '')
   || !['picovoice-console', 'sherpa-text2token', 'icefall-training'].includes(method)
   || typeof sourceId !== 'string' || !safeId.test(sourceId)
   || !safeId.test(corpusResultId)
@@ -56,9 +60,13 @@ try {
   process.exit(2)
 }
 
-const targetDirectory = join(repositoryRoot, 'resources', 'wake-models', packageId)
+const modelRoot = outputRoot === undefined
+  ? join(repositoryRoot, 'resources', 'wake-models')
+  : resolve(outputRoot)
+const targetDirectory = join(modelRoot, packageId)
 const temporaryDirectory = `${targetDirectory}.partial-${process.pid}`
 try {
+  await mkdir(modelRoot, { recursive: true })
   await mkdir(temporaryDirectory, { recursive: false })
   const artifacts = []
   const roles = new Set()
@@ -90,7 +98,7 @@ try {
     modelVersion,
     phrase: phrase.trim(),
     locale: 'zh-CN',
-    platform: 'darwin-arm64',
+    platform,
     artifacts,
     tuning,
     provenance: {

@@ -50,6 +50,29 @@ describe('wake model package', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('keeps sherpa trailing-blank tuning inside the immutable package', () => {
+    const result = validateWakeModelPackage({
+      manifest: manifest({
+        tuning: {
+          sampleRateHz: 16_000,
+          threshold: 0.45,
+          score: 1,
+          numTrailingBlanks: 2,
+        },
+      }),
+      wake: {
+        phrase: '魔鏡阿魔鏡',
+        modelVersion: 'test-v1',
+        packageId: 'magic-mirror-zh-test-v1',
+      },
+      platform: 'darwin-arm64',
+      artifacts: new Map([['model.onnx', artifact]]),
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.manifest.tuning.numTrailingBlanks).toBe(2)
+  })
+
   it.each([
     ['wake_package_phrase_mismatch', { phrase: '魔鏡啊魔鏡' }],
     ['wake_package_platform_mismatch', { platform: 'win32-x64' }],

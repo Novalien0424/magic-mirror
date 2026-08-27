@@ -160,6 +160,7 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
       ...(tuning.sensitivity === undefined ? {} : { sensitivity: tuning.sensitivity }),
       ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
       ...(tuning.score === undefined ? {} : { score: tuning.score }),
+      ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
     },
   }
   let activation: ReturnType<typeof createWakeConversationActivation> | null = null
