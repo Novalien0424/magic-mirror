@@ -358,7 +358,11 @@ describe('Realtime runtime dependency composition core', () => {
   it('maps the exact bundle and sinks into the injected session factory without credential metadata', async () => {
     const fixture = makeFixture()
     const bundle = makeBundle()
-    const dependencies = createRealtimeRuntimeOwnerDependencies(fixture.input)
+    const onReturnToDormant = vi.fn(async () => undefined)
+    const dependencies = createRealtimeRuntimeOwnerDependencies({
+      ...fixture.input,
+      onReturnToDormant,
+    })
     const sessionMetadata = {
       event: 'realtime_session_created',
       status: 'info',
@@ -393,6 +397,7 @@ describe('Realtime runtime dependency composition core', () => {
     expect(sessionInput.audioElement).toBe(fixture.audioElement)
     expect(sessionInput.eventSink).toBe(fixture.sessionEventSink)
     expect(sessionInput.onFailure).toBe(fixture.onFailure)
+    expect(sessionInput.onReturnToDormant).toBe(onReturnToDormant)
     expect(JSON.stringify(fixture.sessionEventSink.mock.calls)).not.toContain(
       bundle.clientSecret,
     )

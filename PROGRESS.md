@@ -7,9 +7,9 @@ tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
 released as `phase1-v0.3.1`. Phase 2 may now integrate from that accepted
 baseline. Its existing Windows candidate implements the replaceable wake
 package, isolated worker, exclusive mic handoff, idle/sleep lifecycle, Console
-evidence, and current-host corpus evaluator. A real sherpa Windows package
-candidate exists, but the runtime remains `unselected` until its local package
-and microphone checks pass. The Mac mini M4 port and target-specific
+evidence, and current-host corpus evaluator. The runtime now selects the hashed
+`sherpa-magic-mirror-win-v1` package; native load and real EPOS microphone
+acquisition pass. The Mac mini M4 port and target-specific
 revalidation remain deferred until PC development is complete. Phases 3–7 have
 not started; their earlier prep-only lanes remain non-phase evidence.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
@@ -154,12 +154,12 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Official Realtime model verification — 2026-08-26 | Official OpenAI model pages document `gpt-realtime-2.1` and `gpt-realtime-2.1-mini`; the official Realtime session-create schema lists both exact IDs. Both spellings are verified; spelling is ruled out. |
 | Fresh full-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1`; the failed actual connect is authoritative. |
 | Fresh mini-model live gate — 2026-08-26 | Exact marker is recorded in the automated live-gate evidence below. One-model-at-a-time connect used `gpt-realtime-2.1-mini`; this was a bounded verification attempt, not a baseline/config change. |
-| Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
+| Current product configuration | Realtime model `gpt-realtime-2.1-mini`; input transcription `gpt-live-transcribe`; voice `cedar`; `server-vad-noisy`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
-| Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; Windows microphone/output, natural conversation, audible output, and spoken barge-in are not claimed. Target-Mac checks are deferred to the later port. |
-| Phase 2 Windows engineering candidate | Commits `52cb13b` through `7c55436` plus final package-validation/harness closure; default phrase `魔鏡阿魔鏡`; real target package remains `unselected`. Full candidate verification is recorded below. |
-| Phase 2 sherpa Windows package candidate | Commit `693edef`; official WenetSpeech 3.3M epoch-12/avg-2 artifacts, custom `魔鏡阿魔鏡` token encoding, hashes, provenance, and trailing-blank tuning are recorded in `sherpa-magic-mirror-win-v1`. The production Node adapter passed the official documented known-WAV baseline; the custom package processed seven official non-target clips with zero detections/failures and detected 7/9 synthetic phrase clips across three Windows Mandarin voices and three rates with zero failures. This is native-plumbing evidence only; `corpusResultId` remains `not-evaluated` and runtime remains `unselected`. |
-| Phase 2 Windows wake candidate selection | `not_executed`; no Windows Porcupine `.ppn` or sherpa package has been selected. Compare false rejects, false accepts, latency, CPU, and stability on this PC before publishing the Windows development candidate; repeat/revalidate on the M4 during the later port. |
+| Phase 1 exit | Accepted by the operator from the real Windows microphone/speaker path and released as `phase1-v0.3.1`; target-Mac checks remain deferred to the later port. |
+| Phase 2 Windows engineering candidate | Accepted Phase 1 baseline merged at `b9b74cb`; default phrase `魔鏡阿魔鏡`; selected package `sherpa-magic-mirror-win-v1`; full candidate verification is recorded below. |
+| Phase 2 sherpa Windows package candidate | Official WenetSpeech 3.3M epoch-12/avg-2 artifacts, custom `魔鏡阿魔鏡` token encoding, hashes, provenance, and trailing-blank tuning are recorded in `sherpa-magic-mirror-win-v1`. The production Node adapter passed the documented known-WAV baseline; seven official non-target clips produced zero detections/failures and 7/9 synthetic phrase clips were detected across three Windows Mandarin voices and rates. Runtime package loading and real EPOS microphone acquisition passed; physical human wake quality remains pending. |
+| Phase 2 Windows wake candidate selection | The Windows development runtime explicitly selects the sherpa package. Porcupine and its credential/dependency/runtime branches are removed; the sherpa package is revalidated on M4 during the later port. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
 ### Phase 0 accepted ledger — 2026-08-20
@@ -195,15 +195,15 @@ failure never silently substitutes another ID.
 
 ## Phase 2 Windows engineering candidate — 2026-08-27
 
-- The frozen Phase 1 candidate is `d239c01`. Phase 2 adds immutable,
-  replaceable `zh-CN` wake packages for trained Porcupine or compiled/trained
-  sherpa artifacts, exact hashes/provenance/tuning, and one explicitly selected
-  engine with no runtime fallback.
+- Accepted Phase 1 tag `phase1-v0.3.1` is merged into Phase 2 at `b9b74cb`.
+  Phase 2 uses one immutable, replaceable sherpa `zh-CN` wake package with
+  exact hashes/provenance/tuning and no alternate-engine credential or fallback.
 - The isolated worker owns one `decibri` 16 kHz mono capture path only in
   Dormant/OfflineLoop. Wake/manual start release it before Realtime starts;
-  stop, idle, exact completed-transcript `睡吧`, and cloud failure close the
-  renderer tracks before wake reacquires. Local handoff failure enters
-  Maintenance.
+  stop, idle, the payload-free model tool `return_to_dormant` for the directed
+  phrase `恭送渡鴨大人`, and cloud failure close renderer tracks before wake
+  reacquires. Quoted, negated, hypothetical, and incidental mentions do not
+  activate the tool. Local handoff failure enters Maintenance.
 - Console reuses existing Overview, simulator, Events, and Phase Tests. When a
   wake reference changes, Draft Test and Publish validate its manifest,
   phrase, platform, artifacts, and hashes; an invalid package cannot replace
@@ -217,7 +217,8 @@ failure never silently substitutes another ID.
   `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=6035 model_availability=available provenance=passed cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
 - Windows package/tooling closure at `693edef`: explicit `win32-x64`/
   `darwin-arm64` import and evaluation, immutable sherpa
-  `numTrailingBlanks`, and the unselected official-model candidate. Fresh
+  `numTrailingBlanks`, and the official-model candidate that is now selected
+  for Windows human validation. Fresh
   verification: `61/61` test files and `667/667` tests, both typechecks, build,
   and diff check exited `0`; canonical Windows packaging exited `0`. The
   canonical automated provider smoke passed with
@@ -229,29 +230,30 @@ failure never silently substitutes another ID.
   rates with zero inference failures. The 22.2% synthetic false-reject rate was
   not used for tuning or package selection; these checks do not claim physical
   wake quality.
-- M4/native quality, packaged macOS worker/TCC/signing, real microphone, and
-  human evidence were not run and are not claimed. P2-D1..D5 remain
-  `real-demo not_executed`; no Phase 2 tag exists.
+- Electron `44.0.0` dev runtime loaded the hashed sherpa package and reached
+  `wake_worker_ready` then `wake_worker_listening` on the real EPOS microphone.
+  Two fixed Windows-TTS speaker-loop attempts were not detected, consistent
+  with the EPOS echo-cancellation path; this is not a physical human wake pass.
+- Current Phase 2 close-preparation gate: `60/60` test files and `662/662`
+  tests passed; Node/web typechecks, Electron Vite build, Electron 44 Windows
+  package, and `git diff --check` passed. The packaged executable smoke exited
+  `0` in Dormant. The real-provider lifecycle smoke passed with
+  `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=13727 model_availability=available provenance=passed cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
+- M4/native quality, packaged macOS worker/TCC/signing, and human wake evidence
+  are not claimed. P2-D1..D5 remain pending human evidence; no Phase 2 tag exists.
 
 ## Pending work — exact order
 
-1. From the exact frozen Phase 1 build, run P1-D1 (20 real turns), P1-D2 (10
-   spoken interruptions), and P1-D5 (real Draft/Publish/new-session/invalid
-   Draft). If they pass, record evidence and tag Phase 1.
-2. On this Windows PC, import/train the platform-specific Mandarin Porcupine
-   `魔鏡阿魔鏡` package and compile the matching sherpa package. Compare both at
-   the same false-accept target on at least 100 approved positives plus hard
-   negatives and two hours of approved background audio; Publish the measured
-   Windows development candidate.
-3. From the exact Phase 2 build, run P2-D1..D5: local wake to real Realtime,
+1. From the exact Phase 2 candidate, run P2-D1..D5: local wake to real Realtime,
    offline wake to OfflineLoop, 30-second developer idle plus 300-second
-   configuration check, exact `睡吧` after playback, and the mic-owner timeline.
-4. Satisfy the Windows Phase 2 evidence: at least 19/20 live wakes, the
+   configuration check, `恭送渡鴨大人` model-tool sleep after goodbye playback,
+   and the mic-owner timeline.
+2. Satisfy the Windows Phase 2 evidence: at least 19/20 live wakes, the
    separate 30-minute ambient/TV false-wake run, and clean lifecycle/device
    release. Any resulting phase tag is a Windows development checkpoint only.
-   Continue Phases 3–7 sequentially on this PC. After PC development, repeat
-   wake selection and complete TCC/native packaging/signing/LaunchAgent/power
-   evidence during the Mac mini M4 port before final deployment acceptance.
+3. After PC development, revalidate the sherpa package and complete TCC/native
+   packaging/signing/LaunchAgent/power evidence during the Mac mini M4 port
+   before final deployment acceptance.
 
 ## Human-intervention ledger
 
@@ -263,9 +265,9 @@ failure never silently substitutes another ID.
 | P1-C3 Electron launch | Earlier launch failure cleared without intervention; it did not reproduce in the focused rerun/full gate; no install/reinstall or human action was required. | Cleared |
 | P1 automated live gate — 2026-08-26 (earlier attempt) | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Historical metadata-only observation; no model-spelling conclusion is drawn. |
 | P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Superseded diagnosis: these runs loaded a local mock model from non-isolated user data; the 2026-08-27 corrected run proves provider/project access. |
-| Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
-| Phase 2 engineering | Windows implementation and deterministic verification required no operator input. | Engineering candidate only; P2-D1..D5 `real-demo not_executed` |
-| Wake quality selection | Train/import both Windows `魔鏡阿魔鏡` candidates, collect/approve the local corpus, run the equal-false-accept PC comparison, and Publish the development winner. | Pending; current package is `unselected`; M4 revalidation deferred to port |
+| Phase 1 exit | Operator accepted real conversation, output, and barge-in; `phase1-v0.3.1` is pushed. | Complete |
+| Phase 2 engineering | Windows implementation, real native package load, EPOS microphone acquisition, and automated verification require no further operator setup. | Candidate ready; P2-D1..D5 human evidence pending |
+| Wake quality selection | Windows candidate is the selected sherpa package; human live-wake and ambient evidence remain. | Pending human quality; M4 revalidation deferred to port |
 | Target Mac | Port only after PC development; then repeat wake selection and verify TCC, signing/entitlements, packaged workers, LaunchAgent, power, device, and provider behavior. | Deferred; not a current PC-development gate |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
 

@@ -412,7 +412,7 @@ describe('ConfigService contract', () => {
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      configVersion: 5,
+      configVersion: 6,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
@@ -428,8 +428,8 @@ describe('ConfigService contract', () => {
       },
       wake: {
         phrase: '魔鏡阿魔鏡',
-        modelVersion: 'unselected-v1',
-        packageId: 'unselected',
+        modelVersion: 'wenetspeech-3.3m-2024-01-01-epoch12-avg2',
+        packageId: 'sherpa-magic-mirror-win-v1',
       },
       faceModel: {
         detectorId: 'mock-face-detector-v1',

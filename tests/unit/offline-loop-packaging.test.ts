@@ -522,9 +522,9 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
       }>
     }
 
-    expect(packageJson.devDependencies.electron).toBe('43.4.1')
+    expect(packageJson.devDependencies.electron).toBe('44.0.0')
     expect(packageJson.devDependencies['electron-builder']).toBe('26.15.3')
-    expect(packageJson.dependencies['@picovoice/porcupine-node']).toBe('4.0.2')
+    expect(packageJson.dependencies['@picovoice/porcupine-node']).toBeUndefined()
     expect(packageJson.dependencies['sherpa-onnx-node']).toBe('1.13.6')
     expect(packageJson.dependencies.decibri).toBe('5.7.0')
     expect(packageJson.scripts['generate:offline-loop']).toBe('node scripts/generate-offline-loop.mjs')
@@ -533,12 +533,12 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(packageJson.scripts.package).toBe('electron-builder --dir --publish never')
     expect(packageJson.scripts.smoke).toBe('electron .')
 
-    expect(packageLock.packages['']?.devDependencies?.electron).toBe('43.4.1')
+    expect(packageLock.packages['']?.devDependencies?.electron).toBe('44.0.0')
     expect(packageLock.packages['']?.devDependencies?.['electron-builder']).toBe('26.15.3')
-    expect(packageLock.packages['']?.dependencies?.['@picovoice/porcupine-node']).toBe('4.0.2')
+    expect(packageLock.packages['']?.dependencies?.['@picovoice/porcupine-node']).toBeUndefined()
     expect(packageLock.packages['']?.dependencies?.['sherpa-onnx-node']).toBe('1.13.6')
     expect(packageLock.packages['']?.dependencies?.decibri).toBe('5.7.0')
-    expect(packageLock.packages['node_modules/electron']?.version).toBe('43.4.1')
+    expect(packageLock.packages['node_modules/electron']?.version).toBe('44.0.0')
     expect(packageLock.packages['node_modules/electron-builder']?.version).toBe('26.15.3')
   })
 

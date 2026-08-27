@@ -1,5 +1,4 @@
-import { createConfiguredWakeDetector, type WakeDetector } from './detector'
-import { createConfiguredPorcupineDetector } from './porcupine-detector'
+import type { WakeDetector } from './detector'
 import { createConfiguredSherpaDetector } from './sherpa-detector'
 import { openWakeCapture, type WakeCapture } from './capture'
 import {
@@ -16,20 +15,14 @@ interface WorkerPort {
 export interface WakeWorkerDependencies {
   readonly createDetector?: (
     wakePackage: Extract<WakeWorkerCommand, { type: 'initialize' }>['package'],
-    accessKey?: string,
   ) => WakeDetector
   readonly openCapture?: typeof openWakeCapture
 }
 
 function defaultCreateDetector(
   wakePackage: Extract<WakeWorkerCommand, { type: 'initialize' }>['package'],
-  accessKey?: string,
 ): WakeDetector {
-  return createConfiguredWakeDetector({
-    package: wakePackage,
-    createPorcupine: (configured) => createConfiguredPorcupineDetector(configured, accessKey),
-    createSherpa: createConfiguredSherpaDetector,
-  })
+  return createConfiguredSherpaDetector(wakePackage)
 }
 
 export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDependencies = {}): void {
@@ -94,7 +87,7 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
     if (stopped) return
     if (command.type === 'initialize' || command.type === 'update_config') {
       if (capture !== null) throw new Error('wake_microphone_owned')
-      const nextDetector = createDetector(command.package, command.accessKey)
+      const nextDetector = createDetector(command.package)
       detector?.close()
       detector = nextDetector
       activePackage = command.package

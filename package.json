@@ -23,7 +23,6 @@
   "dependencies": {
     "@openai/agents": "0.16.1",
     "@openai/agents-realtime": "0.16.1",
-    "@picovoice/porcupine-node": "4.0.2",
     "decibri": "5.7.0",
     "sherpa-onnx-node": "1.13.6",
     "write-file-atomic": "^8.0.0",
@@ -35,7 +34,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "43.4.1",
+    "electron": "44.0.0",
     "electron-builder": "26.15.3",
     "electron-vite": "^5.0.0",
     "react": "^19.2.8",

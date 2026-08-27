@@ -136,6 +136,7 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly micEventSink: MicOwnerMetadataEventSink
   readonly createCleanup: RealtimeRuntimeOwnerDependencies['createCleanup']
   readonly onFailure?: RealtimeFailureCallback
+  readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>
   readonly createSession?: (
     input: CreateRealtimeSessionInput,
@@ -235,6 +236,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         sessionGeneration,
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
+        onReturnToDormant: input.onReturnToDormant,
       })
     },
     createMicOwner: (

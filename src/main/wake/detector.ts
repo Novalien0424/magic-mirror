@@ -11,15 +11,3 @@ export interface WakeDetector {
 
 export const WAKE_LISTENING: WakeDetectorResult = Object.freeze({ status: 'listening' })
 export const WAKE_DETECTED: WakeDetectorResult = Object.freeze({ status: 'detected' })
-
-export function createConfiguredWakeDetector<TPackage extends { readonly engine: 'porcupine' | 'sherpa' }>(
-  input: {
-    readonly package: TPackage
-    readonly createPorcupine: (wakePackage: TPackage) => WakeDetector
-    readonly createSherpa: (wakePackage: TPackage) => WakeDetector
-  },
-): WakeDetector {
-  return input.package.engine === 'porcupine'
-    ? input.createPorcupine(input.package)
-    : input.createSherpa(input.package)
-}

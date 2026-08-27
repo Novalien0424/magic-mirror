@@ -7,9 +7,9 @@ description: Use when implementing the Electron shell -- main process, lifecycle
 
 ## Overview
 
-Verified **2026-08-16**. Pin `electron@43.x` (Chromium M150, Node 24.17;
-Electron 44 lands 2026-08-25, 41 EOLs same day -- plan the bump, don't ride
-`latest`). Scaffold: **electron-vite 5** for dev/build + **electron-builder
+Verified **2026-08-27**. Pin stable `electron@44.x`; the project currently
+uses exact `44.0.0`. Recheck the stable release before a deliberate dependency
+upgrade rather than using an unpinned `latest`. Scaffold: **electron-vite 5** for dev/build + **electron-builder
 or Forge** for packaging/signing. TypeScript + React renderers.
 
 ## Process Model & IPC

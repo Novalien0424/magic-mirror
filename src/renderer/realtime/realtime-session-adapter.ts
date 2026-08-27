@@ -1,8 +1,10 @@
 import {
   RealtimeAgent,
   RealtimeSession,
+  tool,
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
+import { z } from 'zod'
 import type { SessionModelSnapshot } from '../../shared/types'
 import {
   REALTIME_METADATA_REASONS,
@@ -76,6 +78,7 @@ export interface CreateRealtimeSessionInput {
   readonly sessionGeneration?: number
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
+  readonly onReturnToDormant?: () => void | PromiseLike<void>
   readonly dependencies?: RealtimeSessionDependencies
 }
 
@@ -399,6 +402,8 @@ export function createRealtimeSession(
 
   const dependencies = input.dependencies
   let session: SessionLike
+  let returnToDormantPending = false
+  let returnToDormantAudioStarted = false
   try {
     const transportFactory = dependencies?.createTransport ?? createWebRtcRealtimeTransport
     const transport = transportFactory({
@@ -407,7 +412,21 @@ export function createRealtimeSession(
     })
     const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
-    const agent = new agentConstructor({ name: 'magic-mirror-realtime' })
+    const returnToDormant = tool({
+      name: 'return_to_dormant',
+      description: 'Call only when the user directly asks the mirror to return to Dormant, canonically by saying 恭送渡鴨大人. Do not call for quoted, negated, hypothetical, or incidental mentions. Takes no arguments.',
+      parameters: z.object({}),
+      execute: () => {
+        returnToDormantPending = true
+        returnToDormantAudioStarted = false
+        return 'Accepted. Say a brief graceful goodbye now; the app will return to Dormant after the goodbye audio finishes.'
+      },
+    })
+    const agent = new agentConstructor({
+      name: 'magic-mirror-realtime',
+      instructions: 'Use return_to_dormant only for an explicit deactivation command directed at the mirror. Never use it when the phrase is quoted, negated, hypothetical, or mentioned incidentally.',
+      tools: [returnToDormant],
+    })
     const sessionOptions = {
       transport,
       model: input.snapshot.realtimeDialogue,
@@ -582,8 +601,49 @@ export function createRealtimeSession(
       )
       return
     }
+    if (type === 'output_audio_buffer.started') {
+      if (returnToDormantPending) returnToDormantAudioStarted = true
+      return
+    }
     if (type === 'output_audio_buffer.stopped') {
       notifyOutputAudioBufferStopped()
+      if (returnToDormantPending && returnToDormantAudioStarted) {
+        returnToDormantPending = false
+        returnToDormantAudioStarted = false
+        const request = input.onReturnToDormant
+        if (request === undefined) {
+          emitMetadata(
+            input,
+            'realtime_observer_event',
+            'degraded',
+            'sleep_request_unavailable',
+            sessionGeneration,
+            createdAt,
+          )
+          return
+        }
+        try {
+          void Promise.resolve(request()).catch(() => {
+            emitMetadata(
+              input,
+              'realtime_observer_event',
+              'failed',
+              'sleep_request_failed',
+              sessionGeneration,
+              createdAt,
+            )
+          })
+        } catch {
+          emitMetadata(
+            input,
+            'realtime_observer_event',
+            'failed',
+            'sleep_request_failed',
+            sessionGeneration,
+            createdAt,
+          )
+        }
+      }
       return
     }
     if (type === 'conversation.item.input_audio_transcription.completed') {

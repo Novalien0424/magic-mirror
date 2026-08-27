@@ -157,7 +157,6 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
     sampleRateHz: 16_000,
     artifactPaths: Object.fromEntries(loaded.artifactPaths),
     tuning: {
-      ...(tuning.sensitivity === undefined ? {} : { sensitivity: tuning.sensitivity }),
       ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
       ...(tuning.score === undefined ? {} : { score: tuning.score }),
       ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
@@ -184,10 +183,7 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
     reacquireWake: () => supervisor.acquire(),
   })
   wakeSupervisor = supervisor
-  const accessKey = loaded.manifest.engine === 'porcupine'
-    ? process.env['PICOVOICE_ACCESS_KEY']?.trim()
-    : undefined
-  const started = await supervisor.start({ package: workerPackage, accessKey })
+  const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
   if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
     await supervisor.acquire()

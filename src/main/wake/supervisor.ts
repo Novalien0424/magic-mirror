@@ -22,7 +22,7 @@ export type WakeSupervisorStatus =
 export interface WakeSupervisorSnapshot {
   readonly status: WakeSupervisorStatus
   readonly packageId: string | null
-  readonly engine: 'porcupine' | 'sherpa' | null
+  readonly engine: 'sherpa' | null
   readonly restartCount: 0 | 1
   readonly reason: string | null
 }
@@ -55,10 +55,10 @@ const successReason: Partial<Record<WakeWorkerOutcome['type'], string>> = {
 }
 
 export interface WakeSupervisor {
-  start(input: { readonly package: WakeWorkerPackage; readonly accessKey?: string }): Promise<WakeSupervisorResult>
+  start(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult>
   acquire(): Promise<WakeSupervisorResult>
   release(): Promise<WakeSupervisorResult>
-  updateConfig(input: { readonly package: WakeWorkerPackage; readonly accessKey?: string }): Promise<WakeSupervisorResult>
+  updateConfig(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult>
   shutdown(): Promise<WakeSupervisorResult>
   snapshot(): WakeSupervisorSnapshot
 }
@@ -73,7 +73,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     ?? ((handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>))
 
   let child: WakeWorkerChild | null = null
-  let initialization: { readonly package: WakeWorkerPackage; readonly accessKey?: string } | null = null
+  let initialization: { readonly package: WakeWorkerPackage } | null = null
   let status: WakeSupervisorStatus = 'stopped'
   let reason: string | null = null
   let restartCount: 0 | 1 = 0
@@ -243,7 +243,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   }
 
   async function start(
-    input: { readonly package: WakeWorkerPackage; readonly accessKey?: string },
+    input: { readonly package: WakeWorkerPackage },
   ): Promise<WakeSupervisorResult> {
     if (child !== null) return action('failed', 'wake_worker_already_started')
     initialization = input
@@ -266,7 +266,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   }
 
   async function updateConfig(
-    input: { readonly package: WakeWorkerPackage; readonly accessKey?: string },
+    input: { readonly package: WakeWorkerPackage },
   ): Promise<WakeSupervisorResult> {
     const previous = initialization
     initialization = input

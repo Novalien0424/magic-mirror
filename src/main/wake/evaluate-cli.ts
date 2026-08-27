@@ -3,7 +3,6 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
 import { evaluateWakeCorpus, type WakeCorpusSample } from './corpus-evaluator'
-import { createConfiguredPorcupineDetector } from './porcupine-detector'
 import { createConfiguredSherpaDetector } from './sherpa-detector'
 import { loadWakeModelPackage } from './model-package'
 import type { WakeWorkerPackage } from './protocol'
@@ -99,7 +98,6 @@ async function main(): Promise<void> {
       sampleRateHz: 16_000,
       artifactPaths: Object.fromEntries(loaded.artifactPaths),
       tuning: {
-        ...(tuning.sensitivity === undefined ? {} : { sensitivity: tuning.sensitivity }),
         ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
         ...(tuning.score === undefined ? {} : { score: tuning.score }),
         ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
@@ -107,9 +105,7 @@ async function main(): Promise<void> {
     }
     candidates.push({
       packageId,
-      createDetector: () => workerPackage.engine === 'porcupine'
-        ? createConfiguredPorcupineDetector(workerPackage, process.env['PICOVOICE_ACCESS_KEY']?.trim())
-        : createConfiguredSherpaDetector(workerPackage),
+      createDetector: () => createConfiguredSherpaDetector(workerPackage),
     })
   }
 

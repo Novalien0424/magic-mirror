@@ -8,7 +8,7 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Optional built-in roles are used only when genuinely independent parallel work, isolated noisy investigation, or high-risk fresh validation materially improves the result. Delegation is not a serial gate and uses a short outcome/scope/evidence prompt.
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.
 - Robustness means explicit ownership, bounded cleanup/retry, visible metadata-only failure, and focused tests at risky boundaries. It does not mean duplicate controllers, shadow implementations, hard-coded provider taxonomies, or exhaustive internal-state tests with no product requirement.
-- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phase 0 is accepted; Phase 1 engineering is accepted through deterministic U8-B, but Phase 1 exit/tag is not. Phases 2–7 remain sequential; status/evidence are in `PROGRESS.md`.
+- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phase 0 and Phase 1 are accepted and tagged; Phase 2 is active. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
 - On 2026-08-27 the user clarified that this Windows PC is the development and
   functional-verification host for all phases. Porting to the Mac mini M4 and
   all macOS-only evidence occur after PC development; they do not block
@@ -24,14 +24,12 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   Human evidence remains sequential and separately attributable: verify/tag
   the exact Phase 1 candidate first, then verify Phase 2. Default configurable
   wake phrase is `魔鏡阿魔鏡`.
-- The deployment target remains Mac mini M4. Phase 2 first compares a trained
-  Mandarin Porcupine 4.x package with a replaceable sherpa-onnx package on this
-  Windows PC using the same approved corpus and labels the winner as the
-  Windows development candidate. Neither vendor claim nor mock result selects
-  it. The comparison and platform-specific package are repeated/revalidated on
-  the M4 during the later port. A versioned package binds phrase,
-  engine/platform/version, artifact hashes, tuning, and corpus result. Runtime
-  uses exactly one Published package and never silently falls back to the other.
+- The Windows development candidate uses one replaceable sherpa-onnx package;
+  the unused Porcupine adapter, dependency, credential path, and A/B runtime
+  surface are removed. A versioned package binds phrase, platform/version,
+  artifact hashes, tuning, and corpus result. The selected package must be
+  revalidated on the Mac mini M4 during the later port; there is no runtime
+  engine fallback.
 
 ## Pre-Phase-1 prep authorization — 2026-08-24
 
@@ -105,6 +103,9 @@ release tag, or phase-status promotion.
 
 ## Phase 2 wake decision — verified 2026-08-23
 
+- The 2026-08-27 Windows candidate pins stable Electron `44.0.0`,
+  `sherpa-onnx-node` `1.13.6`, and `decibri` `5.7.0`, verified as the registry
+  latest releases that day. Dependency updates remain deliberate exact pins.
 - The canonical Active-only sleep/deactivation phrase is exactly
   `恭送渡鴨大人`. It is not a wake keyword. During an Active Realtime session,
   the model may invoke one payload-free `return_to_dormant` tool only for an

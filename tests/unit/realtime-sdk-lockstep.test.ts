@@ -38,11 +38,11 @@ describe('P1-U1 realtime SDK dependency contract', () => {
       expect(lockfile.packages?.[`node_modules/${packageName}`]?.version).toBe(version)
     }
 
-    expect(manifest.devDependencies?.electron).toBe('43.4.1')
+    expect(manifest.devDependencies?.electron).toBe('44.0.0')
     expect(manifest.devDependencies?.['electron-builder']).toBe('26.15.3')
-    expect(lockRoot.devDependencies?.electron).toBe('43.4.1')
+    expect(lockRoot.devDependencies?.electron).toBe('44.0.0')
     expect(lockRoot.devDependencies?.['electron-builder']).toBe('26.15.3')
-    expect(lockfile.packages?.['node_modules/electron']?.version).toBe('43.4.1')
+    expect(lockfile.packages?.['node_modules/electron']?.version).toBe('44.0.0')
     expect(lockfile.packages?.['node_modules/electron-builder']?.version).toBe('26.15.3')
   })
 })

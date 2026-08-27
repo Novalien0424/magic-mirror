@@ -36,13 +36,13 @@ const safeId = /^[a-z0-9][a-z0-9._-]{0,95}$/u
 
 if (
   typeof packageId !== 'string' || !safeId.test(packageId)
-  || (engine !== 'porcupine' && engine !== 'sherpa')
+  || engine !== 'sherpa'
   || typeof engineVersion !== 'string' || engineVersion.trim() === ''
   || typeof modelVersion !== 'string' || modelVersion.trim() === ''
   || typeof phrase !== 'string' || phrase.trim() === ''
   || typeof platform !== 'string' || !/^[a-z0-9]+-[a-z0-9]+$/u.test(platform)
   || (outputRoot !== undefined && outputRoot.trim() === '')
-  || !['picovoice-console', 'sherpa-text2token', 'icefall-training'].includes(method)
+  || !['sherpa-text2token', 'icefall-training'].includes(method)
   || typeof sourceId !== 'string' || !safeId.test(sourceId)
   || !safeId.test(corpusResultId)
   || typeof tuningText !== 'string'

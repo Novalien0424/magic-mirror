@@ -12,6 +12,7 @@ import type { SessionModelSnapshot } from "../../src/shared/types";
 type SessionEventListener = (event: unknown) => void;
 
 type AdapterProbe = {
+  agentConstructorCalls: unknown[][];
   constructorCalls: unknown[][];
   connect: ReturnType<typeof vi.fn>;
   interrupt: ReturnType<typeof vi.fn>;
@@ -22,6 +23,7 @@ type AdapterProbe = {
 
 function makeAdapterProbe(): AdapterProbe {
   const listeners = new Map<string, SessionEventListener[]>();
+  const agentConstructorCalls: unknown[][] = [];
   const constructorCalls: unknown[][] = [];
   const connect = vi.fn(async (..._args: unknown[]) => undefined);
   const interrupt = vi.fn(async (..._args: unknown[]) => undefined);
@@ -40,8 +42,13 @@ function makeAdapterProbe(): AdapterProbe {
     constructorCalls.push(args);
     return fakeSession;
   });
+  const RealtimeAgent = vi.fn(function (...args: unknown[]) {
+    agentConstructorCalls.push(args);
+    return { name: "magic-mirror-realtime" };
+  });
 
   return {
+    agentConstructorCalls,
     constructorCalls,
     connect,
     interrupt,
@@ -50,6 +57,7 @@ function makeAdapterProbe(): AdapterProbe {
       for (const listener of listeners.get(eventName) ?? []) listener(event);
     },
     dependencies: {
+      RealtimeAgent: RealtimeAgent as unknown as RealtimeSessionDependencies["RealtimeAgent"],
       RealtimeSession: RealtimeSession as unknown as RealtimeSessionDependencies["RealtimeSession"],
       createTransport: () => createDeterministicRealtimeTransport(),
     },
@@ -88,6 +96,63 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it("requests dormant once after the model invokes the payload-free sleep tool and goodbye audio stops", async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const onReturnToDormant = vi.fn(async () => undefined);
+
+    createRealtimeSession({
+      ...makeSessionInput(makeSnapshot(), eventSink, probe),
+      onReturnToDormant,
+    });
+
+    const agentOptions = probe.agentConstructorCalls[0]?.[0] as {
+      readonly tools: readonly {
+        readonly name: string;
+        readonly parameters: Record<string, unknown>;
+        invoke(context: unknown, input: string): Promise<unknown>;
+      }[];
+    };
+    const sleepTool = agentOptions.tools[0];
+    expect(sleepTool).toMatchObject({
+      name: "return_to_dormant",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    });
+
+    await sleepTool?.invoke({}, "{}");
+    expect(onReturnToDormant).not.toHaveBeenCalled();
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "session-a",
+    });
+    await Promise.resolve();
+    expect(onReturnToDormant).not.toHaveBeenCalled();
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.started",
+      realtimeSessionId: "session-a",
+    });
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "session-a",
+    });
+    await Promise.resolve();
+    expect(onReturnToDormant).toHaveBeenCalledTimes(1);
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "session-a",
+    });
+    await Promise.resolve();
+    expect(onReturnToDormant).toHaveBeenCalledTimes(1);
+  });
+
   it("configures the wake-gated noisy-room profile for far-field Mandarin conversation", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
@@ -304,7 +369,7 @@ describe("RealtimeSession adapter", () => {
     probe.emit('transport_event', {
       type: 'conversation.item.input_audio_transcription.completed',
       realtimeSessionId: handle.realtimeSessionId,
-      transcript: '睡吧',
+      transcript: 'private completed turn',
     });
     dispose?.();
     probe.emit('transport_event', {
@@ -314,8 +379,8 @@ describe("RealtimeSession adapter", () => {
     });
 
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith('睡吧');
-    expect(JSON.stringify(eventSink.mock.calls)).not.toContain('睡吧');
+    expect(listener).toHaveBeenCalledWith('private completed turn');
+    expect(JSON.stringify(eventSink.mock.calls)).not.toContain('private completed turn');
   });
 
   it("reports observer failures without failing the session", () => {

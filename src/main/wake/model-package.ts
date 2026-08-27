@@ -13,7 +13,7 @@ const artifactFile = z.string().trim().min(1).max(160).refine((value) => {
 const wakeModelPackageSchema = z.object({
   schemaVersion: z.literal(1),
   packageId: safeId,
-  engine: z.enum(['porcupine', 'sherpa']),
+  engine: z.literal('sherpa'),
   engineVersion: z.string().trim().min(1).max(48),
   modelVersion: z.string().trim().min(1).max(96),
   phrase: z.string().trim().min(1).max(96),
@@ -26,13 +26,12 @@ const wakeModelPackageSchema = z.object({
   }).strict()).min(1).max(16),
   tuning: z.object({
     sampleRateHz: z.literal(16_000),
-    sensitivity: z.number().min(0).max(1).optional(),
     threshold: z.number().min(0).max(1).optional(),
     score: z.number().positive().max(100).optional(),
     numTrailingBlanks: z.number().int().min(1).max(100).optional(),
   }).strict(),
   provenance: z.object({
-    method: z.enum(['picovoice-console', 'sherpa-text2token', 'icefall-training']),
+    method: z.enum(['sherpa-text2token', 'icefall-training']),
     sourceId: safeId,
     createdAt: z.string().datetime({ offset: true }),
   }).strict(),
@@ -47,13 +46,7 @@ const wakeModelPackageSchema = z.object({
     files.add(artifact.file)
     roles.add(artifact.role)
   }
-  if (manifest.engine === 'porcupine' && manifest.tuning.sensitivity === undefined) {
-    context.addIssue({ code: 'custom', path: ['tuning', 'sensitivity'], message: 'required' })
-  }
-  if (
-    manifest.engine === 'sherpa'
-    && (manifest.tuning.threshold === undefined || manifest.tuning.score === undefined)
-  ) {
+  if (manifest.tuning.threshold === undefined || manifest.tuning.score === undefined) {
     context.addIssue({ code: 'custom', path: ['tuning'], message: 'sherpa_tuning_required' })
   }
 })

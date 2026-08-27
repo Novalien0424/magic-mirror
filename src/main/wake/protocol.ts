@@ -6,14 +6,13 @@ const artifactPaths = z.record(safeToken, z.string().trim().min(1).max(512))
 
 const packageSchema = z.object({
   packageId: safeToken,
-  engine: z.enum(['porcupine', 'sherpa']),
+  engine: z.literal('sherpa'),
   engineVersion: z.string().trim().min(1).max(48),
   modelVersion: z.string().trim().min(1).max(96),
   phrase: z.string().trim().min(1).max(96),
   sampleRateHz: z.literal(16_000),
   artifactPaths,
   tuning: z.object({
-    sensitivity: z.number().min(0).max(1).optional(),
     threshold: z.number().min(0).max(1).optional(),
     score: z.number().positive().max(100).optional(),
     numTrailingBlanks: z.number().int().min(1).max(100).optional(),
@@ -24,7 +23,6 @@ const initializeSchema = z.object({
   type: z.literal('initialize'),
   requestId,
   package: packageSchema,
-  accessKey: z.string().trim().min(1).max(512).optional(),
 }).strict()
 
 const wakeWorkerCommandSchema = z.discriminatedUnion('type', [
@@ -33,7 +31,6 @@ const wakeWorkerCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('update_config'),
     requestId,
     package: packageSchema,
-    accessKey: z.string().trim().min(1).max(512).optional(),
   }).strict(),
   z.object({ type: z.literal('acquire_microphone'), requestId }).strict(),
   z.object({ type: z.literal('release_microphone'), requestId }).strict(),
