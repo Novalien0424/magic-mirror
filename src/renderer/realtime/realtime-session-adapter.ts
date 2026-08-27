@@ -124,11 +124,34 @@ function readProperty(value: unknown, key: string): unknown {
 }
 
 function configuredTurnDetection(profile: string): {
-  readonly type: 'semantic_vad'
+  readonly type: 'semantic_vad' | 'server_vad'
+  readonly eagerness?: 'low'
+  readonly threshold?: 0.7
+  readonly prefixPaddingMs?: 300
+  readonly silenceDurationMs?: 900
+  readonly createResponse?: true
   readonly interruptResponse: true
 } {
   if (profile === 'semantic-vad-interruptible') {
     return Object.freeze({ type: 'semantic_vad', interruptResponse: true })
+  }
+  if (profile === 'semantic-vad-strict') {
+    return Object.freeze({
+      type: 'semantic_vad',
+      eagerness: 'low',
+      createResponse: true,
+      interruptResponse: true,
+    })
+  }
+  if (profile === 'server-vad-noisy') {
+    return Object.freeze({
+      type: 'server_vad',
+      threshold: 0.7,
+      prefixPaddingMs: 300,
+      silenceDurationMs: 900,
+      createResponse: true,
+      interruptResponse: true,
+    })
   }
   throw new RealtimeSessionAdapterError('unknown_turn_detection_profile')
 }
@@ -243,7 +266,30 @@ function tokenForStatus(status: number): RealtimeConnectFailureToken | undefined
   return undefined
 }
 
-function classifyConnectFailure(value: unknown): RealtimeConnectFailureToken {
+function invalidRequestToken(nodes: readonly unknown[]): string | undefined {
+  const isInvalidRequest = nodes.some((node) => {
+    const type = readProperty(node, 'type')
+    const code = readProperty(node, 'code')
+    return type === 'invalid_request_error'
+      || (typeof code === 'string' && ['invalid_value', 'unknown_parameter'].includes(code))
+  })
+  if (!isInvalidRequest) return undefined
+
+  const parameter = nodes
+    .map((node) => readProperty(node, 'param'))
+    .find((value): value is string => typeof value === 'string' && value.length > 0)
+  if (parameter === undefined) return 'start_connect_bad_request'
+  const safeParameter = parameter
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48)
+  return safeParameter.length === 0
+    ? 'start_connect_bad_request'
+    : `start_connect_bad_request_${safeParameter}`
+}
+
+function classifyConnectFailure(value: unknown): string {
   const nodes = errorNodes(value)
   const message = nodes.map(connectFailureMessage).find((item) => item !== undefined)
 
@@ -260,6 +306,9 @@ function classifyConnectFailure(value: unknown): RealtimeConnectFailureToken {
   if (message?.startsWith('Failed to parse SessionDescription')) {
     return 'start_connect_sdp_answer_failed'
   }
+
+  const invalidRequest = invalidRequestToken(nodes)
+  if (invalidRequest !== undefined) return invalidRequest
 
   const signalingStatus = message?.match(/^Realtime call request failed with status (\d{3})/)
   if (signalingStatus !== undefined && signalingStatus !== null) {
@@ -310,6 +359,10 @@ function stableCloseReason(reason: string): RealtimeMetadataReason {
     : 'cause=close'
 }
 
+function runtimeFailureReason(reason: RealtimeMetadataReason): string {
+  return reason.startsWith('cause=') ? reason.slice('cause='.length) : reason
+}
+
 export function createRealtimeSession(
   input: CreateRealtimeSessionInput,
 ): RealtimeSessionHandle {
@@ -322,7 +375,12 @@ export function createRealtimeSession(
     throw new RealtimeSessionAdapterError('invalid_session_generation')
   }
   let turnDetection: {
-    readonly type: 'semantic_vad'
+    readonly type: 'semantic_vad' | 'server_vad'
+    readonly eagerness?: 'low'
+    readonly threshold?: 0.7
+    readonly prefixPaddingMs?: 300
+    readonly silenceDurationMs?: 900
+    readonly createResponse?: true
     readonly interruptResponse: true
   }
   try {
@@ -359,7 +417,13 @@ export function createRealtimeSession(
         tracing: null,
         audio: {
           input: {
-            transcription: { model: input.snapshot.inputTranscription },
+            noiseReduction: { type: 'far_field' },
+            transcription: {
+              model: input.snapshot.inputTranscription,
+              languages: ['zh-tw', 'en'],
+              keywords: ['恭送渡鴨大人'],
+              delay: 'medium',
+            },
             turnDetection,
           },
           output: { voice: input.snapshot.voice },
@@ -385,7 +449,7 @@ export function createRealtimeSession(
   let closed = false
   let readyEmitted = false
   let failureReported = false
-  let latestConnectFailureToken: RealtimeConnectFailureToken | undefined
+  let latestConnectFailureToken: string | undefined
   let connectPromise: Promise<void> | null = null
   let transientClientSecret: string | null = input.clientSecret
   const outputAudioBufferStoppedSubscriptions = new Set<OutputAudioBufferStoppedSubscription>()
@@ -473,7 +537,9 @@ export function createRealtimeSession(
     const failure: RealtimeFailureInput = {
       kind,
       realtimeSessionId: input.sessionId,
-      reason,
+      reason: reason === 'cause=transport_error' && latestConnectFailureToken !== undefined
+        ? latestConnectFailureToken
+        : runtimeFailureReason(reason),
     }
     const onFailure = input.onFailure
 
@@ -507,6 +573,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'error') {
+      if (!readyEmitted) latestConnectFailureToken = classifyConnectFailure(event)
       reportFailure(
         readyEmitted ? 'ice' : 'connect',
         'realtime_connect_failed',
@@ -553,6 +620,7 @@ export function createRealtimeSession(
       emitStale()
       return
     }
+    if (!readyEmitted) latestConnectFailureToken = classifyConnectFailure(event)
     reportFailure(
       readyEmitted ? 'ice' : 'connect',
       'realtime_connect_failed',
@@ -608,7 +676,7 @@ export function createRealtimeSession(
       latestConnectFailureToken = undefined
       if (!closed) emitReady('cause=connect_succeeded')
     } catch (error: unknown) {
-      latestConnectFailureToken = classifyConnectFailure(error)
+      latestConnectFailureToken ??= classifyConnectFailure(error)
       if (!closed && !failureReported) {
         reportFailure(
           readyEmitted ? 'ice' : 'connect',

@@ -1,23 +1,23 @@
 {
   "schemaVersion": 3,
-  "configVersion": 1,
+  "configVersion": 5,
   "persona": {
     "name": "mock-persona-v1",
     "instructions": "mock-persona-instructions-v1"
   },
-  "voice": "marin",
+  "voice": "cedar",
   "reasoningEffort": "low",
-  "turnDetectionProfile": "semantic-vad-interruptible",
+  "turnDetectionProfile": "server-vad-noisy",
   "idleSeconds": 300,
   "aiModels": {
     "realtimeDialogue": {
-      "modelId": "gpt-realtime-2.1"
+      "modelId": "gpt-realtime-2.1-mini"
     },
     "inputTranscription": {
       "modelId": "gpt-live-transcribe"
     },
     "memoryExtractor": {
-      "modelId": "mock-memory-extractor-v1"
+      "modelId": "gpt-5.6-luna"
     }
   },
   "wake": {

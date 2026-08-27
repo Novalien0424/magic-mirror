@@ -105,6 +105,13 @@ release tag, or phase-status promotion.
 
 ## Phase 2 wake decision — verified 2026-08-23
 
+- The canonical Active-only sleep/deactivation phrase is exactly
+  `恭送渡鴨大人`. It is not a wake keyword. During an Active Realtime session,
+  the model may invoke one payload-free `return_to_dormant` tool only for an
+  explicit command directed at the mirror; quoted, negated, hypothetical, or
+  incidental mentions do not activate it. Main remains the lifecycle owner:
+  after actual goodbye playback completes, it closes Realtime, stops renderer
+  tracks, reacquires the wake microphone, and then returns to Dormant.
 - Use sherpa-onnx open-vocabulary phrase encoding for the customizable wake
   phrase; do not train a new neural model. Baseline `sherpa-onnx-node >=1.13.5`
   with `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`.

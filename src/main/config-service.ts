@@ -101,6 +101,7 @@ const reasoningEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high'
 const turnDetectionProfileSchema = z.enum([
   'semantic-vad-interruptible',
   'semantic-vad-strict',
+  'server-vad-noisy',
 ])
 
 const aiModelRoleSchema = z.object({

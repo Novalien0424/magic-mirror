@@ -394,6 +394,25 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expectNoSensitiveOutput({ start, disconnect, invalidStart, events: registered.events })
   })
 
+  it('preserves the real reason when disconnect is ignored outside an active session', async () => {
+    const registered = makeHarness()
+    registered.manualStop.mockResolvedValueOnce({
+      status: 'ignored',
+      reason: 'manual_stop_requires_active',
+    })
+
+    const disconnect = await getHandler(registered, 'console:disconnect')(authorizedEvent(registered))
+
+    expect(disconnect).toEqual({
+      ok: true,
+      value: {
+        action: 'disconnect',
+        status: 'degraded',
+        reason: 'manual_stop_requires_active',
+      },
+    })
+  })
+
   it('dispatches an authorized zero-argument interrupt to the tracked Mirror without a payload', async () => {
     const registered = makeHarness()
     const interrupt = getHandler(registered, 'console:interrupt')

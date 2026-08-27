@@ -1,30 +1,17 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-27 — Phase 1 physical exit pending; Phase 2 Wake
-Lifecycle Windows engineering candidate built.**
-Branch `phase1-realtime-voice` has accepted product commit `b246521` for
-P1-U9. Phase 0 is accepted and tagged
-`phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
-`82aa39c`; P1-U1 through P1-U7 are accepted, with U7 tip `426f52c`.
-P1-U8-A is accepted/pushed at `fd78a28`; the phase-evidence skill correction
-was accepted at `d8ca7de`; deterministic P1-U8-B engineering is
-accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted. A
-corrected real provider smoke now passes with the configured `gpt-realtime-2.1`;
-physical mic/output and target-Mac evidence have not occurred. Phase 1 exit/tag
-is **not accepted**. Official phase
-order for human evidence, exit decisions, release tags, and phase-status
-promotion remains sequential. The user authorized Phase 2 runtime engineering
-to start from a frozen Phase 1 candidate while away. The Windows engineering
-candidate now implements the replaceable wake package, isolated worker,
-exclusive mic handoff, idle/sleep lifecycle, Console evidence, and current-host
-corpus evaluator. The evaluator and package import now support the current
-`win32-x64` development host as well as the later `darwin-arm64` port. A real
-sherpa Windows package candidate exists, but runtime remains intentionally
-`unselected` until the approved Windows candidate comparison is run. The Mac
-mini M4 port and target-specific revalidation are deferred until PC development
-is complete. Neither phase is
-accepted or tagged, and Phases 3–7 have not started. The four earlier
-prep-only lanes below do not start or promote another phase.
+**Current dashboard — 2026-08-27 — Phase 1 accepted; Phase 2 Wake Lifecycle is
+the active Windows engineering phase.**
+Phase 0 is accepted and tagged `phase0-v0.3.1` at `9237dc7`. Phase 1 product
+tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
+released as `phase1-v0.3.1`. Phase 2 may now integrate from that accepted
+baseline. Its existing Windows candidate implements the replaceable wake
+package, isolated worker, exclusive mic handoff, idle/sleep lifecycle, Console
+evidence, and current-host corpus evaluator. A real sherpa Windows package
+candidate exists, but the runtime remains `unselected` until its local package
+and microphone checks pass. The Mac mini M4 port and target-specific
+revalidation remain deferred until PC development is complete. Phases 3–7 have
+not started; their earlier prep-only lanes remain non-phase evidence.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 The automated live harness launches the actual `npm run dev` /
@@ -33,7 +20,28 @@ start-to-Active and stop-to-Dormant when the provider permits it, emits one fixe
 metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
 failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
-passes the real provider path; Phase 1 exit/tag remains not accepted and untagged.
+passes the real provider path.
+
+## Phase 1 closure — accepted 2026-08-27
+
+- The operator confirmed that real conversation, audible output, and audio
+  barge-in work without a quality problem, and explicitly accepted Phase 1.
+  This is real-device evidence on the Windows development PC. No unreported
+  turn or interruption count is inferred from that confirmation.
+- The configured real-provider lifecycle smoke passed start → Active → stop →
+  Dormant with provenance and cleanup passed and zero orphan processes. The
+  product default is versioned config `gpt-realtime-2.1-mini`, voice `cedar`,
+  input transcription `gpt-live-transcribe`, and `server-vad-noisy`; there is
+  no mock or silent runtime model substitution.
+- P1-D3, P1-D4, and P1-D6 retain their deterministic `mock_passed` evidence.
+  P1-D1/P1-D2 are operator-accepted real audio behavior. P1-D5 is accepted
+  from the real configured-provider session plus the existing versioned
+  Draft/Publish/snapshot/invalid-Draft contract regression.
+- Exit verification at product tip `4bd241f`: `npm test` passed 51 files and
+  621 tests; Node and web typechecks passed; `npm run build` passed; the real
+  provider smoke passed; `git diff --check` passed. Target-Mac TCC, signing,
+  packaged-worker, LaunchAgent, and power behavior remain later port/field
+  evidence and are not claimed by this Windows acceptance.
 
 ## Clock-out handoff — 2026-08-23
 

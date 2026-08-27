@@ -779,6 +779,7 @@ async function invokeSimulator(
 }
 
 function lifecycleActionStatus(value: unknown): ConsoleLifecycleActionResult['status'] | null {
+  if (value === 'ignored') return 'degraded'
   return value === 'success' || value === 'degraded' || value === 'failed'
     ? value
     : null
