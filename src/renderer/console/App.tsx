@@ -1304,7 +1304,7 @@ export function App(): React.JSX.Element {
     events: [],
     nextBeforeSequence: null,
   })
-  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('2')
+  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('3')
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
@@ -1735,9 +1735,15 @@ export function App(): React.JSX.Element {
               value={selectedPhase}
               onChange={(event) => {
                 const nextPhase = event.currentTarget.value
-                if (nextPhase === '0' || nextPhase === '1' || nextPhase === '2') setSelectedPhase(nextPhase)
+                if (
+                  nextPhase === '0'
+                  || nextPhase === '1'
+                  || nextPhase === '2'
+                  || nextPhase === '3'
+                ) setSelectedPhase(nextPhase)
               }}
             >
+              <option value="3">Phase 3</option>
               <option value="2">Phase 2</option>
               <option value="1">Phase 1</option>
               <option value="0">Phase 0</option>

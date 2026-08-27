@@ -162,6 +162,10 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     phase: '2', demoId: 'P2-D1', build: 'synthetic-p2-build',
     time: '2026-08-27T00:00:00.000Z', result: 'not_executed', note: 'synthetic P2-D1 fixture',
   }
+  const phase3Record = {
+    phase: '3', demoId: 'P3-D1', build: 'synthetic-p3-build',
+    time: '2026-08-28T00:00:00.000Z', result: 'not_executed', note: 'synthetic P3-D1 fixture',
+  }
   const phase0Response = {
     ok: true,
     value: {
@@ -184,6 +188,10 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     ok: true,
     value: { phase: '2', source: 'reader', latest: phase2Record, records: [phase2Record] },
   }
+  const phase3Response = {
+    ok: true,
+    value: { phase: '3', source: 'reader', latest: phase3Record, records: [phase3Record] },
+  }
   const serviceObjects = {
     configService: { marker: TEST_SERVICE_SENTINEL },
     telemetry: { marker: TEST_SERVICE_SENTINEL },
@@ -205,7 +213,13 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     }
     return eventsResponse
   })
-  const getPhaseTests = vi.fn((phase?: unknown) => phase === '2' ? phase2Response : phase === '1' ? phase1Response : phase0Response)
+  const getPhaseTests = vi.fn((phase?: unknown) => phase === '3'
+    ? phase3Response
+    : phase === '2'
+      ? phase2Response
+      : phase === '1'
+        ? phase1Response
+        : phase0Response)
   const facade = {
     ...serviceObjects,
     getOverview,
@@ -640,7 +654,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
 })
 
 describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () => {
-  it('preserves the no-argument Phase 0 call and forwards exact 0/1/2 selectors', async () => {
+  it('preserves the no-argument Phase 0 call and forwards exact 0/1/2/3 selectors', async () => {
     const registered = makeHarness()
     const event = authorizedEvent(registered)
     const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
@@ -650,6 +664,7 @@ describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () 
     const selectedPhase0 = await phaseTests(event, '0')
     const selectedPhase1 = await phaseTests(event, '1')
     const selectedPhase2 = await phaseTests(event, '2')
+    const selectedPhase3 = await phaseTests(event, '3')
 
     expect(defaultPhase).toEqual({
       ok: true,
@@ -699,9 +714,10 @@ describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () 
       },
     })
     expect(selectedPhase2).toMatchObject({ ok: true, value: { phase: '2', latest: { demoId: 'P2-D1' } } })
-    expect(registered.facade.getPhaseTests).toHaveBeenCalledTimes(4)
-    expect(registered.facade.getPhaseTests.mock.calls).toEqual([[], ['0'], ['1'], ['2']])
-    expectNoSensitiveOutput({ defaultPhase, selectedPhase0, selectedPhase1, selectedPhase2 })
+    expect(selectedPhase3).toMatchObject({ ok: true, value: { phase: '3', latest: { demoId: 'P3-D1' } } })
+    expect(registered.facade.getPhaseTests).toHaveBeenCalledTimes(5)
+    expect(registered.facade.getPhaseTests.mock.calls).toEqual([[], ['0'], ['1'], ['2'], ['3']])
+    expectNoSensitiveOutput({ defaultPhase, selectedPhase0, selectedPhase1, selectedPhase2, selectedPhase3 })
   })
 
   it('rejects invalid selectors and extra arguments with no phase facade invocation', async () => {
@@ -709,7 +725,7 @@ describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () 
     const event = authorizedEvent(registered)
     const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
 
-    const invalidString = await phaseTests(event, '3')
+    const invalidString = await phaseTests(event, '4')
     const invalidNumber = await phaseTests(event, 0)
     const extraArgument = await phaseTests(event, '0', TEST_CONFIGURED_VALUE_SENTINEL)
 
