@@ -18,8 +18,9 @@ to start from a frozen Phase 1 candidate while away. The Windows engineering
 candidate now implements the replaceable wake package, isolated worker,
 exclusive mic handoff, idle/sleep lifecycle, Console evidence, and target-Mac
 corpus evaluator. Its package remains intentionally `unselected` until the
-Mac mini M4 comparison is run. Neither phase is accepted or tagged, and Phases
-3–7 have not started. The four earlier
+Windows candidate comparison is run. The Mac mini M4 port and target-specific
+revalidation are deferred until PC development is complete. Neither phase is
+accepted or tagged, and Phases 3–7 have not started. The four earlier
 prep-only lanes below do not start or promote another phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
@@ -146,7 +147,7 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
 | Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
 | Phase 2 Windows engineering candidate | Commits `52cb13b` through `7c55436` plus final package-validation/harness closure; default phrase `魔鏡阿魔鏡`; real target package remains `unselected`. Full candidate verification is recorded below. |
-| Phase 2 target-Mac quality selection | `not_executed`; no Porcupine `.ppn` or sherpa package has been selected. The same M4 corpus must compare false rejects, false accepts, latency, CPU, and stability before Publish. |
+| Phase 2 Windows wake candidate selection | `not_executed`; no Windows Porcupine `.ppn` or sherpa package has been selected. Compare false rejects, false accepts, latency, CPU, and stability on this PC before publishing the Windows development candidate; repeat/revalidate on the M4 during the later port. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
 ### Phase 0 accepted ledger — 2026-08-20
@@ -211,17 +212,20 @@ failure never silently substitutes another ID.
 1. From the exact frozen Phase 1 build, run P1-D1 (20 real turns), P1-D2 (10
    spoken interruptions), and P1-D5 (real Draft/Publish/new-session/invalid
    Draft). If they pass, record evidence and tag Phase 1.
-2. On the Mac mini M4, import/train the Mandarin Porcupine `魔鏡阿魔鏡`
-   package and compile the matching sherpa package. Compare both at the same
-   false-accept target on at least 100 approved positives plus hard negatives
-   and two hours of approved background audio; Publish the measured winner.
+2. On this Windows PC, import/train the platform-specific Mandarin Porcupine
+   `魔鏡阿魔鏡` package and compile the matching sherpa package. Compare both at
+   the same false-accept target on at least 100 approved positives plus hard
+   negatives and two hours of approved background audio; Publish the measured
+   Windows development candidate.
 3. From the exact Phase 2 build, run P2-D1..D5: local wake to real Realtime,
    offline wake to OfflineLoop, 30-second developer idle plus 300-second
    configuration check, exact `睡吧` after playback, and the mic-owner timeline.
-4. Satisfy Phase 2 exit evidence: at least 19/20 live wakes, the separate
-   30-minute ambient/TV false-wake run, macOS TCC/native packaging/signing,
-   and clean lifecycle/device release. Then review/tag Phase 2. Phases 3–7
-   remain sequential.
+4. Satisfy the Windows Phase 2 evidence: at least 19/20 live wakes, the
+   separate 30-minute ambient/TV false-wake run, and clean lifecycle/device
+   release. Any resulting phase tag is a Windows development checkpoint only.
+   Continue Phases 3–7 sequentially on this PC. After PC development, repeat
+   wake selection and complete TCC/native packaging/signing/LaunchAgent/power
+   evidence during the Mac mini M4 port before final deployment acceptance.
 
 ## Human-intervention ledger
 
@@ -235,8 +239,8 @@ failure never silently substitutes another ID.
 | P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Superseded diagnosis: these runs loaded a local mock model from non-isolated user data; the 2026-08-27 corrected run proves provider/project access. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Phase 2 engineering | Windows implementation and deterministic verification required no operator input. | Engineering candidate only; P2-D1..D5 `real-demo not_executed` |
-| Wake quality selection | Train/import both `魔鏡阿魔鏡` candidates, collect/approve the local corpus, run the equal-false-accept M4 comparison, and Publish the winner. | Pending; current package is `unselected` |
-| Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
+| Wake quality selection | Train/import both Windows `魔鏡阿魔鏡` candidates, collect/approve the local corpus, run the equal-false-accept PC comparison, and Publish the development winner. | Pending; current package is `unselected`; M4 revalidation deferred to port |
+| Target Mac | Port only after PC development; then repeat wake selection and verify TCC, signing/entitlements, packaged workers, LaunchAgent, power, device, and provider behavior. | Deferred; not a current PC-development gate |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
 
 ### Autonomous Phase 1 exit audit — 2026-08-23 — pushed tip `f5a2d59`
@@ -357,13 +361,13 @@ The seven ordered Phase 1 interventions above remain the higher-priority work.
 After that gate, the remaining plain-language needs are:
 
 - Phase 2: the approved phrase is `魔鏡阿魔鏡`; provide or approve the real
-  corpus and target microphone time for measured M4 model selection and demos.
+  corpus and Windows microphone time for the PC model selection and demos.
 - Phase 3: provide the final Live2D/Cubism assets, then observe actual-output-
   audio behavior.
 - Phase 4: approve the final spells and presets, then connect and observe the
   adapters and hardware.
-- Phase 7: provide target-Mac, operator, and device time for the 100-cycle and
-  soak, boot, power, signing, and TCC checks.
+- After PC development: provide target-Mac, operator, and device time for the
+  port, wake revalidation, 100-cycle/soak, boot, power, signing, and TCC checks.
 
 Phase 2 engineering started under the dated overlap ruling and now has a
 Windows candidate. That does not promote or accept Phase 2. Human evidence,

@@ -9,6 +9,14 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.
 - Robustness means explicit ownership, bounded cleanup/retry, visible metadata-only failure, and focused tests at risky boundaries. It does not mean duplicate controllers, shadow implementations, hard-coded provider taxonomies, or exhaustive internal-state tests with no product requirement.
 - Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phase 0 is accepted; Phase 1 engineering is accepted through deterministic U8-B, but Phase 1 exit/tag is not. Phases 2–7 remain sequential; status/evidence are in `PROGRESS.md`.
+- On 2026-08-27 the user clarified that this Windows PC is the development and
+  functional-verification host for all phases. Porting to the Mac mini M4 and
+  all macOS-only evidence occur after PC development; they do not block
+  continuing sequential Windows engineering. Any pre-port phase tag is a
+  Windows development checkpoint only and does not claim Mac deployment
+  readiness. Target-Mac TCC, signing, packaged native workers, LaunchAgent,
+  power/performance, and wake-quality revalidation remain required before the
+  final Mac deployment is accepted.
 - On 2026-08-27 the user authorized one scheduling overlap while away from the
   development PC: Phase 2 Wake Lifecycle runtime engineering may proceed from
   a frozen Phase 1 candidate before P1-D1/P1-D2/P1-D5 physical evidence. This
@@ -16,10 +24,12 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   Human evidence remains sequential and separately attributable: verify/tag
   the exact Phase 1 candidate first, then verify Phase 2. Default configurable
   wake phrase is `魔鏡阿魔鏡`.
-- The target is Mac mini M4 and wake quality is selected by target-device
-  evidence. Phase 2 compares a trained Mandarin Porcupine 4.x model package
-  with a replaceable sherpa-onnx package on the same corpus; neither vendor
-  claim nor mock result selects production. A versioned package binds phrase,
+- The deployment target remains Mac mini M4. Phase 2 first compares a trained
+  Mandarin Porcupine 4.x package with a replaceable sherpa-onnx package on this
+  Windows PC using the same approved corpus and labels the winner as the
+  Windows development candidate. Neither vendor claim nor mock result selects
+  it. The comparison and platform-specific package are repeated/revalidated on
+  the M4 during the later port. A versioned package binds phrase,
   engine/platform/version, artifact hashes, tuning, and corpus result. Runtime
   uses exactly one Published package and never silently falls back to the other.
 

@@ -176,8 +176,12 @@ Preserve applicable IDs; delegated prompts name only relevant IDs.
 
 ## Platform and protected boundaries
 
-- Windows development does not field-verify target-Mac TCC, signing,
-  entitlements, packaged-worker, or LaunchAgent behavior.
+- This Windows PC is the development and functional-verification host through
+  all phases. The Mac mini M4 port happens afterward; macOS TCC, signing,
+  entitlements, packaged-worker, LaunchAgent, power/performance, and final wake
+  quality evidence are deferred to that port and do not block continued
+  sequential PC engineering. Label Windows evidence explicitly and never use
+  it to claim Mac behavior or deployment readiness.
 - On this Windows host, commands that launch development `electron.exe` run
   only from the canonical `C:\Project\magic-mirror` checkout. Worktrees may run
   Node-only tests, typechecks, builds, and packaging, but not Electron runtime
