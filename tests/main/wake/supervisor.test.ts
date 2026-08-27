@@ -121,6 +121,46 @@ describe('wake worker supervisor', () => {
     expect(statuses).toContain('failed')
   })
 
+  it('restarts once and reacquires after the listening microphone endpoint fails', async () => {
+    const first = new FakeChild()
+    const second = new FakeChild()
+    const children = [first, second]
+    const supervisor = createWakeSupervisor({
+      spawn: () => children.shift() ?? (() => { throw new Error('unexpected_spawn') })(),
+      onWake() {},
+      requestTimeoutMs: 1_000,
+    })
+    const started = supervisor.start({ package: wakePackage })
+    first.emitMessage({
+      type: 'ready',
+      requestId: first.commands[0].requestId,
+      packageId: wakePackage.packageId,
+    })
+    await started
+    const acquired = supervisor.acquire()
+    first.emitMessage({ type: 'microphone_acquired', requestId: first.commands[1].requestId })
+    await acquired
+
+    first.emitMessage({ type: 'failed', reason: 'wake_microphone_failed' })
+
+    expect(first.kill).toHaveBeenCalledOnce()
+    first.emitExit()
+    await flush()
+    second.emitMessage({
+      type: 'ready',
+      requestId: second.commands[0].requestId,
+      packageId: wakePackage.packageId,
+    })
+    await flush()
+    second.emitMessage({ type: 'microphone_acquired', requestId: second.commands[1].requestId })
+    await flush()
+    expect(supervisor.snapshot()).toEqual(expect.objectContaining({
+      status: 'listening',
+      restartCount: 1,
+      reason: null,
+    }))
+  })
+
   it('fails a pending request on an invalid worker message without exposing it', async () => {
     const child = new FakeChild()
     const supervisor = createWakeSupervisor({

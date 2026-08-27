@@ -186,6 +186,13 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       publishStatus('failed', outcome.reason)
       if (outcome.requestId !== undefined) settlePending(outcome.requestId, action('failed', outcome.reason))
       else failAllPending(outcome.reason)
+      if (outcome.reason === 'wake_microphone_failed' && shouldListen) {
+        try {
+          child?.kill()
+        } catch {
+          // The microphone failure is already visible; process exit owns bounded recovery.
+        }
+      }
       return
     }
 

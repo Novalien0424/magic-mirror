@@ -153,6 +153,60 @@ describe("RealtimeSession adapter", () => {
     expect(onReturnToDormant).toHaveBeenCalledTimes(1);
   });
 
+  it("requests dormant when goodbye playback starts before the sleep tool executes", async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const onReturnToDormant = vi.fn(async () => undefined);
+
+    createRealtimeSession({
+      ...makeSessionInput(makeSnapshot(), eventSink, probe),
+      onReturnToDormant,
+    });
+
+    const agentOptions = probe.agentConstructorCalls[0]?.[0] as {
+      readonly tools: readonly {
+        invoke(context: unknown, input: string): Promise<unknown>;
+      }[];
+    };
+    const sleepTool = agentOptions.tools[0];
+
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.started",
+      realtimeSessionId: "session-a",
+    });
+    await sleepTool?.invoke({}, "{}");
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "session-a",
+    });
+    await Promise.resolve();
+
+    expect(onReturnToDormant).toHaveBeenCalledTimes(1);
+  });
+
+  it("instructs the sleep tool path to say only the Persona goodbye", async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+
+    createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+
+    const agentOptions = probe.agentConstructorCalls[0]?.[0] as {
+      readonly instructions: string;
+      readonly tools: readonly {
+        invoke(context: unknown, input: string): Promise<unknown>;
+      }[];
+    };
+    expect(agentOptions.instructions).toContain(
+      "The entire audible response for this command must be exactly 如你所願，再會.",
+    );
+    expect(agentOptions.instructions).toContain(
+      "Never say 我來處理你的指令 or any other acknowledgement before the tool call.",
+    );
+    await expect(agentOptions.tools[0]?.invoke({}, "{}")).resolves.toBe(
+      "Say exactly 如你所願，再會 now and no other words.",
+    );
+  });
+
   it("configures the wake-gated noisy-room profile for far-field Mandarin conversation", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();

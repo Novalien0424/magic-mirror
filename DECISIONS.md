@@ -8,7 +8,20 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Optional built-in roles are used only when genuinely independent parallel work, isolated noisy investigation, or high-risk fresh validation materially improves the result. Delegation is not a serial gate and uses a short outcome/scope/evidence prompt.
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.
 - Robustness means explicit ownership, bounded cleanup/retry, visible metadata-only failure, and focused tests at risky boundaries. It does not mean duplicate controllers, shadow implementations, hard-coded provider taxonomies, or exhaustive internal-state tests with no product requirement.
-- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phase 0 and Phase 1 are accepted and tagged; Phase 2 is active. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
+- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phases 0, 1, and 2 are accepted Windows checkpoints and tagged; Phase 3 is next but not started. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
+- On 2026-08-27 the user added two later-scope requirements. Phase 7 must
+  optimize wake-word accuracy with a representative multi-speaker positive
+  corpus, ambient negatives, and target-hardware revalidation. After observing
+  one successful real wake in two attempts, real directed sleep, a real
+  30-second developer-idle return, and the exclusive-mic timeline, the user
+  explicitly accepted the Windows Phase 2 checkpoint. The unexecuted P2-D2
+  offline-wake demo, 19/20 live-wake sample, 30-minute ambient/TV run, and
+  broader multi-speaker accuracy work are deferred to Phase 7 and are not
+  recorded as Phase 2 passes. After the Phase 0-7 core is complete, Phase 8 is specifically
+  **Multiple Personas / Persona Tuning**: multiple operator-selectable,
+  versioned Personas and evidence-led refinement of character consistency,
+  speaking style, and response quality. Detailed Phase 8 design is deferred
+  until that phase and does not add work or gates to Phase 2.
 - On 2026-08-27 the user clarified that this Windows PC is the development and
   functional-verification host for all phases. Porting to the Mac mini M4 and
   all macOS-only evidence occur after PC development; they do not block
