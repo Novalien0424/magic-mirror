@@ -24,6 +24,14 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   Human evidence remains sequential and separately attributable: verify/tag
   the exact Phase 1 candidate first, then verify Phase 2. Default configurable
   wake phrase is `魔鏡阿魔鏡`.
+- On 2026-08-27 the user also authorized bounded Phase 3 preparation while
+  away, based on the Phase 2 engineering tip. `P3-PREP-A2` is limited to an
+  SDK-independent avatar-state projection, actual-output analyser-to-mouth
+  driver, Cubism bundle validator, injectable music duck/fade controller, and
+  one deterministic test journey. It adds no Cubism dependency or asset,
+  Realtime/Web Audio runtime wiring, Console/config/IPC change, device access,
+  phase demo claim, exit decision, promotion, or tag. Phase 3 remains
+  `not-started`; physical Phase 1 and Phase 2 evidence stays sequential.
 - The deployment target remains Mac mini M4. Phase 2 first compares a trained
   Mandarin Porcupine 4.x package with a replaceable sherpa-onnx package on this
   Windows PC using the same approved corpus and labels the winner as the

@@ -24,7 +24,9 @@ sherpa Windows package candidate exists, but runtime remains intentionally
 mini M4 port and target-specific revalidation are deferred until PC development
 is complete. Neither phase is
 accepted or tagged, and Phases 3–7 have not started. The four earlier
-prep-only lanes below do not start or promote another phase.
+prep-only lanes below do not start or promote another phase. The user later
+authorized SDK-independent `P3-PREP-A2`; its deterministic contracts are built
+without starting Phase 3 runtime integration.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 The automated live harness launches the actual `npm run dev` /
@@ -89,6 +91,7 @@ regression, release-tag, or field evidence.
 | --- | --- | --- | --- | --- |
 | `P2-PREP-W1` | Offline keyword artifact and opaque synthetic corpus | `26/26` focused tests; node typecheck exit `0` | No detector, microphone, or wake-to-Realtime handoff evidence | `src/main/wake/keyword-artifact.ts`; `src/main/wake/fixtures/synthetic-keyword-corpus.ts`; `tests/main/wake/keyword-artifact.test.ts` |
 | `P3-PREP-A1` | Pure RMS/envelope math | `20/20` focused tests; web typecheck exit `0` | No real audio, Web Audio, Cubism, or asset evidence | `src/renderer/avatar/audio/lipSyncMath.ts`; `tests/renderer/avatar/audio/lipSyncMath.test.ts` |
+| `P3-PREP-A2` | Stateless avatar projection, analyser-to-mouth driver, Cubism bundle validation, and injectable music duck/fade control | Commits `60656ba` through `5ce4ab5`; six focused files/`48` tests, Node/web typechecks, build, and deterministic journey exit `0` | No SDK/rig/music asset, runtime wiring, Console/config/IPC change, Electron/device/real audio, phase demo, exit, or FPS evidence | `src/renderer/avatar/avatar-state.ts`; `src/renderer/avatar/audio/lip-sync-driver.ts`; `src/main/avatar/model-bundle.ts`; `src/renderer/avatar/audio/music-ducking.ts`; focused and integration tests |
 | `P4-PREP-S1` | Pure normalized exact spell trigger and one-turn guard | `19/19` focused tests; node typecheck exit `0` | No transcript pipeline, preset, adapter, or hardware evidence | `src/main/scenes/spell-trigger.ts`; `tests/main/scenes/spell-trigger.test.ts` |
 | `P7-PREP-E1` | Empty evidence template | Seven no-claim header sentinels; `19` pending rows; forbidden generic status scan returned expected no-match | No field evidence | `docs/Magic_Mirror_Phase7_Field_Hardening_Evidence_Template.md` |
 
@@ -225,6 +228,31 @@ failure never silently substitutes another ID.
   human evidence were not run and are not claimed. P2-D1..D5 remain
   `real-demo not_executed`; no Phase 2 tag exists.
 
+## Phase 3 SDK-independent preparation — 2026-08-27
+
+- `P3-PREP-A2` projects lifecycle plus renderer-local conversation cues into
+  the eight specified Avatar states without a second state machine. Starting
+  and Maintenance remain owned by the existing non-avatar fallback.
+- The lip-sync driver reads an injected actual-output analyser on animation
+  frames, reuses the accepted RMS envelope, writes only a clamped mouth value,
+  and synchronously zeros/stops on interruption, invalid samples, or analyser
+  failure. A failed mouth port stops visibly because that port cannot accept a
+  zero write. Reasons are bounded metadata only.
+- Cubism validation checks safe local paths, file presence, `.moc3`, textures,
+  physics, expressions, EyeBlink/LipSync parameter groups, and all seven
+  Live2D motion groups before a future SDK loader receives the bundle.
+- Music ducking is one injected gain-port controller: idempotent duck, restore,
+  and two-second fade-out behavior. It neither owns nor duplicates the accepted
+  Realtime audio element.
+- Focused evidence: six files/`48` tests, both TypeScript targets, production
+  build, and diff check exited `0`. Complete non-Electron worktree regression:
+  `64/64` files and `683/683` tests. The two existing suites that launch
+  Electron were correctly excluded because worktree Electron execution is
+  forbidden; no runtime change imports these prep contracts.
+- No Live2D SDK, Core, rig, music asset, Web Audio/Realtime runtime wiring,
+  Console/config/IPC change, Electron/device run, real audio, FPS, P3-D1..D4,
+  phase exit, or tag is claimed. Phase 3 remains `not-started`.
+
 ## Pending work — exact order
 
 1. From the exact frozen Phase 1 build, run P1-D1 (20 real turns), P1-D2 (10
@@ -244,6 +272,10 @@ failure never silently substitutes another ID.
    Continue Phases 3–7 sequentially on this PC. After PC development, repeat
    wake selection and complete TCC/native packaging/signing/LaunchAgent/power
    evidence during the Mac mini M4 port before final deployment acceptance.
+5. After the Windows Phase 2 checkpoint, provide an official Cubism SDK for Web
+   R5 package plus a development rig and local music asset. Wire the prepared
+   Phase 3 ports into the real renderer, then run P3-D1..D4 and real-output
+   audio/FPS/interruption evidence on this PC.
 
 ## Human-intervention ledger
 
@@ -257,6 +289,7 @@ failure never silently substitutes another ID.
 | P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Superseded diagnosis: these runs loaded a local mock model from non-isolated user data; the 2026-08-27 corrected run proves provider/project access. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
 | Phase 2 engineering | Windows implementation and deterministic verification required no operator input. | Engineering candidate only; P2-D1..D5 `real-demo not_executed` |
+| Phase 3 preparation | SDK-independent `P3-PREP-A2` required no operator input. | Prep-only contracts; Phase 3 `not-started`, P3-D1..D4 `not_executed` |
 | Wake quality selection | Train/import both Windows `魔鏡阿魔鏡` candidates, collect/approve the local corpus, run the equal-false-accept PC comparison, and Publish the development winner. | Pending; current package is `unselected`; M4 revalidation deferred to port |
 | Target Mac | Port only after PC development; then repeat wake selection and verify TCC, signing/entitlements, packaged workers, LaunchAgent, power, device, and provider behavior. | Deferred; not a current PC-development gate |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
