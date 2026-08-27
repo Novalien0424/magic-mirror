@@ -39,6 +39,7 @@ import {
   type WakeWorkerChild,
 } from './wake/supervisor'
 import type { WakeWorkerPackage } from './wake/protocol'
+import { createWakeConversationActivation } from './wake/conversation-activation'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
@@ -157,10 +158,11 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
       ...(tuning.score === undefined ? {} : { score: tuning.score }),
     },
   }
+  let activation: ReturnType<typeof createWakeConversationActivation> | null = null
   const supervisor = createWakeSupervisor({
     spawn: spawnWakeWorker,
     onWake: () => {
-      void runtime.setWakeRuntimeStatus('degraded', 'wake_activation_not_wired')
+      void activation?.handleWake()
     },
     onStatus: (snapshot) => {
       const moduleStatus = snapshot.status === 'failed'
@@ -170,6 +172,11 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
           : 'ready'
       void runtime.setWakeRuntimeStatus(moduleStatus, snapshot.reason ?? `wake_worker_${snapshot.status}`)
     },
+  })
+  activation = createWakeConversationActivation({
+    getLifecycle: () => runtime.snapshot().lifecycle,
+    startConversation: () => runtime.manualStart(),
+    reacquireWake: () => supervisor.acquire(),
   })
   wakeSupervisor = supervisor
   const accessKey = loaded.manifest.engine === 'porcupine'
@@ -498,6 +505,16 @@ void app.whenReady().then(() => {
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,
+    wakeMicrophoneHandoff: {
+      release: () => wakeSupervisor?.release() ?? Promise.resolve({
+        status: 'success' as const,
+        reason: 'wake_microphone_not_configured',
+      }),
+      acquire: () => wakeSupervisor?.acquire() ?? Promise.resolve({
+        status: 'success' as const,
+        reason: 'wake_microphone_not_configured',
+      }),
+    },
     dispatchRealtimeRuntimeCommand: (command) =>
       dispatchMirrorRealtimeRuntimeCommand(command, windows),
   })

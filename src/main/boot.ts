@@ -205,6 +205,11 @@ export interface AssetPreflightOptions {
   readonly acquireMicrophone?: () => void
 }
 
+export interface WakeMicrophoneHandoff {
+  release(): PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+  acquire(): PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+}
+
 export interface BootOptions {
   readonly appVersion?: string
   readonly buildCommit?: string
@@ -234,6 +239,7 @@ export interface BootOptions {
   readonly dispatchRealtimeRuntimeCommand?: (
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
+  readonly wakeMicrophoneHandoff?: WakeMicrophoneHandoff
   readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => unknown
   readonly cancelRealtimeTimer?: (handle: unknown) => void
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
@@ -275,7 +281,9 @@ export interface BootRuntime {
   snapshot(): AppSnapshot
   subscribe(listener: (snapshot: AppSnapshot) => void): BootSubscription
   handleRealtimeFailure(input: RealtimeFailureInput): Promise<Record<string, unknown>>
-  handleRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): Record<string, unknown>
+  handleRealtimeRuntimeOutcome(
+    report: RealtimeRuntimeOutcomeReport,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>
   getLastRealtimeRuntimeOutcomeReason(): string | null
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
@@ -618,7 +626,12 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
   const transitions: Partial<Record<LifecycleState, Partial<Record<LifecycleEvent['type'], LifecycleState>>>> = {
     starting: { LOCAL_READY: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
     dormant: { WAKE_DETECTED: 'activating', LOCAL_CORE_FAILED: 'maintenance' },
-    activating: { REALTIME_READY: 'active', CLOUD_FAILED: 'offlineLoop', LOCAL_CORE_FAILED: 'maintenance' },
+    activating: {
+      REALTIME_READY: 'active',
+      CLOUD_FAILED: 'offlineLoop',
+      LOCAL_AUDIO_FAILED: 'maintenance',
+      LOCAL_CORE_FAILED: 'maintenance',
+    },
     active: {
       REALTIME_SESSION_REPLACED: 'active',
       CLOUD_FAILED: 'offlineLoop',
@@ -632,7 +645,11 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
       LOCAL_AUDIO_FAILED: 'maintenance',
       LOCAL_CORE_FAILED: 'maintenance',
     },
-    offlineLoop: { RECOVERY_PASSED: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
+    offlineLoop: {
+      RECOVERY_PASSED: 'dormant',
+      LOCAL_AUDIO_FAILED: 'maintenance',
+      LOCAL_CORE_FAILED: 'maintenance',
+    },
     maintenance: { RETRY_STARTUP: 'starting', LOCAL_CORE_FAILED: 'maintenance' },
   }
 
@@ -1281,6 +1298,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     refreshSnapshot()
     notifyListeners()
     if (lifecycleState() === 'offlineLoop') startRecoveryProbeCycle()
+    reacquireWakeAfterCloudFailure()
   }
 
   function recordRealtimeStopFailure(): void {
@@ -1883,6 +1901,40 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     notifyListeners()
   }
 
+  function recordWakeHandoffFailure(errorCode: string): void {
+    pendingRealtimeSessionIdentity = null
+    pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
+    sendLifecycle({ type: 'LOCAL_AUDIO_FAILED', errorCode })
+    lastError = {
+      module: 'audio',
+      error_code: errorCode,
+      time: nowValue(now),
+    }
+    maintenance = { code: errorCode, detail: 'cause=microphone_handoff_failed' }
+    refreshSnapshot()
+    notifyListeners()
+    emitMetadata(telemetry, {
+      module: 'audio',
+      event: 'wake_microphone_handoff_failed',
+      status: 'failed',
+      error_code: errorCode,
+      reason: 'cause=microphone_handoff_failed',
+      source: 'runtime',
+    })
+  }
+
+  function reacquireWakeAfterCloudFailure(): void {
+    const handoff = options.wakeMicrophoneHandoff
+    if (handoff === undefined) return
+    void Promise.resolve()
+      .then(() => handoff.acquire())
+      .then((result) => {
+        if (result.status !== 'success') recordWakeHandoffFailure('wake_microphone_acquire_failed')
+      })
+      .catch(() => recordWakeHandoffFailure('wake_microphone_acquire_failed'))
+  }
+
   async function probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'> {
     try {
       await ready
@@ -1974,6 +2026,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       source: 'runtime',
     })
     startRecoveryProbeCycle()
+    reacquireWakeAfterCloudFailure()
     return Object.freeze({ status: 'degraded', reason: 'offline_loop_started' })
   }
 
@@ -2017,6 +2070,21 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       lastInteractionAt: nowValue(now),
     })) {
       return emitRealtimeRuntimeResult('start', 'failed', 'runtime_command_send_failed')
+    }
+
+    const wakeHandoff = options.wakeMicrophoneHandoff
+    if (wakeHandoff !== undefined) {
+      let released = false
+      try {
+        const result = await Promise.resolve(wakeHandoff.release())
+        released = result.status === 'success'
+      } catch {
+        released = false
+      }
+      if (!released) {
+        recordWakeHandoffFailure('wake_microphone_release_failed')
+        return emitRealtimeRuntimeResult('start', 'failed', 'wake_microphone_release_failed')
+      }
     }
 
     const sessionGeneration = lifecycleView.context.sessionGeneration
@@ -2096,9 +2164,38 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return emitRealtimeRuntimeResult('stop', dispatchResult.status, dispatchResult.reason)
   }
 
+  function commitRealtimeStop(reason: string): Record<string, unknown> {
+    const closed = sendLifecycle({ type: 'MEDIA_CLOSED' })
+    if (!closed || lifecycleState() !== 'dormant') {
+      recordRealtimeStopFailure()
+      return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
+    }
+    pendingRealtimeSessionIdentity = null
+    lastError = null
+    maintenance = null
+    refreshSnapshot()
+    notifyListeners()
+    return emitRealtimeRuntimeResult('stop', 'success', reason)
+  }
+
+  async function acquireWakeMicrophoneThenCommitStop(reason: string): Promise<Record<string, unknown>> {
+    let acquired = false
+    try {
+      const result = await Promise.resolve(options.wakeMicrophoneHandoff?.acquire())
+      acquired = result?.status === 'success'
+    } catch {
+      acquired = false
+    }
+    if (!acquired) {
+      recordWakeHandoffFailure('wake_microphone_acquire_failed')
+      return emitRealtimeRuntimeResult('stop', 'failed', 'wake_microphone_acquire_failed')
+    }
+    return commitRealtimeStop(reason)
+  }
+
   function handleRealtimeRuntimeOutcome(
     report: RealtimeRuntimeOutcomeReport,
-  ): Record<string, unknown> {
+  ): Record<string, unknown> | Promise<Record<string, unknown>> {
     const operationValue = readProperty(report, 'operation')
     const operation = operationValue === 'start' || operationValue === 'stop' || operationValue === 'rollover'
       ? operationValue
@@ -2177,17 +2274,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     if (status === 'success') {
       lastRealtimeRuntimeOutcomeReason = null
-      const closed = sendLifecycle({ type: 'MEDIA_CLOSED' })
-      if (!closed || lifecycleState() !== 'dormant') {
-        recordRealtimeStopFailure()
-        return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
-      }
-      pendingRealtimeSessionIdentity = null
-      lastError = null
-      maintenance = null
-      refreshSnapshot()
-      notifyListeners()
-      return emitRealtimeRuntimeResult('stop', 'success', reason)
+      return options.wakeMicrophoneHandoff === undefined
+        ? commitRealtimeStop(reason)
+        : acquireWakeMicrophoneThenCommitStop(reason)
     }
 
     lastRealtimeRuntimeOutcomeReason = reason

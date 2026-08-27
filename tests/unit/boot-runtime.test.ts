@@ -10,6 +10,14 @@ interface TestRuntimeOptions {
   readonly realtimeDialogue?: unknown
   readonly initialize?: () => Promise<unknown>
   readonly wake?: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
+  readonly wakeMicrophoneHandoff?: {
+    release(): Promise<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+    acquire(): Promise<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+  }
+  readonly dispatchRealtimeRuntimeCommand?: (command: { readonly operation: string }) => {
+    readonly status: 'success'
+    readonly reason: 'runtime_command_delivered'
+  }
 }
 
 function createTestRuntime(options: TestRuntimeOptions = {}) {
@@ -45,10 +53,11 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
       snapshot: () => ({}),
       probe: async () => ({ status: 'not_implemented' }),
     } as never),
-    dispatchRealtimeRuntimeCommand: () => ({
+    wakeMicrophoneHandoff: options.wakeMicrophoneHandoff,
+    dispatchRealtimeRuntimeCommand: options.dispatchRealtimeRuntimeCommand ?? (() => ({
       status: 'success',
       reason: 'runtime_command_delivered',
-    }),
+    })),
   })
   return runtime
 }
@@ -100,6 +109,77 @@ describe('BootRuntime realtime runtime outcome reason', () => {
 })
 
 describe('BootRuntime configured model availability probe', () => {
+  it('releases wake capture before Realtime start and reacquires only after renderer stop', async () => {
+    const calls: string[] = []
+    const runtime = createTestRuntime({
+      wakeMicrophoneHandoff: {
+        release: async () => {
+          calls.push('wake_release')
+          return { status: 'success', reason: 'wake_microphone_released' }
+        },
+        acquire: async () => {
+          calls.push('wake_acquire')
+          return { status: 'success', reason: 'wake_microphone_acquired' }
+        },
+      },
+      dispatchRealtimeRuntimeCommand: (command) => {
+        calls.push(`renderer_${command.operation}`)
+        return { status: 'success', reason: 'runtime_command_delivered' } as const
+      },
+    })
+    await runtime.ready
+
+    await runtime.manualStart()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    await runtime.manualStop()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'closed' })
+
+    expect(calls).toEqual(['wake_release', 'renderer_start', 'renderer_stop', 'wake_acquire'])
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+  })
+
+  it('enters Maintenance without dispatch when wake microphone release fails', async () => {
+    let dispatches = 0
+    const runtime = createTestRuntime({
+      wakeMicrophoneHandoff: {
+        release: async () => ({ status: 'failed', reason: 'wake_worker_unavailable' }),
+        acquire: async () => ({ status: 'success', reason: 'wake_microphone_acquired' }),
+      },
+      dispatchRealtimeRuntimeCommand: () => {
+        dispatches += 1
+        return { status: 'success', reason: 'runtime_command_delivered' } as const
+      },
+    })
+
+    const result = await runtime.manualStart()
+
+    expect(result).toEqual({ status: 'failed', reason: 'wake_microphone_release_failed' })
+    expect(dispatches).toBe(0)
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+  })
+
+  it('enters Maintenance if wake capture cannot reacquire after renderer stop', async () => {
+    const runtime = createTestRuntime({
+      wakeMicrophoneHandoff: {
+        release: async () => ({ status: 'success', reason: 'wake_microphone_released' }),
+        acquire: async () => ({ status: 'failed', reason: 'wake_worker_unavailable' }),
+      },
+    })
+    await runtime.ready
+    await runtime.manualStart()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    await runtime.manualStop()
+
+    const result = await runtime.handleRealtimeRuntimeOutcome({
+      operation: 'stop',
+      status: 'success',
+      reason: 'closed',
+    })
+
+    expect(result).toEqual({ status: 'failed', reason: 'wake_microphone_acquire_failed' })
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+  })
+
   it('publishes the Main-only wake config and updates wake status without gating lifecycle', async () => {
     const wake = {
       phrase: '魔鏡阿魔鏡',
