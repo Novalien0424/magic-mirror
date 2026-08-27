@@ -1,5 +1,13 @@
 import { basename, join, resolve } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, powerSaveBlocker, type WebContents } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  powerSaveBlocker,
+  utilityProcess,
+  type WebContents,
+} from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { bootSequence, type BootRuntime } from './boot'
@@ -24,6 +32,13 @@ import {
   type ClientSecretBrokerEventSink,
 } from './realtime/client-secret-broker'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
+import { loadWakeModelPackage } from './wake/model-package'
+import {
+  createWakeSupervisor,
+  type WakeSupervisor,
+  type WakeWorkerChild,
+} from './wake/supervisor'
+import type { WakeWorkerPackage } from './wake/protocol'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
@@ -68,6 +83,7 @@ let mirrorRendererReady = false
 let displaySleepBlocker: DisplaySleepBlocker | null = null
 let bootRuntime: BootRuntime | null = null
 let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
+let wakeSupervisor: WakeSupervisor | null = null
 let shutdownPromise: Promise<void> | null = null
 let willQuitHandled = false
 let quitResourcesStopped = false
@@ -86,6 +102,84 @@ function resolveOfflineLoopAssetPath(): string {
     return join(process.resourcesPath, 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')
   }
   return resolve(__dirname, '../../resources/generated/mock/offline-loop-v1.mp4')
+}
+
+function wakeModelRoot(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'wake-models')
+    : join(app.getAppPath(), 'resources', 'wake-models')
+}
+
+function spawnWakeWorker(): WakeWorkerChild {
+  const child = utilityProcess.fork(resolve(__dirname, 'wake-worker.js'), [], {
+    serviceName: 'Magic Mirror Wake Listener',
+  })
+  return {
+    postMessage: (command) => child.postMessage(command),
+    on(event, listener) {
+      if (event === 'message') child.on('message', listener)
+      else child.on('exit', (code) => listener(code))
+    },
+    kill: () => child.kill(),
+  }
+}
+
+async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+  let wake: Awaited<ReturnType<BootRuntime['getPublishedWakeConfigForRuntime']>>
+  try {
+    wake = await runtime.getPublishedWakeConfigForRuntime()
+  } catch {
+    await runtime.setWakeRuntimeStatus('failed', 'wake_config_unavailable')
+    return
+  }
+  const loaded = await loadWakeModelPackage({
+    rootDirectory: wakeModelRoot(),
+    wake,
+    platform: `${process.platform}-${process.arch}`,
+  })
+  if (!loaded.ok) {
+    await runtime.setWakeRuntimeStatus('degraded', loaded.reason)
+    return
+  }
+
+  const tuning = loaded.manifest.tuning
+  const workerPackage: WakeWorkerPackage = {
+    packageId: loaded.manifest.packageId,
+    engine: loaded.manifest.engine,
+    engineVersion: loaded.manifest.engineVersion,
+    modelVersion: loaded.manifest.modelVersion,
+    phrase: loaded.manifest.phrase,
+    sampleRateHz: 16_000,
+    artifactPaths: Object.fromEntries(loaded.artifactPaths),
+    tuning: {
+      ...(tuning.sensitivity === undefined ? {} : { sensitivity: tuning.sensitivity }),
+      ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
+      ...(tuning.score === undefined ? {} : { score: tuning.score }),
+    },
+  }
+  const supervisor = createWakeSupervisor({
+    spawn: spawnWakeWorker,
+    onWake: () => {
+      void runtime.setWakeRuntimeStatus('degraded', 'wake_activation_not_wired')
+    },
+    onStatus: (snapshot) => {
+      const moduleStatus = snapshot.status === 'failed'
+        ? 'failed'
+        : snapshot.status === 'starting' || snapshot.status === 'stopped'
+          ? 'degraded'
+          : 'ready'
+      void runtime.setWakeRuntimeStatus(moduleStatus, snapshot.reason ?? `wake_worker_${snapshot.status}`)
+    },
+  })
+  wakeSupervisor = supervisor
+  const accessKey = loaded.manifest.engine === 'porcupine'
+    ? process.env['PICOVOICE_ACCESS_KEY']?.trim()
+    : undefined
+  const started = await supervisor.start({ package: workerPackage, accessKey })
+  if (started.status === 'failed') return
+  if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+    await supervisor.acquire()
+  }
 }
 
 function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructorOptions {
@@ -409,6 +503,7 @@ void app.whenReady().then(() => {
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
+  void configureWakeRuntime(runtime)
 
   displaySleepBlocker = createDisplaySleepBlocker(
     {
@@ -494,6 +589,7 @@ function shutdownBootRuntime(): Promise<void> {
   }
 
   shutdownPromise = Promise.resolve()
+    .then(() => wakeSupervisor?.shutdown())
     .then(() => runtime.shutdown())
     .catch(() => {
       marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })

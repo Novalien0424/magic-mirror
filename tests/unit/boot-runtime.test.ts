@@ -9,6 +9,7 @@ interface TestRuntimeOptions {
   }
   readonly realtimeDialogue?: unknown
   readonly initialize?: () => Promise<unknown>
+  readonly wake?: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
 }
 
 function createTestRuntime(options: TestRuntimeOptions = {}) {
@@ -20,8 +21,8 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
       close: async () => {},
     } as never),
     configService: {
-      initialize: options.initialize ?? (async () => ({})),
-      read: async () => ({}),
+      initialize: options.initialize ?? (async () => ({ active: { wake: options.wake } })),
+      read: async () => ({ active: { wake: options.wake } }),
     } as never,
     resolveModelSettings: () => ({
       active: {
@@ -99,6 +100,23 @@ describe('BootRuntime realtime runtime outcome reason', () => {
 })
 
 describe('BootRuntime configured model availability probe', () => {
+  it('publishes the Main-only wake config and updates wake status without gating lifecycle', async () => {
+    const wake = {
+      phrase: '魔鏡阿魔鏡',
+      modelVersion: 'test-v1',
+      packageId: 'magic-mirror-zh-test-v1',
+    }
+    const runtime = createTestRuntime({ wake })
+
+    const published = await runtime.getPublishedWakeConfigForRuntime()
+    await runtime.setWakeRuntimeStatus('degraded', 'wake_package_manifest_invalid')
+
+    expect(published).toEqual(wake)
+    expect(Object.isFrozen(published)).toBe(true)
+    expect(runtime.snapshot().modules.wake).toBe('degraded')
+    expect(runtime.snapshot().lifecycle).not.toBe('maintenance')
+  })
+
   it('publishes the validated Main-only session model snapshot after ready', async () => {
     const runtime = createTestRuntime({ realtimeDialogue: 'configured-realtime-model' })
 

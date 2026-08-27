@@ -9,6 +9,7 @@ import type {
   ModuleId,
   ModuleStatus,
   MirrorEvent,
+  MirrorConfig,
   OpStatus,
   Result,
   SessionModelSnapshot,
@@ -265,6 +266,10 @@ export interface BootRuntime {
   requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>>
   /** Main-only live-smoke provenance seam; never exposed through renderer IPC. */
   getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>>
+  /** Main-only active wake pin; never exposed through renderer IPC. */
+  getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>>
+  /** Projects wake availability without gating unrelated conversation paths. */
+  setWakeRuntimeStatus(status: 'ready' | 'degraded' | 'failed', reason: string): Promise<void>
   probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
@@ -1843,6 +1848,41 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return createSessionModelSnapshot(activeModelSettings, nowValue(now))
   }
 
+  async function getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>> {
+    await ready
+    const slots = await configService?.read()
+    const wake = readProperty(readProperty(slots, 'active'), 'wake')
+    const phrase = readProperty(wake, 'phrase')
+    const modelVersion = readProperty(wake, 'modelVersion')
+    const packageId = readProperty(wake, 'packageId')
+    if (
+      typeof phrase !== 'string'
+      || typeof modelVersion !== 'string'
+      || typeof packageId !== 'string'
+    ) throw new Error('wake_config_unavailable')
+    return Object.freeze({ phrase, modelVersion, packageId })
+  }
+
+  async function setWakeRuntimeStatus(
+    status: 'ready' | 'degraded' | 'failed',
+    reason: string,
+  ): Promise<void> {
+    await ready
+    const safeWakeReason = safeReason(reason, 'wake_runtime_status_invalid')
+    modules.wake = status
+    const event: Omit<MirrorEvent, 'time'> = {
+      module: 'wake',
+      event: 'wake_runtime_status',
+      status: status === 'ready' ? 'success' : status,
+      reason: safeWakeReason,
+      source: 'runtime',
+    }
+    if (status !== 'ready') event.error_code = safeWakeReason
+    emitMetadata(telemetry, event)
+    refreshSnapshot()
+    notifyListeners()
+  }
+
   async function probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'> {
     try {
       await ready
@@ -2273,6 +2313,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     console: consoleDataPlane,
     requestRealtimeClientSecret,
     getPublishedSessionModelSnapshotForDiagnostics,
+    getPublishedWakeConfigForRuntime,
+    setWakeRuntimeStatus,
     probeConfiguredModelAvailability,
     shutdown,
     telemetry: {
