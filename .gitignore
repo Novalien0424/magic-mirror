@@ -1,6 +1,8 @@
 # Dependencies / build output (Phase 0+)
 node_modules/
 dist/
+!src/vendor/live2d/Framework/dist/
+!src/vendor/live2d/Framework/dist/**
 out/
 build/
 *.tsbuildinfo

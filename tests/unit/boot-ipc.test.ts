@@ -32,7 +32,7 @@ const REALTIME_SESSION_ID_SENTINEL = 'synthetic-realtime-session-id'
 const FIXED_TIME = '2026-08-19T00:00:00.000Z'
 const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as const
 
-type RendererMetadataKind = 'session' | 'mic' | 'playback' | 'transcript' | 'cleanup'
+type RendererMetadataKind = 'session' | 'mic' | 'playback' | 'transcript' | 'cleanup' | 'avatar'
 type RendererMetadataStatus = 'success' | 'degraded' | 'failed' | 'info'
 type RendererMetadataReport = {
   readonly kind: RendererMetadataKind
@@ -802,6 +802,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       interrupt: 'mirror:interrupt',
+      avatarControl: 'mirror:avatar-control',
+      reportAvatarRuntime: 'mirror:report-avatar-runtime',
       ready: 'boot:renderer-ready',
     })
     expect(CONSOLE_IPC_CHANNELS).toEqual({
@@ -816,6 +818,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       config: 'console:get-config',
       models: 'console:get-models',
       phaseTests: 'console:get-phase-tests',
+      avatarRuntime: 'console:get-avatar-runtime',
+      avatarControl: 'console:avatar-control',
       saveModelDraft: 'console:save-model-draft',
       saveDraft: 'console:save-draft',
       testDraft: 'console:test-draft',
@@ -876,6 +880,14 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         },
         event: 'realtime_cleanup_metadata',
       },
+      {
+        report: {
+          kind: 'avatar',
+          status: 'success',
+          reason: 'cubism_avatar_ready',
+        },
+        event: 'avatar_runtime_metadata',
+      },
     ]
 
     it('keeps the metadata channel and method Mirror-only', () => {
@@ -907,7 +919,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         ))
 
         const expectedEvent: MetadataEvent = {
-          module: 'openai',
+          module: report.kind === 'avatar' ? 'avatar' : 'openai',
           event,
           status: report.status,
           reason: report.reason,

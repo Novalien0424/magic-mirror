@@ -16,7 +16,12 @@ import type {
   ConsoleRuntimeSnapshotResult,
   PhaseTestPhase,
 } from '../shared/console-types'
-import type { ConsoleBridge, SnapshotListener } from '../shared/bridge'
+import type {
+  AvatarControlCommand,
+  AvatarRuntimeSnapshot,
+  ConsoleBridge,
+  SnapshotListener,
+} from '../shared/bridge'
 
 const READY_CHANNEL = 'boot:renderer-ready' as const
 const SNAPSHOT_CHANNEL = 'console:snapshot' as const
@@ -36,6 +41,8 @@ const PUBLISH_CHANNEL = 'console:publish' as const
 const ROLLBACK_CHANNEL = 'console:rollback' as const
 const NEXT_RUNTIME_CHANNEL = 'console:create-next-runtime' as const
 const GET_PHASE_TESTS_CHANNEL = 'console:get-phase-tests' as const
+const GET_AVATAR_RUNTIME_CHANNEL = 'console:get-avatar-runtime' as const
+const AVATAR_CONTROL_CHANNEL = 'console:avatar-control' as const
 
 const bridge: ConsoleBridge = {
   notifyReady(): void {
@@ -115,6 +122,14 @@ const bridge: ConsoleBridge = {
       return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
     }
     return ipcRenderer.invoke(GET_PHASE_TESTS_CHANNEL, phase) as Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  },
+
+  getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>> {
+    return ipcRenderer.invoke(GET_AVATAR_RUNTIME_CHANNEL) as Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  },
+
+  controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>> {
+    return ipcRenderer.invoke(AVATAR_CONTROL_CHANNEL, command) as Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   },
 }
 

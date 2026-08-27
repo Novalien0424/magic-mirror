@@ -658,6 +658,7 @@ function makeMainIndexHarness(options: {
     }),
     subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
     handleSimulator: vi.fn(),
+    setAvatarRuntimeStatus: vi.fn(() => Promise.resolve()),
     shutdown,
   }
 
@@ -691,6 +692,7 @@ function makeMainIndexHarness(options: {
   }
 
   const app = {
+    commandLine: { appendSwitch: vi.fn() },
     whenReady: vi.fn(() => Promise.resolve()),
     getPath: vi.fn((_name: string) => userData),
     getAppPath: vi.fn(() => resolve(__dirname, '../..')),
@@ -711,6 +713,16 @@ function makeMainIndexHarness(options: {
     BrowserWindow: FakeBrowserWindow,
     globalShortcut,
     ipcMain: { handle: vi.fn(), on: vi.fn() },
+    screen: {
+      getPrimaryDisplay: vi.fn(() => ({
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      })),
+      getAllDisplays: vi.fn(() => [{
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      }]),
+    },
     powerSaveBlocker: {
       start: vi.fn(() => 1),
       isStarted: vi.fn(() => true),

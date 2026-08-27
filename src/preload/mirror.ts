@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { AppSnapshot } from '../shared/types'
 import type {
   MirrorBridge,
+  AvatarControlCommand,
+  AvatarRuntimeSnapshot,
   RealtimeFailureReport,
   RealtimeRendererMetadataReport,
   RealtimeRuntimeCommand,
@@ -11,6 +13,7 @@ import type {
   SnapshotListener,
   TransientRealtimeSecretResult,
 } from '../shared/bridge'
+import { AVATAR_RUNTIME_STATES } from '../shared/bridge'
 
 // Smoke-contract failure switch: a missing bridge remains visible in the renderer.
 if (process.env['MIRROR_FORCE_RENDERER_FAIL'] === '1') {
@@ -27,6 +30,8 @@ const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-
 const REPORT_REALTIME_FAILURE_CHANNEL = 'mirror:report-realtime-failure' as const
 const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as const
 const SLEEP_REQUEST_CHANNEL = 'mirror:sleep-request' as const
+const AVATAR_CONTROL_CHANNEL = 'mirror:avatar-control' as const
+const REPORT_AVATAR_RUNTIME_CHANNEL = 'mirror:report-avatar-runtime' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -84,6 +89,36 @@ function exactKeys(value: unknown, expected: readonly string[]): boolean {
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function unitNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+}
+
+function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
+  if (!isRecord(value)) return null
+  const type = readProperty(value, 'type')
+  if (type === 'state' && exactKeys(value, ['type', 'state'])) {
+    const state = readProperty(value, 'state')
+    return AVATAR_RUNTIME_STATES.includes(state as AvatarRuntimeSnapshot['state'])
+      ? Object.freeze({ type, state: state as AvatarRuntimeSnapshot['state'] })
+      : null
+  }
+  if (type === 'expression' && exactKeys(value, ['type', 'name'])) {
+    const name = readProperty(value, 'name')
+    return typeof name === 'string' && /^F0[1-8]$/.test(name)
+      ? Object.freeze({ type, name })
+      : null
+  }
+  if ((type === 'recorded_audio' || type === 'music') && exactKeys(value, ['type', 'action'])) {
+    const action = readProperty(value, 'action')
+    return action === 'play' || action === 'stop' ? Object.freeze({ type, action }) : null
+  }
+  if ((type === 'voice_gain' || type === 'music_gain') && exactKeys(value, ['type', 'value'])) {
+    const next = readProperty(value, 'value')
+    return unitNumber(next) ? Object.freeze({ type, value: next }) : null
+  }
+  return null
 }
 
 function sanitizeRealtimeRuntimeCommand(value: unknown): RealtimeRuntimeCommand | null {
@@ -265,6 +300,29 @@ const bridge: MirrorBridge = {
 
   requestSleep(): void {
     ipcRenderer.send(SLEEP_REQUEST_CHANNEL)
+  },
+
+  reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void {
+    ipcRenderer.send(REPORT_AVATAR_RUNTIME_CHANNEL, Object.freeze({
+      status: readProperty(snapshot, 'status'),
+      reason: readProperty(snapshot, 'reason'),
+      state: readProperty(snapshot, 'state'),
+      fps: readProperty(snapshot, 'fps'),
+      waveform: readProperty(snapshot, 'waveform'),
+      mouthOpen: readProperty(snapshot, 'mouthOpen'),
+      audioUnderruns: readProperty(snapshot, 'audioUnderruns'),
+      voiceGain: readProperty(snapshot, 'voiceGain'),
+      musicGain: readProperty(snapshot, 'musicGain'),
+    }))
+  },
+
+  onAvatarControl(listener): () => void {
+    const handler = (_event: IpcRendererEvent, value: unknown): void => {
+      const command = sanitizeAvatarControl(value)
+      if (command !== null) listener(command)
+    }
+    ipcRenderer.on(AVATAR_CONTROL_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(AVATAR_CONTROL_CHANNEL, handler)
   },
 
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void {

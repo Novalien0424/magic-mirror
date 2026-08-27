@@ -79,6 +79,14 @@ export interface CreateRealtimeSessionInput {
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: () => void | PromiseLike<void>
+  readonly onAudioActivity?: (
+    activity:
+      | 'speech_started'
+      | 'speech_stopped'
+      | 'output_started'
+      | 'output_stopped'
+      | 'interrupted'
+  ) => void
   readonly dependencies?: RealtimeSessionDependencies
 }
 
@@ -580,6 +588,23 @@ export function createRealtimeSession(
     })
   }
 
+  const notifyAudioActivity = (
+    activity: Parameters<NonNullable<CreateRealtimeSessionInput['onAudioActivity']>>[0],
+  ): void => {
+    try {
+      input.onAudioActivity?.(activity)
+    } catch {
+      emitMetadata(
+        input,
+        'realtime_observer_event',
+        'degraded',
+        'avatar_audio_activity_listener_failed',
+        sessionGeneration,
+        createdAt,
+      )
+    }
+  }
+
   const handleTransportEvent = (event: unknown): void => {
     if (rawEventIsStale(event, input.sessionId)) {
       emitStale()
@@ -602,12 +627,14 @@ export function createRealtimeSession(
     }
     if (type === 'output_audio_buffer.started') {
       returnToDormantAudioStarted = true
+      notifyAudioActivity('output_started')
       return
     }
     if (type === 'output_audio_buffer.stopped') {
       const audioStarted = returnToDormantAudioStarted
       returnToDormantAudioStarted = false
       notifyOutputAudioBufferStopped()
+      notifyAudioActivity('output_stopped')
       if (returnToDormantPending && audioStarted) {
         returnToDormantPending = false
         const request = input.onReturnToDormant
@@ -644,6 +671,14 @@ export function createRealtimeSession(
           )
         }
       }
+      return
+    }
+    if (type === 'input_audio_buffer.speech_started') {
+      notifyAudioActivity('speech_started')
+      return
+    }
+    if (type === 'input_audio_buffer.speech_stopped') {
+      notifyAudioActivity('speech_stopped')
       return
     }
     if (type === 'conversation.item.input_audio_transcription.completed') {
@@ -692,7 +727,7 @@ export function createRealtimeSession(
   session.on('transport_event', handleTransportEvent)
   session.on('error', handleSessionError)
   // Interruption and completion stay on official RealtimeSession event surfaces.
-  session.on('audio_interrupted', () => {})
+  session.on('audio_interrupted', () => notifyAudioActivity('interrupted'))
   session.on('audio_stopped', () => {})
 
   emitMetadata(

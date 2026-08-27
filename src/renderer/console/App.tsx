@@ -1,7 +1,12 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { ConsoleBridge } from '../../shared/bridge'
+import {
+  AVATAR_RUNTIME_STATES,
+  type AvatarControlCommand,
+  type AvatarRuntimeSnapshot,
+  type ConsoleBridge,
+} from '../../shared/bridge'
 import type {
   ConsoleConfigDraftInput,
   ConsoleConfigPayload,
@@ -25,7 +30,7 @@ import type {
   SimulatorResult,
 } from '../../shared/types'
 
-const PAGES = ['Overview', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const PAGES = ['Overview', 'Avatar / Audio', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
   'app',
   'openai',
@@ -90,7 +95,7 @@ export const CONSOLE_UI_CONTRACT = {
     tccLabel: 'TCC: not_checked',
   },
   lifecycle: {
-    controls: ['Start Conversation', 'Disconnect'] as const,
+    controls: ['Start Conversation', 'Interrupt', 'Disconnect'] as const,
     outcomeCopy: 'Lifecycle action outcomes contain metadata only: action, status, and reason.',
   },
   simulator: {
@@ -158,7 +163,7 @@ type EventsState =
   | ({ readonly status: 'success' } & EventsStatePage)
   | ({ readonly status: 'failure' } & EventsStatePage & ConsoleFailure)
 
-type LifecycleActionName = 'startConversation' | 'disconnect'
+type LifecycleActionName = 'startConversation' | 'interrupt' | 'disconnect'
 
 type LifecycleActionState =
   | { readonly status: 'idle' }
@@ -195,6 +200,11 @@ type ModelsState =
   | { readonly status: 'success'; readonly value: ConsoleModelsPayload }
   | ({ readonly status: 'failure' } & ConsoleFailure)
 
+type AvatarRuntimeState =
+  | { readonly status: 'loading' }
+  | { readonly status: 'success'; readonly value: AvatarRuntimeSnapshot }
+  | ({ readonly status: 'failure' } & ConsoleFailure)
+
 const BRIDGE_FAILURE: ConsoleFailure = {
   error: 'console_request_rejected',
   reason: 'cause=console_data_plane_unavailable',
@@ -223,6 +233,8 @@ function isConsoleBridge(value: unknown): value is ConsoleBridge {
     && typeof value.rollback === 'function'
     && typeof value.createNextRuntimeSnapshots === 'function'
     && typeof value.getPhaseTests === 'function'
+    && typeof value.getAvatarRuntime === 'function'
+    && typeof value.controlAvatar === 'function'
 }
 
 function readConsoleBridge(): ConsoleBridge | null {
@@ -483,11 +495,13 @@ function LifecycleControls({
   bridgeAvailable,
   state,
   onStartConversation,
+  onInterrupt,
   onDisconnect,
 }: {
   readonly bridgeAvailable: boolean
   readonly state: LifecycleActionState
   readonly onStartConversation: () => void
+  readonly onInterrupt: () => void
   readonly onDisconnect: () => void
 }): React.JSX.Element {
   const controlsDisabled = !bridgeAvailable || state.status === 'loading'
@@ -508,6 +522,9 @@ function LifecycleControls({
       <div className="console__command-list" aria-label="Conversation lifecycle controls">
         <button type="button" disabled={controlsDisabled} onClick={onStartConversation}>
           Start Conversation
+        </button>
+        <button type="button" disabled={controlsDisabled} onClick={onInterrupt}>
+          Interrupt
         </button>
         <button type="button" disabled={controlsDisabled} onClick={onDisconnect}>
           Disconnect
@@ -600,6 +617,74 @@ function SimulatorPanel({
           Simulator failed: {state.error}; {state.reason}
         </p>
       ) : null}
+    </section>
+  )
+}
+
+function AvatarAudioPanel({
+  state,
+  disabled,
+  onCommand,
+}: {
+  readonly state: AvatarRuntimeState
+  readonly disabled: boolean
+  readonly onCommand: (command: AvatarControlCommand) => void
+}): React.JSX.Element {
+  const value = state.status === 'success' ? state.value : null
+  return (
+    <section className="console__panel" aria-labelledby="console-avatar-audio">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Actual renderer and output graph</p>
+          <h2 id="console-avatar-audio">Avatar / Audio</h2>
+        </div>
+        <span className={statusClass(value?.status ?? state.status)}>{value?.status ?? state.status}</span>
+      </div>
+
+      {state.status === 'failure' ? <p className="console__fault">{state.error}; {state.reason}</p> : null}
+      <div className="console__overview-grid">
+        <OverviewField label="state" value={displayValue(value?.state)} />
+        <OverviewField label="FPS" value={value ? value.fps.toFixed(1) : '—'} />
+        <OverviewField label="mouth" value={value ? value.mouthOpen.toFixed(3) : '—'} />
+        <OverviewField label="underruns" value={displayValue(value?.audioUnderruns)} />
+        <OverviewField label="voice gain" value={value ? value.voiceGain.toFixed(2) : '—'} />
+        <OverviewField label="music gain" value={value ? value.musicGain.toFixed(2) : '—'} />
+        <OverviewField label="reason" value={displayValue(value?.reason)} />
+        <label className="console__overview-field">
+          <small>waveform</small>
+          <meter min="0" max="1" value={value?.waveform ?? 0} />
+        </label>
+      </div>
+
+      <p className="console__label">States / motions</p>
+      <div className="console__command-list">
+        {AVATAR_RUNTIME_STATES.filter((stateName) => stateName !== 'OfflineLoop').map((stateName) => (
+          <button key={stateName} type="button" disabled={disabled} onClick={() => onCommand({ type: 'state', state: stateName })}>
+            {stateName}
+          </button>
+        ))}
+      </div>
+      <p className="console__label">Expressions</p>
+      <div className="console__command-list">
+        {['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08'].map((name) => (
+          <button key={name} type="button" disabled={disabled} onClick={() => onCommand({ type: 'expression', name })}>{name}</button>
+        ))}
+      </div>
+      <p className="console__label">Audio checks</p>
+      <div className="console__command-list">
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'recorded_audio', action: 'play' })}>Play recorded AI</button>
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'recorded_audio', action: 'stop' })}>Stop recorded AI</button>
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'play' })}>Play music</button>
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'stop' })}>Stop music</button>
+      </div>
+      <div className="console__gain-controls">
+        <label>Voice gain
+          <input type="range" min="0" max="1" step="0.05" value={value?.voiceGain ?? 1} disabled={disabled} onChange={(event) => onCommand({ type: 'voice_gain', value: Number(event.currentTarget.value) })} />
+        </label>
+        <label>Music gain
+          <input type="range" min="0" max="1" step="0.05" value={value?.musicGain ?? 1} disabled={disabled} onChange={(event) => onCommand({ type: 'music_gain', value: Number(event.currentTarget.value) })} />
+        </label>
+      </div>
     </section>
   )
 }
@@ -1225,6 +1310,7 @@ export function App(): React.JSX.Element {
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
+  const [avatarRuntimeState, setAvatarRuntimeState] = useState<AvatarRuntimeState>({ status: 'loading' })
   const [moduleFilter, setModuleFilter] = useState<EventModuleFilter>('all')
   const [statusFilter, setStatusFilter] = useState<EventStatusFilter>('all')
   const [sourceFilter, setSourceFilter] = useState<EventSourceFilter>('all')
@@ -1454,6 +1540,30 @@ export function App(): React.JSX.Element {
     void requestPhaseTests(bridge, selectedPhase)
   }, [bridgeAvailable, selectedPhase])
 
+  useEffect(() => {
+    if (activePage !== 'Avatar / Audio' || !bridgeAvailable) return
+    const bridge = bridgeRef.current
+    if (bridge === null) return
+    let stopped = false
+    const refresh = async (): Promise<void> => {
+      try {
+        const response = await bridge.getAvatarRuntime()
+        if (stopped || !mountedRef.current) return
+        const failure = requestFailure(response)
+        if (failure !== null) setAvatarRuntimeState({ status: 'failure', ...failure })
+        else if (response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
+      } catch {
+        if (!stopped && mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
+      }
+    }
+    void refresh()
+    const interval = window.setInterval(() => void refresh(), 500)
+    return () => {
+      stopped = true
+      window.clearInterval(interval)
+    }
+  }, [activePage, bridgeAvailable])
+
   const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
 
   const runSimulation = (command: SimulatorCommand): void => {
@@ -1520,8 +1630,25 @@ export function App(): React.JSX.Element {
     runLifecycleAction('startConversation', (bridge) => bridge.startConversation())
   }
 
+  const interrupt = (): void => {
+    runLifecycleAction('interrupt', (bridge) => bridge.interrupt())
+  }
+
   const disconnect = (): void => {
     runLifecycleAction('disconnect', (bridge) => bridge.disconnect())
+  }
+
+  const controlAvatar = (command: AvatarControlCommand): void => {
+    const bridge = bridgeRef.current
+    if (bridge === null || !bridgeAvailable || !developerMode) return
+    void bridge.controlAvatar(command).then(
+      (response) => {
+        if (mountedRef.current && response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
+      },
+      () => {
+        if (mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
+      },
+    )
   }
 
   const loadOlderEvents = (): void => {
@@ -1551,6 +1678,7 @@ export function App(): React.JSX.Element {
         bridgeAvailable={bridgeAvailable}
         state={lifecycleActionState}
         onStartConversation={startConversation}
+        onInterrupt={interrupt}
         onDisconnect={disconnect}
       />
 
@@ -1571,6 +1699,13 @@ export function App(): React.JSX.Element {
       <div className="console__panels">
         <div hidden={activePage !== 'Overview'}>
           <OverviewPanel state={overviewState} configState={configState} />
+        </div>
+        <div hidden={activePage !== 'Avatar / Audio'}>
+          <AvatarAudioPanel
+            state={avatarRuntimeState}
+            disabled={!bridgeAvailable || !developerMode}
+            onCommand={controlAvatar}
+          />
         </div>
         <div hidden={activePage !== 'Simulator'}>
           <SimulatorPanel

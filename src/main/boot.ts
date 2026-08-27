@@ -277,6 +277,8 @@ export interface BootRuntime {
   getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>>
   /** Projects wake availability without gating unrelated conversation paths. */
   setWakeRuntimeStatus(status: 'ready' | 'degraded' | 'failed', reason: string): Promise<void>
+  /** Projects renderer-asset availability without gating voice or wake paths. */
+  setAvatarRuntimeStatus(status: 'ready' | 'degraded' | 'failed', reason: string): Promise<void>
   probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'>
   shutdown(): Promise<void>
   snapshot(): AppSnapshot
@@ -1968,6 +1970,26 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     notifyListeners()
   }
 
+  async function setAvatarRuntimeStatus(
+    status: 'ready' | 'degraded' | 'failed',
+    reason: string,
+  ): Promise<void> {
+    await ready
+    const safeAvatarReason = safeReason(reason, 'avatar_runtime_status_invalid')
+    modules.avatar = status
+    const event: Omit<MirrorEvent, 'time'> = {
+      module: 'avatar',
+      event: 'avatar_runtime_status',
+      status: status === 'ready' ? 'success' : status,
+      reason: safeAvatarReason,
+      source: 'runtime',
+    }
+    if (status !== 'ready') event.error_code = safeAvatarReason
+    emitMetadata(telemetry, event)
+    refreshSnapshot()
+    notifyListeners()
+  }
+
   function recordWakeHandoffFailure(errorCode: string): void {
     pendingRealtimeSessionIdentity = null
     pendingRealtimeRolloverSessionIdentity = null
@@ -2489,6 +2511,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getPublishedSessionModelSnapshotForDiagnostics,
     getPublishedWakeConfigForRuntime,
     setWakeRuntimeStatus,
+    setAvatarRuntimeStatus,
     probeConfiguredModelAvailability,
     shutdown,
     telemetry: {

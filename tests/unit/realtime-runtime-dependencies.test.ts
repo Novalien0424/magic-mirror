@@ -359,9 +359,11 @@ describe('Realtime runtime dependency composition core', () => {
     const fixture = makeFixture()
     const bundle = makeBundle()
     const onReturnToDormant = vi.fn(async () => undefined)
+    const onAudioActivity = vi.fn()
     const dependencies = createRealtimeRuntimeOwnerDependencies({
       ...fixture.input,
       onReturnToDormant,
+      onAudioActivity,
     })
     const sessionMetadata = {
       event: 'realtime_session_created',
@@ -398,6 +400,7 @@ describe('Realtime runtime dependency composition core', () => {
     expect(sessionInput.eventSink).toBe(fixture.sessionEventSink)
     expect(sessionInput.onFailure).toBe(fixture.onFailure)
     expect(sessionInput.onReturnToDormant).toBe(onReturnToDormant)
+    expect(sessionInput.onAudioActivity).toBe(onAudioActivity)
     expect(JSON.stringify(fixture.sessionEventSink.mock.calls)).not.toContain(
       bundle.clientSecret,
     )
@@ -660,6 +663,30 @@ describe('Realtime runtime dependency composition — playback completion', () =
 })
 
 describe('Realtime runtime dependency composition — audio analyser', () => {
+  it('exposes the exact actual-output analyser boundary and clears it after disposal', async () => {
+    const fixture = makeFixture()
+    const audioFixture = makeAudioAnalyserFixture()
+    const onAudioOutputAvailable = vi.fn()
+    const onAudioOutputDisposed = vi.fn()
+    fixture.createAudioOutput.mockReturnValue(audioFixture.output)
+    const dependencies = createRealtimeRuntimeOwnerDependencies({
+      ...fixture.input,
+      onAudioOutputAvailable,
+      onAudioOutputDisposed,
+    })
+
+    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput())
+
+    expect(onAudioOutputAvailable).toHaveBeenCalledOnce()
+    expect(onAudioOutputAvailable).toHaveBeenCalledWith(audioFixture.output)
+    expect(onAudioOutputDisposed).not.toHaveBeenCalled()
+
+    await returnedAudioOutput.dispose()
+
+    expect(onAudioOutputDisposed).toHaveBeenCalledOnce()
+    expect(onAudioOutputDisposed).toHaveBeenCalledWith(audioFixture.output)
+  })
+
   it('keeps audio output construction lazy and adapts the injected output once', async () => {
     const fixture = makeFixture()
     const audioFixture = makeAudioAnalyserFixture()

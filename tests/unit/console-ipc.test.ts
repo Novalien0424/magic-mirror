@@ -318,6 +318,8 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       reportRealtimeFailure: MIRROR_REALTIME_FAILURE_CHANNEL,
       reportRealtimeMetadata: 'mirror:report-realtime-metadata',
       sleepRequest: 'mirror:sleep-request',
+      avatarControl: 'mirror:avatar-control',
+      reportAvatarRuntime: 'mirror:report-avatar-runtime',
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)
@@ -392,6 +394,50 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       }),
     ]))
     expectNoSensitiveOutput({ start, disconnect, invalidStart, events: registered.events })
+  })
+
+  it('stores bounded avatar metrics and dispatches typed Console controls only to Mirror', async () => {
+    const registered = makeHarness()
+    const avatar = {
+      status: 'ready',
+      reason: 'cubism_avatar_ready',
+      state: 'Dormant',
+      fps: 60,
+      waveform: 0.25,
+      mouthOpen: 0.4,
+      audioUnderruns: 0,
+      voiceGain: 1,
+      musicGain: 0.22,
+    } as const
+
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)(
+      authorizedMirrorEvent(registered),
+      avatar,
+    )
+    const read = await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)(
+      authorizedEvent(registered),
+    )
+    const controlled = await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarControl)(
+      authorizedEvent(registered),
+      { type: 'state', state: 'Speaking' },
+    )
+
+    expect(read).toEqual({ ok: true, value: avatar })
+    expect(controlled).toEqual({ ok: true, value: avatar })
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(
+      MIRROR_IPC_CHANNELS.avatarControl,
+      { type: 'state', state: 'Speaking' },
+    )
+
+    const invalid = await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarControl)(
+      authorizedEvent(registered),
+      { type: 'voice_gain', value: 2 },
+    )
+    expect(invalid).toEqual({
+      ok: false,
+      error: 'console_request_invalid',
+      reason: 'cause=payload_schema_invalid',
+    })
   })
 
   it('preserves the real reason when disconnect is ignored outside an active session', async () => {

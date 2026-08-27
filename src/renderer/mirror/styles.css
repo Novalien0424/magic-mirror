@@ -15,6 +15,41 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
 }
 
+.avatar-stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 34%, rgb(38 38 53 / 76%), transparent 37%),
+    linear-gradient(180deg, #08090e 0%, #12111d 55%, #05060a 100%);
+}
+
+.avatar-stage__canvas {
+  position: absolute;
+  display: block;
+  aspect-ratio: 9 / 16;
+}
+
+.avatar-stage__fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  color: #d8d1ec;
+  text-align: center;
+  letter-spacing: 0.12em;
+  background:
+    radial-gradient(circle at center, rgb(87 66 111 / 48%), transparent 34%),
+    #090a10;
+}
+
+.avatar-stage__fallback-mark {
+  font-size: clamp(4rem, 12vw, 10rem);
+  color: #a68bd0;
+  filter: drop-shadow(0 0 1.2rem rgb(156 123 202 / 60%));
+}
+
 .screen {
   position: relative;
   display: flex;

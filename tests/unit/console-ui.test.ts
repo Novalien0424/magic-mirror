@@ -14,6 +14,7 @@ import type {
 
 const EXPECTED_TABS = [
   'Overview',
+  'Avatar / Audio',
   'Simulator',
   'Events',
   'Phase Tests',
@@ -72,7 +73,13 @@ const EVENT_QUERY_FIELDS = [
 
 type ConsoleUiBridge = Pick<
   ConsoleBridge,
-  'getOverview' | 'getEvents' | 'simulate' | 'startConversation' | 'disconnect' | 'getPhaseTests'
+  | 'getOverview'
+  | 'getEvents'
+  | 'simulate'
+  | 'startConversation'
+  | 'interrupt'
+  | 'disconnect'
+  | 'getPhaseTests'
 >
 
 const PHASE_RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
@@ -321,15 +328,22 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(html).toMatch(/Developer Mode.*disabled/i)
   })
 
-  it('exposes typed Start Conversation and Disconnect controls with metadata-only outcomes', () => {
+  it('exposes typed Start Conversation, Interrupt, and Disconnect controls with metadata-only outcomes', () => {
     const html = renderConsole()
     const startSource = bridgeCallSource('startConversation')
+    const interruptSource = bridgeCallSource('interrupt')
     const disconnectSource = bridgeCallSource('disconnect')
 
-    expect(CONSOLE_UI_CONTRACT.lifecycle.controls).toEqual(['Start Conversation', 'Disconnect'])
+    expect(CONSOLE_UI_CONTRACT.lifecycle.controls).toEqual([
+      'Start Conversation',
+      'Interrupt',
+      'Disconnect',
+    ])
     expect(html).toContain('Start Conversation')
+    expect(html).toContain('Interrupt')
     expect(html).toContain('Disconnect')
     expect(startSource).toMatch(/ok|error|reason/i)
+    expect(interruptSource).toMatch(/ok|error|reason/i)
     expect(disconnectSource).toMatch(/ok|error|reason/i)
     expect(CONSOLE_APP_SOURCE).toMatch(/console_lifecycle_action|Lifecycle action|action outcome/i)
   })

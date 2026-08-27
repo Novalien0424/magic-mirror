@@ -42,6 +42,7 @@ export interface CreateLipSyncDriverInput {
   readonly scheduler: AnimationFrameScheduler
   readonly envelope: LipSyncEnvelopeOptions
   readonly eventSink: (event: LipSyncDriverEvent) => void
+  readonly onMouthOpen?: (value: number) => void
 }
 
 function analyserSampleSize(fftSize: number): number {
@@ -127,6 +128,7 @@ export function createLipSyncDriver(input: CreateLipSyncDriverInput): LipSyncDri
 
     try {
       input.mouth.setMouthOpen(mouthOpen)
+      input.onMouthOpen?.(mouthOpen)
     } catch {
       halt('avatar_mouth_write_failed', false)
       return
@@ -146,6 +148,7 @@ export function createLipSyncDriver(input: CreateLipSyncDriverInput): LipSyncDri
       cancelPendingFrame()
       previousTimestampMs = null
       mouthOpen = 0
+      input.onMouthOpen?.(0)
       try {
         input.mouth.setMouthOpen(0)
       } catch {
