@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { bootSequence } from '../../src/main/boot'
 
 type ProbeStatus = 'available' | 'unavailable'
@@ -18,10 +18,14 @@ interface TestRuntimeOptions {
     readonly status: 'success'
     readonly reason: 'runtime_command_delivered'
   }
+  readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => unknown
+  readonly cancelRealtimeTimer?: (handle: unknown) => void
+  readonly isPackaged?: boolean
 }
 
 function createTestRuntime(options: TestRuntimeOptions = {}) {
   const runtime = bootSequence({
+    isPackaged: options.isPackaged,
     createTelemetry: () => ({
       emit() {},
       readPage: () => [],
@@ -58,6 +62,8 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
       status: 'success',
       reason: 'runtime_command_delivered',
     })),
+    scheduleRealtimeTimer: options.scheduleRealtimeTimer,
+    cancelRealtimeTimer: options.cancelRealtimeTimer,
   })
   return runtime
 }
@@ -109,6 +115,61 @@ describe('BootRuntime realtime runtime outcome reason', () => {
 })
 
 describe('BootRuntime configured model availability probe', () => {
+  it('owns one resettable 30-second Developer Mode idle timer and dispatches idle stop', async () => {
+    const timers = new Map<number, { callback: () => void; delayMs: number }>()
+    let nextHandle = 0
+    const cancelled: number[] = []
+    const operations: string[] = []
+    const runtime = createTestRuntime({
+      scheduleRealtimeTimer: (callback, delayMs) => {
+        const handle = ++nextHandle
+        timers.set(handle, { callback, delayMs })
+        return handle
+      },
+      cancelRealtimeTimer: (handle) => {
+        cancelled.push(handle as number)
+        timers.delete(handle as number)
+      },
+      dispatchRealtimeRuntimeCommand: (command) => {
+        operations.push(command.operation)
+        return { status: 'success', reason: 'runtime_command_delivered' }
+      },
+    })
+
+    await runtime.ready
+    await runtime.manualStart()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    const firstIdle = [...timers.entries()].find(([, timer]) => timer.delayMs === 30_000)
+    expect(firstIdle).toBeDefined()
+
+    runtime.noteRealtimeActivity('user_turn')
+    const activeIdleTimers = [...timers.entries()].filter(([, timer]) => timer.delayMs === 30_000)
+    expect(activeIdleTimers).toHaveLength(1)
+    expect(cancelled).toContain(firstIdle?.[0])
+
+    activeIdleTimers[0]?.[1].callback()
+    await vi.waitFor(() => expect(operations).toEqual(['start', 'stop']))
+    expect(runtime.snapshot().lifecycle).toBe('suspending')
+  })
+
+  it('keeps the published 300-second idle duration outside Developer Mode', async () => {
+    const delays: number[] = []
+    const runtime = createTestRuntime({
+      isPackaged: true,
+      scheduleRealtimeTimer: (_callback, delayMs) => {
+        delays.push(delayMs)
+        return delays.length
+      },
+      cancelRealtimeTimer: () => {},
+    })
+
+    await runtime.ready
+    await runtime.manualStart()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+
+    expect(delays).toContain(300_000)
+  })
+
   it('releases wake capture before Realtime start and reacquires only after renderer stop', async () => {
     const calls: string[] = []
     const runtime = createTestRuntime({

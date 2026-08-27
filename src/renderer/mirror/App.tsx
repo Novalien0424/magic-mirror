@@ -14,6 +14,7 @@ import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-
 import type { PlaybackCompletionScheduler } from '../realtime/playback-completion'
 import { createSessionCleanup, type SessionCleanupBoundary } from '../realtime/session-cleanup'
 import { TranscriptBuffer } from '../realtime/transcript-buffer'
+import { requestSleepAfterPlayback } from '../realtime/sleep-command'
 import type {
   RealtimeRuntimeCleanup,
   RealtimeRuntimeCleanupBoundary,
@@ -33,6 +34,7 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'reportRealtimeFailure'
   | 'onRealtimeRuntimeCommand'
   | 'onInterrupt'
+  | 'requestSleep'
 >
 type MirrorRealtimeMetadataBridge = Pick<MirrorBridge, 'reportRealtimeMetadata'>
 type MirrorRealtimeRuntimeOwner = Pick<
@@ -270,6 +272,7 @@ function hasMirrorRealtimeRuntimeBridge(
       typeof candidate.reportRealtimeRuntimeOutcome === 'function' &&
       typeof candidate.reportRealtimeMetadata === 'function' &&
       typeof candidate.reportRealtimeFailure === 'function' &&
+      typeof candidate.requestSleep === 'function' &&
       typeof candidate.onRealtimeRuntimeCommand === 'function' &&
       typeof candidate.onInterrupt === 'function'
     )
@@ -347,6 +350,18 @@ function createMirrorRealtimeRuntimeOwner(
       silenceThreshold: REALTIME_PLAYBACK_SILENCE_THRESHOLD,
       silentSamplesRequired: REALTIME_PLAYBACK_SILENT_SAMPLES_REQUIRED,
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
+    },
+    onCompletedInputTranscript: async ({ transcript, realtimeSessionId, waitForActualEnd }) => {
+      reportMirrorRealtimeMetadata(bridge, 'transcript', {
+        status: 'success',
+        reason: 'cause=transcript_available',
+        realtimeSessionId,
+      })
+      await requestSleepAfterPlayback({
+        transcript,
+        waitForActualEnd,
+        requestSleep: () => bridge.requestSleep(),
+      })
     },
   })
 }

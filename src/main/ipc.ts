@@ -43,6 +43,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
   reportRealtimeFailure: 'mirror:report-realtime-failure',
   reportRealtimeMetadata: 'mirror:report-realtime-metadata',
+  sleepRequest: 'mirror:sleep-request',
   ready: 'boot:renderer-ready',
 })
 
@@ -112,6 +113,8 @@ export interface RegisterIpcHandlersOptions {
     readonly handleRealtimeFailure?: (
       report: RealtimeFailureReport,
     ) => unknown | PromiseLike<unknown>
+    readonly requestSleep?: () => unknown | PromiseLike<unknown>
+    readonly noteRealtimeActivity?: (kind: 'user_turn' | 'assistant_playback') => void
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -1016,8 +1019,34 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
         ...(durationMs === undefined ? {} : { duration_ms: durationMs as number }),
         ...(sessionId === undefined ? {} : { session_id: sessionId as string }),
       })
+      if (status === 'success' && kind === 'transcript') {
+        runtime.noteRealtimeActivity?.('user_turn')
+      } else if (
+        kind === 'playback'
+        && (status === 'success' || status === 'degraded')
+      ) {
+        runtime.noteRealtimeActivity?.('assistant_playback')
+      }
     } catch {
       payloadRejected(telemetry)
+    }
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.sleepRequest, (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return
+    }
+    try {
+      const result = runtime.requestSleep?.()
+      void Promise.resolve(result).catch(() => undefined)
+    } catch {
+      // The runtime emits the bounded failure outcome.
     }
   })
 

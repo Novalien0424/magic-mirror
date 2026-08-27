@@ -195,6 +195,30 @@ describe("RealtimeSession adapter", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it('delivers completed input transcripts only inside the renderer session', () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    const listener = vi.fn<(transcript: string) => void>();
+    const dispose = handle.onInputTranscriptCompleted?.(listener);
+
+    probe.emit('transport_event', {
+      type: 'conversation.item.input_audio_transcription.completed',
+      realtimeSessionId: handle.realtimeSessionId,
+      transcript: '睡吧',
+    });
+    dispose?.();
+    probe.emit('transport_event', {
+      type: 'conversation.item.input_audio_transcription.completed',
+      realtimeSessionId: handle.realtimeSessionId,
+      transcript: 'second private turn',
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith('睡吧');
+    expect(JSON.stringify(eventSink.mock.calls)).not.toContain('睡吧');
+  });
+
   it("reports observer failures without failing the session", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();

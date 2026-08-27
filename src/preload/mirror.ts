@@ -26,6 +26,7 @@ const INTERRUPT_CHANNEL = 'mirror:interrupt' as const
 const REPORT_REALTIME_RUNTIME_OUTCOME_CHANNEL = 'mirror:report-realtime-runtime-outcome' as const
 const REPORT_REALTIME_FAILURE_CHANNEL = 'mirror:report-realtime-failure' as const
 const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as const
+const SLEEP_REQUEST_CHANNEL = 'mirror:sleep-request' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -260,6 +261,10 @@ const bridge: MirrorBridge = {
     const sessionId = readMetadataScalar(report, 'sessionId')
     if (sessionId !== undefined) dto.sessionId = sessionId
     ipcRenderer.send(REPORT_REALTIME_METADATA_CHANNEL, Object.freeze(dto))
+  },
+
+  requestSleep(): void {
+    ipcRenderer.send(SLEEP_REQUEST_CHANNEL)
   },
 
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void {

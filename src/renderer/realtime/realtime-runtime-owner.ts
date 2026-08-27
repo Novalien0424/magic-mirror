@@ -148,6 +148,11 @@ export interface RealtimeRuntimeOwnerDependencies {
     analyser: object,
   ) => RealtimeRuntimePlaybackCompletion
   readonly eventSink?: RealtimeRuntimeEventSink
+  readonly onCompletedInputTranscript?: (input: {
+    readonly transcript: string
+    readonly realtimeSessionId: string
+    readonly waitForActualEnd: () => Promise<PlaybackCompletionResult>
+  }) => MaybePromise<void>
 }
 
 export interface RealtimeRuntimeSnapshot {
@@ -304,6 +309,33 @@ export function createRealtimeRuntimeOwner(
     }
   }
 
+  const observeCompletedTranscripts = (owned: OwnedResources): void => {
+    const subscribe = owned.session.onInputTranscriptCompleted
+    const handler = dependencies.onCompletedInputTranscript
+    if (subscribe === undefined || handler === undefined) return
+    subscribe.call(owned.session, (transcript) => {
+      if (current?.session !== owned.session || state !== 'active') return
+      const completionFactory = dependencies.createPlaybackCompletion
+      const analyser = owned.audioOutput.analyser
+      const waitForActualEnd = async (): Promise<PlaybackCompletionResult> => {
+        if (completionFactory === undefined || analyser === undefined) {
+          throw new Error('playback_completion_unavailable')
+        }
+        return completionFactory(owned.playbackTransport, analyser)
+          .waitForActualEnd(new AbortController().signal)
+      }
+      try {
+        void Promise.resolve(handler({
+          transcript,
+          realtimeSessionId: owned.identity.realtimeSessionId,
+          waitForActualEnd,
+        })).catch(() => undefined)
+      } catch {
+        // Transcript control handling must not gate the voice session.
+      }
+    })
+  }
+
   const stopStream = async (
     stream: MediaStream,
     report: CleanupReport,
@@ -423,6 +455,7 @@ export function createRealtimeRuntimeOwner(
         identity,
       }
       state = 'active'
+      observeCompletedTranscripts(current)
       return result('start', 'success', 'started')
     } catch {
       const reason = stage === 'connect' && partial.session !== undefined
@@ -593,6 +626,7 @@ export function createRealtimeRuntimeOwner(
       identity: freezeIdentity(bundle.identity),
     }
     state = 'active'
+    observeCompletedTranscripts(current)
     return result(
       'rollover',
       'success',

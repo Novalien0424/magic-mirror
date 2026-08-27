@@ -796,6 +796,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       reportRealtimeFailure: 'mirror:report-realtime-failure',
       reportRealtimeMetadata: REPORT_REALTIME_METADATA_CHANNEL,
+      sleepRequest: 'mirror:sleep-request',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',

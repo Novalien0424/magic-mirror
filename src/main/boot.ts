@@ -288,6 +288,8 @@ export interface BootRuntime {
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
+  requestSleep(): Promise<Record<string, unknown>>
+  noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback'): void
   rolloverAtSafeBoundary(): Promise<Record<string, unknown>>
   handleSimulator(command: unknown): Promise<SimulatorResult>
   /** Main-owned phase-record writer; never exposed through renderer IPC. */
@@ -850,6 +852,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let realtimeRolloverTimerHandle: unknown = null
   let realtimeRolloverTimerOwned = false
   let realtimeRolloverTimerToken = 0
+  let realtimeIdleTimerHandle: unknown = null
+  let realtimeIdleTimerOwned = false
+  let realtimeIdleTimerToken = 0
+  let activeIdleSeconds = 300
   let recoveryProbeCycle: RecoveryProbeCycle | null = null
   let recoveryProbeCycleToken = 0
   const scheduleRealtimeTimer = options.scheduleRealtimeTimer
@@ -978,6 +984,59 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
   }
 
+  function cancelRealtimeIdleTimer(): void {
+    const owned = realtimeIdleTimerOwned
+    const handle = realtimeIdleTimerHandle
+    realtimeIdleTimerOwned = false
+    realtimeIdleTimerHandle = null
+    realtimeIdleTimerToken += 1
+    if (!owned) return
+    try {
+      cancelRealtimeTimer(handle)
+    } catch {
+      emitMetadata(telemetry, {
+        module: 'app', event: 'idle_timer', status: 'failed',
+        reason: 'cause=timer_cancel_failed', source: 'runtime',
+      })
+    }
+  }
+
+  function configuredIdleSeconds(): number {
+    return developerMode.enabled ? Math.min(activeIdleSeconds, 30) : activeIdleSeconds
+  }
+
+  function armRealtimeIdleTimer(reason: string): void {
+    cancelRealtimeIdleTimer()
+    if (lifecycleState() !== 'active') return
+    const token = realtimeIdleTimerToken + 1
+    realtimeIdleTimerToken = token
+    realtimeIdleTimerOwned = true
+    try {
+      realtimeIdleTimerHandle = scheduleRealtimeTimer(() => {
+        if (!realtimeIdleTimerOwned || realtimeIdleTimerToken !== token) return
+        realtimeIdleTimerOwned = false
+        realtimeIdleTimerHandle = null
+        void stopRealtime('idle_timeout').catch(() => undefined)
+      }, configuredIdleSeconds() * 1_000)
+      emitMetadata(telemetry, {
+        module: 'app', event: 'idle_timer', status: 'info',
+        reason: `reset=${reason};duration_seconds=${configuredIdleSeconds()}`,
+        source: 'runtime',
+      })
+    } catch {
+      realtimeIdleTimerOwned = false
+      realtimeIdleTimerHandle = null
+      emitMetadata(telemetry, {
+        module: 'app', event: 'idle_timer', status: 'failed',
+        reason: 'cause=timer_schedule_failed', source: 'runtime',
+      })
+    }
+  }
+
+  function noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback'): void {
+    if (lifecycleState() === 'active') armRealtimeIdleTimer(kind)
+  }
+
   function authoritativeRealtimeSessionIdentity(): Readonly<RealtimeSessionIdentity> | null {
     const { realtimeSessionId, sessionGeneration } = lifecycleView.context
     const safeRealtimeSessionId = safeIdentifier(realtimeSessionId)
@@ -1046,10 +1105,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       || event.type === 'LOCAL_CORE_FAILED'
       || event.type === 'MEDIA_CLOSED'
       || event.type === 'SLEEP_REQUESTED'
+      || event.type === 'IDLE_TIMEOUT'
     if (clearsPendingIdentity) pendingRealtimeSessionIdentity = null
     if (clearsRollover) {
       pendingRealtimeRolloverSessionIdentity = null
       cancelRealtimeRolloverTimer()
+      cancelRealtimeIdleTimer()
     }
     if (actor === null) return false
     try {
@@ -1384,6 +1445,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     try {
       configSlots = await configInitializer.initialize()
+      const configuredIdle = readProperty(readProperty(configSlots, 'active'), 'idleSeconds')
+      if (typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle > 0) {
+        activeIdleSeconds = configuredIdle
+      }
       const activeVersion = readProperty(readProperty(configSlots, 'active'), 'configVersion')
       if (typeof activeVersion === 'number' && Number.isSafeInteger(activeVersion) && activeVersion >= 1) {
         configVersion = activeVersion
@@ -1629,6 +1694,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     pendingRealtimeRolloverSessionIdentity = null
     cancelRecoveryProbeCycle()
     cancelRealtimeRolloverTimer()
+    cancelRealtimeIdleTimer()
     shutdownPromise = (async () => {
       try {
         await ready
@@ -2128,19 +2194,21 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return emitRealtimeRuntimeResult('start', dispatchResult.status, dispatchResult.reason)
   }
 
-  async function manualStop(): Promise<Record<string, unknown>> {
+  async function stopRealtime(
+    cause: 'manual_stop' | 'sleep_command' | 'idle_timeout',
+  ): Promise<Record<string, unknown>> {
     await ready
     lastRealtimeRuntimeOutcomeReason = null
     const dispatch = options.dispatchRealtimeRuntimeCommand
     if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
 
     if (lifecycleState() !== 'active') {
-      return emitRealtimeRuntimeResult('stop', 'ignored', 'manual_stop_requires_active')
+      return emitRealtimeRuntimeResult('stop', 'ignored', `${cause}_requires_active`)
     }
 
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
-    if (!sendLifecycle({ type: 'SLEEP_REQUESTED' })) {
+    if (!sendLifecycle({ type: cause === 'idle_timeout' ? 'IDLE_TIMEOUT' : 'SLEEP_REQUESTED' })) {
       recordRealtimeStopFailure()
       return emitRealtimeRuntimeResult('stop', 'failed', 'runtime_command_send_failed')
     }
@@ -2162,6 +2230,14 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       recordRealtimeStopFailure()
     }
     return emitRealtimeRuntimeResult('stop', dispatchResult.status, dispatchResult.reason)
+  }
+
+  function manualStop(): Promise<Record<string, unknown>> {
+    return stopRealtime('manual_stop')
+  }
+
+  function requestSleep(): Promise<Record<string, unknown>> {
+    return stopRealtime('sleep_command')
   }
 
   function commitRealtimeStop(reason: string): Record<string, unknown> {
@@ -2235,6 +2311,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         refreshSnapshot()
         notifyListeners()
         armRealtimeRolloverTimer()
+        armRealtimeIdleTimer('realtime_rollover')
         return emitRealtimeRuntimeResult('rollover', 'success', reason)
       }
 
@@ -2264,6 +2341,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         refreshSnapshot()
         notifyListeners()
         armRealtimeRolloverTimer()
+        armRealtimeIdleTimer('realtime_started')
         return emitRealtimeRuntimeResult('start', 'success', reason)
       }
 
@@ -2325,6 +2403,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       sessionGeneration,
     })
     cancelRealtimeRolloverTimer()
+    cancelRealtimeIdleTimer()
 
     let dispatchResult: RealtimeRuntimeCommandDispatchResult
     try {
@@ -2366,6 +2445,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       }
       configVersion = activeVersion
       resolvedModelSettings = resolution
+      const configuredIdle = readProperty(readProperty(slots, 'active'), 'idleSeconds')
+      if (typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle > 0) {
+        activeIdleSeconds = configuredIdle
+      }
       refreshSnapshot()
       notifyListeners()
       return { ok: true, configVersion: activeVersion, resolution }
@@ -2418,6 +2501,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     scheduleRecoveryProbes,
     manualStart,
     manualStop,
+    requestSleep,
+    noteRealtimeActivity,
     rolloverAtSafeBoundary,
     subscribe(listener) {
       listeners.add(listener)

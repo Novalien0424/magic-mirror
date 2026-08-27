@@ -27,6 +27,7 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'user_requested',
   'output_playback_listener_failed',
   'output_playback_subscription_closed',
+  'transcript_listener_failed',
 ] as const)
 
 export type RealtimeMetadataReason = (typeof REALTIME_METADATA_REASONS)[number]

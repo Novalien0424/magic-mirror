@@ -90,6 +90,7 @@ export interface MirrorChannelMap {
   readonly reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome'
   readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
   readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
+  readonly sleepRequest: 'mirror:sleep-request'
   readonly ready: BootChannel
 }
 
@@ -134,6 +135,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
   reportRealtimeFailure(report: RealtimeFailureReport): void
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
+  requestSleep(): void
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
 }

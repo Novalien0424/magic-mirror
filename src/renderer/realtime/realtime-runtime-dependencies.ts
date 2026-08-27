@@ -154,6 +154,7 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
     'transport' | 'analyser'
   >
   readonly createPlaybackCompletion?: RealtimeRuntimeOwnerDependencies['createPlaybackCompletion']
+  readonly onCompletedInputTranscript?: RealtimeRuntimeOwnerDependencies['onCompletedInputTranscript']
 }
 
 function wrapMicOwner(micOwner: MicOwner): RealtimeRuntimeMicOwner {
@@ -252,6 +253,7 @@ export function createRealtimeRuntimeOwnerDependencies(
     createCleanup: input.createCleanup,
     createPlaybackCompletion: playbackCompletionFactory,
     eventSink: input.eventSink,
+    onCompletedInputTranscript: input.onCompletedInputTranscript,
   }
 }
 
