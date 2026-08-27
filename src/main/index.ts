@@ -126,6 +126,10 @@ function spawnWakeWorker(): WakeWorkerChild {
 }
 
 async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+  if (
+    typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
+    || typeof runtime.setWakeRuntimeStatus !== 'function'
+  ) return
   let wake: Awaited<ReturnType<BootRuntime['getPublishedWakeConfigForRuntime']>>
   try {
     wake = await runtime.getPublishedWakeConfigForRuntime()

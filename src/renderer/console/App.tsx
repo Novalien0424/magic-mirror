@@ -399,8 +399,15 @@ function ModuleCard({
   )
 }
 
-function OverviewPanel({ state }: { readonly state: OverviewState }): React.JSX.Element {
+function OverviewPanel({
+  state,
+  configState,
+}: {
+  readonly state: OverviewState
+  readonly configState: ConfigState
+}): React.JSX.Element {
   const overview = state.status === 'success' ? state.value : null
+  const activeConfig = configState.status === 'success' ? configState.value.active : null
   const audioTcc = overview?.audioTcc ?? 'not_checked'
   const cameraTcc = overview?.cameraTcc ?? 'not_checked'
 
@@ -413,6 +420,26 @@ function OverviewPanel({ state }: { readonly state: OverviewState }): React.JSX.
         </div>
         <span className="console__status console__status--mock">{CONSOLE_UI_CONTRACT.overview.readinessLabel}</span>
       </div>
+
+      <article className="console__module-card" aria-label="Wake lifecycle">
+        <div className="console__module-heading">
+          <strong>Wake lifecycle</strong>
+          <span className={statusClass(overview?.modules.wake.status ?? 'not_implemented')}>
+            {overview?.modules.wake.status ?? 'not_implemented'}
+          </span>
+        </div>
+        <dl className="console__summary-fields">
+          <MetadataEntry name="phrase" value={activeConfig?.wake.phrase} />
+          <MetadataEntry name="package" value={activeConfig?.wake.packageId} />
+          <MetadataEntry name="model version" value={activeConfig?.wake.modelVersion} />
+          <MetadataEntry
+            name="mic owner"
+            value={overview === null ? undefined : overview.lifecycle === 'active' ? 'realtime' : overview.lifecycle === 'dormant' || overview.lifecycle === 'offlineLoop' ? 'wake' : 'handoff'}
+          />
+          <MetadataEntry name="idle timer" value={overview === null ? undefined : overview.lifecycle === 'active' ? 'armed' : 'cancelled'} />
+          <MetadataEntry name="idle seconds" value={activeConfig?.idleSeconds} />
+        </dl>
+      </article>
 
       {state.status === 'loading' ? (
         <p className="console__request-state" aria-live="polite">Loading Overview…</p>
@@ -1192,7 +1219,7 @@ export function App(): React.JSX.Element {
     events: [],
     nextBeforeSequence: null,
   })
-  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('1')
+  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('2')
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
@@ -1542,7 +1569,9 @@ export function App(): React.JSX.Element {
       </nav>
 
       <div className="console__panels">
-        <div hidden={activePage !== 'Overview'}><OverviewPanel state={overviewState} /></div>
+        <div hidden={activePage !== 'Overview'}>
+          <OverviewPanel state={overviewState} configState={configState} />
+        </div>
         <div hidden={activePage !== 'Simulator'}>
           <SimulatorPanel
             developerMode={developerMode}
@@ -1571,9 +1600,10 @@ export function App(): React.JSX.Element {
               value={selectedPhase}
               onChange={(event) => {
                 const nextPhase = event.currentTarget.value
-                if (nextPhase === '0' || nextPhase === '1') setSelectedPhase(nextPhase)
+                if (nextPhase === '0' || nextPhase === '1' || nextPhase === '2') setSelectedPhase(nextPhase)
               }}
             >
+              <option value="2">Phase 2</option>
               <option value="1">Phase 1</option>
               <option value="0">Phase 0</option>
             </select>

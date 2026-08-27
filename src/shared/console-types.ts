@@ -132,7 +132,7 @@ export interface ConsoleEventsPage {
   readonly nextBeforeSequence: number | null
 }
 
-export type PhaseTestPhase = '0' | '1'
+export type PhaseTestPhase = '0' | '1' | '2'
 
 type Phase0TestRecord = {
   readonly phase: '0'
@@ -152,7 +152,16 @@ type Phase1TestRecord = {
   readonly note: string
 }
 
-export type PhaseTestRecord = Phase0TestRecord | Phase1TestRecord
+type Phase2TestRecord = {
+  readonly phase: '2'
+  readonly demoId: 'P2-D1' | 'P2-D2' | 'P2-D3' | 'P2-D4' | 'P2-D5'
+  readonly build: string
+  readonly time: string
+  readonly result: 'passed' | 'failed' | 'mock_passed' | 'not_executed'
+  readonly note: string
+}
+
+export type PhaseTestRecord = Phase0TestRecord | Phase1TestRecord | Phase2TestRecord
 
 export interface PhaseTestRecordReader {
   read(phase: PhaseTestPhase): readonly PhaseTestRecord[] | PromiseLike<readonly PhaseTestRecord[]>

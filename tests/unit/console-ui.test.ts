@@ -78,6 +78,12 @@ type ConsoleUiBridge = Pick<
 const PHASE_RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
 const CANONICAL_PHASE_0_TIME = '2026-08-22T00:00:00.000Z'
 const CANONICAL_PHASE_1_TIME = '2026-08-23T00:00:00.000Z'
+const CANONICAL_PHASE_2_TIME = '2026-08-27T00:00:00.000Z'
+
+const P2_D1_NOT_EXECUTED = {
+  phase: '2', demoId: 'P2-D1', build: 'phase2-build-canonical',
+  time: CANONICAL_PHASE_2_TIME, result: 'not_executed', note: 'live_evidence_not_executed',
+} as const satisfies PhaseTestRecord
 
 const P1_D1_NOT_EXECUTED = {
   phase: '1',
@@ -205,6 +211,15 @@ function classTokens(markup: string): string[] {
 }
 
 describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
+  it('shows the configured wake package, mic owner, and idle timer in one bounded card', () => {
+    expect(CONSOLE_APP_SOURCE).toMatch(/Wake lifecycle/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/wake\.phrase/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/wake\.packageId/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/wake\.modelVersion/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/mic owner/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/idle timer/)
+  })
+
   it('renders exactly the six Console tabs and exposes the phase-exit Phase Tests ownership sentence', () => {
     const html = renderConsole()
 
@@ -319,24 +334,24 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(CONSOLE_APP_SOURCE).toMatch(/console_lifecycle_action|Lifecycle action|action outcome/i)
   })
 
-  it('defaults Phase Tests to controlled Phase 1, requests it once, and renders pending P1-D1 metadata', () => {
-    const html = renderPhaseRecord(P1_D1_NOT_EXECUTED)
+  it('defaults Phase Tests to controlled Phase 2, requests it once, and renders pending P2-D1 metadata', () => {
+    const html = renderPhaseRecord(P2_D1_NOT_EXECUTED)
     const panelSource = phaseTestsPanelSource()
     const selectorSource = phaseSelectorSource()
     const phaseTestCalls = CONSOLE_APP_SOURCE.match(/(?:\bbridge|\bmagicMirror|window\.magicMirror)\.getPhaseTests\s*\(/g) ?? []
 
-    expect(CONSOLE_APP_SOURCE).toMatch(/useState<PhaseTestPhase>\(\s*['"]1['"]\s*\)/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/useState<PhaseTestPhase>\(\s*['"]2['"]\s*\)/)
     expect(phaseTestCalls).toHaveLength(1)
     expect(bridgeCallArguments('getPhaseTests')).toMatch(/(?:selectedPhase|requestedPhase|phase)/i)
     expect(selectorSource).toMatch(/value=\{[^}]+\}/)
     expect(selectorSource).toMatch(/onChange=/)
 
-    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?1/i)
-    expect(html).toMatch(/Latest validated Phase 1 record/i)
-    expect(html).toContain(P1_D1_NOT_EXECUTED.demoId)
-    expect(html).toContain(P1_D1_NOT_EXECUTED.build)
-    expect(html).toContain(P1_D1_NOT_EXECUTED.time)
-    expect(html).toContain(P1_D1_NOT_EXECUTED.note)
+    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?2/i)
+    expect(html).toMatch(/Latest validated Phase 2 record/i)
+    expect(html).toContain(P2_D1_NOT_EXECUTED.demoId)
+    expect(html).toContain(P2_D1_NOT_EXECUTED.build)
+    expect(html).toContain(P2_D1_NOT_EXECUTED.time)
+    expect(html).toContain(P2_D1_NOT_EXECUTED.note)
     expect(html).toContain('Not executed')
     expect(html).not.toMatch(/Phase 0|Task 10 owns/i)
     expect(panelSource).not.toMatch(/Latest validated Phase 0|Task 10 owns|No Phase 0/i)
@@ -346,11 +361,12 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(notExecutedMarkup).toMatch(/console__muted|console__notice|console__status--disabled|console__status--not-executed/)
   })
 
-  it('exposes exactly Phase 1 and Phase 0, switches to phase 0, and renders real P0-D1 evidence', () => {
+  it('exposes Phases 2, 1, and 0, switches to phase 0, and renders real P0-D1 evidence', () => {
     const selectorSource = phaseSelectorSource()
     const html = renderPhaseRecord(P0_D1_PASSED)
 
-    expect(selectorSource.match(/<option\b/g) ?? []).toHaveLength(2)
+    expect(selectorSource.match(/<option\b/g) ?? []).toHaveLength(3)
+    expect(selectorSource).toMatch(/<option\s+value=["']2["']\s*>\s*Phase 2\s*<\/option>/)
     expect(selectorSource).toMatch(/<option\s+value=["']1["']\s*>\s*Phase 1\s*<\/option>/)
     expect(selectorSource).toMatch(/<option\s+value=["']0["']\s*>\s*Phase 0\s*<\/option>/)
     expect(selectorSource).toMatch(/value=\{[^}]*phase[^}]*\}/i)

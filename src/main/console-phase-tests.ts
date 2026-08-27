@@ -12,8 +12,10 @@ const MAX_METADATA_LENGTH = 2048
 const RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
 const PHASE_0_DEMO_IDS: ReadonlySet<string> = new Set(['P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5'])
 const PHASE_1_DEMO_IDS: ReadonlySet<string> = new Set(['P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'])
+const PHASE_2_DEMO_IDS: ReadonlySet<string> = new Set(['P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5'])
 const PHASE_0_RESULTS: ReadonlySet<string> = new Set(['passed', 'failed', 'mock_passed'])
 const PHASE_1_RESULTS: ReadonlySet<string> = new Set(['passed', 'failed', 'mock_passed', 'not_executed'])
+const PHASE_2_RESULTS = PHASE_1_RESULTS
 const CANONICAL_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
 type PhaseTestsFailureReason = 'cause=reader_failed' | 'cause=record_invalid'
@@ -118,6 +120,18 @@ function validateRecord(value: unknown, selectedPhase: PhaseTestPhase): PhaseTes
       build,
       time,
       result: result as Extract<PhaseTestRecord, { readonly phase: '1' }>['result'],
+      note,
+    }
+  }
+
+  if (selectedPhase === '2') {
+    if (!PHASE_2_DEMO_IDS.has(demoId) || !PHASE_2_RESULTS.has(result)) return null
+    return {
+      phase: '2',
+      demoId: demoId as Extract<PhaseTestRecord, { readonly phase: '2' }>['demoId'],
+      build,
+      time,
+      result: result as Extract<PhaseTestRecord, { readonly phase: '2' }>['result'],
       note,
     }
   }

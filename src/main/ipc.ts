@@ -690,7 +690,7 @@ function eventArgsAreEmpty(args: readonly unknown[]): boolean {
 }
 
 function isPhaseTestPhase(value: unknown): value is PhaseTestPhase {
-  return value === '0' || value === '1'
+  return value === '0' || value === '1' || value === '2'
 }
 
 function cloneProjectedSnapshot(value: unknown): AppSnapshot {

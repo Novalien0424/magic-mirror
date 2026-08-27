@@ -138,6 +138,23 @@ const latestRecord = makeRecord(1, {
 })
 
 describe('Phase 0 Task 9 Gate 9C.1 Phase Tests Main adapter RED contract', () => {
+  it('accepts bounded Phase 2 demo evidence without changing the default phase', async () => {
+    const common = makeCommon()
+    const record = {
+      phase: '2', demoId: 'P2-D1', build: 'phase2-build',
+      time: '2026-08-27T00:00:00.000Z', result: 'not_executed', note: 'target_mac_pending',
+    } as const
+    const controller = createConsolePhaseTests({
+      ...commonDependencies(common),
+      reader: { read: vi.fn(() => [record]) },
+    })
+
+    await expect(controller.get('2')).resolves.toMatchObject({
+      ok: true,
+      value: { phase: '2', latest: record, records: [record] },
+    })
+  })
+
   it('defaults to Phase 0, reads phase 0, and preserves the existing Phase 0 payload', async () => {
     const common = makeCommon()
     const read = vi.fn(() => [olderRecord, latestRecord])
