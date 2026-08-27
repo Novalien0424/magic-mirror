@@ -9,6 +9,10 @@ function flushPromises(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve))
 }
 
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 describe('phase 1 live smoke coordinator', () => {
   it('requires an exact safe provenance snapshot', () => {
     const snapshot = {
@@ -50,6 +54,7 @@ describe('phase 1 live smoke coordinator', () => {
       manualStop: async () => ({ status: 'success', reason: 'runtime_command_delivered' }),
       emitResult: (result) => results.push(result),
       stageTimeoutMs: 1_000,
+      activeHoldMs: 1,
     })
 
     coordinator.start()
@@ -90,6 +95,7 @@ describe('phase 1 live smoke coordinator', () => {
       },
       emitResult: (result) => results.push(result),
       stageTimeoutMs: 1_000,
+      activeHoldMs: 1,
     })
 
     coordinator.start()
@@ -101,7 +107,7 @@ describe('phase 1 live smoke coordinator', () => {
 
     lifecycle = 'active'
     for (const listener of listeners) listener({ lifecycle })
-    await flushPromises()
+    await delay(5)
     expect(calls).toEqual(['manual_start', 'manual_stop'])
 
     lifecycle = 'dormant'
@@ -115,6 +121,56 @@ describe('phase 1 live smoke coordinator', () => {
         modelAvailability: 'probe_failed',
       }),
     ])
+  })
+
+  it('holds the real session active before stopping so delayed transport failures are observable', async () => {
+    let lifecycle = 'dormant'
+    const listeners = new Set<(snapshot: { lifecycle: string }) => void>()
+    const scheduled: Array<{ callback: () => void; delayMs: number; cleared: boolean }> = []
+    const calls: string[] = []
+    const coordinator = createPhase1LiveSmokeCoordinator({
+      getSnapshot: () => ({ lifecycle }),
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return { unsubscribe: () => listeners.delete(listener) }
+      },
+      manualStart: async () => {
+        calls.push('manual_start')
+        return { status: 'success', reason: 'runtime_command_delivered' }
+      },
+      manualStop: async () => {
+        calls.push('manual_stop')
+        return { status: 'success', reason: 'runtime_command_delivered' }
+      },
+      emitResult: () => {},
+      stageTimeoutMs: 60_000,
+      activeHoldMs: 10_000,
+      scheduleTimeout: (callback, delayMs) => {
+        const entry = { callback, delayMs, cleared: false }
+        scheduled.push(entry)
+        return entry
+      },
+      clearScheduledTimeout: (handle) => {
+        if (typeof handle === 'object' && handle !== null && 'cleared' in handle) {
+          ;(handle as { cleared: boolean }).cleared = true
+        }
+      },
+    })
+
+    coordinator.start()
+    coordinator.onMirrorRendererReady()
+    await flushPromises()
+    lifecycle = 'active'
+    for (const listener of listeners) listener({ lifecycle })
+    await delay(5)
+
+    expect(calls).toEqual(['manual_start'])
+    const hold = scheduled.find(({ delayMs, cleared }) => delayMs === 10_000 && !cleared)
+    expect(hold).toBeDefined()
+
+    hold?.callback()
+    await flushPromises()
+    expect(calls).toEqual(['manual_start', 'manual_stop'])
   })
 
   it('starts the model probe concurrently and records its fixed enum result', async () => {
@@ -148,6 +204,7 @@ describe('phase 1 live smoke coordinator', () => {
       },
       emitResult: (result) => results.push(result),
       stageTimeoutMs: 1_000,
+      activeHoldMs: 1,
     })
 
     coordinator.start()
@@ -159,7 +216,7 @@ describe('phase 1 live smoke coordinator', () => {
 
     lifecycle = 'active'
     for (const listener of listeners) listener({ lifecycle })
-    await flushPromises()
+    await delay(5)
     expect(calls).toEqual(['manual_start', 'manual_stop'])
 
     lifecycle = 'dormant'
@@ -227,6 +284,7 @@ describe('phase 1 live smoke coordinator', () => {
       },
       emitResult: (result) => results.push(result),
       stageTimeoutMs: 1_000,
+      activeHoldMs: 10_000,
       scheduleTimeout: (callback, delayMs) => {
         const entry = { callback, delayMs, cleared: false }
         scheduled.push(entry)
@@ -246,6 +304,10 @@ describe('phase 1 live smoke coordinator', () => {
 
     lifecycle = 'active'
     for (const listener of listeners) listener({ lifecycle })
+    await delay(5)
+    const activeHold = scheduled.find(({ delayMs, cleared }) => delayMs === 10_000 && !cleared)
+    expect(activeHold).toBeDefined()
+    activeHold?.callback()
     await flushPromises()
     expect(calls).toEqual(['manual_start', 'manual_stop'])
 

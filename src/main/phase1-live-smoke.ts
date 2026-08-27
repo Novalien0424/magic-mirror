@@ -73,6 +73,7 @@ export interface Phase1LiveSmokeCoordinatorOptions {
   readonly manualStop: () => Promise<Record<string, unknown>>
   readonly emitResult: (result: Phase1LiveSmokeResult) => void
   readonly stageTimeoutMs?: number
+  readonly activeHoldMs?: number
   readonly now?: () => number
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => unknown
   readonly clearScheduledTimeout?: (handle: unknown) => void
@@ -86,6 +87,9 @@ export function createPhase1LiveSmokeCoordinator(
   const stageTimeoutMs = Number.isFinite(options.stageTimeoutMs) && (options.stageTimeoutMs ?? 0) > 0
     ? Math.max(1, Math.floor(options.stageTimeoutMs ?? 0))
     : 60_000
+  const activeHoldMs = Number.isFinite(options.activeHoldMs) && (options.activeHoldMs ?? 0) > 0
+    ? Math.max(1, Math.floor(options.activeHoldMs ?? 0))
+    : 10_000
   const now = options.now ?? (() => Date.now())
   const scheduleTimeout = options.scheduleTimeout
     ?? ((callback: () => void, delayMs: number): unknown => setTimeout(callback, delayMs))
@@ -98,6 +102,7 @@ export function createPhase1LiveSmokeCoordinator(
   let rendererReady = false
   let startTime = 0
   let stage: Phase1LiveSmokeStage = 'renderer_ready'
+  let activeHoldStarted = false
   let timeoutHandle: unknown = null
   let subscription: { unsubscribe(): void } | null = null
   let modelAvailability: Phase1LiveSmokeModelAvailability = 'probe_failed'
@@ -264,6 +269,22 @@ export function createPhase1LiveSmokeCoordinator(
     armTimeout(timeoutReason)
   }
 
+  function beginActiveHold(): void {
+    if (activeHoldStarted || finished) return
+    activeHoldStarted = true
+    clearTimeoutHandle()
+    try {
+      timeoutHandle = scheduleTimeout(() => {
+        timeoutHandle = null
+        if (finished) return
+        setStage('stop', 'stop_request_timeout')
+        void requestStop()
+      }, activeHoldMs)
+    } catch {
+      fail('active', 'timer_setup_failed')
+    }
+  }
+
   function isSuccessfulAction(value: unknown): boolean {
     return typeof value === 'object'
       && value !== null
@@ -299,8 +320,7 @@ export function createPhase1LiveSmokeCoordinator(
     }
 
     if (stage === 'active' && snapshot.lifecycle === 'active') {
-      setStage('stop', 'stop_request_timeout')
-      void requestStop()
+      beginActiveHold()
       return
     }
     if (stage === 'dormant' && snapshot.lifecycle === 'dormant') {

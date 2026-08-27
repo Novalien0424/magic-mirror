@@ -143,6 +143,42 @@ describe("RealtimeSession adapter", () => {
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain("mock-realtime-dialogue-v1");
   });
 
+  it("preserves a classified transport-event failure and reports a valid runtime reason", async () => {
+    const probe = makeAdapterProbe();
+    let rejectConnect!: (reason: unknown) => void;
+    probe.connect.mockReturnValueOnce(new Promise<void>((_resolve, reject) => {
+      rejectConnect = reject;
+    }));
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const onFailure = vi.fn();
+    const handle = createRealtimeSession({
+      ...makeSessionInput(makeSnapshot(), eventSink, probe),
+      onFailure,
+    });
+
+    const connecting = handle.connect();
+    probe.emit("transport_event", {
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        code: "invalid_value",
+        param: "session.reasoning.effort",
+      },
+      realtimeSessionId: handle.realtimeSessionId,
+    });
+    rejectConnect(new Error("opaque-provider-detail"));
+
+    await expect(connecting).rejects.toMatchObject({ reason: "connect_failed" });
+    expect(handle.getLastConnectFailureToken?.()).toBe(
+      "start_connect_bad_request_session_reasoning_effort",
+    );
+    expect(onFailure).toHaveBeenCalledWith({
+      kind: "connect",
+      realtimeSessionId: "session-a",
+      reason: "start_connect_bad_request_session_reasoning_effort",
+    });
+  });
+
   it("keeps runtime model catalogs out of source diagnostics", async () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(

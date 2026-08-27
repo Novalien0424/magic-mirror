@@ -402,18 +402,18 @@ describe('ConfigService contract', () => {
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      configVersion: 1,
+      configVersion: 4,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
       },
-      voice: 'marin',
+      voice: 'cedar',
       ...V2_BASELINE,
       idleSeconds: 300,
       aiModels: {
-        realtimeDialogue: { modelId: 'gpt-realtime-2.1' },
+        realtimeDialogue: { modelId: 'gpt-realtime-2.1-mini' },
         inputTranscription: { modelId: 'gpt-live-transcribe' },
-        memoryExtractor: { modelId: 'mock-memory-extractor-v1' },
+        memoryExtractor: { modelId: 'gpt-5.6-luna' },
       },
       wake: {
         phrase: 'mock-wake-phrase-v1',
@@ -458,10 +458,10 @@ describe('ConfigService contract', () => {
     }
     walkKeys(resource)
     const aiModels = resource.aiModels as Record<string, { modelId: string }>
-    expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1')
-    expect(aiModels.realtimeDialogue.modelId).not.toMatch(/^mock-/)
+    expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1-mini')
     expect(aiModels.inputTranscription.modelId).toBe('gpt-live-transcribe')
-    expect(aiModels.memoryExtractor.modelId).toBe('mock-memory-extractor-v1')
+    expect(aiModels.memoryExtractor.modelId).toBe('gpt-5.6-luna')
+    expect(Object.values(aiModels).every(({ modelId }) => !modelId.startsWith('mock-'))).toBe(true)
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),
       readFile(resolve(process.cwd(), 'src/main/environment-credential-source.ts'), 'utf8'),
