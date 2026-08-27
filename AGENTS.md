@@ -189,7 +189,9 @@ Preserve applicable IDs; delegated prompts name only relevant IDs.
   mismatched, stop and ask the user to run
   `scripts\configure-windows-electron-firewall.ps1` once from the canonical
   checkout with elevation. Never create per-worktree rules or rely on an
-  interactive Windows Defender Firewall prompt.
+  interactive Windows Defender Firewall prompt. After an exact match is
+  verified, proceed without asking again; recheck only after the Electron path
+  or installation changes, or an actual rule lookup fails.
 - The user LaunchAgent with `KeepAlive={SuccessfulExit=false}` is the sole
   restart owner. Never call `app.relaunch()` or add another restart owner.
 - Use npm.

@@ -382,11 +382,13 @@ exit/tag, and promotion remain sequential after the Phase 1 physical gate.
   shell warning and nonblocking LF-to-CRLF warnings remain. Windows firewall
   evidence is development-only; script-fix commit `3e93936` supplied the
   persistent Private-profile rule names `MagicMirror.Development.Electron.TCP`
-  and `MagicMirror.Development.Electron.UDP`. The 2026-08-27 read-only check
-  found both rules absent. Before any later Windows Electron runtime run, the
-  user must execute the accepted setup script once from canonical
-  `C:\Project\magic-mirror`; per-worktree Electron execution/rules are now
-  forbidden because firewall program scope is an exact path.
+  and `MagicMirror.Development.Electron.UDP`. One elevated canonical setup is
+  complete. The 2026-08-27 read-only verification found both enabled Private
+  inbound Allow rules in `PersistentStore`, with TCP/UDP respectively and the
+  exact program `C:\Project\magic-mirror\node_modules\electron\dist\electron.exe`.
+  Later canonical Electron runs proceed without another prompt; recheck only
+  after that path/install changes or rule lookup fails. Per-worktree Electron
+  execution/rules remain forbidden because program scope is an exact path.
 - `.env` exists and is ignored/untracked. For this personal build it is the sole
   runtime master-key source, loaded only by Electron Main; missing, empty, and
   read failures remain metadata-only reasons. Agents/workers do not inspect or
