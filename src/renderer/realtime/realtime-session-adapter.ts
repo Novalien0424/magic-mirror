@@ -122,11 +122,34 @@ function readProperty(value: unknown, key: string): unknown {
 }
 
 function configuredTurnDetection(profile: string): {
-  readonly type: 'semantic_vad'
+  readonly type: 'semantic_vad' | 'server_vad'
+  readonly eagerness?: 'low'
+  readonly threshold?: 0.7
+  readonly prefixPaddingMs?: 300
+  readonly silenceDurationMs?: 900
+  readonly createResponse?: true
   readonly interruptResponse: true
 } {
   if (profile === 'semantic-vad-interruptible') {
     return Object.freeze({ type: 'semantic_vad', interruptResponse: true })
+  }
+  if (profile === 'semantic-vad-strict') {
+    return Object.freeze({
+      type: 'semantic_vad',
+      eagerness: 'low',
+      createResponse: true,
+      interruptResponse: true,
+    })
+  }
+  if (profile === 'server-vad-noisy') {
+    return Object.freeze({
+      type: 'server_vad',
+      threshold: 0.7,
+      prefixPaddingMs: 300,
+      silenceDurationMs: 900,
+      createResponse: true,
+      interruptResponse: true,
+    })
   }
   throw new RealtimeSessionAdapterError('unknown_turn_detection_profile')
 }
@@ -350,7 +373,12 @@ export function createRealtimeSession(
     throw new RealtimeSessionAdapterError('invalid_session_generation')
   }
   let turnDetection: {
-    readonly type: 'semantic_vad'
+    readonly type: 'semantic_vad' | 'server_vad'
+    readonly eagerness?: 'low'
+    readonly threshold?: 0.7
+    readonly prefixPaddingMs?: 300
+    readonly silenceDurationMs?: 900
+    readonly createResponse?: true
     readonly interruptResponse: true
   }
   try {
@@ -387,7 +415,13 @@ export function createRealtimeSession(
         tracing: null,
         audio: {
           input: {
-            transcription: { model: input.snapshot.inputTranscription },
+            noiseReduction: { type: 'far_field' },
+            transcription: {
+              model: input.snapshot.inputTranscription,
+              languages: ['zh-tw', 'en'],
+              keywords: ['恭送渡鴨大人'],
+              delay: 'medium',
+            },
             turnDetection,
           },
           output: { voice: input.snapshot.voice },

@@ -402,13 +402,14 @@ describe('ConfigService contract', () => {
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      configVersion: 4,
+      configVersion: 5,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
       },
       voice: 'cedar',
       ...V2_BASELINE,
+      turnDetectionProfile: 'server-vad-noisy',
       idleSeconds: 300,
       aiModels: {
         realtimeDialogue: { modelId: 'gpt-realtime-2.1-mini' },

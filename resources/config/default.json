@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "configVersion": 4,
+  "configVersion": 5,
   "persona": {
     "name": "mock-persona-v1",
     "instructions": "mock-persona-instructions-v1"
   },
   "voice": "cedar",
   "reasoningEffort": "low",
-  "turnDetectionProfile": "semantic-vad-interruptible",
+  "turnDetectionProfile": "server-vad-noisy",
   "idleSeconds": 300,
   "aiModels": {
     "realtimeDialogue": {

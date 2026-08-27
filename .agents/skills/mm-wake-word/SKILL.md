@@ -83,6 +83,11 @@ hits device-busy. Handoff failure = local audio fault -> Maintenance (never
 OfflineLoop). During Active the worker must not reopen the mic; a wake phrase
 said mid-conversation is just a normal utterance.
 
+The Active-only deactivation phrase is exactly `恭送渡鴨大人`. It is a
+Realtime tool intent, never a wake keyword. After goodbye playback completes,
+Main owns the payload-free transition back to Dormant and the release-then-
+acquire mic handoff.
+
 ## macOS Gotchas
 
 - TCC attributes the mic prompt to the nearest signed ancestor (the app that

@@ -22,9 +22,10 @@ facts only. Evidence and examples remain metadata-only.
 Runtime model IDs come only from versioned configuration and frozen session/job
 snapshots. The configured extractor tiers include `gpt-5.6-luna` and
 `gpt-5.6-terra`; that product use is separate from the worker route. Preserve
-`gpt-realtime-2.1`, `gpt-live-transcribe`, `gpt-4o-mini-transcribe`, and every
-configured extractor tier exactly. A failed configured ID must fail visibly and
-must never silently substitute the worker model or another runtime ID.
+`gpt-realtime-2.1-mini`, `gpt-realtime-2.1`, `gpt-live-transcribe`,
+`gpt-4o-mini-transcribe`, and every configured extractor tier exactly. A failed
+configured ID must fail visibly and must never silently substitute the worker
+model or another runtime ID.
 
 ## Packages and session creation
 
@@ -124,6 +125,19 @@ backups, telemetry, or debug logs, even temporarily for debugging.
 Exactly one microphone owner exists at a time. Use the explicit release-then-
 acquire handoff between the wake worker and renderer; a failed handoff is local
 Maintenance, not cloud OfflineLoop.
+
+## Wake-gated noisy-room profile
+
+- In Dormant, only the local wake worker listens; Realtime is disconnected.
+- In Active, the `server-vad-noisy` baseline is `far_field` noise reduction
+  plus server VAD threshold `0.7`, prefix padding `300` ms, silence duration
+  `900` ms, and automatic response/interruption enabled. Semantic VAD `low` is
+  an alternate for premature turn endings, not the default noise filter.
+- Configure `gpt-live-transcribe` with `languages: ['zh-tw', 'en']`, keyword
+  `恭送渡鴨大人`, and `delay: 'medium'`. Do not add browser-side denoising on
+  top of conference-speaker DSP and Realtime `far_field` without field evidence.
+- Automated evidence covers the exact SDK config and a live provider session;
+  a human judges recognition, false turns, pause handling, and barge-in quality.
 
 ## Profile switch and reconnect
 

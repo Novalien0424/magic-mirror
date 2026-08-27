@@ -88,6 +88,69 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it("configures the wake-gated noisy-room profile for far-field Mandarin conversation", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const snapshot = Object.freeze({
+      ...makeSnapshot(),
+      turnDetectionProfile: "server-vad-noisy",
+    });
+
+    createRealtimeSession(makeSessionInput(snapshot, eventSink, probe));
+
+    const options = probe.constructorCalls[0]?.[1] as Record<string, unknown>;
+    expect(options).toMatchObject({
+      config: {
+        audio: {
+          input: {
+            noiseReduction: { type: "far_field" },
+            transcription: {
+              model: "configured-transcription-model",
+              languages: ["zh-tw", "en"],
+              keywords: ["恭送渡鴨大人"],
+              delay: "medium",
+            },
+            turnDetection: {
+              type: "server_vad",
+              threshold: 0.7,
+              prefixPaddingMs: 300,
+              silenceDurationMs: 900,
+              createResponse: true,
+              interruptResponse: true,
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("honors the already-versioned strict semantic profile instead of rejecting it at runtime", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const snapshot = Object.freeze({
+      ...makeSnapshot(),
+      turnDetectionProfile: "semantic-vad-strict",
+    });
+
+    createRealtimeSession(makeSessionInput(snapshot, eventSink, probe));
+
+    const options = probe.constructorCalls[0]?.[1] as Record<string, unknown>;
+    expect(options).toMatchObject({
+      config: {
+        audio: {
+          input: {
+            turnDetection: {
+              type: "semantic_vad",
+              eagerness: "low",
+              createResponse: true,
+              interruptResponse: true,
+            },
+          },
+        },
+      },
+    });
+  });
+
   it("passes the frozen config snapshot to the official session and connects once", async () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
