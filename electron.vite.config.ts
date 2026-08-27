@@ -10,7 +10,11 @@ export default defineConfig({
         // `node:sqlite` ships with Electron's Node runtime (Task 5 uses it). Rollup
         // cannot resolve it, so it must stay external or the main build breaks.
         external: ['node:sqlite'],
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'wake-worker': resolve(__dirname, 'src/main/wake/worker.ts'),
+          'wake-evaluator': resolve(__dirname, 'src/main/wake/evaluate-cli.ts'),
+        }
       }
     }
   },
@@ -29,6 +33,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    publicDir: resolve(__dirname, 'resources/generated'),
     plugins: [react()],
     build: {
       rollupOptions: {

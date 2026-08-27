@@ -1,0 +1,22 @@
+appId: com.magicmirror.app
+productName: Magic Mirror
+files:
+  - out/**/*
+  - package.json
+asar: true
+asarUnpack: out/renderer/mock/*.mp4
+extraResources:
+  - from: resources/config/default.json
+    to: config/default.json
+  - from: resources/wake-models
+    to: wake-models
+mac:
+  hardenedRuntime: true
+  entitlements: resources/macos/entitlements.plist
+  entitlementsInherit: resources/macos/entitlements.plist
+  extendInfo: resources/macos/Info.plist.additions.xml
+win:
+  target:
+    - target: dir
+      arch:
+        - x64

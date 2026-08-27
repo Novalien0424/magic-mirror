@@ -12,6 +12,8 @@ export type ModelSettingsRole =
   | 'inputTranscription'
   | 'memoryExtractor'
 
+export const REALTIME_SDK_VERSION = '0.16.1' as const
+
 export const MODEL_SETTINGS_ROLES: readonly ModelSettingsRole[] = Object.freeze([
   'realtimeDialogue',
   'inputTranscription',
@@ -26,6 +28,8 @@ export type ActiveModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export type DraftModelSettings = Readonly<{
@@ -36,6 +40,8 @@ export type DraftModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export type PreviousModelSettings = Readonly<{
@@ -46,6 +52,8 @@ export type PreviousModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export interface ModelSettingsResolution {
@@ -188,7 +196,14 @@ function resolveSlot(slot: ConfigSlot, config: MirrorConfig): ModelSettingsView 
 
     const configVersion = config.configVersion
     const voice = config.voice
-    if (!isValidConfigVersion(configVersion) || !isNonEmptyString(voice)) {
+    const reasoningEffort = config.reasoningEffort
+    const turnDetectionProfile = config.turnDetectionProfile
+    if (
+      !isValidConfigVersion(configVersion)
+      || !isNonEmptyString(voice)
+      || !isNonEmptyString(reasoningEffort)
+      || !isNonEmptyString(turnDetectionProfile)
+    ) {
       throw invalidConfig(slot)
     }
 
@@ -215,6 +230,8 @@ function resolveSlot(slot: ConfigSlot, config: MirrorConfig): ModelSettingsView 
       inputTranscription: modelIds.inputTranscription,
       memoryExtractor: modelIds.memoryExtractor,
       voice,
+      reasoningEffort,
+      turnDetectionProfile,
     }) as ModelSettingsView
   } catch (error) {
     if (error instanceof ModelSettingsError) throw error
@@ -271,9 +288,13 @@ export function createSessionModelSnapshot(
   return Object.freeze({
     configVersion: active.configVersion,
     fingerprint: active.fingerprint,
+    sdkVersion: REALTIME_SDK_VERSION,
     realtimeDialogue: active.realtimeDialogue,
     inputTranscription: active.inputTranscription,
+    memoryExtractor: active.memoryExtractor,
     voice: active.voice,
+    reasoningEffort: active.reasoningEffort,
+    turnDetectionProfile: active.turnDetectionProfile,
     takenAt,
   })
 }

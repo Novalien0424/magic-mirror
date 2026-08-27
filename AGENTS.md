@@ -1,228 +1,214 @@
-# Codex Control Plane
+# Magic Mirror — Codex Working Contract
 
-## Authority and ownership
+## Objective
 
-The root Codex thread is the sole orchestrator and reviewer. It breaks work
-into bounded units, dispatches workers, reads returned artifacts and evidence,
-and makes the external root review decision. The root thread does not
-implement changes, perform exploratory repository survey or research, or
-execute tests or validation commands. It may read authoritative source and
-worker evidence for routing and review.
+Make the smallest correct move, prove it with the smallest relevant evidence,
+and stop. Optimize in this order: correctness/privacy, surgical scope,
+wall-clock time, token cost, optional polish. Do not turn a bounded request into
+a workflow project.
 
-Treat the current interactive Codex thread as the sole root. Treat a fresh
-profile-backed CLI process launched with an explicit `implementer`,
-`surveyor`, or `tester` envelope as that worker, not another root. Execute
-only the bounded task directly; do not delegate, spawn, or dispatch a child,
-create a review gate, or claim root review. Only the current interactive root
-launches workers and performs external review.
+## Authority and state
 
-No separate review role or review worker exists. Worker self-review and root
-review are different gates: root review is external to worker self-review.
-Every current and future plan self-review and every worker self-review is
-capped at three passes. A requested follow-up keeps the same bounded role and
-does not create a review worker or increase that worker's self-review limit.
+Instruction order:
 
-## Authority order and preserved process state
+1. The user's latest request and explicit routing instruction.
+2. This `AGENTS.md`.
+3. Newer durable rulings in `DECISIONS.md`.
+4. Product PRD, Tech Spec, Implementation Plan, and Stack Review.
+5. Current state in `PROGRESS.md`.
+6. Relevant domain facts in `.agents/skills/`.
+7. Historical harness/source documents as reference only.
 
-Use this order when instructions conflict:
+`PROGRESS.md` owns task/branch/phase status; `DECISIONS.md` owns durable rulings.
+Do not duplicate their history here or infer completion from stale text.
 
-1. The user's current request and explicit Codex routing policy.
-2. This root `AGENTS.md` contract.
-3. Product sources: `docs/Magic_Mirror_PRD_v0.3.md`,
-   `docs/Magic_Mirror_Tech_Spec_v0.3.md`,
-   `docs/Magic_Mirror_Implementation_Plan_v0.3.md`, and
-   `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`.
-4. The migrated project skills under `.agents/skills/`, in the routing order
-   below.
-5. `PROGRESS.md`, `DECISIONS.md`, and the ignored SDD ledger as process state.
-6. The immutable historical harness document and its seven source skill
-   documents as reference input only.
+This file owns execution policy. Skill or legacy text that mandates root-only
+orchestration, a fresh worker for every action, Luna/max everywhere, H6 before
+every task, separate tester gates, complete successful stdout, or repeated
+review passes is superseded. Skills supply domain knowledge only.
 
-The seven skill routes are initialized and validated one at a time, in this
-order:
+## Direct execution is the default
 
-1. `.agents/skills/mm-phase-workflow/SKILL.md`
-2. `.agents/skills/mm-invariants/SKILL.md`
-3. `.agents/skills/mm-electron-foundation/SKILL.md`
-4. `.agents/skills/mm-realtime-voice/SKILL.md`
-5. `.agents/skills/mm-wake-word/SKILL.md`
-6. `.agents/skills/mm-live2d-avatar/SKILL.md`
-7. `.agents/skills/mm-face-identity/SKILL.md`
+The interactive Codex thread is the primary executor and reviewer. It may read,
+edit in-scope files, and run proportionate non-destructive checks directly.
 
-Use `mm-phase-workflow` for phase planning, dispatch, demos, and exit review.
-Use `mm-invariants` for every implementation, survey that touches product
-behavior, review, test, or debugging request; include the relevant canonical
-IDs in the worker prompt. Add the matching domain skill for domain work. Do
-not initialize the next skill until the prior skill's source-preservation,
-frontmatter, metadata, trigger/retrieval, and required behavior evidence has
-been accepted by root review.
+- For `answer`, `explain`, `review`, `diagnose`, or `plan`: inspect and report;
+  do not implement unless asked.
+- For `fix`, `change`, `build`, or `implement`: make the requested local change
+  and run the smallest relevant check without asking again.
+- Do not make a plan for an obvious bounded task. Start with the first
+  evidence-producing action.
+- Never delegate a single-file edit, targeted lookup, one command, log/status
+  request, error capture, small config/docs change, or temporary diagnostic.
+- Do not launch a worker merely because a role exists.
 
-The following process rulings remain active: R1 is completed historical
-in-place work through local integration on `phase0-foundation`; application
-Task 2 (the lifecycle state machine) is completed, reviewed, and locally
-integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
-was deleted. R2 keeps the authoritative `handleSimulator` return shape; and
-R5 keeps Tasks 3–5 sequential. R3 and R4 are superseded by the user's current
-Codex policy. Application Task 3 (ConfigService + credentials) is completed,
-corrected, integrated at implementation commit `0270686` with
-correction/integration tip `835c92d`, and pushed on `main`; application Task 4
-(metadata-only telemetry) is completed, root-reviewed, integrated, and pushed
-at `dca1327`; application Task 5 (SQLite initialization and migration baseline)
-is accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
-32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
-build green. Application Task 6 (Main-owned module registry plus deterministic
-mocks) is accepted, root-reviewed, implemented, and pushed on `main` at
-`5b95a94`, with 16 focused tests, 161 total tests, and Node/web typecheck plus
-Electron Vite build green. Its selected design is a runtime-exhaustive Main
-registry, injected closed-outcome adapters, separate deterministic mocks,
-stable metadata-only results/events, informational missing-adapter handling,
-explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
-and no boot/IPC/UI/model resolver. The Task 6 plan's static gate commit was
-`83be86b` on `phase0-modules`; its application/test scope was
-`tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-`src/main/module-mocks.ts`. Application Task 7's accepted plan is recorded at
-`6214b6c`; its accepted implementation is pushed on `phase0-model-settings` at
-`5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
-Electron Vite build green, both negative runtime-model/fallback scans
-successful, and no OpenAI or `.env` requirement. Task 8 (boot wiring, IPC,
-Mirror UI, and OfflineLoop) is next; Tasks 9/10 retain Console UI and
-demos/records/exit ownership. This refers only to application task order and
-does not indicate that a harness-migration Task 2 is pending. The completed
-application Task 1 status is not changed by this harness work. No user setup is
-required for Task 6. Development Node `v24.19.0` satisfies the prerequisite
-of `>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+Ask before destructive actions, external writes, purchases, credential
+rotation, irreversible migrations, or material scope expansion—not before safe
+local reads, edits, and tests already authorized by the request.
 
-Active efficiency ruling: for this nonindustrial project, the root uses the
-fewest bounded fresh-worker gates consistent with strict TDD, tester-owned
-validation, privacy/invariants, and external root review. Avoid duplicate
-surveys, separate review workers, ceremonial tests, duplicate validation, and
-PR bureaucracy. Naturally coupled behavior within one bounded unit may share
-a test-write/implementation/validation sequence. This does not relax any
-mandatory authority, role, profile, model, effort, scope, evidence, tester-
-ownership, privacy/invariant, or external-root-review requirement.
+### Interrupts
 
-The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
-credential presence is recorded only as ignored metadata; its content and
-value are never read, and process records must not claim that its value was
-inspected. The customizable wake word remains a Phase 2 requirement and later
-requires keyword artifact generation plus tuning evidence.
+- `stop`, `cancel`, `abort`: terminate active commands/subagents immediately.
+  Do not restart, substitute, or continue the abandoned plan.
+- `show`, `paste`, `status`: answer from current evidence. If absent, perform
+  only the smallest direct read or one-run capture needed.
+- Do not request authorization twice for reversible in-scope work.
+- Do not emit repetitive waiting commentary. Report only a meaningful state
+  change, concrete blocker, or completion.
 
-## Immutable and product boundaries
+## Minimal effective move
 
-Treat the historical harness document and all seven source skill documents as
-immutable byte-level inputs. Do not edit, rename, reformat, or delete them.
-Do not change product documents, application source, tests, package files,
-dependencies, runtime model configuration, or application behavior in a
-harness migration. The worker model is a harness route and must never be
-copied into runtime configuration, source code, `active.json`, telemetry, or
-product artifacts. Preserve all pinned product model IDs, package versions,
-domain facts, safety rules, and the 12 invariants in the migrated skill
-content.
+1. Identify the requested observable outcome.
+2. Inspect the named path, symbol, error, or command first.
+3. Use targeted search only when the owner location is unknown.
+4. Change the fewest files and lines that solve the cause.
+5. Run the smallest check that proves the changed boundary.
+6. Stop when the outcome is proven.
 
-Keep the Windows-development/macOS-target distinction explicit. Windows
-development uses the same Electron `safeStorage` API backed by DPAPI; the
-target Mac uses Keychain and its TCC, signing, and entitlement paths. Windows
-results do not field-verify target macOS Keychain/TCC/signing/entitlements/
-packaged-worker/LaunchAgent paths. The target's only restart owner is the user
-LaunchAgent with `KeepAlive = { SuccessfulExit = false }`.
-In-app recovery may recreate a failed renderer once, then exits with code 1 so
-the LaunchAgent restarts the app. Never call `app.relaunch()` and never add a
-second restart owner.
+Operational rules:
 
-## Dispatch contract
+- Discover read scope incrementally; it need not be perfect before the first
+  targeted inspection.
+- Prefer one-hop callers/imports over repository-wide exploration.
+- Preserve existing user changes; never revert unrelated work.
+- Prefer `apply_patch` or an equivalent minimal patch.
+- No opportunistic refactor, rename, dependency update, formatting sweep, or
+  adjacent cleanup.
+- Retry an external/flaky action at most once, then report the exact failure.
+- A temporary diagnostic may skip TDD if it leaves no product behavior behind.
+  Keep it narrowly enabled, avoid persistent sensitive output, run only as
+  needed, and revert it in the same task unless asked to retain it.
 
-For every post-plan implementation, repository survey or research, and
-test/validation worker, root launches a fresh profile-backed worker through
-this direct PATH-resolved `codex` wrapper command. The canonical launcher uses
-every routing flag explicitly; no `.Source` assignment is used. Substitute
-only the task prompt:
+## Models and delegation
 
-```powershell
-codex exec --profile nova-auto --ephemeral --cd 'C:\Project\magic-mirror' -m gpt-5.6-luna -c 'model_reasoning_effort="max"' $taskPrompt
-```
+Primary critical path: `gpt-5.6-sol / medium`, executing directly. Increase
+primary effort only for material ambiguity, cross-cutting architecture,
+difficult root-cause analysis, security/privacy, destructive data risk, or
+another high-value task where a mistake is costly.
 
-Every task prompt must repeat these fields and values:
+Optional role routing is defined in `.codex/agents/`:
 
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-task: one bounded unit with explicit non-goals
-write_scope: exact named files; read-only unless the named scope grants a write
-skills: relevant .agents/skills paths
-self_invariants: relevant canonical IDs; use IDs 1–12 for product behavior
-evidence: exact changed files, diff summary, complete command output and exit codes, and risks
-self_review: read the own diff/output; no more than 3 passes
-root_review: external root gate after return; not part of self-review
-```
+| Role | Model / effort | Intended use |
+|---|---|---|
+| `surveyor` | Luna / high | Focused independent read-only trace |
+| `implementer` | Luna / high | Clear bounded change that can run independently |
+| `tester` | Luna / low | Fresh command-oriented validation |
+| `deep_reviewer` | Luna / max | Difficult bounded quality-first audit, preferably parallel/off-path |
 
-The dispatch must name the exact files, relevant skills, invariant IDs, read or
-write scope, and evidence format. Do not infer a role from a request or rely
-on the project backstop for model or effort. Every Codex CLI discovery or
-dry-run uses `--profile nova-auto`, `--ephemeral`, explicit
-`gpt-5.6-luna`, and explicit `max`. Profile-less collaboration calls may
-coordinate context only; they have no profile field and are not execution
-substitutes. A missing profile, model, effort, role, scope, skill, invariant,
-or evidence field is a dispatch failure.
+`Luna + max` is deliberately retained for deep bounded review: Luna's low
+per-token cost can justify extra reasoning, but max is not latency-efficient.
+Do not place it in every serial step.
 
-The implementer may write only the exact bounded paths named in its prompt and
-must use `apply_patch` for every write. The surveyor is read-only. The tester
-may run only the named validation commands and may write only the named
-ignored evidence artifact. No worker may widen its scope, modify immutable
-sources, create a review worker, or silently choose another model.
+Use a subagent only when independent parallel work materially improves speed or
+confidence, noisy read-heavy context would harm the primary thread, or the user
+explicitly asks.
 
-## Worker evidence and privacy
+- Never make a subagent a mandatory serial gate around routine direct work.
+- Use one by default; at most two concurrently when genuinely independent.
+- The primary thread continues useful work instead of polling.
+- A subagent never delegates.
+- Prompt only: outcome, essential context, scope, done condition, evidence.
+  Do not repeat this file, every skill, model/effort, freshness, and review
+  boilerplate.
+- On worker timeout/failure, keep existing evidence and reassess directly; do
+  not auto-launch a replacement.
 
-Use metadata-only artifacts and examples: IDs, enums, counts, timings,
-statuses, reasons, hashes, paths, and exit codes. Never place transcripts,
-audio, extracted memory values, private context, credentials, images,
-embeddings, prompts containing user content, or secrets in source, logs,
-reports, telemetry, or worker output. Survey/research findings must cite
-primary-source URLs and label each finding `verified` or `unverified`.
-Every worker returns exact files changed, a concise diff summary, complete
-stdout/stderr for every command with exit codes, and unresolved risks. A
-tester returns complete output even for a failed or unavailable command.
+Use the built-in optional roles in `.codex/agents/` when delegation is
+justified. The retired external worker launcher and prompt-envelope protocol
+must not be recreated without an explicit, demonstrated isolation need.
 
-## TDD and verification
+## Skills
 
-For behavior or application-code work, route through TDD: write one focused
-failing test, observe the expected failure, implement the smallest change,
-observe the green result, then refactor only while green. Configuration or
-documentation-only work uses the task's strict static checks and does not add
-application tests merely for ceremony. The tester owns all named test and
-validation execution; the root does not execute them. Before any completion
-claim, run fresh verification, read the full output and exit code, and report
-evidence rather than confidence.
+Do not preload skills. Read only relevant sections of:
 
-## Canonical invariants
+- `mm-phase-workflow` for phase slicing, demos, exit evidence, or promotion;
+- `mm-invariants` for detailed interpretation of an implicated invariant;
+- one matching domain skill for Electron, Realtime voice, wake word,
+  Live2D/avatar, or face identity.
 
-Workers preserve all 12 canonical invariants and report the IDs they checked:
+Do not copy skill worker envelopes or orchestration boilerplate into prompts.
 
-1. Final transcripts, conversation audio, extracted memory values, and
-   injected private context remain RAM-only; diagnostics contain metadata.
-2. Face recognition proposes a candidate; private memory follows explicit
-   verbal confirmation.
-3. Guest and candidate profile IDs remain in Electron Main and never cross
-   renderer/model tool boundaries.
-4. A profile change closes the old session and confirms in a clean
-   Persona+Master-only session before updating the agent.
-5. Extraction writes to the owner snapshot taken at turn start.
-6. Identity, naming, switching, group, sleep, and spell control turns skip
-   personal-memory extraction.
-7. A scene requires normalized exact full-transcript spell matching and one
-   trigger per turn; approved presets alone control hardware.
-8. Exactly one microphone owner exists at a time, with explicit
-   release-then-acquire handoff.
-9. Every ignore, drop, fallback, or degrade is visitor-visible or a
-   metadata-only Console event with a reason.
+## Verification proportional to risk
+
+- Read/status/log inspection: no test.
+- Docs/config: relevant parse, syntax, or static check.
+- Small code change: focused test and/or narrow typecheck for that boundary.
+- Cross-cutting behavior, dependency/packaging, schema/destructive migration,
+  credentials, runtime models, microphone/restart ownership, identity/privacy,
+  release, or phase exit: broaden checks according to risk.
+- Full suite/build/demo/regression and an independent tester are conditional,
+  not routine. Use for broad impact, release/phase exit, ambiguous evidence, or
+  explicit request.
+- Use TDD for durable behavior changes when a focused failing test is practical;
+  not for investigation, status reads, log capture, one-run diagnostics,
+  reversible spikes, or docs-only work.
+- The primary thread may validate directly. Perform one final diff/output
+  self-check; repeat only if it finds a concrete issue.
+
+Report successful checks as command + exit code + key result. Include complete
+stdout/stderr only on failure or explicit request.
+
+## Canonical product invariants
+
+Preserve applicable IDs; delegated prompts name only relevant IDs.
+
+1. Transcripts, conversation audio, extracted memory values, and injected
+   private context are RAM-only; diagnostics are metadata-only.
+2. Face recognition proposes; private memory loads only after verbal confirm.
+3. Guest/candidate profile IDs stay in Electron Main and never cross
+   renderer/model boundaries.
+4. Profile change closes old history, confirms in a clean Persona+Master
+   session, then updates the agent.
+5. Extraction writes to the owner snapshot captured at turn start.
+6. Identity/naming/switch/group/sleep/spell control turns skip extraction.
+7. Scene trigger is normalized exact full-transcript match, once per turn;
+   approved presets alone control hardware.
+8. Exactly one microphone owner, with explicit release then acquire.
+9. Every ignore/drop/fallback/degrade is visitor-visible or a metadata-only
+   Console event with a reason.
 10. Failures degrade without gating conversation or unrelated adapters.
-11. Model IDs come only from versioned configuration; a failed configured ID
-   never silently substitutes another ID.
-12. Credentials are read by Main through `safeStorage`; keys never enter
-   renderer data, logs, telemetry, or exports.
+11. Runtime model IDs come only from versioned config; no silent substitution.
+12. Under the dated personal-build ruling, ignored root `.env`
+    `OPENAI_API_KEY` is the sole master-key source and Electron Main alone loads
+    it. No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env, or
+    alternate fallback. Agents/workers never inspect or output its value;
+    missing/empty/read failures remain metadata-only reasons.
 
-No worker may weaken, rename, or omit an applicable invariant. Product safety
-and runtime model IDs outrank convenience wording in a skill. Root review
-checks the returned diff, evidence, privacy posture, scope, and the maximum
-three-pass limit before accepting a worker result.
+## Platform and protected boundaries
+
+- This Windows PC is the development and functional-verification host through
+  all phases. The Mac mini M4 port happens afterward; macOS TCC, signing,
+  entitlements, packaged-worker, LaunchAgent, power/performance, and final wake
+  quality evidence are deferred to that port and do not block continued
+  sequential PC engineering. Label Windows evidence explicitly and never use
+  it to claim Mac behavior or deployment readiness.
+- On this Windows host, commands that launch development `electron.exe` run
+  only from the canonical `C:\Project\magic-mirror` checkout. Worktrees may run
+  Node-only tests, typechecks, builds, and packaging, but not Electron runtime
+  demos or live smoke. Windows Firewall program rules bind an exact executable
+  path: before the first Electron run, verify the persistent Private-profile
+  rules `MagicMirror.Development.Electron.TCP` and
+  `MagicMirror.Development.Electron.UDP` target the canonical
+  `node_modules\electron\dist\electron.exe`. If either rule is absent or
+  mismatched, stop and ask the user to run
+  `scripts\configure-windows-electron-firewall.ps1` once from the canonical
+  checkout with elevation. Never create per-worktree rules or rely on an
+  interactive Windows Defender Firewall prompt. After an exact match is
+  verified, proceed without asking again; recheck only after the Electron path
+  or installation changes, or an actual rule lookup fails.
+- The user LaunchAgent with `KeepAlive={SuccessfulExit=false}` is the sole
+  restart owner. Never call `app.relaunch()` or add another restart owner.
+- Use npm.
+- Do not modify `scripts/install-node-lts.ps1`, immutable historical inputs,
+  protected review/product docs, dependencies, runtime model config, or phase
+  status unless the task explicitly requires and names it.
+- Official phase order, runtime integration, demos, exit decisions, regression,
+  tags, and promotion remain sequential. Prep-only exceptions in
+  `DECISIONS.md`/`PROGRESS.md` are not phase starts.
+
+## Completion
+
+Lead with the outcome, then only: changed files; focused checks and exit codes;
+material unresolved risk/blocker. Omit performative narration, repeated
+reassurance, source dumps, and ceremonial process summaries. Stop when the
+requested outcome and proportionate verification are complete.

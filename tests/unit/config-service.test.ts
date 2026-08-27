@@ -17,6 +17,23 @@ import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/typ
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
 
+const CURRENT_CONFIG_SCHEMA_VERSION = 3
+
+type Phase1ConfigFixture = MirrorConfig & {
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
+}
+
+type LegacyConfigFixture = Omit<
+  Phase1ConfigFixture,
+  'reasoningEffort' | 'turnDetectionProfile'
+>
+
+const V2_BASELINE = {
+  reasoningEffort: 'low',
+  turnDetectionProfile: 'semantic-vad-interruptible',
+} as const
+
 const MODEL_PATHS = [
   'aiModels.realtimeDialogue.modelId',
   'aiModels.inputTranscription.modelId',
@@ -28,6 +45,9 @@ const CONFIG_EVENT_NAMES = new Set([
   'config_loaded',
   'config_recovered',
   'config_auxiliary_degraded',
+  'config_schema_migrated',
+  'config_schema_migration_failed',
+  'config_schema_unsupported',
   'config_draft_saved',
   'config_published',
   'config_rolled_back',
@@ -41,6 +61,9 @@ const CONFIG_EVENT_STATUS: Record<string, ConfigEvent['status']> = {
   config_loaded: 'success',
   config_recovered: 'degraded',
   config_auxiliary_degraded: 'degraded',
+  config_schema_migrated: 'success',
+  config_schema_migration_failed: 'failed',
+  config_schema_unsupported: 'failed',
   config_draft_saved: 'success',
   config_published: 'success',
   config_rolled_back: 'success',
@@ -52,6 +75,8 @@ const CONFIG_EVENT_STATUS: Record<string, ConfigEvent['status']> = {
 const CONFIG_ERROR_EVENTS = new Set([
   'config_recovered',
   'config_auxiliary_degraded',
+  'config_schema_migration_failed',
+  'config_schema_unsupported',
   'config_operation_failed',
 ])
 
@@ -70,12 +95,15 @@ const CONFIG_ERROR_CODES = new Set([
   'config_scene_container_invalid',
   'config_spell_entry_invalid',
   'config_scene_entry_invalid',
+  'config_schema_unsupported',
+  'config_schema_migration_failed',
+  'config_schema_migrated',
 ])
 
 const observedEvents: ConfigEvent[] = []
 const temporaryDirectories: string[] = []
 
-function baseConfig(configVersion = 7): MirrorConfig {
+function baseConfig(configVersion = 7): Phase1ConfigFixture {
   return {
     configVersion,
     persona: {
@@ -92,6 +120,7 @@ function baseConfig(configVersion = 7): MirrorConfig {
     wake: {
       phrase: 'mock-wake-phrase-v1',
       modelVersion: 'mock-wake-model-v1',
+      packageId: 'mock-wake-package-v1',
     },
 
     faceModel: {
@@ -123,11 +152,32 @@ function baseConfig(configVersion = 7): MirrorConfig {
       fog: 'physical',
       music: 'mock',
     },
+    ...V2_BASELINE,
   }
 }
 
-function encode(config: MirrorConfig): string {
+function withoutV2Fields(config: Phase1ConfigFixture): LegacyConfigFixture {
+  const {
+    reasoningEffort: _reasoningEffort,
+    turnDetectionProfile: _turnDetectionProfile,
+    ...legacy
+  } = config
+  return legacy
+}
+
+function encodeLegacy(config: LegacyConfigFixture): string {
   return JSON.stringify(config, null, 2) + '\n'
+}
+
+function encodeSchema(
+  config: LegacyConfigFixture | Phase1ConfigFixture,
+  schemaVersion: unknown,
+): string {
+  return JSON.stringify({ schemaVersion, ...config }, null, 2) + '\n'
+}
+
+function encode(config: MirrorConfig): string {
+  return encodeSchema(config, CURRENT_CONFIG_SCHEMA_VERSION)
 }
 
 function slotPath(configDir: string, slot: ConfigSlot): string {
@@ -264,6 +314,24 @@ function expectEvent(
   expect(events).toContainEqual(expected)
 }
 
+function expectSchemaReason(
+  event: ConfigEvent,
+  expected: { from: number; to: number; slot?: string | RegExp },
+): void {
+  expect(event.reason).toEqual(expect.any(String))
+  const fields = Object.fromEntries(
+    (event.reason as string).split(';').map((part) => part.split('=')),
+  )
+  expect(Object.keys(fields).sort()).toEqual(['action', 'cause', 'from', 'slot', 'to'])
+  expect(fields.from).toBe(String(expected.from))
+  expect(fields.to).toBe(String(expected.to))
+  if (expected.slot instanceof RegExp) expect(fields.slot).toMatch(expected.slot)
+  else if (expected.slot !== undefined) expect(fields.slot).toBe(expected.slot)
+  else expect(fields.slot).toMatch(/^(active|previous|draft|default|all)$/)
+  expect(fields.action).toMatch(/^[A-Za-z0-9_-]+$/)
+  expect(fields.cause).toMatch(/^[A-Za-z0-9_-]+$/)
+}
+
 function assertConfigEvents(events: readonly ConfigEvent[]): void {
   for (const event of events) {
     expect(CONFIG_EVENT_NAMES.has(event.event)).toBe(true)
@@ -320,6 +388,15 @@ describe('ConfigService contract', () => {
     expect(
       mirrorConfigSchema.safeParse({
         ...baseConfig(),
+        wake: {
+          phrase: '魔鏡阿魔鏡',
+          modelVersion: 'candidate-v1',
+        },
+      }).success,
+    ).toBe(false)
+    expect(
+      mirrorConfigSchema.safeParse({
+        ...baseConfig(),
         aiModels: {
           ...baseConfig().aiModels,
           realtimeDialogue: { modelId: ' ' },
@@ -328,25 +405,31 @@ describe('ConfigService contract', () => {
     ).toBe(false)
   })
 
-  it('keeps the versioned resource mock-only and free of forbidden content fields', async () => {
+  it('keeps the versioned resource pin and free of forbidden content fields', async () => {
     const resourcePath = resolve(process.cwd(), 'resources/config/default.json')
     const resource = JSON.parse(await readFile(resourcePath, 'utf8')) as Record<string, unknown>
+    expect(resource.schemaVersion).toBe(3)
+    expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
-      configVersion: 1,
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+      configVersion: 7,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
       },
-      voice: 'mock-voice-v1',
+      voice: 'cedar',
+      ...V2_BASELINE,
+      turnDetectionProfile: 'server-vad-noisy',
       idleSeconds: 300,
       aiModels: {
-        realtimeDialogue: { modelId: 'mock-realtime-dialogue-v1' },
-        inputTranscription: { modelId: 'mock-input-transcription-v1' },
-        memoryExtractor: { modelId: 'mock-memory-extractor-v1' },
+        realtimeDialogue: { modelId: 'gpt-realtime-2.1-mini' },
+        inputTranscription: { modelId: 'gpt-live-transcribe' },
+        memoryExtractor: { modelId: 'gpt-5.6-luna' },
       },
       wake: {
-        phrase: 'mock-wake-phrase-v1',
-        modelVersion: 'mock-wake-model-v1',
+        phrase: '魔鏡阿魔鏡',
+        modelVersion: 'zh-en-3m-2025-12-20-epoch13-avg2',
+        packageId: 'sherpa-magic-mirror-win-v2',
       },
       faceModel: {
         detectorId: 'mock-face-detector-v1',
@@ -386,11 +469,14 @@ describe('ConfigService contract', () => {
       }
     }
     walkKeys(resource)
-    const roleValues = Object.values(resource.aiModels as Record<string, { modelId: string }>)
-    expect(roleValues.every((role) => role.modelId.startsWith('mock-'))).toBe(true)
+    const aiModels = resource.aiModels as Record<string, { modelId: string }>
+    expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1-mini')
+    expect(aiModels.inputTranscription.modelId).toBe('gpt-live-transcribe')
+    expect(aiModels.memoryExtractor.modelId).toBe('gpt-5.6-luna')
+    expect(Object.values(aiModels).every(({ modelId }) => !modelId.startsWith('mock-'))).toBe(true)
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),
-      readFile(resolve(process.cwd(), 'src/main/credential-store.ts'), 'utf8'),
+      readFile(resolve(process.cwd(), 'src/main/environment-credential-source.ts'), 'utf8'),
     ])
     const productionText = production.join('\n')
     expect(productionText).not.toMatch(/modelId\s*:\s*['"]/)
@@ -418,6 +504,373 @@ describe('ConfigService contract', () => {
         reason: 'operation=initialize;action=seed;config_version=7',
       },
     ])
+  })
+
+  const legacySchemaCases: Array<{
+    label: string
+    from: number
+    encode: (config: Phase1ConfigFixture) => string
+  }> = [
+    {
+      label: 'absent schemaVersion',
+      from: 0,
+      encode: (config) => encodeLegacy(withoutV2Fields(config)),
+    },
+    {
+      label: 'explicit schemaVersion zero',
+      from: 0,
+      encode: (config) => encodeSchema(withoutV2Fields(config), 0),
+    },
+    {
+      label: 'explicit schemaVersion one',
+      from: 1,
+      encode: (config) => encodeSchema(withoutV2Fields(config), 1),
+    },
+  ]
+
+  it.each(legacySchemaCases)(
+    'materializes $label into the current private envelope without changing runtime values',
+    async ({ from, encode: encodeLegacyCase }) => {
+      const harness = makeMemoryHarness()
+      const active = baseConfig(17)
+      active.voice = 'mock-operator-active-voice-v1'
+      const previous = baseConfig(15)
+      previous.voice = 'mock-operator-previous-voice-v1'
+      const draft = baseConfig(19)
+      draft.voice = 'mock-operator-draft-voice-v1'
+      const values: Record<ConfigSlot, Phase1ConfigFixture> = { active, previous, draft }
+
+      for (const slot of ['active', 'previous', 'draft'] as const) {
+        harness.store.set(slotPath('mock-config', slot), encodeLegacyCase(values[slot]))
+      }
+
+      const result = await harness.service().read()
+
+      expect(result).toEqual(values)
+      for (const slot of ['active', 'previous', 'draft'] as const) {
+        expect(harness.store.get(slotPath('mock-config', slot))).toBe(encode(values[slot]))
+        expect(Object.keys(result[slot])).not.toContain('schemaVersion')
+        expect(result[slot].configVersion).toBe(values[slot].configVersion)
+      }
+      expect(harness.writer.writePaths).toEqual([
+        slotPath('mock-config', 'previous'),
+        slotPath('mock-config', 'active'),
+        slotPath('mock-config', 'draft'),
+      ])
+      expect(harness.removePaths).toEqual([])
+
+      const migrated = harness.events.filter((event) => event.event === 'config_schema_migrated')
+      expect(migrated).toHaveLength(3)
+      for (const slot of ['active', 'previous', 'draft'] as const) {
+        const event = migrated.find((candidate) =>
+          candidate.reason?.split(';').includes('slot=' + slot),
+        )
+        expect(event).toBeDefined()
+        expect(event).toEqual(expect.objectContaining({
+          module: 'config',
+          event: 'config_schema_migrated',
+          status: 'success',
+          source: 'runtime',
+        }))
+        expectSchemaReason(event as ConfigEvent, { slot, from, to: CURRENT_CONFIG_SCHEMA_VERSION })
+        expect(JSON.stringify(event)).not.toContain('mock-operator-' + slot + '-voice-v1')
+      }
+      for (const sentinel of [
+        'mock-operator-active-voice-v1',
+        'mock-operator-previous-voice-v1',
+        'mock-operator-draft-voice-v1',
+      ]) {
+        expect(JSON.stringify(harness.events)).not.toContain(sentinel)
+      }
+    },
+  )
+
+  it('migrates a schemaVersion 2 wake pin to an explicit unresolved package without losing the phrase', async () => {
+    const harness = makeMemoryHarness()
+    const current = baseConfig(23)
+    const { packageId: _packageId, ...legacyWake } = current.wake
+    const schemaTwo = { ...current, wake: legacyWake }
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      harness.store.set(slotPath('mock-config', slot), encodeSchema(schemaTwo as never, 2))
+    }
+
+    const result = await harness.service().read()
+
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      expect(result[slot].wake).toEqual({
+        phrase: current.wake.phrase,
+        modelVersion: current.wake.modelVersion,
+        packageId: 'legacy-unresolved',
+      })
+      expect(JSON.parse(harness.store.get(slotPath('mock-config', slot)) ?? '{}')).toEqual({
+        schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+        ...result[slot],
+      })
+    }
+  })
+
+  const invalidV2FieldCases: Array<{
+    field: 'reasoningEffort' | 'turnDetectionProfile'
+    value: string
+  }> = [
+    { field: 'reasoningEffort', value: 'invalid' },
+    { field: 'turnDetectionProfile', value: 'invalid' },
+  ]
+
+  it.each(invalidV2FieldCases)(
+    'rejects an invalid supplied $field instead of replacing it with the v2 baseline',
+    async ({ field, value }) => {
+      const harness = makeMemoryHarness()
+      const active = baseConfig(7)
+      harness.store.set(
+        'mock-default',
+        encodeSchema(withoutV2Fields(active), 1),
+      )
+      const before = new Map(harness.store)
+      const candidate = { ...active, [field]: value }
+
+      let caught: unknown
+      try {
+        await harness.service().saveDraft(candidate)
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(ConfigServiceError)
+      expect((caught as ConfigServiceError).code).toBe('config_schema_invalid')
+      expect((caught as ConfigServiceError).fields).toEqual([
+        { path: field, message: 'invalid_value' },
+      ])
+      expect(harness.store).toEqual(before)
+      expect(harness.writer.writePaths).toEqual([])
+      expectEvent(
+        harness.events,
+        'config_operation_failed',
+        'failed',
+        'operation=save_draft;slot=draft;action=reject;cause=schema_invalid;issue_count=1',
+        'config_schema_invalid',
+      )
+    },
+  )
+
+  it('keeps schemaVersion private to persisted bytes while current reads and writes expose MirrorConfig only', async () => {
+    const harness = makeMemoryHarness()
+    const active = baseConfig(7)
+    seedSlots(harness, 'mock-config', active)
+
+    const result = await harness.service().read()
+
+    expect(result).toEqual({ active, draft: active, previous: active })
+    expect(Object.keys(result.active)).not.toContain('schemaVersion')
+    expect(harness.writer.writePaths).toEqual([])
+
+    const candidate = { ...active, voice: 'mock-current-envelope-voice-v2' }
+    const saved = await harness.service().saveDraft(candidate)
+
+    expect(Object.keys(saved)).not.toContain('schemaVersion')
+    expect(JSON.parse(harness.store.get(slotPath('mock-config', 'draft')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+      ...saved,
+    })
+  })
+
+  it('fails closed on migration write failure and restores exact bytes for every touched slot', async () => {
+    const harness = makeMemoryHarness()
+    const active = baseConfig(17)
+    const previous = baseConfig(15)
+    const originalActive = encodeLegacy(withoutV2Fields(active)) + '\n'
+    const originalPrevious = encodeSchema(withoutV2Fields(previous), 0) + '\n'
+    harness.store.set(slotPath('mock-config', 'active'), originalActive)
+    harness.store.set(slotPath('mock-config', 'previous'), originalPrevious)
+    const before = new Map(harness.store)
+    harness.writer.failWrites.add(2)
+
+    let caught: unknown
+    try {
+      await harness.service().read()
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(ConfigServiceError)
+    expect((caught as ConfigServiceError).code).toBe('config_schema_migration_failed')
+    expect(harness.store).toEqual(before)
+    expect(harness.store.has(slotPath('mock-config', 'draft'))).toBe(false)
+    expect(harness.writer.writePaths.length).toBeGreaterThanOrEqual(2)
+
+    const failure = harness.events.find((event) =>
+      event.event === 'config_schema_migration_failed'
+      || event.error_code === 'config_schema_migration_failed',
+    )
+    expect(failure).toBeDefined()
+    expect(failure).toEqual(expect.objectContaining({
+      module: 'config',
+      status: 'failed',
+      source: 'runtime',
+      error_code: 'config_schema_migration_failed',
+    }))
+    expectSchemaReason(failure as ConfigEvent, {
+      from: 0,
+      to: CURRENT_CONFIG_SCHEMA_VERSION,
+    })
+
+    const compensation = harness.events.find((event) => event.event === 'config_transaction_compensated')
+    expect(compensation).toEqual(expect.objectContaining({
+      module: 'config',
+      event: 'config_transaction_compensated',
+      status: 'info',
+      source: 'runtime',
+    }))
+    expect(compensation?.reason).toMatch(/^[A-Za-z0-9_=;.-]+$/)
+    expect(JSON.stringify(harness.events)).not.toContain('synthetic-write-adapter-detail')
+  })
+
+  const malformedSchemaCases: Array<{ label: string; schemaVersion: unknown }> = [
+    { label: 'string schemaVersion', schemaVersion: '1' },
+    { label: 'null schemaVersion', schemaVersion: null },
+    { label: 'fractional schemaVersion', schemaVersion: 1.5 },
+  ]
+
+  it.each(malformedSchemaCases)(
+    'keeps $label on ordinary invalid-slot fallback handling',
+    async ({ schemaVersion }) => {
+      const harness = makeMemoryHarness()
+      const active = baseConfig(7)
+      const previous = baseConfig(6)
+      const draft = baseConfig(8)
+      seedSlots(harness, 'mock-config', active, draft, previous)
+      harness.store.set(slotPath('mock-config', 'active'), encodeSchema(active, schemaVersion))
+
+      const result = await harness.service().read()
+
+      expect(result.active).toEqual(previous)
+      expect(result.previous).toEqual(previous)
+      expect(result.draft).toEqual(draft)
+      expect(harness.writer.writePaths).toEqual([])
+      expectEvent(
+        harness.events,
+        'config_recovered',
+        'degraded',
+        'slot=active;source=previous;action=use_previous;cause=invalid',
+        'config_slot_invalid',
+      )
+      expect(harness.events.some((event) =>
+        event.error_code === 'config_schema_unsupported'
+        || event.event === 'config_schema_unsupported',
+      )).toBe(false)
+    },
+  )
+
+  const physicalFutureSchemaSlots: ConfigSlot[] = ['active', 'previous', 'draft']
+
+  it.each(physicalFutureSchemaSlots)(
+    'rejects a future schema in physical $slot without fallback or materialization',
+    async (slot) => {
+      const harness = makeMemoryHarness()
+      const active = baseConfig(7)
+      const previous = baseConfig(6)
+      const draft = baseConfig(8)
+      seedSlots(harness, 'mock-config', active, draft, previous)
+      harness.store.set(slotPath('mock-config', slot), encodeSchema({
+        ...({ active, previous, draft }[slot]),
+        voice: 'mock-future-schema-voice-v2',
+      }, CURRENT_CONFIG_SCHEMA_VERSION + 1))
+      harness.store.set('mock-default', encode(baseConfig(3)))
+      const before = new Map(harness.store)
+
+      let caught: unknown
+      try {
+        await harness.service().read()
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(ConfigServiceError)
+      expect((caught as ConfigServiceError).code).toBe('config_schema_unsupported')
+      expect(harness.store).toEqual(before)
+      expect(harness.writer.writePaths).toEqual([])
+      expect(harness.events.some((event) => event.event === 'config_recovered')).toBe(false)
+
+      const unsupported = harness.events.find((event) =>
+        event.event === 'config_schema_unsupported'
+        || event.error_code === 'config_schema_unsupported',
+      )
+      expect(unsupported).toBeDefined()
+      expect(unsupported).toEqual(expect.objectContaining({
+        status: 'failed',
+        source: 'runtime',
+        error_code: 'config_schema_unsupported',
+      }))
+      expectSchemaReason(unsupported as ConfigEvent, {
+        slot,
+        from: CURRENT_CONFIG_SCHEMA_VERSION + 1,
+        to: CURRENT_CONFIG_SCHEMA_VERSION,
+      })
+    },
+  )
+
+  it('rejects a future packaged Default instead of converting it to default-invalid or seeding a fallback', async () => {
+    const harness = makeMemoryHarness()
+    const futureDefault = encodeSchema(baseConfig(3), CURRENT_CONFIG_SCHEMA_VERSION + 1)
+    harness.store.set('mock-default', futureDefault)
+    const before = new Map(harness.store)
+
+    let caught: unknown
+    try {
+      await harness.service().initialize()
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(ConfigServiceError)
+    expect((caught as ConfigServiceError).code).toBe('config_schema_unsupported')
+    expect(harness.store).toEqual(before)
+    expect(harness.writer.writePaths).toEqual([])
+    const unsupported = harness.events.find((event) =>
+      event.event === 'config_schema_unsupported'
+      || event.error_code === 'config_schema_unsupported',
+    )
+    expect(unsupported).toBeDefined()
+    expectSchemaReason(unsupported as ConfigEvent, {
+      from: CURRENT_CONFIG_SCHEMA_VERSION + 1,
+      to: CURRENT_CONFIG_SCHEMA_VERSION,
+      slot: /^(active|default|all)$/,
+    })
+  })
+
+  it('does not mask an unsupported physical Previous during direct rollback', async () => {
+    const harness = makeMemoryHarness()
+    const active = baseConfig(8)
+    const draft = baseConfig(8)
+    const futurePrevious = baseConfig(7)
+    seedSlots(harness, 'mock-config', active, draft, active)
+    harness.store.set(
+      slotPath('mock-config', 'previous'),
+      encodeSchema(futurePrevious, CURRENT_CONFIG_SCHEMA_VERSION + 1),
+    )
+    const before = new Map(harness.store)
+
+    let caught: unknown
+    try {
+      await harness.service().rollback()
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(ConfigServiceError)
+    expect((caught as ConfigServiceError).code).toBe('config_schema_unsupported')
+    expect(harness.store).toEqual(before)
+    expect(harness.writer.writePaths).toEqual([])
+    const unsupported = harness.events.find((event) =>
+      event.event === 'config_schema_unsupported'
+      || event.error_code === 'config_schema_unsupported',
+    )
+    expect(unsupported).toBeDefined()
+    expectSchemaReason(unsupported as ConfigEvent, {
+      slot: 'previous',
+      from: CURRENT_CONFIG_SCHEMA_VERSION + 1,
+      to: CURRENT_CONFIG_SCHEMA_VERSION,
+    })
   })
 
   it('resolves files-only and atomic-only mixed optional adapter seams', async () => {
@@ -705,6 +1158,7 @@ describe('ConfigService contract', () => {
     expect(harness.store.get(slotPath('mock-config', 'active'))).toBe(beforeActive)
     expect(harness.store.get(slotPath('mock-config', 'previous'))).toBe(beforePrevious)
     expect(JSON.parse(harness.store.get(slotPath('mock-config', 'draft')) as string)).toMatchObject({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       configVersion: 7,
       voice: 'mock-voice-v2',
     })
@@ -850,12 +1304,17 @@ describe('ConfigService contract', () => {
     const published = await harness.service().publish()
 
     expect(published.configVersion).toBe(8)
-    expect(JSON.parse(harness.store.get(slotPath('mock-config', 'previous')) as string)).toEqual(active)
+    expect(JSON.parse(harness.store.get(slotPath('mock-config', 'previous')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+      ...active,
+    })
     expect(JSON.parse(harness.store.get(slotPath('mock-config', 'active')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       ...draft,
       configVersion: 8,
     })
     expect(JSON.parse(harness.store.get(slotPath('mock-config', 'draft')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       ...draft,
       configVersion: 8,
     })
@@ -1031,12 +1490,17 @@ describe('ConfigService contract', () => {
     const rolledBack = await harness.service().rollback()
 
     expect(rolledBack).toEqual({ ...previous, configVersion: 9 })
-    expect(JSON.parse(harness.store.get(slotPath('mock-config', 'previous')) as string)).toEqual(active)
+    expect(JSON.parse(harness.store.get(slotPath('mock-config', 'previous')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+      ...active,
+    })
     expect(JSON.parse(harness.store.get(slotPath('mock-config', 'active')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       ...previous,
       configVersion: 9,
     })
     expect(JSON.parse(harness.store.get(slotPath('mock-config', 'draft')) as string)).toEqual({
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       ...previous,
       configVersion: 9,
     })

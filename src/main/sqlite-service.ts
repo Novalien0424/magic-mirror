@@ -1,10 +1,11 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { isAbsolute } from 'node:path'
 
+import type { PhaseTestRecord } from '../shared/console-types'
 import type { Result } from '../shared/types'
 import type { Telemetry } from './telemetry'
 
-export const SQLITE_SCHEMA_VERSION = 1 as const
+export const SQLITE_SCHEMA_VERSION = 4 as const
 
 export type SqliteFailureCode =
   | 'sqlite_path_invalid'
@@ -17,6 +18,9 @@ export type SqliteFailureCode =
   | 'sqlite_integrity_failed'
   | 'sqlite_close_failed'
   | 'sqlite_closed'
+  | 'sqlite_phase_record_invalid'
+  | 'sqlite_phase_record_write_failed'
+  | 'sqlite_phase_record_read_failed'
 
 export type SqliteFailureReason =
   | 'empty_path'
@@ -37,6 +41,10 @@ export type SqliteFailureReason =
   | 'integrity_check_not_ok'
   | 'driver_close_failed'
   | 'cleanup_close_failed'
+  | 'record_invalid'
+  | 'phase_invalid'
+  | 'transaction_failed'
+  | 'read_failed'
   | 'service_closed'
 
 export interface SqliteFailure {
@@ -77,11 +85,64 @@ export interface SqliteService {
   close(): Result<void, SqliteFailure>
 }
 
+export interface SqlitePhaseTestService extends SqliteService {
+  appendPhaseTestRecord(record: unknown): Result<void, SqliteFailure>
+  readPhaseTestRecords(
+    phase: unknown,
+  ): Result<readonly PhaseTestRecord[], SqliteFailure>
+}
+
 const BASELINE_DDL =
   'CREATE TABLE app_migrations (version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)'
 const BASELINE_DDL_WITH_IF_NOT_EXISTS =
   'CREATE TABLE IF NOT EXISTS app_migrations (version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)'
 const BASELINE_NAME = 'foundation_baseline'
+const PHASE_TEST_V2_MIGRATION_NAME = 'phase_test_records'
+const PHASE_TEST_V3_MIGRATION_NAME = 'phase_test_records_v3'
+const PHASE_TEST_MIGRATION_NAME = 'phase_test_records_v4'
+const PHASE_TEST_V2_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase = '0'), demo_id TEXT NOT NULL CHECK (demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'mock_passed')), note TEXT NOT NULL)"
+const PHASE_TEST_V3_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase = '1' AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
+const PHASE_TEST_V4_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
+const BASELINE_VERSION = 1
+const MAX_PHASE_TEST_RECORDS = 20
+const MAX_METADATA_LENGTH = 2048
+const PHASE_TEST_RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
+const PHASE_TEST_ROW_KEYS = ['sequence', 'phase', 'demo_id', 'build', 'time', 'result', 'note'] as const
+const PHASE0_DEMO_IDS = [
+  'P0-D1',
+  'P0-D2',
+  'P0-D3',
+  'P0-D4',
+  'P0-D5',
+] as const
+const PHASE1_DEMO_IDS = [
+  'P1-D1',
+  'P1-D2',
+  'P1-D3',
+  'P1-D4',
+  'P1-D5',
+  'P1-D6',
+] as const
+const PHASE2_DEMO_IDS = ['P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5'] as const
+const PHASE0_RESULTS = [
+  'passed',
+  'failed',
+  'mock_passed',
+] as const
+const PHASE1_RESULTS = [
+  'passed',
+  'failed',
+  'mock_passed',
+  'not_executed',
+] as const
+const PHASE2_RESULTS = PHASE1_RESULTS
+const PHASE_TEST_BUILD_PATTERN = /^[A-Za-z0-9._:+/-]{1,2048}$/
+const PHASE_TEST_NOTE_PATTERN = /^[A-Za-z0-9_=;.%:+,/?-]{1,2048}$/
+const PHASE_TEST_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const PRIVATE_CONTENT_PATTERN = /(?:guest|candidate|profile|credential|transcript|audio|embedding|memory|secret|token|prompt|private)/i
 
 const SQL = {
   foreignKeysOn: 'PRAGMA foreign_keys = ON',
@@ -91,9 +152,26 @@ const SQL = {
   indexList: "PRAGMA index_list('app_migrations')",
   foreignKeyList: "PRAGMA foreign_key_list('app_migrations')",
   master: "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name = 'app_migrations'",
+  phaseMaster: "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name = 'phase_test_records'",
+  phaseTableInfo: "PRAGMA table_info('phase_test_records')",
+  phaseIndexList: "PRAGMA index_list('phase_test_records')",
+  phaseForeignKeyList: "PRAGMA foreign_key_list('phase_test_records')",
   migrations: 'SELECT version, name FROM app_migrations ORDER BY version ASC',
   createBaseline: BASELINE_DDL_WITH_IF_NOT_EXISTS,
-  insertBaseline: 'INSERT INTO app_migrations (version, name) VALUES (?, ?)',
+  createPhaseTestRecordsV2: PHASE_TEST_V2_DDL,
+  createPhaseTestRecordsV3: PHASE_TEST_V3_DDL,
+  createPhaseTestRecords: PHASE_TEST_V4_DDL,
+  phaseTestRows: 'SELECT sequence, phase, demo_id, build, time, result, note FROM phase_test_records ORDER BY sequence ASC',
+  renamePhaseTestRecordsV2: 'ALTER TABLE phase_test_records RENAME TO phase_test_records_v2',
+  copyPhaseTestRecordsV2: 'INSERT INTO phase_test_records (sequence, phase, demo_id, build, time, result, note) SELECT sequence, phase, demo_id, build, time, result, note FROM phase_test_records_v2 ORDER BY sequence ASC',
+  dropPhaseTestRecordsV2: 'DROP TABLE phase_test_records_v2',
+  renamePhaseTestRecordsV3: 'ALTER TABLE phase_test_records RENAME TO phase_test_records_v3',
+  copyPhaseTestRecordsV3: 'INSERT INTO phase_test_records (sequence, phase, demo_id, build, time, result, note) SELECT sequence, phase, demo_id, build, time, result, note FROM phase_test_records_v3 ORDER BY sequence ASC',
+  dropPhaseTestRecordsV3: 'DROP TABLE phase_test_records_v3',
+  insertMigration: 'INSERT INTO app_migrations (version, name) VALUES (?, ?)',
+  insertPhaseTestRecord: 'INSERT INTO phase_test_records (phase, demo_id, build, time, result, note) VALUES (?, ?, ?, ?, ?, ?)',
+  prunePhaseTestRecords: `DELETE FROM phase_test_records WHERE sequence NOT IN (SELECT sequence FROM phase_test_records ORDER BY sequence DESC LIMIT ${MAX_PHASE_TEST_RECORDS})`,
+  readPhaseTestRecords: 'SELECT sequence, phase, demo_id, build, time, result, note FROM phase_test_records WHERE phase = ? ORDER BY sequence DESC LIMIT 20',
   integrityCheck: 'PRAGMA integrity_check',
   beginImmediate: 'BEGIN IMMEDIATE',
   commit: 'COMMIT',
@@ -101,12 +179,20 @@ const SQL = {
 } as const
 
 const EXPECTED_MIGRATIONS = [
-  { version: SQLITE_SCHEMA_VERSION, name: BASELINE_NAME },
+  { version: BASELINE_VERSION, name: BASELINE_NAME },
+  { version: 2, name: PHASE_TEST_V2_MIGRATION_NAME },
+  { version: 3, name: PHASE_TEST_V3_MIGRATION_NAME },
+  { version: SQLITE_SCHEMA_VERSION, name: PHASE_TEST_MIGRATION_NAME },
 ] as const
 
 const BASELINE_DDL_NORMALIZED = normalizeSql(BASELINE_DDL)
+const PHASE_TEST_V2_DDL_NORMALIZED = normalizeSql(PHASE_TEST_V2_DDL)
+const PHASE_TEST_V3_DDL_NORMALIZED = normalizeSql(PHASE_TEST_V3_DDL)
+const PHASE_TEST_DDL_NORMALIZED = normalizeSql(PHASE_TEST_V4_DDL)
 const BASELINE_MASTER_KEYS = ['type', 'name', 'tbl_name', 'sql'] as const
 const BASELINE_COLUMN_KEYS = ['cid', 'name', 'type', 'notnull', 'dflt_value', 'pk'] as const
+const PHASE_MASTER_KEYS = ['type', 'name', 'tbl_name', 'sql'] as const
+const PHASE_COLUMN_KEYS = ['cid', 'name', 'type', 'notnull', 'dflt_value', 'pk'] as const
 const MIGRATION_KEYS = ['version', 'name'] as const
 
 type TelemetryEventInput = Parameters<Telemetry['emit']>[0]
@@ -125,6 +211,13 @@ type ValidatedSchema = {
 
 function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function isOneOf<const Values extends readonly string[]>(
+  value: unknown,
+  values: Values,
+): value is Values[number] {
+  return typeof value === 'string' && values.some((candidate) => candidate === value)
 }
 
 function makeFailure(
@@ -222,7 +315,7 @@ function emitOpenSuccess(telemetry: unknown): void {
     module: 'sqlite',
     event: 'sqlite_open',
     status: 'success',
-    reason: 'schema_version=1;foreign_keys=on;journal_mode=wal;integrity=ok',
+    reason: 'schema_version=4;foreign_keys=on;journal_mode=wal;integrity=ok',
     source: 'runtime',
   })
 }
@@ -243,7 +336,22 @@ function emitMigrationSuccess(telemetry: unknown): void {
     module: 'sqlite',
     event: 'sqlite_migration',
     status: 'success',
-    reason: 'version=1;name=foundation_baseline',
+    reason: 'version=4;name=phase_test_records_v4',
+    source: 'runtime',
+  })
+}
+
+function emitPhaseRecordFailure(
+  telemetry: unknown,
+  operation: 'append' | 'read',
+  failure: SqliteFailure,
+): void {
+  safeEmit(telemetry, {
+    module: 'sqlite',
+    event: `sqlite_phase_record_${operation}`,
+    status: 'failed',
+    error_code: failure.code,
+    reason: `cause=${failure.reason}`,
     source: 'runtime',
   })
 }
@@ -384,6 +492,93 @@ function validateColumns(rows: readonly SqliteDatabaseRow[]): boolean {
   } catch {
     return false
   }
+}
+
+function validatePhaseColumns(rows: readonly SqliteDatabaseRow[]): boolean {
+  if (!Array.isArray(rows) || rows.length !== 7) return false
+
+  const expected = [
+    { cid: 0, name: 'sequence', type: 'INTEGER', notnull: 0, dflt_value: null, pk: 1 },
+    { cid: 1, name: 'phase', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    { cid: 2, name: 'demo_id', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    { cid: 3, name: 'build', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    { cid: 4, name: 'time', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    { cid: 5, name: 'result', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    { cid: 6, name: 'note', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+  ] as const
+
+  try {
+    return rows.every((row, index) => {
+      const expectedColumn = expected[index]
+      return expectedColumn !== undefined
+        && hasExactKeys(row, PHASE_COLUMN_KEYS)
+        && row.cid === expectedColumn.cid
+        && row.name === expectedColumn.name
+        && row.type === expectedColumn.type
+        && row.notnull === expectedColumn.notnull
+        && row.dflt_value === expectedColumn.dflt_value
+        && row.pk === expectedColumn.pk
+    })
+  } catch {
+    return false
+  }
+}
+
+function inspectPhaseTable(
+  driver: SqliteDatabaseDriver,
+  expectedDdl: string,
+): Result<void, SqliteFailure> {
+  let objects: readonly SqliteDatabaseRow[]
+  try {
+    objects = driver.all(SQL.phaseMaster)
+  } catch {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_object_invalid'))
+  }
+
+  if (!Array.isArray(objects) || objects.length !== 1) {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_object_invalid'))
+  }
+
+  try {
+    const object = objects[0]
+    if (
+      !hasExactKeys(object, PHASE_MASTER_KEYS)
+      || object.type !== 'table'
+      || object.name !== 'phase_test_records'
+      || object.tbl_name !== 'phase_test_records'
+    ) {
+      return failureResult(makeFailure('sqlite_schema_invalid', 'schema_object_invalid'))
+    }
+    if (typeof object.sql !== 'string' || normalizeSql(object.sql) !== expectedDdl) {
+      return failureResult(makeFailure('sqlite_schema_invalid', 'schema_ddl_invalid'))
+    }
+  } catch {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_ddl_invalid'))
+  }
+
+  let columns: readonly SqliteDatabaseRow[]
+  try {
+    columns = driver.all(SQL.phaseTableInfo)
+  } catch {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_columns_invalid'))
+  }
+  if (!validatePhaseColumns(columns)) {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_columns_invalid'))
+  }
+
+  let indexes: readonly SqliteDatabaseRow[]
+  let foreignKeys: readonly SqliteDatabaseRow[]
+  try {
+    indexes = driver.all(SQL.phaseIndexList)
+    foreignKeys = driver.all(SQL.phaseForeignKeyList)
+  } catch {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_columns_invalid'))
+  }
+  if (!Array.isArray(indexes) || indexes.length !== 0 || !Array.isArray(foreignKeys) || foreignKeys.length !== 0) {
+    return failureResult(makeFailure('sqlite_schema_invalid', 'schema_columns_invalid'))
+  }
+
+  return { ok: true, value: undefined }
 }
 
 function validateMigrationRows(
@@ -528,21 +723,131 @@ function inspectSchema(driver: SqliteDatabaseDriver): Result<ValidatedSchema, Sq
   const rowResult = validateMigrationRows(migrations)
   if (!rowResult.ok) return rowResult
 
+  if (rowResult.value === SQLITE_SCHEMA_VERSION) {
+    const phaseTable = inspectPhaseTable(driver, PHASE_TEST_DDL_NORMALIZED)
+    if (!phaseTable.ok) return phaseTable
+  }
+
   return {
     ok: true,
     value: {
       present: true,
       version: rowResult.value,
-      needsMigration: rowResult.value === null,
+      needsMigration: rowResult.value === null || rowResult.value < SQLITE_SCHEMA_VERSION,
     },
   }
 }
 
-function applyBaselineMigration(driver: SqliteDatabaseDriver): Result<void, SqliteFailure> {
+function validateExistingV2PhaseRows(driver: SqliteDatabaseDriver): boolean {
+  let rows: readonly SqliteDatabaseRow[]
+  try {
+    rows = driver.all(SQL.phaseTestRows)
+  } catch {
+    return false
+  }
+
+  if (!Array.isArray(rows)) return false
+
+  try {
+    for (const row of rows) {
+      if (!hasExactKeys(row, PHASE_TEST_ROW_KEYS)) return false
+      if (
+        typeof row.sequence !== 'number'
+        || !Number.isSafeInteger(row.sequence)
+        || row.sequence <= 0
+        || row.phase !== '0'
+      ) {
+        return false
+      }
+
+      const recordValidation = validatePhaseTestRecord({
+        phase: row.phase,
+        demoId: row.demo_id,
+        build: row.build,
+        time: row.time,
+        result: row.result,
+        note: row.note,
+      })
+      if (!recordValidation.ok || recordValidation.value.phase !== '0') return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function migratePhaseTestRecordsV2ToV3(driver: SqliteDatabaseDriver): void {
+  const v2Schema = inspectPhaseTable(driver, PHASE_TEST_V2_DDL_NORMALIZED)
+  if (!v2Schema.ok) throw new Error('migration_v2_schema_invalid')
+  if (!validateExistingV2PhaseRows(driver)) throw new Error('migration_v2_rows_invalid')
+
+  driver.exec(SQL.renamePhaseTestRecordsV2)
+  driver.exec(SQL.createPhaseTestRecordsV3)
+  driver.exec(SQL.copyPhaseTestRecordsV2)
+  driver.exec(SQL.dropPhaseTestRecordsV2)
+  driver.run(SQL.insertMigration, [3, PHASE_TEST_V3_MIGRATION_NAME])
+}
+
+function validateExistingV3PhaseRows(driver: SqliteDatabaseDriver): boolean {
+  let rows: readonly SqliteDatabaseRow[]
+  try {
+    rows = driver.all(SQL.phaseTestRows)
+  } catch {
+    return false
+  }
+  if (!Array.isArray(rows)) return false
+  return rows.every((row) => {
+    if (!hasExactKeys(row, PHASE_TEST_ROW_KEYS)) return false
+    const validated = validatePhaseTestRecord({
+      phase: row.phase,
+      demoId: row.demo_id,
+      build: row.build,
+      time: row.time,
+      result: row.result,
+      note: row.note,
+    })
+    return typeof row.sequence === 'number'
+      && Number.isSafeInteger(row.sequence)
+      && row.sequence > 0
+      && (row.phase === '0' || row.phase === '1')
+      && validated.ok
+  })
+}
+
+function migratePhaseTestRecordsV3ToV4(driver: SqliteDatabaseDriver): void {
+  const schema = inspectPhaseTable(driver, PHASE_TEST_V3_DDL_NORMALIZED)
+  if (!schema.ok || !validateExistingV3PhaseRows(driver)) throw new Error('migration_v3_invalid')
+  driver.exec(SQL.renamePhaseTestRecordsV3)
+  driver.exec(SQL.createPhaseTestRecords)
+  driver.exec(SQL.copyPhaseTestRecordsV3)
+  driver.exec(SQL.dropPhaseTestRecordsV3)
+  driver.run(SQL.insertMigration, [SQLITE_SCHEMA_VERSION, PHASE_TEST_MIGRATION_NAME])
+}
+
+function applyMigrations(
+  driver: SqliteDatabaseDriver,
+  currentVersion: number | null,
+): Result<void, SqliteFailure> {
   try {
     driver.exec(SQL.beginImmediate)
-    driver.exec(SQL.createBaseline)
-    driver.run(SQL.insertBaseline, [SQLITE_SCHEMA_VERSION, BASELINE_NAME])
+    let version = currentVersion
+    if (version === null) {
+      driver.exec(SQL.createBaseline)
+      driver.run(SQL.insertMigration, [BASELINE_VERSION, BASELINE_NAME])
+      version = BASELINE_VERSION
+    }
+    if (version === BASELINE_VERSION) {
+      driver.exec(SQL.createPhaseTestRecordsV2)
+      driver.run(SQL.insertMigration, [2, PHASE_TEST_V2_MIGRATION_NAME])
+      version = 2
+    }
+    if (version === 2) {
+      migratePhaseTestRecordsV2ToV3(driver)
+      version = 3
+    }
+    if (version === 3) {
+      migratePhaseTestRecordsV3ToV4(driver)
+    }
     driver.exec(SQL.commit)
     return { ok: true, value: undefined }
   } catch {
@@ -586,10 +891,136 @@ function cloneCloseResult(result: Result<void, SqliteFailure>): Result<void, Sql
   return { ok: false, error: cloneFailure(result.error) }
 }
 
+function phaseRecordFailure(
+  code: SqliteFailureCode,
+  reason: SqliteFailureReason,
+): Result<never, SqliteFailure> {
+  return failureResult(makeFailure(code, reason))
+}
+
+function isSafeMetadata(value: unknown, pattern: RegExp): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= MAX_METADATA_LENGTH
+    && value.trim().length > 0
+    && pattern.test(value)
+    && !PRIVATE_CONTENT_PATTERN.test(value)
+}
+
+function isCanonicalPhaseTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !PHASE_TEST_TIME_PATTERN.test(value)) return false
+  try {
+    return new Date(value).toISOString() === value
+  } catch {
+    return false
+  }
+}
+
+function validatePhaseTestRecord(value: unknown): Result<PhaseTestRecord, SqliteFailure> {
+  if (!isRecordObject(value) || !hasExactKeys(value, PHASE_TEST_RECORD_KEYS)) {
+    return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+  }
+
+  try {
+    const phase = value.phase
+    const demoId = value.demoId
+    const build = value.build
+    const time = value.time
+    const result = value.result
+    const note = value.note
+    if (phase === '0') {
+      if (!isOneOf(demoId, PHASE0_DEMO_IDS)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isSafeMetadata(build, PHASE_TEST_BUILD_PATTERN)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isCanonicalPhaseTime(time)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isOneOf(result, PHASE0_RESULTS)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isSafeMetadata(note, PHASE_TEST_NOTE_PATTERN)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+
+      return {
+        ok: true,
+        value: {
+          phase,
+          demoId,
+          build,
+          time,
+          result,
+          note,
+        },
+      }
+    }
+
+    if (phase === '1') {
+      if (!isOneOf(demoId, PHASE1_DEMO_IDS)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isSafeMetadata(build, PHASE_TEST_BUILD_PATTERN)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isCanonicalPhaseTime(time)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isOneOf(result, PHASE1_RESULTS)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      if (!isSafeMetadata(note, PHASE_TEST_NOTE_PATTERN)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+
+      return {
+        ok: true,
+        value: {
+          phase,
+          demoId,
+          build,
+          time,
+          result,
+          note,
+        },
+      }
+    }
+
+    if (phase === '2') {
+      if (!isOneOf(demoId, PHASE2_DEMO_IDS)
+        || !isSafeMetadata(build, PHASE_TEST_BUILD_PATTERN)
+        || !isCanonicalPhaseTime(time)
+        || !isOneOf(result, PHASE2_RESULTS)
+        || !isSafeMetadata(note, PHASE_TEST_NOTE_PATTERN)) {
+        return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+      }
+      return { ok: true, value: { phase, demoId, build, time, result, note } }
+    }
+
+    return phaseRecordFailure('sqlite_phase_record_invalid', 'phase_invalid')
+  } catch {
+    return phaseRecordFailure('sqlite_phase_record_invalid', 'record_invalid')
+  }
+}
+
+function clonePhaseTestRecord(record: PhaseTestRecord): PhaseTestRecord {
+  return { ...record }
+}
+
+function phaseRecordReadFailure(): SqliteFailure {
+  return makeFailure('sqlite_phase_record_read_failed', 'read_failed')
+}
+
+function phaseRecordWriteFailure(): SqliteFailure {
+  return makeFailure('sqlite_phase_record_write_failed', 'transaction_failed')
+}
+
 function createService(
   driver: SqliteDatabaseDriver,
   telemetry: unknown,
-): SqliteService {
+): SqlitePhaseTestService {
   let healthState: SqliteHealth = {
     status: 'ready',
     schemaVersion: SQLITE_SCHEMA_VERSION,
@@ -600,9 +1031,118 @@ function createService(
   }
   let firstCloseResult: Result<void, SqliteFailure> | null = null
 
-  const service: SqliteService = {
+  const service: SqlitePhaseTestService = {
     health() {
       return cloneHealth(healthState)
+    },
+    appendPhaseTestRecord(record) {
+      if (firstCloseResult !== null) {
+        const failure = makeFailure('sqlite_closed', 'service_closed')
+        emitPhaseRecordFailure(telemetry, 'append', failure)
+        return failureResult(failure)
+      }
+
+      const validation = validatePhaseTestRecord(record)
+      if (!validation.ok) {
+        emitPhaseRecordFailure(telemetry, 'append', validation.error)
+        return validation
+      }
+
+      try {
+        driver.exec(SQL.beginImmediate)
+        driver.run(SQL.insertPhaseTestRecord, [
+          validation.value.phase,
+          validation.value.demoId,
+          validation.value.build,
+          validation.value.time,
+          validation.value.result,
+          validation.value.note,
+        ])
+        driver.run(SQL.prunePhaseTestRecords)
+        driver.exec(SQL.commit)
+        return { ok: true, value: undefined }
+      } catch {
+        try {
+          driver.exec(SQL.rollback)
+        } catch {
+          // Rollback is best effort; the append failure remains primary.
+        }
+        const failure = phaseRecordWriteFailure()
+        emitPhaseRecordFailure(telemetry, 'append', failure)
+        return failureResult(failure)
+      }
+    },
+    readPhaseTestRecords(phase) {
+      if (firstCloseResult !== null) {
+        const failure = makeFailure('sqlite_closed', 'service_closed')
+        emitPhaseRecordFailure(telemetry, 'read', failure)
+        return failureResult(failure)
+      }
+      if (phase !== '0' && phase !== '1' && phase !== '2') {
+        const failure = makeFailure('sqlite_phase_record_invalid', 'phase_invalid')
+        emitPhaseRecordFailure(telemetry, 'read', failure)
+        return failureResult(failure)
+      }
+
+      let rows: readonly SqliteDatabaseRow[]
+      try {
+        rows = driver.all(SQL.readPhaseTestRecords, [phase])
+      } catch {
+        const failure = phaseRecordReadFailure()
+        emitPhaseRecordFailure(telemetry, 'read', failure)
+        return failureResult(failure)
+      }
+
+      if (!Array.isArray(rows) || rows.length > MAX_PHASE_TEST_RECORDS) {
+        const failure = phaseRecordReadFailure()
+        emitPhaseRecordFailure(telemetry, 'read', failure)
+        return failureResult(failure)
+      }
+
+      try {
+        const ordered: Array<{ sequence: number; record: PhaseTestRecord }> = []
+        for (const row of rows) {
+          if (!hasExactKeys(row, PHASE_TEST_ROW_KEYS)) {
+            const failure = phaseRecordReadFailure()
+            emitPhaseRecordFailure(telemetry, 'read', failure)
+            return failureResult(failure)
+          }
+          if (
+            typeof row.sequence !== 'number'
+            || !Number.isSafeInteger(row.sequence)
+            || row.sequence <= 0
+          ) {
+            const failure = phaseRecordReadFailure()
+            emitPhaseRecordFailure(telemetry, 'read', failure)
+            return failureResult(failure)
+          }
+
+          const recordValidation = validatePhaseTestRecord({
+            phase: row.phase,
+            demoId: row.demo_id,
+            build: row.build,
+            time: row.time,
+            result: row.result,
+            note: row.note,
+          })
+          if (!recordValidation.ok || recordValidation.value.phase !== phase) {
+            const failure = phaseRecordReadFailure()
+            emitPhaseRecordFailure(telemetry, 'read', failure)
+            return failureResult(failure)
+          }
+          ordered.push({ sequence: row.sequence, record: recordValidation.value })
+        }
+
+        ordered.sort((left, right) => right.sequence - left.sequence)
+        return {
+          ok: true,
+          value: ordered.map(({ record }) => clonePhaseTestRecord(record)),
+        }
+      } catch {
+        const failure = phaseRecordReadFailure()
+        emitPhaseRecordFailure(telemetry, 'read', failure)
+        return failureResult(failure)
+      }
     },
     close() {
       if (firstCloseResult !== null) {
@@ -646,7 +1186,7 @@ function failAfterOpen(
   driver: SqliteDatabaseDriver,
   telemetry: unknown,
   primaryFailure: SqliteFailure,
-): Result<SqliteService, SqliteFailure> {
+): Result<SqlitePhaseTestService, SqliteFailure> {
   try {
     driver.close()
   } catch {
@@ -659,7 +1199,7 @@ function failAfterOpen(
 
 export function openSqlite(
   options: SqliteServiceOptions,
-): Result<SqliteService, SqliteFailure> {
+): Result<SqlitePhaseTestService, SqliteFailure> {
   const telemetry = readOption(options, 'telemetry')
   const pathResult = validateDbPath(readOption(options, 'dbPath'))
   if (!pathResult.ok) {
@@ -719,7 +1259,7 @@ export function openSqlite(
   }
 
   if (initialSchema.value.needsMigration) {
-    const migration = applyBaselineMigration(driver)
+    const migration = applyMigrations(driver, initialSchema.value.version)
     if (!migration.ok) {
       emitMigrationFailure(telemetry)
       return failAfterOpen(driver, telemetry, migration.error)

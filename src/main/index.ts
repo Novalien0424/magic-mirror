@@ -1,17 +1,65 @@
-import { basename, join } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'electron'
+import { basename, join, resolve } from 'node:path'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  powerSaveBlocker,
+  utilityProcess,
+  type WebContents,
+} from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
+import { bootSequence, type BootRuntime } from './boot'
 import { createCrashRecovery } from './crash-recovery'
+import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
+import { createEnvironmentCredentialSource } from './environment-credential-source'
+import {
+  dispatchMirrorRealtimeRuntimeCommand,
+  publishSnapshot,
+  registerIpcHandlers,
+} from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
+import { applyPhase0UserDataPath } from './phase0-demo-runner'
+import {
+  createPhase1LiveSmokeCoordinator,
+  matchesPhase1LiveSmokeProvenance,
+  type Phase1LiveSmokeCoordinator,
+  type Phase1LiveSmokeResult,
+} from './phase1-live-smoke'
+import {
+  createClientSecretBroker,
+  type ClientSecretBrokerEventSink,
+} from './realtime/client-secret-broker'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
+import { loadWakeModelPackage } from './wake/model-package'
+import {
+  createWakeSupervisor,
+  type WakeSupervisor,
+  type WakeWorkerChild,
+} from './wake/supervisor'
+import type { WakeWorkerPackage } from './wake/protocol'
+import { createWakeConversationActivation } from './wake/conversation-activation'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 /** Never let a stalled stdout pipe turn a smoke run into a hang. */
 const EXIT_FLUSH_TIMEOUT_MS = 500
+const phase1LiveSmokeEnabled = process.env['MIRROR_PHASE1_LIVE_SMOKE'] === '1'
+
+if (phase1LiveSmokeEnabled) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
 
 const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
+const phase0UserDataPath = applyPhase0UserDataPath({
+  app,
+  demo: process.env['MIRROR_PHASE0_DEMO'],
+  smoke: smokeMode.kind === 'on' || phase1LiveSmokeEnabled,
+  userDataRoot: process.env['MIRROR_PHASE0_USER_DATA_ROOT'],
+  userDataDir: process.env['MIRROR_USER_DATA_DIR'],
+})
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
 const hideWindowsForSmoke = smokeMode.kind === 'on'
 
@@ -26,11 +74,21 @@ const windows = new Map<MirrorWindowKind, BrowserWindow>()
 const readyReported = new WeakSet<WebContents>()
 const crashRecovery = createCrashRecovery()
 
+/** Smoke-only state: Main lifecycle is projected only after the current mirror is ready. */
 const boot: { lifecycle: LifecycleState; loaded: Record<MirrorWindowKind, boolean> } = {
-  // Task 2 owns the real machine; Task 1 only needs "did we leave starting".
   lifecycle: 'starting',
   loaded: { mirror: false, console: false }
 }
+let mainLifecycle: LifecycleState = 'starting'
+let mirrorRendererReady = false
+let displaySleepBlocker: DisplaySleepBlocker | null = null
+let bootRuntime: BootRuntime | null = null
+let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
+let wakeSupervisor: WakeSupervisor | null = null
+let shutdownPromise: Promise<void> | null = null
+let willQuitHandled = false
+let quitResourcesStopped = false
+let appQuitFinalizationStarted = false
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -40,6 +98,98 @@ function rendererEntry(kind: MirrorWindowKind): RendererEntry {
   return { from: 'file', file: join(__dirname, `../renderer/${kind}/index.html`) }
 }
 
+function resolveOfflineLoopAssetPath(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')
+  }
+  return resolve(__dirname, '../../resources/generated/mock/offline-loop-v1.mp4')
+}
+
+function wakeModelRoot(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'wake-models')
+    : join(app.getAppPath(), 'resources', 'wake-models')
+}
+
+function spawnWakeWorker(): WakeWorkerChild {
+  const child = utilityProcess.fork(resolve(__dirname, 'wake-worker.js'), [], {
+    serviceName: 'Magic Mirror Wake Listener',
+  })
+  return {
+    postMessage: (command) => child.postMessage(command),
+    on(event, listener) {
+      if (event === 'message') child.on('message', listener)
+      else child.on('exit', (code) => listener(code))
+    },
+    kill: () => child.kill(),
+  }
+}
+
+async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+  if (
+    typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
+    || typeof runtime.setWakeRuntimeStatus !== 'function'
+  ) return
+  let wake: Awaited<ReturnType<BootRuntime['getPublishedWakeConfigForRuntime']>>
+  try {
+    wake = await runtime.getPublishedWakeConfigForRuntime()
+  } catch {
+    await runtime.setWakeRuntimeStatus('failed', 'wake_config_unavailable')
+    return
+  }
+  const loaded = await loadWakeModelPackage({
+    rootDirectory: wakeModelRoot(),
+    wake,
+    platform: `${process.platform}-${process.arch}`,
+  })
+  if (!loaded.ok) {
+    await runtime.setWakeRuntimeStatus('degraded', loaded.reason)
+    return
+  }
+
+  const tuning = loaded.manifest.tuning
+  const workerPackage: WakeWorkerPackage = {
+    packageId: loaded.manifest.packageId,
+    engine: loaded.manifest.engine,
+    engineVersion: loaded.manifest.engineVersion,
+    modelVersion: loaded.manifest.modelVersion,
+    phrase: loaded.manifest.phrase,
+    sampleRateHz: 16_000,
+    artifactPaths: Object.fromEntries(loaded.artifactPaths),
+    tuning: {
+      ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
+      ...(tuning.score === undefined ? {} : { score: tuning.score }),
+      ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
+    },
+  }
+  let activation: ReturnType<typeof createWakeConversationActivation> | null = null
+  const supervisor = createWakeSupervisor({
+    spawn: spawnWakeWorker,
+    onWake: () => {
+      void activation?.handleWake()
+    },
+    onStatus: (snapshot) => {
+      const moduleStatus = snapshot.status === 'failed'
+        ? 'failed'
+        : snapshot.status === 'starting' || snapshot.status === 'stopped'
+          ? 'degraded'
+          : 'ready'
+      void runtime.setWakeRuntimeStatus(moduleStatus, snapshot.reason ?? `wake_worker_${snapshot.status}`)
+    },
+  })
+  activation = createWakeConversationActivation({
+    getLifecycle: () => runtime.snapshot().lifecycle,
+    startConversation: () => runtime.manualStart(),
+    reacquireWake: () => supervisor.acquire(),
+  })
+  wakeSupervisor = supervisor
+  const started = await supervisor.start({ package: workerPackage })
+  if (started.status === 'failed') return
+  if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+    await supervisor.acquire()
+  }
+}
+
 function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructorOptions {
   const shared: Electron.BrowserWindowConstructorOptions = {
     show: false,
@@ -47,7 +197,8 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
       preload: join(__dirname, `../preload/${kind}.js`),
       sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true
     }
   }
 
@@ -71,6 +222,16 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
 function createWindow(kind: MirrorWindowKind): BrowserWindow {
   const win = new BrowserWindow(windowOptions(kind))
   windows.set(kind, win)
+  boot.loaded[kind] = false
+  if (kind === 'mirror') {
+    mirrorRendererReady = false
+    boot.lifecycle = 'starting'
+  }
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
 
   win.webContents.on('did-finish-load', () => {
     boot.loaded[kind] = true
@@ -85,13 +246,13 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
     }
   })
 
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    marker('WINDOW_LOAD_FAILED', { window: kind, error_code: errorCode, reason: errorDescription })
+  win.webContents.on('did-fail-load', (_event, errorCode, _errorDescription) => {
+    marker('WINDOW_LOAD_FAILED', { window: kind, error_code: errorCode, reason: 'window_load_failed' })
   })
 
-  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+  win.webContents.on('preload-error', (_event, preloadPath, _error) => {
     // No silent failure: a preload that threw means a renderer with no bridge.
-    marker('PRELOAD_ERROR', { window: kind, file: basename(preloadPath), reason: error.message })
+    marker('PRELOAD_ERROR', { window: kind, file: basename(preloadPath), reason: 'preload_exception' })
   })
 
   // The mirror is the visitor-facing glass: show it as soon as it can paint.
@@ -143,9 +304,9 @@ function onRendererReady(sender: WebContents): void {
   readyReported.add(sender)
 
   marker('RENDERER_READY', { window: kind })
-  if (kind === 'mirror' && boot.lifecycle === 'starting') {
-    boot.lifecycle = 'dormant'
-    marker('LIFECYCLE', { from: 'starting', to: 'dormant' })
+  if (kind === 'mirror') {
+    mirrorRendererReady = true
+    boot.lifecycle = mainLifecycle
   }
 }
 
@@ -162,7 +323,7 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
   marker('RENDERER_GONE', { window: kind, reason: details.reason, exit_code: details.exitCode })
 
   if (decision.action === 'give_up') {
-    // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts — never app.relaunch().
+    // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts; do not relaunch in-app.
     exitWithMarker('APP_EXIT', { code: 1, window: kind, attempts: decision.attempt, reason: decision.reason }, 1)
     return
   }
@@ -209,7 +370,14 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
   const quit = (): void => {
     if (exited) return
     exited = true
-    app.exit(code)
+    stopQuitResources()
+    void shutdownBootRuntime().then(() => {
+      if (code === 1) {
+        app.exit(1)
+        return
+      }
+      app.exit(code)
+    })
   }
   process.stdout.write(formatMarker(name, fields), quit)
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
@@ -217,10 +385,96 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
 
 function finishSmokeRun(): void {
   const verdict = evaluateSmoke(boot)
-  exitWithMarker('SMOKE_RESULT', { exit: verdict.exitCode, reason: verdict.reason }, verdict.exitCode)
+  const snapshot = bootRuntime?.snapshot()
+  exitWithMarker(
+    'SMOKE_RESULT',
+    {
+      exit: verdict.exitCode,
+      reason: verdict.reason,
+      lifecycle: snapshot?.lifecycle ?? 'starting',
+      config_status: snapshot?.modules.config ?? 'failed',
+      maintenance_code: snapshot?.maintenance?.code ?? 'none',
+    },
+    verdict.exitCode,
+  )
+}
+
+function finishPhase1LiveSmoke(result: Phase1LiveSmokeResult): void {
+  exitWithMarker(
+    'PHASE1_LIVE_RESULT',
+    {
+      status: result.status,
+      exit: result.exit,
+      stage: result.stage,
+      reason: result.reason,
+      duration_ms: result.duration_ms,
+      model_availability: result.modelAvailability,
+      provenance: result.provenance,
+    },
+    result.exit,
+  )
+}
+
+function emitDisplaySleepMetadata(
+  telemetry: BootRuntime['telemetry'],
+  event: DisplaySleepBlockerEvent,
+): void {
+  const metadata: Parameters<typeof telemetry.emit>[0] = {
+    module: 'app',
+    event: `display_sleep_blocker_${event.action}`,
+    status: event.status === 'degraded' ? 'degraded' : event.status === 'not_started' ? 'info' : 'success',
+    source: 'runtime',
+  }
+  if (event.reason !== undefined) metadata.reason = event.reason
+  try {
+    telemetry.emit(metadata)
+  } catch {
+    // A diagnostic sink failure cannot gate blocker startup or clean quit.
+  }
+}
+
+function createDeferredCredentialEventSink(): {
+  readonly sink: ClientSecretBrokerEventSink
+  readonly install: (target: ClientSecretBrokerEventSink) => void
+} {
+  let target: ClientSecretBrokerEventSink | null = null
+  const pending: Parameters<ClientSecretBrokerEventSink['emit']>[0][] = []
+
+  return {
+    sink: {
+      emit(event) {
+        if (target === null) {
+          pending.push(event)
+          return
+        }
+        try {
+          target.emit(event)
+        } catch {
+          // Credential diagnostics remain metadata-only and cannot gate a request.
+        }
+      },
+    },
+    install(nextTarget) {
+      target = nextTarget
+      while (pending.length > 0) {
+        const event = pending.shift()
+        if (event === undefined) continue
+        try {
+          target.emit(event)
+        } catch {
+          // A telemetry sink failure cannot expose or block credential handling.
+        }
+      }
+    },
+  }
 }
 
 void app.whenReady().then(() => {
+  if (!phase0UserDataPath.ok) {
+    exitWithMarker('SMOKE_CONFIG_INVALID', { reason: 'phase0_user_data_isolation_invalid' }, 2)
+    return
+  }
+
   marker('MAIN_READY', {
     electron: process.versions.electron,
     platform: process.platform,
@@ -232,15 +486,161 @@ void app.whenReady().then(() => {
     return
   }
 
-  ipcMain.on(BOOT_RENDERER_READY_CHANNEL, (event) => onRendererReady(event.sender))
+  const deferredCredentialEvents = createDeferredCredentialEventSink()
+  const credentialSource = createEnvironmentCredentialSource()
+  const clientSecretBroker = createClientSecretBroker({
+    credentialStore: credentialSource,
+    events: deferredCredentialEvents.sink,
+  })
+
+  const runtime: BootRuntime = bootSequence({
+    appVersion: app.getVersion(),
+    buildCommit: process.env['MIRROR_BUILD_COMMIT'] ?? 'development',
+    isPackaged: app.isPackaged,
+    developerModeOverride: process.env['MIRROR_DEVELOPER_MODE'],
+    telemetryDirectory: join(app.getPath('userData'), 'telemetry'),
+    configDir: join(app.getPath('userData'), 'config'),
+    defaultConfigPath: app.isPackaged
+      ? join(process.resourcesPath, 'config', 'default.json')
+      : join(app.getAppPath(), 'resources', 'config', 'default.json'),
+    sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
+    offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
+    clientSecretBroker,
+    wakeMicrophoneHandoff: {
+      release: () => wakeSupervisor?.release() ?? Promise.resolve({
+        status: 'success' as const,
+        reason: 'wake_microphone_not_configured',
+      }),
+      acquire: () => wakeSupervisor?.acquire() ?? Promise.resolve({
+        status: 'success' as const,
+        reason: 'wake_microphone_not_configured',
+      }),
+    },
+    validateWakeConfig: async (wake) => (await loadWakeModelPackage({
+      rootDirectory: wakeModelRoot(),
+      wake,
+      platform: `${process.platform}-${process.arch}`,
+    })).ok,
+    dispatchRealtimeRuntimeCommand: (command) =>
+      dispatchMirrorRealtimeRuntimeCommand(command, windows),
+  })
+  deferredCredentialEvents.install(runtime.telemetry)
+  bootRuntime = runtime
+  void configureWakeRuntime(runtime)
+
+  displaySleepBlocker = createDisplaySleepBlocker(
+    {
+      start: (type) => powerSaveBlocker.start(type),
+      isStarted: (id) => powerSaveBlocker.isStarted(id),
+      stop: (id) => powerSaveBlocker.stop(id),
+    },
+    (event) => emitDisplaySleepMetadata(runtime.telemetry, event),
+  )
+  displaySleepBlocker.start()
+
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
+
   createWindows()
+  registerIpcHandlers({
+    ipcMain,
+    runtime,
+    console: runtime.console,
+    windows,
+    telemetry: runtime.telemetry,
+    onReady: (kind) => {
+      const win = windows.get(kind)
+      if (win !== undefined && !win.isDestroyed()) {
+        onRendererReady(win.webContents)
+        if (kind === 'mirror') phase1LiveSmokeCoordinator?.onMirrorRendererReady()
+      }
+    },
+  })
+  runtime.subscribe((snapshot) => {
+    mainLifecycle = snapshot.lifecycle
+    boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
+    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
+    void publishSnapshot('console', snapshot, windows, runtime.telemetry)
+  })
+
+  if (phase1LiveSmokeEnabled) {
+    phase1LiveSmokeCoordinator = createPhase1LiveSmokeCoordinator({
+      getSnapshot: () => runtime.snapshot(),
+      getLastRealtimeRuntimeOutcomeReason: () => runtime.getLastRealtimeRuntimeOutcomeReason(),
+      subscribe: (listener) => runtime.subscribe(listener),
+      checkProvenance: async () => {
+        const encodedExpected = process.env['MIRROR_PHASE1_EXPECTED_PROVENANCE']
+        if (encodedExpected === undefined) return false
+        let expected: unknown
+        try {
+          expected = JSON.parse(encodedExpected) as unknown
+        } catch {
+          return false
+        }
+        const snapshot = await runtime.getPublishedSessionModelSnapshotForDiagnostics()
+        return matchesPhase1LiveSmokeProvenance(expected, {
+          userDataDir: resolve(app.getPath('userData')),
+          configVersion: snapshot.configVersion,
+          fingerprint: snapshot.fingerprint,
+          sdkVersion: snapshot.sdkVersion,
+          realtimeDialogue: snapshot.realtimeDialogue,
+          inputTranscription: snapshot.inputTranscription,
+          memoryExtractor: snapshot.memoryExtractor,
+          voice: snapshot.voice,
+          reasoningEffort: snapshot.reasoningEffort,
+          turnDetectionProfile: snapshot.turnDetectionProfile,
+        })
+      },
+      probeConfiguredModelAvailability: runtime.probeConfiguredModelAvailability,
+      manualStart: () => runtime.manualStart(),
+      manualStop: () => runtime.manualStop(),
+      emitResult: finishPhase1LiveSmoke,
+    })
+    phase1LiveSmokeCoordinator.start()
+  }
+
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+function shutdownBootRuntime(): Promise<void> {
+  if (shutdownPromise !== null) return shutdownPromise
+  const runtime = bootRuntime
+  if (runtime === null) {
+    shutdownPromise = Promise.resolve()
+    return shutdownPromise
+  }
+
+  shutdownPromise = Promise.resolve()
+    .then(() => wakeSupervisor?.shutdown())
+    .then(() => runtime.shutdown())
+    .catch(() => {
+      marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })
+    })
+  return shutdownPromise
+}
+
+function stopQuitResources(): void {
+  if (quitResourcesStopped) return
+  quitResourcesStopped = true
+  globalShortcut.unregisterAll()
+  displaySleepBlocker?.stop()
+}
+
+app.on('will-quit', (event) => {
+  if (willQuitHandled) return
+
+  event.preventDefault()
+  stopQuitResources()
+  if (appQuitFinalizationStarted) return
+  appQuitFinalizationStarted = true
+
+  void shutdownBootRuntime().then(() => {
+    // Release before app.quit() so Electron's reentrant will-quit is allowed through.
+    willQuitHandled = true
+    app.quit()
+  })
+})
 
 app.on('window-all-closed', () => {
   if (!isDarwin) app.quit()

@@ -8,12 +8,23 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "generate:offline-loop": "node scripts/generate-offline-loop.mjs",
+    "predev": "npm run generate:offline-loop",
+    "prebuild": "npm run generate:offline-loop",
+    "package": "electron-builder --dir --publish never",
+    "smoke": "electron .",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:phase1:live": "node scripts/run-phase1-live-smoke.mjs",
+    "evaluate:wake": "node scripts/evaluate-wake-models.mjs"
   },
   "dependencies": {
+    "@openai/agents": "0.16.1",
+    "@openai/agents-realtime": "0.16.1",
+    "decibri": "5.7.0",
+    "sherpa-onnx-node": "1.13.6",
     "write-file-atomic": "^8.0.0",
     "xstate": "^5.32.5",
     "zod": "^4.4.3"
@@ -23,7 +34,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^43.0.0",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "^5.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

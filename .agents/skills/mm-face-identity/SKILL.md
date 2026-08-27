@@ -12,35 +12,12 @@ Face only PROPOSES a candidate; verbal confirmation authorizes (invariant #2).
 Candidate scan runs ~2-3 s during Activating only; runtime frames are never
 persisted.
 
-## Reusable worker contract
+## Codex routing
 
-For every future task that uses this skill, the dispatch must include this
-bounded worker contract:
-
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: "implementer"
-fresh_worker: true
-task: one bounded face-identity unit with explicit non-goals
-write_scope: exact named file path(s) for this task; read-only unless a named path is explicitly writable
-skills: .agents/skills/mm-invariants/SKILL.md and .agents/skills/mm-face-identity/SKILL.md
-self_invariants: applicable canonical invariant IDs; for this skill check #1, #2, #9, and #10 as applicable, with #2 and #10 required for candidate confirmation or camera degradation
-evidence: exact changed files, concise diff summary, metadata-only evidence, complete stdout/stderr and exit code for each command, and risks
-self_review: read the own diff and output; no more than 3 passes
-root_review: external root review after return; not part of self-review
-reviewer: none
-child: none
-```
-
-Evidence is metadata-only: use IDs, enums, counts, timings, statuses, reasons,
-hashes, paths, and exit codes. Never put raw transcript text, audio, extracted
-memory values, private context, credentials, images, embeddings, or prompts
-containing user content in evidence, logs, telemetry, or reports. Do not
-delegate, spawn, launch, or create a reviewer or child worker. Product,
-application, test, dependency, and runtime writes are allowed only when the
-exact future task `write_scope` names those paths; otherwise do not infer or
-widen the write scope.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy. Apply invariants 1,
+2, 9, and 10 when candidate confirmation, privacy, or camera degradation is in
+scope. This skill supplies face-pipeline facts only; evidence remains
+metadata-only and recognition never authorizes identity by itself.
 
 ## Versions and models - pin the pair
 

@@ -7,9 +7,9 @@ description: Use when implementing the Electron shell -- main process, lifecycle
 
 ## Overview
 
-Verified **2026-08-16**. Pin `electron@43.x` (Chromium M150, Node 24.17;
-Electron 44 lands 2026-08-25, 41 EOLs same day -- plan the bump, don't ride
-`latest`). Scaffold: **electron-vite 5** for dev/build + **electron-builder
+Verified **2026-08-27**. Pin stable `electron@44.x`; the project currently
+uses exact `44.0.0`. Recheck the stable release before a deliberate dependency
+upgrade rather than using an unpinned `latest`. Scaffold: **electron-vite 5** for dev/build + **electron-builder
 or Forge** for packaging/signing. TypeScript + React renderers.
 
 ## Process Model & IPC
@@ -52,12 +52,10 @@ rollup `external` or it breaks the build.
 
 ## Credentials
 
-`safeStorage` (Keychain-backed on macOS); **keytar is archived -- never add
-it**. Call only after `app.ready`; prefer `encryptStringAsync`/
-`decryptStringAsync` (sync blocks on Keychain UI); handle `shouldReEncrypt`.
-Store the encrypted blob in local data, plaintext never crosses IPC
-(invariant #12). On the Windows dev machine safeStorage uses DPAPI -- same
-code path, no shim needed.
+For this personal build, Electron Main alone loads `OPENAI_API_KEY` from the
+ignored repository-root `.env`. Do not add Console provisioning, `safeStorage`,
+Keychain, DPAPI, inherited-environment, or alternate-key fallbacks. Only a
+short-lived Realtime credential may cross to the renderer (invariant #12).
 
 ## Kiosk Windows
 
@@ -113,36 +111,8 @@ block anonymous Voice startup (Spec Section 13.3).
 - OfflineLoop video: verify decodability at Starting; a corrupt asset falls
   back to the built-in Maintenance still, never black (Spec Section 9.3).
 
-## Codex execution contract
+## Codex routing
 
-When this skill is used for Magic Mirror work, dispatch one bounded fresh
-worker with this explicit envelope:
-
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-task: one bounded Electron-foundation unit with explicit non-goals
-write_scope: exact named files; read-only unless the named scope grants a write
-skills: .agents/skills/mm-phase-workflow/SKILL.md, .agents/skills/mm-invariants/SKILL.md, .agents/skills/mm-electron-foundation/SKILL.md
-self_invariants: 1, 3, 8, 9, 10, 11, 12
-evidence: exact files changed, concise diff summary, complete command output and exit codes, unresolved risks; metadata-only
-self_review: read the own diff/output; no more than 3 passes
-root_review: interactive root-only external review after return; not part of self-review
-```
-
-The interactive root is the sole orchestrator and reviewer. Do not delegate,
-spawn, or create a reviewer worker. Keep root review external to worker
-self-review. Preserve this skill's source-grounded facts, pins, dependencies,
-platform distinctions, failure paths, safety boundaries, and prohibited
-shortcuts as immutable inputs; do not edit, rename, reformat, or delete them.
-Immutable legacy sources and prompt-excluded paths never change. Application,
-product, test, package, dependency, runtime configuration, plan, and process
-paths may change only when the dispatch explicitly names them in `write_scope`;
-preserve exact scope and never widen it. Keep evidence
-metadata-only: use paths, IDs, enums, counts, timings, statuses, reasons,
-hashes, and exit codes; never include transcripts, audio, memory values,
-private context, credentials, images, embeddings, or user-content prompts.
-The worker harness model is not a Magic Mirror runtime model and must not be
-copied into runtime configuration, source, telemetry, or product artifacts.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy and load
+`mm-invariants` only for the IDs implicated by the change. This skill supplies
+Electron versions, platform distinctions, and failure-boundary facts only.

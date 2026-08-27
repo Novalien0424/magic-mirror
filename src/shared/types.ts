@@ -8,6 +8,7 @@ export type ModuleId =
 
 export type ModuleStatus = 'not_implemented' | 'ready' | 'degraded' | 'failed';
 export type OpStatus = 'success' | 'degraded' | 'failed';
+export type IdentityStatus = 'unassigned' | 'confirming' | 'active' | 'anonymous' | 'group';
 
 export interface MirrorEvent {
   time: string;                 // ISO-8601, set by Telemetry.emit
@@ -33,9 +34,11 @@ export interface MirrorConfig {
   configVersion: number;                     // bumped on every publish
   persona: { name: string; instructions: string };
   voice: string;
+  reasoningEffort: string;
+  turnDetectionProfile: string;
   idleSeconds: number;                       // 300 in production config
   aiModels: AiModelsConfig;
-  wake: { phrase: string; modelVersion: string };
+  wake: { phrase: string; modelVersion: string; packageId: string };
   faceModel: { detectorId: string; recognizerId: string };
   assets: { offlineLoopVideo: string; avatarDir: string; musicDir: string };
   spells: unknown[];                         // Phase 4 owns the shape
@@ -50,7 +53,9 @@ export interface ConfigDiff { changed: Array<{ path: string; from: unknown; to: 
 
 export interface SessionModelSnapshot {
   configVersion: number; fingerprint: string;
-  realtimeDialogue: string; inputTranscription: string; voice: string;
+  sdkVersion: '0.16.1';
+  realtimeDialogue: string; inputTranscription: string; memoryExtractor: string;
+  voice: string; reasoningEffort: string; turnDetectionProfile: string;
   takenAt: string;
 }
 export interface JobModelSnapshot {
@@ -59,9 +64,9 @@ export interface JobModelSnapshot {
 
 export interface AppSnapshot {
   lifecycle: LifecycleState;
-  appVersion: string; buildCommit: string; configVersion: number;
+  appVersion: string; buildCommit: string; configVersion: number | null;
   modules: Record<ModuleId, ModuleStatus>;
-  activeProfileId: string | 'anonymous' | null;
+  identityStatus: IdentityStatus;
   realtimeSessionId: string | null;
   sessionGeneration: number;
   lastError: { module: ModuleId; error_code: string; time: string } | null;
@@ -76,6 +81,11 @@ export type SimulatorCommand =
   | { type: 'scene_result'; sceneId: string; status: OpStatus }
   | { type: 'sqlite_failure' }
   | { type: 'sleep' };
+
+export interface SimulatorResult {
+  readonly op: OpStatus;
+  readonly lifecycleEvent?: string;
+}
 
 export interface PhaseTestRecord {
   demoId: string;               // 'P0-D1' ...

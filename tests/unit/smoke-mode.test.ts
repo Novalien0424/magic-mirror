@@ -23,14 +23,28 @@ describe('parseSmokeMode', () => {
 describe('evaluateSmoke', () => {
   const ready = { lifecycle: 'dormant', loaded: { mirror: true, console: true } } as const
 
-  it('exits 0 when both windows loaded and lifecycle left starting', () => {
+  it('exits 0 when both windows loaded and lifecycle is dormant', () => {
     expect(evaluateSmoke(ready)).toEqual({ exitCode: SMOKE_EXIT_OK, reason: 'ok' })
+  })
+
+  it('exits 0 when both windows loaded and lifecycle is maintenance', () => {
+    expect(evaluateSmoke({ ...ready, lifecycle: 'maintenance' })).toEqual({
+      exitCode: SMOKE_EXIT_OK,
+      reason: 'ok'
+    })
   })
 
   it('exits 2 while the lifecycle is still starting', () => {
     const verdict = evaluateSmoke({ ...ready, lifecycle: 'starting' })
     expect(verdict.exitCode).toBe(SMOKE_EXIT_FAILED)
     expect(verdict.reason).toContain('lifecycle_still_starting')
+  })
+
+  it('exits 2 when both windows loaded but lifecycle is offlineLoop', () => {
+    expect(evaluateSmoke({ ...ready, lifecycle: 'offlineLoop' })).toEqual({
+      exitCode: SMOKE_EXIT_FAILED,
+      reason: 'lifecycle_not_terminal'
+    })
   })
 
   it('exits 2 when a window never loaded, naming which one', () => {

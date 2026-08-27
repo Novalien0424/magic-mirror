@@ -1,4 +1,12 @@
-# Codex CLI discovery and dry-runs use --profile nova-auto; the profile is user-level and is never copied here.
+# Primary interactive executor: direct, capable, and on the critical path.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+
+# Optional subagents are deliberately limited. Role files override effort where
+# deeper or lighter reasoning is appropriate.
 [agents]
+enabled = true
+max_concurrent_threads_per_session = 2
 default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "max"
+default_subagent_reasoning_effort = "high"
+interrupt_message = true

@@ -2,11 +2,99 @@
 
 **版本：** 0.3.1  
 **日期：** 2026-08-16  
-**狀態：** Build-ready  
+**狀態：** Build-ready baseline；Phase 0 Task 10 remains unimplemented
 **對應文件：** `Magic_Mirror_PRD_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`  
 **目的：** 把 Phase 1 Prototype 拆成 Phase 0～7；每一階段都能在 Mac mini 上獨立執行、展示、診斷與驗收。
 
 > **v0.3.1（2026-08-16）修訂：** 依 stack adversarial review 在 Phase 0／1／2／3／5／6 加入版本 pin、TCC 打包基線、Voice contract test 追加項、wake telemetry 校正、RMS-first lip sync 基線、embedding pair 版本與 extractor baseline 調整。
+
+> **2026-08-19 accepted correction addendum:** The 2026-08-19 adversarial
+> review is directionally valid, but root accepted a subset rather than every
+> premise. Tasks 1–9 are accepted; the original Task 10 plan is `255008e`,
+> correction plan `9adcca4`, Task 10 remains unimplemented, Phase 0 remains in
+> progress, and Phase 1 remains blocked. This addendum is authoritative for
+> the corrections below; it does not edit the adversarial review or the
+> immutable 2026-08-16 stack review.
+
+## 0. 2026-08-19 Accepted Corrections and Future Contracts
+
+### Phase 0 correction boundary
+
+- Serialized config has an independent `schemaVersion`; `configVersion`
+  remains the published revision. Known legacy or missing schema markers are
+  migrated and materialized atomically without losing operator values.
+  Unsupported or future Active schema fails visibly to Maintenance and never
+  reaches packaged Default. Active → Previous → packaged Default is only for
+  corrupt, missing, or unreadable data. Existing `config_recovered` remains,
+  with schema-specific metadata reasons added.
+- Before Phase 1, Main starts exactly one
+  `powerSaveBlocker.start('prevent-display-sleep')` after readiness, retains
+  and checks its ID, keeps protection in Maintenance, stops on clean quit, and
+  reports failure metadata without gating boot or conversation. `pmset` and
+  screensaver are target-Mac operations evidence, not Windows evidence.
+- The verified Node 24 SQLite backup contract is module-level:
+  `import { backup } from 'node:sqlite'; await backup(sourceDb, backupPath, options)`;
+  it returns a Promise and there is no `db.backup` instance method. The
+  accepted SQLite schema baseline and `eventDelivery: emitted|failed` remain
+  unchanged.
+
+### Corrected Task 10 boundary
+
+- Pin Electron exactly `43.4.1`; keep `electron-builder` exactly `26.15.3`.
+  NSIS is outside Task 10. Use one OfflineLoop video placement in renderer
+  `publicDir`/output plus `asarUnpack`; do not put the video in
+  `extraResources`. Keep config Default in `extraResources`. Retain the text
+  base64 generator solely because worker writes must use `apply_patch`.
+- Inject activation failure after `WAKE_DETECTED` and before
+  `REALTIME_READY`. Query Console Overview, Events, and Phase Tests while
+  OfflineLoop and Maintenance are active. Final smoke passes only when both
+  windows are loaded and lifecycle is exactly `dormant` or `maintenance`.
+  Include the bundled-Electron `node:sqlite` open/WAL/close/reopen smoke.
+  Task 10 evidence is Windows-labeled and cannot verify target macOS behavior.
+
+### Phase 1–7 future contracts
+
+- Phase 1 uses exact lockstep `@openai/agents` `0.16.1` and
+  `@openai/agents-realtime` `0.16.1`; `ScriptedRealtimeTransport` comes from
+  the official testing export. `openai ^7.2.0` is an umbrella-package
+  dependency, not a peer of `agents-realtime`.
+- Runtime model IDs come only from versioned config; no configured failure may
+  silently substitute another ID. `realtimeSessionId` is authoritative for
+  stale-event rejection; `sessionGeneration` is diagnostic only.
+- Authorized Main/Console Persona-instruction editing is planned. A one-time,
+  operator-triggered `.env`-to-Main-`safeStorage` import is planned; `.env`
+  is never a runtime source and no value is read or logged in evidence.
+- Phase 5 owner display is Console-only and sender-authorized public
+  `call_name`; it is never a UUID, profile, guest, or candidate ID.
+- Phase 3 records a bounded actual-output-audio or analyser fallback for a
+  delayed `output_audio_buffer.stopped` event, with visible metadata. The
+  delayed-event community report remains **unverified** absent a local primary
+  official source.
+- Phase 6/7 uses indexed Main point lookups only. Batch writes, scans, and
+  backup use `utilityProcess` or worker-owned connections with a nonzero busy
+  timeout. Phase 3/5 large assets are unpacked or `extraResources`, never
+  streamed from `app.asar`.
+
+### Target-Mac checkpoint before Phase 2 exit
+
+On the real Mac, before Phase 2 exit, record stable signing, packaged TCC
+keys and microphone/camera capture, Keychain `safeStorage`, LaunchAgent
+restart and clean quit, a 30-minute OfflineLoop soak, ten boots, and the power
+policy checkpoint. Windows cannot claim this field evidence. The LaunchAgent
+remains the sole restart owner; `app.relaunch()` is forbidden.
+
+### Verified primary references
+
+- Electron `43.4.1`: [release](https://github.com/electron/electron/releases/tag/v43.4.1)
+  and [power-save-blocker API](https://www.electronjs.org/docs/latest/api/power-save-blocker).
+- Node module-level backup: [Node 24 `node:sqlite` API](https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html).
+- Builder `26.15.3`: [npm registry](https://registry.npmjs.org/electron-builder)
+  and [NSIS-only issue #9983](https://github.com/electron-userland/electron-builder/issues/9983).
+- Agents `0.16.1`: [agents registry](https://registry.npmjs.org/@openai%2fagents),
+  [realtime registry](https://registry.npmjs.org/@openai%2fagents-realtime),
+  [official testing export](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents-realtime/src/testing/index.ts),
+  [agents package](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents/package.json),
+  and [realtime package](https://raw.githubusercontent.com/openai/openai-agents-js/v0.16.1/packages/agents-realtime/package.json).
 
 ---
 
@@ -155,7 +243,14 @@ Developer Mode 可在 RAM 顯示最近幾個 final transcripts，供咒語及記
 - OfflineLoop 預載與無縫播放。
 - OpenAI、Wake、Camera、Identity、Memory、Lighting、Fog、Music mock adapters。
 - 基本錯誤邊界：Renderer crash 不留下黑畫面；核心資產／DB 失敗顯示 Maintenance。
-- 版本基線：Electron pin 43.x；SQLite 採 `node:sqlite`（WAL pragma＋online backup API）。
+- 版本基線：Electron pin `43.4.1`；SQLite 採 `node:sqlite`（WAL pragma＋
+  module-level `backup(sourceDb, backupPath, options): Promise`）。
+- Serialized config separately carries `schemaVersion`; known legacy markers
+  migrate without losing operator values, while unsupported/future Active
+  schema routes to Maintenance rather than packaged Default.
+- Main starts one retained-ID `powerSaveBlocker` after readiness, including in
+  Maintenance, and stops it on clean quit; failures are visible and
+  non-gating.
 - macOS 打包基線從 Phase 0 進 build 設定：Info.plist `NSMicrophoneUsageDescription`／`NSCameraUsageDescription`、`com.apple.security.device.*` entitlements 與 hardened runtime——TCC 對 spawned worker 是**靜默拒絕（無對話框）**，缺 key 時看起來像硬體壞掉；Console Audio／Camera 卡片顯示 TCC 授權狀態。LaunchAgent 為唯一 app-level restart owner，程式內不用 `app.relaunch()`。
 
 ### Console Increment
@@ -175,9 +270,13 @@ Developer Mode 可在 RAM 顯示最近幾個 final transcripts，供咒語及記
 
 ### Exit Criteria
 
-- 連續啟動 10 次皆顯示 Dormant 或 Maintenance，不出現空白畫面。
+- 連續啟動 10 次皆顯示 Dormant 或 Maintenance，不出現空白畫面；Task 10
+  final smoke 必須同時確認兩個 window loaded，且 lifecycle 精確為
+  `dormant` 或 `maintenance`。
 - OfflineLoop 連續播放 30 分鐘，不出現明顯 memory growth 或播放中止。
 - 每個 mock action 都有畫面結果及 Console event。
+- OfflineLoop 與 Maintenance 活躍時，Console Overview、Events、Phase
+  Tests 均可查詢。
 - Model ID source scan只允許packaged config、migration／test data與文件出現；Voice／Memory runtime module不得有model literal或hidden fallback。
 - 無效Draft或mock contract failure不改Active、不partial publish，Console直接顯示原因。
 - P0-D1～D5 可由非原開發者依文件重複完成。
@@ -209,14 +308,22 @@ Developer Mode 可在 RAM 顯示最近幾個 final transcripts，供咒語及記
 - 使用官方 OpenAI Agents SDK `RealtimeSession`＋WebRTC。
 - Production與contract test使用同一config resolver，分別從Draft／SessionModelSnapshot取得Realtime Dialogue、Input Transcription、內建Voice、reasoning與app-level turn-detection profile；初始baseline只見PRD §6.1。
 - 採 SDK 的 Voice Activity Detection 與 interruption 能力；adapter負責把app-level profile映射當期SDK，不重建一套Realtime protocol state machine。
-- App 只保存目前 `sessionGeneration`，忽略已關閉 session 的遲到事件。
+- `realtimeSessionId` 是 stale-event rejection 的 authoritative key；
+  `sessionGeneration` 只作 diagnostic metadata。
+- Phase 1 exact package lockstep is `@openai/agents@0.16.1` and
+  `@openai/agents-realtime@0.16.1`; deterministic tests use the official
+  `ScriptedRealtimeTransport` export. `openai ^7.2.0` is an umbrella-package
+  dependency, not an `agents-realtime` peer.
 - Final transcript 只在 RAM 中供 Console 及後續功能使用。
 - 正式模式明確關閉 Agents SDK model／tool data tracing、Realtime audio history及可能保存內容的 debug log；不能只依賴預設值。
 - 手動 Console Wake；自訂 wake word 留到 Phase 2。
+- Authorized Main/Console Persona instructions editing is a planned Phase 1
+  Console increment. A one-time operator-triggered `.env` import into Main
+  `safeStorage` is planned; `.env` never becomes a runtime source.
 - Connect failure、ICE failure 或 Active disconnect → 停止 AI audio → OfflineLoop。
 - 進入 OfflineLoop 時關閉 session並清除 active owner與RAM transcript；恢復後只回Dormant，不續接舊對話。
 - 輕量 recovery probe；服務恢復後回 Dormant，不續接中斷的句子。
-- Contract test 追加項（2026-08 驗證所得）：config 值確實到達 session（SDK 隱含預設 transcription model `gpt-4o-mini-transcribe`，不得成為 hidden fallback）；`close()` 後明確停止 app 自有 mic tracks；playback completion 以 raw `output_audio_buffer.stopped` 為準；60 分鐘上限 rollover 以新 client secret＋新 session 重建（SDK 無 reconnect API）。
+- Contract test 追加項（2026-08 驗證所得）：config 值確實到達 session（SDK 隱含預設 transcription model `gpt-4o-mini-transcribe`，不得成為 hidden fallback）；`close()` 後明確停止 app 自有 mic tracks；raw actual-output event `output_audio_buffer.stopped` 是 playback completion 的 primary signal；若該 event 延遲，保留已接受的 bounded actual-output-audio／analyser fallback，並以 visible metadata 記錄 fallback；60 分鐘上限 rollover 以新 client secret＋新 session 重建（SDK 無 reconnect API）。
 
 ### Console Increment
 
@@ -247,7 +354,8 @@ Developer Mode 可在 RAM 顯示最近幾個 final transcripts，供咒語及記
 
 ### What Can Be Mocked
 
-CI／開發時可使用 recorded Realtime events 與 forced disconnect；Exit Criteria 中的 P1-D1、D2 必須使用真實 OpenAI session。
+CI／開發時可使用官方 `ScriptedRealtimeTransport` 與 forced disconnect；Exit
+Criteria 中的 P1-D1、D2 必須使用真實 OpenAI session。
 
 ### 不做什麼
 
@@ -326,8 +434,13 @@ CI／開發時可使用 recorded Realtime events 與 forced disconnect；Exit Cr
 - 眨眼、呼吸、微頭動與平順 transition。
 - 以實際播放的 Realtime audio analyser 驅動 mouth open，不以字幕時間猜測。RMS／analyser 路徑是 Phase 3 Exit 基線；Live2D MotionSync 為選配強化（proprietary Core 需 vendoring、SDK sibling-directory 佈局），不作為 exit 條件。
 - Interruption／disconnect 時聲音與嘴型同步停止。
+- 若 `output_audio_buffer.stopped` 延遲，使用 bounded actual-output-audio 或
+  analyser fallback，並以 visible metadata 記錄 fallback。該延遲的 community
+  report 目前 **unverified**，沒有本地 primary official source。
 - 獨立 AI voice／music gain；AI 說話時 duck、結束後恢復。
 - Music play、stop、fade in、fade out。
+- Large Phase 3 assets are unpacked or in `extraResources`; they are not
+  streamed from `app.asar`.
 
 ### Console Increment
 
@@ -427,6 +540,8 @@ Lighting、Fog、Music device transports與所有 error；本機音樂播放及 
 ### Scope
 
 - Profile 使用 UUID；Phase 1 的 `call_name` 唯一，重名者選不同鏡中稱呼。
+- Phase 5 的 owner display 只在 sender-authorized Console 顯示 public
+  `call_name`，絕不顯示 UUID、profile、guest 或 candidate ID。
 - Wake 時 Camera 短暫 capture：單一可信候選就詢問；無候選就問稱呼；多人就問 conversation owner 或 anonymous group。
 - 口頭確認前的 session 只有 Persona＋當前 Master Memory，不載入私人資料。
 - `candidateProfileId` 只由 Main 保存；確認 parser／tool 只回傳明確肯定、否定或模糊，不接受模型提供 guest ID。
@@ -438,6 +553,8 @@ Lighting、Fog、Music device transports與所有 error；本機音樂播放及 
 - Embedding record：source image ID、detector＋recognition model 成對 ID／version／檔案雜湊、preprocess version、dimension、created time；detector 換版視為新 embedding 版本（alignCrop 依 detector landmarks）。
 - Rebuild 先寫入新 batch；完成後由 Console 手動切 active model。失敗保留舊版，不要求重拍。
 - Runtime recognition frames 不保存。
+- Large face/model assets are unpacked or in `extraResources`, never streamed
+  from `app.asar`.
 
 ### Console Increment
 
@@ -503,6 +620,9 @@ Lighting、Fog、Music device transports與所有 error；本機音樂播放及 
 - Master Memory 由 Console 編輯，下一個 Realtime session 生效。
 - Phase 1 不提供訪客 list／remember／forget／forget-me tools。
 - 小資料量採 typed SQL 與時間／類型排序；FTS5 可作可選查詢，不成為 Phase 1 runtime gate；不使用外部 memory framework 或 vector DB。
+- Main 只做 indexed point lookups。Batch writes and scans use a
+  `utilityProcess` or worker-owned connection with a nonzero busy timeout;
+  backup follows the module-level `node:sqlite` API above.
 
 ### Console Increment
 
@@ -559,10 +679,18 @@ Extractor、Responses failure、seed profiles與時間；至少一次真實 Resp
 ### Scope
 
 - macOS 自動登入後啟動與基本 process restart。
+- Before Phase 2 exit on the real Mac, the field checkpoint must cover stable
+  signing, packaged TCC keys plus mic/camera capture, Keychain `safeStorage`,
+  LaunchAgent restart/clean quit, a 30-minute OfflineLoop soak, ten boots,
+  and the power policy. Windows cannot verify these facts.
 - 最終 audio、Camera、Live2D asset、DMX／Fog／Music adapters。
 - Wake／face／audio／scene 現場 calibration。
 - 備份包含 SQLite、active／draft／previous config、registration source images與face model manifest。
-- Console 手動 backup、backup time、Dormant／Maintenance restore與integrity check。
+- Console 手動 backup、backup time、Dormant／Maintenance restore與integrity
+  check；the implementation targets module-level
+  `backup(sourceDb, backupPath, options): Promise`, not `db.backup()`.
+- Batch writes, scans, and backup use `utilityProcess` or worker-owned
+  connections; every connection has a nonzero busy timeout.
 - Admin 刪除 Profile 只刪 active DB rows／目前資料目錄；舊 rotation backup 依正常週期淘汰，不承諾 privacy-grade erasure。
 - 全流程 regression、故障注入、100 cycles、72h soak。
 

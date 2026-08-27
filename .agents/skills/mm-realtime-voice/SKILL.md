@@ -7,59 +7,34 @@ description: Use when implementing or testing anything touching the OpenAI Agent
 
 ## Overview
 
-Verified against `@openai/agents` **0.16.0** and `openai` **7.4.0** on
-**2026-08-16**. These facts seed implementation; the Phase 1 live contract
-test against the pinned SDK is still the authority (Spec section 7.6). If
-this file and the contract test disagree, fix this file.
+Verified against @openai/agents **0.16.1** and
+@openai/agents-realtime **0.16.1** on **2026-08-16**. These facts seed
+implementation; the Phase 1 live contract test against the pinned SDK is
+still the authority (Spec section 7.6). If this file and the contract test
+disagree, fix this file.
 
-## Worker envelope and scope
+## Codex routing
 
-Use this explicit envelope for any worker handling this domain:
-
-```text
-model: "gpt-5.6-luna"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-task: one bounded Realtime voice unit with explicit non-goals
-write_scope: exact named paths; read-only unless the named scope grants a write
-skills: mm-realtime-voice and the applicable mm-invariants skill
-self_invariants: 1, 4, 5, 6, 8, 9, 10, 11, 12
-evidence: exact paths, diff summary, complete command output and exit codes,
-          risks; metadata-only values
-self_review: read the own diff and output; no more than 3 passes
-root_review: external to worker self-review
-```
-
-The root thread owns the external review. Do not create a child worker, a
-reviewer worker, or a separate review role. Worker evidence and examples use
-only metadata: IDs, enums, counts, timings, statuses, reasons, hashes, paths,
-and exit codes. Never put transcript text, audio, extracted memory values,
-private context, credentials, images, embeddings, or user-content prompts in
-source, logs, telemetry, reports, or worker output.
-
-Treat `write_scope` as an exact allowlist. Edit an application, runtime,
-package, dependency, source, configuration, test, process-record, forward-test,
-or report path only when that exact path is named in `write_scope`. Never infer
-write permission from a Realtime concern, and never widen the scope.
-
-## Runtime model IDs versus worker routing
-
-The worker route is a harness setting, not a Magic Mirror runtime setting.
-`gpt-5.6-luna` in the worker envelope with `reasoning_effort: "max"` must never
-replace a configured Realtime, transcription, or extractor model ID.
+Use [AGENTS.md](../../../AGENTS.md) for execution policy and `mm-invariants`
+for applicable product constraints. This skill supplies Realtime-specific
+facts only. Evidence and examples remain metadata-only.
 
 Runtime model IDs come only from versioned configuration and frozen session/job
 snapshots. The configured extractor tiers include `gpt-5.6-luna` and
 `gpt-5.6-terra`; that product use is separate from the worker route. Preserve
-`gpt-realtime-2.1`, `gpt-live-transcribe`, `gpt-4o-mini-transcribe`, and every
-configured extractor tier exactly. A failed configured ID must fail visibly and
-must never silently substitute the worker model or another runtime ID.
+`gpt-realtime-2.1-mini`, `gpt-realtime-2.1`, `gpt-live-transcribe`,
+`gpt-4o-mini-transcribe`, and every configured extractor tier exactly. A failed
+configured ID must fail visibly and must never silently substitute the worker
+model or another runtime ID.
 
 ## Packages and session creation
 
-- `@openai/agents` 0.16.0, realtime via subpath `@openai/agents/realtime`
-  (lockstep with `@openai/agents-realtime|-core|-openai`). Peer: **Zod v4**.
+- `@openai/agents` **0.16.1** and `@openai/agents-realtime` **0.16.1**;
+  realtime imports use the official subpath `@openai/agents/realtime`.
+  The package graph uses `@openai/agents-core` and `@openai/agents-openai`.
+  `openai ^7.2.0` is an umbrella-package dependency, not an
+  `agents-realtime` peer or an exact Phase 1 direct pin; the operator-generated
+  `package-lock.json` owns the concrete compatible resolution. Peer: **Zod v4**.
 - `gpt-realtime-2.1` exists and is the SDK default model. Voices include
   `marin`, `cedar` (recommended), `alloy`, `sage`, `verse`, and others.
 
@@ -91,7 +66,7 @@ audio.
 
 ## Ephemeral credentials (Main-process only)
 
-`POST /v1/realtime/client_secrets` with the Keychain key and this body:
+`POST /v1/realtime/client_secrets` with the Main-only root `.env` key and this body:
 
 ```text
 { expires_after: { anchor: 'created_at', seconds: 600 },
@@ -102,10 +77,11 @@ The response `value` starts with `ek_`; hand that value to the renderer.
 `seconds` is 10-7200. Expiry gates session start, not session duration. Never
 use `useInsecureApiKey`.
 
-Credentials are read by Electron Main through `safeStorage` (Keychain on the
-target Mac; DPAPI on Windows development machines). Renderer code receives
-only the short-lived Realtime credential. Keys never enter renderer data,
-configuration, logs, telemetry, or exports.
+Electron Main alone loads `OPENAI_API_KEY` from the ignored repository-root
+`.env`. Renderer code receives only the short-lived Realtime credential. Do
+not add Console provisioning, `safeStorage`, Keychain, DPAPI, inherited-env,
+or alternate-key fallbacks. Keys never enter renderer data, configuration,
+logs, telemetry, exports, or agent evidence.
 
 ## Transcripts
 
@@ -129,9 +105,13 @@ backups, telemetry, or debug logs, even temporarily for debugging.
 - VAD interruption is automatic on WebRTC; use `session.interrupt()` for manual
   interruption such as spell-response cutoff. It emits `audio_interrupted`.
 - `audio_stopped` means generation done, not speaker-out done. True playback
-  end on WebRTC is raw `output_audio_buffer.stopped` via
-  `session.transport.on(...)`. Use that boundary for Speaking -> Listening,
-  the 300 s idle timer, and safe rollover (Spec section 8.3).
+  end consumes the exact raw `output_audio_buffer.stopped` boundary through
+  `RealtimeSessionHandle.onOutputAudioBufferStopped` via
+  `createPlaybackCompletionTransport(session)`; never use a private
+  `session.transport` path. Use `PlaybackCompletion.waitForActualEnd(signal)`
+  for Speaking -> Listening, the 300 s idle timer, and safe rollover so
+  listener, abort, and analyser-fallback cleanup remains owned by the accepted
+  component (Spec section 8.3).
 - Web Audio: the SDK audio element (ours, unmuted) is the only audible path
   (Spec section 8.2). The analyser is a silent tap:
   `audioCtx.createMediaStreamSource(audioElement.srcObject)` -> AnalyserNode,
@@ -145,6 +125,19 @@ backups, telemetry, or debug logs, even temporarily for debugging.
 Exactly one microphone owner exists at a time. Use the explicit release-then-
 acquire handoff between the wake worker and renderer; a failed handoff is local
 Maintenance, not cloud OfflineLoop.
+
+## Wake-gated noisy-room profile
+
+- In Dormant, only the local wake worker listens; Realtime is disconnected.
+- In Active, the `server-vad-noisy` baseline is `far_field` noise reduction
+  plus server VAD threshold `0.7`, prefix padding `300` ms, silence duration
+  `900` ms, and automatic response/interruption enabled. Semantic VAD `low` is
+  an alternate for premature turn endings, not the default noise filter.
+- Configure `gpt-live-transcribe` with `languages: ['zh-tw', 'en']`, keyword
+  `恭送渡鴨大人`, and `delay: 'medium'`. Do not add browser-side denoising on
+  top of conference-speaker DSP and Realtime `far_field` without field evidence.
+- Automated evidence covers the exact SDK config and a live provider session;
+  a human judges recognition, false turns, pause handling, and barge-in quality.
 
 ## Profile switch and reconnect
 
@@ -230,8 +223,5 @@ behavior:
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Model IDs come from versioned config; a failed ID never silently
    substitutes another ID.
-12. Main reads credentials through `safeStorage`; keys never enter renderer
-   data, logs, telemetry, or exports.
-
-The worker harness route never overrides these product rules or any configured
-runtime ID.
+12. Main alone loads the ignored root `.env` `OPENAI_API_KEY`; keys never enter
+    renderer data, logs, telemetry, exports, or agent evidence.
