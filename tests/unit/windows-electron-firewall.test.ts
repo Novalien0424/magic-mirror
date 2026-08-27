@@ -134,4 +134,11 @@ describe('Windows Electron development firewall static contract', () => {
 
     for (const forbidden of forbiddenPatterns) expect(source).not.toMatch(forbidden)
   })
+
+  it('refuses per-worktree installation so one canonical executable rule remains durable', () => {
+    const source = readFirewallScript()
+
+    expect(source).toMatch(/\.worktrees/i)
+    expect(source).toMatch(/canonical-checkout-required/i)
+  })
 })

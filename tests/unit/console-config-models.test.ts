@@ -112,6 +112,7 @@ interface ControllerOptions {
   readonly getDeveloperMode: () => boolean
   readonly emit: (event: ConfigEvent) => void
   readonly now: () => string
+  readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
   readonly mockDraftProbe?: (...args: readonly unknown[]) => DraftProbeResult | PromiseLike<DraftProbeResult>
 }
 
@@ -337,6 +338,7 @@ function makeMemoryHarness(options: MemoryHarnessOptions = {}): MemoryHarness {
 interface ControllerOverrides extends MemoryHarnessOptions {
   readonly developerMode?: boolean
   readonly refreshFails?: boolean
+  readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
   readonly mockDraftProbe?: () => DraftProbeResult | PromiseLike<DraftProbeResult>
 }
 
@@ -365,6 +367,7 @@ function makeController(overrides: ControllerOverrides = {}): ControllerHarness 
       harness.events.push({ ...event })
     },
     now: () => '2026-08-19T00:00:00.000Z',
+    validateWakeConfig: overrides.validateWakeConfig,
     mockDraftProbe: async (...args) => {
       void args
       harness.metrics.mockProbeCalls += 1
@@ -611,6 +614,89 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expectEvent(harness.events, 'config_publish_requested')
     expectNoSensitiveOutput({ blocked, tested, published, events: harness.events })
     expectMetadataOnly(harness.events)
+  })
+
+  it('keeps Active unchanged when the Draft wake package does not validate', async () => {
+    const observedWake: MirrorConfig['wake'][] = []
+    const harness = makeController({
+      validateWakeConfig: async (wake) => {
+        observedWake.push({ ...wake })
+        return false
+      },
+    })
+    const changedWake = { phrase: '魔鏡阿魔鏡', modelVersion: 'candidate-v1', packageId: 'candidate-v1' }
+    await harness.controller.saveDraft({
+      ...safeDraftInput(harness.initialSlots.draft),
+      wake: changedWake,
+    })
+
+    const tested = await harness.controller.testDraft()
+    const blocked = await harness.controller.publish(
+      diffConfirmation(await readDiff(harness.controller, 'publish')),
+    )
+
+    expect(tested).toMatchObject({
+      ok: true,
+      value: { result: 'failed', source: 'simulator', reason: 'cause=draft_invalid' },
+    })
+    expect(blocked).toMatchObject({
+      ok: false,
+      error: 'console_config_test_failed',
+      reason: 'cause=draft_test_failed',
+    })
+    expect(observedWake).toEqual([changedWake])
+    expect(harness.metrics.mockProbeCalls).toBe(0)
+    expect(harness.metrics.publishCalls).toBe(0)
+    expect(await activeRevision(harness)).toBe(7)
+  })
+
+  it('revalidates the wake package immediately before Publish', async () => {
+    let validationCalls = 0
+    const harness = makeController({
+      validateWakeConfig: () => {
+        validationCalls += 1
+        return validationCalls === 1
+      },
+    })
+    await harness.controller.saveDraft({
+      ...safeDraftInput(harness.initialSlots.draft),
+      wake: { phrase: '魔鏡阿魔鏡', modelVersion: 'candidate-v1', packageId: 'candidate-v1' },
+    })
+
+    const tested = await harness.controller.testDraft()
+    const blocked = await harness.controller.publish(
+      diffConfirmation(await readDiff(harness.controller, 'publish')),
+    )
+
+    expect(tested).toMatchObject({ ok: true, value: { result: 'mock_passed' } })
+    expect(blocked).toMatchObject({
+      ok: false,
+      error: 'console_config_test_failed',
+      reason: 'cause=draft_test_failed',
+    })
+    expect(validationCalls).toBe(2)
+    expect(harness.metrics.publishCalls).toBe(0)
+    expect(await activeRevision(harness)).toBe(7)
+  })
+
+  it('does not let an unchanged unavailable wake package gate unrelated Draft changes', async () => {
+    let validationCalls = 0
+    const harness = makeController({
+      validateWakeConfig: () => {
+        validationCalls += 1
+        return false
+      },
+    })
+
+    const tested = await harness.controller.testDraft()
+    const published = await harness.controller.publish(
+      diffConfirmation(await readDiff(harness.controller, 'publish')),
+    )
+
+    expect(tested).toMatchObject({ ok: true, value: { result: 'mock_passed' } })
+    expect(published).toMatchObject({ ok: true })
+    expect(validationCalls).toBe(0)
+    expect(harness.metrics.publishCalls).toBe(1)
   })
 
   it('rejects a stale full diff confirmation before calling ConfigService.publish', async () => {
@@ -1111,6 +1197,7 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
       interrupt: 'mirror:interrupt',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
+      sleepRequest: 'mirror:sleep-request',
       ready: 'boot:renderer-ready',
     })
 

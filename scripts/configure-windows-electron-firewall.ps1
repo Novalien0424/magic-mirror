@@ -86,6 +86,11 @@ try {
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path -Path $PSScriptRoot -ChildPath '..') -ErrorAction Stop).Path
     $repoRoot = [System.IO.Path]::GetFullPath($repoRoot)
     $electronPath = [System.IO.Path]::GetFullPath((Join-Path -Path $repoRoot -ChildPath 'node_modules\electron\dist\electron.exe'))
+    $worktreeSegment = [System.IO.Path]::DirectorySeparatorChar + '.worktrees' + [System.IO.Path]::DirectorySeparatorChar
+    if ($repoRoot.IndexOf($worktreeSegment, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        [Console]::Error.WriteLine('[error] code=canonical-checkout-required')
+        exit 1
+    }
     $repoPrefix = $repoRoot.TrimEnd([char[]]@('\', '/')) + [System.IO.Path]::DirectorySeparatorChar
     $resolvedElectronPath = (Resolve-Path -LiteralPath $electronPath -ErrorAction Stop).Path
 

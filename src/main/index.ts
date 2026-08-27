@@ -519,6 +519,11 @@ void app.whenReady().then(() => {
         reason: 'wake_microphone_not_configured',
       }),
     },
+    validateWakeConfig: async (wake) => (await loadWakeModelPackage({
+      rootDirectory: wakeModelRoot(),
+      wake,
+      platform: `${process.platform}-${process.arch}`,
+    })).ok,
     dispatchRealtimeRuntimeCommand: (command) =>
       dispatchMirrorRealtimeRuntimeCommand(command, windows),
   })

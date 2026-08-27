@@ -1,7 +1,7 @@
 # Magic Mirror — Progress
 
 **Current dashboard — 2026-08-27 — Phase 1 physical exit pending; Phase 2 Wake
-Lifecycle engineering overlap authorized.**
+Lifecycle Windows engineering candidate built.**
 Branch `phase1-realtime-voice` has accepted product commit `b246521` for
 P1-U9. Phase 0 is accepted and tagged
 `phase0-v0.3.1` at `9237dc7`. The accepted Phase 1 plan is
@@ -12,10 +12,14 @@ accepted/pushed at `d1d5364`. P1-U9 credential-source closure is accepted. A
 corrected real provider smoke now passes with the configured `gpt-realtime-2.1`;
 physical mic/output and target-Mac evidence have not occurred. Phase 1 exit/tag
 is **not accepted**. Official phase
-order for human evidence, exit decisions, regression, release tags, and
-phase-status promotion remains sequential. The user authorized Phase 2 runtime
-engineering to start from a frozen Phase 1 candidate while away; neither phase
-is accepted or tagged, and Phases 3–7 have not started. The four earlier
+order for human evidence, exit decisions, release tags, and phase-status
+promotion remains sequential. The user authorized Phase 2 runtime engineering
+to start from a frozen Phase 1 candidate while away. The Windows engineering
+candidate now implements the replaceable wake package, isolated worker,
+exclusive mic handoff, idle/sleep lifecycle, Console evidence, and target-Mac
+corpus evaluator. Its package remains intentionally `unselected` until the
+Mac mini M4 comparison is run. Neither phase is accepted or tagged, and Phases
+3–7 have not started. The four earlier
 prep-only lanes below do not start or promote another phase.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
@@ -141,6 +145,8 @@ tuning remains required. U6 directly checked invariant IDs `1, 4, 5, 6, 9,
 | Current product configuration | Realtime model `gpt-realtime-2.1`; input transcription `gpt-live-transcribe`; voice `marin`; no runtime fallback |
 | Deterministic SQLite artifact | Outside the repo at `C:\tmp\magic-mirror-p1-u8b-deterministic.sqlite`; P1-D3/D4/D6 `mock_passed`; P1-D1/D2/D5 `real-demo not_executed`. It is not a real demo and is not a tracked repo file. |
 | Phase 1 exit | Not accepted; no Phase 1 release tag. The passing automated provider smoke is not physical demo evidence; target-Mac microphone/TCC, natural conversation, audible output, and spoken barge-in are not claimed. |
+| Phase 2 Windows engineering candidate | Commits `52cb13b` through `7c55436` plus final package-validation/harness closure; default phrase `魔鏡阿魔鏡`; real target package remains `unselected`. Full candidate verification is recorded below. |
+| Phase 2 target-Mac quality selection | `not_executed`; no Porcupine `.ppn` or sherpa package has been selected. The same M4 corpus must compare false rejects, false accepts, latency, CPU, and stability before Publish. |
 | Phase 0 demos | P0-D1 through P0-D5 passed, including both P0-D2 cloud/core failures. |
 
 ### Phase 0 accepted ledger — 2026-08-20
@@ -174,20 +180,48 @@ entitlements, packaged workers, LaunchAgent, real-device, or provider/account
 behavior. Configured model IDs remain versioned-config-only;
 failure never silently substitutes another ID.
 
+## Phase 2 Windows engineering candidate — 2026-08-27
+
+- The frozen Phase 1 candidate is `d239c01`. Phase 2 adds immutable,
+  replaceable `zh-CN` wake packages for trained Porcupine or compiled/trained
+  sherpa artifacts, exact hashes/provenance/tuning, and one explicitly selected
+  engine with no runtime fallback.
+- The isolated worker owns one `decibri` 16 kHz mono capture path only in
+  Dormant/OfflineLoop. Wake/manual start release it before Realtime starts;
+  stop, idle, exact completed-transcript `睡吧`, and cloud failure close the
+  renderer tracks before wake reacquires. Local handoff failure enters
+  Maintenance.
+- Console reuses existing Overview, simulator, Events, and Phase Tests. When a
+  wake reference changes, Draft Test and Publish validate its manifest,
+  phrase, platform, artifacts, and hashes; an invalid package cannot replace
+  Active and an unchanged unavailable package cannot gate unrelated settings.
+  Applying a newly Published wake package requires the next application start;
+  no second hot-reload controller was added.
+- Final Windows gate: `59/59` test files and `661/661` tests; `npm run
+  typecheck`, `npm run build`, Windows `npm run package`, and `git diff
+  --check` exited `0`. Provider smoke passed before the final package-validator
+  and harness-only closure:
+  `PHASE1_LIVE_RESULT status=passed stage=dormant reason=completed exit=0 duration_ms=6035 model_availability=available provenance=passed cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0`.
+- M4/native quality, packaged macOS worker/TCC/signing, real microphone, and
+  human evidence were not run and are not claimed. P2-D1..D5 remain
+  `real-demo not_executed`; no Phase 2 tag exists.
+
 ## Pending work — exact order
 
-The P1 real gate
-(P1-D1/P1-D2/P1-D5) remains `real-demo not_executed`; Phase 1
-regression/exit/tag remains pending and not accepted. The exact-path Phase 2
-survey, planning, implementation, runtime integration, demos, regression,
-exit/tag, and phase-status promotion are forbidden until the real Phase 1 gate
-passes under the accepted sequential workflow; only the separately listed
-prep-only lanes are authorized before that gate, and they do not count as phase
-starts. The next bounded execution plan is
-[`docs/superpowers/plans/2026-08-27-phase1-physical-realtime-exit.md`](docs/superpowers/plans/2026-08-27-phase1-physical-realtime-exit.md);
-it folds the live-smoke config-provenance finding and only the applicable
-physical-timing lessons from the Realtime Voice implementation guide into the
-existing P1-D1/P1-D2/P1-D5 boundary. Subsequent phases remain sequential.
+1. From the exact frozen Phase 1 build, run P1-D1 (20 real turns), P1-D2 (10
+   spoken interruptions), and P1-D5 (real Draft/Publish/new-session/invalid
+   Draft). If they pass, record evidence and tag Phase 1.
+2. On the Mac mini M4, import/train the Mandarin Porcupine `魔鏡阿魔鏡`
+   package and compile the matching sherpa package. Compare both at the same
+   false-accept target on at least 100 approved positives plus hard negatives
+   and two hours of approved background audio; Publish the measured winner.
+3. From the exact Phase 2 build, run P2-D1..D5: local wake to real Realtime,
+   offline wake to OfflineLoop, 30-second developer idle plus 300-second
+   configuration check, exact `睡吧` after playback, and the mic-owner timeline.
+4. Satisfy Phase 2 exit evidence: at least 19/20 live wakes, the separate
+   30-minute ambient/TV false-wake run, macOS TCC/native packaging/signing,
+   and clean lifecycle/device release. Then review/tag Phase 2. Phases 3–7
+   remain sequential.
 
 ## Human-intervention ledger
 
@@ -200,6 +234,8 @@ existing P1-D1/P1-D2/P1-D5 boundary. Subsequent phases remain sequential.
 | P1 automated live gate — 2026-08-26 (earlier attempt) | `PHASE1_LIVE_RESULT status=failed stage=active reason=start_connect_realtime_model_unsupported exit=1 duration_ms=2257 model_availability=unavailable cleanup=passed marker_count=1 output_marker_count=1 orphan_count=0` | Historical metadata-only observation; no model-spelling conclusion is drawn. |
 | P1 exact-model live attempts — 2026-08-26 | Fresh full and mini exact markers are recorded above. | Superseded diagnosis: these runs loaded a local mock model from non-isolated user data; the 2026-08-27 corrected run proves provider/project access. |
 | Phase 1 exit | The autonomous exit audit at pushed tip `f5a2d59` is recorded below; the personal-build credential remains ignored-root `.env` Main-only, with no safeStorage/Keychain/DPAPI path, and records remain metadata-only. | Pending/not accepted; P1-D1/D2/D5 `real-demo not_executed` |
+| Phase 2 engineering | Windows implementation and deterministic verification required no operator input. | Engineering candidate only; P2-D1..D5 `real-demo not_executed` |
+| Wake quality selection | Train/import both `魔鏡阿魔鏡` candidates, collect/approve the local corpus, run the equal-false-accept M4 comparison, and Publish the winner. | Pending; current package is `unselected` |
 | Target Mac | TCC, signing/entitlements, packaged-worker, LaunchAgent, power, device, and provider checks are later; the superseded Keychain credential path is not a runtime requirement for this personal build. | Pending |
 | Venue/product inputs | Wake corpus/keyword, avatar assets, scene spells/presets, camera/identity, memory/profile, and hardware/adapter inputs remain later. | Pending |
 
@@ -320,8 +356,8 @@ the physical mic/output and operator evidence required by P1-D1/P1-D2/P1-D5.
 The seven ordered Phase 1 interventions above remain the higher-priority work.
 After that gate, the remaining plain-language needs are:
 
-- Phase 2: choose the real wake phrase, then provide or approve a real corpus
-  and target microphone, TCC, model, and tooling evidence.
+- Phase 2: the approved phrase is `魔鏡阿魔鏡`; provide or approve the real
+  corpus and target microphone time for measured M4 model selection and demos.
 - Phase 3: provide the final Live2D/Cubism assets, then observe actual-output-
   audio behavior.
 - Phase 4: approve the final spells and presets, then connect and observe the
@@ -329,12 +365,9 @@ After that gate, the remaining plain-language needs are:
 - Phase 7: provide target-Mac, operator, and device time for the 100-cycle and
   soak, boot, power, signing, and TCC checks.
 
-Phase 2 official `phase_state` remains `not-started`. The accepted `P2-PREP-W1`
-artifact is prep-only preparation and does not start or promote Phase 2; the
-exception does not authorize general survey, planning, or implementation
-beyond that exact prep-only scope. Phase 2 runtime integration, demos,
-regression, exit/tag, and phase-status promotion remain forbidden until the
-real Phase 1 gate passes under the accepted sequential workflow.
+Phase 2 engineering started under the dated overlap ruling and now has a
+Windows candidate. That does not promote or accept Phase 2. Human evidence,
+exit/tag, and promotion remain sequential after the Phase 1 physical gate.
 
 ## Harness, environment, warnings, and privacy register
 
@@ -349,7 +382,11 @@ real Phase 1 gate passes under the accepted sequential workflow.
   shell warning and nonblocking LF-to-CRLF warnings remain. Windows firewall
   evidence is development-only; script-fix commit `3e93936` supplied the
   persistent Private-profile rule names `MagicMirror.Development.Electron.TCP`
-  and `MagicMirror.Development.Electron.UDP`.
+  and `MagicMirror.Development.Electron.UDP`. The 2026-08-27 read-only check
+  found both rules absent. Before any later Windows Electron runtime run, the
+  user must execute the accepted setup script once from canonical
+  `C:\Project\magic-mirror`; per-worktree Electron execution/rules are now
+  forbidden because firewall program scope is an exact path.
 - `.env` exists and is ignored/untracked. For this personal build it is the sole
   runtime master-key source, loaded only by Electron Main; missing, empty, and
   read failures remain metadata-only reasons. Agents/workers do not inspect or

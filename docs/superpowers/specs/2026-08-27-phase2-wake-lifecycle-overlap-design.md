@@ -55,7 +55,7 @@ model. Runtime never silently falls back to the other engine.
 The existing XState lifecycle remains the only lifecycle. One narrow wake
 supervisor in Electron Main owns one Electron utility process; it is not a
 general worker framework. The worker owns capture only in Dormant/OfflineLoop,
-performs local sherpa-onnx keyword spotting, persists no audio, and exchanges
+performs local keyword spotting with the Published detector, persists no audio, and exchanges
 only validated metadata commands and outcomes.
 
 The handoff is an explicit two-way protocol:

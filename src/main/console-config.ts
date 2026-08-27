@@ -128,6 +128,7 @@ export interface ConsoleConfigControllerOptions {
   readonly getDeveloperMode: () => boolean
   readonly emit: (event: Omit<MirrorEvent, 'time'>) => void
   readonly now: () => string
+  readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
   readonly mockDraftProbe?: (...args: readonly unknown[]) =>
     | ConsoleDraftProbeResult
     | PromiseLike<ConsoleDraftProbeResult>
@@ -672,6 +673,21 @@ export function createConsoleConfigController(
   let runtimeOld: ConsoleRuntimeSnapshot | null = null
   let runtimeNew: ConsoleRuntimeSnapshot | null = null
 
+  async function wakeConfigIsValid(wake: MirrorConfig['wake']): Promise<boolean> {
+    if (options.validateWakeConfig === undefined) return true
+    try {
+      return await Promise.resolve(options.validateWakeConfig(wake))
+    } catch {
+      return false
+    }
+  }
+
+  function wakeConfigChanged(slots: ConfigSlots): boolean {
+    return slots.active.wake.phrase !== slots.draft.wake.phrase
+      || slots.active.wake.modelVersion !== slots.draft.wake.modelVersion
+      || slots.active.wake.packageId !== slots.draft.wake.packageId
+  }
+
   async function readState(): Promise<ControllerState | null> {
     const service = getService(options)
     if (service === null) return null
@@ -846,7 +862,9 @@ export function createConsoleConfigController(
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
       let probeResult: ConsoleDraftProbeResult
-      try {
+      if (wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        probeResult = { result: 'failed', reason: 'cause=draft_invalid' }
+      } else try {
         probeResult = options.mockDraftProbe === undefined
           ? defaultDraftProbe(state.resolution, options.now())
           : normalizeProbeResult(await Promise.resolve(options.mockDraftProbe(state.resolution.draft, state.slots)))
@@ -921,6 +939,10 @@ export function createConsoleConfigController(
       const matchingTest = currentDraftTest(state.resolution)
       if (matchingTest === null) return responseError('console_config_not_tested', 'cause=draft_not_tested')
       if (matchingTest.result !== 'mock_passed') {
+        return responseError('console_config_test_failed', 'cause=draft_test_failed')
+      }
+      if (wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        draftTest = null
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
       await state.service.publish()

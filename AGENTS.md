@@ -178,6 +178,18 @@ Preserve applicable IDs; delegated prompts name only relevant IDs.
 
 - Windows development does not field-verify target-Mac TCC, signing,
   entitlements, packaged-worker, or LaunchAgent behavior.
+- On this Windows host, commands that launch development `electron.exe` run
+  only from the canonical `C:\Project\magic-mirror` checkout. Worktrees may run
+  Node-only tests, typechecks, builds, and packaging, but not Electron runtime
+  demos or live smoke. Windows Firewall program rules bind an exact executable
+  path: before the first Electron run, verify the persistent Private-profile
+  rules `MagicMirror.Development.Electron.TCP` and
+  `MagicMirror.Development.Electron.UDP` target the canonical
+  `node_modules\electron\dist\electron.exe`. If either rule is absent or
+  mismatched, stop and ask the user to run
+  `scripts\configure-windows-electron-firewall.ps1` once from the canonical
+  checkout with elevation. Never create per-worktree rules or rely on an
+  interactive Windows Defender Firewall prompt.
 - The user LaunchAgent with `KeepAlive={SuccessfulExit=false}` is the sole
   restart owner. Never call `app.relaunch()` or add another restart owner.
 - Use npm.

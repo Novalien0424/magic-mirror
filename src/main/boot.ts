@@ -245,6 +245,7 @@ export interface BootOptions {
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
+  readonly validateWakeConfig?: ConsoleConfigControllerOptions['validateWakeConfig']
   readonly mockDraftProbe?: ConsoleConfigControllerOptions['mockDraftProbe']
   readonly now?: () => string
   readonly createActivationId?: () => string
@@ -2464,6 +2465,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getDeveloperMode: () => developerMode.enabled,
     emit: (event) => emitMetadata(telemetry, event),
     now: () => nowValue(now),
+    validateWakeConfig: options.validateWakeConfig,
     mockDraftProbe: options.mockDraftProbe,
   })
 
