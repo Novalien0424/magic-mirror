@@ -56,6 +56,7 @@ function fixtureConfig(configVersion: number, suffix: string): MirrorConfig {
     wake: {
       phrase: `fixture-wake-${suffix}`,
       modelVersion: `fixture-wake-model-${suffix}`,
+      packageId: `fixture-wake-package-${suffix}`,
     },
     faceModel: {
       detectorId: `fixture-face-detector-${suffix}`,

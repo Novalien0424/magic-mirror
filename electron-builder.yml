@@ -8,6 +8,8 @@ asarUnpack: out/renderer/mock/*.mp4
 extraResources:
   - from: resources/config/default.json
     to: config/default.json
+  - from: resources/wake-models
+    to: wake-models
 mac:
   hardenedRuntime: true
   entitlements: resources/macos/entitlements.plist

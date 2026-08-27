@@ -175,7 +175,7 @@ export interface ConsoleConfigSafeView {
   readonly personaName: string
   readonly voice: string
   readonly idleSeconds: number
-  readonly wake: { readonly phrase: string; readonly modelVersion: string }
+  readonly wake: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
   readonly faceModel: { readonly detectorId: string; readonly recognizerId: string }
   readonly assets: {
     readonly offlineLoopVideo: string
@@ -193,7 +193,7 @@ export interface ConsoleConfigDraftInput {
   readonly personaName: string
   readonly voice: string
   readonly idleSeconds: number
-  readonly wake: { readonly phrase: string; readonly modelVersion: string }
+  readonly wake: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
   readonly faceModel: { readonly detectorId: string; readonly recognizerId: string }
   readonly assets: {
     readonly offlineLoopVideo: string

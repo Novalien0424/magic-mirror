@@ -39,6 +39,7 @@ function fixtureConfig(
     wake: {
       phrase: `synthetic-wake-${label}`,
       modelVersion: `synthetic-wake-model-${label}`,
+      packageId: `synthetic-wake-package-${label}`,
     },
     faceModel: {
       detectorId: `synthetic-face-detector-${label}`,

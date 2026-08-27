@@ -336,7 +336,11 @@ function safeConfigView(config: MirrorConfig): ConsoleConfigSafeView {
     personaName: config.persona.name,
     voice: config.voice,
     idleSeconds: config.idleSeconds,
-    wake: { phrase: config.wake.phrase, modelVersion: config.wake.modelVersion },
+    wake: {
+      phrase: config.wake.phrase,
+      modelVersion: config.wake.modelVersion,
+      packageId: config.wake.packageId,
+    },
     faceModel: {
       detectorId: config.faceModel.detectorId,
       recognizerId: config.faceModel.recognizerId,
@@ -469,7 +473,7 @@ function draftInputValidation(value: unknown):
   }
 
   const nested = [
-    ['wake', ['phrase', 'modelVersion']],
+    ['wake', ['phrase', 'modelVersion', 'packageId']],
     ['faceModel', ['detectorId', 'recognizerId']],
     ['assets', ['offlineLoopVideo', 'avatarDir', 'musicDir']],
     ['adapters', ['lighting', 'fog', 'music']],
@@ -500,6 +504,7 @@ function draftInputValidation(value: unknown):
       wake: {
         phrase: readProperty(readProperty(value, 'wake'), 'phrase') as string,
         modelVersion: readProperty(readProperty(value, 'wake'), 'modelVersion') as string,
+        packageId: readProperty(readProperty(value, 'wake'), 'packageId') as string,
       },
       faceModel: {
         detectorId: readProperty(readProperty(value, 'faceModel'), 'detectorId') as string,

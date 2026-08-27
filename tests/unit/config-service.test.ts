@@ -17,7 +17,7 @@ import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/typ
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
 
-const CURRENT_CONFIG_SCHEMA_VERSION = 2
+const CURRENT_CONFIG_SCHEMA_VERSION = 3
 
 type Phase1ConfigFixture = MirrorConfig & {
   readonly reasoningEffort: string
@@ -120,6 +120,7 @@ function baseConfig(configVersion = 7): Phase1ConfigFixture {
     wake: {
       phrase: 'mock-wake-phrase-v1',
       modelVersion: 'mock-wake-model-v1',
+      packageId: 'mock-wake-package-v1',
     },
 
     faceModel: {
@@ -387,6 +388,15 @@ describe('ConfigService contract', () => {
     expect(
       mirrorConfigSchema.safeParse({
         ...baseConfig(),
+        wake: {
+          phrase: '魔鏡阿魔鏡',
+          modelVersion: 'candidate-v1',
+        },
+      }).success,
+    ).toBe(false)
+    expect(
+      mirrorConfigSchema.safeParse({
+        ...baseConfig(),
         aiModels: {
           ...baseConfig().aiModels,
           realtimeDialogue: { modelId: ' ' },
@@ -398,7 +408,7 @@ describe('ConfigService contract', () => {
   it('keeps the versioned resource pin and free of forbidden content fields', async () => {
     const resourcePath = resolve(process.cwd(), 'resources/config/default.json')
     const resource = JSON.parse(await readFile(resourcePath, 'utf8')) as Record<string, unknown>
-    expect(resource.schemaVersion).toBe(2)
+    expect(resource.schemaVersion).toBe(3)
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
@@ -416,8 +426,9 @@ describe('ConfigService contract', () => {
         memoryExtractor: { modelId: 'mock-memory-extractor-v1' },
       },
       wake: {
-        phrase: 'mock-wake-phrase-v1',
-        modelVersion: 'mock-wake-model-v1',
+        phrase: '魔鏡阿魔鏡',
+        modelVersion: 'unselected-v1',
+        packageId: 'unselected',
       },
       faceModel: {
         detectorId: 'mock-face-detector-v1',
@@ -572,6 +583,30 @@ describe('ConfigService contract', () => {
       }
     },
   )
+
+  it('migrates a schemaVersion 2 wake pin to an explicit unresolved package without losing the phrase', async () => {
+    const harness = makeMemoryHarness()
+    const current = baseConfig(23)
+    const { packageId: _packageId, ...legacyWake } = current.wake
+    const schemaTwo = { ...current, wake: legacyWake }
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      harness.store.set(slotPath('mock-config', slot), encodeSchema(schemaTwo as never, 2))
+    }
+
+    const result = await harness.service().read()
+
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      expect(result[slot].wake).toEqual({
+        phrase: current.wake.phrase,
+        modelVersion: current.wake.modelVersion,
+        packageId: 'legacy-unresolved',
+      })
+      expect(JSON.parse(harness.store.get(slotPath('mock-config', slot)) ?? '{}')).toEqual({
+        schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+        ...result[slot],
+      })
+    }
+  })
 
   const invalidV2FieldCases: Array<{
     field: 'reasoningEffort' | 'turnDetectionProfile'

@@ -29,6 +29,9 @@ assets/offline/
 # SDD orchestration scratch (ledger/briefs/reports live on disk, not in git)
 .superpowers/
 .worktrees/
+resources/wake-models/*/*
+!resources/wake-models/*/manifest.json
+wake-corpus/
 
 # OS noise
 .DS_Store

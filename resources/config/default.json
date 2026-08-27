@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "configVersion": 1,
   "persona": {
     "name": "mock-persona-v1",
@@ -21,8 +21,9 @@
     }
   },
   "wake": {
-    "phrase": "mock-wake-phrase-v1",
-    "modelVersion": "mock-wake-model-v1"
+    "phrase": "魔鏡阿魔鏡",
+    "modelVersion": "unselected-v1",
+    "packageId": "unselected"
   },
   "faceModel": {
     "detectorId": "mock-face-detector-v1",

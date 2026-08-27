@@ -135,7 +135,11 @@ function makeConfig(configVersion = 7): Record<string, unknown> {
       inputTranscription: { modelId: MODEL_ID_SENTINEL },
       memoryExtractor: { modelId: MODEL_ID_SENTINEL },
     },
-    wake: { phrase: 'synthetic-wake-phrase', modelVersion: 'synthetic-wake-model' },
+    wake: {
+      phrase: 'synthetic-wake-phrase',
+      modelVersion: 'synthetic-wake-model',
+      packageId: 'synthetic-wake-package',
+    },
     faceModel: {
       detectorId: 'synthetic-face-detector',
       recognizerId: 'synthetic-face-recognizer',

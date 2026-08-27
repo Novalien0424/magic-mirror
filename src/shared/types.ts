@@ -38,7 +38,7 @@ export interface MirrorConfig {
   turnDetectionProfile: string;
   idleSeconds: number;                       // 300 in production config
   aiModels: AiModelsConfig;
-  wake: { phrase: string; modelVersion: string };
+  wake: { phrase: string; modelVersion: string; packageId: string };
   faceModel: { detectorId: string; recognizerId: string };
   assets: { offlineLoopVideo: string; avatarDir: string; musicDir: string };
   spells: unknown[];                         // Phase 4 owns the shape

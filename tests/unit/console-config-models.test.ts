@@ -146,6 +146,7 @@ function fixtureConfig(configVersion: number, suffix: string): MirrorConfig {
     wake: {
       phrase: `fixture-wake-${suffix}`,
       modelVersion: `fixture-wake-model-${suffix}`,
+      packageId: `fixture-wake-package-${suffix}`,
     },
     faceModel: {
       detectorId: `fixture-face-detector-${suffix}`,
@@ -859,7 +860,11 @@ function fixtureSafeConfigResponse(): ConsoleResponse<ConsoleConfigPayload> {
     personaName: 'fixture-persona-safe',
     voice: 'fixture-voice-safe',
     idleSeconds: 300,
-    wake: { phrase: 'fixture-wake-safe', modelVersion: 'fixture-wake-model-safe' },
+    wake: {
+      phrase: 'fixture-wake-safe',
+      modelVersion: 'fixture-wake-model-safe',
+      packageId: 'fixture-wake-package-safe',
+    },
     faceModel: { detectorId: 'fixture-detector-safe', recognizerId: 'fixture-recognizer-safe' },
     assets: { offlineLoopVideo: 'fixture-loop-safe.mp4', avatarDir: 'fixture-avatar-safe', musicDir: 'fixture-music-safe' },
     adapters: { lighting: 'mock' as const, fog: 'mock' as const, music: 'mock' as const },

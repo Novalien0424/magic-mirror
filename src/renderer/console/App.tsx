@@ -916,6 +916,18 @@ export function ConfigPanel({
             />
           </label>
           <label>
+            <span>wake.packageId</span>
+            <input
+              type="text"
+              value={draft?.wake.packageId ?? ''}
+              disabled={disabled}
+              onChange={(event) => updateDraft((current) => ({
+                ...current,
+                wake: { ...current.wake, packageId: event.currentTarget.value },
+              }))}
+            />
+          </label>
+          <label>
             <span>faceModel.detectorId</span>
             <input
               type="text"

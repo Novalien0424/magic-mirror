@@ -510,15 +510,23 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
 
   it('pins the exact Electron/package scripts and package-lock versions', () => {
     const packageJson = JSON.parse(readRequired(PACKAGE_JSON_PATH)) as {
+      readonly dependencies: Record<string, string>
       readonly devDependencies: Record<string, string>
       readonly scripts: Record<string, string>
     }
     const packageLock = JSON.parse(readRequired(PACKAGE_LOCK_PATH)) as {
-      readonly packages: Record<string, { readonly devDependencies?: Record<string, string>; readonly version?: string }>
+      readonly packages: Record<string, {
+        readonly dependencies?: Record<string, string>
+        readonly devDependencies?: Record<string, string>
+        readonly version?: string
+      }>
     }
 
     expect(packageJson.devDependencies.electron).toBe('43.4.1')
     expect(packageJson.devDependencies['electron-builder']).toBe('26.15.3')
+    expect(packageJson.dependencies['@picovoice/porcupine-node']).toBe('4.0.2')
+    expect(packageJson.dependencies['sherpa-onnx-node']).toBe('1.13.6')
+    expect(packageJson.dependencies.decibri).toBe('5.7.0')
     expect(packageJson.scripts['generate:offline-loop']).toBe('node scripts/generate-offline-loop.mjs')
     expect(packageJson.scripts.predev).toBe('npm run generate:offline-loop')
     expect(packageJson.scripts.prebuild).toBe('npm run generate:offline-loop')
@@ -527,11 +535,14 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
 
     expect(packageLock.packages['']?.devDependencies?.electron).toBe('43.4.1')
     expect(packageLock.packages['']?.devDependencies?.['electron-builder']).toBe('26.15.3')
+    expect(packageLock.packages['']?.dependencies?.['@picovoice/porcupine-node']).toBe('4.0.2')
+    expect(packageLock.packages['']?.dependencies?.['sherpa-onnx-node']).toBe('1.13.6')
+    expect(packageLock.packages['']?.dependencies?.decibri).toBe('5.7.0')
     expect(packageLock.packages['node_modules/electron']?.version).toBe('43.4.1')
     expect(packageLock.packages['node_modules/electron-builder']?.version).toBe('26.15.3')
   })
 
-  it('keeps the exact builder identity, file sets, unpack rule, macOS metadata, and config-only extra resource', () => {
+  it('keeps the exact builder identity, file sets, unpack rule, macOS metadata, and versioned extra resources', () => {
     const builder = readRequired(BUILDER_CONFIG_PATH)
     const files = sectionLines(builder, 'files')
     const asarUnpack = sectionOrScalarLines(builder, 'asarUnpack')
@@ -551,6 +562,8 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
       'extraResources:',
       '- from: resources/config/default.json',
       'to: config/default.json',
+      '- from: resources/wake-models',
+      'to: wake-models',
     ])
     expect(extraResources.join('\n')).not.toMatch(/\.mp4|offline-loop/i)
 

@@ -89,7 +89,8 @@ export class ConfigServiceError extends Error {
   }
 }
 
-const CURRENT_CONFIG_SCHEMA_VERSION = 2
+const CURRENT_CONFIG_SCHEMA_VERSION = 3
+const LEGACY_WAKE_PACKAGE_ID = 'legacy-unresolved'
 
 const V2_BASELINE = {
   reasoningEffort: 'low',
@@ -123,6 +124,7 @@ const mirrorConfigBaseEnvelope = z.object({
   wake: z.object({
     phrase: z.string().trim().min(1),
     modelVersion: z.string().trim().min(1),
+    packageId: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/),
   }).strict(),
   faceModel: z.object({
     detectorId: z.string().trim().min(1),
@@ -150,13 +152,18 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
 const mirrorConfigLegacyEnvelope = mirrorConfigBaseEnvelope.extend({
   reasoningEffort: reasoningEffortSchema.default(V2_BASELINE.reasoningEffort),
   turnDetectionProfile: turnDetectionProfileSchema.default(V2_BASELINE.turnDetectionProfile),
+  wake: z.object({
+    phrase: z.string().trim().min(1),
+    modelVersion: z.string().trim().min(1),
+    packageId: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/).default(LEGACY_WAKE_PACKAGE_ID),
+  }).strict(),
 }).strict()
 
 export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope
 
 type SlotInspection =
   | { status: 'missing'; raw: null }
-  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 | 2 }
+  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 | 2 | 3 }
   | { status: 'invalid'; raw: string; fields: readonly FieldError[] }
   | { status: 'unsupported'; raw: string; schemaVersion: number }
   | { status: 'unreadable'; raw: null }
@@ -477,7 +484,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseConfigEnvelope(decoded: unknown): {
-  schemaVersion: 0 | 1 | 2
+  schemaVersion: 0 | 1 | 2 | 3
   config: unknown
 } {
   if (!isRecord(decoded)) return { schemaVersion: 0, config: decoded }
@@ -493,7 +500,7 @@ function parseConfigEnvelope(decoded: unknown): {
     if (schemaVersion >= 0 && schemaVersion <= CURRENT_CONFIG_SCHEMA_VERSION) {
       const config = { ...decoded }
       delete config.schemaVersion
-      return { schemaVersion: schemaVersion as 0 | 1 | 2, config }
+      return { schemaVersion: schemaVersion as 0 | 1 | 2 | 3, config }
     }
   }
 
@@ -504,7 +511,7 @@ function parseConfigText(
   contents: string,
   slot: ConfigSlot,
   events: ConfigEventSink,
-): { value: MirrorConfig; schemaVersion: 0 | 1 | 2 } {
+): { value: MirrorConfig; schemaVersion: 0 | 1 | 2 | 3 } {
   let decoded: unknown
   try {
     decoded = JSON.parse(contents) as unknown
