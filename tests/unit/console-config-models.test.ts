@@ -1192,6 +1192,8 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       reportRealtimeFailure: 'mirror:report-realtime-failure',
       reportRealtimeMetadata: 'mirror:report-realtime-metadata',
+      avatarControl: 'mirror:avatar-control',
+      reportAvatarRuntime: 'mirror:report-avatar-runtime',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',

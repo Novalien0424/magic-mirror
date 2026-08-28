@@ -528,8 +528,12 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(packageJson.dependencies['sherpa-onnx-node']).toBe('1.13.6')
     expect(packageJson.dependencies.decibri).toBe('5.7.0')
     expect(packageJson.scripts['generate:offline-loop']).toBe('node scripts/generate-offline-loop.mjs')
-    expect(packageJson.scripts.predev).toBe('npm run generate:offline-loop')
-    expect(packageJson.scripts.prebuild).toBe('npm run generate:offline-loop')
+    expect(packageJson.scripts.predev).toBe(
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio',
+    )
+    expect(packageJson.scripts.prebuild).toBe(
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio',
+    )
     expect(packageJson.scripts.package).toBe('electron-builder --dir --publish never')
     expect(packageJson.scripts.smoke).toBe('electron .')
 
@@ -553,11 +557,12 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(builder).toContain('productName: Magic Mirror')
     expect(files).toEqual(['files:', '- out/**/*', '- package.json'])
     expect(builder).toMatch(/^asar:\s*true\s*$/m)
-    expect(
-      asarUnpack.length === 1
-        ? asarUnpack[0] === 'asarUnpack: out/renderer/mock/*.mp4'
-        : asarUnpack.join('\n') === 'asarUnpack:\n- out/renderer/mock/*.mp4',
-    ).toBe(true)
+    expect(asarUnpack).toEqual([
+      'asarUnpack:',
+      '- out/renderer/mock/*.mp4',
+      '- out/renderer/avatar/**/*',
+      '- out/renderer/audio/**/*',
+    ])
     expect(extraResources).toEqual([
       'extraResources:',
       '- from: resources/config/default.json',
@@ -587,11 +592,12 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     const asarUnpack = sectionOrScalarLines(builder, 'asarUnpack')
 
     expect(PACKAGED_VIDEO_RELATIVE).toBe('app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')
-    expect(
-      asarUnpack.length === 1
-        ? asarUnpack[0] === 'asarUnpack: out/renderer/mock/*.mp4'
-        : asarUnpack.join('\n') === 'asarUnpack:\n- out/renderer/mock/*.mp4',
-    ).toBe(true)
+    expect(asarUnpack).toEqual([
+      'asarUnpack:',
+      '- out/renderer/mock/*.mp4',
+      '- out/renderer/avatar/**/*',
+      '- out/renderer/audio/**/*',
+    ])
     expect((builder.match(/out\/renderer\/mock\/\*\.mp4/g) ?? []).length).toBe(1)
     expect(extraResources.join('\n')).not.toMatch(/\.mp4|offline-loop/i)
     expect(index.includes('render-process-gone')).toBe(true)

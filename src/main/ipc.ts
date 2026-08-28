@@ -6,6 +6,8 @@ import type {
   SimulatorResult,
 } from '../shared/types'
 import type {
+  AvatarControlCommand,
+  AvatarRuntimeSnapshot,
   ConsoleChannelMap,
   MirrorChannelMap,
   MirrorWindowKind,
@@ -21,6 +23,7 @@ import type {
   TransientRealtimeSecretInput,
   TransientRealtimeSecretResult,
 } from '../shared/bridge'
+import { AVATAR_RUNTIME_STATES } from '../shared/bridge'
 import type {
   ConsoleErrorCode,
   ConsoleLifecycleAction,
@@ -44,6 +47,8 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   reportRealtimeFailure: 'mirror:report-realtime-failure',
   reportRealtimeMetadata: 'mirror:report-realtime-metadata',
   sleepRequest: 'mirror:sleep-request',
+  avatarControl: 'mirror:avatar-control',
+  reportAvatarRuntime: 'mirror:report-avatar-runtime',
   ready: 'boot:renderer-ready',
 })
 
@@ -65,6 +70,8 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   rollback: 'console:rollback',
   nextRuntime: 'console:create-next-runtime',
   phaseTests: 'console:get-phase-tests',
+  avatarRuntime: 'console:get-avatar-runtime',
+  avatarControl: 'console:avatar-control',
   ready: 'boot:renderer-ready',
 })
 
@@ -188,6 +195,7 @@ const REALTIME_RENDERER_METADATA_KIND_VALUES: ReadonlySet<RealtimeRendererMetada
   'playback',
   'transcript',
   'cleanup',
+  'avatar',
 ])
 const REALTIME_RENDERER_METADATA_STATUS_VALUES: ReadonlySet<RealtimeRendererMetadataStatus> = new Set([
   'success',
@@ -201,7 +209,55 @@ const REALTIME_RENDERER_METADATA_EVENTS: Readonly<Record<RealtimeRendererMetadat
   playback: 'realtime_playback_metadata',
   transcript: 'realtime_transcript_metadata',
   cleanup: 'realtime_cleanup_metadata',
+  avatar: 'avatar_runtime_metadata',
 })
+
+const AVATAR_STATUS_VALUES = new Set(['not_ready', 'ready', 'degraded', 'failed'])
+const AVATAR_STATE_VALUES = new Set<string>(AVATAR_RUNTIME_STATES)
+
+function isUnitNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+}
+
+function isValidAvatarRuntimeSnapshot(value: unknown): value is AvatarRuntimeSnapshot {
+  if (!exactKeys(value, [
+    'status', 'reason', 'state', 'fps', 'waveform', 'mouthOpen',
+    'audioUnderruns', 'voiceGain', 'musicGain',
+  ])) return false
+  const fps = readProperty(value, 'fps')
+  const underruns = readProperty(value, 'audioUnderruns')
+  return AVATAR_STATUS_VALUES.has(readProperty(value, 'status') as string)
+    && typeof readProperty(value, 'reason') === 'string'
+    && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(readProperty(value, 'reason') as string)
+    && AVATAR_STATE_VALUES.has(readProperty(value, 'state') as string)
+    && typeof fps === 'number' && Number.isFinite(fps) && fps >= 0 && fps <= 240
+    && isUnitNumber(readProperty(value, 'waveform'))
+    && isUnitNumber(readProperty(value, 'mouthOpen'))
+    && typeof underruns === 'number' && Number.isSafeInteger(underruns) && underruns >= 0
+    && isUnitNumber(readProperty(value, 'voiceGain'))
+    && isUnitNumber(readProperty(value, 'musicGain'))
+}
+
+function validateAvatarControl(value: unknown): value is AvatarControlCommand {
+  const type = readProperty(value, 'type')
+  if (type === 'state') {
+    return exactKeys(value, ['type', 'state'])
+      && AVATAR_STATE_VALUES.has(readProperty(value, 'state') as string)
+  }
+  if (type === 'expression') {
+    return exactKeys(value, ['type', 'name'])
+      && typeof readProperty(value, 'name') === 'string'
+      && /^F0[1-8]$/.test(readProperty(value, 'name') as string)
+  }
+  if (type === 'recorded_audio' || type === 'music') {
+    return exactKeys(value, ['type', 'action'])
+      && (readProperty(value, 'action') === 'play' || readProperty(value, 'action') === 'stop')
+  }
+  if (type === 'voice_gain' || type === 'music_gain') {
+    return exactKeys(value, ['type', 'value']) && isUnitNumber(readProperty(value, 'value'))
+  }
+  return false
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -690,7 +746,7 @@ function eventArgsAreEmpty(args: readonly unknown[]): boolean {
 }
 
 function isPhaseTestPhase(value: unknown): value is PhaseTestPhase {
-  return value === '0' || value === '1' || value === '2'
+  return value === '0' || value === '1' || value === '2' || value === '3'
 }
 
 function cloneProjectedSnapshot(value: unknown): AppSnapshot {
@@ -910,8 +966,35 @@ export function dispatchMirrorRealtimeRuntimeCommand(
   }
 }
 
+function dispatchMirrorAvatarControl(
+  command: AvatarControlCommand,
+  windows: TrackedWindows,
+): boolean {
+  const tracked = getTrackedWindow(windows, 'mirror')
+  if (tracked === null || isTrackedWindowDestroyed(tracked)) return false
+  const sender = readProperty(tracked, 'webContents')
+  if (!isWebContentsLike(sender)) return false
+  try {
+    sender.send(MIRROR_IPC_CHANNELS.avatarControl, Object.freeze({ ...command }))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
   const { ipcMain, runtime, windows, telemetry } = options
+  let avatarRuntime: AvatarRuntimeSnapshot = Object.freeze({
+    status: 'not_ready',
+    reason: 'avatar_renderer_not_ready',
+    state: 'Dormant',
+    fps: 0,
+    waveform: 0,
+    mouthOpen: 0,
+    audioUnderruns: 0,
+    voiceGain: 1,
+    musicGain: 1,
+  })
   const realtimeIpcContract = createRealtimeIpcContract({
     issueRealtimeSessionStartBundle: () => {
       const issue = runtime.requestRealtimeClientSecret
@@ -993,6 +1076,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     }
   })
 
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportAvatarRuntime, (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return
+    }
+    if (args.length !== 1 || !isValidAvatarRuntimeSnapshot(args[0])) {
+      payloadRejected(telemetry)
+      return
+    }
+    avatarRuntime = Object.freeze({ ...(args[0] as AvatarRuntimeSnapshot) })
+  })
+
   ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
     try {
       const authorization = authorizeSender(event, 'mirror', windows)
@@ -1012,7 +1108,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       const durationMs = readProperty(report, 'durationMs')
       const sessionId = readProperty(report, 'sessionId')
       emit(telemetry, {
-        module: 'openai',
+        module: kind === 'avatar' ? 'avatar' : 'openai',
         event: REALTIME_RENDERER_METADATA_EVENTS[kind],
         status,
         reason,
@@ -1203,6 +1299,42 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     return invokeConsole(consoleFacade(options), (facade) => facade.getOverview(), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarRuntime, (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return { ok: true, value: avatarRuntime }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarControl, (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1 || !validateAvatarControl(args[0])) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (!dispatchMirrorAvatarControl(args[0], windows)) {
+      emit(telemetry, {
+        module: 'avatar',
+        event: 'avatar_control_dispatch_failed',
+        status: 'failed',
+        reason: 'mirror_window_unavailable',
+        source: 'runtime',
+      })
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    return { ok: true, value: avatarRuntime }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.events, async (event, ...args) => {

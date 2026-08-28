@@ -96,6 +96,43 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it("projects raw actual-output and VAD activity for the avatar without transcript timing", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const onAudioActivity = vi.fn();
+
+    createRealtimeSession({
+      ...makeSessionInput(makeSnapshot(), eventSink, probe),
+      onAudioActivity,
+    });
+
+    probe.emit("transport_event", {
+      type: "input_audio_buffer.speech_started",
+      realtimeSessionId: "session-a",
+    });
+    probe.emit("transport_event", {
+      type: "input_audio_buffer.speech_stopped",
+      realtimeSessionId: "session-a",
+    });
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.started",
+      realtimeSessionId: "session-a",
+    });
+    probe.emit("audio_interrupted", {});
+    probe.emit("transport_event", {
+      type: "output_audio_buffer.stopped",
+      realtimeSessionId: "session-a",
+    });
+
+    expect(onAudioActivity.mock.calls).toEqual([
+      ["speech_started"],
+      ["speech_stopped"],
+      ["output_started"],
+      ["interrupted"],
+      ["output_stopped"],
+    ]);
+  });
+
   it("requests dormant once after the model invokes the payload-free sleep tool and goodbye audio stops", async () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();

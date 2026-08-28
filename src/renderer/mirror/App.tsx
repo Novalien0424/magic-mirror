@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
+  AvatarRuntimeSnapshot,
   MirrorBridge,
   RealtimeRendererMetadataKind,
   RealtimeRendererMetadataReport,
@@ -22,6 +23,23 @@ import type {
   RealtimeRuntimeOwner,
   RealtimeRuntimeSession,
 } from '../realtime/realtime-runtime-owner'
+import { AvatarCanvas } from '../avatar/AvatarCanvas'
+import {
+  projectAvatarState,
+  type AvatarConversationState,
+} from '../avatar/avatar-state'
+import type { CubismAvatarRenderer } from '../avatar/cubism-avatar'
+import {
+  createAvatarAudioCoordinator,
+  type AvatarAudioActivity,
+  type AvatarAudioCoordinator,
+} from '../avatar/audio/avatar-audio-coordinator'
+import type { RealtimeAudioOutput } from '../realtime/realtime-audio-output'
+import {
+  createAvatarMediaController,
+  type AvatarMediaController,
+  type AvatarMediaSnapshot,
+} from '../avatar/audio/avatar-media-controller'
 
 type MirrorInterruptBridge = Pick<MirrorBridge, 'onInterrupt'>
 type MirrorInterruptTarget = Pick<RealtimeRuntimeOwner, 'interrupt'>
@@ -34,6 +52,8 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'onRealtimeRuntimeCommand'
   | 'onInterrupt'
   | 'requestSleep'
+  | 'reportAvatarRuntime'
+  | 'onAvatarControl'
 >
 type MirrorRealtimeMetadataBridge = Pick<MirrorBridge, 'reportRealtimeMetadata'>
 type MirrorRealtimeRuntimeOwner = Pick<
@@ -109,6 +129,7 @@ export function subscribeMirrorRealtimeRuntime(
     | 'onInterrupt'
   >,
   owner: MirrorRealtimeRuntimeOwner,
+  beforeInterrupt?: () => void,
 ): () => void {
   let disposed = false
   let commandUnsubscribe: (() => void) | undefined
@@ -212,6 +233,11 @@ export function subscribeMirrorRealtimeRuntime(
 
   const onInterrupt = (): void => {
     if (disposed) return
+    try {
+      beforeInterrupt?.()
+    } catch {
+      // Avatar stop-sync cannot block Realtime interruption.
+    }
     invokeOwner('interrupt', () => owner.interrupt(), 'interrupt_failed')
   }
 
@@ -272,6 +298,8 @@ function hasMirrorRealtimeRuntimeBridge(
       typeof candidate.reportRealtimeMetadata === 'function' &&
       typeof candidate.reportRealtimeFailure === 'function' &&
       typeof candidate.requestSleep === 'function' &&
+      typeof candidate.reportAvatarRuntime === 'function' &&
+      typeof candidate.onAvatarControl === 'function' &&
       typeof candidate.onRealtimeRuntimeCommand === 'function' &&
       typeof candidate.onInterrupt === 'function'
     )
@@ -320,6 +348,11 @@ function createMirrorRuntimeCleanup(
 
 function createMirrorRealtimeRuntimeOwner(
   bridge: MirrorRealtimeRuntimeBridge,
+  avatarAudio: {
+    readonly onOutputAvailable: (output: RealtimeAudioOutput) => void
+    readonly onOutputDisposed: (output: RealtimeAudioOutput) => void
+    readonly onActivity: (activity: AvatarAudioActivity) => void
+  },
 ): RealtimeRuntimeOwner {
   const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
     // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
@@ -341,6 +374,9 @@ function createMirrorRealtimeRuntimeOwner(
     micEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'mic', event),
     createCleanup: (session) => createMirrorRuntimeCleanup(bridge, session),
     onFailure: reportFailure,
+    onAudioOutputAvailable: avatarAudio.onOutputAvailable,
+    onAudioOutputDisposed: avatarAudio.onOutputDisposed,
+    onAudioActivity: avatarAudio.onActivity,
     playbackCompletion: {
       scheduler: createBrowserPlaybackScheduler(),
       fallbackAfterMs: REALTIME_PLAYBACK_FALLBACK_AFTER_MS,
@@ -645,7 +681,51 @@ function OfflineLoopScreen(): React.JSX.Element {
 export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [bridgeMissing, setBridgeMissing] = useState(false)
+  const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
+  const avatarRendererRef = useRef<CubismAvatarRenderer | null>(null)
+  const avatarAudioOutputRef = useRef<RealtimeAudioOutput | null>(null)
+  const avatarMediaControllerRef = useRef<AvatarMediaController | null>(null)
+  const avatarMetricsRef = useRef<AvatarRuntimeSnapshot>({
+    status: 'not_ready',
+    reason: 'avatar_renderer_not_ready',
+    state: 'Dormant',
+    fps: 0,
+    waveform: 0,
+    mouthOpen: 0,
+    audioUnderruns: 0,
+    voiceGain: 1,
+    musicGain: 1,
+  })
+
+  const reportAvatarRuntime = (patch: Partial<AvatarRuntimeSnapshot>): void => {
+    const next = Object.freeze({ ...avatarMetricsRef.current, ...patch })
+    avatarMetricsRef.current = next
+    const bridge = window.magicMirror
+    if (bridge !== undefined && 'reportAvatarRuntime' in bridge) {
+      try { bridge.reportAvatarRuntime(next) } catch { /* reporting cannot gate rendering */ }
+    }
+  }
+  const avatarAudioCoordinatorRef = useRef<AvatarAudioCoordinator | null>(null)
+  const ensureAvatarAudioCoordinator = (): AvatarAudioCoordinator => {
+    if (avatarAudioCoordinatorRef.current !== null) return avatarAudioCoordinatorRef.current
+    const coordinator = createAvatarAudioCoordinator({
+      onConversationState: setConversationState,
+      onMouthOpen: (value) => reportAvatarRuntime({ mouthOpen: value, waveform: value }),
+      eventSink: (event) => {
+        reportAvatarRuntime({ status: 'degraded', reason: event.reason })
+      },
+    })
+    avatarAudioCoordinatorRef.current = coordinator
+    return coordinator
+  }
+  ensureAvatarAudioCoordinator()
   const view = projectMirrorSnapshot(snapshot)
+  const avatarState = projectAvatarState({
+    lifecycle: view.state,
+    conversation: conversationState,
+  })
+  const avatarStateRef = useRef(avatarState)
+  avatarStateRef.current = avatarState
 
   useEffect(() => {
     let mounted = true
@@ -679,6 +759,38 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [])
 
   useEffect(() => {
+    const coordinator = ensureAvatarAudioCoordinator()
+    let media: AvatarMediaController
+    try {
+      media = createAvatarMediaController({
+        onRecordedOutput: (output) => {
+          coordinator.setAudioOutput(output ?? avatarAudioOutputRef.current)
+          if (output !== null) avatarRendererRef.current?.setState('Speaking')
+          else if (avatarStateRef.current !== null) avatarRendererRef.current?.setState(avatarStateRef.current)
+        },
+        onActivity: (activity) => coordinator?.handleActivity(activity),
+        onChanged: (metrics: AvatarMediaSnapshot) => reportAvatarRuntime(metrics),
+        eventSink: (reason) => {
+          reportAvatarRuntime({ status: 'degraded', reason })
+          const bridge = window.magicMirror
+          if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
+            bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
+          }
+        },
+      })
+    } catch {
+      reportAvatarRuntime({ status: 'degraded', reason: 'avatar_audio_graph_unavailable' })
+      return
+    }
+    avatarMediaControllerRef.current = media
+    reportAvatarRuntime(media.snapshot())
+    return () => {
+      media.dispose()
+      if (avatarMediaControllerRef.current === media) avatarMediaControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     const bridge = window.magicMirror
     if (
       bridge === undefined ||
@@ -689,13 +801,73 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     }
 
     try {
-      const owner = createMirrorRealtimeRuntimeOwner(bridge)
-      return subscribeMirrorRealtimeRuntime(bridge, owner)
+      const coordinator = ensureAvatarAudioCoordinator()
+      const owner = createMirrorRealtimeRuntimeOwner(bridge, {
+        onOutputAvailable: (output) => {
+          avatarAudioOutputRef.current = output
+          avatarMediaControllerRef.current?.setRealtimeOutput(output)
+          coordinator?.setAudioOutput(output)
+        },
+        onOutputDisposed: (output) => {
+          if (avatarAudioOutputRef.current !== output) return
+          avatarAudioOutputRef.current = null
+          avatarMediaControllerRef.current?.setRealtimeOutput(null)
+          coordinator?.setAudioOutput(null)
+        },
+        onActivity: (activity) => {
+          if (activity === 'interrupted') {
+            coordinator.handleActivity(activity)
+            avatarMediaControllerRef.current?.handleActivity(activity)
+          } else {
+            avatarMediaControllerRef.current?.handleActivity(activity)
+            coordinator.handleActivity(activity)
+          }
+        },
+      })
+      return subscribeMirrorRealtimeRuntime(
+        bridge,
+        owner,
+        () => {
+          coordinator.handleActivity('interrupted')
+          avatarMediaControllerRef.current?.handleActivity('interrupted')
+        },
+      )
     } catch {
       // Setup failure must not gate the existing snapshot or fallback UI path.
       return
     }
   }, [interruptComposition])
+
+  useEffect(() => {
+    avatarMediaControllerRef.current?.setLifecycle(view.state)
+    if (avatarState !== null) reportAvatarRuntime({ state: avatarState })
+    else if (view.state === 'offlineLoop') reportAvatarRuntime({ state: 'OfflineLoop' })
+  }, [avatarState, view.state])
+
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (bridge === undefined || !('onAvatarControl' in bridge)) return
+    return bridge.onAvatarControl((command) => {
+      if (command.type === 'state') {
+        avatarRendererRef.current?.setState(command.state)
+        reportAvatarRuntime({ state: command.state, reason: 'avatar_manual_state' })
+        return
+      }
+      if (command.type === 'expression') {
+        avatarRendererRef.current?.setExpression(command.name)
+        reportAvatarRuntime({ reason: 'avatar_manual_expression' })
+        return
+      }
+      reportAvatarRuntime({ reason: `avatar_${command.type}_command_received` })
+      avatarMediaControllerRef.current?.handleCommand(command)
+    })
+  }, [])
+
+  useEffect(() => () => {
+    avatarAudioCoordinatorRef.current?.dispose()
+    avatarAudioCoordinatorRef.current = null
+    avatarAudioOutputRef.current = null
+  }, [])
 
   useEffect(() => {
     const bridge = window.magicMirror
@@ -724,6 +896,39 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }
 
   if (view.state === 'offlineLoop') return <OfflineLoopScreen />
+
+  if (avatarState !== null) {
+    return (
+      <AvatarCanvas
+        state={avatarState}
+        onRenderer={(renderer) => {
+          avatarRendererRef.current = renderer
+          ensureAvatarAudioCoordinator().setRenderer(renderer)
+        }}
+        onEvent={(event) => {
+          reportAvatarRuntime({
+            status: event.status === 'ready' ? 'ready' : event.status,
+            reason: event.reason,
+          })
+          const bridge = window.magicMirror
+          if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
+            bridge.reportRealtimeMetadata({
+              kind: 'avatar',
+              status: event.status === 'ready' ? 'success' : event.status,
+              reason: event.reason,
+            })
+          }
+        }}
+        onMetrics={(metrics) => {
+          reportAvatarRuntime({
+            state: metrics.state,
+            fps: Math.max(0, Math.min(240, metrics.fps)),
+            mouthOpen: metrics.mouthOpen,
+          })
+        }}
+      />
+    )
+  }
 
   return (
     <div className={view.className} data-state={view.state}>

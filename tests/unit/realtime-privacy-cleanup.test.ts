@@ -211,6 +211,8 @@ type ExistingConsoleIpcChannelKey =
   | 'rollback'
   | 'nextRuntime'
   | 'phaseTests'
+  | 'avatarRuntime'
+  | 'avatarControl'
   | 'ready'
 
 const TRANSCRIPT_SENTINEL = 'synthetic-transcript-sentinel'

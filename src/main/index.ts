@@ -1,10 +1,12 @@
 import { basename, join, resolve } from 'node:path'
+import { readFile, readdir } from 'node:fs/promises'
 import {
   app,
   BrowserWindow,
   globalShortcut,
   ipcMain,
   powerSaveBlocker,
+  screen,
   utilityProcess,
   type WebContents,
 } from 'electron'
@@ -40,12 +42,18 @@ import {
 } from './wake/supervisor'
 import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
+import { selectPortraitDisplay } from './portrait-display'
+import { validateCubismModelBundle } from './avatar/model-bundle'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 /** Never let a stalled stdout pipe turn a smoke run into a hang. */
 const EXIT_FLUSH_TIMEOUT_MS = 500
 const phase1LiveSmokeEnabled = process.env['MIRROR_PHASE1_LIVE_SMOKE'] === '1'
+
+// A kiosk wake/Console command has no click inside the mirror renderer. Permit
+// those trusted Main-routed actions to start the local output graph.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 if (phase1LiveSmokeEnabled) {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream')
@@ -109,6 +117,37 @@ function wakeModelRoot(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'wake-models')
     : join(app.getAppPath(), 'resources', 'wake-models')
+}
+
+function avatarModelRoot(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'app.asar.unpacked', 'out', 'renderer', 'avatar', 'Ren')
+    : join(app.getAppPath(), 'resources', 'avatar', 'Ren')
+}
+
+async function configureAvatarRuntime(runtime: BootRuntime): Promise<void> {
+  const root = avatarModelRoot()
+  try {
+    const [manifestSource, entries] = await Promise.all([
+      readFile(join(root, 'Ren.model3.json'), 'utf8'),
+      readdir(root, { recursive: true, withFileTypes: true }),
+    ])
+    const files = new Set(entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name)
+        .slice(root.length + 1)
+        .replaceAll('\\', '/')))
+    const result = validateCubismModelBundle({
+      model3: JSON.parse(manifestSource) as unknown,
+      files,
+    })
+    await runtime.setAvatarRuntimeStatus(
+      result.ok ? 'ready' : 'degraded',
+      result.ok ? 'avatar_bundle_validated' : result.reason,
+    )
+  } catch {
+    await runtime.setAvatarRuntimeStatus('degraded', 'avatar_bundle_unavailable')
+  }
 }
 
 function spawnWakeWorker(): WakeWorkerChild {
@@ -206,10 +245,13 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
     return { ...shared, width: 1100, height: 760, title: 'Magic Mirror Console', backgroundColor: '#101418' }
   }
 
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const mirrorDisplay = selectPortraitDisplay(screen.getAllDisplays(), primaryDisplay.id)
+  const mirrorBounds = mirrorDisplay?.bounds
+
   return {
     ...shared,
-    width: 1280,
-    height: 800,
+    ...(mirrorBounds ?? { width: 1280, height: 800 }),
     frame: false,
     backgroundColor: '#05070a',
     // macOS kiosk uses pre-Lion fullscreen (no Space transition); the Windows dev
@@ -527,6 +569,7 @@ void app.whenReady().then(() => {
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
   void configureWakeRuntime(runtime)
+  void configureAvatarRuntime(runtime)
 
   displaySleepBlocker = createDisplaySleepBlocker(
     {

@@ -88,6 +88,7 @@ function safeAnalyserSampleSize(analyser: AnalyserNode): number {
 
 function adaptRealtimeAudioOutput(
   output: RealtimeAudioOutput,
+  onDisposed?: (output: RealtimeAudioOutput) => void,
 ): RealtimeRuntimeAudioOutput {
   let analyserTapAttempted = false
   let analyserTapAttached = false
@@ -123,10 +124,25 @@ function adaptRealtimeAudioOutput(
     },
   })
 
+  let disposePromise: Promise<void> | null = null
+  const dispose = onDisposed === undefined
+    ? output.dispose
+    : (): Promise<void> => {
+        if (disposePromise !== null) return disposePromise
+        disposePromise = Promise.resolve(output.dispose()).finally(() => {
+          try {
+            onDisposed(output)
+          } catch {
+            // Avatar observation cannot change audio cleanup.
+          }
+        })
+        return disposePromise
+      }
+
   return Object.freeze({
     audioElement: output.audioElement,
     analyser,
-    dispose: output.dispose,
+    dispose,
   })
 }
 
@@ -137,6 +153,7 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly createCleanup: RealtimeRuntimeOwnerDependencies['createCleanup']
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
+  readonly onAudioActivity?: CreateRealtimeSessionInput['onAudioActivity']
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>
   readonly createSession?: (
     input: CreateRealtimeSessionInput,
@@ -147,6 +164,8 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly createAudioOutput?: (
     input?: CreateRealtimeAudioOutputInput,
   ) => MaybePromise<RealtimeAudioOutput>
+  readonly onAudioOutputAvailable?: (output: RealtimeAudioOutput) => void
+  readonly onAudioOutputDisposed?: (output: RealtimeAudioOutput) => void
   readonly createPlaybackTransport?: (
     session: RealtimeRuntimeSession,
   ) => MaybePromise<RealtimeRuntimePlaybackTransport>
@@ -213,9 +232,15 @@ export function createRealtimeRuntimeOwnerDependencies(
     },
     createAudioOutput: (): MaybePromise<RealtimeRuntimeAudioOutput> => {
       const output = audioOutputFactory()
-      return isPromiseLike(output)
-        ? output.then(adaptRealtimeAudioOutput)
-        : adaptRealtimeAudioOutput(output)
+      const adapt = (resolved: RealtimeAudioOutput): RealtimeRuntimeAudioOutput => {
+        try {
+          input.onAudioOutputAvailable?.(resolved)
+        } catch {
+          // Avatar observation cannot change Realtime output ownership.
+        }
+        return adaptRealtimeAudioOutput(resolved, input.onAudioOutputDisposed)
+      }
+      return isPromiseLike(output) ? output.then(adapt) : adapt(output)
     },
     createSession: (
       bundle: Readonly<RealtimeSessionStartBundleValue>,
@@ -237,6 +262,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
+        onAudioActivity: input.onAudioActivity,
       })
     },
     createMicOwner: (

@@ -1,7 +1,7 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-27 — Phase 2 Wake Lifecycle is accepted as a
-Windows development checkpoint; Phase 3 Avatar/Audio is next but not started.**
+**Current dashboard — 2026-08-28 — Phase 3 Avatar/Audio is accepted as a
+Windows development checkpoint; Phase 4 Scenes is next.**
 Phase 0 is accepted and tagged `phase0-v0.3.1` at `9237dc7`. Phase 1 product
 tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
 released as `phase1-v0.3.1`. Phase 2 is released as `phase2-v0.3.1`; it
@@ -10,8 +10,9 @@ package, isolated worker, exclusive mic handoff, idle/sleep lifecycle, Console
 evidence, and current-host corpus evaluator. The runtime now selects the hashed
 `sherpa-magic-mirror-win-v2` package; native load and real EPOS microphone
 acquisition pass. The Mac mini M4 port and target-specific
-revalidation remain deferred until PC development is complete. Phases 3–7 have
-not started; their earlier prep-only lanes remain non-phase evidence.
+revalidation remain deferred until PC development is complete. Phase 3 is
+released as `phase3-v0.3.1`; Phases 4–7 have not started, and their earlier
+prep-only lanes remain non-phase evidence.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 The automated live harness launches the actual `npm run dev` /
@@ -21,6 +22,37 @@ metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
 failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
+
+## Phase 3 closure — accepted 2026-08-28
+
+- The accepted Windows checkpoint vendors the official Cubism 5 Web SDK R5
+  Core/Framework and Ren Foster development rig, renders with WebGL2 on the closest
+  9:16 portrait display, and provides Dormant, Waking, Listening, Thinking,
+  Speaking, Scene, and Suspending motions plus expressions, blink, breath,
+  micro-head movement, physics, pose, and a visible static fallback.
+- Lip sync uses an analyser on actual audible output, never transcript timing.
+  The Realtime remote stream and recorded-output fixture share the same
+  RMS/envelope path; interruption zeros the mouth and stops speaking motion and
+  expression. Voice/music gains are independent; music ducks, restores, and
+  fades before Dormant/OfflineLoop.
+- Console now exposes state/motion/expression controls, recorded output, music,
+  Interrupt, gain controls, FPS, waveform, mouth, underruns, and metadata-only
+  failure reasons. Large avatar/audio assets are unpacked in the packaged app.
+- Automated Windows evidence passed the P3-D1 state journey. The live portrait
+  renderer reported ready at about 238 FPS; recorded output drove mouth to
+  0.833; music followed `1.00 -> 0.22 -> 1.00 -> 0.00`; interrupt restored
+  Dormant with mouth `0.000`; a 13.5-second loop reported zero false underruns.
+  This is real local renderer/Web Audio evidence, not real Realtime audio or a
+  Phase 3 exit claim.
+- The operator explicitly marked Phase 3 closed and tested after the real
+  Windows conversation/avatar check. This accepts the real Realtime-output
+  lip-sync and interruption behavior. Exact elapsed-time and interruption-count
+  telemetry were not separately captured, so no granular count is invented.
+  The automated P3-D1/P3-D4 evidence and static fallback remain accepted.
+- Phase 3 is released as the Windows checkpoint `phase3-v0.3.1`. Target-Mac
+  near-60-FPS evidence remains deferred under the Windows-first ruling.
+  MotionSync and a final custom Cubism rig are later quality enhancements, not
+  retroactive Phase 3 gates.
 
 ## Phase 1 closure — accepted 2026-08-27
 
@@ -256,12 +288,17 @@ failure never silently substitutes another ID.
 
 ## Pending work — exact order
 
-1. Begin Phase 3 Avatar/Audio from the accepted Phase 2 tag, preserving actual-
-   output-audio lip sync and the existing wake/Realtime mic ownership boundary.
-2. In Phase 7, execute the deferred P2-D2 offline-wake check, representative
+1. Start Phase 4 Scenes: approve three exact spells and three presets, then
+   integrate the existing exact matcher with scene timelines and the
+   Avatar/Lighting/Fog/Music adapters.
+2. Continue sequentially through Phase 5 Identity/Profiles and Phase 6 Memory.
+3. In Phase 7, execute the deferred P2-D2 offline-wake check, representative
    multi-speaker positive corpus, 19/20 acceptance sample, and 30-minute
    ambient/TV false-wake run.
-3. After PC development, revalidate the sherpa package and complete TCC/native
+4. After the Phase 0–7 core, implement Phase 8 Multiple Personas / Persona and
+   Avatar Tuning, including the operator-owned custom Cubism rig and per-model
+   calibration.
+5. After PC development, revalidate the sherpa package and complete TCC/native
    packaging/signing/LaunchAgent/power evidence during the Mac mini M4 port
    before final deployment acceptance.
 
@@ -269,10 +306,13 @@ failure never silently substitutes another ID.
 
 - Phase 7 — optimize wake-word accuracy using representative speakers,
   distances/noise conditions, ambient negatives, and final target hardware.
-- Phase 8 — Multiple Personas / Persona Tuning. Add versioned,
-  operator-selectable Personas and tune their character consistency, speaking
-  style, and response quality. This post-core phase is not started and its
-  detailed design is intentionally deferred.
+- Phase 8 — Multiple Personas / Persona and Avatar Tuning. Add versioned,
+  operator-selectable Personas; replace the development rig with an
+  operator-owned custom Cubism model; calibrate parameters, motions,
+  expressions, physics, lip sync, framing, and tracking; then tune character
+  consistency, speaking style, voice, and response quality. Cubism authoring is
+  rigging/calibration rather than ML training. This post-core phase is not
+  started and its detailed design is intentionally deferred.
 
 ## Human-intervention ledger
 
@@ -409,8 +449,9 @@ After that gate, the remaining plain-language needs are:
 
 - Phase 2: the approved phrase is `魔鏡阿魔鏡`; provide or approve the real
   corpus and Windows microphone time for the PC model selection and demos.
-- Phase 3: provide the final Live2D/Cubism assets, then observe actual-output-
-  audio behavior.
+- Phase 3: observe real Realtime-output lipsync, interruption, ten-minute
+  stability, and perceived avatar/audio quality on the Windows candidate. The
+  final character asset remains a Phase 7 deliverable.
 - Phase 4: approve the final spells and presets, then connect and observe the
   adapters and hardware.
 - After PC development: provide target-Mac, operator, and device time for the

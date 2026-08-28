@@ -8,7 +8,7 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Optional built-in roles are used only when genuinely independent parallel work, isolated noisy investigation, or high-risk fresh validation materially improves the result. Delegation is not a serial gate and uses a short outcome/scope/evidence prompt.
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.
 - Robustness means explicit ownership, bounded cleanup/retry, visible metadata-only failure, and focused tests at risky boundaries. It does not mean duplicate controllers, shadow implementations, hard-coded provider taxonomies, or exhaustive internal-state tests with no product requirement.
-- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phases 0, 1, and 2 are accepted Windows checkpoints and tagged; Phase 3 is next but not started. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
+- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phases 0 through 3 are accepted Windows checkpoints and tagged; Phase 4 Scenes is next. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
 - On 2026-08-27 the user added two later-scope requirements. Phase 7 must
   optimize wake-word accuracy with a representative multi-speaker positive
   corpus, ambient negatives, and target-hardware revalidation. After observing
@@ -18,10 +18,13 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   offline-wake demo, 19/20 live-wake sample, 30-minute ambient/TV run, and
   broader multi-speaker accuracy work are deferred to Phase 7 and are not
   recorded as Phase 2 passes. After the Phase 0-7 core is complete, Phase 8 is specifically
-  **Multiple Personas / Persona Tuning**: multiple operator-selectable,
-  versioned Personas and evidence-led refinement of character consistency,
-  speaking style, and response quality. Detailed Phase 8 design is deferred
-  until that phase and does not add work or gates to Phase 2.
+  **Multiple Personas / Persona and Avatar Tuning**: multiple
+  operator-selectable, versioned Personas; an operator-owned custom Cubism rig
+  with per-model motion/expression/physics/lip-sync/framing/tracking
+  calibration; and evidence-led refinement of character consistency, voice,
+  speaking style, and response quality. Cubism work is model authoring and
+  rigging, not ML training. Detailed Phase 8 design is deferred until that
+  phase and does not add work or gates to earlier phases.
 - On 2026-08-27 the user clarified that this Windows PC is the development and
   functional-verification host for all phases. Porting to the Mac mini M4 and
   all macOS-only evidence occur after PC development; they do not block
@@ -43,6 +46,14 @@ This ledger records durable boundaries, accepted design choices, and truth claim
   artifact hashes, tuning, and corpus result. The selected package must be
   revalidated on the Mac mini M4 during the later port; there is no runtime
   engine fallback.
+- The accepted Phase 3 Windows renderer uses the official Cubism 5 Web SDK R5
+  directly with WebGL2 and the Ren Foster development rig. It targets the closest
+  9:16 portrait display and drives mouth motion only from the actual audible
+  output analyser. RMS/envelope lip sync is the exit baseline; MotionSync is an
+  optional enhancement, not a Phase 3 gate. The operator explicitly closed and
+  accepted the real Windows avatar/audio checkpoint on 2026-08-28. Final custom
+  character work belongs to Phase 8; target-Mac performance remains later
+  deployment evidence.
 
 ## Pre-Phase-1 prep authorization — 2026-08-24
 

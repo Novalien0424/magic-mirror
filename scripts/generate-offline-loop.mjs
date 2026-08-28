@@ -61,6 +61,22 @@ export function generateOfflineLoop({ sourcePath = DEFAULT_SOURCE_PATH, outputPa
   const sourceSha256 = assertAssetContract(sourceBytes)
 
   mkdirSync(dirname(outputPath), { recursive: true })
+  if (existsSync(outputPath)) {
+    try {
+      const existingBytes = readFileSync(outputPath)
+      const outputSha256 = assertAssetContract(existingBytes)
+      if (existingBytes.equals(sourceBytes)) {
+        return {
+          sourceSha256,
+          outputSha256,
+          byteLength: existingBytes.byteLength,
+          outputPath,
+        }
+      }
+    } catch {
+      // Invalid existing output is replaced through the verified atomic path.
+    }
+  }
   const temporaryPath = `${outputPath}.tmp-${process.pid}-${Date.now()}`
   try {
     writeFileSync(temporaryPath, sourceBytes)

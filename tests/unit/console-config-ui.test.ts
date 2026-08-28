@@ -13,6 +13,7 @@ import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 
 const EXPECTED_TABS = [
   'Overview',
+  'Avatar / Audio',
   'Simulator',
   'Events',
   'Phase Tests',
@@ -131,7 +132,7 @@ function expectNoPrivacySentinels(value: unknown): void {
 }
 
 describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
-  it('preserves the six existing tabs and all 9A Overview, Simulator, and Events contracts', () => {
+  it('preserves the existing tabs and all 9A Overview, Simulator, and Events contracts', () => {
     const html = renderConsole()
 
     expect(CONSOLE_UI_CONTRACT.tabs).toEqual(EXPECTED_TABS)

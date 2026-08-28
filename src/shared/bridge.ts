@@ -67,6 +67,7 @@ export type RealtimeRendererMetadataKind =
   | 'playback'
   | 'transcript'
   | 'cleanup'
+  | 'avatar'
 
 export type RealtimeRendererMetadataStatus = 'success' | 'degraded' | 'failed' | 'info'
 
@@ -76,6 +77,39 @@ export interface RealtimeRendererMetadataReport {
   readonly reason: string
   readonly durationMs?: number
   readonly sessionId?: string
+}
+
+export const AVATAR_RUNTIME_STATES = [
+  'Dormant',
+  'Waking',
+  'Listening',
+  'Thinking',
+  'Speaking',
+  'Scene',
+  'Suspending',
+  'OfflineLoop',
+] as const
+
+export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
+
+export type AvatarControlCommand =
+  | Readonly<{ type: 'state'; state: AvatarRuntimeState }>
+  | Readonly<{ type: 'expression'; name: string }>
+  | Readonly<{ type: 'recorded_audio'; action: 'play' | 'stop' }>
+  | Readonly<{ type: 'music'; action: 'play' | 'stop' }>
+  | Readonly<{ type: 'voice_gain'; value: number }>
+  | Readonly<{ type: 'music_gain'; value: number }>
+
+export interface AvatarRuntimeSnapshot {
+  readonly status: 'not_ready' | 'ready' | 'degraded' | 'failed'
+  readonly reason: string
+  readonly state: AvatarRuntimeState
+  readonly fps: number
+  readonly waveform: number
+  readonly mouthOpen: number
+  readonly audioUnderruns: number
+  readonly voiceGain: number
+  readonly musicGain: number
 }
 
 export type BootChannel = 'boot:renderer-ready'
@@ -91,6 +125,8 @@ export interface MirrorChannelMap {
   readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
   readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
   readonly sleepRequest: 'mirror:sleep-request'
+  readonly avatarControl: 'mirror:avatar-control'
+  readonly reportAvatarRuntime: 'mirror:report-avatar-runtime'
   readonly ready: BootChannel
 }
 
@@ -112,6 +148,8 @@ export interface ConsoleChannelMap {
   readonly rollback: 'console:rollback'
   readonly nextRuntime: 'console:create-next-runtime'
   readonly phaseTests: 'console:get-phase-tests'
+  readonly avatarRuntime: 'console:get-avatar-runtime'
+  readonly avatarControl: 'console:avatar-control'
   readonly ready: BootChannel
 }
 
@@ -123,6 +161,7 @@ export type RealtimeRuntimeCommand =
   | Readonly<{ operation: 'rollover'; reason: 'session_limit' }>
 
 export type RealtimeRuntimeCommandListener = (command: RealtimeRuntimeCommand) => void
+export type AvatarControlCommandListener = (command: AvatarControlCommand) => void
 
 interface SharedRendererBridge {
   notifyReady(): void
@@ -136,6 +175,8 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeFailure(report: RealtimeFailureReport): void
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
+  reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
+  onAvatarControl(listener: AvatarControlCommandListener): () => void
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
 }
@@ -156,6 +197,8 @@ export interface ConsoleBridge extends SharedRendererBridge {
   rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
+  getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

@@ -119,6 +119,9 @@ export function createRealtimeAudioOutput(
     const source = audioContext.createMediaStreamSource(remoteStream as MediaStream)
     analyserSource = source
     source.connect(analyser)
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume().catch(() => undefined)
+    }
     analyserTapAttached = true
   }
 
