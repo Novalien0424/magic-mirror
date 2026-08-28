@@ -14,6 +14,10 @@ import type { ACubismMotion } from '../../vendor/live2d/Framework/dist/motion/ac
 import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
 import type { CubismIdHandle } from '../../vendor/live2d/Framework/dist/id/cubismid'
 import { CubismWebGLOffscreenManager } from '../../vendor/live2d/Framework/dist/rendering/cubismoffscreenmanager'
+import {
+  renExpressionForState,
+  resolveAvatarModelSource,
+} from './avatar-model-source'
 import type { AvatarState } from './avatar-state'
 
 const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
@@ -63,6 +67,7 @@ export interface CubismAvatarRenderer {
 export interface CreateCubismAvatarRendererInput {
   readonly canvas: HTMLCanvasElement
   readonly assetBaseUrl?: string
+  readonly manifestFileName?: string
   readonly eventSink: (event: CubismAvatarEvent) => void
   readonly metricsSink: (metrics: CubismAvatarMetrics) => void
 }
@@ -115,6 +120,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
   readonly #canvas: HTMLCanvasElement
   readonly #gl: WebGLRenderingContext | WebGL2RenderingContext
   readonly #assetBaseUrl: string
+  readonly #manifestUrl: string
   readonly #motions = new Map<Exclude<AvatarState, 'OfflineLoop'>, CubismMotion>()
   readonly #expressions = new Map<string, ACubismMotion>()
   readonly #textures: WebGLTexture[] = []
@@ -128,15 +134,17 @@ class MagicMirrorCubismModel extends CubismUserModel {
     canvas: HTMLCanvasElement,
     gl: WebGLRenderingContext | WebGL2RenderingContext,
     assetBaseUrl: string,
+    manifestUrl: string,
   ) {
     super()
     this.#canvas = canvas
     this.#gl = gl
     this.#assetBaseUrl = assetBaseUrl.endsWith('/') ? assetBaseUrl : `${assetBaseUrl}/`
+    this.#manifestUrl = manifestUrl
   }
 
   async load(): Promise<void> {
-    const model3 = await fetchBuffer(`${this.#assetBaseUrl}Haru.model3.json`)
+    const model3 = await fetchBuffer(this.#manifestUrl)
     const setting = new CubismModelSettingJson(model3, model3.byteLength)
     this.#setting = setting
     for (let index = 0; index < setting.getEyeBlinkParameterCount(); index += 1) {
@@ -274,10 +282,13 @@ class MagicMirrorCubismModel extends CubismUserModel {
 
   setState(state: AvatarState): void {
     this.#state = state
+    this._expressionManager.stopAllMotions()
     if (state === 'OfflineLoop') {
       this._motionManager.stopAllMotions()
       return
     }
+    const expressionName = renExpressionForState(state)
+    if (expressionName !== null) this.setExpression(expressionName)
     const motion = this.#motions.get(state)
     if (motion === undefined) return
     this._motionManager.stopAllMotions()
@@ -382,7 +393,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
 export function createCubismAvatarRenderer(
   input: CreateCubismAvatarRendererInput,
 ): CubismAvatarRenderer {
-  const assetBaseUrl = input.assetBaseUrl ?? '/avatar/Haru/'
+  const modelSource = resolveAvatarModelSource(input)
   let model: MagicMirrorCubismModel | null = null
   let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null
   let frameId: number | null = null
@@ -475,7 +486,12 @@ export function createCubismAvatarRenderer(
         softwareRenderer = typeof rendererName === 'string' && /swiftshader/iu.test(rendererName)
       }
 
-      model = new MagicMirrorCubismModel(input.canvas, gl, assetBaseUrl)
+      model = new MagicMirrorCubismModel(
+        input.canvas,
+        gl,
+        modelSource.assetBaseUrl,
+        modelSource.manifestUrl,
+      )
       try {
         await model.load()
       } catch (error) {

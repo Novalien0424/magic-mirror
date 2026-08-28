@@ -18,16 +18,16 @@ describe('Phase 3 official Cubism asset packaging', () => {
       'gl_Position',
     )
     expect(read('src/vendor/live2d/NOTICE.md')).toContain('Live2D')
-    expect(read('src/vendor/live2d/SDK_VERSION')).toBe('CubismSdkForWeb-5-r.5\n')
+    expect(read('src/vendor/live2d/SDK_VERSION').trim()).toBe('CubismSdkForWeb-5-r.5')
   })
 
-  it('packages the development avatar outside app.asar', () => {
+  it('packages Ren with the Magic Mirror lifecycle contract outside app.asar', () => {
     const builder = read('electron-builder.yml')
     expect(builder).toContain('out/renderer/avatar/**/*')
     expect(builder).toContain('out/renderer/audio/**/*')
 
     const model = JSON.parse(
-      read('resources/avatar/Haru/Haru.model3.json'),
+      read('resources/avatar/Ren/Ren.model3.json'),
     ) as {
       Groups: Array<{ Name: string; Ids: string[] }>
       FileReferences: { Motions: Record<string, unknown[]> }
@@ -68,7 +68,7 @@ describe('Phase 3 official Cubism asset packaging', () => {
 
     expect(packageJson.scripts['predev']).toContain('npm run prepare:avatar')
     expect(packageJson.scripts['prebuild']).toContain('npm run prepare:avatar')
-    expect(preparer).toContain("'resources', 'avatar', 'Haru'")
+    expect(preparer).toContain("'resources', 'avatar', 'Ren'")
     expect(preparer).toContain("'resources', 'generated'")
     expect(preparer).toContain("'Framework', 'Shaders'")
     expect(packageJson.scripts['predev']).toContain('npm run generate:avatar-audio')

@@ -121,15 +121,15 @@ function wakeModelRoot(): string {
 
 function avatarModelRoot(): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'app.asar.unpacked', 'out', 'renderer', 'avatar', 'Haru')
-    : join(app.getAppPath(), 'resources', 'avatar', 'Haru')
+    ? join(process.resourcesPath, 'app.asar.unpacked', 'out', 'renderer', 'avatar', 'Ren')
+    : join(app.getAppPath(), 'resources', 'avatar', 'Ren')
 }
 
 async function configureAvatarRuntime(runtime: BootRuntime): Promise<void> {
   const root = avatarModelRoot()
   try {
     const [manifestSource, entries] = await Promise.all([
-      readFile(join(root, 'Haru.model3.json'), 'utf8'),
+      readFile(join(root, 'Ren.model3.json'), 'utf8'),
       readdir(root, { recursive: true, withFileTypes: true }),
     ])
     const files = new Set(entries

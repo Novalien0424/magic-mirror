@@ -27,8 +27,8 @@ await mkdir(resolve(generatedRoot, 'avatar'), { recursive: true })
 await mkdir(resolve(generatedRoot, 'live2d', 'Core'), { recursive: true })
 await mkdir(resolve(generatedRoot, 'live2d', 'Framework'), { recursive: true })
 await cp(
-  resolve(projectRoot, 'resources', 'avatar', 'Haru'),
-  resolve(generatedRoot, 'avatar', 'Haru'),
+  resolve(projectRoot, 'resources', 'avatar', 'Ren'),
+  resolve(generatedRoot, 'avatar', 'Ren'),
   { recursive: true, force: true, filter: shouldCopy },
 )
 await cp(
