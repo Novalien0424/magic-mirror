@@ -1,9 +1,21 @@
 import type {
   AppSnapshot,
   MirrorEvent,
+  MirrorConfig,
+  ManagedVisualAsset,
   OpStatus,
+  PendingVisualAsset,
+  SceneActionDefinition,
+  SceneActionCommandContext,
+  SceneActionRendererReport,
+  ScenePublicCatalog,
+  SceneRunResult,
+  SceneStartResult,
+  SceneStatusEvent,
+  SceneVisualPlaybackReport,
   SimulatorCommand,
   SimulatorResult,
+  VisualAssetProbe,
 } from '../shared/types'
 import type {
   AvatarControlCommand,
@@ -36,6 +48,12 @@ import { projectAppSnapshot, type BootRuntime } from './boot'
 import type { ConsoleDataPlane } from './console-data'
 import type { RealtimeSessionStartBundle } from './realtime/session-start-bundle'
 import type { RealtimeFailureKind } from '../shared/realtime-recovery'
+import { createSceneRuntime, type SceneRuntime, type SceneRuntimeEvent } from './scenes/scene-runtime'
+import {
+  createMockPhysicalAdapter,
+  createUnavailablePhysicalAdapter,
+  type PhysicalSceneAdapter,
+} from './scenes/adapters'
 
 export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   getSnapshot: 'mirror:get-snapshot',
@@ -49,6 +67,12 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   sleepRequest: 'mirror:sleep-request',
   avatarControl: 'mirror:avatar-control',
   reportAvatarRuntime: 'mirror:report-avatar-runtime',
+  reportSceneAction: 'mirror:report-scene-action',
+  reportSceneVisual: 'mirror:report-scene-visual',
+  getSceneCatalog: 'mirror:get-scene-catalog',
+  triggerScene: 'mirror:trigger-scene',
+  stopScene: 'mirror:stop-scene',
+  sceneStatus: 'mirror:scene-status',
   ready: 'boot:renderer-ready',
 })
 
@@ -72,6 +96,13 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   phaseTests: 'console:get-phase-tests',
   avatarRuntime: 'console:get-avatar-runtime',
   avatarControl: 'console:avatar-control',
+  runScene: 'console:run-scene',
+  stopScenes: 'console:stop-scenes',
+  sceneStatus: 'console:scene-status',
+  uploadMusic: 'console:upload-music',
+  uploadVisual: 'console:upload-visual',
+  finalizeVisual: 'console:finalize-visual',
+  cancelVisual: 'console:cancel-visual',
   ready: 'boot:renderer-ready',
 })
 
@@ -122,11 +153,20 @@ export interface RegisterIpcHandlersOptions {
     ) => unknown | PromiseLike<unknown>
     readonly requestSleep?: () => unknown | PromiseLike<unknown>
     readonly noteRealtimeActivity?: (kind: 'user_turn' | 'assistant_playback') => void
+    readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
   readonly telemetry: IpcEventSink
   readonly onReady?: (kind: MirrorWindowKind) => void
+  readonly importMusicAsset?: () => Promise<MirrorConfig['musicAssets'][number] | null>
+  readonly importVisualAsset?: () => Promise<PendingVisualAsset | null>
+  readonly finalizeVisualAsset?: (input: Readonly<{ token: string; probe: VisualAssetProbe }>) => Promise<ManagedVisualAsset>
+  readonly cancelVisualAsset?: (token: string) => Promise<void>
+}
+
+export interface SceneRuntimeControl {
+  stopAll(): Promise<void>
 }
 
 export type SenderAuthResult =
@@ -214,6 +254,7 @@ const REALTIME_RENDERER_METADATA_EVENTS: Readonly<Record<RealtimeRendererMetadat
 
 const AVATAR_STATUS_VALUES = new Set(['not_ready', 'ready', 'degraded', 'failed'])
 const AVATAR_STATE_VALUES = new Set<string>(AVATAR_RUNTIME_STATES)
+const SCENE_RENDERER_REPORT_STATUSES = new Set(['acknowledged', 'completed', 'failed', 'timeout'])
 
 function isUnitNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
@@ -244,10 +285,47 @@ function validateAvatarControl(value: unknown): value is AvatarControlCommand {
     return exactKeys(value, ['type', 'state'])
       && AVATAR_STATE_VALUES.has(readProperty(value, 'state') as string)
   }
+  if (type === 'asset_failure') {
+    return exactKeys(value, ['type', 'action'])
+      && (readProperty(value, 'action') === 'inject' || readProperty(value, 'action') === 'clear')
+  }
   if (type === 'expression') {
     return exactKeys(value, ['type', 'name'])
       && typeof readProperty(value, 'name') === 'string'
-      && /^F0[1-8]$/.test(readProperty(value, 'name') as string)
+      && /^[A-Za-z0-9._-]{1,80}$/.test(readProperty(value, 'name') as string)
+  }
+  if (type === 'motion') {
+    return exactKeys(value, ['type', 'group'])
+      && typeof readProperty(value, 'group') === 'string'
+      && /^[A-Za-z0-9._-]{1,80}$/.test(readProperty(value, 'group') as string)
+  }
+  if (type === 'scene_dialogue') {
+    const text = readProperty(value, 'text')
+    return exactKeys(value, ['type', 'text'])
+      && typeof text === 'string' && text.trim().length > 0 && text.length <= 1000
+  }
+  if (type === 'scene_music') {
+    const action = readProperty(value, 'action')
+    if (action === 'play') {
+      return exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop'])
+        && SAFE_ID_PATTERN.test(readProperty(value, 'assetId') as string)
+        && isUnitNumber(readProperty(value, 'gain'))
+        && typeof readProperty(value, 'loop') === 'boolean'
+    }
+    if (action === 'stop') {
+      const duration = readProperty(value, 'fadeDurationMs')
+      return exactKeys(value, ['type', 'action', 'fadeDurationMs'])
+        && typeof duration === 'number' && Number.isSafeInteger(duration)
+        && duration >= 0 && duration <= 60_000
+    }
+    if (action === 'fade') {
+      const duration = readProperty(value, 'durationMs')
+      return exactKeys(value, ['type', 'action', 'targetGain', 'durationMs'])
+        && isUnitNumber(readProperty(value, 'targetGain'))
+        && typeof duration === 'number' && Number.isSafeInteger(duration)
+        && duration >= 1 && duration <= 60_000
+    }
+    return false
   }
   if (type === 'recorded_audio' || type === 'music') {
     return exactKeys(value, ['type', 'action'])
@@ -746,7 +824,7 @@ function eventArgsAreEmpty(args: readonly unknown[]): boolean {
 }
 
 function isPhaseTestPhase(value: unknown): value is PhaseTestPhase {
-  return value === '0' || value === '1' || value === '2' || value === '3'
+  return value === '0' || value === '1' || value === '2' || value === '3' || value === '4'
 }
 
 function cloneProjectedSnapshot(value: unknown): AppSnapshot {
@@ -982,7 +1060,124 @@ function dispatchMirrorAvatarControl(
   }
 }
 
-export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
+const VISUAL_PENDING_TOKEN_PATTERN = /^[a-f0-9]{24}$/
+
+function isValidVisualAssetProbe(value: unknown): value is VisualAssetProbe {
+  const hasDuration = Object.prototype.hasOwnProperty.call(
+    typeof value === 'object' && value !== null ? value : {},
+    'durationMs',
+  )
+  if (!exactKeys(value, hasDuration
+    ? ['width', 'height', 'durationMs', 'audioTrack']
+    : ['width', 'height', 'audioTrack'])) return false
+  const width = readProperty(value, 'width')
+  const height = readProperty(value, 'height')
+  const audioTrack = readProperty(value, 'audioTrack')
+  if (
+    typeof width !== 'number' || !Number.isSafeInteger(width) || width < 1 || width > 4096
+    || typeof height !== 'number' || !Number.isSafeInteger(height) || height < 1 || height > 4096
+    || (audioTrack !== 'present' && audioTrack !== 'absent' && audioTrack !== 'unknown')
+  ) return false
+  if (!hasDuration) return audioTrack === 'absent'
+  const durationMs = readProperty(value, 'durationMs')
+  return typeof durationMs === 'number' && Number.isSafeInteger(durationMs)
+    && durationMs >= 1 && durationMs <= 10 * 60_000
+}
+
+function isValidSceneActionRendererReport(value: unknown): value is SceneActionRendererReport {
+  const status = readProperty(value, 'status')
+  const errorCode = readProperty(value, 'errorCode')
+  const expectedKeys = status === 'failed' || status === 'timeout'
+    ? ['runId', 'sceneId', 'stageId', 'actionId', 'status', 'errorCode']
+    : ['runId', 'sceneId', 'stageId', 'actionId', 'status']
+  return exactKeys(value, expectedKeys)
+    && ['runId', 'sceneId', 'stageId', 'actionId'].every((key) =>
+      SAFE_ID_PATTERN.test(readProperty(value, key) as string))
+    && SCENE_RENDERER_REPORT_STATUSES.has(status as string)
+    && (errorCode === undefined || REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(errorCode as string))
+}
+
+function isValidSceneVisualPlaybackReport(value: unknown): value is SceneVisualPlaybackReport {
+  const type = readProperty(value, 'type')
+  const expectedKeys = type === 'playing'
+    ? ['runId', 'sceneId', 'stageId', 'actionId', 'type', 'durationMs']
+    : type === 'progress'
+      ? ['runId', 'sceneId', 'stageId', 'actionId', 'type', 'currentTimeMs']
+      : type === 'failed'
+        ? ['runId', 'sceneId', 'stageId', 'actionId', 'type', 'errorCode']
+        : ['runId', 'sceneId', 'stageId', 'actionId', 'type']
+  if (!exactKeys(value, expectedKeys)) return false
+  if (!['runId', 'sceneId', 'stageId', 'actionId'].every((key) =>
+    SAFE_ID_PATTERN.test(readProperty(value, key) as string))) return false
+  if (type === 'ready' || type === 'ended') return true
+  if (type === 'playing') {
+    const durationMs = readProperty(value, 'durationMs')
+    return typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 1
+  }
+  if (type === 'progress') {
+    const currentTimeMs = readProperty(value, 'currentTimeMs')
+    return typeof currentTimeMs === 'number' && Number.isFinite(currentTimeMs) && currentTimeMs >= 0
+  }
+  return type === 'failed'
+    && REALTIME_RUNTIME_OUTCOME_REASON_PATTERN.test(readProperty(value, 'errorCode') as string)
+}
+
+function sceneRendererCommand(
+  action: SceneActionDefinition,
+  context: SceneActionCommandContext,
+): AvatarControlCommand | null {
+  if (action.kind === 'avatar_dialogue') {
+    return { type: 'scene_dialogue', text: action.text, context }
+  }
+  if (action.kind === 'avatar_motion') {
+    return { type: 'motion', group: action.motionGroup, context }
+  }
+  if (action.kind === 'avatar_expression') {
+    return { type: 'expression', name: action.expression, context }
+  }
+  if (action.kind === 'music') {
+    if (action.command === 'play') {
+      return {
+        type: 'scene_music',
+        action: 'play',
+        assetId: action.assetId,
+        gain: action.gain,
+        loop: action.loop,
+        context,
+      }
+    }
+    if (action.command === 'stop') {
+      return {
+        type: 'scene_music',
+        action: 'stop',
+        fadeDurationMs: action.fadeDurationMs,
+        context,
+      }
+    }
+    return {
+      type: 'scene_music',
+      action: 'fade',
+      targetGain: action.targetGain,
+      durationMs: action.durationMs,
+      context,
+    }
+  }
+  if (action.kind === 'visual') {
+    return {
+      type: 'scene_visual',
+      action: 'start',
+      assetId: action.assetId,
+      fit: action.fit,
+      playback: action.playback,
+      audio: action.audio,
+      gain: action.gain,
+      context,
+    }
+  }
+  return null
+}
+
+export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneRuntimeControl {
   const { ipcMain, runtime, windows, telemetry } = options
   let avatarRuntime: AvatarRuntimeSnapshot = Object.freeze({
     status: 'not_ready',
@@ -995,6 +1190,145 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     voiceGain: 1,
     musicGain: 1,
   })
+  let cachedSceneRuntime: { readonly configVersion: number; readonly value: SceneRuntime } | null = null
+  let unavailableSceneRunSequence = 0
+
+  const unavailableSceneResult = (): SceneStartResult => ({
+    runId: 'scene-unavailable-' + String(++unavailableSceneRunSequence),
+    status: 'skipped',
+    skipReason: 'invalid_config',
+  })
+
+  const dispatchSceneStatus = (status: SceneStatusEvent): void => {
+    for (const kind of ['mirror', 'console'] as const) {
+      const tracked = getTrackedWindow(windows, kind)
+      if (tracked === null || isTrackedWindowDestroyed(tracked)) continue
+      const sender = readProperty(tracked, 'webContents')
+      if (!isWebContentsLike(sender)) continue
+      try {
+        sender.send(kind === 'mirror' ? MIRROR_IPC_CHANNELS.sceneStatus : CONSOLE_IPC_CHANNELS.sceneStatus, status)
+      } catch {
+        emit(telemetry, {
+          module: 'lighting',
+          event: 'scene_status_delivery_failed',
+          status: 'degraded',
+          reason: `window=${kind};cause=send_failed`,
+          source: 'runtime',
+        })
+      }
+    }
+  }
+
+  const onSceneRuntimeEvent = (event: SceneRuntimeEvent): void => {
+    if (event.type === 'diagnostic') {
+      emit(telemetry, {
+        module: event.category === 'visual' ? 'avatar' : 'lighting',
+        event: 'scene_runtime_diagnostic',
+        status: 'degraded',
+        reason: event.reason,
+        ...(event.sceneId === undefined ? {} : { scene_id: event.sceneId }),
+        source: 'runtime',
+      })
+      return
+    }
+    dispatchSceneStatus(event)
+    if (event.type === 'finished') emitSceneResult(event.result, 'runtime')
+  }
+
+  const loadSceneRuntime = async (): Promise<{
+    readonly config: Readonly<Pick<
+      MirrorConfig,
+      'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
+    >>
+    readonly value: SceneRuntime
+  } | null> => {
+    const getConfig = runtime.getPublishedSceneConfigForRuntime
+    if (getConfig === undefined) return null
+    let config: Awaited<ReturnType<NonNullable<typeof getConfig>>>
+    try {
+      config = await getConfig()
+    } catch {
+      return null
+    }
+    if (cachedSceneRuntime?.configVersion === config.configVersion) {
+      return { config, value: cachedSceneRuntime.value }
+    }
+    if (cachedSceneRuntime !== null) await cachedSceneRuntime.value.stopAll()
+
+    const physicalAdapter = (kind: 'lighting' | 'fog'): PhysicalSceneAdapter =>
+      config.adapters[kind] === 'mock'
+        ? createMockPhysicalAdapter(kind, { behavior: 'success' })
+        : createUnavailablePhysicalAdapter(kind)
+    const lighting = physicalAdapter('lighting')
+    const fog = physicalAdapter('fog')
+    const value = createSceneRuntime({
+      spells: config.spells,
+      scenes: config.scenes,
+      actions: config.sceneActions,
+      visualAssets: config.visualAssets,
+      eventSink: onSceneRuntimeEvent,
+      executor: {
+        dispatch(action, actionContext, signal) {
+          if (action.kind === 'lighting' || action.kind === 'fog') {
+            const adapter = action.kind === 'lighting' ? lighting : fog
+            return {
+              status: 'dispatched',
+              feedback: adapter.execute(action, signal),
+            }
+          }
+          const context: SceneActionCommandContext = { ...actionContext, actionId: action.id }
+          const command = sceneRendererCommand(action, context)
+          if (command === null) {
+            return { status: 'failed', errorCode: 'scene_renderer_unavailable' }
+          }
+          if (!dispatchMirrorAvatarControl(command, windows)) {
+            return { status: 'failed', errorCode: 'scene_renderer_unavailable' }
+          }
+          return { status: 'dispatched' }
+        },
+        async release(category, context) {
+          if (category === 'lighting') return lighting.stopAll()
+          if (category === 'fog') return fog.stopAll()
+          const delivered = category === 'music'
+            ? dispatchMirrorAvatarControl({ type: 'scene_music', action: 'stop', fadeDurationMs: 0 }, windows)
+            : dispatchMirrorAvatarControl({
+                type: 'scene_visual', action: 'stop', runId: context.runId, sceneId: context.sceneId,
+              }, windows)
+          if (!delivered) throw new Error('scene_renderer_unavailable')
+        },
+        async stopAll() {
+          await Promise.allSettled([lighting.stopAll(), fog.stopAll()])
+          const musicStopped = dispatchMirrorAvatarControl({
+            type: 'scene_music',
+            action: 'stop',
+            fadeDurationMs: 0,
+          }, windows)
+          const visualStopped = dispatchMirrorAvatarControl({
+            type: 'scene_visual', action: 'stop', runId: 'all', sceneId: 'all',
+          }, windows)
+          if (!musicStopped || !visualStopped) throw new Error('scene_renderer_unavailable')
+        },
+      },
+    })
+    cachedSceneRuntime = { configVersion: config.configVersion, value }
+    return { config, value }
+  }
+
+  const emitSceneResult = (result: SceneRunResult, source: 'runtime' | 'simulator'): void => {
+    emit(telemetry, {
+      module: 'lighting',
+      event: 'scene_run_finished',
+      status: result.status === 'completed'
+        ? 'success'
+        : result.status === 'partial_failure' || result.status === 'skipped'
+          ? 'degraded'
+          : 'failed',
+      duration_ms: result.durationMs,
+      ...(result.sceneId === undefined ? {} : { scene_id: result.sceneId }),
+      ...(result.skipReason === undefined ? {} : { reason: result.skipReason }),
+      source,
+    })
+  }
   const realtimeIpcContract = createRealtimeIpcContract({
     issueRealtimeSessionStartBundle: () => {
       const issue = runtime.requestRealtimeClientSecret
@@ -1087,6 +1421,34 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return
     }
     avatarRuntime = Object.freeze({ ...(args[0] as AvatarRuntimeSnapshot) })
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneAction, (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return
+    }
+    if (args.length !== 1 || !isValidSceneActionRendererReport(args[0])) {
+      payloadRejected(telemetry)
+      return
+    }
+    const report = args[0] as SceneActionRendererReport
+    void loadSceneRuntime().then((loaded) => loaded?.value.reportAction(report))
+  })
+
+  ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneVisual, (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return
+    }
+    if (args.length !== 1 || !isValidSceneVisualPlaybackReport(args[0])) {
+      payloadRejected(telemetry)
+      return
+    }
+    const report = args[0] as SceneVisualPlaybackReport
+    void loadSceneRuntime().then((loaded) => loaded?.value.reportVisual(report))
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
@@ -1218,6 +1580,76 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     return projectAppSnapshot(runtime.snapshot())
   })
 
+  ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return { configVersion: 0, stopPhrase: '', spells: [] } satisfies ScenePublicCatalog
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return { configVersion: 0, stopPhrase: '', spells: [] } satisfies ScenePublicCatalog
+    }
+    const loaded = await loadSceneRuntime()
+    if (loaded === null) return { configVersion: 0, stopPhrase: '', spells: [] }
+    return {
+      configVersion: loaded.config.configVersion,
+      stopPhrase: loaded.config.wake.phrase,
+      spells: loaded.config.spells
+        .filter((spell) => spell.enabled)
+        .map((spell) => ({ id: spell.id, phrase: spell.phrase })),
+    } satisfies ScenePublicCatalog
+  })
+
+  ipcMain.handle(MIRROR_IPC_CHANNELS.triggerScene, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return unavailableSceneResult()
+    }
+    const request = args[0]
+    if (
+      args.length !== 1
+      || !exactKeys(request, ['spellId', 'turnId'])
+      || !SAFE_ID_PATTERN.test(readProperty(request, 'spellId') as string)
+      || !SAFE_ID_PATTERN.test(readProperty(request, 'turnId') as string)
+    ) {
+      payloadRejected(telemetry)
+      return unavailableSceneResult()
+    }
+    const loaded = await loadSceneRuntime()
+    if (loaded === null) return unavailableSceneResult()
+    const result = await loaded.value.triggerSpell({
+      spellId: readProperty(request, 'spellId') as string,
+      turnId: readProperty(request, 'turnId') as string,
+    })
+    return result
+  })
+
+  ipcMain.handle(MIRROR_IPC_CHANNELS.stopScene, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return 'stale' as const
+    }
+    const request = args[0]
+    if (
+      args.length !== 1
+      || !exactKeys(request, ['runId', 'turnId'])
+      || !SAFE_ID_PATTERN.test(readProperty(request, 'runId') as string)
+      || !SAFE_ID_PATTERN.test(readProperty(request, 'turnId') as string)
+    ) {
+      payloadRejected(telemetry)
+      return 'stale' as const
+    }
+    const loaded = await loadSceneRuntime()
+    if (loaded === null) return 'stale' as const
+    return loaded.value.stopRun({
+      runId: readProperty(request, 'runId') as string,
+      turnId: readProperty(request, 'turnId') as string,
+    })
+  })
+
   ipcMain.handle(CONSOLE_IPC_CHANNELS.getSnapshot, (event, ...args) => {
     const authorization = authorizeSender(event, 'console', windows)
     if (!authorization.ok) {
@@ -1335,6 +1767,165 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
       return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
     }
     return { ok: true, value: avatarRuntime }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.runScene, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1 || !SAFE_ID_PATTERN.test(args[0] as string)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    const loaded = await loadSceneRuntime()
+    if (loaded === null) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    const result = await loaded.value.runScene(args[0] as string)
+    return { ok: true, value: result }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.stopScenes, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    const loaded = await loadSceneRuntime()
+    if (loaded === null) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    await loaded.value.stopAll()
+    return { ok: true, value: { status: 'stopped' as const } }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.uploadMusic, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    const importer = options.importMusicAsset
+    if (importer === undefined) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    try {
+      return { ok: true, value: await importer() }
+    } catch {
+      emit(telemetry, {
+        module: 'music',
+        event: 'music_asset_import_failed',
+        status: 'failed',
+        error_code: 'music_asset_import_failed',
+        reason: 'cause=import_failed',
+        source: 'runtime',
+      })
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.uploadVisual, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (!eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (options.importVisualAsset === undefined) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    try {
+      return { ok: true, value: await options.importVisualAsset() }
+    } catch {
+      emit(telemetry, {
+        module: 'avatar',
+        event: 'visual_asset_import_failed',
+        status: 'failed',
+        error_code: 'visual_asset_import_failed',
+        reason: 'cause=import_failed',
+        source: 'runtime',
+      })
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.finalizeVisual, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    const request = args[0]
+    if (
+      args.length !== 1
+      || !exactKeys(request, ['token', 'probe'])
+      || !VISUAL_PENDING_TOKEN_PATTERN.test(readProperty(request, 'token') as string)
+      || !isValidVisualAssetProbe(readProperty(request, 'probe'))
+    ) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (options.finalizeVisualAsset === undefined) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    try {
+      return {
+        ok: true,
+        value: await options.finalizeVisualAsset({
+          token: readProperty(request, 'token') as string,
+          probe: structuredClone(readProperty(request, 'probe')) as VisualAssetProbe,
+        }),
+      }
+    } catch {
+      emit(telemetry, {
+        module: 'avatar',
+        event: 'visual_asset_finalize_failed',
+        status: 'failed',
+        error_code: 'visual_asset_finalize_failed',
+        reason: 'cause=probe_or_storage_failed',
+        source: 'runtime',
+      })
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.cancelVisual, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    const request = args[0]
+    if (
+      args.length !== 1
+      || !exactKeys(request, ['token'])
+      || !VISUAL_PENDING_TOKEN_PATTERN.test(readProperty(request, 'token') as string)
+    ) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (options.cancelVisualAsset === undefined) {
+      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    }
+    try {
+      await options.cancelVisualAsset(readProperty(request, 'token') as string)
+      return { ok: true, value: { status: 'cancelled' as const } }
+    } catch {
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.events, async (event, ...args) => {
@@ -1498,5 +2089,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): void {
     senderRejected(telemetry, mirrorAuthorization.reason === 'unknown_sender'
       ? consoleAuthorization.reason
       : mirrorAuthorization.reason)
+  })
+
+  return Object.freeze({
+    async stopAll(): Promise<void> {
+      await cachedSceneRuntime?.value.stopAll()
+    },
   })
 }

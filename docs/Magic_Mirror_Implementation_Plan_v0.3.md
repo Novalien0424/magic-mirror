@@ -1,12 +1,14 @@
 # 魔鏡 AI Avatar：Phase Implementation Plan
 
-**版本：** 0.3.1  
-**日期：** 2026-08-16  
-**狀態：** Build-ready baseline；Phase 0 Task 10 remains unimplemented
-**對應文件：** `Magic_Mirror_PRD_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`  
+**版本：** 0.3.2
+**日期：** 2026-08-28
+**狀態：** Build-ready baseline；即時 Phase 狀態只以 `PROGRESS.md` 為準
+**對應文件：** `Magic_Mirror_PRD_v0.3.md`、`Magic_Mirror_Tech_Spec_v0.3.md`、`Magic_Mirror_Phase4_UIUX_Design_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
 **目的：** 把 Phase 1 Prototype 拆成 Phase 0～7；每一階段都能在 Mac mini 上獨立執行、展示、診斷與驗收。
 
 > **v0.3.1（2026-08-16）修訂：** 依 stack adversarial review 在 Phase 0／1／2／3／5／6 加入版本 pin、TCC 打包基線、Voice contract test 追加項、wake telemetry 校正、RMS-first lip sync 基線、embedding pair 版本與 extractor baseline 調整。
+
+> **v0.3.2（2026-08-28）修訂：** Phase 4 採 Console-managed spells、reusable typed actions 與 duration-driven stages；增加 Realtime verbatim dialogue、Cubism motion／expression、managed music upload、feedback capability 和無實體硬體時的 mock-first acceptance。
 
 > **2026-08-19 accepted correction addendum:** The 2026-08-19 adversarial
 > review is directionally valid, but root accepted a subset rather than every
@@ -202,7 +204,7 @@ Developer Mode 可在 RAM 顯示最近幾個 final transcripts，供咒語及記
 | Camera／face model 不可用 | 改問稱呼或 anonymous | Camera／model failure |
 | 找不到人臉候選 | 正常詢問稱呼 | `no_candidate`，不是 error |
 | Memory extraction 失敗 | 對話繼續，該回合不保存 | `memory_not_saved`＋原因 |
-| 單一 scene adapter 失敗 | 其他對話／cue 繼續 | 失敗 adapter、timeout／error |
+| 單一 scene adapter 失敗 | 其他對話／action／Stage clock 繼續 | 失敗 adapter、timeout／error |
 | Avatar animation 失敗 | 顯示靜態角色或 Maintenance asset | asset／render error |
 | SQLite／核心設定不可用 | 顯示 Maintenance，不黑畫面 | integrity／config error |
 | Wake worker 不可用 | 顯示 Maintenance；Console 仍可手動測試 | worker／model error |
@@ -476,53 +478,64 @@ Criteria 中的 P1-D1、D2 必須使用真實 OpenAI session。
 
 ### Goal
 
-先完成產品的「魔幻效果」核心價值：完整咒語可靠觸發 Lighting、Fog、Music，同時維持對話可用。
+完成產品的「魔幻效果」核心價值：完整咒語可靠觸發可由 Console 編排的 Avatar、Lighting、Fog 與 Music 場景，同時維持對話可用。
 
 ### Start Conditions
 
 - Phase 3 的 final transcript、Avatar 與 audio graph 可用。
-- 已定義至少三條咒語、三個 scene presets 及預期 cue timing。
+- Console 可建立至少三條咒語、三個 scenes、reusable actions 及預期 Stage duration。
 
 ### Scope
 
 - 本機 normalizer＋exact full-transcript matcher。
 - 每個 `turnId` 最多觸發一次；小型 RAM dedupe 即可。
-- Phase 1 所需的 cue、delay、preset、cooldown、timeout。
-- Lighting、Fog、Music 各一個 typed adapter 與 mock。
-- Adapter failure 不阻塞對話；可成功的其他 cue 繼續。
-- 本機核准音檔、ducking、stop、fade。
+- Spell、reusable typed Action、ordered Scene Stage 與 Scene 的 Draft／Test／Publish。
+- 每個 Stage 必填 `Duration`；Stage 進入時 dispatch 所有 linked actions，到期開始下一 Stage，不隱含 stop／reset。
+- Action kinds 限於 verbatim Avatar dialogue、Cubism motion、Cubism expression、Lighting、Fog 與 Music。
+- Lighting／Fog 使用 approved `on`／`off`／bounded `value` presets；Music 使用 managed asset ID、ducking、stop、fade。
+- Adapter feedback capability 和 dispatched／acknowledged／completed／failed／timeout 結果只作觀測，不控制 Stage advancement。
+- Adapter failure 不阻塞對話、Stage clock 或其他 actions。
 
 ### Console Increment
 
-- Spell／normalization preview、Simulate Final Transcript。
-- Scene／cue timeline viewer；可逐一 Test Cue 或 Run Scene。
-- Adapter connection、最近 command、duration、success／timeout／failure。
+- Spell／normalization preview、Simulate Final Transcript、CRUD 和 scene linking。
+- Reusable Action library；typed editor 只顯示該 kind 允許的欄位。
+- Scene／Stage timeline editor；可 reorder、編輯 Duration、link actions、Test Draft，並在 Publish 後 Run Published Scene。
+- Music picker／upload、managed asset list 與 preview。
+- Adapter capability、connection、最近 command、feedback duration、success／timeout／failure。
+- Validation summary、unpublished changes、Test result、Publish／rollback visibility。
 - 明確顯示「為何沒有觸發」，例如 `partial_transcript`、`not_exact_match`、`cooldown`。
 
 ### Independent Demo
 
 - **P4-D1 Exact match：** 20 個完整正例全部觸發。
 - **P4-D2 Negative corpus：** 30 個部分句、相似句、否定句、附加文字都不觸發，Console 顯示 reason。
-- **P4-D3 Timeline：** 三個場景分別以 mocks 完整走完 Avatar＋Lighting／Fog／Music cue。
-- **P4-D4 Failure：** 模擬 Fog timeout；Lighting、Music、對話仍可繼續，Console 指出 Fog failure。
+- **P4-D3 Timeline：** 三個場景分別完整走完多個 duration stages；同 Stage actions 一起開始，並以 real Ren Cubism motion／expression、Realtime dialogue path、local music graph 與 Lighting／Fog mocks 產生 evidence。
+- **P4-D4 Failure：** 模擬 Fog timeout；Stage 仍按 Duration 前進，Lighting、Music、Avatar 與對話繼續，Console 指出 Fog failure。
 - **P4-D5 Physical smoke：** 若硬體已到位，各 adapter 至少送出一次實體 command；未到位則記為 Phase 7 blocker，不阻止 Phase 5。
 - **P4-D6 Transcript unavailable：** 對話仍可繼續，但scene command＝0；Console顯示transcription role、fingerprint與`transcript_unavailable` skip reason。
+- **P4-D7 Authoring safety：** invalid link／unsupported value／missing Duration 無法 Publish；active config 保持不變。上傳音樂只能產生 managed asset ID。
+- **P4-D8 Avatar QA：** 每個 active Ren motion group 至少 one-shot 播放一次，保存非黑畫面 screenshot、motion-start／motion-finished metadata 和回到 lifecycle motion 的結果；expression 逐一套用並保存 screenshot。
 
 ### Exit Criteria
 
 - 固定 20 positive＝100% trigger；30 negative＝0 false trigger。
 - 相同 `turnId` 重送不會執行第二次。
 - 三個 mock scenes 都能獨立完成並產生可理解的 result。
+- Stage advancement 的 timing test 只由設定 Duration 決定；adapter completion 不會提早或延遲下一 Stage。
+- Console 可建立、驗證、測試及 Publish 完整 spell→scene→stage→action links，失敗 Publish 不改 active config。
+- Ren one-shot motion／expression 與 managed local music 在真實 renderer／audio graph 完成 QA；逐字 dialogue 至少經 real active Realtime session 測一次。
 - 實體設備未到位時，adapter contract 與 mock 必須完成；最終實體驗收不可略過 Phase 7。
 
 ### What Can Be Mocked
 
-Lighting、Fog、Music device transports與所有 error；本機音樂播放及 final transcript 必須真實驗證。
+Lighting、Fog device transports與所有 error可 mock；本機音樂播放、Ren Cubism rendering及 final transcript必須真實驗證。沒有實體 Lighting／Fog 時，physical evidence標為deferred，不可用mock冒充。
 
 ### 不做什麼
 
 - 不讓 LLM 生成任意 DMX channel、煙霧秒數或設備參數。
-- 不建通用 scene editor、workflow engine、MQTT bus、Home Assistant 或跨房間系統。
+- 不建 arbitrary-script editor、branching／DAG workflow engine、MQTT bus、Home Assistant 或跨房間系統。
+- 不加入獨立 delay action；等待只由 Stage Duration 表達。
 - 不以 semantic similarity 取代完整咒語。
 
 ## 10. Phase 5 — Identity／Profiles／Re-embedding

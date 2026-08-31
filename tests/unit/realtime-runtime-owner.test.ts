@@ -49,6 +49,9 @@ function fixture() {
     close: vi.fn(async () => {
       order.push(`${label}:session.close`);
     }),
+    speakVerbatim: vi.fn((text: string) => {
+      order.push(`${label}:session.speak:${text}`);
+    }),
     getLastConnectFailureToken: vi.fn(() => undefined),
     onOutputAudioBufferStopped: vi.fn(() => () => {}),
   });
@@ -169,6 +172,37 @@ describe("Realtime runtime owner", () => {
     expect(f.mic.acquire).toHaveBeenCalledWith(f.stream);
   });
 
+  it('forwards the same RAM-only input item boundary into completed transcript handling', async () => {
+    const f = fixture();
+    let createdListener: ((itemId: string) => void) | undefined;
+    let completedListener: ((input: { itemId: string; transcript: string }) => void) | undefined;
+    Object.assign(f.oldSession, {
+      onInputItemCreated: (listener: typeof createdListener) => {
+        createdListener = listener;
+        return () => {};
+      },
+      onInputTranscriptCompleted: (listener: typeof completedListener) => {
+        completedListener = listener;
+        return () => {};
+      },
+    });
+    const onInputItemCreated = vi.fn();
+    const onCompletedInputTranscript = vi.fn();
+    Object.assign(f.dependencies, { onInputItemCreated, onCompletedInputTranscript });
+    await f.owner.start(bundle());
+
+    createdListener?.('item-one');
+    completedListener?.({ itemId: 'item-one', transcript: 'private completed turn' });
+
+    expect(onInputItemCreated).toHaveBeenCalledWith({
+      itemId: 'item-one', realtimeSessionId: 'session-1',
+    });
+    expect(onCompletedInputTranscript).toHaveBeenCalledWith(expect.objectContaining({
+      itemId: 'item-one', transcript: 'private completed turn', realtimeSessionId: 'session-1',
+    }));
+    expect(JSON.stringify(f.outcomes)).not.toContain('private completed turn');
+  });
+
   it("uses a bounded adapter token and cleans partial resources on connect failure", async () => {
     const f = fixture();
     vi.mocked(f.oldSession.getLastConnectFailureToken!).mockReturnValue("start_connect_auth_failed");
@@ -213,6 +247,22 @@ describe("Realtime runtime owner", () => {
 
     expect(result).toMatchObject({ status: "success", reason: "interrupted" });
     expect(f.oldSession.interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches verbatim scene dialogue only to the active session", async () => {
+    const f = fixture();
+
+    expect(f.owner.speakVerbatim("Before start")).toEqual({
+      status: "ignored",
+      reason: "no_active_realtime_session",
+    });
+    await f.owner.start(bundle());
+
+    expect(f.owner.speakVerbatim("The mirror awakens.")).toEqual({
+      status: "dispatched",
+      reason: "scene_dialogue_dispatched",
+    });
+    expect(f.oldSession.speakVerbatim).toHaveBeenCalledWith("The mirror awakens.");
   });
 
   it("rolls over after actual playback completion on the same mic stream", async () => {

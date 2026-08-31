@@ -28,6 +28,8 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'output_playback_listener_failed',
   'output_playback_subscription_closed',
   'transcript_listener_failed',
+  'input_item_listener_failed',
+  'transcript_unavailable',
   'sleep_request_unavailable',
   'sleep_request_failed',
   'avatar_audio_activity_listener_failed',

@@ -1055,6 +1055,11 @@ async function runD5(context: DemoRuntimeContext): Promise<DemoExecutionResult> 
     faceModel: { ...draft.faceModel },
     assets: { ...draft.assets },
     adapters: { ...draft.adapters },
+    visualAssets: structuredClone(draft.visualAssets),
+    musicAssets: structuredClone(draft.musicAssets),
+    sceneActions: structuredClone(draft.sceneActions),
+    spells: structuredClone(draft.spells),
+    scenes: structuredClone(draft.scenes),
   })
   if (!saved.ok) signal('non_model_draft_failed')
   const testForPublish = await context.runtime.console.testDraft()

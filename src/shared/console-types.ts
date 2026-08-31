@@ -3,9 +3,14 @@ import type {
   JobModelSnapshot,
   LifecycleState,
   MirrorEvent,
+  ManagedMusicAsset,
+  ManagedVisualAsset,
   ModuleId,
   ModuleStatus,
+  SceneActionDefinition,
+  SceneDefinition,
   SessionModelSnapshot,
+  SpellConfig,
 } from './types'
 
 export type ConsoleResponse<T> =
@@ -132,7 +137,7 @@ export interface ConsoleEventsPage {
   readonly nextBeforeSequence: number | null
 }
 
-export type PhaseTestPhase = '0' | '1' | '2' | '3'
+export type PhaseTestPhase = '0' | '1' | '2' | '3' | '4'
 
 type Phase0TestRecord = {
   readonly phase: '0'
@@ -170,7 +175,16 @@ type Phase3TestRecord = {
   readonly note: string
 }
 
-export type PhaseTestRecord = Phase0TestRecord | Phase1TestRecord | Phase2TestRecord | Phase3TestRecord
+type Phase4TestRecord = {
+  readonly phase: '4'
+  readonly demoId: 'P4-D1' | 'P4-D2' | 'P4-D3' | 'P4-D4' | 'P4-D5' | 'P4-D6' | 'P4-D7' | 'P4-D8'
+  readonly build: string
+  readonly time: string
+  readonly result: 'passed' | 'failed' | 'mock_passed' | 'not_executed'
+  readonly note: string
+}
+
+export type PhaseTestRecord = Phase0TestRecord | Phase1TestRecord | Phase2TestRecord | Phase3TestRecord | Phase4TestRecord
 
 export interface PhaseTestRecordReader {
   read(phase: PhaseTestPhase): readonly PhaseTestRecord[] | PromiseLike<readonly PhaseTestRecord[]>
@@ -205,6 +219,11 @@ export interface ConsoleConfigSafeView {
     readonly fog: 'mock' | 'physical'
     readonly music: 'mock' | 'physical'
   }
+  readonly visualAssets: readonly ManagedVisualAsset[]
+  readonly musicAssets: readonly ManagedMusicAsset[]
+  readonly sceneActions: readonly SceneActionDefinition[]
+  readonly spells: readonly SpellConfig[]
+  readonly scenes: readonly SceneDefinition[]
 }
 
 export interface ConsoleConfigDraftInput {
@@ -223,6 +242,11 @@ export interface ConsoleConfigDraftInput {
     readonly fog: 'mock' | 'physical'
     readonly music: 'mock' | 'physical'
   }
+  readonly visualAssets: readonly ManagedVisualAsset[]
+  readonly musicAssets: readonly ManagedMusicAsset[]
+  readonly sceneActions: readonly SceneActionDefinition[]
+  readonly spells: readonly SpellConfig[]
+  readonly scenes: readonly SceneDefinition[]
 }
 
 export interface ConsoleConfigDiffEntry {

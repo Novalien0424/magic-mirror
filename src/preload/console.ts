@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AppSnapshot, SimulatorCommand, SimulatorResult } from '../shared/types'
+import type { AppSnapshot, ManagedMusicAsset, ManagedVisualAsset, PendingVisualAsset, SceneStartResult, SceneStatusEvent, SimulatorCommand, SimulatorResult, VisualAssetProbe } from '../shared/types'
 import type {
   ConsoleConfigDraftInput,
   ConsoleConfigPayload,
@@ -43,6 +43,13 @@ const NEXT_RUNTIME_CHANNEL = 'console:create-next-runtime' as const
 const GET_PHASE_TESTS_CHANNEL = 'console:get-phase-tests' as const
 const GET_AVATAR_RUNTIME_CHANNEL = 'console:get-avatar-runtime' as const
 const AVATAR_CONTROL_CHANNEL = 'console:avatar-control' as const
+const RUN_SCENE_CHANNEL = 'console:run-scene' as const
+const STOP_SCENES_CHANNEL = 'console:stop-scenes' as const
+const SCENE_STATUS_CHANNEL = 'console:scene-status' as const
+const UPLOAD_MUSIC_CHANNEL = 'console:upload-music' as const
+const UPLOAD_VISUAL_CHANNEL = 'console:upload-visual' as const
+const FINALIZE_VISUAL_CHANNEL = 'console:finalize-visual' as const
+const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
   notifyReady(): void {
@@ -130,6 +137,41 @@ const bridge: ConsoleBridge = {
 
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>> {
     return ipcRenderer.invoke(AVATAR_CONTROL_CHANNEL, command) as Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  },
+
+  runScene(sceneId: string): Promise<ConsoleResponse<SceneStartResult>> {
+    return ipcRenderer.invoke(RUN_SCENE_CHANNEL, sceneId) as Promise<ConsoleResponse<SceneStartResult>>
+  },
+
+  stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>> {
+    return ipcRenderer.invoke(STOP_SCENES_CHANNEL) as Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
+  },
+
+  onSceneStatus(listener): () => void {
+    const handler = (_event: IpcRendererEvent, value: SceneStatusEvent): void => {
+      listener(value)
+    }
+    ipcRenderer.on(SCENE_STATUS_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(SCENE_STATUS_CHANNEL, handler)
+  },
+
+  uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>> {
+    return ipcRenderer.invoke(UPLOAD_MUSIC_CHANNEL) as Promise<ConsoleResponse<ManagedMusicAsset | null>>
+  },
+
+  uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>> {
+    return ipcRenderer.invoke(UPLOAD_VISUAL_CHANNEL) as Promise<ConsoleResponse<PendingVisualAsset | null>>
+  },
+
+  finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>> {
+    return ipcRenderer.invoke(FINALIZE_VISUAL_CHANNEL, Object.freeze({
+      token: input.token,
+      probe: Object.freeze({ ...input.probe }),
+    })) as Promise<ConsoleResponse<ManagedVisualAsset>>
+  },
+
+  cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>> {
+    return ipcRenderer.invoke(CANCEL_VISUAL_CHANNEL, Object.freeze({ token })) as Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>
   },
 }
 

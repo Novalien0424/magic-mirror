@@ -174,6 +174,7 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
     'transport' | 'analyser'
   >
   readonly createPlaybackCompletion?: RealtimeRuntimeOwnerDependencies['createPlaybackCompletion']
+  readonly onInputItemCreated?: RealtimeRuntimeOwnerDependencies['onInputItemCreated']
   readonly onCompletedInputTranscript?: RealtimeRuntimeOwnerDependencies['onCompletedInputTranscript']
 }
 
@@ -281,6 +282,7 @@ export function createRealtimeRuntimeOwnerDependencies(
     createCleanup: input.createCleanup,
     createPlaybackCompletion: playbackCompletionFactory,
     eventSink: input.eventSink,
+    onInputItemCreated: input.onInputItemCreated,
     onCompletedInputTranscript: input.onCompletedInputTranscript,
   }
 }

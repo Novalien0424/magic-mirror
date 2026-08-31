@@ -67,6 +67,9 @@ function fixtureConfig(configVersion: number, suffix: string): MirrorConfig {
       avatarDir: `fixture-avatar-${suffix}`,
       musicDir: `fixture-music-${suffix}`,
     },
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [],
     spells: [],
     scenes: [],
     adapters: {

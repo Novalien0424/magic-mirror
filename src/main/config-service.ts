@@ -2,6 +2,14 @@ import { mkdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
+import {
+  managedMusicAssetSchema,
+  managedVisualAssetSchema,
+  sceneActionSchema,
+  sceneCollectionsSchema,
+  sceneDefinitionSchema,
+  spellConfigSchema,
+} from './scenes/scene-config'
 
 type WriteFileAtomic = (
   fileName: string,
@@ -89,7 +97,7 @@ export class ConfigServiceError extends Error {
   }
 }
 
-const CURRENT_CONFIG_SCHEMA_VERSION = 3
+const CURRENT_CONFIG_SCHEMA_VERSION = 5
 const LEGACY_WAKE_PACKAGE_ID = 'legacy-unresolved'
 
 const V2_BASELINE = {
@@ -136,8 +144,6 @@ const mirrorConfigBaseEnvelope = z.object({
     avatarDir: z.string().trim().min(1),
     musicDir: z.string().trim().min(1),
   }).strict(),
-  spells: z.unknown(),
-  scenes: z.unknown(),
   adapters: z.object({
     lighting: z.enum(['mock', 'physical']),
     fog: z.enum(['mock', 'physical']),
@@ -148,7 +154,25 @@ const mirrorConfigBaseEnvelope = z.object({
 const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
   reasoningEffort: reasoningEffortSchema,
   turnDetectionProfile: turnDetectionProfileSchema,
-}).strict()
+  visualAssets: z.array(managedVisualAssetSchema).max(256),
+  musicAssets: z.array(managedMusicAssetSchema).max(256),
+  sceneActions: z.array(sceneActionSchema).max(512),
+  spells: z.array(spellConfigSchema).max(128),
+  scenes: z.array(sceneDefinitionSchema).max(128),
+}).strict().superRefine((value, context) => {
+  const parsed = sceneCollectionsSchema.safeParse({
+    visualAssets: value.visualAssets,
+    musicAssets: value.musicAssets,
+    sceneActions: value.sceneActions,
+    spells: value.spells,
+    scenes: value.scenes,
+  })
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      context.addIssue({ code: 'custom', path: issue.path, message: issue.message })
+    }
+  }
+})
 
 const mirrorConfigLegacyEnvelope = mirrorConfigBaseEnvelope.extend({
   reasoningEffort: reasoningEffortSchema.default(V2_BASELINE.reasoningEffort),
@@ -158,13 +182,20 @@ const mirrorConfigLegacyEnvelope = mirrorConfigBaseEnvelope.extend({
     modelVersion: z.string().trim().min(1),
     packageId: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/).default(LEGACY_WAKE_PACKAGE_ID),
   }).strict(),
+  visualAssets: z.array(managedVisualAssetSchema).max(256).default([]),
+  musicAssets: z.array(managedMusicAssetSchema).max(256).default([]),
+  sceneActions: z.array(sceneActionSchema).max(512).default([]),
+  spells: z.unknown(),
+  scenes: z.unknown(),
 }).strict()
 
 export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope
 
+type ConfigSchemaVersion = 0 | 1 | 2 | 3 | 4 | 5
+
 type SlotInspection =
   | { status: 'missing'; raw: null }
-  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: 0 | 1 | 2 | 3 }
+  | { status: 'valid'; raw: string; value: MirrorConfig; schemaVersion: ConfigSchemaVersion }
   | { status: 'invalid'; raw: string; fields: readonly FieldError[] }
   | { status: 'unsupported'; raw: string; schemaVersion: number }
   | { status: 'unreadable'; raw: null }
@@ -172,11 +203,6 @@ type SlotInspection =
 type RawSlots = Record<ConfigSlot, string | null>
 
 type AuxiliarySlot = 'spells' | 'scenes'
-
-interface AuxiliaryEnvelope {
-  id: string
-  enabled: boolean
-}
 
 const SLOT_ORDER: readonly ConfigSlot[] = ['previous', 'active', 'draft']
 const MODEL_PATHS: ReadonlySet<string> = new Set([
@@ -202,6 +228,7 @@ interface ResolvedConfigServiceOptions {
 interface SafeIssue {
   code?: unknown
   path?: readonly (string | number)[]
+  message?: unknown
 }
 
 class SchemaFailure extends Error {
@@ -353,6 +380,8 @@ const allowedCorePaths = new Set([
   'assets.offlineLoopVideo',
   'assets.avatarDir',
   'assets.musicDir',
+  'musicAssets',
+  'sceneActions',
   'spells',
   'scenes',
   'adapters',
@@ -371,113 +400,75 @@ function safePath(path: readonly (string | number)[] | undefined): string {
       result += result.length === 0 ? segment : '.' + segment
     }
   }
-  return allowedCorePaths.has(result) ? result : '$'
+  if (allowedCorePaths.has(result)) return result
+  const root = path[0]
+  return root === 'musicAssets' || root === 'sceneActions' || root === 'spells' || root === 'scenes'
+    ? result
+    : '$'
 }
 
 function safeFields(issues: readonly SafeIssue[]): readonly FieldError[] {
   return issues.map((issue) => ({
     path: safePath(issue.path),
-    message: safeIssueMessages[String(issue.code)] ?? 'schema_invalid',
+    message: issue.code === 'custom' && typeof issue.message === 'string'
+      ? issue.message
+      : safeIssueMessages[String(issue.code)] ?? 'schema_invalid',
   }))
 }
 
-const spellEnvelopeSchema = z.object({
-  id: z.string().trim().min(1),
-  phrase: z.string().trim().min(1),
-  sceneId: z.string().trim().min(1),
-  enabled: z.boolean(),
-}).passthrough()
-
-const sceneEnvelopeSchema = z.object({
-  id: z.string().trim().min(1),
-  enabled: z.boolean(),
-  cues: z.array(z.unknown()),
-}).passthrough()
-
-function disabledSpell(index: number): AuxiliaryEnvelope & {
-  phrase: string
-  sceneId: string
-} {
-  return {
-    id: 'disabled-spell-' + String(index),
-    phrase: '',
-    sceneId: '',
-    enabled: false,
-  }
-}
-
-function disabledScene(index: number): AuxiliaryEnvelope & {
-  cues: unknown[]
-} {
-  return {
-    id: 'disabled-scene-' + String(index),
-    enabled: false,
-    cues: [],
-  }
-}
-
-function normalizeEntries(
-  value: unknown,
-  schema: z.ZodType<unknown>,
-  disabled: (index: number) => unknown,
-  field: AuxiliarySlot,
-  slot: ConfigSlot,
-  events: ConfigEventSink,
-): unknown[] {
-  if (!Array.isArray(value)) {
-    const errorCode: ConfigAuxiliaryTelemetryCode = field === 'spells'
-      ? 'config_spell_container_invalid'
-      : 'config_scene_container_invalid'
-    emitConfigEvent(
-      events,
-      'config_auxiliary_degraded',
-      'degraded',
-      'slot=' + slot + ';field=' + field + ';index=container;action=empty;cause=not_array',
-      errorCode,
-    )
-    return []
-  }
-
-  return value.map((entry, index) => {
-    const parsed = schema.safeParse(entry)
-    if (parsed.success) return parsed.data
-
-    const errorCode: ConfigAuxiliaryTelemetryCode = field === 'spells'
-      ? 'config_spell_entry_invalid'
-      : 'config_scene_entry_invalid'
-    emitConfigEvent(
-      events,
-      'config_auxiliary_degraded',
-      'degraded',
-      'slot=' + slot + ';field=' + field + ';index=' + String(index) + ';action=disabled;cause=schema_invalid',
-      errorCode,
-    )
-    return disabled(index)
-  })
-}
-
-function normalizeAuxiliary(
+function normalizeLegacyAuxiliary(
   config: MirrorConfig,
   slot: ConfigSlot,
   events: ConfigEventSink,
+  schemaVersion: ConfigSchemaVersion,
 ): MirrorConfig {
-  const spells = normalizeEntries(
-    config.spells,
-    spellEnvelopeSchema,
-    disabledSpell,
-    'spells',
-    slot,
-    events,
-  )
-  const scenes = normalizeEntries(
-    config.scenes,
-    sceneEnvelopeSchema,
-    disabledScene,
-    'scenes',
-    slot,
-    events,
-  )
-  return { ...config, spells, scenes }
+  const migratedScenes = schemaVersion < 5 && Array.isArray(config.scenes)
+    ? config.scenes.map((scene: unknown) => {
+      if (!isRecord(scene) || !Array.isArray(scene.stages)) return scene
+      return {
+        ...scene,
+        stages: scene.stages.map((stage: unknown) => {
+          if (!isRecord(stage) || Object.prototype.hasOwnProperty.call(stage, 'endCondition')) return stage
+          if (typeof stage.durationMs !== 'number') return stage
+          const { durationMs, ...rest } = stage
+          return { ...rest, endCondition: { kind: 'duration', durationMs } }
+        }),
+      }
+    })
+    : config.scenes
+  const candidate = {
+    visualAssets: config.visualAssets,
+    musicAssets: config.musicAssets,
+    sceneActions: config.sceneActions,
+    spells: config.spells,
+    scenes: migratedScenes,
+  }
+  const parsed = sceneCollectionsSchema.safeParse(candidate)
+  if (parsed.success) return { ...config, ...parsed.data }
+
+  for (const field of ['spells', 'scenes'] as const satisfies readonly AuxiliarySlot[]) {
+    const value = candidate[field]
+    const containerInvalid = !Array.isArray(value)
+    const errorCode: ConfigAuxiliaryTelemetryCode = field === 'spells'
+      ? containerInvalid ? 'config_spell_container_invalid' : 'config_spell_entry_invalid'
+      : containerInvalid ? 'config_scene_container_invalid' : 'config_scene_entry_invalid'
+    emitConfigEvent(
+      events,
+      'config_auxiliary_degraded',
+      'degraded',
+      'slot=' + slot + ';field=' + field + ';index=' + (containerInvalid ? 'container' : 'catalog')
+        + ';action=empty;cause=' + (containerInvalid ? 'not_array' : 'schema_invalid'),
+      errorCode,
+    )
+  }
+  return {
+    ...config,
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [],
+    spells: [],
+    scenes: [],
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -485,7 +476,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseConfigEnvelope(decoded: unknown): {
-  schemaVersion: 0 | 1 | 2 | 3
+  schemaVersion: ConfigSchemaVersion
   config: unknown
 } {
   if (!isRecord(decoded)) return { schemaVersion: 0, config: decoded }
@@ -501,7 +492,7 @@ function parseConfigEnvelope(decoded: unknown): {
     if (schemaVersion >= 0 && schemaVersion <= CURRENT_CONFIG_SCHEMA_VERSION) {
       const config = { ...decoded }
       delete config.schemaVersion
-      return { schemaVersion: schemaVersion as 0 | 1 | 2 | 3, config }
+      return { schemaVersion: schemaVersion as ConfigSchemaVersion, config }
     }
   }
 
@@ -512,7 +503,7 @@ function parseConfigText(
   contents: string,
   slot: ConfigSlot,
   events: ConfigEventSink,
-): { value: MirrorConfig; schemaVersion: 0 | 1 | 2 | 3 } {
+): { value: MirrorConfig; schemaVersion: ConfigSchemaVersion } {
   let decoded: unknown
   try {
     decoded = JSON.parse(contents) as unknown
@@ -529,7 +520,9 @@ function parseConfigText(
     throw new SchemaFailure(safeFields(parsed.error.issues as readonly SafeIssue[]))
   }
   return {
-    value: normalizeAuxiliary(parsed.data as MirrorConfig, slot, events),
+    value: envelope.schemaVersion === CURRENT_CONFIG_SCHEMA_VERSION
+      ? parsed.data as MirrorConfig
+      : normalizeLegacyAuxiliary(parsed.data as MirrorConfig, slot, events, envelope.schemaVersion),
     schemaVersion: envelope.schemaVersion,
   }
 }
@@ -1091,7 +1084,7 @@ export function createConfigService(options: ConfigServiceOptions): ConfigServic
         throw new ConfigServiceError('config_schema_invalid', fields)
       }
 
-      const normalized = normalizeAuxiliary(parsed.data as MirrorConfig, 'draft', resolved.events)
+      const normalized = parsed.data as MirrorConfig
       const saved = { ...normalized, configVersion: slots.active.configVersion }
       try {
         await resolved.files.ensureDirectory(resolved.configDir)

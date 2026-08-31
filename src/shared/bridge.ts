@@ -1,8 +1,18 @@
 import type {
   AppSnapshot,
+  ManagedMusicAsset,
+  ManagedVisualAsset,
+  PendingVisualAsset,
+  ScenePublicCatalog,
+  SceneActionCommandContext,
+  SceneActionRendererReport,
+  SceneStartResult,
+  SceneStatusEvent,
+  SceneVisualPlaybackReport,
   SessionModelSnapshot,
   SimulatorCommand,
   SimulatorResult,
+  VisualAssetProbe,
 } from './types'
 import type {
   ConsoleConfigDraftInput,
@@ -94,7 +104,37 @@ export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
   | Readonly<{ type: 'state'; state: AvatarRuntimeState }>
-  | Readonly<{ type: 'expression'; name: string }>
+  | Readonly<{ type: 'asset_failure'; action: 'inject' | 'clear' }>
+  | Readonly<{ type: 'expression'; name: string; context?: SceneActionCommandContext }>
+  | Readonly<{ type: 'motion'; group: string; context?: SceneActionCommandContext }>
+  | Readonly<{ type: 'scene_dialogue'; text: string; context: SceneActionCommandContext }>
+  | Readonly<{
+      type: 'scene_music'
+      action: 'play'
+      assetId: string
+      gain: number
+      loop: boolean
+      context?: SceneActionCommandContext
+    }>
+  | Readonly<{ type: 'scene_music'; action: 'stop'; fadeDurationMs: number; context?: SceneActionCommandContext }>
+  | Readonly<{
+      type: 'scene_music'
+      action: 'fade'
+      targetGain: number
+      durationMs: number
+      context?: SceneActionCommandContext
+    }>
+  | Readonly<{
+      type: 'scene_visual'
+      action: 'start'
+      assetId: string
+      fit: 'contain' | 'cover'
+      playback: 'still' | 'once' | 'loop'
+      audio: 'muted' | 'embedded'
+      gain: number
+      context: SceneActionCommandContext
+    }>
+  | Readonly<{ type: 'scene_visual'; action: 'stop'; runId: string; sceneId: string }>
   | Readonly<{ type: 'recorded_audio'; action: 'play' | 'stop' }>
   | Readonly<{ type: 'music'; action: 'play' | 'stop' }>
   | Readonly<{ type: 'voice_gain'; value: number }>
@@ -127,6 +167,12 @@ export interface MirrorChannelMap {
   readonly sleepRequest: 'mirror:sleep-request'
   readonly avatarControl: 'mirror:avatar-control'
   readonly reportAvatarRuntime: 'mirror:report-avatar-runtime'
+  readonly reportSceneAction: 'mirror:report-scene-action'
+  readonly reportSceneVisual: 'mirror:report-scene-visual'
+  readonly getSceneCatalog: 'mirror:get-scene-catalog'
+  readonly triggerScene: 'mirror:trigger-scene'
+  readonly stopScene: 'mirror:stop-scene'
+  readonly sceneStatus: 'mirror:scene-status'
   readonly ready: BootChannel
 }
 
@@ -150,6 +196,13 @@ export interface ConsoleChannelMap {
   readonly phaseTests: 'console:get-phase-tests'
   readonly avatarRuntime: 'console:get-avatar-runtime'
   readonly avatarControl: 'console:avatar-control'
+  readonly runScene: 'console:run-scene'
+  readonly stopScenes: 'console:stop-scenes'
+  readonly sceneStatus: 'console:scene-status'
+  readonly uploadMusic: 'console:upload-music'
+  readonly uploadVisual: 'console:upload-visual'
+  readonly finalizeVisual: 'console:finalize-visual'
+  readonly cancelVisual: 'console:cancel-visual'
   readonly ready: BootChannel
 }
 
@@ -162,6 +215,7 @@ export type RealtimeRuntimeCommand =
 
 export type RealtimeRuntimeCommandListener = (command: RealtimeRuntimeCommand) => void
 export type AvatarControlCommandListener = (command: AvatarControlCommand) => void
+export type SceneStatusListener = (event: SceneStatusEvent) => void
 
 interface SharedRendererBridge {
   notifyReady(): void
@@ -176,6 +230,12 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
+  reportSceneAction(report: SceneActionRendererReport): void
+  reportSceneVisual(report: SceneVisualPlaybackReport): void
+  getSceneCatalog(): Promise<ScenePublicCatalog>
+  triggerScene(request: Readonly<{ spellId: string; turnId: string }>): Promise<SceneStartResult>
+  stopScene(request: Readonly<{ runId: string; turnId: string }>): Promise<'stopped' | 'stale'>
+  onSceneStatus(listener: SceneStatusListener): () => void
   onAvatarControl(listener: AvatarControlCommandListener): () => void
   onRealtimeRuntimeCommand(listener: RealtimeRuntimeCommandListener): () => void
   onInterrupt(listener: () => void): () => void
@@ -199,6 +259,13 @@ export interface ConsoleBridge extends SharedRendererBridge {
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  runScene(sceneId: string): Promise<ConsoleResponse<SceneStartResult>>
+  stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
+  onSceneStatus(listener: SceneStatusListener): () => void
+  uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>
+  uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>>
+  finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>>
+  cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

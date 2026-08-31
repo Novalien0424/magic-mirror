@@ -63,6 +63,11 @@ const SAFE_DRAFT_KEYS = [
   'faceModel',
   'assets',
   'adapters',
+  'visualAssets',
+  'musicAssets',
+  'sceneActions',
+  'spells',
+  'scenes',
 ] as const
 
 const MODEL_DRAFT_KEYS = [
@@ -356,6 +361,11 @@ function safeConfigView(config: MirrorConfig): ConsoleConfigSafeView {
       fog: config.adapters.fog,
       music: config.adapters.music,
     },
+    visualAssets: structuredClone(config.visualAssets),
+    musicAssets: structuredClone(config.musicAssets),
+    sceneActions: structuredClone(config.sceneActions),
+    spells: structuredClone(config.spells),
+    scenes: structuredClone(config.scenes),
   }
 }
 
@@ -473,6 +483,12 @@ function draftInputValidation(value: unknown):
     return { ok: false, fields: [safeFieldError('idleSeconds', 'invalid_type')] }
   }
 
+  for (const field of ['visualAssets', 'musicAssets', 'sceneActions', 'spells', 'scenes'] as const) {
+    if (!Array.isArray(readProperty(value, field))) {
+      return { ok: false, fields: [safeFieldError(field, 'invalid_type')] }
+    }
+  }
+
   const nested = [
     ['wake', ['phrase', 'modelVersion', 'packageId']],
     ['faceModel', ['detectorId', 'recognizerId']],
@@ -521,6 +537,11 @@ function draftInputValidation(value: unknown):
         fog: readProperty(readProperty(value, 'adapters'), 'fog') as 'mock' | 'physical',
         music: readProperty(readProperty(value, 'adapters'), 'music') as 'mock' | 'physical',
       },
+      visualAssets: structuredClone(readProperty(value, 'visualAssets')) as ConsoleConfigDraftInput['visualAssets'],
+      musicAssets: structuredClone(readProperty(value, 'musicAssets')) as ConsoleConfigDraftInput['musicAssets'],
+      sceneActions: structuredClone(readProperty(value, 'sceneActions')) as ConsoleConfigDraftInput['sceneActions'],
+      spells: structuredClone(readProperty(value, 'spells')) as ConsoleConfigDraftInput['spells'],
+      scenes: structuredClone(readProperty(value, 'scenes')) as ConsoleConfigDraftInput['scenes'],
     },
   }
 }
@@ -583,6 +604,11 @@ function copyConfigInput(
     faceModel: { ...input.faceModel },
     assets: { ...input.assets },
     adapters: { ...input.adapters },
+    visualAssets: structuredClone(input.visualAssets) as MirrorConfig['visualAssets'],
+    musicAssets: structuredClone(input.musicAssets) as MirrorConfig['musicAssets'],
+    sceneActions: structuredClone(input.sceneActions) as MirrorConfig['sceneActions'],
+    spells: structuredClone(input.spells) as MirrorConfig['spells'],
+    scenes: structuredClone(input.scenes) as MirrorConfig['scenes'],
   }
 }
 

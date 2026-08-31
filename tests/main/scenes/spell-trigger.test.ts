@@ -42,6 +42,37 @@ describe("matchExactSpell", () => {
     ).toEqual({ matched: true, spellId: "spell-a" });
   });
 
+  test("accepts the 20-case exact-match normalization corpus", () => {
+    const positives = [
+      "AX 7", " AX 7", "AX 7 ", "  AX 7  ", "ＡＸ ７",
+      "AX, 7", "AX. 7", "AX 7!", "AX 7?", "AX: 7",
+      "AX; 7", "(AX 7)", "[AX 7]", "‘AX 7’", "“AX 7”",
+      "ＡＸ，　７", "ＡＸ。　７", "ＡＸ：　７", "ＡＸ；　７", "！AX 7！",
+    ];
+
+    expect(positives).toHaveLength(20);
+    for (const [index, transcript] of positives.entries()) {
+      expect(matchExactSpell({ turnId: `positive-${index}`, status: "final", transcript }, spell))
+        .toEqual({ matched: true, spellId: "spell-a" });
+    }
+  });
+
+  test("rejects the 30-case partial, similar, negated, and appended-text corpus", () => {
+    const negatives = [
+      "AX", "7", "AX7", "AX  7", "ax 7", "Ax 7", "AX 8", "BX 7", "AX Q",
+      "NO AX 7", "not AX 7", "don't AX 7", "不要 AX 7", "AX 7 no", "AX 7 not",
+      "please AX 7", "AX 7 please", "say AX 7", "AX 7 now", "now AX 7",
+      "AX 7 Q", "Q AX 7", "AX 7 and continue", "AX 7 again", "AX 7 AX 7",
+      "the AX 7", "AX-7", "AX/7", "AX_7", "AX ７ 追加",
+    ];
+
+    expect(negatives).toHaveLength(30);
+    for (const [index, transcript] of negatives.entries()) {
+      expect(matchExactSpell({ turnId: `negative-${index}`, status: "final", transcript }, spell))
+        .toEqual({ matched: false, reason: "not_exact_match" });
+    }
+  });
+
   test.each([
     {
       label: "partial",

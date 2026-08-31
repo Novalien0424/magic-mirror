@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AppSnapshot } from '../shared/types'
+import type {
+  AppSnapshot,
+  SceneActionCommandContext,
+  SceneActionRendererReport,
+  ScenePublicCatalog,
+  SceneStartResult,
+  SceneStatusEvent,
+  SceneVisualPlaybackReport,
+} from '../shared/types'
 import type {
   MirrorBridge,
   AvatarControlCommand,
@@ -32,6 +40,12 @@ const REPORT_REALTIME_METADATA_CHANNEL = 'mirror:report-realtime-metadata' as co
 const SLEEP_REQUEST_CHANNEL = 'mirror:sleep-request' as const
 const AVATAR_CONTROL_CHANNEL = 'mirror:avatar-control' as const
 const REPORT_AVATAR_RUNTIME_CHANNEL = 'mirror:report-avatar-runtime' as const
+const REPORT_SCENE_ACTION_CHANNEL = 'mirror:report-scene-action' as const
+const REPORT_SCENE_VISUAL_CHANNEL = 'mirror:report-scene-visual' as const
+const GET_SCENE_CATALOG_CHANNEL = 'mirror:get-scene-catalog' as const
+const TRIGGER_SCENE_CHANNEL = 'mirror:trigger-scene' as const
+const STOP_SCENE_CHANNEL = 'mirror:stop-scene' as const
+const SCENE_STATUS_CHANNEL = 'mirror:scene-status' as const
 
 const SESSION_SNAPSHOT_KEYS = [
   'configVersion',
@@ -95,6 +109,21 @@ function unitNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
 }
 
+function sanitizeSceneActionContext(value: unknown): SceneActionCommandContext | null {
+  if (!exactKeys(value, ['runId', 'sceneId', 'stageId', 'actionId'])) return null
+  const ids = ['runId', 'sceneId', 'stageId', 'actionId'] as const
+  if (!ids.every((key) => {
+    const id = readProperty(value, key)
+    return typeof id === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(id)
+  })) return null
+  return Object.freeze({
+    runId: readProperty(value, 'runId') as string,
+    sceneId: readProperty(value, 'sceneId') as string,
+    stageId: readProperty(value, 'stageId') as string,
+    actionId: readProperty(value, 'actionId') as string,
+  })
+}
+
 function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   if (!isRecord(value)) return null
   const type = readProperty(value, 'type')
@@ -104,11 +133,103 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
       ? Object.freeze({ type, state: state as AvatarRuntimeSnapshot['state'] })
       : null
   }
-  if (type === 'expression' && exactKeys(value, ['type', 'name'])) {
-    const name = readProperty(value, 'name')
-    return typeof name === 'string' && /^F0[1-8]$/.test(name)
-      ? Object.freeze({ type, name })
+  if (type === 'asset_failure' && exactKeys(value, ['type', 'action'])) {
+    const action = readProperty(value, 'action')
+    return action === 'inject' || action === 'clear'
+      ? Object.freeze({ type, action })
       : null
+  }
+  if (type === 'expression' && (
+    exactKeys(value, ['type', 'name']) || exactKeys(value, ['type', 'name', 'context'])
+  )) {
+    const name = readProperty(value, 'name')
+    const context = readProperty(value, 'context')
+    const sanitizedContext = context === undefined ? undefined : sanitizeSceneActionContext(context)
+    if (typeof name !== 'string' || !/^[A-Za-z0-9._-]{1,80}$/.test(name) || sanitizedContext === null) return null
+    return Object.freeze({ type, name, ...(sanitizedContext === undefined ? {} : { context: sanitizedContext }) })
+  }
+  if (type === 'motion' && (
+    exactKeys(value, ['type', 'group']) || exactKeys(value, ['type', 'group', 'context'])
+  )) {
+    const group = readProperty(value, 'group')
+    const context = readProperty(value, 'context')
+    const sanitizedContext = context === undefined ? undefined : sanitizeSceneActionContext(context)
+    if (typeof group !== 'string' || !/^[A-Za-z0-9._-]{1,80}$/.test(group) || sanitizedContext === null) return null
+    return Object.freeze({ type, group, ...(sanitizedContext === undefined ? {} : { context: sanitizedContext }) })
+  }
+  if (type === 'scene_dialogue' && exactKeys(value, ['type', 'text', 'context'])) {
+    const text = readProperty(value, 'text')
+    const context = sanitizeSceneActionContext(readProperty(value, 'context'))
+    return typeof text === 'string' && text.trim().length > 0 && text.length <= 1000 && context !== null
+      ? Object.freeze({ type, text, context })
+      : null
+  }
+  if (type === 'scene_music') {
+    const action = readProperty(value, 'action')
+    const rawContext = readProperty(value, 'context')
+    const context = rawContext === undefined ? undefined : sanitizeSceneActionContext(rawContext)
+    if (context === null) return null
+    if (action === 'play' && (
+      exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop'])
+      || exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop', 'context'])
+    )) {
+      const assetId = readProperty(value, 'assetId')
+      const gain = readProperty(value, 'gain')
+      const loop = readProperty(value, 'loop')
+      return typeof assetId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(assetId)
+        && unitNumber(gain) && typeof loop === 'boolean'
+        ? Object.freeze({ type, action, assetId, gain, loop, ...(context === undefined ? {} : { context }) })
+        : null
+    }
+    if (action === 'stop' && (
+      exactKeys(value, ['type', 'action', 'fadeDurationMs'])
+      || exactKeys(value, ['type', 'action', 'fadeDurationMs', 'context'])
+    )) {
+      const fadeDurationMs = readProperty(value, 'fadeDurationMs')
+      return typeof fadeDurationMs === 'number' && Number.isSafeInteger(fadeDurationMs)
+        && fadeDurationMs >= 0 && fadeDurationMs <= 60_000
+        ? Object.freeze({ type, action, fadeDurationMs, ...(context === undefined ? {} : { context }) })
+        : null
+    }
+    if (action === 'fade' && (
+      exactKeys(value, ['type', 'action', 'targetGain', 'durationMs'])
+      || exactKeys(value, ['type', 'action', 'targetGain', 'durationMs', 'context'])
+    )) {
+      const targetGain = readProperty(value, 'targetGain')
+      const durationMs = readProperty(value, 'durationMs')
+      return unitNumber(targetGain) && typeof durationMs === 'number'
+        && Number.isSafeInteger(durationMs) && durationMs >= 1 && durationMs <= 60_000
+        ? Object.freeze({ type, action, targetGain, durationMs, ...(context === undefined ? {} : { context }) })
+        : null
+    }
+  }
+  if (type === 'scene_visual') {
+    const action = readProperty(value, 'action')
+    if (action === 'start' && exactKeys(value, [
+      'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context',
+    ])) {
+      const assetId = readProperty(value, 'assetId')
+      const fit = readProperty(value, 'fit')
+      const playback = readProperty(value, 'playback')
+      const audio = readProperty(value, 'audio')
+      const gain = readProperty(value, 'gain')
+      const context = sanitizeSceneActionContext(readProperty(value, 'context'))
+      return typeof assetId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(assetId)
+        && (fit === 'contain' || fit === 'cover')
+        && (playback === 'still' || playback === 'once' || playback === 'loop')
+        && (audio === 'muted' || audio === 'embedded')
+        && unitNumber(gain) && context !== null
+        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, context })
+        : null
+    }
+    if (action === 'stop' && exactKeys(value, ['type', 'action', 'runId', 'sceneId'])) {
+      const runId = readProperty(value, 'runId')
+      const sceneId = readProperty(value, 'sceneId')
+      return typeof runId === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(runId)
+        && typeof sceneId === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(sceneId)
+        ? Object.freeze({ type, action, runId, sceneId })
+        : null
+    }
   }
   if ((type === 'recorded_audio' || type === 'music') && exactKeys(value, ['type', 'action'])) {
     const action = readProperty(value, 'action')
@@ -314,6 +435,60 @@ const bridge: MirrorBridge = {
       voiceGain: readProperty(snapshot, 'voiceGain'),
       musicGain: readProperty(snapshot, 'musicGain'),
     }))
+  },
+
+  reportSceneAction(report: SceneActionRendererReport): void {
+    const dto: Record<string, unknown> = {
+      runId: readProperty(report, 'runId'),
+      sceneId: readProperty(report, 'sceneId'),
+      stageId: readProperty(report, 'stageId'),
+      actionId: readProperty(report, 'actionId'),
+      status: readProperty(report, 'status'),
+    }
+    const errorCode = readProperty(report, 'errorCode')
+    if (errorCode !== undefined) dto.errorCode = errorCode
+    ipcRenderer.send(REPORT_SCENE_ACTION_CHANNEL, Object.freeze(dto))
+  },
+
+  reportSceneVisual(report: SceneVisualPlaybackReport): void {
+    const dto: Record<string, unknown> = {
+      runId: readProperty(report, 'runId'),
+      sceneId: readProperty(report, 'sceneId'),
+      stageId: readProperty(report, 'stageId'),
+      actionId: readProperty(report, 'actionId'),
+      type: readProperty(report, 'type'),
+    }
+    for (const key of ['durationMs', 'currentTimeMs', 'errorCode'] as const) {
+      const value = readProperty(report, key)
+      if (value !== undefined) dto[key] = value
+    }
+    ipcRenderer.send(REPORT_SCENE_VISUAL_CHANNEL, Object.freeze(dto))
+  },
+
+  getSceneCatalog(): Promise<ScenePublicCatalog> {
+    return ipcRenderer.invoke(GET_SCENE_CATALOG_CHANNEL) as Promise<ScenePublicCatalog>
+  },
+
+  triggerScene(request): Promise<SceneStartResult> {
+    return ipcRenderer.invoke(TRIGGER_SCENE_CHANNEL, Object.freeze({
+      spellId: readProperty(request, 'spellId'),
+      turnId: readProperty(request, 'turnId'),
+    })) as Promise<SceneStartResult>
+  },
+
+  stopScene(request): Promise<'stopped' | 'stale'> {
+    return ipcRenderer.invoke(STOP_SCENE_CHANNEL, Object.freeze({
+      runId: readProperty(request, 'runId'),
+      turnId: readProperty(request, 'turnId'),
+    })) as Promise<'stopped' | 'stale'>
+  },
+
+  onSceneStatus(listener): () => void {
+    const handler = (_event: IpcRendererEvent, value: SceneStatusEvent): void => {
+      listener(value)
+    }
+    ipcRenderer.on(SCENE_STATUS_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(SCENE_STATUS_CHANNEL, handler)
   },
 
   onAvatarControl(listener): () => void {

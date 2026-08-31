@@ -531,6 +531,42 @@ th {
   font-size: 0.78rem;
 }
 
+.console__scene-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.console__scene-card,
+.console__stage-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(153, 190, 212, 0.22);
+  border-radius: 0.65rem;
+  background: rgba(6, 12, 18, 0.42);
+}
+
+.console__stage-card {
+  margin-top: 0.5rem;
+  border-left: 3px solid #68b9d7;
+}
+
+.console__scenes textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.console__publish-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 0.8rem;
+  border: 1px solid rgba(104, 185, 215, 0.35);
+  border-radius: 0.65rem;
+  background: rgba(12, 20, 28, 0.96);
+}
+
 .console__path-list li {
   overflow-wrap: anywhere;
 }

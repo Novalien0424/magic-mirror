@@ -59,11 +59,15 @@ interface RegisteredIpc {
   readonly mirrorSender: Record<string, unknown>
   readonly mirrorFrame: Record<string, unknown>
   readonly snapshot: Record<string, unknown>
+  readonly importVisualAsset: ReturnType<typeof vi.fn>
+  readonly finalizeVisualAsset: ReturnType<typeof vi.fn>
+  readonly cancelVisualAsset: ReturnType<typeof vi.fn>
 }
 
 interface HarnessOptions {
   readonly destroyed?: boolean
   readonly mismatchedTrackedId?: boolean
+  readonly sceneConfig?: Record<string, unknown>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -236,12 +240,40 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     status: 'degraded' as const,
     reason: 'cause=manual_stop_requested',
   }))
+  const importVisualAsset = vi.fn(async () => ({
+    token: '0123456789abcdef01234567',
+    assetId: 'visual-0123456789abcdef01234567',
+    name: 'Synthetic visual',
+    kind: 'video',
+    mimeType: 'video/webm',
+    byteLength: 4096,
+    sha256: 'a'.repeat(64),
+  }))
+  const finalizeVisualAsset = vi.fn(async () => ({
+    id: 'visual-0123456789abcdef01234567',
+    name: 'Synthetic visual',
+    kind: 'video',
+    fileName: 'visual-0123456789abcdef01234567.webm',
+    mimeType: 'video/webm',
+    byteLength: 4096,
+    sha256: 'a'.repeat(64),
+    width: 1920,
+    height: 1080,
+    orientation: 'landscape',
+    durationMs: 5000,
+    audioTrack: 'unknown',
+    windowsDecode: 'passed',
+  }))
+  const cancelVisualAsset = vi.fn(async () => undefined)
   const runtime = {
     snapshot: () => snapshot,
     handleSimulator,
     handleRealtimeFailure,
     manualStart,
     manualStop,
+    ...(options.sceneConfig === undefined
+      ? {}
+      : { getPublishedSceneConfigForRuntime: async () => options.sceneConfig }),
     console: facade,
     ...serviceObjects,
   }
@@ -271,6 +303,9 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
         if (isRecord(event)) events.push({ ...event })
       },
     },
+    importVisualAsset,
+    finalizeVisualAsset,
+    cancelVisualAsset,
   } as never)
 
   return {
@@ -286,6 +321,9 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     mirrorSender,
     mirrorFrame,
     snapshot,
+    importVisualAsset,
+    finalizeVisualAsset,
+    cancelVisualAsset,
   }
 }
 
@@ -334,10 +372,17 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       sleepRequest: 'mirror:sleep-request',
       avatarControl: 'mirror:avatar-control',
       reportAvatarRuntime: 'mirror:report-avatar-runtime',
+      reportSceneAction: 'mirror:report-scene-action',
+      reportSceneVisual: 'mirror:report-scene-visual',
+      getSceneCatalog: 'mirror:get-scene-catalog',
+      triggerScene: 'mirror:trigger-scene',
+      stopScene: 'mirror:stop-scene',
+      sceneStatus: 'mirror:scene-status',
       ready: 'boot:renderer-ready',
     })
     expect(registered.handlers.has('console:get-overview')).toBe(true)
     expect(registered.handlers.has('console:get-events')).toBe(true)
+    expect(registered.handlers.has('mirror:report-scene-action')).toBe(true)
 
     const event = authorizedEvent(registered)
     const overview = await getHandler(registered, 'console:get-overview')(event)
@@ -443,6 +488,16 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       { type: 'state', state: 'Speaking' },
     )
 
+    const injectedFailure = await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarControl)(
+      authorizedEvent(registered),
+      { type: 'asset_failure', action: 'inject' },
+    )
+    expect(injectedFailure).toEqual({ ok: true, value: avatar })
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(
+      MIRROR_IPC_CHANNELS.avatarControl,
+      { type: 'asset_failure', action: 'inject' },
+    )
+
     const invalid = await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarControl)(
       authorizedEvent(registered),
       { type: 'voice_gain', value: 2 },
@@ -452,6 +507,219 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       error: 'console_request_invalid',
       reason: 'cause=payload_schema_invalid',
     })
+  })
+
+  it('returns an immediate Scene start and publishes correlated completion as an event', async () => {
+    const registered = makeHarness({
+      sceneConfig: {
+        configVersion: 7,
+        visualAssets: [],
+        musicAssets: [],
+        sceneActions: [
+          { id: 'dialogue-opening', name: 'Opening', enabled: true, kind: 'avatar_dialogue', text: 'The mirror awakens now.' },
+          { id: 'light-on', name: 'Light on', enabled: true, kind: 'lighting', command: 'on', presetId: 'qa-blue' },
+        ],
+        spells: [{
+          id: 'spell-opening', name: 'Opening spell', phrase: 'Mirror begin',
+          sceneId: 'scene-opening', enabled: true, cooldownMs: 0,
+        }],
+        scenes: [{
+          id: 'scene-opening', name: 'Opening scene', enabled: true,
+          stages: [{
+            id: 'stage-opening', name: 'Opening stage', endCondition: { kind: 'duration', durationMs: 50 },
+            actionIds: ['dialogue-opening', 'light-on'],
+          }],
+        }],
+        adapters: { lighting: 'mock', fog: 'mock', music: 'mock' },
+      },
+    })
+
+    const result = await getHandler(registered, MIRROR_IPC_CHANNELS.triggerScene)(
+      authorizedMirrorEvent(registered),
+      { spellId: 'spell-opening', turnId: 'turn-opening' },
+    ) as Record<string, unknown>
+
+    expect(result).toEqual({
+      runId: 'scene-run-1',
+      sceneId: 'scene-opening',
+      status: 'accepted',
+    })
+
+    await vi.waitFor(() => {
+      expect(registered.mirrorSender.send).toHaveBeenCalledWith(
+        MIRROR_IPC_CHANNELS.avatarControl,
+        expect.objectContaining({
+          type: 'scene_dialogue',
+          text: 'The mirror awakens now.',
+          context: {
+            runId: 'scene-run-1',
+            sceneId: 'scene-opening',
+            stageId: 'stage-opening',
+            actionId: 'dialogue-opening',
+          },
+        }),
+      )
+    })
+
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneAction)(
+      authorizedMirrorEvent(registered),
+      {
+        runId: 'scene-run-1',
+        sceneId: 'scene-opening',
+        stageId: 'stage-opening',
+        actionId: 'dialogue-opening',
+        status: 'failed',
+        errorCode: 'no_active_realtime_session',
+      },
+    )
+
+    await vi.waitFor(() => {
+      expect(registered.consoleSender.send).toHaveBeenCalledWith(
+        CONSOLE_IPC_CHANNELS.sceneStatus,
+        expect.objectContaining({
+          type: 'finished',
+          result: expect.objectContaining({
+            sceneId: 'scene-opening',
+            status: 'partial_failure',
+            actions: expect.arrayContaining([
+              expect.objectContaining({
+                actionId: 'dialogue-opening',
+                status: 'failed',
+                errorCode: 'no_active_realtime_session',
+              }),
+              expect.objectContaining({ actionId: 'light-on', status: 'acknowledged' }),
+            ]),
+          }),
+        }),
+      )
+    })
+    expectNoSensitiveOutput({ result, events: registered.events })
+  })
+
+  it('routes exact visual observations and a lease-targeted stop through Main', async () => {
+    const registered = makeHarness({
+      sceneConfig: {
+        configVersion: 7,
+        visualAssets: [{
+          id: 'visual-opening', name: 'Opening', kind: 'video', fileName: 'visual-opening.webm',
+          mimeType: 'video/webm', byteLength: 1000, sha256: 'a'.repeat(64),
+          width: 1920, height: 1080, orientation: 'landscape', durationMs: 5000,
+          audioTrack: 'unknown', windowsDecode: 'passed',
+        }],
+        musicAssets: [],
+        sceneActions: [{
+          id: 'visual-action', name: 'Opening visual', enabled: true, kind: 'visual',
+          assetId: 'visual-opening', fit: 'cover', playback: 'once', audio: 'muted', gain: 0,
+        }],
+        spells: [{
+          id: 'spell-visual', name: 'Visual spell', phrase: 'Show opening',
+          sceneId: 'scene-visual', enabled: true, cooldownMs: 0,
+        }],
+        scenes: [{
+          id: 'scene-visual', name: 'Visual scene', enabled: true,
+          stages: [{
+            id: 'stage-visual', name: 'Visual stage',
+            endCondition: { kind: 'duration', durationMs: 1000 },
+            actionIds: ['visual-action'],
+          }],
+        }],
+        adapters: { lighting: 'mock', fog: 'mock', music: 'mock' },
+      },
+    })
+    const mirrorEvent = authorizedMirrorEvent(registered)
+    const start = await getHandler(registered, MIRROR_IPC_CHANNELS.triggerScene)(
+      mirrorEvent,
+      { spellId: 'spell-visual', turnId: 'turn-visual' },
+    ) as { runId: string; status: string }
+    expect(start).toMatchObject({ runId: 'scene-run-1', status: 'accepted' })
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(
+      MIRROR_IPC_CHANNELS.avatarControl,
+      expect.objectContaining({ type: 'scene_visual', action: 'start', assetId: 'visual-opening' }),
+    )
+
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneVisual)(mirrorEvent, {
+      runId: start.runId,
+      sceneId: 'scene-visual',
+      stageId: 'stage-visual',
+      actionId: 'visual-action',
+      type: 'playing',
+      durationMs: 5000,
+    })
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneVisual)(mirrorEvent, {
+      runId: start.runId,
+      sceneId: 'scene-visual',
+      stageId: 'stage-visual',
+      actionId: 'visual-action',
+      type: 'progress',
+      currentTimeMs: 100,
+      url: 'file:///private/path',
+    })
+    expect(registered.events).toContainEqual(expect.objectContaining({
+      event: 'ipc_payload_invalid', reason: 'payload_schema_invalid',
+    }))
+
+    const stopped = await getHandler(registered, MIRROR_IPC_CHANNELS.stopScene)(
+      mirrorEvent,
+      { runId: start.runId, turnId: 'turn-stop' },
+    )
+    expect(stopped).toBe('stopped')
+    expect(await getHandler(registered, MIRROR_IPC_CHANNELS.stopScene)(
+      mirrorEvent,
+      { runId: start.runId, turnId: 'turn-stale' },
+    )).toBe('stale')
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(
+      MIRROR_IPC_CHANNELS.avatarControl,
+      { type: 'scene_visual', action: 'stop', runId: start.runId, sceneId: 'scene-visual' },
+    )
+    expect(registered.consoleSender.send).toHaveBeenCalledWith(
+      CONSOLE_IPC_CHANNELS.sceneStatus,
+      expect.objectContaining({ type: 'finished', result: expect.objectContaining({ status: 'stopped' }) }),
+    )
+  })
+
+  it('keeps visual import/finalize/cancel Console-only and path-free', async () => {
+    const registered = makeHarness()
+    const candidate = await getHandler(registered, CONSOLE_IPC_CHANNELS.uploadVisual)(
+      authorizedEvent(registered),
+    )
+    expect(candidate).toMatchObject({ ok: true, value: { token: '0123456789abcdef01234567' } })
+    expect(JSON.stringify(candidate)).not.toMatch(/[A-Z]:\\/i)
+
+    const finalized = await getHandler(registered, CONSOLE_IPC_CHANNELS.finalizeVisual)(
+      authorizedEvent(registered),
+      {
+        token: '0123456789abcdef01234567',
+        probe: { width: 1920, height: 1080, durationMs: 5000, audioTrack: 'unknown' },
+      },
+    )
+    expect(finalized).toMatchObject({ ok: true, value: { windowsDecode: 'passed' } })
+
+    const cancelled = await getHandler(registered, CONSOLE_IPC_CHANNELS.cancelVisual)(
+      authorizedEvent(registered),
+      { token: '0123456789abcdef01234567' },
+    )
+    expect(cancelled).toEqual({ ok: true, value: { status: 'cancelled' } })
+
+    const rejectedExtraPath = await getHandler(registered, CONSOLE_IPC_CHANNELS.finalizeVisual)(
+      authorizedEvent(registered),
+      {
+        token: '0123456789abcdef01234567',
+        probe: { width: 1920, height: 1080, durationMs: 5000, audioTrack: 'unknown' },
+        sourcePath: 'C:\\private\\operator-video.webm',
+      },
+    )
+    expect(rejectedExtraPath).toEqual({
+      ok: false,
+      error: 'console_request_invalid',
+      reason: 'cause=payload_schema_invalid',
+    })
+    expect(registered.finalizeVisualAsset).toHaveBeenCalledTimes(1)
+
+    const rejectedMirror = await getHandler(registered, CONSOLE_IPC_CHANNELS.uploadVisual)(
+      authorizedMirrorEvent(registered),
+    )
+    expect(rejectedMirror).toMatchObject({ ok: false, error: 'console_request_rejected' })
+    expect(registered.importVisualAsset).toHaveBeenCalledTimes(1)
   })
 
   it('preserves the real reason when disconnect is ignored outside an active session', async () => {
@@ -725,7 +993,7 @@ describe('P1-U8-A2 read-only Console phase-selector transport RED contract', () 
     const event = authorizedEvent(registered)
     const phaseTests = getHandler(registered, CONSOLE_IPC_CHANNELS.phaseTests)
 
-    const invalidString = await phaseTests(event, '4')
+    const invalidString = await phaseTests(event, '5')
     const invalidNumber = await phaseTests(event, 0)
     const extraArgument = await phaseTests(event, '0', TEST_CONFIGURED_VALUE_SENTINEL)
 

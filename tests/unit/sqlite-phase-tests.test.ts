@@ -23,12 +23,15 @@ const V2_PHASE_TEST_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } a
 const V3_PHASE_TEST_MIGRATION_ROW = { version: 3, name: 'phase_test_records_v3' } as const
 const V4_PHASE_TEST_MIGRATION_ROW = { version: 4, name: 'phase_test_records_v4' } as const
 const V5_PHASE_TEST_MIGRATION_ROW = { version: 5, name: 'phase_test_records_v5' } as const
+const V6_PHASE_TEST_MIGRATION_ROW = { version: 6, name: 'phase_test_records_v6' } as const
 const V2_PHASE_TEST_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase = '0'), demo_id TEXT NOT NULL CHECK (demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'mock_passed')), note TEXT NOT NULL)"
 const V4_PHASE_TEST_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
 const V5_PHASE_TEST_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2', '3')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5')) OR (phase = '3' AND demo_id IN ('P3-D1', 'P3-D2', 'P3-D3', 'P3-D4'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2', '3') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
+const V6_PHASE_TEST_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2', '3', '4')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5')) OR (phase = '3' AND demo_id IN ('P3-D1', 'P3-D2', 'P3-D3', 'P3-D4')) OR (phase = '4' AND demo_id IN ('P4-D1', 'P4-D2', 'P4-D3', 'P4-D4', 'P4-D5', 'P4-D6', 'P4-D7', 'P4-D8'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2', '3', '4') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
 const FIXED_TIME = '2026-08-19T00:00:00.000Z'
 const DEMO_IDS = ['P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5'] as const
 const PHASE1_DEMO_IDS = ['P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6'] as const
@@ -43,6 +46,7 @@ type Phase0TestRecord = Extract<PhaseTestRecord, { phase: '0' }>
 type Phase1TestRecord = Extract<PhaseTestRecord, { phase: '1' }>
 type Phase2TestRecord = Extract<PhaseTestRecord, { phase: '2' }>
 type Phase3TestRecord = Extract<PhaseTestRecord, { phase: '3' }>
+type Phase4TestRecord = Extract<PhaseTestRecord, { phase: '4' }>
 
 type PhaseTestFailure = {
   readonly code: string
@@ -217,7 +221,7 @@ async function seedMigrationHistory(
       insert.run(1, BASELINE_ROW.name)
       insert.run(3, V3_PHASE_TEST_MIGRATION_ROW.name)
     } else {
-      insert.run(6, 'future_migration')
+      insert.run(7, 'future_migration')
     }
     return dbPath
   } finally {
@@ -485,6 +489,38 @@ function validPhase3Record(overrides: Partial<Phase3TestRecord> = {}): Phase3Tes
   }
 }
 
+async function seedExactV5PhaseDatabase(record: Phase3TestRecord): Promise<string> {
+  const dbPath = await makeTemporaryDatabasePath()
+  const database = new DatabaseSync(dbPath)
+  try {
+    database.exec(BASELINE_DDL)
+    database.exec(V5_PHASE_TEST_DDL)
+    const insertMigration = database.prepare('INSERT INTO app_migrations (version, name) VALUES (?, ?)')
+    for (const migration of [
+      BASELINE_ROW,
+      V2_PHASE_TEST_MIGRATION_ROW,
+      V3_PHASE_TEST_MIGRATION_ROW,
+      V4_PHASE_TEST_MIGRATION_ROW,
+      V5_PHASE_TEST_MIGRATION_ROW,
+    ]) {
+      insertMigration.run(migration.version, migration.name)
+    }
+    database.prepare(
+      'INSERT INTO phase_test_records (phase, demo_id, build, time, result, note) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(record.phase, record.demoId, record.build, record.time, record.result, record.note)
+    return dbPath
+  } finally {
+    database.close()
+  }
+}
+
+function validPhase4Record(overrides: Partial<Phase4TestRecord> = {}): Phase4TestRecord {
+  return {
+    phase: '4', demoId: 'P4-D1', build: 'phase4-build-abc123', time: FIXED_TIME,
+    result: 'not_executed', note: 'phase4-check', ...overrides,
+  }
+}
+
 function readRecordsForPhase(
   service: PhaseTestService,
   phase: '0',
@@ -503,7 +539,11 @@ function readRecordsForPhase(
 ): readonly Phase3TestRecord[]
 function readRecordsForPhase(
   service: PhaseTestService,
-  phase: '0' | '1' | '2' | '3',
+  phase: '4',
+): readonly Phase4TestRecord[]
+function readRecordsForPhase(
+  service: PhaseTestService,
+  phase: '0' | '1' | '2' | '3' | '4',
 ): readonly PhaseTestRecord[] {
   const result = service.readPhaseTestRecords(phase)
   expect(result.ok).toBe(true)
@@ -765,6 +805,9 @@ function makeMainIndexHarness(options: {
     BrowserWindow: FakeBrowserWindow,
     globalShortcut,
     ipcMain: { handle: vi.fn(), on: vi.fn() },
+    dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
+    net: { fetch: vi.fn() },
+    protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
     screen: {
       getPrimaryDisplay: vi.fn(() => ({
         id: 1,
@@ -844,19 +887,20 @@ afterEach(async () => {
 })
 
 describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
-  it('uses schema v5, applies ordered migrations, and creates the exact phase table contract', async () => {
+  it('uses schema v6, applies ordered migrations, and creates the exact phase table contract', async () => {
     const dbPath = await makeTemporaryDatabasePath()
     const opened = openPhaseService(dbPath)
     const service = requireService(opened)
 
-    expect(SQLITE_SCHEMA_VERSION).toBe(5)
-    expect(service.health().schemaVersion).toBe(5)
+    expect(SQLITE_SCHEMA_VERSION).toBe(6)
+    expect(service.health().schemaVersion).toBe(6)
     expect(inspectDatabase(dbPath).migrations).toEqual([
       BASELINE_ROW,
       V2_PHASE_TEST_MIGRATION_ROW,
       V3_PHASE_TEST_MIGRATION_ROW,
       V4_PHASE_TEST_MIGRATION_ROW,
       V5_PHASE_TEST_MIGRATION_ROW,
+      V6_PHASE_TEST_MIGRATION_ROW,
     ])
 
     const snapshot = inspectDatabase(dbPath)
@@ -891,9 +935,9 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     ])
 
     const ddl = normalizeSql(String(snapshot.phaseTable.sql))
-    expect(ddl).toBe(normalizeSql(V5_PHASE_TEST_DDL))
-    expect(ddl).toContain("check (phase in ('0', '1', '2', '3'))")
-    expect(ddl).toContain("phase = '3'")
+    expect(ddl).toBe(normalizeSql(V6_PHASE_TEST_DDL))
+    expect(ddl).toContain("check (phase in ('0', '1', '2', '3', '4'))")
+    expect(ddl).toContain("phase = '4'")
     expect(snapshot.objects.some((row) => String(row.name).includes('temp'))).toBe(false)
     expectNoPrivateContent(snapshot)
   })
@@ -903,13 +947,14 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     const opened = openPhaseService(dbPath)
     const service = requireService(opened)
 
-    expect(service.health().schemaVersion).toBe(5)
+    expect(service.health().schemaVersion).toBe(6)
     expect(inspectDatabase(dbPath).migrations).toEqual([
       BASELINE_ROW,
       V2_PHASE_TEST_MIGRATION_ROW,
       V3_PHASE_TEST_MIGRATION_ROW,
       V4_PHASE_TEST_MIGRATION_ROW,
       V5_PHASE_TEST_MIGRATION_ROW,
+      V6_PHASE_TEST_MIGRATION_ROW,
     ])
     expect(inspectDatabase(dbPath).phaseTable).toBeDefined()
     expectNoPrivateContent(opened.telemetry.events)
@@ -944,7 +989,7 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
 
     const opened = openPhaseService(dbPath)
     const service = requireService(opened)
-    expect(service.health().schemaVersion).toBe(5)
+    expect(service.health().schemaVersion).toBe(6)
     expect(inspectDatabase(dbPath).phaseRows).toEqual([
       {
         sequence: 2,
@@ -989,12 +1034,13 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
       V3_PHASE_TEST_MIGRATION_ROW,
       V4_PHASE_TEST_MIGRATION_ROW,
       V5_PHASE_TEST_MIGRATION_ROW,
+      V6_PHASE_TEST_MIGRATION_ROW,
     ])
 
     const beforeReopen = inspectDatabase(dbPath)
     expect(service.close()).toEqual({ ok: true, value: undefined })
     const reopened = requireService(openPhaseService(dbPath))
-    expect(reopened.health().schemaVersion).toBe(5)
+    expect(reopened.health().schemaVersion).toBe(6)
     expect(inspectDatabase(dbPath)).toEqual(beforeReopen)
     expect(readRecords(reopened)).toEqual([appended, secondSeed.record, firstSeed.record])
     expectNoPrivateContent(beforeReopen)
@@ -1058,7 +1104,7 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
       label: 'future',
       kind: 'future' as const,
       failure: { code: 'sqlite_schema_too_new', reason: 'schema_future_version' },
-      expectedMigrations: [{ version: 6, name: 'future_migration' }],
+      expectedMigrations: [{ version: 7, name: 'future_migration' }],
     },
   ])('rejects $label migration histories with stable metadata and no repair', async ({ kind, failure, expectedMigrations }) => {
     const dbPath = await seedMigrationHistory(kind)
@@ -1096,7 +1142,7 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
         failure: { code: 'sqlite_phase_record_invalid', reason: 'phase_invalid' },
       },
       {
-        record: { ...base, phase: '4' },
+        record: { ...base, phase: '5' },
         failure: { code: 'sqlite_phase_record_invalid', reason: 'phase_invalid' },
       },
       {
@@ -1280,13 +1326,14 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     const service = requireService(openPhaseService(dbPath))
     const snapshot = inspectDatabase(dbPath)
 
-    expect(service.health().schemaVersion).toBe(5)
+    expect(service.health().schemaVersion).toBe(6)
     expect(snapshot.migrations).toEqual([
       BASELINE_ROW,
       V2_PHASE_TEST_MIGRATION_ROW,
       V3_PHASE_TEST_MIGRATION_ROW,
       V4_PHASE_TEST_MIGRATION_ROW,
       V5_PHASE_TEST_MIGRATION_ROW,
+      V6_PHASE_TEST_MIGRATION_ROW,
     ])
     expect(snapshot.phaseRows.map(({ sequence, ...record }) => record)).toEqual([
       {
@@ -1311,6 +1358,26 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     }
     expect(readRecordsForPhase(service, '3')).toEqual([...records].reverse())
     expect(readRecordsForPhase(service, '2')).toEqual([])
+  })
+
+  it('migrates exact v5 Phase 3 evidence to v6 without changing it', async () => {
+    const record = validPhase3Record({ demoId: 'P3-D4', note: 'v5-phase3' })
+    const service = requireService(openPhaseService(await seedExactV5PhaseDatabase(record)))
+
+    expect(service.health().schemaVersion).toBe(6)
+    expect(readRecordsForPhase(service, '3')).toEqual([record])
+    expect(readRecordsForPhase(service, '4')).toEqual([])
+  })
+
+  it('round-trips all Phase 4 demo records independently', async () => {
+    const service = requireService(openPhaseService(await makeTemporaryDatabasePath()))
+    const records = (['P4-D1', 'P4-D2', 'P4-D3', 'P4-D4', 'P4-D5', 'P4-D6', 'P4-D7', 'P4-D8'] as const)
+      .map((demoId) => validPhase4Record({ demoId }))
+    for (const record of records) {
+      expect(service.appendPhaseTestRecord(record)).toEqual({ ok: true, value: undefined })
+    }
+    expect(readRecordsForPhase(service, '4')).toEqual([...records].reverse())
+    expect(readRecordsForPhase(service, '3')).toEqual([])
   })
 
   it.each(['insert', 'prune', 'commit'] as const)('rolls back an append when $failure fails', async (failure) => {

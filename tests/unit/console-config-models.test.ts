@@ -158,6 +158,9 @@ function fixtureConfig(configVersion: number, suffix: string): MirrorConfig {
       avatarDir: `fixture-avatar-${suffix}`,
       musicDir: `fixture-music-${suffix}`,
     },
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [],
     spells: [],
     scenes: [],
     adapters: {
@@ -388,6 +391,11 @@ function safeDraftInput(config: MirrorConfig): ConsoleConfigDraftInput {
     faceModel: { ...config.faceModel },
     assets: { ...config.assets },
     adapters: { ...config.adapters },
+    visualAssets: structuredClone(config.visualAssets),
+    musicAssets: structuredClone(config.musicAssets),
+    sceneActions: structuredClone(config.sceneActions),
+    spells: structuredClone(config.spells),
+    scenes: structuredClone(config.scenes),
   }
 }
 
@@ -469,7 +477,12 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
       'configVersion',
       'faceModel',
       'idleSeconds',
+      'musicAssets',
       'personaName',
+      'sceneActions',
+      'scenes',
+      'spells',
+      'visualAssets',
       'voice',
       'wake',
     ])
@@ -954,6 +967,11 @@ function fixtureSafeConfigResponse(): ConsoleResponse<ConsoleConfigPayload> {
     faceModel: { detectorId: 'fixture-detector-safe', recognizerId: 'fixture-recognizer-safe' },
     assets: { offlineLoopVideo: 'fixture-loop-safe.mp4', avatarDir: 'fixture-avatar-safe', musicDir: 'fixture-music-safe' },
     adapters: { lighting: 'mock' as const, fog: 'mock' as const, music: 'mock' as const },
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [],
+    spells: [],
+    scenes: [],
   }
   const diff = {
     operation: 'publish' as const,
@@ -1194,6 +1212,12 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       reportRealtimeMetadata: 'mirror:report-realtime-metadata',
       avatarControl: 'mirror:avatar-control',
       reportAvatarRuntime: 'mirror:report-avatar-runtime',
+      reportSceneAction: 'mirror:report-scene-action',
+      reportSceneVisual: 'mirror:report-scene-visual',
+      getSceneCatalog: 'mirror:get-scene-catalog',
+      triggerScene: 'mirror:trigger-scene',
+      stopScene: 'mirror:stop-scene',
+      sceneStatus: 'mirror:scene-status',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',

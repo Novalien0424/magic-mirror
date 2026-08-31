@@ -148,18 +148,16 @@ export interface RealtimeRuntimeOwnerDependencies {
     analyser: object,
   ) => RealtimeRuntimePlaybackCompletion
   readonly eventSink?: RealtimeRuntimeEventSink
-  readonly onCompletedInputTranscript?: (input: {
-    readonly transcript: string
-    readonly realtimeSessionId: string
-    readonly waitForActualEnd: () => Promise<PlaybackCompletionResult>
-  }) => MaybePromise<void>
+  readonly onInputItemCreated?: (input: Readonly<{ itemId: string; realtimeSessionId: string }>) => MaybePromise<void>
+  readonly onCompletedInputTranscript?: (input: Readonly<{
+    itemId: string; transcript: string; realtimeSessionId: string
+    waitForActualEnd: () => Promise<PlaybackCompletionResult>
+  }>) => MaybePromise<void>
 }
-
 export interface RealtimeRuntimeSnapshot {
   readonly state: RealtimeRuntimeState
   readonly currentIdentity?: Readonly<RealtimeSessionIdentity>
 }
-
 export interface RealtimeRuntimeOutcome {
   readonly status: 'success' | 'ignored' | 'failed' | 'degraded'
   readonly operation: 'start' | 'stop' | 'dispose' | 'interrupt' | 'rollover'
@@ -186,7 +184,16 @@ export interface RealtimeRuntimeOwner {
   ) => Promise<RealtimeRuntimeOutcome>
   readonly dispose: () => Promise<RealtimeRuntimeOutcome>
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
+  readonly speakVerbatim: (text: string) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
+}
+
+export interface RealtimeSceneDialogueResult {
+  readonly status: 'dispatched' | 'ignored' | 'failed'
+  readonly reason:
+    | 'scene_dialogue_dispatched'
+    | 'no_active_realtime_session'
+    | 'scene_dialogue_dispatch_failed'
 }
 
 interface OwnedResources {
@@ -310,10 +317,21 @@ export function createRealtimeRuntimeOwner(
   }
 
   const observeCompletedTranscripts = (owned: OwnedResources): void => {
-    const subscribe = owned.session.onInputTranscriptCompleted
-    const handler = dependencies.onCompletedInputTranscript
-    if (subscribe === undefined || handler === undefined) return
-    subscribe.call(owned.session, (transcript) => {
+    const runObserver = (action: () => MaybePromise<void>): void => {
+      try { void Promise.resolve(action()).catch(() => undefined) } catch { /* non-gating */ }
+    }
+    const itemSubscribe = owned.session.onInputItemCreated
+    const itemHandler = dependencies.onInputItemCreated
+    if (itemSubscribe !== undefined && itemHandler !== undefined) {
+      itemSubscribe.call(owned.session, (itemId) => {
+        if (current?.session !== owned.session || state !== 'active') return
+        runObserver(() => itemHandler({ itemId, realtimeSessionId: owned.identity.realtimeSessionId }))
+      })
+    }
+    const transcriptSubscribe = owned.session.onInputTranscriptCompleted
+    const transcriptHandler = dependencies.onCompletedInputTranscript
+    if (transcriptSubscribe === undefined || transcriptHandler === undefined) return
+    transcriptSubscribe.call(owned.session, (completed) => {
       if (current?.session !== owned.session || state !== 'active') return
       const completionFactory = dependencies.createPlaybackCompletion
       const analyser = owned.audioOutput.analyser
@@ -324,15 +342,12 @@ export function createRealtimeRuntimeOwner(
         return completionFactory(owned.playbackTransport, analyser)
           .waitForActualEnd(new AbortController().signal)
       }
-      try {
-        void Promise.resolve(handler({
-          transcript,
+      runObserver(() => transcriptHandler({
+          itemId: completed.itemId,
+          transcript: completed.transcript,
           realtimeSessionId: owned.identity.realtimeSessionId,
           waitForActualEnd,
-        })).catch(() => undefined)
-      } catch {
-        // Transcript control handling must not gate the voice session.
-      }
+        }))
     })
   }
 
@@ -759,12 +774,25 @@ export function createRealtimeRuntimeOwner(
     ...(current === undefined ? {} : { currentIdentity: freezeIdentity(current.identity) }),
   })
 
+  const speakVerbatim = (text: string): RealtimeSceneDialogueResult => {
+    if (state !== 'active' || current === undefined) {
+      return Object.freeze({ status: 'ignored', reason: 'no_active_realtime_session' })
+    }
+    try {
+      current.session.speakVerbatim(text)
+      return Object.freeze({ status: 'dispatched', reason: 'scene_dialogue_dispatched' })
+    } catch {
+      return Object.freeze({ status: 'failed', reason: 'scene_dialogue_dispatch_failed' })
+    }
+  }
+
   return Object.freeze({
     start,
     rollover,
     stop,
     dispose,
     interrupt,
+    speakVerbatim,
     getSnapshot,
   })
 }

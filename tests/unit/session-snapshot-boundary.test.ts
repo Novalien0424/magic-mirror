@@ -50,6 +50,9 @@ function fixtureConfig(
       avatarDir: `synthetic-avatar-${label}`,
       musicDir: `synthetic-music-${label}`,
     },
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [],
     spells: [],
     scenes: [],
     adapters: {

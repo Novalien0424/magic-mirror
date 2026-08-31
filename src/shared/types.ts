@@ -30,6 +30,207 @@ export interface AiModelsConfig {
   memoryExtractor: AiModelRoleConfig;
 }
 
+export type SceneFeedbackCapability = 'dispatch_only' | 'acknowledgement' | 'completion';
+export type SceneActionFeedbackStatus =
+  | 'dispatched' | 'acknowledged' | 'completed' | 'failed' | 'timeout';
+
+interface SceneActionBase {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+interface ManagedVisualAssetBase {
+  id: string;
+  name: string;
+  fileName: string;
+  byteLength: number;
+  sha256: string;
+  width: number;
+  height: number;
+  orientation: 'portrait' | 'landscape' | 'square';
+  windowsDecode: 'passed';
+}
+
+export type ManagedVisualAsset = ManagedVisualAssetBase & (
+  | {
+      kind: 'image';
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+      audioTrack: 'absent';
+    }
+  | {
+      kind: 'video';
+      mimeType: 'video/mp4' | 'video/webm';
+      durationMs: number;
+      audioTrack: 'present' | 'absent' | 'unknown';
+    }
+);
+
+export interface PendingVisualAsset {
+  readonly token: string;
+  readonly assetId: string;
+  readonly name: string;
+  readonly kind: 'image' | 'video';
+  readonly mimeType: ManagedVisualAsset['mimeType'];
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+
+export type VisualAssetProbe =
+  | Readonly<{ width: number; height: number; audioTrack: 'absent' }>
+  | Readonly<{
+      width: number;
+      height: number;
+      durationMs: number;
+      audioTrack: 'present' | 'absent' | 'unknown';
+    }>;
+
+export type PhysicalSceneActionDefinition<K extends 'lighting' | 'fog'> =
+  | (SceneActionBase & {
+      kind: K;
+      command: 'on' | 'off';
+      presetId: string;
+    })
+  | (SceneActionBase & {
+      kind: K;
+      command: 'value';
+      presetId: string;
+      value: number;
+    });
+
+export type SceneActionDefinition =
+  | (SceneActionBase & {
+      kind: 'visual';
+      assetId: string;
+      fit: 'contain' | 'cover';
+      playback: 'still' | 'once' | 'loop';
+      audio: 'muted' | 'embedded';
+      gain: number;
+    })
+  | (SceneActionBase & { kind: 'avatar_dialogue'; text: string })
+  | (SceneActionBase & { kind: 'avatar_motion'; motionGroup: string })
+  | (SceneActionBase & { kind: 'avatar_expression'; expression: string })
+  | PhysicalSceneActionDefinition<'lighting'>
+  | PhysicalSceneActionDefinition<'fog'>
+  | (SceneActionBase & {
+      kind: 'music';
+      command: 'play';
+      assetId: string;
+      gain: number;
+      loop: boolean;
+    })
+  | (SceneActionBase & {
+      kind: 'music';
+      command: 'stop';
+      fadeDurationMs: number;
+    })
+  | (SceneActionBase & {
+      kind: 'music';
+      command: 'fade';
+      targetGain: number;
+      durationMs: number;
+    });
+
+/** Current Ren Cubism manifest capabilities exposed to Phase 4 authoring. */
+export const REN_MOTION_GROUPS = [
+  'Dormant', 'Waking', 'Listening', 'Thinking', 'Speaking', 'Scene', 'Suspending',
+] as const;
+export const REN_EXPRESSION_NAMES = ['exp_01', 'exp_02', 'exp_03', 'exp_04', 'exp_05'] as const;
+
+export type StageEndCondition =
+  | { kind: 'duration'; durationMs: number }
+  | { kind: 'video_complete'; visualActionId: string }
+  | { kind: 'until_stopped'; maxRuntimeMs: number };
+
+export interface SceneStageDefinition {
+  id: string;
+  name: string;
+  endCondition: StageEndCondition;
+  actionIds: string[];
+}
+
+export interface SceneDefinition {
+  id: string;
+  name: string;
+  enabled: boolean;
+  stages: SceneStageDefinition[];
+}
+
+export interface SpellConfig {
+  id: string;
+  name: string;
+  phrase: string;
+  sceneId: string;
+  enabled: boolean;
+  cooldownMs: number;
+}
+
+export interface ManagedMusicAsset {
+  id: string;
+  name: string;
+  fileName: string;
+  mimeType: 'audio/mpeg' | 'audio/wav' | 'audio/ogg' | 'audio/mp4';
+  byteLength: number;
+  sha256: string;
+}
+
+export interface ScenePublicCatalog {
+  configVersion: number;
+  stopPhrase: string;
+  spells: Array<Pick<SpellConfig, 'id' | 'phrase'>>;
+}
+
+export type SceneRunSkipReason =
+  | 'duplicate_turn' | 'cooldown' | 'disabled' | 'invalid_config';
+
+export interface SceneActionRunResult {
+  actionId: string;
+  stageId: string;
+  status: SceneActionFeedbackStatus;
+  errorCode?: string;
+}
+
+export interface SceneActionCommandContext {
+  runId: string;
+  sceneId: string;
+  stageId: string;
+  actionId: string;
+}
+
+export interface SceneActionRendererReport extends SceneActionCommandContext {
+  status: 'acknowledged' | 'completed' | 'failed' | 'timeout';
+  errorCode?: string;
+}
+
+export type SceneVisualPlaybackReport = SceneActionCommandContext & (
+  | { type: 'ready' }
+  | { type: 'playing'; durationMs: number }
+  | { type: 'progress'; currentTimeMs: number }
+  | { type: 'ended' }
+  | { type: 'failed'; errorCode: string }
+);
+
+export type SceneStartResult =
+  | Readonly<{ runId: string; sceneId: string; status: 'accepted' }>
+  | Readonly<{
+      runId: string;
+      status: 'skipped';
+      skipReason: SceneRunSkipReason | 'stopped_before_start';
+    }>;
+
+export type SceneStatusEvent =
+  | Readonly<{ type: 'started' | 'stage_started'; runId: string; sceneId: string; stageId: string }>
+  | Readonly<{ type: 'finished'; result: SceneRunResult }>;
+
+export interface SceneRunResult {
+  runId: string;
+  sceneId?: string;
+  status: 'completed' | 'partial_failure' | 'failed' | 'stopped' | 'skipped';
+  durationMs: number;
+  skipReason?: SceneRunSkipReason;
+  actions: SceneActionRunResult[];
+}
+
 export interface MirrorConfig {
   configVersion: number;                     // bumped on every publish
   persona: { name: string; instructions: string };
@@ -41,8 +242,11 @@ export interface MirrorConfig {
   wake: { phrase: string; modelVersion: string; packageId: string };
   faceModel: { detectorId: string; recognizerId: string };
   assets: { offlineLoopVideo: string; avatarDir: string; musicDir: string };
-  spells: unknown[];                         // Phase 4 owns the shape
-  scenes: unknown[];
+  visualAssets: ManagedVisualAsset[];
+  musicAssets: ManagedMusicAsset[];
+  sceneActions: SceneActionDefinition[];
+  spells: SpellConfig[];
+  scenes: SceneDefinition[];
   adapters: { lighting: 'mock' | 'physical'; fog: 'mock' | 'physical'; music: 'mock' | 'physical' };
 }
 

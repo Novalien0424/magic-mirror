@@ -26,11 +26,16 @@ import type {
 import type {
   MirrorEvent,
   ModuleId,
+  SceneActionDefinition,
+  SceneDefinition,
   SimulatorCommand,
   SimulatorResult,
 } from '../../shared/types'
+import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../../shared/types'
+import { runConsoleVisualImport } from './visual-import'
+import { estimateSceneMaximumMs } from './scene-estimate'
 
-const PAGES = ['Overview', 'Avatar / Audio', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const PAGES = ['Overview', 'Avatar / Audio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
   'app',
   'openai',
@@ -225,6 +230,9 @@ function isConsoleBridge(value: unknown): value is ConsoleBridge {
     && typeof value.getOverview === 'function'
     && typeof value.getEvents === 'function'
     && typeof value.getConfig === 'function'
+    && typeof value.runScene === 'function'
+    && typeof value.stopScenes === 'function'
+    && typeof value.uploadMusic === 'function'
     && typeof value.getModels === 'function'
     && typeof value.saveModelDraft === 'function'
     && typeof value.saveDraft === 'function'
@@ -666,9 +674,14 @@ function AvatarAudioPanel({
       </div>
       <p className="console__label">Expressions</p>
       <div className="console__command-list">
-        {['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08'].map((name) => (
+        {REN_EXPRESSION_NAMES.map((name) => (
           <button key={name} type="button" disabled={disabled} onClick={() => onCommand({ type: 'expression', name })}>{name}</button>
         ))}
+      </div>
+      <p className="console__label">Fallback check</p>
+      <div className="console__command-list">
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'asset_failure', action: 'inject' })}>Inject avatar asset failure</button>
+        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'asset_failure', action: 'clear' })}>Clear avatar asset failure</button>
       </div>
       <p className="console__label">Audio checks</p>
       <div className="console__command-list">
@@ -885,6 +898,11 @@ function safeDraftFromConfig(value: ConsoleConfigPayload['draft']): ConsoleConfi
     faceModel: { ...value.faceModel },
     assets: { ...value.assets },
     adapters: { ...value.adapters },
+    visualAssets: structuredClone(value.visualAssets),
+    musicAssets: structuredClone(value.musicAssets),
+    sceneActions: structuredClone(value.sceneActions),
+    spells: structuredClone(value.spells),
+    scenes: structuredClone(value.scenes),
   }
 }
 
@@ -1169,6 +1187,299 @@ interface ModelsPanelProps {
   readonly onChanged: () => void
 }
 
+type SceneActionKind = SceneActionDefinition['kind']
+
+function newSceneAction(kind: SceneActionKind, index: number): SceneActionDefinition {
+  const base = { id: `action-${Date.now()}-${index}`, name: 'New action', enabled: true }
+  if (kind === 'avatar_dialogue') return { ...base, kind, text: 'Speak these words exactly.' }
+  if (kind === 'avatar_motion') return { ...base, kind, motionGroup: 'Scene' }
+  if (kind === 'avatar_expression') return { ...base, kind, expression: 'exp_01' }
+  if (kind === 'lighting' || kind === 'fog') {
+    return { ...base, kind, command: 'on', presetId: 'default' }
+  }
+  if (kind === 'visual') {
+    return { ...base, kind, assetId: '', fit: 'contain', playback: 'still', audio: 'muted', gain: 0 }
+  }
+  return { ...base, kind: 'music', command: 'stop', fadeDurationMs: 0 }
+}
+
+interface ScenesPanelProps {
+  readonly state: ConfigState
+  readonly bridge: ConsoleBridge | null
+  readonly bridgeAvailable: boolean
+  readonly onChanged: () => void
+}
+
+export function ScenesPanel({
+  state,
+  bridge,
+  bridgeAvailable,
+  onChanged,
+}: ScenesPanelProps): React.JSX.Element {
+  const payload = state.status === 'success' ? state.value : null
+  const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const [result, setResult] = useState('Draft not tested in this view.')
+
+  useEffect(() => {
+    if (payload !== null) setDraft(safeDraftFromConfig(payload.draft))
+  }, [payload])
+
+  useEffect(() => bridge?.onSceneStatus((event) => {
+    if (event.type === 'finished') {
+      setResult(`Scene ${event.result.sceneId ?? event.result.runId}: ${event.result.status}.`)
+    } else {
+      setResult(`Scene ${event.sceneId}: ${event.type === 'started' ? 'started' : `Stage ${event.stageId} started`}.`)
+    }
+  }), [bridge])
+
+  const disabled = !bridgeAvailable || bridge === null || draft === null
+  const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
+    setDraft((current) => current === null ? current : {
+      ...current,
+      sceneActions: current.sceneActions.map((action) => action.id === actionId ? next : action),
+    })
+  }
+  const replaceScene = (sceneId: string, next: SceneDefinition): void => {
+    setDraft((current) => current === null ? current : {
+      ...current,
+      scenes: current.scenes.map((scene) => scene.id === sceneId ? next : scene),
+    })
+  }
+  const runResponse = async (operation: () => Promise<ConsoleResponse<unknown>>): Promise<void> => {
+    try {
+      const response = await operation()
+      setResult(response.ok ? 'Operation completed.' : `${response.error}: ${response.reason}`)
+      onChanged()
+    } catch {
+      setResult('Console operation failed.')
+    }
+  }
+
+  return (
+    <section className="console__panel console__scenes" aria-labelledby="console-scenes">
+      <div className="console__panel-heading">
+        <div>
+          <p className="console__eyebrow">Phase 4 · Draft / Test / Publish</p>
+          <h2 id="console-scenes">Scenes</h2>
+        </div>
+        <span className="console__status console__status--mock">
+          Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical'
+            ? 'Physical not connected'
+            : 'Mock'}
+        </span>
+      </div>
+
+      <p className="console__notice">
+        Each Stage has one explicit end condition. Ending a Stage never implicitly turns off, stops,
+        undoes, or resets an authored action.
+      </p>
+      {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason}</p> : null}
+      <p className="console__muted" aria-live="polite">{result}</p>
+
+      <fieldset>
+        <legend>Managed visuals</legend>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => bridge && void runConsoleVisualImport(bridge).then((response) => {
+            if (!response.ok) {
+              setResult(`Visual import failed: ${response.reason}.`)
+              return
+            }
+            const asset = response.asset
+            if (asset === null) {
+              setResult('Visual import cancelled.')
+              return
+            }
+            setDraft((current) => current === null || current.visualAssets.some((item) => item.id === asset.id)
+              ? current
+              : { ...current, visualAssets: [...current.visualAssets, asset] })
+            setResult(`Imported ${asset.name} (${asset.width}×${asset.height}). Save Draft to link it.`)
+          })}
+        >Import image / video…</button>
+        <ul className="console__path-list">
+          {(draft?.visualAssets ?? []).map((asset) => (
+            <li key={asset.id}>
+              {asset.name} · {asset.kind} · {asset.width}×{asset.height}
+              {asset.kind === 'video' ? ` · ${asset.durationMs} ms · audio ${asset.audioTrack}` : ''}
+              {' · '}{asset.id}
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+
+      <fieldset>
+        <legend>Managed music</legend>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => bridge && void bridge.uploadMusic().then((response) => {
+            if (!response.ok) {
+              setResult(`${response.error}: ${response.reason}`)
+              return
+            }
+            const asset = response.value
+            if (asset === null) {
+              setResult('Music import cancelled.')
+              return
+            }
+            setDraft((current) => current === null || current.musicAssets.some((item) => item.id === asset.id)
+              ? current
+              : { ...current, musicAssets: [...current.musicAssets, asset] })
+            setResult(`Imported ${asset.name} as ${asset.id}. Save Draft to link it.`)
+          })}
+        >Upload music…</button>
+        <ul className="console__path-list">
+          {(draft?.musicAssets ?? []).map((asset) => (
+            <li key={asset.id}>{asset.name} · {asset.mimeType} · {asset.id}</li>
+          ))}
+        </ul>
+      </fieldset>
+
+      <fieldset>
+        <legend>Spells</legend>
+        <button
+          type="button"
+          disabled={disabled || (draft?.scenes.length ?? 0) === 0}
+          onClick={() => setDraft((current) => current === null || current.scenes[0] === undefined
+            ? current
+            : {
+                ...current,
+                spells: [...current.spells, {
+                  id: `spell-${Date.now()}-${current.spells.length}`,
+                  name: 'New spell',
+                  phrase: 'New exact phrase',
+                  sceneId: current.scenes[0].id,
+                  enabled: true,
+                  cooldownMs: 5000,
+                }],
+              })}
+        >Add spell</button>
+        <div className="console__scene-list">
+          {(draft?.spells ?? []).map((spell) => (
+            <article className="console__scene-card" key={spell.id}>
+              <label>Name<input value={spell.name} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, name: event.currentTarget.value } : item) })} /></label>
+              <label>Exact phrase<input value={spell.phrase} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, phrase: event.currentTarget.value } : item) })} /></label>
+              <label>Scene<select value={spell.sceneId} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, sceneId: event.currentTarget.value } : item) })}>{(draft?.scenes ?? []).map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select></label>
+              <label>Cooldown ms<input type="number" min="0" value={spell.cooldownMs} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, cooldownMs: Number(event.currentTarget.value) } : item) })} /></label>
+              <label><input type="checkbox" checked={spell.enabled} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, enabled: event.currentTarget.checked } : item) })} /> Enabled</label>
+              <button type="button" onClick={() => setDraft((current) => current === null ? current : { ...current, spells: current.spells.filter((item) => item.id !== spell.id) })}>Delete</button>
+            </article>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Reusable actions</legend>
+        <div className="console__action-row">
+          {(['avatar_dialogue', 'avatar_motion', 'avatar_expression', 'lighting', 'fog', 'music', 'visual'] as const).map((kind) => (
+            <button key={kind} type="button" disabled={disabled} onClick={() => setDraft((current) => current === null ? current : { ...current, sceneActions: [...current.sceneActions, newSceneAction(kind, current.sceneActions.length)] })}>+ {kind}</button>
+          ))}
+        </div>
+        <div className="console__scene-list">
+          {(draft?.sceneActions ?? []).map((action) => (
+            <article className="console__scene-card" key={action.id}>
+              <label>Name<input value={action.name} onChange={(event) => replaceAction(action.id, { ...action, name: event.currentTarget.value })} /></label>
+              <label>Kind<select value={action.kind} onChange={(event) => replaceAction(action.id, { ...newSceneAction(event.currentTarget.value as SceneActionKind, 0), id: action.id, name: action.name })}>{(['avatar_dialogue', 'avatar_motion', 'avatar_expression', 'lighting', 'fog', 'music', 'visual'] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
+              {action.kind === 'avatar_dialogue' ? <label>Text<textarea value={action.text} onChange={(event) => replaceAction(action.id, { ...action, text: event.currentTarget.value })} /></label> : null}
+              {action.kind === 'avatar_motion' ? <label>Cubism motion group<select value={action.motionGroup} onChange={(event) => replaceAction(action.id, { ...action, motionGroup: event.currentTarget.value })}>{REN_MOTION_GROUPS.map((group) => <option key={group} value={group}>{group}</option>)}</select></label> : null}
+              {action.kind === 'avatar_expression' ? <label>Cubism expression<select value={action.expression} onChange={(event) => replaceAction(action.id, { ...action, expression: event.currentTarget.value })}>{REN_EXPRESSION_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}</select></label> : null}
+              {action.kind === 'lighting' || action.kind === 'fog' ? <>
+                <label>Command<select value={action.command} onChange={(event) => replaceAction(action.id, event.currentTarget.value === 'value' ? { ...action, command: 'value', value: 0.5 } : { id: action.id, name: action.name, enabled: action.enabled, kind: action.kind, command: event.currentTarget.value as 'on' | 'off', presetId: action.presetId })}><option value="on">ON</option><option value="off">OFF</option><option value="value">Value</option></select></label>
+                <label>Approved preset<input value={action.presetId} onChange={(event) => replaceAction(action.id, { ...action, presetId: event.currentTarget.value })} /></label>
+                {action.command === 'value' ? <label>Value 0–1<input type="number" min="0" max="1" step="0.05" value={action.value} onChange={(event) => replaceAction(action.id, { ...action, value: Number(event.currentTarget.value) })} /></label> : null}
+              </> : null}
+              {action.kind === 'music' ? <>
+                <label>Command<select value={action.command} onChange={(event) => {
+                  const command = event.currentTarget.value
+                  replaceAction(action.id, command === 'play'
+                    ? { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'play', assetId: draft?.musicAssets[0]?.id ?? '', gain: 1, loop: false }
+                    : command === 'fade'
+                      ? { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'fade', targetGain: 0, durationMs: 1000 }
+                      : { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'stop', fadeDurationMs: 0 })
+                }}><option value="play">Play</option><option value="stop">Stop</option><option value="fade">Fade</option></select></label>
+                {action.command === 'play' ? <><label>Asset<select value={action.assetId} onChange={(event) => replaceAction(action.id, { ...action, assetId: event.currentTarget.value })}><option value="">Select asset</option>{(draft?.musicAssets ?? []).map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label><label>Gain<input type="number" min="0" max="1" step="0.05" value={action.gain} onChange={(event) => replaceAction(action.id, { ...action, gain: Number(event.currentTarget.value) })} /></label><label><input type="checkbox" checked={action.loop} onChange={(event) => replaceAction(action.id, { ...action, loop: event.currentTarget.checked })} /> Loop</label></> : null}
+                {action.command === 'stop' ? <label>Fade ms<input type="number" min="0" value={action.fadeDurationMs} onChange={(event) => replaceAction(action.id, { ...action, fadeDurationMs: Number(event.currentTarget.value) })} /></label> : null}
+                {action.command === 'fade' ? <><label>Target gain<input type="number" min="0" max="1" step="0.05" value={action.targetGain} onChange={(event) => replaceAction(action.id, { ...action, targetGain: Number(event.currentTarget.value) })} /></label><label>Duration ms<input type="number" min="1" value={action.durationMs} onChange={(event) => replaceAction(action.id, { ...action, durationMs: Number(event.currentTarget.value) })} /></label></> : null}
+              </> : null}
+              {action.kind === 'visual' ? <>
+                <label>Asset<select value={action.assetId} onChange={(event) => {
+                  const assetId = event.currentTarget.value
+                  const asset = draft?.visualAssets.find((item) => item.id === assetId)
+                  replaceAction(action.id, {
+                    ...action,
+                    assetId,
+                    playback: asset?.kind === 'video' ? 'once' : 'still',
+                    audio: 'muted',
+                    gain: 0,
+                  })
+                }}><option value="">Select asset</option>{(draft?.visualAssets ?? []).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} ({asset.kind})</option>)}</select></label>
+                <label>Fit<select value={action.fit} onChange={(event) => replaceAction(action.id, { ...action, fit: event.currentTarget.value as 'contain' | 'cover' })}><option value="contain">Contain</option><option value="cover">Cover</option></select></label>
+                {draft?.visualAssets.find((asset) => asset.id === action.assetId)?.kind === 'video' ? <>
+                  <label>Playback<select value={action.playback} onChange={(event) => replaceAction(action.id, { ...action, playback: event.currentTarget.value as 'once' | 'loop' })}><option value="once">Once</option><option value="loop">Loop</option></select></label>
+                  <label>Audio<select value={action.audio} onChange={(event) => replaceAction(action.id, { ...action, audio: event.currentTarget.value as 'muted' | 'embedded', gain: event.currentTarget.value === 'muted' ? 0 : Math.max(action.gain, 0.5) })}><option value="muted">Muted</option><option value="embedded">Embedded track</option></select></label>
+                  {action.audio === 'embedded' ? <label>Gain<input type="number" min="0" max="1" step="0.05" value={action.gain} onChange={(event) => replaceAction(action.id, { ...action, gain: Number(event.currentTarget.value) })} /></label> : null}
+                  {action.audio === 'embedded' && draft?.visualAssets.find((asset) => asset.id === action.assetId)?.audioTrack === 'unknown' ? <p className="console__muted">Audio track could not be verified; test this Draft on Windows before Publish.</p> : null}
+                </> : null}
+              </> : null}
+              <button type="button" onClick={() => setDraft((current) => current === null ? current : { ...current, sceneActions: current.sceneActions.filter((item) => item.id !== action.id) })}>Delete</button>
+            </article>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Ordered scene stages</legend>
+        <button type="button" disabled={disabled} onClick={() => setDraft((current) => current === null ? current : { ...current, scenes: [...current.scenes, { id: `scene-${Date.now()}-${current.scenes.length}`, name: 'New scene', enabled: true, stages: [{ id: `stage-${Date.now()}-0`, name: 'Stage 1', endCondition: { kind: 'duration', durationMs: 1000 }, actionIds: [] }] }] })}>Add scene</button>
+        <div className="console__scene-list">
+          {(draft?.scenes ?? []).map((scene) => (
+            <article className="console__scene-card" key={scene.id}>
+              <label>Scene name<input value={scene.name} onChange={(event) => replaceScene(scene.id, { ...scene, name: event.currentTarget.value })} /></label>
+              <p className="console__muted">Estimated maximum: {(() => {
+                const duration = estimateSceneMaximumMs(scene, draft?.sceneActions ?? [], draft?.visualAssets ?? [])
+                return duration === null ? 'incomplete configuration' : `${duration} ms`
+              })()}</p>
+              <div className="console__action-row"><button type="button" onClick={() => bridge && void runResponse(() => bridge.runScene(scene.id))}>Run Published Scene</button><button type="button" onClick={() => replaceScene(scene.id, { ...scene, stages: [...scene.stages, { id: `stage-${Date.now()}-${scene.stages.length}`, name: `Stage ${scene.stages.length + 1}`, endCondition: { kind: 'duration', durationMs: 1000 }, actionIds: [] }] })}>Add Stage</button></div>
+              {scene.stages.map((stage, stageIndex) => (
+                <div className="console__stage-card" key={stage.id}>
+                  <strong>Stage {stageIndex + 1}</strong>
+                  <label>Name<input value={stage.name} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, name: event.currentTarget.value } : item) })} /></label>
+                  <label>Ends when<select value={stage.endCondition.kind} onChange={(event) => {
+                    const kind = event.currentTarget.value
+                    const visualAction = draft?.sceneActions.find((action) =>
+                      stage.actionIds.includes(action.id) && action.kind === 'visual' && action.playback === 'once')
+                    const endCondition = kind === 'duration'
+                      ? { kind: 'duration' as const, durationMs: 1000 }
+                      : kind === 'video_complete'
+                        ? { kind: 'video_complete' as const, visualActionId: visualAction?.id ?? '' }
+                        : { kind: 'until_stopped' as const, maxRuntimeMs: 60_000 }
+                    replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition } : item) })
+                  }}><option value="duration">Duration</option><option value="video_complete">Once video completes</option><option value="until_stopped">Stopped / maximum</option></select></label>
+                  {stage.endCondition.kind === 'duration' ? <label>Duration ms<input type="number" min="1" value={stage.endCondition.durationMs} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'duration', durationMs: Number(event.currentTarget.value) } } : item) })} /></label> : null}
+                  {stage.endCondition.kind === 'video_complete' ? <label>Once-video action<select value={stage.endCondition.visualActionId} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'video_complete', visualActionId: event.currentTarget.value } } : item) })}><option value="">Select action</option>{(draft?.sceneActions ?? []).filter((action) => stage.actionIds.includes(action.id) && action.kind === 'visual' && action.playback === 'once').map((action) => <option key={action.id} value={action.id}>{action.name}</option>)}</select></label> : null}
+                  {stage.endCondition.kind === 'until_stopped' ? <label>Maximum runtime ms<input type="number" min="1" value={stage.endCondition.maxRuntimeMs} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'until_stopped', maxRuntimeMs: Number(event.currentTarget.value) } } : item) })} /></label> : null}
+                  <span>Actions start together:</span>
+                  {(draft?.sceneActions ?? []).map((action) => <label key={action.id}><input type="checkbox" checked={stage.actionIds.includes(action.id)} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id !== stage.id ? item : { ...item, actionIds: event.currentTarget.checked ? [...item.actionIds, action.id] : item.actionIds.filter((id) => id !== action.id) }) })} />{action.name}</label>)}
+                  <div className="console__action-row"><button type="button" disabled={stageIndex === 0} onClick={() => { const stages = [...scene.stages]; [stages[stageIndex - 1], stages[stageIndex]] = [stages[stageIndex]!, stages[stageIndex - 1]!]; replaceScene(scene.id, { ...scene, stages }) }}>Up</button><button type="button" disabled={stageIndex === scene.stages.length - 1} onClick={() => { const stages = [...scene.stages]; [stages[stageIndex], stages[stageIndex + 1]] = [stages[stageIndex + 1]!, stages[stageIndex]!]; replaceScene(scene.id, { ...scene, stages }) }}>Down</button><button type="button" disabled={scene.stages.length === 1} onClick={() => replaceScene(scene.id, { ...scene, stages: scene.stages.filter((item) => item.id !== stage.id) })}>Delete Stage</button></div>
+                  {stageIndex < scene.stages.length - 1 ? <p className="console__muted">When this end condition is satisfied → next Stage</p> : null}
+                </div>
+              ))}
+            </article>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="console__action-row console__publish-bar">
+        <span>Active v{payload?.active.configVersion ?? '—'} · Draft {payload?.publishDiff.changed.length ?? 0} changes</span>
+        <button type="button" disabled={disabled} onClick={() => bridge && draft && void runResponse(() => bridge.saveDraft(draft))}>Save Draft</button>
+        <button type="button" disabled={disabled} onClick={() => bridge && void runResponse(() => bridge.testDraft())}>Test Draft</button>
+        <button type="button" disabled={disabled || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)))}>Publish</button>
+        <button type="button" disabled={disabled} onClick={() => bridge && void runResponse(() => bridge.stopScenes())}>Stop All</button>
+      </div>
+    </section>
+  )
+}
+
 export function ModelsPanel({
   state,
   bridge,
@@ -1304,7 +1615,7 @@ export function App(): React.JSX.Element {
     events: [],
     nextBeforeSequence: null,
   })
-  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('3')
+  const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('4')
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
@@ -1707,6 +2018,14 @@ export function App(): React.JSX.Element {
             onCommand={controlAvatar}
           />
         </div>
+        <div hidden={activePage !== 'Scenes'}>
+          <ScenesPanel
+            state={configState}
+            bridge={bridgeRef.current}
+            bridgeAvailable={bridgeAvailable}
+            onChanged={refreshConfigAndModels}
+          />
+        </div>
         <div hidden={activePage !== 'Simulator'}>
           <SimulatorPanel
             developerMode={developerMode}
@@ -1740,9 +2059,11 @@ export function App(): React.JSX.Element {
                   || nextPhase === '1'
                   || nextPhase === '2'
                   || nextPhase === '3'
+                  || nextPhase === '4'
                 ) setSelectedPhase(nextPhase)
               }}
             >
+              <option value="4">Phase 4</option>
               <option value="3">Phase 3</option>
               <option value="2">Phase 2</option>
               <option value="1">Phase 1</option>

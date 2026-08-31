@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 5,
   "configVersion": 7,
   "persona": {
     "name": "mock-persona-v1",
@@ -34,6 +34,9 @@
     "avatarDir": "mock/avatar-v1",
     "musicDir": "mock/music-v1"
   },
+  "visualAssets": [],
+  "musicAssets": [],
+  "sceneActions": [],
   "spells": [],
   "scenes": [],
   "adapters": {

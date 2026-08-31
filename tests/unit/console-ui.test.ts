@@ -15,6 +15,7 @@ import type {
 const EXPECTED_TABS = [
   'Overview',
   'Avatar / Audio',
+  'Scenes',
   'Simulator',
   'Events',
   'Phase Tests',
@@ -85,11 +86,11 @@ type ConsoleUiBridge = Pick<
 const PHASE_RECORD_KEYS = ['phase', 'demoId', 'build', 'time', 'result', 'note'] as const
 const CANONICAL_PHASE_0_TIME = '2026-08-22T00:00:00.000Z'
 const CANONICAL_PHASE_1_TIME = '2026-08-23T00:00:00.000Z'
-const CANONICAL_PHASE_3_TIME = '2026-08-28T00:00:00.000Z'
+const CANONICAL_PHASE_4_TIME = '2026-08-28T01:00:00.000Z'
 
-const P3_D1_NOT_EXECUTED = {
-  phase: '3', demoId: 'P3-D1', build: 'phase3-build-canonical',
-  time: CANONICAL_PHASE_3_TIME, result: 'not_executed', note: 'live_evidence_not_executed',
+const P4_D5_NOT_EXECUTED = {
+  phase: '4', demoId: 'P4-D5', build: 'phase4-build-canonical',
+  time: CANONICAL_PHASE_4_TIME, result: 'not_executed', note: 'live_evidence_not_executed',
 } as const satisfies PhaseTestRecord
 
 const P1_D1_NOT_EXECUTED = {
@@ -138,6 +139,13 @@ const CONSOLE_APP_SOURCE = readFileSync(
   new URL('../../src/renderer/console/App.tsx', import.meta.url),
   'utf8',
 )
+
+it('uses the active Ren expression catalog and exposes avatar fallback injection controls', () => {
+  expect(CONSOLE_APP_SOURCE).toContain('REN_EXPRESSION_NAMES.map')
+  expect(CONSOLE_APP_SOURCE).toContain("type: 'asset_failure', action: 'inject'")
+  expect(CONSOLE_APP_SOURCE).toContain("type: 'asset_failure', action: 'clear'")
+  expect(CONSOLE_APP_SOURCE).not.toContain("['F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08']")
+})
 
 function bridgeCallSource(method: keyof ConsoleUiBridge): string {
   const methodPattern = new RegExp(
@@ -227,7 +235,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(CONSOLE_APP_SOURCE).toMatch(/idle timer/)
   })
 
-  it('renders exactly the six Console tabs and exposes the phase-exit Phase Tests ownership sentence', () => {
+  it('renders the complete Console tabs and exposes the phase-exit Phase Tests ownership sentence', () => {
     const html = renderConsole()
 
     expect(CONSOLE_UI_CONTRACT.tabs).toEqual(EXPECTED_TABS)
@@ -348,24 +356,24 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(CONSOLE_APP_SOURCE).toMatch(/console_lifecycle_action|Lifecycle action|action outcome/i)
   })
 
-  it('defaults Phase Tests to controlled Phase 3, requests it once, and renders pending P3-D1 metadata', () => {
-    const html = renderPhaseRecord(P3_D1_NOT_EXECUTED)
+  it('defaults Phase Tests to controlled Phase 4, requests it once, and renders pending P4-D5 metadata', () => {
+    const html = renderPhaseRecord(P4_D5_NOT_EXECUTED)
     const panelSource = phaseTestsPanelSource()
     const selectorSource = phaseSelectorSource()
     const phaseTestCalls = CONSOLE_APP_SOURCE.match(/(?:\bbridge|\bmagicMirror|window\.magicMirror)\.getPhaseTests\s*\(/g) ?? []
 
-    expect(CONSOLE_APP_SOURCE).toMatch(/useState<PhaseTestPhase>\(\s*['"]3['"]\s*\)/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/useState<PhaseTestPhase>\(\s*['"]4['"]\s*\)/)
     expect(phaseTestCalls).toHaveLength(1)
     expect(bridgeCallArguments('getPhaseTests')).toMatch(/(?:selectedPhase|requestedPhase|phase)/i)
     expect(selectorSource).toMatch(/value=\{[^}]+\}/)
     expect(selectorSource).toMatch(/onChange=/)
 
-    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?3/i)
-    expect(html).toMatch(/Latest validated Phase 3 record/i)
-    expect(html).toContain(P3_D1_NOT_EXECUTED.demoId)
-    expect(html).toContain(P3_D1_NOT_EXECUTED.build)
-    expect(html).toContain(P3_D1_NOT_EXECUTED.time)
-    expect(html).toContain(P3_D1_NOT_EXECUTED.note)
+    expect(html).toMatch(/selected phase\s*:\s*(?:phase\s*)?4/i)
+    expect(html).toMatch(/Latest validated Phase 4 record/i)
+    expect(html).toContain(P4_D5_NOT_EXECUTED.demoId)
+    expect(html).toContain(P4_D5_NOT_EXECUTED.build)
+    expect(html).toContain(P4_D5_NOT_EXECUTED.time)
+    expect(html).toContain(P4_D5_NOT_EXECUTED.note)
     expect(html).toContain('Not executed')
     expect(html).not.toMatch(/Phase 0|Task 10 owns/i)
     expect(panelSource).not.toMatch(/Latest validated Phase 0|Task 10 owns|No Phase 0/i)
@@ -375,11 +383,12 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(notExecutedMarkup).toMatch(/console__muted|console__notice|console__status--disabled|console__status--not-executed/)
   })
 
-  it('exposes Phases 3, 2, 1, and 0, switches to phase 0, and renders real P0-D1 evidence', () => {
+  it('exposes Phases 4 through 0, switches to phase 0, and renders real P0-D1 evidence', () => {
     const selectorSource = phaseSelectorSource()
     const html = renderPhaseRecord(P0_D1_PASSED)
 
-    expect(selectorSource.match(/<option\b/g) ?? []).toHaveLength(4)
+    expect(selectorSource.match(/<option\b/g) ?? []).toHaveLength(5)
+    expect(selectorSource).toMatch(/<option\s+value=["']4["']\s*>\s*Phase 4\s*<\/option>/)
     expect(selectorSource).toMatch(/<option\s+value=["']3["']\s*>\s*Phase 3\s*<\/option>/)
     expect(selectorSource).toMatch(/<option\s+value=["']2["']\s*>\s*Phase 2\s*<\/option>/)
     expect(selectorSource).toMatch(/<option\s+value=["']1["']\s*>\s*Phase 1\s*<\/option>/)

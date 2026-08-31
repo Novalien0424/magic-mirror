@@ -155,6 +155,23 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests Main adapter RED contract', () =>
     })
   })
 
+  it('accepts bounded Phase 4 demo evidence', async () => {
+    const common = makeCommon()
+    const record = {
+      phase: '4', demoId: 'P4-D8', build: 'phase4-build',
+      time: '2026-08-28T01:00:00.000Z', result: 'mock_passed', note: 'mock_hardware_passed',
+    } as const
+    const controller = createConsolePhaseTests({
+      ...commonDependencies(common),
+      reader: { read: vi.fn(() => [record]) },
+    })
+
+    await expect(controller.get('4')).resolves.toMatchObject({
+      ok: true,
+      value: { phase: '4', latest: record, records: [record] },
+    })
+  })
+
   it('defaults to Phase 0, reads phase 0, and preserves the existing Phase 0 payload', async () => {
     const common = makeCommon()
     const read = vi.fn(() => [olderRecord, latestRecord])

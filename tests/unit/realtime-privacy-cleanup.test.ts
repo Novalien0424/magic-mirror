@@ -213,6 +213,13 @@ type ExistingConsoleIpcChannelKey =
   | 'phaseTests'
   | 'avatarRuntime'
   | 'avatarControl'
+  | 'runScene'
+  | 'stopScenes'
+  | 'sceneStatus'
+  | 'uploadMusic'
+  | 'uploadVisual'
+  | 'finalizeVisual'
+  | 'cancelVisual'
   | 'ready'
 
 const TRANSCRIPT_SENTINEL = 'synthetic-transcript-sentinel'

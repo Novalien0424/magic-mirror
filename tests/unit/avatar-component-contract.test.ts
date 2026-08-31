@@ -25,6 +25,7 @@ describe('portrait visitor avatar component', () => {
 
     expect(component).toContain('avatar_static_fallback')
     expect(component).toContain('avatar-stage__fallback')
+    expect(component).toContain('forceFallback')
   })
 
   it('stops both actual and recorded output at the interrupt boundary', () => {
@@ -50,5 +51,13 @@ describe('portrait visitor avatar component', () => {
     expect(media).toContain("output.audioElement.addEventListener('waiting', noteRealtimeUnderrun)")
     expect(media).toContain("output.audioElement.addEventListener('stalled', noteRealtimeUnderrun)")
     expect(media).toContain('atLoopBoundary')
+  })
+
+  it('routes managed scene music through an analyser and reports observed output activity', () => {
+    const media = read('src/renderer/avatar/audio/avatar-media-controller.ts')
+
+    expect(media).toContain('musicSource.connect(musicAnalyser)')
+    expect(media).toContain("input.eventSink('avatar_music_analyser_active')")
+    expect(media).toContain("input.eventSink('avatar_music_analyser_inactive')")
   })
 })

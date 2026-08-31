@@ -112,3 +112,25 @@ body {
   color: #ffb4a2;
   opacity: 1;
 }
+
+.scene-visual {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-visual__media {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.scene-visual__media--contain {
+  object-fit: contain;
+}
+
+.scene-visual__media--cover {
+  object-fit: cover;
+}

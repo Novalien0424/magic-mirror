@@ -14,6 +14,7 @@ import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 const EXPECTED_TABS = [
   'Overview',
   'Avatar / Audio',
+  'Scenes',
   'Simulator',
   'Events',
   'Phase Tests',
@@ -155,7 +156,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
   it('renders Config with only safe fields and no credential or model-value control', () => {
     const html = renderConsole()
     const config = contractPage('config')
-    const configSource = sourceSection('function ConfigPanel', 'function ModelsPanel')
+    const configSource = sourceSection('function ConfigPanel', 'type SceneActionKind')
 
     expect(typeof ConfigPanel).toBe('function')
     expect(config).toEqual(expect.objectContaining({
@@ -211,7 +212,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
       roleCount: 3,
       reason: 'cause=all_configured_ids_observed',
     })
-    const configSource = sourceSection('function ConfigPanel', 'function ModelsPanel')
+    const configSource = sourceSection('function ConfigPanel', 'type SceneActionKind')
     const modelsSource = sourceSection('function ModelsPanel', 'export function App')
 
     expect(configSource).toMatch(/changed paths|changedPaths/i)
@@ -250,7 +251,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models UI RED contract', () => {
   it('keeps the Config/Models view contract free of provider calls, credentials, and privacy-bearing output', () => {
     const config = contractPage('config')
     const models = contractPage('models')
-    const configSource = sourceSection('function ConfigPanel', 'function ModelsPanel')
+    const configSource = sourceSection('function ConfigPanel', 'type SceneActionKind')
     const modelsSource = sourceSection('function ModelsPanel', 'export function App')
     const serializedContracts = JSON.stringify({ config, models })
 

@@ -36,10 +36,13 @@ const PHASE_TEST_V4_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
 const PHASE_TEST_V5_DDL =
   "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2', '3')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5')) OR (phase = '3' AND demo_id IN ('P3-D1', 'P3-D2', 'P3-D3', 'P3-D4'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2', '3') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
+const PHASE_TEST_V6_DDL =
+  "CREATE TABLE phase_test_records (sequence INTEGER PRIMARY KEY AUTOINCREMENT, phase TEXT NOT NULL CHECK (phase IN ('0', '1', '2', '3', '4')), demo_id TEXT NOT NULL CHECK ((phase = '0' AND demo_id IN ('P0-D1', 'P0-D2', 'P0-D3', 'P0-D4', 'P0-D5')) OR (phase = '1' AND demo_id IN ('P1-D1', 'P1-D2', 'P1-D3', 'P1-D4', 'P1-D5', 'P1-D6')) OR (phase = '2' AND demo_id IN ('P2-D1', 'P2-D2', 'P2-D3', 'P2-D4', 'P2-D5')) OR (phase = '3' AND demo_id IN ('P3-D1', 'P3-D2', 'P3-D3', 'P3-D4')) OR (phase = '4' AND demo_id IN ('P4-D1', 'P4-D2', 'P4-D3', 'P4-D4', 'P4-D5', 'P4-D6', 'P4-D7', 'P4-D8'))), build TEXT NOT NULL, time TEXT NOT NULL, result TEXT NOT NULL CHECK ((phase = '0' AND result IN ('passed', 'failed', 'mock_passed')) OR (phase IN ('1', '2', '3', '4') AND result IN ('passed', 'failed', 'mock_passed', 'not_executed'))), note TEXT NOT NULL)"
 const PHASE_TEST_V2_MIGRATION_ROW = { version: 2, name: 'phase_test_records' } as const
 const PHASE_TEST_V3_MIGRATION_ROW = { version: 3, name: 'phase_test_records_v3' } as const
 const PHASE_TEST_V4_MIGRATION_ROW = { version: 4, name: 'phase_test_records_v4' } as const
 const PHASE_TEST_V5_MIGRATION_ROW = { version: 5, name: 'phase_test_records_v5' } as const
+const PHASE_TEST_V6_MIGRATION_ROW = { version: 6, name: 'phase_test_records_v6' } as const
 const PHASE_TEST_COLUMNS = [
   { cid: 0, name: 'sequence', type: 'INTEGER', notnull: 0, dflt_value: null, pk: 1 },
   { cid: 1, name: 'phase', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
@@ -288,7 +291,7 @@ function assertTelemetryPrivacy(events: readonly TelemetryEventInput[], dbPath?:
       if (event.status === 'success') {
         expect(event.error_code).toBeUndefined()
         expect(event.reason).toBe(
-          'schema_version=5;foreign_keys=on;journal_mode=wal;integrity=ok',
+          'schema_version=6;foreign_keys=on;journal_mode=wal;integrity=ok',
         )
       } else {
         const causes = OPEN_FAILURE_CAUSES[event.error_code ?? '']
@@ -301,7 +304,7 @@ function assertTelemetryPrivacy(events: readonly TelemetryEventInput[], dbPath?:
     } else if (event.event === 'sqlite_migration') {
       if (event.status === 'success') {
         expect(event.error_code).toBeUndefined()
-        expect(event.reason).toBe('version=5;name=phase_test_records_v5')
+        expect(event.reason).toBe('version=6;name=phase_test_records_v6')
       } else {
         expect(event.error_code).toBe('sqlite_migration_failed')
         expect(event.reason).toBe('cause=migration_transaction_failed')
@@ -373,7 +376,7 @@ function expectSuccessfulOpen(
     module: 'sqlite',
     source: 'runtime',
     status: 'success',
-    reason: 'schema_version=5;foreign_keys=on;journal_mode=wal;integrity=ok',
+    reason: 'schema_version=6;foreign_keys=on;journal_mode=wal;integrity=ok',
   })
   assertTelemetryPrivacy(events, dbPath)
 }
@@ -445,13 +448,18 @@ async function seedPersistentDatabase(dbPath: string, kind: SeedKind): Promise<v
       database.exec('INSERT INTO phase_test_records SELECT * FROM phase_test_records_v4')
       database.exec('DROP TABLE phase_test_records_v4')
       insert.run(PHASE_TEST_V5_MIGRATION_ROW.version, PHASE_TEST_V5_MIGRATION_ROW.name)
+      database.exec('ALTER TABLE phase_test_records RENAME TO phase_test_records_v5')
+      database.exec(PHASE_TEST_V6_DDL)
+      database.exec('INSERT INTO phase_test_records SELECT * FROM phase_test_records_v5')
+      database.exec('DROP TABLE phase_test_records_v5')
+      insert.run(PHASE_TEST_V6_MIGRATION_ROW.version, PHASE_TEST_V6_MIGRATION_ROW.name)
     } else if (kind === 'gap') {
       insert.run(1, BASELINE_ROW.name)
       insert.run(3, 'gap_marker')
     } else if (kind === 'unknown') {
       insert.run(1, 'unknown_migration')
     } else if (kind === 'future') {
-      insert.run(6, 'future_migration')
+      insert.run(7, 'future_migration')
     }
   } finally {
     database.close()
@@ -499,11 +507,11 @@ function makeFakeDriverHarness(
   let factoryCalls = 0
   let closeCalls = 0
   let tableExists = false
-  let phaseTableVersion: 'v2' | 'v3' | 'v4' | 'v5' | null = null
+  let phaseTableVersion: 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | null = null
   let migrationRows: SqliteDatabaseRow[] = []
   let transactionSnapshot: {
     tableExists: boolean
-    phaseTableVersion: 'v2' | 'v3' | 'v4' | 'v5' | null
+    phaseTableVersion: 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | null
     migrationRows: SqliteDatabaseRow[]
   } | null = null
 
@@ -523,7 +531,9 @@ function makeFakeDriverHarness(
         ? PHASE_TEST_V3_DDL
         : phaseTableVersion === 'v4'
           ? PHASE_TEST_V4_DDL
-          : PHASE_TEST_V5_DDL,
+          : phaseTableVersion === 'v5'
+            ? PHASE_TEST_V5_DDL
+            : PHASE_TEST_V6_DDL,
   })
   const columnRows: readonly SqliteDatabaseRow[] = [
     { cid: 0, name: 'version', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 1 },
@@ -574,6 +584,12 @@ function makeFakeDriverHarness(
     ) {
       operations.push('insert_phase_migration')
       migration = { ...PHASE_TEST_V5_MIGRATION_ROW }
+    } else if (
+      version === PHASE_TEST_V6_MIGRATION_ROW.version
+      && name === PHASE_TEST_V6_MIGRATION_ROW.name
+    ) {
+      operations.push('insert_phase_migration')
+      migration = { ...PHASE_TEST_V6_MIGRATION_ROW }
     } else {
       operations.push('other_run')
       return
@@ -655,6 +671,12 @@ function makeFakeDriverHarness(
         phaseTableVersion = 'v5'
         return
       }
+      if (statement.includes(normalizeSql(PHASE_TEST_V6_DDL))) {
+        operations.push('create_phase_records')
+        if (options.migration === 'ddl') fail()
+        phaseTableVersion = 'v6'
+        return
+      }
       if (statement.startsWith('alter table phase_test_records rename to phase_test_records_v2')) {
         operations.push('alter')
         return
@@ -664,6 +686,10 @@ function makeFakeDriverHarness(
         return
       }
       if (statement.startsWith('alter table phase_test_records rename to phase_test_records_v4')) {
+        operations.push('alter')
+        return
+      }
+      if (statement.startsWith('alter table phase_test_records rename to phase_test_records_v5')) {
         operations.push('alter')
         return
       }
@@ -680,6 +706,10 @@ function makeFakeDriverHarness(
         return
       }
       if (statement.startsWith('drop table phase_test_records_v4')) {
+        operations.push('drop')
+        return
+      }
+      if (statement.startsWith('drop table phase_test_records_v5')) {
         operations.push('drop')
         return
       }
@@ -859,7 +889,7 @@ function expectExactPhaseTable(snapshot: PersistentSnapshot): void {
   const phaseTable = snapshot.objects.find((row) => row.name === 'phase_test_records')
   expect(phaseTable).toBeDefined()
   if (phaseTable === undefined) return
-  expect(normalizeSql(phaseTable.sql as string)).toBe(normalizeSql(PHASE_TEST_V5_DDL))
+  expect(normalizeSql(phaseTable.sql as string)).toBe(normalizeSql(PHASE_TEST_V6_DDL))
   expect(snapshot.phaseColumns).toEqual(PHASE_TEST_COLUMNS)
   expect(snapshot.phaseIndexes).toEqual([])
   expect(snapshot.phaseForeignKeys).toEqual([])
@@ -873,6 +903,7 @@ function expectExactValidSchema(
     { ...PHASE_TEST_V3_MIGRATION_ROW },
     { ...PHASE_TEST_V4_MIGRATION_ROW },
     { ...PHASE_TEST_V5_MIGRATION_ROW },
+    { ...PHASE_TEST_V6_MIGRATION_ROW },
   ],
 ): void {
   expectOnlyCurrentSchemaObjects(snapshot)
@@ -944,7 +975,7 @@ describe('SQLite service public contract', () => {
     const options: SqliteServiceOptions = { dbPath, telemetry: telemetry.telemetry }
     const result: Result<SqlitePhaseTestService, SqliteFailure> = openTracked(options)
 
-    expect(SQLITE_SCHEMA_VERSION).toBe(5)
+    expect(SQLITE_SCHEMA_VERSION).toBe(6)
     expect(Object.keys(result).sort()).toEqual(['ok', 'value'])
     expect(result.ok).toBe(true)
     if (!result.ok) {
@@ -984,7 +1015,7 @@ describe('SQLite service public contract', () => {
     expect(existsSync(join(directory, 'alternate.sqlite'))).toBe(false)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'success',
-      reason: 'version=5;name=phase_test_records_v5',
+      reason: 'version=6;name=phase_test_records_v6',
     })
     expectEvent(telemetry.events, 'sqlite_integrity_check', {
       status: 'success',
@@ -1017,7 +1048,7 @@ describe('SQLite service public contract', () => {
     expect(secondTelemetry.events.some((event) => event.event === 'sqlite_migration')).toBe(false)
     expectEvent(secondTelemetry.events, 'sqlite_open', {
       status: 'success',
-      reason: 'schema_version=5;foreign_keys=on;journal_mode=wal;integrity=ok',
+      reason: 'schema_version=6;foreign_keys=on;journal_mode=wal;integrity=ok',
     })
     expect(second.value.close()).toEqual({ ok: true, value: undefined })
 
@@ -1045,7 +1076,7 @@ describe('SQLite service public contract', () => {
     readyCopy.schemaVersion = 99
     expect(result.value.health()).toEqual({
       status: 'ready',
-      schemaVersion: 5,
+      schemaVersion: 6,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -1067,7 +1098,7 @@ describe('SQLite service public contract', () => {
     failedCopy.failure.reason = 'driver_close_failed'
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 5,
+      schemaVersion: 6,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -1095,7 +1126,7 @@ describe('SQLite persistent schema and migration contract', () => {
     expectReadyHealth(result.value, dbPath)
     expectEvent(telemetry.events, 'sqlite_migration', {
       status: 'success',
-      reason: 'version=5;name=phase_test_records_v5',
+      reason: 'version=6;name=phase_test_records_v6',
     })
     expect(result.value.close()).toEqual({ ok: true, value: undefined })
 
@@ -1176,7 +1207,7 @@ describe('SQLite persistent schema and migration contract', () => {
     expectUnchangedV1Fixture(snapshot, [{ version: 1, name: 'unknown_migration' }])
   })
 
-  it('rejects true future version 6 without downgrading it', async () => {
+  it('rejects true future version 7 without downgrading it', async () => {
     const { dbPath } = await makeTemporaryDatabasePath()
     await seedPersistentDatabase(dbPath, 'future')
     const telemetry = makeTelemetryHarness()
@@ -1188,7 +1219,7 @@ describe('SQLite persistent schema and migration contract', () => {
     })
     expectPrimaryOpenFailure(telemetry.events, failure, dbPath)
     const snapshot = await inspectPersistentDatabase(dbPath)
-    expectUnchangedV1Fixture(snapshot, [{ version: 6, name: 'future_migration' }])
+    expectUnchangedV1Fixture(snapshot, [{ version: 7, name: 'future_migration' }])
   })
 
   it('maps a real missing-parent open failure without creating the parent or an alternate file', async () => {
@@ -1419,7 +1450,7 @@ describe('SQLite deterministic failure contract', () => {
     expect(Object.keys(firstClose).sort()).toEqual(['error', 'ok'])
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 5,
+      schemaVersion: 6,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',
@@ -1454,7 +1485,7 @@ describe('SQLite telemetry isolation and privacy', () => {
     expect(() => result.value.close()).not.toThrow()
     expect(result.value.health()).toEqual({
       status: 'failed',
-      schemaVersion: 5,
+      schemaVersion: 6,
       journalMode: 'wal',
       foreignKeys: true,
       integrity: 'ok',

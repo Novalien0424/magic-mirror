@@ -1,12 +1,14 @@
 # 魔鏡 AI Avatar：Software PRD
 
-**版本：** 0.3.1  
-**日期：** 2026-08-16  
+**版本：** 0.3.2
+**日期：** 2026-08-28
 **狀態：** Build-ready baseline  
 **產品類型：** 單一私人招待所、單場域客製 Prototype  
-**相關文件：** `Magic_Mirror_Tech_Spec_v0.3.md`、`Magic_Mirror_Implementation_Plan_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
+**相關文件：** `Magic_Mirror_Tech_Spec_v0.3.md`、`Magic_Mirror_Implementation_Plan_v0.3.md`、`Magic_Mirror_Phase4_UIUX_Design_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
 
 > **v0.3.1（2026-08-16）：** 依 stack adversarial review 校正兩處產品層敘述——wake 遙測改記 keyword 與設定 threshold（所選 KWS 引擎不輸出 per-event confidence，產品不得宣稱）；embedding 版本改以 detector＋recognition model 成對記錄。技術層修訂見 Tech Spec 與 Implementation Plan 同日版本。
+
+> **v0.3.2（2026-08-28）：** Phase 4 Scenes 改為由 Console 管理咒語、可重用 Scene Actions／Skills 與 duration-driven stages；加入逐字 Avatar dialogue、Cubism motion／expression、實體效果 preset、action feedback 能力及本機音樂上傳需求。Stage 仍是小型線性 timeline，不擴張為通用 workflow engine。
 
 ---
 
@@ -288,7 +290,11 @@ Phase exit criteria 用來判斷是否能前進，不表示正式執行時每個
 - 只有 normalized final transcript 完整等於 normalized spell 才觸發。
 - Partial、相似語意、咒語加上否定或其他句子均不觸發。
 - 每個 user turn 最多觸發一次。
-- Scene 使用具名 presets 與簡單 timeline；LLM 不產生任意 DMX／煙霧參數。
+- 咒語、Scene、Stage 與可重用 Scene Action／Skill 都由 Console 建立、編輯、停用、測試及連結，不寫死在程式中的固定 sequence。
+- Scene 是可排序的線性 Stage 清單；每個 Stage 必須設定 `Duration`，Stage 進入時啟動其連結 actions，時間耗盡後開始下一個 Stage。
+- Stage 到期不會自動還原上一個 action。需要關燈、停煙、停止音樂或把 value 歸零時，主持人必須在後續 Stage 明確連結 `OFF`、`stop`、`fade` 或對應 preset。
+- Scene Action／Skill 只可使用核准的 typed capability 與具名 preset；支援基本 `ON`／`OFF`，adapter 有能力時可支援受限 value。LLM 不產生任意 DMX channel、煙霧秒數、設備參數或檔案路徑。
+- Action feedback 若存在，需區分 command 已送出、已確認、實際完成、失敗與 timeout；feedback 用於 Console 與 Scene result，不改變 `Duration` 驅動的 Stage 排程。
 - Adapter failure 產生 Console event，其他對話與未失敗功能繼續。
 
 ### US-SCENE-002｜音樂與對話共存（Must）
@@ -301,6 +307,22 @@ Phase exit criteria 用來判斷是否能前進，不表示正式執行時每個
 - AI 說話時音樂自動降低音量，結束後恢復。
 - 支援 play、stop、fade in、fade out。
 - 進入 Dormant 或 OfflineLoop 前停止／淡出場景音樂。
+
+### US-SCENE-003｜Console 管理咒語、Actions 與 Scenes（Must）
+
+身為主持人，我希望不改程式就能組合咒語、Avatar 演出、音樂與實體效果，並在發布前逐項測試。
+
+**驗收：**
+
+- Console 可新增、修改、啟用、停用及刪除咒語與 Scene，並可重排 Scene 內的 Stages；每個啟用咒語包含唯一 ID、顯示名稱、完整 phrase、linked Scene 與 cooldown。
+- Console 在 Save Draft／Test Draft／Publish 邊界阻止空白 phrase、normalized collision、遺失連結、未知 action、無效 duration、未知 asset／motion／expression／preset 等設定進入 active config。
+- Action library 支援 `avatar_dialogue`、`avatar_motion`、`avatar_expression`、`lighting`、`fog` 與 `music`；同一 action 可被多個 Stage／Scene 連結。等待只由 Stage `Duration` 表達，不提供 `delay` action。
+- `avatar_dialogue` 保存主持人撰寫的 text。執行時只要求目前 Realtime model 逐字說出該 text，不讓模型改寫或自行加入內容；產品接受模型指令遵循而不另做逐字比對、重試或第二套 TTS。
+- `avatar_motion` 連結 Cubism `.motion3.json` motion；`avatar_expression` 連結 `.exp3.json` expression。兩者與 dialogue 分開設定，嘴型仍只由實際 audible output 驅動。
+- 每個 Stage 可連結零到多個 actions；同一 Stage 的 actions 於 Stage 進入時一起啟動。下一個 Stage 只由目前 Stage 的 `Duration` 到期觸發，不等待 action feedback，也不因提早完成而提早進入。
+- Console 可 Save Draft、Test Draft、Publish、Run Published Scene 與 Stop All；runtime／Phase Test evidence 統一記錄 action 的 dispatch／acknowledgement／completion 能力、實際狀態、duration、timeout、failure reason 與 Scene aggregate result。
+- Console 可上傳核准的本機音樂檔、驗證支援格式，並以穩定 asset ID 連結到 music action；實際播放由 published Scene 驗證，runtime config 不保存任意外部檔案路徑。仍被 action 引用的 asset 不可靜默刪除或替換。
+- 變更遵循既有 Draft／Test／Publish／Previous config contract；未通過驗證或測試的 Draft 不取代目前 active Scenes。
 
 ### US-IDLE-001｜五分鐘或口頭休眠（Must）
 
@@ -358,7 +380,13 @@ Phase exit criteria 用來判斷是否能前進，不表示正式執行時每個
 
 - **FR-SCENE-01：** Spell matcher 是本機 exact matcher，不使用 LLM semantic intent。
 - **FR-SCENE-02：** Lighting、Fog、Music 各有一個小型 typed adapter 與 mock。
-- **FR-SCENE-03：** Scene timeline 只支援 Phase 1 需要的 cue、delay、preset、cooldown 與 timeout，不建立通用 workflow engine。
+- **FR-SCENE-03：** Scene 是可排序的線性 Stage 清單；每個 Stage 有必填 `Duration` 與 action references。Stage 到期只負責開始下一個 Stage，不隱含停止、反轉或重設既有 action。
+- **FR-SCENE-04：** Scene Action／Skill 是可重用、可連結的核准 definition；Phase 1 action kinds 限於 Avatar dialogue、Cubism motion、Cubism expression、Lighting、Fog 與 Music。等待只由 Stage `Duration` 表達，不提供獨立 delay action、arbitrary script、DAG、branching 或通用 workflow editor。
+- **FR-SCENE-05：** Physical action 使用 adapter 宣告的 typed `ON`／`OFF`、optional bounded value 與具名 preset；模型與 Scene text 都不能直接指定硬體參數。
+- **FR-SCENE-06：** Adapter 宣告其 feedback capability 為 dispatch-only、acknowledgement 或 completion。Runtime 統一回報 dispatched、acknowledged、completed、failed 或 timeout，但 Stage advancement 永遠只由 `Duration` 決定。
+- **FR-SCENE-07：** Avatar dialogue 以一次性的逐字指令交給目前 Realtime session；系統信任模型遵循，不建立內容驗證／重試 loop。Dialogue 的實際 audible-output end、Cubism motion callback 與 non-looping music `ended` 可作 completion feedback。
+- **FR-SCENE-08：** Console 提供 spell／action／stage／scene CRUD、linking、reorder、validation、preview、focused test 與 Draft／Test／Publish；active config 必須保持可回復。
+- **FR-SCENE-09：** Music upload 匯入 app 管理的本機 asset storage，驗證格式並以 asset ID 連結；不得把任意 operator filesystem path 暴露給模型或直接作 runtime action input。
 
 ### 9.5 記憶架構決策
 
@@ -464,7 +492,7 @@ Telemetry queue、RAM timeline與本機 rotating logs 都必須有固定上限�
 | Wake phrase | 主要詞與可接受變體 | 3～6 音節、避開日常高頻句 |
 | OfflineLoop | 固定特效影片 | 本機 H.264／H.265，可無縫循環、無需網路 |
 | Spells | 每個場景完整咒語 | 先定 3 條不常出現在日常談話的完整句 |
-| Scenes | 燈光、煙霧、音樂 cue timing | 先做 3 個代表場景 |
+| Scenes | Avatar、燈光、煙霧、音樂的 Stage duration 與 action linking | 先做 3 個代表場景 |
 | Avatar | 分層 PSD、Live2D rig、motions／expressions | 先一個角色，不做換裝系統 |
 | Hardware | Audio、Camera、DMX／Fog control interface | 依 adapter contract 選型 |
 

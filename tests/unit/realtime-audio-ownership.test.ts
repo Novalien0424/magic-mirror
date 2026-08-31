@@ -46,6 +46,7 @@ function makeSession(
     close: vi.fn<RealtimeSessionHandle["close"]>(async (reason) => {
       await close(reason);
     }),
+    speakVerbatim: vi.fn<RealtimeSessionHandle["speakVerbatim"]>(() => undefined),
     onOutputAudioBufferStopped: vi.fn<RealtimeSessionHandle["onOutputAudioBufferStopped"]>(
       () => () => undefined,
     ),

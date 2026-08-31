@@ -1,7 +1,7 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-28 — Phase 3 Avatar/Audio is accepted as a
-Windows development checkpoint; Phase 4 Scenes is next.**
+**Current dashboard — 2026-08-31 — Phase 3 Avatar/Audio remains accepted as a
+Windows development checkpoint; Phase 4 Scenes is ready for Windows human testing.**
 Phase 0 is accepted and tagged `phase0-v0.3.1` at `9237dc7`. Phase 1 product
 tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
 released as `phase1-v0.3.1`. Phase 2 is released as `phase2-v0.3.1`; it
@@ -11,8 +11,9 @@ evidence, and current-host corpus evaluator. The runtime now selects the hashed
 `sherpa-magic-mirror-win-v2` package; native load and real EPOS microphone
 acquisition pass. The Mac mini M4 port and target-specific
 revalidation remain deferred until PC development is complete. Phase 3 is
-released as `phase3-v0.3.1`; Phases 4–7 have not started, and their earlier
-prep-only lanes remain non-phase evidence.
+released as `phase3-v0.3.1`. Phase 4 has started but is not accepted or tagged;
+Phases 5–7 have not started, and their earlier prep-only lanes remain non-phase
+evidence.
 Canonical invariants 1–12 remain authoritative; control-plane rules and current authority are in
 [`AGENTS.md`](AGENTS.md), and durable rulings are in [`DECISIONS.md`](DECISIONS.md).
 The automated live harness launches the actual `npm run dev` /
@@ -22,6 +23,82 @@ metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
 failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
+
+## Clock-out handoff — 2026-08-31
+
+- Phase 3 remains closed at `phase3-v0.3.1`. Phase 4 remains active, unaccepted,
+  untagged, and uncommitted. Preserve the current dirty worktree and do not infer
+  Phase 4 completion from deterministic or mock evidence.
+- Codex plugin marketplaces were refreshed before reboot with
+  `codex plugin marketplace upgrade --json`. The Git-backed
+  `claude-in-codex` marketplace refreshed; `superpowers-dev` was already
+  current. A second invocation returned no upgraded roots and no errors.
+  Installed Git plugin versions remained `claude-in-codex 0.8.0` and
+  `superpowers 6.3.0`. Local, bundled, curated, and primary-runtime plugins are
+  host-managed and are reloaded/refreshed by the Codex host rather than by the
+  Git-marketplace upgrade command.
+- After reboot, first run `codex --version`, `codex plugin list --json`, and
+  `codex plugin marketplace upgrade --json`. The last command should report no
+  errors and normally no upgraded roots. This is a reload check, not a product
+  phase gate.
+- The approved Scene media extension is implemented in the current dirty
+  worktree. The typed model is an ordered Scene of Stages with one end condition
+  per Stage (`duration`, `video_complete`, or final `until_stopped`), reusable
+  image/video/music/Avatar/hardware actions, strict authoring validation, and a
+  single serialized runtime owner for replacement, stop, timeout, and cleanup.
+- Managed visual import uses a pending-copy/probe/finalize transaction, hashes
+  bytes into opaque managed storage, never publishes source paths, and serves
+  published or pending media through the private protocol. Console exposes only
+  metadata and the minimum authoring controls, warnings, estimated maximum, run
+  status, and Stop All.
+- Mirror presentation keeps the Avatar until image decode or video playback is
+  ready, fences stale media events, and restores the lifecycle-appropriate
+  Avatar after completion, wake-stop, replacement, failure, Maintenance, or
+  shutdown. Embedded video audio and managed BGM use the same ducked background
+  bus while Realtime dialogue stays on its actual-output path.
+- Automated Windows evidence on 2026-08-31 is green: changed-boundary tests
+  `286/286`; node and web typechecks exit `0`; production build exit `0`; full
+  repository suite `815/815`; real Electron smoke including crash recovery
+  `4/4`; and deterministic `npm run test:phase4:qa` exit `0` with 7 motions,
+  5 expressions, 3 legacy Scenes, 5 visual cases, 28 screenshots, and the music
+  analyser active. The successful artifact root is
+  `.artifacts/phase4-qa/2026-08-31T11-03-36-734Z`.
+- The deterministic visual cases cover still, finite completion and Avatar
+  return, silent loop plus external BGM and exact wake-stop, next-Scene
+  replacement with stale-event rejection, embedded audio, missing-media
+  failure cleanup, and non-black fallback. Sample screenshots were visually
+  inspected after the run.
+- Both persistent Windows Private-profile inbound firewall rules were verified
+  enabled/allow and resolved exactly to the canonical
+  `node_modules\electron\dist\electron.exe` before the successful QA run.
+- Phase 4 is ready for Windows human real testing using
+  `docs/testing/phase4-scene-media-windows-checklist.md`. Human observations are
+  not yet executed. Phase 4 remains active, unaccepted, untagged, and
+  uncommitted; physical lighting/fog, Mac readiness, and live Realtime dialogue
+  ducking remain explicitly outside the deterministic evidence.
+
+## Clock-out handoff — 2026-08-30
+
+- Phase 3 remains closed and released as `phase3-v0.3.1`; no new Phase 3 tag,
+  promotion, or reopened exit claim was made. Phase 4 remains the active phase
+  and is not accepted or tagged.
+- The latest completed evidence remains the 2026-08-29 Windows gate: focused
+  Phase 3 regression `68/68`, repository regression `760/760`, both TypeScript
+  targets and production build exit `0`, full Cubism/music/scene QA exit `0`,
+  and live Realtime dialogue with actual-output mouth movement exit `0`.
+- A read-only Console audit identified two honest manual-QA gaps: the
+  `Avatar / Audio` expression buttons still expose stale `F01`–`F08` labels
+  instead of the Ren manifest's `exp_01`–`exp_05`, and Console has no dedicated
+  avatar-asset-failure injection for visually exercising the static fallback.
+  Neither gap is recorded as passed from Console evidence; automated fallback
+  coverage remains green.
+- Resume with the smallest focused Console correction for those two QA gaps,
+  then rerun the manual Phase 3 Console checklist as post-closure regression.
+  Continue Phase 4 acceptance only afterward. Lighting and fog remain mock-only
+  until physical hardware is connected; Mac deployment evidence remains
+  deferred under the Windows-first ruling.
+- The Phase 4 implementation worktree remains uncommitted. Preserve all current
+  changes; do not retag Phase 3 or promote Phase 4 from mock-device evidence.
 
 ## Phase 3 closure — accepted 2026-08-28
 
@@ -53,6 +130,24 @@ passes the real provider path.
   near-60-FPS evidence remains deferred under the Windows-first ruling.
   MotionSync and a final custom Cubism rig are later quality enhancements, not
   retroactive Phase 3 gates.
+
+### Phase 3 post-closure regression — 2026-08-29
+
+- The accepted `phase3-v0.3.1` tag is preserved; no replacement tag or revised
+  Phase 3 acceptance is claimed. The focused Windows avatar/audio boundary
+  passed `11/11` files and `68/68` tests. The repository regression passed
+  `76/76` files and `760/760` tests; both TypeScript targets and the production
+  Electron Vite build exited `0`.
+- A Phase 4 integration QA reused the accepted Phase 3 renderer and actual-output
+  audio path. All seven exported Cubism motion groups and all five expressions
+  passed with 21 non-black, changing-frame captures. A live configured-provider
+  run connected successfully, accepted both configured verbatim dialogue
+  actions, completed the four-stage scene, and drove actual-output lip sync to a
+  sampled mouth-open maximum of `0.303`.
+- This is Windows post-closure regression evidence and Phase 4 integration
+  evidence. It does not reopen Phase 3, promote Phase 4, claim physical fog/light
+  execution, or claim Mac deployment readiness. Dialogue/transcript content and
+  audio remained RAM-only; recorded evidence is metadata-only.
 
 ## Phase 1 closure — accepted 2026-08-27
 
@@ -288,9 +383,9 @@ failure never silently substitutes another ID.
 
 ## Pending work — exact order
 
-1. Start Phase 4 Scenes: approve three exact spells and three presets, then
-   integrate the existing exact matcher with scene timelines and the
-   Avatar/Lighting/Fog/Music adapters.
+1. Finish Phase 4 Scenes: review the configurable spell/scene Console UX and
+   close the remaining physical-adapter evidence when hardware is available;
+   do not promote the phase from mock-device evidence alone.
 2. Continue sequentially through Phase 5 Identity/Profiles and Phase 6 Memory.
 3. In Phase 7, execute the deferred P2-D2 offline-wake check, representative
    multi-speaker positive corpus, 19/20 acceptance sample, and 30-minute
@@ -449,9 +544,8 @@ After that gate, the remaining plain-language needs are:
 
 - Phase 2: the approved phrase is `魔鏡阿魔鏡`; provide or approve the real
   corpus and Windows microphone time for the PC model selection and demos.
-- Phase 3: observe real Realtime-output lipsync, interruption, ten-minute
-  stability, and perceived avatar/audio quality on the Windows candidate. The
-  final character asset remains a Phase 7 deliverable.
+- Phase 3: no remaining Windows checkpoint intervention. The final custom
+  character asset remains a later Phase 8 deliverable.
 - Phase 4: approve the final spells and presets, then connect and observe the
   adapters and hardware.
 - After PC development: provide target-Mac, operator, and device time for the

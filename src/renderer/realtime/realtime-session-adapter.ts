@@ -21,7 +21,8 @@ import {
 
 type SessionEventListener = (...args: unknown[]) => void
 type OutputAudioBufferStoppedListener = () => void
-type InputTranscriptCompletedListener = (transcript: string) => void
+type InputItemCreatedListener = (itemId: string) => void
+type InputTranscriptCompletedListener = (input: Readonly<{ itemId: string; transcript: string }>) => void
 
 interface OutputAudioBufferStoppedSubscription {
   readonly listener: OutputAudioBufferStoppedListener
@@ -30,6 +31,7 @@ interface SessionLike {
   connect(options: { readonly apiKey: string }): void | PromiseLike<void>
   interrupt(): void | PromiseLike<void>
   close(): void | PromiseLike<void>
+  sendMessage(message: string): void
   on(eventName: string, listener: SessionEventListener): unknown
 }
 
@@ -97,7 +99,9 @@ export interface RealtimeSessionHandle {
   connect(): Promise<void>
   interrupt(): Promise<void>
   close(reason: string): Promise<void>
+  speakVerbatim(text: string): void
   onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
+  onInputItemCreated?(listener: InputItemCreatedListener): () => void
   onInputTranscriptCompleted?(listener: InputTranscriptCompletedListener): () => void
 }
 
@@ -480,6 +484,8 @@ export function createRealtimeSession(
   let transientClientSecret: string | null = input.clientSecret
   const outputAudioBufferStoppedSubscriptions = new Set<OutputAudioBufferStoppedSubscription>()
   const inputTranscriptCompletedListeners = new Set<InputTranscriptCompletedListener>()
+  const inputItemCreatedListeners = new Set<InputItemCreatedListener>()
+  const createdInputItemIds = new Set<string>()
 
   const emitReady = (reason: RealtimeMetadataReason): void => {
     if (closed || readyEmitted || failureReported) return
@@ -681,12 +687,37 @@ export function createRealtimeSession(
       notifyAudioActivity('speech_stopped')
       return
     }
+    if (type === 'input_audio_buffer.committed') {
+      notifyInputItemCreated(readProperty(event, 'item_id'))
+      return
+    }
+    if (type === 'conversation.item.created') {
+      const item = readProperty(event, 'item')
+      if (readProperty(item, 'role') === 'user') notifyInputItemCreated(readProperty(item, 'id'))
+      return
+    }
     if (type === 'conversation.item.input_audio_transcription.completed') {
       const transcript = readProperty(event, 'transcript')
-      if (typeof transcript !== 'string' || transcript.trim().length === 0) return
+      const itemId = readProperty(event, 'item_id')
+      if (
+        typeof itemId !== 'string'
+        || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)
+        || typeof transcript !== 'string'
+        || transcript.trim().length === 0
+      ) {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'transcript_unavailable',
+          sessionGeneration,
+          createdAt,
+        )
+        return
+      }
       for (const listener of [...inputTranscriptCompletedListeners]) {
         try {
-          listener(transcript)
+          listener(Object.freeze({ itemId, transcript }))
         } catch {
           emitMetadata(
             input,
@@ -804,6 +835,8 @@ export function createRealtimeSession(
     closed = true
     outputAudioBufferStoppedSubscriptions.clear()
     inputTranscriptCompletedListeners.clear()
+    inputItemCreatedListeners.clear()
+    createdInputItemIds.clear()
     let closeFailed = false
     try {
       await session.close()
@@ -812,6 +845,38 @@ export function createRealtimeSession(
     }
     const disconnectReason = stableCloseReason(reason)
     emitDisconnected(closeFailed ? 'cause=close_failed' : disconnectReason)
+  }
+
+  const notifyInputItemCreated = (itemId: unknown): void => {
+    if (typeof itemId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) return
+    if (createdInputItemIds.has(itemId)) return
+    createdInputItemIds.add(itemId)
+    for (const listener of [...inputItemCreatedListeners]) {
+      try {
+        listener(itemId)
+      } catch {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'input_item_listener_failed',
+          sessionGeneration,
+          createdAt,
+        )
+      }
+    }
+  }
+
+  function speakVerbatim(text: string): void {
+    if (closed) throw new RealtimeSessionAdapterError('session_closed')
+    if (text.trim().length === 0 || text.length > 1000) {
+      throw new RealtimeSessionAdapterError('scene_dialogue_invalid')
+    }
+    session.sendMessage(
+      'The entire audible response must be exactly the following operator-authored text. '
+        + 'Do not add, omit, translate, paraphrase, or acknowledge it:\n'
+        + text,
+    )
   }
 
   function onOutputAudioBufferStopped(
@@ -846,6 +911,12 @@ export function createRealtimeSession(
     return () => inputTranscriptCompletedListeners.delete(listener)
   }
 
+  function onInputItemCreated(listener: InputItemCreatedListener): () => void {
+    if (closed) return () => {}
+    inputItemCreatedListeners.add(listener)
+    return () => inputItemCreatedListeners.delete(listener)
+  }
+
   return Object.freeze({
     realtimeSessionId: input.sessionId,
     sessionGeneration,
@@ -853,7 +924,9 @@ export function createRealtimeSession(
     getLastConnectFailureToken: () => latestConnectFailureToken,
     interrupt,
     close,
+    speakVerbatim,
     onOutputAudioBufferStopped,
+    onInputItemCreated,
     onInputTranscriptCompleted,
   })
 }

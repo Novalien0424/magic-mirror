@@ -12,6 +12,7 @@ export interface AvatarMediaSnapshot {
 
 export interface AvatarMediaController {
   setRealtimeOutput(output: RealtimeAudioOutput | null): void
+  setSceneVideoAudio(element: HTMLVideoElement | null, gain?: number): void
   handleActivity(activity: AvatarAudioActivity): void
   setLifecycle(state: LifecycleState): void
   handleCommand(command: AvatarControlCommand): void
@@ -42,7 +43,9 @@ export function createAvatarMediaController(
   input: CreateAvatarMediaControllerInput,
 ): AvatarMediaController {
   const context = new AudioContext()
-  const music = new Audio('/audio/test-music.wav')
+  const music = new Audio()
+  music.crossOrigin = 'anonymous'
+  music.src = '/audio/test-music.wav'
   music.preload = 'auto'
   music.loop = true
 
@@ -52,9 +55,17 @@ export function createAvatarMediaController(
   recordedGain.connect(context.destination)
 
   const musicSource = context.createMediaElementSource(music)
+  const musicAnalyser = context.createAnalyser()
+  musicAnalyser.fftSize = 256
   const musicGainNode = context.createGain()
-  musicSource.connect(musicGainNode)
-  musicGainNode.connect(context.destination)
+  const backgroundAnalyser = context.createAnalyser()
+  backgroundAnalyser.fftSize = 256
+  const backgroundDuckGain = context.createGain()
+  musicSource.connect(musicAnalyser)
+  musicAnalyser.connect(musicGainNode)
+  musicGainNode.connect(backgroundAnalyser)
+  backgroundAnalyser.connect(backgroundDuckGain)
+  backgroundDuckGain.connect(context.destination)
 
   let realtimeOutput: RealtimeAudioOutput | null = null
   let voiceGain = 1
@@ -66,6 +77,11 @@ export function createAvatarMediaController(
   let recordedSource: AudioBufferSourceNode | null = null
   let recordedGeneration = 0
   let fadePauseTimer: number | null = null
+  let musicAnalysisGeneration = 0
+  let sceneMusicLoadGeneration = 0
+  let managedMusicObjectUrl: string | null = null
+  let sceneVideoSource: MediaElementAudioSourceNode | null = null
+  let sceneVideoGain: GainNode | null = null
 
   const snapshot = (): AvatarMediaSnapshot => Object.freeze({
     voiceGain,
@@ -88,8 +104,14 @@ export function createAvatarMediaController(
     if (musicPlaying && !atLoopBoundary) noteUnderrun()
   }
   const noteRealtimeUnderrun = (): void => noteUnderrun()
+  const musicPlayFailureReason = (): string =>
+    `avatar_music_play_failed:code_${music.error?.code ?? 0}:network_${music.networkState}:ready_${music.readyState}`
   music.addEventListener('waiting', noteMusicUnderrun)
   music.addEventListener('stalled', noteMusicUnderrun)
+  music.addEventListener('ended', () => {
+    musicPlaying = false
+    input.eventSink('avatar_music_completed')
+  })
 
   const ramp = (gain: GainNode, target: number, durationMs: number): void => {
     const now = context.currentTime
@@ -103,7 +125,7 @@ export function createAvatarMediaController(
     gain: {
       rampTo: (target, durationMs) => {
         effectiveMusicGain = target * musicGainSetting
-        ramp(musicGainNode, effectiveMusicGain, durationMs)
+        ramp(backgroundDuckGain, target, durationMs)
         changed()
       },
     },
@@ -130,12 +152,60 @@ export function createAvatarMediaController(
 
   const fadeAndPauseMusic = (): void => {
     musicPlaying = false
+    musicAnalysisGeneration += 1
     ducking.fadeOut()
     if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
     fadePauseTimer = window.setTimeout(() => {
       fadePauseTimer = null
       music.pause()
     }, DUCKING.fadeOutMs)
+  }
+
+  const loadManagedMusic = async (assetId: string): Promise<boolean> => {
+    const generation = ++sceneMusicLoadGeneration
+    const response = await fetch(`magic-mirror-media://music/${encodeURIComponent(assetId)}`)
+    if (!response.ok) throw new Error('managed_music_fetch_failed')
+    const blob = await response.blob()
+    if (disposed || generation !== sceneMusicLoadGeneration) return false
+    if (managedMusicObjectUrl !== null) URL.revokeObjectURL(managedMusicObjectUrl)
+    managedMusicObjectUrl = URL.createObjectURL(blob)
+    music.src = managedMusicObjectUrl
+    return true
+  }
+
+  const setSceneVideoAudio = (element: HTMLVideoElement | null, gain = 0): void => {
+    sceneVideoSource?.disconnect()
+    sceneVideoGain?.disconnect()
+    sceneVideoSource = null
+    sceneVideoGain = null
+    if (element === null || disposed) return
+    try {
+      sceneVideoSource = context.createMediaElementSource(element)
+      sceneVideoGain = context.createGain()
+      sceneVideoGain.gain.value = unit(gain)
+      sceneVideoSource.connect(sceneVideoGain)
+      sceneVideoGain.connect(backgroundAnalyser)
+      void context.resume().catch(() => input.eventSink('avatar_video_audio_resume_failed'))
+    } catch {
+      sceneVideoSource = null
+      sceneVideoGain = null
+      input.eventSink('avatar_video_audio_graph_failed')
+    }
+  }
+
+  const observeMusicSignal = (generation: number, attempt = 0): void => {
+    if (disposed || !musicPlaying || generation !== musicAnalysisGeneration) return
+    const samples = new Uint8Array(musicAnalyser.frequencyBinCount)
+    musicAnalyser.getByteTimeDomainData(samples)
+    if (samples.some((sample) => Math.abs(sample - 128) > 1)) {
+      input.eventSink('avatar_music_analyser_active')
+      return
+    }
+    if (attempt >= 39) {
+      input.eventSink('avatar_music_analyser_inactive')
+      return
+    }
+    window.setTimeout(() => observeMusicSignal(generation, attempt + 1), 50)
   }
 
   const playRecorded = async (): Promise<void> => {
@@ -175,6 +245,7 @@ export function createAvatarMediaController(
         output.audioElement.addEventListener('stalled', noteRealtimeUnderrun)
       }
     },
+    setSceneVideoAudio,
     handleActivity: (activity: AvatarAudioActivity): void => {
       if (activity === 'output_started') ducking.setSpeechActive(true)
       if (activity === 'output_stopped' || activity === 'interrupted') {
@@ -214,7 +285,60 @@ export function createAvatarMediaController(
         void context.resume().then(() => {
           ducking.restore()
           return music.play()
-        }).then(() => { musicPlaying = true }).catch(() => input.eventSink('avatar_music_play_failed'))
+        }).then(() => { musicPlaying = true }).catch(() => input.eventSink(musicPlayFailureReason()))
+        return
+      }
+      if (command.type === 'scene_music') {
+        if (command.action === 'stop') {
+          musicPlaying = false
+          musicAnalysisGeneration += 1
+          sceneMusicLoadGeneration += 1
+          if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
+          if (command.fadeDurationMs === 0) {
+            music.pause()
+            music.currentTime = 0
+            input.eventSink('avatar_music_stopped')
+            return
+          }
+          ramp(musicGainNode, 0, command.fadeDurationMs)
+          fadePauseTimer = window.setTimeout(() => {
+            fadePauseTimer = null
+            music.pause()
+            music.currentTime = 0
+            input.eventSink('avatar_music_stopped')
+          }, command.fadeDurationMs)
+          return
+        }
+        if (command.action === 'fade') {
+          musicGainSetting = unit(command.targetGain)
+          effectiveMusicGain = musicGainSetting
+          ramp(musicGainNode, effectiveMusicGain, command.durationMs)
+          changed()
+          window.setTimeout(() => input.eventSink('avatar_music_fade_completed'), command.durationMs)
+          return
+        }
+        if (fadePauseTimer !== null) {
+          window.clearTimeout(fadePauseTimer)
+          fadePauseTimer = null
+        }
+        music.loop = command.loop
+        musicGainSetting = unit(command.gain)
+        effectiveMusicGain = musicGainSetting
+        musicGainNode.gain.value = effectiveMusicGain
+        void loadManagedMusic(command.assetId).then(async (loaded) => {
+          if (!loaded) return false
+          await context.resume()
+          await music.play()
+          return true
+        }).then((played) => {
+          if (!played) return
+          musicPlaying = true
+          musicAnalysisGeneration += 1
+          const generation = musicAnalysisGeneration
+          changed()
+          input.eventSink('avatar_music_started')
+          observeMusicSignal(generation)
+        }).catch(() => input.eventSink(musicPlayFailureReason()))
         return
       }
       if (command.type === 'voice_gain') {
@@ -237,7 +361,12 @@ export function createAvatarMediaController(
       disposed = true
       stopRecorded()
       music.pause()
+      setSceneVideoAudio(null)
       musicPlaying = false
+      musicAnalysisGeneration += 1
+      sceneMusicLoadGeneration += 1
+      if (managedMusicObjectUrl !== null) URL.revokeObjectURL(managedMusicObjectUrl)
+      managedMusicObjectUrl = null
       if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
       realtimeOutput?.audioElement.removeEventListener('waiting', noteRealtimeUnderrun)
       realtimeOutput?.audioElement.removeEventListener('stalled', noteRealtimeUnderrun)

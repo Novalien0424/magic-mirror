@@ -573,6 +573,124 @@ describe('Mirror preload interrupt bridge contract', () => {
   })
 })
 
+describe('Mirror scene-action feedback transport', () => {
+  it('sends one frozen metadata-only renderer result on the dedicated channel', async () => {
+    const sends: Array<{ channel: string; payload: unknown[] }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: () => undefined,
+        removeListener: () => undefined,
+        send: (channel: string, ...payload: unknown[]) => sends.push({ channel, payload }),
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+      const bridge = exposedBridge as unknown as {
+        reportSceneAction?: (report: Record<string, unknown>) => void
+      }
+      expect(bridge.reportSceneAction).toBeTypeOf('function')
+      if (typeof bridge.reportSceneAction !== 'function') return
+
+      bridge.reportSceneAction({
+        runId: 'scene-run-1',
+        sceneId: 'scene-opening',
+        stageId: 'stage-opening',
+        actionId: 'dialogue-opening',
+        status: 'failed',
+        errorCode: 'no_active_realtime_session',
+        transcript: RAW_TRANSCRIPT,
+        audio: RAW_AUDIO,
+        guestId: RAW_GUEST_ID,
+      })
+
+      expect(sends).toHaveLength(1)
+      expect(sends[0]?.channel).toBe('mirror:report-scene-action')
+      expect(sends[0]?.payload).toHaveLength(1)
+      expect(sends[0]?.payload[0]).toEqual({
+        runId: 'scene-run-1',
+        sceneId: 'scene-opening',
+        stageId: 'stage-opening',
+        actionId: 'dialogue-opening',
+        status: 'failed',
+        errorCode: 'no_active_realtime_session',
+      })
+      expect(Object.isFrozen(sends[0]?.payload[0])).toBe(true)
+      expectNoForbiddenContent(sends)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
+  })
+
+  it('delivers correlated scene commands while rejecting malformed context', async () => {
+    type IpcListener = (event: unknown, ...payload: unknown[]) => void
+    const registrations: Array<{ channel: string; listener: IpcListener }> = []
+    let exposedBridge: Record<string, unknown> | undefined
+
+    vi.resetModules()
+    vi.doMock('electron', () => ({
+      contextBridge: {
+        exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+          exposedBridge = bridge
+        },
+      },
+      ipcRenderer: {
+        invoke: () => Promise.resolve(undefined),
+        on: (channel: string, listener: IpcListener) => registrations.push({ channel, listener }),
+        removeListener: () => undefined,
+        send: () => undefined,
+      },
+    }))
+
+    try {
+      await import('../../src/preload/mirror')
+      const bridge = exposedBridge as unknown as {
+        onAvatarControl: (listener: (command: unknown) => void) => () => void
+      }
+      const listener = vi.fn<(command: unknown) => void>()
+      bridge.onAvatarControl(listener)
+      const registration = registrations.find((entry) => entry.channel === 'mirror:avatar-control')
+      expect(registration).toBeDefined()
+      if (registration === undefined) return
+
+      const context = {
+        runId: 'scene-run-1', sceneId: 'scene-opening',
+        stageId: 'stage-opening', actionId: 'dialogue-opening',
+      }
+      const commands = [
+        { type: 'asset_failure', action: 'inject' },
+        { type: 'scene_dialogue', text: 'The mirror awakens now.', context },
+        { type: 'motion', group: 'Scene', context: { ...context, actionId: 'motion-scene' } },
+        { type: 'expression', name: 'exp_01', context: { ...context, actionId: 'expression-one' } },
+        { type: 'scene_music', action: 'play', assetId: 'music-tone', gain: 0.65, loop: false, context: { ...context, actionId: 'music-play' } },
+      ]
+      for (const command of commands) registration.listener({}, command)
+      registration.listener({}, {
+        type: 'motion', group: 'Scene',
+        context: { ...context, transcript: RAW_TRANSCRIPT },
+      })
+
+      expect(listener).toHaveBeenCalledTimes(commands.length)
+      expect(listener.mock.calls.map(([command]) => command)).toEqual(commands)
+      expect(listener.mock.calls.every(([command]) => Object.isFrozen(command))).toBe(true)
+      expectNoForbiddenContent(listener.mock.calls)
+    } finally {
+      vi.doUnmock('electron')
+      vi.resetModules()
+    }
+  })
+})
+
 describe('Mirror realtime runtime command transport', () => {
   const RUNTIME_COMMAND_CHANNEL = 'mirror:realtime-runtime-command'
 

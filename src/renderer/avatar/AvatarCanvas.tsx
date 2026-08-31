@@ -9,6 +9,7 @@ import { computePortraitLayout, type PortraitLayout } from './portrait-layout'
 
 export interface AvatarCanvasProps {
   readonly state: AvatarState
+  readonly forceFallback?: boolean
   readonly onRenderer: (renderer: CubismAvatarRenderer | null) => void
   readonly onEvent: (event: CubismAvatarEvent) => void
   readonly onMetrics: (metrics: CubismAvatarMetrics) => void
@@ -24,6 +25,7 @@ function currentLayout(): PortraitLayout {
 
 export function AvatarCanvas({
   state,
+  forceFallback = false,
   onRenderer,
   onEvent,
   onMetrics,
@@ -31,14 +33,15 @@ export function AvatarCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<CubismAvatarRenderer | null>(null)
   const [layout, setLayout] = useState<PortraitLayout>(() => currentLayout())
-  const [fallback, setFallback] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const fallback = loadFailed || forceFallback
 
   useEffect(() => {
     const onResize = (): void => {
       try {
         setLayout(currentLayout())
       } catch {
-        setFallback(true)
+        setLoadFailed(true)
       }
     }
     window.addEventListener('resize', onResize)
@@ -63,7 +66,7 @@ export function AvatarCanvas({
           eventSink: (event) => {
             if (!mounted) return
             onEvent(event)
-            if (event.status === 'failed') setFallback(true)
+            if (event.status === 'failed') setLoadFailed(true)
           },
           metricsSink: (metrics) => {
             if (mounted) onMetrics(metrics)
@@ -74,7 +77,7 @@ export function AvatarCanvas({
         return renderer.initialize()
       },
       () => {
-        if (mounted) setFallback(true)
+        if (mounted) setLoadFailed(true)
       },
     ).then(
       () => {
@@ -83,7 +86,7 @@ export function AvatarCanvas({
         onRenderer(renderer)
       },
       () => {
-        if (mounted) setFallback(true)
+        if (mounted) setLoadFailed(true)
       },
     )
 

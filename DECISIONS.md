@@ -8,7 +8,7 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 - Optional built-in roles are used only when genuinely independent parallel work, isolated noisy investigation, or high-risk fresh validation materially improves the result. Delegation is not a serial gate and uses a short outcome/scope/evidence prompt.
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.
 - Robustness means explicit ownership, bounded cleanup/retry, visible metadata-only failure, and focused tests at risky boundaries. It does not mean duplicate controllers, shadow implementations, hard-coded provider taxonomies, or exhaustive internal-state tests with no product requirement.
-- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phases 0 through 3 are accepted Windows checkpoints and tagged; Phase 4 Scenes is next. Later phases remain sequential; status/evidence are in `PROGRESS.md`.
+- Phase order is 0 Foundation/Console, 1 Realtime Voice, 2 Wake Lifecycle, 3 Avatar/Audio, 4 Scenes, 5 Identity/Profiles, 6 Memory, 7 Field Hardening. Phases 0 through 3 are accepted Windows checkpoints and tagged. Later phases remain sequential; current status/evidence are owned by `PROGRESS.md`.
 - On 2026-08-27 the user added two later-scope requirements. Phase 7 must
   optimize wake-word accuracy with a representative multi-speaker positive
   corpus, ambient negatives, and target-hardware revalidation. After observing

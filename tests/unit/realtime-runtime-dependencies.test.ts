@@ -76,6 +76,7 @@ function makeSession(): RealtimeRuntimeSession {
     connect: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
+    speakVerbatim: vi.fn(() => undefined),
     onOutputAudioBufferStopped: vi.fn(() => () => undefined),
   }
 }

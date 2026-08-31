@@ -275,6 +275,11 @@ export interface BootRuntime {
   getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>>
   /** Main-only active wake pin; never exposed through renderer IPC. */
   getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>>
+  /** Main-owned published Phase 4 catalog; transcript text never enters this boundary. */
+  getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
+    MirrorConfig,
+    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
+  >>>
   /** Projects wake availability without gating unrelated conversation paths. */
   setWakeRuntimeStatus(status: 'ready' | 'degraded' | 'failed', reason: string): Promise<void>
   /** Projects renderer-asset availability without gating voice or wake paths. */
@@ -1950,6 +1955,25 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return Object.freeze({ phrase, modelVersion, packageId })
   }
 
+  async function getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
+    MirrorConfig,
+    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
+  >>> {
+    await ready
+    const active = (await configService?.read())?.active
+    if (active === undefined) throw new Error('scene_config_unavailable')
+    return Object.freeze({
+      configVersion: active.configVersion,
+      wake: structuredClone(active.wake),
+      visualAssets: structuredClone(active.visualAssets),
+      musicAssets: structuredClone(active.musicAssets),
+      sceneActions: structuredClone(active.sceneActions),
+      spells: structuredClone(active.spells),
+      scenes: structuredClone(active.scenes),
+      adapters: structuredClone(active.adapters),
+    })
+  }
+
   async function setWakeRuntimeStatus(
     status: 'ready' | 'degraded' | 'failed',
     reason: string,
@@ -2510,6 +2534,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     requestRealtimeClientSecret,
     getPublishedSessionModelSnapshotForDiagnostics,
     getPublishedWakeConfigForRuntime,
+    getPublishedSceneConfigForRuntime,
     setWakeRuntimeStatus,
     setAvatarRuntimeStatus,
     probeConfiguredModelAvailability,

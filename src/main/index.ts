@@ -1,11 +1,15 @@
-import { basename, join, resolve } from 'node:path'
+import { basename, extname, isAbsolute, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { readFile, readdir } from 'node:fs/promises'
 import {
   app,
   BrowserWindow,
+  dialog,
   globalShortcut,
   ipcMain,
+  net,
   powerSaveBlocker,
+  protocol,
   screen,
   utilityProcess,
   type WebContents,
@@ -20,6 +24,7 @@ import {
   dispatchMirrorRealtimeRuntimeCommand,
   publishSnapshot,
   registerIpcHandlers,
+  type SceneRuntimeControl,
 } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { applyPhase0UserDataPath } from './phase0-demo-runner'
@@ -44,16 +49,30 @@ import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
 import { selectPortraitDisplay } from './portrait-display'
 import { validateCubismModelBundle } from './avatar/model-bundle'
+import { importManagedMusicAsset } from './scenes/music-assets'
+import { createVisualAssetManager, verifyManagedVisualAsset } from './scenes/visual-assets'
+import { runPhase4Qa } from './phase4-qa'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 /** Never let a stalled stdout pipe turn a smoke run into a hang. */
 const EXIT_FLUSH_TIMEOUT_MS = 500
 const phase1LiveSmokeEnabled = process.env['MIRROR_PHASE1_LIVE_SMOKE'] === '1'
+const phase4QaEnabled = process.env['MIRROR_PHASE4_QA'] === '1'
 
 // A kiosk wake/Console command has no click inside the mirror renderer. Permit
 // those trusted Main-routed actions to start the local output graph.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'magic-mirror-media',
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+  },
+}])
 
 if (phase1LiveSmokeEnabled) {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream')
@@ -64,12 +83,12 @@ const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 const phase0UserDataPath = applyPhase0UserDataPath({
   app,
   demo: process.env['MIRROR_PHASE0_DEMO'],
-  smoke: smokeMode.kind === 'on' || phase1LiveSmokeEnabled,
+  smoke: smokeMode.kind === 'on' || phase1LiveSmokeEnabled || phase4QaEnabled,
   userDataRoot: process.env['MIRROR_PHASE0_USER_DATA_ROOT'],
   userDataDir: process.env['MIRROR_USER_DATA_DIR'],
 })
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
-const hideWindowsForSmoke = smokeMode.kind === 'on'
+const hideWindowsForSmoke = smokeMode.kind === 'on' && !phase4QaEnabled
 
 /**
  * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
@@ -91,7 +110,10 @@ let mainLifecycle: LifecycleState = 'starting'
 let mirrorRendererReady = false
 let displaySleepBlocker: DisplaySleepBlocker | null = null
 let bootRuntime: BootRuntime | null = null
+let sceneRuntimeControl: SceneRuntimeControl | null = null
 let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
+const phase4QaReadyKinds = new Set<MirrorWindowKind>()
+let phase4QaStarted = false
 let wakeSupervisor: WakeSupervisor | null = null
 let shutdownPromise: Promise<void> | null = null
 let willQuitHandled = false
@@ -297,6 +319,11 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
     marker('PRELOAD_ERROR', { window: kind, file: basename(preloadPath), reason: 'preload_exception' })
   })
 
+  win.once('closed', () => {
+    if (windows.get(kind) === win) windows.delete(kind)
+    if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
+  })
+
   // The mirror is the visitor-facing glass: show it as soon as it can paint.
   // The console stays hidden until Ctrl+Shift+D.
   if (kind === 'mirror') {
@@ -313,8 +340,14 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   }
 
   const entry = rendererEntry(kind)
-  if (entry.from === 'dev-server') void win.loadURL(entry.url)
-  else void win.loadFile(entry.file)
+  const phase4QaQuery = phase4QaEnabled && kind === 'mirror' ? { phase4Qa: '1' } : undefined
+  if (entry.from === 'dev-server') {
+    const url = new URL(entry.url)
+    if (phase4QaQuery !== undefined) url.searchParams.set('phase4Qa', phase4QaQuery.phase4Qa)
+    void win.loadURL(url.toString())
+  } else {
+    void win.loadFile(entry.file, phase4QaQuery === undefined ? undefined : { query: phase4QaQuery })
+  }
 
   return win
 }
@@ -358,6 +391,8 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
     marker('RENDERER_GONE_UNTRACKED', { reason: details.reason })
     return
   }
+
+  if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
 
   const decision = crashRecovery.decide({ window: kind, reason: details.reason, exitCode: details.exitCode })
   if (decision.action === 'ignore') return
@@ -457,6 +492,52 @@ function finishPhase1LiveSmoke(result: Phase1LiveSmokeResult): void {
   )
 }
 
+function startPhase4QaIfReady(runtime: BootRuntime): void {
+  if (
+    !phase4QaEnabled
+    || phase4QaStarted
+    || !phase4QaReadyKinds.has('mirror')
+    || !phase4QaReadyKinds.has('console')
+  ) return
+  phase4QaStarted = true
+  const mirror = windows.get('mirror')
+  const consoleWindow = windows.get('console')
+  const outputDir = process.env['MIRROR_PHASE4_QA_OUTPUT_DIR']
+  if (
+    mirror === undefined
+    || consoleWindow === undefined
+    || outputDir === undefined
+    || !isAbsolute(outputDir)
+  ) {
+    exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason: 'phase4_qa_config_invalid' }, 2)
+    return
+  }
+  void runPhase4Qa({
+    runtime,
+    mirror,
+    console: consoleWindow,
+    outputDir,
+    musicOnly: process.env['MIRROR_PHASE4_QA_MUSIC_ONLY'] === '1',
+    live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
+    onEvidence: (evidence) => marker('PHASE4_QA_STEP', { ...evidence }),
+  }).then((result) => {
+    exitWithMarker('PHASE4_QA_RESULT', {
+      status: 'passed',
+      motion_count: result.motionCount,
+      expression_count: result.expressionCount,
+      scene_count: result.sceneCount,
+      visual_count: result.visualCount,
+      screenshot_count: result.screenshotCount,
+      music_analyser: result.musicAnalyser,
+    }, 0)
+  }).catch((error: unknown) => {
+    const reason = error instanceof Error && /^phase4_qa_[a-z_]+$/.test(error.message)
+      ? error.message
+      : 'phase4_qa_failed'
+    exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason }, 2)
+  })
+}
+
 function emitDisplaySleepMetadata(
   telemetry: BootRuntime['telemetry'],
   event: DisplaySleepBlockerEvent,
@@ -511,7 +592,7 @@ function createDeferredCredentialEventSink(): {
   }
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   if (!phase0UserDataPath.ok) {
     exitWithMarker('SMOKE_CONFIG_INVALID', { reason: 'phase0_user_data_isolation_invalid' }, 2)
     return
@@ -568,6 +649,17 @@ void app.whenReady().then(() => {
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
+  const visualStorageDir = join(app.getPath('userData'), 'assets', 'visual')
+  const visualAssetManager = createVisualAssetManager({ storageDir: visualStorageDir })
+  const visualAssetReady = visualAssetManager.initialize().catch(() => {
+    runtime.telemetry.emit({
+      module: 'avatar',
+      event: 'visual_asset_storage_unavailable',
+      status: 'degraded',
+      reason: 'cause=pending_cleanup_failed',
+      source: 'runtime',
+    })
+  })
   void configureWakeRuntime(runtime)
   void configureAvatarRuntime(runtime)
 
@@ -584,22 +676,124 @@ void app.whenReady().then(() => {
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
 
   createWindows()
-  registerIpcHandlers({
+  protocol.handle('magic-mirror-media', async (request) => {
+    try {
+      await visualAssetReady
+      if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
+      const url = new URL(request.url)
+      const opaqueId = decodeURIComponent(url.pathname.replace(/^\//, ''))
+      if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(opaqueId)) {
+        return new Response(null, { status: 404 })
+      }
+      let filePath: string
+      let mimeType: string
+      if (url.hostname === 'music') {
+        const config = await runtime.getPublishedSceneConfigForRuntime()
+        const asset = config.musicAssets.find((candidate) => candidate.id === opaqueId)
+        if (asset === undefined) return new Response(null, { status: 404 })
+        filePath = join(app.getPath('userData'), 'assets', 'music', asset.fileName)
+        mimeType = asset.mimeType
+      } else if (url.hostname === 'visual-pending') {
+        const pendingPath = await visualAssetManager.resolvePendingPath(opaqueId)
+        if (pendingPath === null) return new Response(null, { status: 404 })
+        filePath = pendingPath
+        const extension = extname(pendingPath).toLowerCase()
+        mimeType = extension === '.png' ? 'image/png'
+          : extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg'
+            : extension === '.webp' ? 'image/webp'
+              : extension === '.mp4' ? 'video/mp4'
+                : extension === '.webm' ? 'video/webm' : ''
+        if (mimeType === '') return new Response(null, { status: 404 })
+      } else if (url.hostname === 'visual') {
+        const config = await runtime.getPublishedSceneConfigForRuntime()
+        const asset = config.visualAssets.find((candidate) => candidate.id === opaqueId)
+        if (asset === undefined) return new Response(null, { status: 404 })
+        await verifyManagedVisualAsset({ asset, storageDir: visualStorageDir })
+        filePath = join(visualStorageDir, asset.fileName)
+        mimeType = asset.mimeType
+      } else {
+        return new Response(null, { status: 404 })
+      }
+      if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'asset', status: 'resolved' })
+      const response = await net.fetch(pathToFileURL(filePath).toString(), {
+        headers: request.headers,
+      })
+      if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'file_fetch', status: response.status })
+      const headers = new Headers(response.headers)
+      headers.set('Access-Control-Allow-Origin', '*')
+      headers.set('Content-Type', mimeType)
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      })
+    } catch {
+      if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'handler', status: 'failed' })
+      return new Response(null, { status: 404 })
+    }
+  })
+  sceneRuntimeControl = registerIpcHandlers({
     ipcMain,
     runtime,
     console: runtime.console,
     windows,
     telemetry: runtime.telemetry,
+    importMusicAsset: async () => {
+      const owner = windows.get('console')
+      const pickerOptions: Electron.OpenDialogOptions = {
+        title: 'Import scene music',
+        properties: ['openFile'],
+        filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a'] }],
+      }
+      const selection = owner === undefined
+        ? await dialog.showOpenDialog(pickerOptions)
+        : await dialog.showOpenDialog(owner, pickerOptions)
+      const sourcePath = selection.filePaths[0]
+      if (selection.canceled || sourcePath === undefined) return null
+      return importManagedMusicAsset({
+        sourcePath,
+        storageDir: join(app.getPath('userData'), 'assets', 'music'),
+      })
+    },
+    importVisualAsset: async () => {
+      await visualAssetReady
+      const owner = windows.get('console')
+      const pickerOptions: Electron.OpenDialogOptions = {
+        title: 'Import scene visual',
+        properties: ['openFile'],
+        filters: [{ name: 'Images and videos', extensions: ['png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm'] }],
+      }
+      const selection = owner === undefined
+        ? await dialog.showOpenDialog(pickerOptions)
+        : await dialog.showOpenDialog(owner, pickerOptions)
+      const sourcePath = selection.filePaths[0]
+      if (selection.canceled || sourcePath === undefined) return null
+      return visualAssetManager.import({ sourcePath })
+    },
+    finalizeVisualAsset: async (input) => {
+      await visualAssetReady
+      return visualAssetManager.finalize(input)
+    },
+    cancelVisualAsset: async (token) => {
+      await visualAssetReady
+      return visualAssetManager.cancel(token)
+    },
     onReady: (kind) => {
       const win = windows.get(kind)
       if (win !== undefined && !win.isDestroyed()) {
         onRendererReady(win.webContents)
         if (kind === 'mirror') phase1LiveSmokeCoordinator?.onMirrorRendererReady()
+        phase4QaReadyKinds.add(kind)
+        startPhase4QaIfReady(runtime)
       }
     },
   })
   runtime.subscribe((snapshot) => {
+    const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
+    if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
+      void sceneRuntimeControl?.stopAll()
+    }
     boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
     void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
     void publishSnapshot('console', snapshot, windows, runtime.telemetry)
@@ -655,6 +849,7 @@ function shutdownBootRuntime(): Promise<void> {
   }
 
   shutdownPromise = Promise.resolve()
+    .then(() => sceneRuntimeControl?.stopAll())
     .then(() => wakeSupervisor?.shutdown())
     .then(() => runtime.shutdown())
     .catch(() => {

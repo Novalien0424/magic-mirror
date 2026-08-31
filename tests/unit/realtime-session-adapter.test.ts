@@ -17,6 +17,7 @@ type AdapterProbe = {
   connect: ReturnType<typeof vi.fn>;
   interrupt: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  sendMessage: ReturnType<typeof vi.fn>;
   emit: (eventName: string, event: unknown) => void;
   dependencies: RealtimeSessionDependencies;
 };
@@ -28,10 +29,12 @@ function makeAdapterProbe(): AdapterProbe {
   const connect = vi.fn(async (..._args: unknown[]) => undefined);
   const interrupt = vi.fn(async (..._args: unknown[]) => undefined);
   const close = vi.fn(async (..._args: unknown[]) => undefined);
+  const sendMessage = vi.fn((..._args: unknown[]) => undefined);
   const fakeSession = {
     connect,
     interrupt,
     close,
+    sendMessage,
     on: vi.fn((eventName: string, listener: SessionEventListener) => {
       const eventListeners = listeners.get(eventName) ?? [];
       eventListeners.push(listener);
@@ -53,6 +56,7 @@ function makeAdapterProbe(): AdapterProbe {
     connect,
     interrupt,
     close,
+    sendMessage,
     emit: (eventName, event) => {
       for (const listener of listeners.get(eventName) ?? []) listener(event);
     },
@@ -96,6 +100,20 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it("sends operator-authored scene dialogue as one best-effort verbatim Realtime message", () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+
+    handle.speakVerbatim("The mirror awakens.");
+
+    expect(probe.sendMessage).toHaveBeenCalledTimes(1);
+    expect(probe.sendMessage).toHaveBeenCalledWith(
+      "The entire audible response must be exactly the following operator-authored text. "
+        + "Do not add, omit, translate, paraphrase, or acknowledge it:\nThe mirror awakens.",
+    );
+  });
+
   it("projects raw actual-output and VAD activity for the avatar without transcript timing", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
@@ -450,28 +468,60 @@ describe("RealtimeSession adapter", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('delivers completed input transcripts only inside the renderer session', () => {
+  it('pairs input-item creation with its completed transcript only inside renderer RAM', () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
     const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
-    const listener = vi.fn<(transcript: string) => void>();
+    const created = vi.fn<(itemId: string) => void>();
+    const listener = vi.fn<(input: { itemId: string; transcript: string }) => void>();
+    const disposeCreated = handle.onInputItemCreated?.(created);
     const dispose = handle.onInputTranscriptCompleted?.(listener);
+
+    probe.emit('transport_event', {
+      type: 'input_audio_buffer.committed',
+      realtimeSessionId: handle.realtimeSessionId,
+      item_id: 'item-private-turn',
+    });
 
     probe.emit('transport_event', {
       type: 'conversation.item.input_audio_transcription.completed',
       realtimeSessionId: handle.realtimeSessionId,
+      item_id: 'item-private-turn',
       transcript: 'private completed turn',
     });
+    disposeCreated?.();
     dispose?.();
     probe.emit('transport_event', {
       type: 'conversation.item.input_audio_transcription.completed',
       realtimeSessionId: handle.realtimeSessionId,
+      item_id: 'item-second-turn',
       transcript: 'second private turn',
     });
 
+    expect(created).toHaveBeenCalledWith('item-private-turn');
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith('private completed turn');
+    expect(listener).toHaveBeenCalledWith({ itemId: 'item-private-turn', transcript: 'private completed turn' });
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain('private completed turn');
+  });
+
+  it('reports transcript_unavailable without exposing an incomplete input item', () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    const listener = vi.fn();
+    handle.onInputTranscriptCompleted?.(listener);
+    eventSink.mockClear();
+
+    probe.emit('transport_event', {
+      type: 'conversation.item.input_audio_transcription.completed',
+      realtimeSessionId: handle.realtimeSessionId,
+      item_id: 'item-missing-transcript',
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'realtime_observer_event', status: 'degraded', reason: 'transcript_unavailable',
+    }));
   });
 
   it("reports observer failures without failing the session", () => {

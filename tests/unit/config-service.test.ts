@@ -17,7 +17,7 @@ import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/typ
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
 
-const CURRENT_CONFIG_SCHEMA_VERSION = 3
+const CURRENT_CONFIG_SCHEMA_VERSION = 5
 
 type Phase1ConfigFixture = MirrorConfig & {
   readonly reasoningEffort: string
@@ -132,27 +132,49 @@ function baseConfig(configVersion = 7): Phase1ConfigFixture {
       avatarDir: 'mock/avatar-v1',
       musicDir: 'mock/music-v1',
     },
-    spells: [
-      {
-        id: 'mock-spell-1',
-        phrase: 'mock-spell-phrase-1',
-        sceneId: 'mock-scene-1',
-        enabled: true,
-      },
-    ],
-    scenes: [
-      {
-        id: 'mock-scene-1',
-        enabled: true,
-        cues: ['mock-cue-v1'],
-      },
-    ],
     adapters: {
       lighting: 'mock',
       fog: 'physical',
       music: 'mock',
     },
     ...V2_BASELINE,
+    visualAssets: [],
+    musicAssets: [],
+    sceneActions: [
+      {
+        id: 'mock-action-1',
+        name: 'Mock action 1',
+        enabled: true,
+        kind: 'lighting',
+        command: 'on',
+        presetId: 'mock-preset-1',
+      },
+    ],
+    spells: [
+      {
+        id: 'mock-spell-1',
+        name: 'Mock spell 1',
+        phrase: 'mock-spell-phrase-1',
+        sceneId: 'mock-scene-1',
+        enabled: true,
+        cooldownMs: 1000,
+      },
+    ],
+    scenes: [
+      {
+        id: 'mock-scene-1',
+        name: 'Mock scene 1',
+        enabled: true,
+        stages: [
+          {
+            id: 'mock-stage-1',
+            name: 'Mock stage 1',
+            endCondition: { kind: 'duration', durationMs: 1000 },
+            actionIds: ['mock-action-1'],
+          },
+        ],
+      },
+    ],
   }
 }
 
@@ -408,7 +430,7 @@ describe('ConfigService contract', () => {
   it('keeps the versioned resource pin and free of forbidden content fields', async () => {
     const resourcePath = resolve(process.cwd(), 'resources/config/default.json')
     const resource = JSON.parse(await readFile(resourcePath, 'utf8')) as Record<string, unknown>
-    expect(resource.schemaVersion).toBe(3)
+    expect(resource.schemaVersion).toBe(5)
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
@@ -440,6 +462,9 @@ describe('ConfigService contract', () => {
         avatarDir: 'mock/avatar-v1',
         musicDir: 'mock/music-v1',
       },
+      visualAssets: [],
+      musicAssets: [],
+      sceneActions: [],
       spells: [],
       scenes: [],
       adapters: {
@@ -1065,24 +1090,24 @@ describe('ConfigService contract', () => {
     )
   })
 
-  it('degrades malformed auxiliary containers without blocking the valid core', async () => {
+  it('degrades malformed legacy scene containers without blocking the valid core', async () => {
     const harness = makeMemoryHarness()
     const malformed = baseConfig(7)
-    malformed.spells = null as unknown as unknown[]
+    malformed.spells = null as never
     malformed.scenes = [
       { id: 'mock-scene-valid', enabled: true, cues: [] },
       { id: 7, enabled: true, cues: [] },
-    ]
-    seedSlots(harness, 'mock-config', malformed, malformed, malformed)
+    ] as never
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      harness.store.set(slotPath('mock-config', slot), encodeSchema(malformed, 3))
+    }
 
     const result = await harness.service().read()
 
     expect(result.active.voice).toBe('mock-voice-v1')
     expect(result.active.spells).toEqual([])
-    expect(result.active.scenes).toEqual([
-      { id: 'mock-scene-valid', enabled: true, cues: [] },
-      { id: 'disabled-scene-1', enabled: false, cues: [] },
-    ])
+    expect(result.active.scenes).toEqual([])
+    expect(result.active.sceneActions).toEqual([])
     expectEvent(
       harness.events,
       'config_auxiliary_degraded',
@@ -1094,12 +1119,44 @@ describe('ConfigService contract', () => {
       harness.events,
       'config_auxiliary_degraded',
       'degraded',
-      'slot=active;field=scenes;index=1;action=disabled;cause=schema_invalid',
+      'slot=active;field=scenes;index=catalog;action=empty;cause=schema_invalid',
       'config_scene_entry_invalid',
     )
   })
 
-  it('maps malformed spell entries to disabled envelopes and preserves valid future fields', async () => {
+  it('migrates schemaVersion 4 duration stages in every slot without emptying the catalog', async () => {
+    const harness = makeMemoryHarness()
+    const values = {
+      active: baseConfig(41),
+      previous: baseConfig(40),
+      draft: baseConfig(42),
+    }
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      const legacy = structuredClone(values[slot]) as unknown as Record<string, unknown>
+      delete legacy.visualAssets
+      const scenes = legacy.scenes as Array<{ stages: Array<Record<string, unknown>> }>
+      for (const scene of scenes) {
+        for (const stage of scene.stages) {
+          stage.durationMs = (stage.endCondition as { durationMs: number }).durationMs
+          delete stage.endCondition
+        }
+      }
+      harness.store.set(slotPath('mock-config', slot), encodeSchema(legacy as never, 4))
+    }
+
+    const result = await harness.service().read()
+
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      expect(result[slot].visualAssets).toEqual([])
+      expect(result[slot].scenes).toEqual(values[slot].scenes)
+      expect(JSON.parse(harness.store.get(slotPath('mock-config', slot)) ?? '{}')).toEqual({
+        schemaVersion: 5,
+        ...result[slot],
+      })
+    }
+  })
+
+  it('empties an incompatible legacy catalog rather than preserving arbitrary future fields', async () => {
     const harness = makeMemoryHarness()
     const malformed = baseConfig(7)
     malformed.spells = [
@@ -1111,31 +1168,20 @@ describe('ConfigService contract', () => {
         futureField: 'mock-future-v1',
       },
       { id: 3, phrase: '', sceneId: '', enabled: 'yes' },
-    ]
-    seedSlots(harness, 'mock-config', malformed, malformed, malformed)
+    ] as never
+    for (const slot of ['active', 'previous', 'draft'] as const) {
+      harness.store.set(slotPath('mock-config', slot), encodeSchema(malformed, 3))
+    }
 
     const result = await harness.service().read()
 
-    expect(result.active.spells).toEqual([
-      {
-        id: 'mock-spell-valid',
-        phrase: 'mock-spell-phrase-valid',
-        sceneId: 'mock-scene-1',
-        enabled: true,
-        futureField: 'mock-future-v1',
-      },
-      {
-        id: 'disabled-spell-1',
-        phrase: '',
-        sceneId: '',
-        enabled: false,
-      },
-    ])
+    expect(result.active.spells).toEqual([])
+    expect(result.active.scenes).toEqual([])
     expectEvent(
       harness.events,
       'config_auxiliary_degraded',
       'degraded',
-      'slot=active;field=spells;index=1;action=disabled;cause=schema_invalid',
+      'slot=active;field=spells;index=catalog;action=empty;cause=schema_invalid',
       'config_spell_entry_invalid',
     )
   })
@@ -1197,6 +1243,31 @@ describe('ConfigService contract', () => {
     )
   })
 
+  it('rejects an invalid scene link without changing any persisted config slot', async () => {
+    const harness = makeMemoryHarness()
+    const active = baseConfig(7)
+    seedSlots(harness, 'mock-config', active)
+    const before = new Map(harness.store)
+    const candidate = structuredClone(active)
+    candidate.scenes[0].stages[0].actionIds = ['missing-action']
+
+    let caught: unknown
+    try {
+      await harness.service().saveDraft(candidate)
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(ConfigServiceError)
+    expect((caught as ConfigServiceError).code).toBe('config_schema_invalid')
+    expect((caught as ConfigServiceError).fields).toContainEqual({
+      path: 'scenes[0].stages[0].actionIds[0]',
+      message: 'missing_scene_action',
+    })
+    expect(harness.store).toEqual(before)
+    expect(harness.writer.writePaths).toEqual([])
+  })
+
   it('reports a Draft write failure without exposing the adapter error', async () => {
     const harness = makeMemoryHarness()
     seedSlots(harness, 'mock-config', baseConfig(7))
@@ -1230,7 +1301,7 @@ describe('ConfigService contract', () => {
     const draft = baseConfig(7)
     draft.aiModels.realtimeDialogue.modelId = 'mock-realtime-dialogue-v2'
     draft.voice = 'mock-voice-v2'
-    draft.scenes = [{ id: 'mock-scene-1', enabled: true, cues: ['mock-cue-v2'] }]
+    draft.scenes[0].stages[0].endCondition = { kind: 'duration', durationMs: 2000 }
     seedSlots(harness, 'mock-config', active, draft, active)
 
     const diff = await harness.service().diff('active', 'draft')
@@ -1243,9 +1314,9 @@ describe('ConfigService contract', () => {
           to: 'mock-realtime-dialogue-v2',
         },
         {
-          path: 'scenes[0].cues[0]',
-          from: 'mock-cue-v1',
-          to: 'mock-cue-v2',
+          path: 'scenes[0].stages[0].endCondition.durationMs',
+          from: 1000,
+          to: 2000,
         },
         {
           path: 'voice',

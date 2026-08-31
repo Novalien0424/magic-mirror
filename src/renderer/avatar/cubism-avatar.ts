@@ -12,11 +12,13 @@ import { CubismMatrix44 } from '../../vendor/live2d/Framework/dist/math/cubismma
 import { CubismUserModel } from '../../vendor/live2d/Framework/dist/model/cubismusermodel'
 import type { ACubismMotion } from '../../vendor/live2d/Framework/dist/motion/acubismmotion'
 import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
+import { InvalidMotionQueueEntryHandleValue } from '../../vendor/live2d/Framework/dist/motion/cubismmotionqueuemanager'
 import type { CubismIdHandle } from '../../vendor/live2d/Framework/dist/id/cubismid'
 import { CubismWebGLOffscreenManager } from '../../vendor/live2d/Framework/dist/rendering/cubismoffscreenmanager'
 import {
   renExpressionForState,
   resolveAvatarModelSource,
+  resolveCubismShaderBaseUrl,
 } from './avatar-model-source'
 import type { AvatarState } from './avatar-state'
 
@@ -24,7 +26,6 @@ const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
 const FPS_SAMPLE_COUNT = 120
 const METRICS_INTERVAL_MS = 500
-const SHADER_BASE_URL = '/live2d/Framework/Shaders/WebGL/'
 
 export type CubismAvatarFailureReason =
   | 'avatar_core_unavailable'
@@ -56,6 +57,7 @@ export interface CubismAvatarMetrics {
 export interface CubismAvatarRenderer {
   initialize(): Promise<void>
   setState(state: AvatarState): void
+  playMotion(group: string): boolean
   setExpression(name: string): void
   setMouthOpen(value: number): void
   stopSpeakingMotion(): void
@@ -121,7 +123,8 @@ class MagicMirrorCubismModel extends CubismUserModel {
   readonly #gl: WebGLRenderingContext | WebGL2RenderingContext
   readonly #assetBaseUrl: string
   readonly #manifestUrl: string
-  readonly #motions = new Map<Exclude<AvatarState, 'OfflineLoop'>, CubismMotion>()
+  readonly #motionEventSink: (phase: 'started' | 'completed', group: string) => void
+  readonly #motions = new Map<string, CubismMotion>()
   readonly #expressions = new Map<string, ACubismMotion>()
   readonly #textures: WebGLTexture[] = []
   readonly #eyeBlinkIds: CubismIdHandle[] = []
@@ -129,18 +132,22 @@ class MagicMirrorCubismModel extends CubismUserModel {
   #setting: CubismModelSettingJson | null = null
   #state: AvatarState = 'Dormant'
   #mouthOpen = 0
+  #oneShotGroup: string | null = null
+  #resumeLifecycleMotion = false
 
   constructor(
     canvas: HTMLCanvasElement,
     gl: WebGLRenderingContext | WebGL2RenderingContext,
     assetBaseUrl: string,
     manifestUrl: string,
+    motionEventSink: (phase: 'started' | 'completed', group: string) => void,
   ) {
     super()
     this.#canvas = canvas
     this.#gl = gl
     this.#assetBaseUrl = assetBaseUrl.endsWith('/') ? assetBaseUrl : `${assetBaseUrl}/`
     this.#manifestUrl = manifestUrl
+    this.#motionEventSink = motionEventSink
   }
 
   async load(): Promise<void> {
@@ -215,7 +222,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
   async #loadMotions(setting: CubismModelSettingJson): Promise<void> {
     const tasks: Promise<void>[] = []
     for (let groupIndex = 0; groupIndex < setting.getMotionGroupCount(); groupIndex += 1) {
-      const group = setting.getMotionGroupName(groupIndex) as Exclude<AvatarState, 'OfflineLoop'>
+      const group = setting.getMotionGroupName(groupIndex)
       if (setting.getMotionCount(group) === 0) continue
       tasks.push((async () => {
         const file = setting.getMotionFileName(group, 0)
@@ -282,6 +289,8 @@ class MagicMirrorCubismModel extends CubismUserModel {
 
   setState(state: AvatarState): void {
     this.#state = state
+    this.#oneShotGroup = null
+    this.#resumeLifecycleMotion = false
     this._expressionManager.stopAllMotions()
     if (state === 'OfflineLoop') {
       this._motionManager.stopAllMotions()
@@ -293,6 +302,29 @@ class MagicMirrorCubismModel extends CubismUserModel {
     if (motion === undefined) return
     this._motionManager.stopAllMotions()
     this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+  }
+
+  playMotion(group: string): boolean {
+    if (this.#state === 'OfflineLoop') return false
+    const motion = this.#motions.get(group)
+    if (motion === undefined) return false
+    this.#oneShotGroup = group
+    this.#resumeLifecycleMotion = false
+    motion.setLoop(false)
+    motion.setBeganMotionHandler(() => {
+      if (this.#oneShotGroup === group) this.#motionEventSink('started', group)
+    })
+    motion.setFinishedMotionHandler(() => {
+      if (this.#oneShotGroup !== group) return
+      this.#oneShotGroup = null
+      this.#resumeLifecycleMotion = true
+      motion.setBeganMotionHandler(() => {})
+      motion.setFinishedMotionHandler(() => {})
+      this.#motionEventSink('completed', group)
+    })
+    this._motionManager.stopAllMotions()
+    return this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+      !== InvalidMotionQueueEntryHandleValue
   }
 
   setExpression(name: string): void {
@@ -316,7 +348,17 @@ class MagicMirrorCubismModel extends CubismUserModel {
     if (!this.isInitialized()) return
     try { this._model.loadParameters() } catch { throw new Error('avatar_parameter_load_failed') }
     try {
-      if (this._motionManager.isFinished() && this.#state !== 'OfflineLoop') {
+      if (this.#resumeLifecycleMotion && this.#state !== 'OfflineLoop') {
+        this.#resumeLifecycleMotion = false
+        const motion = this.#motions.get(this.#state)
+        if (motion !== undefined) {
+          this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+        }
+      } else if (
+        this.#oneShotGroup === null
+        && this._motionManager.isFinished()
+        && this.#state !== 'OfflineLoop'
+      ) {
         const motion = this.#motions.get(this.#state)
         if (motion !== undefined) {
           this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
@@ -380,7 +422,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
       this.#gl.getParameter(this.#gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer,
       [0, 0, width, height],
     )
-    this.getRenderer().drawModel(SHADER_BASE_URL)
+    this.getRenderer().drawModel(resolveCubismShaderBaseUrl())
   }
 
   override release(): void {
@@ -491,6 +533,10 @@ export function createCubismAvatarRenderer(
         gl,
         modelSource.assetBaseUrl,
         modelSource.manifestUrl,
+        (phase, group) => report(input.eventSink, {
+          status: 'ready',
+          reason: `avatar_motion_${phase}:${group}`,
+        }),
       )
       try {
         await model.load()
@@ -513,6 +559,7 @@ export function createCubismAvatarRenderer(
       state = next
       model?.setState(next)
     },
+    playMotion: (group: string): boolean => model?.playMotion(group) ?? false,
     setExpression: (name: string): void => model?.setExpression(name),
     setMouthOpen: (value: number): void => {
       mouthOpen = unit(value)

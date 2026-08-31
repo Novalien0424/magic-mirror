@@ -10,8 +10,14 @@ import type {
   RealtimeSessionIdentity,
   TransientRealtimeSecretResult,
 } from '../../shared/bridge'
-import type { AppSnapshot, LifecycleState } from '../../shared/types'
+import type { AppSnapshot, LifecycleState, SceneActionCommandContext, SceneRunResult } from '../../shared/types'
 import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-dependencies'
+import { createSceneTranscriptController, type SceneTranscriptDecision } from './scene-transcript-controller'
+import {
+  createSceneVisualController,
+  type SceneVisualController,
+  type SceneVisualMedia,
+} from './scene-visual-controller'
 import type { PlaybackCompletionScheduler } from '../realtime/playback-completion'
 import { createSessionCleanup, type SessionCleanupBoundary } from '../realtime/session-cleanup'
 import { TranscriptBuffer } from '../realtime/transcript-buffer'
@@ -53,6 +59,10 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'onInterrupt'
   | 'requestSleep'
   | 'reportAvatarRuntime'
+  | 'getSceneCatalog'
+  | 'triggerScene'
+  | 'stopScene'
+  | 'onSceneStatus'
   | 'onAvatarControl'
 >
 type MirrorRealtimeMetadataBridge = Pick<MirrorBridge, 'reportRealtimeMetadata'>
@@ -299,6 +309,10 @@ function hasMirrorRealtimeRuntimeBridge(
       typeof candidate.reportRealtimeFailure === 'function' &&
       typeof candidate.requestSleep === 'function' &&
       typeof candidate.reportAvatarRuntime === 'function' &&
+      typeof candidate.getSceneCatalog === 'function' &&
+      typeof candidate.triggerScene === 'function' &&
+      typeof candidate.stopScene === 'function' &&
+      typeof candidate.onSceneStatus === 'function' &&
       typeof candidate.onAvatarControl === 'function' &&
       typeof candidate.onRealtimeRuntimeCommand === 'function' &&
       typeof candidate.onInterrupt === 'function'
@@ -353,7 +367,15 @@ function createMirrorRealtimeRuntimeOwner(
     readonly onOutputDisposed: (output: RealtimeAudioOutput) => void
     readonly onActivity: (activity: AvatarAudioActivity) => void
   },
-): RealtimeRuntimeOwner {
+  onQaTranscriptHandler?: (
+    handler: ((input: {
+      transcript: string
+      realtimeSessionId: string
+      turnId?: string
+    }) => Promise<SceneTranscriptDecision>) | null,
+  ) => void,
+): Readonly<{ owner: RealtimeRuntimeOwner; disposeSceneStatus: () => void }> {
+  let owner: RealtimeRuntimeOwner
   const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
     // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
   }
@@ -368,7 +390,31 @@ function createMirrorRealtimeRuntimeOwner(
     }
   }
 
-  return createBrowserRealtimeRuntimeOwner({
+  const sceneTranscript = createSceneTranscriptController({
+    bridge,
+    interrupt: async () => owner.interrupt(),
+    metadataSink: (reason, realtimeSessionId) => reportMirrorRealtimeMetadata(bridge, 'transcript', {
+      status: reason === 'transcript_available' ? 'success' : 'info',
+      reason: `cause=${reason}`,
+      realtimeSessionId,
+    }),
+  })
+  const disposeSceneStatus = bridge.onSceneStatus((event) => sceneTranscript.handleStatus(event))
+  const handleQaTranscript = async (input: {
+    transcript: string
+    realtimeSessionId: string
+    turnId?: string
+  }): Promise<SceneTranscriptDecision> => {
+    const itemId = `qa-${input.turnId ?? 'turn'}`
+    sceneTranscript.handleInputItemCreated(itemId, input.turnId)
+    return sceneTranscript.handleCompletedTranscript({
+      itemId,
+      transcript: input.transcript,
+      realtimeSessionId: input.realtimeSessionId,
+    })
+  }
+
+  owner = createBrowserRealtimeRuntimeOwner({
     eventSink: ignoreDuplicateRuntimeOutcome,
     sessionEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'session', event),
     micEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'mic', event),
@@ -387,14 +433,16 @@ function createMirrorRealtimeRuntimeOwner(
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
     },
     onReturnToDormant: () => bridge.requestSleep(),
-    onCompletedInputTranscript: ({ realtimeSessionId }) => {
+    onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
+    onCompletedInputTranscript: async (input) => {
       reportMirrorRealtimeMetadata(bridge, 'transcript', {
-        status: 'success',
-        reason: 'cause=transcript_available',
-        realtimeSessionId,
+        status: 'success', reason: 'cause=transcript_available', realtimeSessionId: input.realtimeSessionId,
       })
+      await sceneTranscript.handleCompletedTranscript(input)
     },
   })
+  onQaTranscriptHandler?.(handleQaTranscript)
+  return Object.freeze({ owner, disposeSceneStatus })
 }
 
 export interface MirrorInterruptComposition {
@@ -682,9 +730,17 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
+  const [avatarFallbackInjected, setAvatarFallbackInjected] = useState(false)
   const avatarRendererRef = useRef<CubismAvatarRenderer | null>(null)
+  const realtimeRuntimeOwnerRef = useRef<RealtimeRuntimeOwner | null>(null)
+  const phase4QaTranscriptHandlerRef = useRef<Parameters<NonNullable<Parameters<typeof createMirrorRealtimeRuntimeOwner>[2]>>[0]>(null)
+  const pendingSceneMotionRef = useRef(new Map<string, SceneActionCommandContext>())
+  const pendingSceneMusicRef = useRef<SceneActionCommandContext | null>(null)
   const avatarAudioOutputRef = useRef<RealtimeAudioOutput | null>(null)
   const avatarMediaControllerRef = useRef<AvatarMediaController | null>(null)
+  const sceneVisualControllerRef = useRef<SceneVisualController | null>(null)
+  const sceneVisualHostRef = useRef<HTMLDivElement | null>(null)
+  const presentedSceneVisualRef = useRef<SceneVisualMedia | null>(null)
   const avatarMetricsRef = useRef<AvatarRuntimeSnapshot>({
     status: 'not_ready',
     reason: 'avatar_renderer_not_ready',
@@ -704,6 +760,19 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     if (bridge !== undefined && 'reportAvatarRuntime' in bridge) {
       try { bridge.reportAvatarRuntime(next) } catch { /* reporting cannot gate rendering */ }
     }
+  }
+  const reportSceneAction = (
+    context: SceneActionCommandContext,
+    status: 'acknowledged' | 'completed' | 'failed' | 'timeout',
+    errorCode?: string,
+  ): void => {
+    const bridge = window.magicMirror
+    if (bridge === undefined || !('reportSceneAction' in bridge)) return
+    bridge.reportSceneAction({
+      ...context,
+      status,
+      ...(errorCode === undefined ? {} : { errorCode }),
+    })
   }
   const avatarAudioCoordinatorRef = useRef<AvatarAudioCoordinator | null>(null)
   const ensureAvatarAudioCoordinator = (): AvatarAudioCoordinator => {
@@ -776,6 +845,19 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
             bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
           }
+          const context = pendingSceneMusicRef.current
+          if (context !== null) {
+            if (reason === 'avatar_music_started') {
+              pendingSceneMusicRef.current = null
+              reportSceneAction(context, 'acknowledged')
+            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_fade_completed') {
+              pendingSceneMusicRef.current = null
+              reportSceneAction(context, 'completed')
+            } else if (reason.startsWith('avatar_music_play_failed') || reason === 'avatar_music_analyser_inactive') {
+              pendingSceneMusicRef.current = null
+              reportSceneAction(context, 'failed', 'avatar_music_action_failed')
+            }
+          }
         },
       })
     } catch {
@@ -802,7 +884,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
 
     try {
       const coordinator = ensureAvatarAudioCoordinator()
-      const owner = createMirrorRealtimeRuntimeOwner(bridge, {
+      const sceneRuntime = createMirrorRealtimeRuntimeOwner(bridge, {
         onOutputAvailable: (output) => {
           avatarAudioOutputRef.current = output
           avatarMediaControllerRef.current?.setRealtimeOutput(output)
@@ -823,8 +905,10 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             coordinator.handleActivity(activity)
           }
         },
-      })
-      return subscribeMirrorRealtimeRuntime(
+      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler })
+      const owner = sceneRuntime.owner
+      realtimeRuntimeOwnerRef.current = owner
+      const unsubscribe = subscribeMirrorRealtimeRuntime(
         bridge,
         owner,
         () => {
@@ -832,6 +916,12 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           avatarMediaControllerRef.current?.handleActivity('interrupted')
         },
       )
+      return () => {
+        unsubscribe()
+        sceneRuntime.disposeSceneStatus()
+        phase4QaTranscriptHandlerRef.current = null
+        if (realtimeRuntimeOwnerRef.current === owner) realtimeRuntimeOwnerRef.current = null
+      }
     } catch {
       // Setup failure must not gate the existing snapshot or fallback UI path.
       return
@@ -839,7 +929,89 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [interruptComposition])
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('phase4Qa') !== '1') return
+    const qaWindow = window as typeof window & {
+      magicMirrorPhase4Qa?: Readonly<{
+        injectFinalTranscript: (transcript: string, turnId: string) => Promise<unknown>
+        injectFinalTranscriptStart: (transcript: string, turnId: string) => Promise<unknown>
+      }>
+    }
+    const startTranscript = async (transcript: string, turnId: string): Promise<SceneTranscriptDecision> => {
+      if (
+        typeof transcript !== 'string'
+        || transcript.length === 0
+        || transcript.length > 1000
+        || typeof turnId !== 'string'
+        || !/^[A-Za-z0-9._:-]{1,64}$/.test(turnId)
+      ) return { decision: 'failed', reason: 'qa_transcript_invalid' }
+      const handler = phase4QaTranscriptHandlerRef.current
+      if (handler === null) return { decision: 'failed', reason: 'qa_transcript_handler_not_ready' }
+      return handler({ transcript, turnId, realtimeSessionId: 'phase4-qa-session' })
+    }
+    qaWindow.magicMirrorPhase4Qa = Object.freeze({
+      injectFinalTranscriptStart: startTranscript,
+      injectFinalTranscript: async (transcript: string, turnId: string): Promise<unknown> => {
+        const bridge = window.magicMirror
+        if (bridge === undefined || !('onSceneStatus' in bridge)) {
+          return { decision: 'failed', reason: 'qa_scene_status_unavailable' }
+        }
+        const finished = new Map<string, SceneRunResult>()
+        let finishWait: ((result: SceneRunResult) => void) | null = null
+        let targetRunId: string | null = null
+        const unsubscribe = bridge.onSceneStatus((event) => {
+          if (event.type !== 'finished') return
+          finished.set(event.result.runId, event.result)
+          if (event.result.runId === targetRunId) finishWait?.(event.result)
+        })
+        try {
+          const decision = await startTranscript(transcript, turnId)
+          if (decision.decision !== 'triggered' || decision.result.status !== 'accepted') return decision
+          targetRunId = decision.result.runId
+          const completed = finished.get(targetRunId) ?? await new Promise<SceneRunResult>((resolve, reject) => {
+            finishWait = resolve
+            window.setTimeout(() => reject(new Error('phase4_qa_scene_status_timeout')), 120_000)
+          })
+          return { ...decision, result: completed }
+        } finally {
+          unsubscribe()
+        }
+      },
+    })
+    return () => { delete qaWindow.magicMirrorPhase4Qa }
+  }, [])
+
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (bridge === undefined || !('reportSceneVisual' in bridge)) return
+    const visual = createSceneVisualController({
+      createImage: () => new Image() as unknown as SceneVisualMedia,
+      createVideo: () => document.createElement('video') as unknown as SceneVisualMedia,
+      present: (media) => {
+        presentedSceneVisualRef.current = media
+        const host = sceneVisualHostRef.current
+        if (host !== null) host.replaceChildren(...(media === null ? [] : [media as unknown as Node]))
+      },
+      report: (report) => bridge.reportSceneVisual(report),
+      setVideoAudio: (media, gain) => avatarMediaControllerRef.current?.setSceneVideoAudio(
+        media as unknown as HTMLVideoElement | null,
+        gain,
+      ),
+    })
+    sceneVisualControllerRef.current = visual
+    return () => {
+      visual.dispose()
+      presentedSceneVisualRef.current = null
+      if (sceneVisualControllerRef.current === visual) sceneVisualControllerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     avatarMediaControllerRef.current?.setLifecycle(view.state)
+    if (view.state !== 'active') {
+      sceneVisualControllerRef.current?.handleCommand({
+        type: 'scene_visual', action: 'stop', runId: 'all', sceneId: 'all',
+      })
+    }
     if (avatarState !== null) reportAvatarRuntime({ state: avatarState })
     else if (view.state === 'offlineLoop') reportAvatarRuntime({ state: 'OfflineLoop' })
   }, [avatarState, view.state])
@@ -848,14 +1020,70 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     const bridge = window.magicMirror
     if (bridge === undefined || !('onAvatarControl' in bridge)) return
     return bridge.onAvatarControl((command) => {
+      if (command.type === 'asset_failure') {
+        const injected = command.action === 'inject'
+        setAvatarFallbackInjected(injected)
+        reportAvatarRuntime({
+          status: injected || avatarRendererRef.current === null ? 'degraded' : 'ready',
+          reason: injected
+            ? 'avatar_asset_failure_injected'
+            : avatarRendererRef.current === null
+              ? 'avatar_renderer_not_ready'
+              : 'avatar_asset_failure_injection_cleared',
+        })
+        return
+      }
       if (command.type === 'state') {
         avatarRendererRef.current?.setState(command.state)
         reportAvatarRuntime({ state: command.state, reason: 'avatar_manual_state' })
         return
       }
       if (command.type === 'expression') {
-        avatarRendererRef.current?.setExpression(command.name)
+        const renderer = avatarRendererRef.current
+        renderer?.setExpression(command.name)
         reportAvatarRuntime({ reason: 'avatar_manual_expression' })
+        if (command.context !== undefined) {
+          reportSceneAction(
+            command.context,
+            renderer === null ? 'failed' : 'completed',
+            renderer === null ? 'avatar_renderer_not_ready' : undefined,
+          )
+        }
+        return
+      }
+      if (command.type === 'motion') {
+        if (command.context !== undefined) pendingSceneMotionRef.current.set(command.group, command.context)
+        const started = avatarRendererRef.current?.playMotion(command.group) ?? false
+        if (!started && command.context !== undefined) {
+          pendingSceneMotionRef.current.delete(command.group)
+          reportSceneAction(command.context, 'failed', 'avatar_motion_unavailable')
+        }
+        reportAvatarRuntime({
+          reason: started ? `avatar_motion_dispatched:${command.group}` : 'avatar_motion_unavailable',
+          status: started ? 'ready' : 'degraded',
+        })
+        return
+      }
+      if (command.type === 'scene_dialogue') {
+        const result = realtimeRuntimeOwnerRef.current?.speakVerbatim(command.text)
+        const status = result?.status ?? 'ignored'
+        const reason = result?.reason ?? 'no_active_realtime_session'
+        reportSceneAction(
+          command.context,
+          status === 'dispatched' ? 'acknowledged' : 'failed',
+          status === 'dispatched' ? undefined : reason,
+        )
+        reportAvatarRuntime({
+          status: status === 'dispatched' ? 'ready' : 'degraded',
+          reason,
+        })
+        return
+      }
+      if (command.type === 'scene_music' && command.context !== undefined) {
+        pendingSceneMusicRef.current = command.context
+      }
+      if (command.type === 'scene_visual') {
+        sceneVisualControllerRef.current?.handleCommand(command)
         return
       }
       reportAvatarRuntime({ reason: `avatar_${command.type}_command_received` })
@@ -899,13 +1127,15 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
 
   if (avatarState !== null) {
     return (
-      <AvatarCanvas
-        state={avatarState}
-        onRenderer={(renderer) => {
+      <>
+        <AvatarCanvas
+          state={avatarState}
+          forceFallback={avatarFallbackInjected}
+          onRenderer={(renderer) => {
           avatarRendererRef.current = renderer
           ensureAvatarAudioCoordinator().setRenderer(renderer)
-        }}
-        onEvent={(event) => {
+          }}
+          onEvent={(event) => {
           reportAvatarRuntime({
             status: event.status === 'ready' ? 'ready' : event.status,
             reason: event.reason,
@@ -918,15 +1148,41 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
               reason: event.reason,
             })
           }
-        }}
-        onMetrics={(metrics) => {
+          if (event.reason.startsWith('avatar_motion_completed:')) {
+            const group = event.reason.slice('avatar_motion_completed:'.length)
+            const context = pendingSceneMotionRef.current.get(group)
+            if (context !== undefined) {
+              pendingSceneMotionRef.current.delete(group)
+              reportSceneAction(context, 'completed')
+            }
+          }
+          if (event.reason.startsWith('avatar_motion_started:')) {
+            const group = event.reason.slice('avatar_motion_started:'.length)
+            const context = pendingSceneMotionRef.current.get(group)
+            if (context !== undefined) {
+              pendingSceneMotionRef.current.delete(group)
+              reportSceneAction(context, 'acknowledged')
+            }
+          }
+          }}
+          onMetrics={(metrics) => {
           reportAvatarRuntime({
             state: metrics.state,
             fps: Math.max(0, Math.min(240, metrics.fps)),
             mouthOpen: metrics.mouthOpen,
           })
-        }}
-      />
+          }}
+        />
+        <div
+          className="scene-visual"
+          aria-hidden="true"
+          ref={(host) => {
+            sceneVisualHostRef.current = host
+            const media = presentedSceneVisualRef.current
+            if (host !== null && media !== null) host.replaceChildren(media as unknown as Node)
+          }}
+        />
+      </>
     )
   }
 
