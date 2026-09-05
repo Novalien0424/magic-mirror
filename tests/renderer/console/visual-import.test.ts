@@ -8,6 +8,11 @@ const pending = {
 }
 
 describe('Console visual import transaction', () => {
+  it('reports a rejected picker bridge without exposing its error', async () => {
+    const bridge = { uploadVisual: vi.fn(async () => { throw new Error('private-error') }),
+      finalizeVisual: vi.fn(), cancelVisual: vi.fn() }
+    await expect(runConsoleVisualImport(bridge)).resolves.toEqual({ ok: false, reason: 'visual_asset_import_failed' })
+  })
   it('probes before finalizing and returns the managed asset', async () => {
     const asset = {
       id: pending.assetId, name: pending.name, kind: pending.kind, mimeType: pending.mimeType,

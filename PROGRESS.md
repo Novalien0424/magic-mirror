@@ -24,6 +24,19 @@ failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
 
+## Avatar/media corrective work — 2026-09-05
+
+- **BUG-SLEEP-001 — OfflineLoop flashes during normal sleep:** corrective changes
+  pass two actual-provider greeting/farewell cycles with synthetic input, no
+  OfflineLoop, and released input tracks. Physical wake-word/listening acceptance
+  remains pending; no phase promotion is implied.
+- Fixed unpublished draft preview routing and disabled preview audio, stale
+  Cubism preview dimensions, media byte-range streaming, background pause/hide
+  on wake, and renderer session cleanup before Main can reacquire the wake mic.
+- Metadata confirms the earlier Main/renderer lifecycle split; the exact original
+  provider error code was not retained and is not retrospectively asserted.
+- Evidence and operator retest: [RCA / QA report](docs/testing/avatar-media-rca-2026-09-05.md).
+
 ## Clock-out handoff — 2026-09-05
 
 - Phase 4 implementation and its automated Windows readiness evidence are

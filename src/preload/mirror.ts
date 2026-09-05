@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { parseAudioPreferences } from '../shared/audio-devices'
+import { parsePresentation } from '../shared/presentation'
 import type {
   AppSnapshot,
   SceneActionCommandContext,
@@ -127,6 +129,11 @@ function sanitizeSceneActionContext(value: unknown): SceneActionCommandContext |
 function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   if (!isRecord(value)) return null
   const type = readProperty(value, 'type')
+  if (type === 'refresh_audio_devices' && exactKeys(value, ['type'])) return { type }
+  if (type === 'audio_devices' && exactKeys(value, ['type', 'preferences'])) {
+    const preferences = parseAudioPreferences(readProperty(value, 'preferences'))
+    return preferences ? Object.freeze({ type, preferences }) : null
+  }
   if (type === 'state' && exactKeys(value, ['type', 'state'])) {
     const state = readProperty(value, 'state')
     return AVATAR_RUNTIME_STATES.includes(state as AvatarRuntimeSnapshot['state'])
@@ -375,6 +382,24 @@ function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretRe
 }
 
 const bridge: MirrorBridge = {
+  async getPresentation() {
+    const value = await ipcRenderer.invoke('mirror:get-presentation')
+    if (!isRecord(value) || !exactKeys(value, ['config', 'background'])) return null
+    const config = parsePresentation(value.config)
+    if (!config) return null
+    const background = value.background
+    if (background === null) return { config, background: null }
+    if (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
+      || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video')) return null
+    return { config, background: { id: config.backgroundId, kind: background.kind } }
+  },
+  async getAudioPreferences() {
+    const result = await ipcRenderer.invoke('mirror:get-audio-preferences')
+    const preferences = parseAudioPreferences(readProperty(result, 'preferences'))
+    const reason = readProperty(result, 'reason')
+    if (!preferences || typeof reason !== 'string' || !/^audio_[a-z_]{1,80}$/.test(reason)) throw new Error('audio_preferences_invalid')
+    return { preferences, reason }
+  },
   notifyReady(): void {
     ipcRenderer.send(READY_CHANNEL)
   },
@@ -434,6 +459,7 @@ const bridge: MirrorBridge = {
       audioUnderruns: readProperty(snapshot, 'audioUnderruns'),
       voiceGain: readProperty(snapshot, 'voiceGain'),
       musicGain: readProperty(snapshot, 'musicGain'),
+      ...(snapshot.audioDevices === undefined ? {} : { audioDevices: snapshot.audioDevices }),
     }))
   },
 

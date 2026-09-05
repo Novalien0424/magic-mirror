@@ -1,3 +1,4 @@
+import { getAudioPreferences } from '../audio-preferences'
 import {
   parseWakeWorkerOutcome,
   type WakeWorkerCommand,
@@ -262,7 +263,8 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   async function acquire(): Promise<WakeSupervisorResult> {
     shouldListen = true
-    const result = await request({ type: 'acquire_microphone' }, 'microphone_acquired')
+    const inputLabel = getAudioPreferences().preferences.inputLabel
+    const result = await request({ type: 'acquire_microphone', ...(inputLabel ? { inputLabel } : {}) }, 'microphone_acquired')
     if (result.status === 'failed' && status !== 'starting') shouldListen = false
     return result
   }

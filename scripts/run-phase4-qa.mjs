@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const musicOnly = process.argv.includes('--music-only')
-const live = process.argv.includes('--live')
+const lifecycleLive = process.argv.includes('--lifecycle-live')
+const live = process.argv.includes('--live') || lifecycleLive
+const manual = process.argv.includes('--manual')
+const editorOnly = process.argv.includes('--editor')
+const consoleOnly = process.argv.includes('--console') || editorOnly
+if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()) {
   throw new Error('phase4_qa_requires_canonical_checkout_cwd')
 }
@@ -162,6 +167,15 @@ config.spells = [
   { id: 'spell-visual-missing', name: 'Missing visual spell', phrase: 'Mirror play the missing vision', sceneId: 'scene-visual-missing', enabled: true, cooldownMs: 0 },
 ]
 config.adapters = { lighting: 'mock', fog: 'mock', music: 'mock' }
+if (lifecycleLive) config.presentation = { mode: 'emerge', backgroundId: 'visual-qa-loop',
+  ambienceId: 'music-qa-tone', ambienceGain: 0.25, entranceMs: 800, exitMs: 900,
+  wakeGreeting: '我在，請說。', sleepFarewell: '如你所願，再會' }
+if (consoleOnly) {
+  config.visualAssets = []
+  config.sceneActions = []
+  config.scenes = []
+  config.spells = []
+}
 
 for (const slot of ['active', 'draft', 'previous']) {
   await writeFile(join(configDir, `${slot}.json`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
@@ -171,12 +185,16 @@ const electron = join(repoRoot, 'node_modules', 'electron', 'dist', process.plat
 const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
+  MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
   MIRROR_PHASE4_QA_LIVE: live ? '1' : '0',
+  MIRROR_PHASE4_QA_LIFECYCLE_LIVE: lifecycleLive ? '1' : '0',
+  MIRROR_PHASE4_QA_CONSOLE: consoleOnly ? '1' : '0',
+  MIRROR_PHASE4_QA_EDITOR: editorOnly ? '1' : '0',
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : '120000',
   MIRROR_DEVELOPER_MODE: 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -191,21 +209,38 @@ const child = spawn(electron, [repoRoot], {
 })
 child.stdout.pipe(process.stdout)
 child.stderr.pipe(process.stderr)
+let resultCount = 0
+let reportedPassed = false
+let pendingOutput = ''
+child.stdout.on('data', chunk => {
+  pendingOutput += chunk.toString()
+  const lines = pendingOutput.split(/\r?\n/)
+  pendingOutput = (lines.pop() ?? '').slice(-4096)
+  for (const line of lines) {
+    const result = /^PHASE4_QA_RESULT status=([a-z_]+)(?: |$)/.exec(line)
+    if (result) { resultCount += 1; reportedPassed = result[1] === 'passed' }
+  }
+})
 
-const exitCode = await new Promise((resolveExit, reject) => {
+let timedOut = false
+const childExitCode = await new Promise((resolveExit, reject) => {
   const timer = setTimeout(() => {
+    timedOut = true
+    if (process.platform === 'win32' && child.pid !== undefined) {
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
+    }
     child.kill()
-    reject(new Error('phase4_qa_timeout'))
-  }, 130_000)
+  }, manual ? 1_810_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)
   })
-  child.once('exit', (code) => {
+  child.once('close', (code) => {
     clearTimeout(timer)
     resolveExit(code ?? 2)
   })
 })
+const exitCode = timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
 
-process.stdout.write(`${JSON.stringify({ marker: 'PHASE4_QA_ARTIFACTS', root, outputDir, exit: exitCode })}\n`)
+process.stdout.write(`${JSON.stringify({ marker: 'PHASE4_QA_ARTIFACTS', root, outputDir, exit: exitCode, timedOut, resultCount })}\n`)
 process.exitCode = exitCode

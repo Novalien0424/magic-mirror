@@ -1,3 +1,5 @@
+import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import type {
   AppSnapshot,
   MirrorEvent,
@@ -152,7 +154,7 @@ export interface RegisterIpcHandlersOptions {
       report: RealtimeFailureReport,
     ) => unknown | PromiseLike<unknown>
     readonly requestSleep?: () => unknown | PromiseLike<unknown>
-    readonly noteRealtimeActivity?: (kind: 'user_turn' | 'assistant_playback') => void
+    readonly noteRealtimeActivity?: BootRuntime['noteRealtimeActivity']
     readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
   }
   readonly console?: ConsoleDataPlane
@@ -160,6 +162,7 @@ export interface RegisterIpcHandlersOptions {
   readonly telemetry: IpcEventSink
   readonly onReady?: (kind: MirrorWindowKind) => void
   readonly importMusicAsset?: () => Promise<MirrorConfig['musicAssets'][number] | null>
+  readonly importMedia?: (request: import('../shared/media-import').MediaImportRequest) => Promise<import('../shared/media-import').MediaImportEntry[]>
   readonly importVisualAsset?: () => Promise<PendingVisualAsset | null>
   readonly finalizeVisualAsset?: (input: Readonly<{ token: string; probe: VisualAssetProbe }>) => Promise<ManagedVisualAsset>
   readonly cancelVisualAsset?: (token: string) => Promise<void>
@@ -261,9 +264,12 @@ function isUnitNumber(value: unknown): value is number {
 }
 
 function isValidAvatarRuntimeSnapshot(value: unknown): value is AvatarRuntimeSnapshot {
+  const audioDevices = readProperty(value, 'audioDevices')
+  if (audioDevices !== undefined && !isAudioDeviceState(audioDevices)) return false
   if (!exactKeys(value, [
     'status', 'reason', 'state', 'fps', 'waveform', 'mouthOpen',
     'audioUnderruns', 'voiceGain', 'musicGain',
+    ...(audioDevices === undefined ? [] : ['audioDevices']),
   ])) return false
   const fps = readProperty(value, 'fps')
   const underruns = readProperty(value, 'audioUnderruns')
@@ -281,6 +287,9 @@ function isValidAvatarRuntimeSnapshot(value: unknown): value is AvatarRuntimeSna
 
 function validateAvatarControl(value: unknown): value is AvatarControlCommand {
   const type = readProperty(value, 'type')
+  if (type === 'refresh_audio_devices') return exactKeys(value, ['type'])
+  if (type === 'audio_devices') return exactKeys(value, ['type', 'preferences'])
+    && parseAudioPreferences(readProperty(value, 'preferences')) !== null
   if (type === 'state') {
     return exactKeys(value, ['type', 'state'])
       && AVATAR_STATE_VALUES.has(readProperty(value, 'state') as string)
@@ -1479,12 +1488,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         ...(sessionId === undefined ? {} : { session_id: sessionId as string }),
       })
       if (status === 'success' && kind === 'transcript') {
-        runtime.noteRealtimeActivity?.('user_turn')
+        runtime.noteRealtimeActivity?.('user_turn', sessionId as string | undefined)
       } else if (
-        kind === 'playback'
-        && (status === 'success' || status === 'degraded')
+        kind === 'session' && status === 'success' && typeof sessionId === 'string'
+        && (reason === 'cause=output_started' || reason === 'cause=output_stopped' || reason === 'cause=output_interrupted')
       ) {
-        runtime.noteRealtimeActivity?.('assistant_playback')
+        runtime.noteRealtimeActivity?.(reason === 'cause=output_started' ? 'assistant_playback_started' : 'assistant_playback', sessionId)
       }
     } catch {
       payloadRejected(telemetry)
@@ -1565,6 +1574,14 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     } catch {
       payloadRejected(telemetry)
     }
+  })
+
+  ipcMain.handle('mirror:get-audio-preferences', (event, ...args) => {
+    if (!authorizeSender(event, 'mirror', windows).ok || !eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry)
+      throw new Error('audio_preferences_request_rejected')
+    }
+    return getAudioPreferences()
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSnapshot, (event, ...args) => {
@@ -1756,6 +1773,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
+    if (args[0].type === 'audio_devices') {
+      try { saveAudioPreferences(args[0].preferences) } catch {
+        emit(telemetry, { module: 'audio', event: 'audio_preferences_save_failed', status: 'failed', reason: 'audio_preferences_save_failed', source: 'runtime' })
+        return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+      }
+    }
     if (!dispatchMirrorAvatarControl(args[0], windows)) {
       emit(telemetry, {
         module: 'avatar',
@@ -1803,6 +1826,20 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     }
     await loaded.value.stopAll()
     return { ok: true, value: { status: 'stopped' as const } }
+  })
+
+  ipcMain.handle('console:import-media', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return consoleFailure('console_request_rejected', 'cause=sender_rejected') }
+    const request = args[0]
+    if (args.length !== 1 || !exactKeys(request, ['kind', 'multiple'])
+      || !['all', 'visual', 'music'].includes(readProperty(request, 'kind') as string)
+      || typeof readProperty(request, 'multiple') !== 'boolean') {
+      payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (!options.importMedia) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.importMedia(request as import('../shared/media-import').MediaImportRequest) } }
+    catch { return consoleFailure('console_request_rejected', 'cause=runtime_action_failed') }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.uploadMusic, async (event, ...args) => {
@@ -1940,6 +1977,18 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     }
     const request = args.length === 0 ? undefined : args[0]
     return invokeConsole(consoleFacade(options), (facade) => facade.getEvents(request), telemetry)
+  })
+
+  ipcMain.handle('mirror:get-presentation', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return null }
+    if (!eventArgsAreEmpty(args)) { payloadRejected(telemetry); return null }
+    const response = await invokeConsole(consoleFacade(options), facade => facade.getConfig(), telemetry)
+    if (!response.ok) return null
+    const config = response.value.active.presentation
+    if (!config) return null
+    const asset = response.value.active.visualAssets.find(asset => asset.id === config.backgroundId)
+    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.config, async (event, ...args) => {

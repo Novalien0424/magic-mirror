@@ -6,6 +6,7 @@ import {
   VisualAssetError,
   createVisualAssetManager,
   verifyManagedVisualAsset,
+  createVisualPlaybackVerifier,
 } from '../../../src/main/scenes/visual-assets'
 
 const roots: string[] = []
@@ -27,6 +28,20 @@ async function harness(now: () => number = () => 1000) {
 }
 
 describe('managed visual import', () => {
+  it('deduplicates playback hashing but rechecks modified managed files', async () => {
+    const { root, manager } = await harness()
+    const sourcePath = join(root, 'cache.png'); await writeFile(sourcePath, 'synthetic-png-bytes')
+    const pending = await manager.import({ sourcePath })
+    const asset = await manager.finalize({ token: pending.token, probe: { width: 360, height: 640, audioTrack: 'absent' } })
+    let hashes = 0
+    const verify = createVisualPlaybackVerifier(async input => { hashes++; await verifyManagedVisualAsset(input) })
+    const input = { asset, storageDir: join(root, 'managed') }
+    await Promise.all([verify(input), verify(input), verify(input)])
+    expect(hashes).toBe(1)
+    await writeFile(join(input.storageDir, asset.fileName), 'changed___png-bytes')
+    await expect(verify(input)).rejects.toMatchObject({ code: 'visual_asset_hash_mismatch' })
+    expect(hashes).toBe(2)
+  })
   it('keeps a selected file pending until a bounded Chromium probe finalizes it', async () => {
     const { root, manager } = await harness()
     const sourcePath = join(root, 'operator portrait.png')

@@ -1,4 +1,5 @@
 import type { RealtimeSessionStartBundleValue } from '../../shared/bridge'
+import type { AudioDeviceRouter } from '../audio-devices'
 import type {
   RealtimeFailureCallback,
   RealtimeMetadataEventSink,
@@ -147,12 +148,14 @@ function adaptRealtimeAudioOutput(
 }
 
 export interface CreateRealtimeRuntimeOwnerDependenciesInput {
+  readonly audioDevices?: AudioDeviceRouter
   readonly eventSink: RealtimeRuntimeEventSink
   readonly sessionEventSink: RealtimeMetadataEventSink
   readonly micEventSink: MicOwnerMetadataEventSink
   readonly createCleanup: RealtimeRuntimeOwnerDependencies['createCleanup']
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
+  readonly getAvatarDialogue?: () => Promise<{ wakeGreeting?: string; sleepFarewell?: string }>
   readonly onAudioActivity?: CreateRealtimeSessionInput['onAudioActivity']
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>
   readonly createSession?: (
@@ -229,6 +232,7 @@ export function createRealtimeRuntimeOwnerDependencies(
   return {
     acquireMediaStream: (): PromiseLike<MediaStream> => {
       const mediaDevices = input.mediaDevices ?? navigator.mediaDevices
+      if (input.audioDevices) return input.audioDevices.inputConstraints().then((audio) => mediaDevices.getUserMedia({ audio, video: false }))
       return mediaDevices.getUserMedia({ audio: true, video: false })
     },
     createAudioOutput: (): MaybePromise<RealtimeRuntimeAudioOutput> => {
@@ -241,19 +245,31 @@ export function createRealtimeRuntimeOwnerDependencies(
         }
         return adaptRealtimeAudioOutput(resolved, input.onAudioOutputDisposed)
       }
+      if (input.audioDevices) return Promise.resolve(output).then(async (resolved) => {
+        const detach = await input.audioDevices!.attach(resolved.audioElement)
+        try { input.onAudioOutputAvailable?.(resolved) } catch { /* observation cannot gate audio */ }
+        return adaptRealtimeAudioOutput(resolved, (disposed) => {
+          detach()
+          input.onAudioOutputDisposed?.(disposed)
+        })
+      })
       return isPromiseLike(output) ? output.then(adapt) : adapt(output)
     },
-    createSession: (
+    createSession: async (
       bundle: Readonly<RealtimeSessionStartBundleValue>,
       stream: MediaStream,
       audioElement: HTMLAudioElement,
-    ): MaybePromise<RealtimeRuntimeSession> => {
+      greet = false,
+    ): Promise<RealtimeRuntimeSession> => {
       const sessionGeneration = bundle.identity.sessionGeneration
       if (!Number.isSafeInteger(sessionGeneration) || sessionGeneration <= 0) {
         throw new Error('invalid_session_generation')
       }
 
+      const dialogue = await input.getAvatarDialogue?.()
       return sessionFactory({
+        ...(greet && dialogue?.wakeGreeting !== undefined ? { wakeGreeting: dialogue.wakeGreeting } : {}),
+        ...(dialogue?.sleepFarewell !== undefined ? { sleepFarewell: dialogue.sleepFarewell } : {}),
         snapshot: bundle.snapshot,
         clientSecret: bundle.clientSecret,
         mediaStream: stream,
@@ -290,7 +306,21 @@ export function createRealtimeRuntimeOwnerDependencies(
 export function createBrowserRealtimeRuntimeOwner(
   input: CreateRealtimeRuntimeOwnerDependenciesInput,
 ): RealtimeRuntimeOwner {
-  return createRealtimeRuntimeOwner(
-    createRealtimeRuntimeOwnerDependencies(input),
-  )
+  let owner: RealtimeRuntimeOwner
+  owner = createRealtimeRuntimeOwner(createRealtimeRuntimeOwnerDependencies({
+    ...input,
+    onFailure: async failure => {
+      const current = owner.getSnapshot().currentIdentity
+      if (current && current.realtimeSessionId !== failure.realtimeSessionId) {
+        await input.onFailure?.(failure)
+        return
+      }
+      // Main may reacquire the wake microphone after this report. Release all
+      // renderer-owned media first, including a still-connected failed session.
+      const cleanup = await owner.stop('close')
+      await input.onFailure?.(cleanup.status === 'failed'
+        ? { ...failure, reason: 'realtime_cleanup_failed' } : failure)
+    },
+  }))
+  return owner
 }

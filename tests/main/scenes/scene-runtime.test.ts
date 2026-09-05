@@ -51,6 +51,7 @@ async function drain(): Promise<void> {
 const actions: SceneActionDefinition[] = [
   { id: 'light-on', name: 'Light on', enabled: true, kind: 'lighting', command: 'on', presetId: 'blue' },
   { id: 'fog-on', name: 'Fog on', enabled: true, kind: 'fog', command: 'on', presetId: 'soft' },
+  { id: 'fog-off', name: 'Fog off', enabled: true, kind: 'fog', command: 'off', presetId: 'soft' },
   { id: 'light-off', name: 'Light off', enabled: true, kind: 'lighting', command: 'off', presetId: 'blue' },
   {
     id: 'video-once', name: 'Once video', enabled: true, kind: 'visual', assetId: 'visual-video',
@@ -105,6 +106,7 @@ const spell: SpellConfig = {
 function createHarness(input: {
   readonly dispatch?: SceneActionExecutor['dispatch']
   readonly release?: SceneActionExecutor['release']
+  readonly scenes?: readonly SceneDefinition[]
 } = {}) {
   const clock = new ManualClock()
   const events: SceneRuntimeEvent[] = []
@@ -123,7 +125,7 @@ function createHarness(input: {
   }
   const runtime = createSceneRuntime({
     spells: [spell],
-    scenes: [durationScene, videoScene, durationVisualScene, loopScene],
+    scenes: input.scenes ?? [durationScene, videoScene, durationVisualScene, loopScene],
     actions,
     visualAssets: [{
       id: 'visual-video', name: 'Video', kind: 'video', fileName: 'visual-video.webm',
@@ -149,6 +151,70 @@ function visualReport(
 }
 
 describe('SceneRuntime serialized owner', () => {
+  it('releases a timed visual before entering an Avatar-only next Stage', async () => {
+    const scene = { ...durationVisualScene, stages: [...durationVisualScene.stages, durationScene.stages[1]!] }
+    const harness = createHarness({ scenes: [scene] })
+    const start = await harness.runtime.runScene(scene.id)
+    await harness.clock.advance(1000)
+    expect(harness.releases).toContain(`${start.runId}:visual`)
+    expect(harness.dispatches.at(-1)?.actionId).toBe('light-off')
+    expect(harness.runtime.activeRunId()).toBe(start.runId)
+  })
+
+  it('does not let repeated unchanged progress keep a stalled loop alive', async () => {
+    const harness = createHarness()
+    const start = await harness.runtime.runScene(loopScene.id)
+    const report = (type: SceneVisualPlaybackReport['type'], fields = {}) => ({
+      runId: start.runId, sceneId: loopScene.id, stageId: 'stage-loop', actionId: 'video-loop', type, ...fields,
+    } as SceneVisualPlaybackReport)
+    await harness.runtime.reportVisual(report('playing', { durationMs: 5000 }))
+    await harness.runtime.reportVisual(report('progress', { currentTimeMs: 1000 }))
+    await harness.clock.advance(6000)
+    await harness.runtime.reportVisual(report('progress', { currentTimeMs: 1000 }))
+    await harness.clock.advance(4000)
+    expect(harness.releases).toContain(`${start.runId}:visual`)
+    expect(harness.events).toContainEqual(expect.objectContaining({
+      type: 'diagnostic', reason: 'visual_progress_timeout',
+    }))
+  })
+
+  it('caps continuous fog at ten minutes even across repeated ON stages', async () => {
+    const scene: SceneDefinition = { id: 'fog-safety', name: 'Fog safety', enabled: true, stages: [
+      { id: 'fog-first', name: 'First', endCondition: { kind: 'duration', durationMs: 300_000 }, actionIds: ['fog-on'] },
+      { id: 'fog-second', name: 'Second', endCondition: { kind: 'until_stopped', maxRuntimeMs: 900_000 }, actionIds: ['fog-on'] },
+    ] }
+    const harness = createHarness({ scenes: [scene] })
+    const start = await harness.runtime.runScene(scene.id)
+    await harness.clock.advance(600_000)
+    expect(harness.releases).toContain(`${start.runId}:fog`)
+    expect(harness.runtime.activeRunId()).toBe(start.runId)
+  })
+
+  it('enforces the absolute once-video deadline even while progress continues', async () => {
+    const harness = createHarness()
+    const start = await harness.runtime.runScene(videoScene.id)
+    await harness.runtime.reportVisual(visualReport(start.runId, 'playing', { durationMs: 5000 }))
+    for (let index = 1; index <= 3; index += 1) {
+      await harness.clock.advance(6000)
+      await harness.runtime.reportVisual(visualReport(start.runId, 'progress', { currentTimeMs: index * 1000 }))
+    }
+    await harness.clock.advance(2000)
+    expect(harness.events.at(-1)).toMatchObject({ type: 'finished', result: {
+      status: 'failed', actions: [expect.objectContaining({ errorCode: 'visual_absolute_timeout' })],
+    } })
+  })
+
+  it('keeps the fog safety deadline when an OFF dispatch fails', async () => {
+    const scene: SceneDefinition = { id: 'fog-failed-off', name: 'Failed off', enabled: true, stages: [
+      { id: 'fog-first', name: 'First', endCondition: { kind: 'duration', durationMs: 300_000 }, actionIds: ['fog-on'] },
+      { id: 'fog-second', name: 'Second', endCondition: { kind: 'until_stopped', maxRuntimeMs: 900_000 }, actionIds: ['fog-off'] },
+    ] }
+    const harness = createHarness({ scenes: [scene], dispatch: action => action.id === 'fog-off'
+      ? { status: 'failed', errorCode: 'fixture_off_failed' } : { status: 'dispatched' } })
+    const start = await harness.runtime.runScene(scene.id)
+    await harness.clock.advance(600_000)
+    expect(harness.releases).toContain(`${start.runId}:fog`)
+  })
   it('returns an immediate start acknowledgement and preserves duration dispatch timing', async () => {
     const harness = createHarness()
     const start = await harness.runtime.triggerSpell({ spellId: spell.id, turnId: 'turn-one' })

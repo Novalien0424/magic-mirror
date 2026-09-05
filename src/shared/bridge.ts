@@ -103,6 +103,8 @@ export const AVATAR_RUNTIME_STATES = [
 export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
+  | Readonly<{ type: 'audio_devices'; preferences: import('./audio-devices').AudioPreferences }>
+  | Readonly<{ type: 'refresh_audio_devices' }>
   | Readonly<{ type: 'state'; state: AvatarRuntimeState }>
   | Readonly<{ type: 'asset_failure'; action: 'inject' | 'clear' }>
   | Readonly<{ type: 'expression'; name: string; context?: SceneActionCommandContext }>
@@ -141,6 +143,7 @@ export type AvatarControlCommand =
   | Readonly<{ type: 'music_gain'; value: number }>
 
 export interface AvatarRuntimeSnapshot {
+  readonly audioDevices?: import('./audio-devices').AudioDeviceState
   readonly status: 'not_ready' | 'ready' | 'degraded' | 'failed'
   readonly reason: string
   readonly state: AvatarRuntimeState
@@ -224,6 +227,8 @@ interface SharedRendererBridge {
 }
 
 export interface MirrorBridge extends SharedRendererBridge {
+  getPresentation?(): Promise<import('./presentation').PresentationPayload | null>
+  getAudioPreferences?(): Promise<{ preferences: import('./audio-devices').AudioPreferences; reason: string }>
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
   reportRealtimeRuntimeOutcome(report: RealtimeRuntimeOutcomeReport): void
   reportRealtimeFailure(report: RealtimeFailureReport): void
@@ -263,6 +268,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
   onSceneStatus(listener: SceneStatusListener): () => void
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>
+  importMedia?(request: import('./media-import').MediaImportRequest): Promise<ConsoleResponse<import('./media-import').MediaImportEntry[]>>
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>>
   finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>>
   cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>

@@ -27,13 +27,20 @@ import type {
   MirrorEvent,
   ModuleId,
   SceneActionDefinition,
-  SceneDefinition,
   SimulatorCommand,
   SimulatorResult,
 } from '../../shared/types'
-import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../../shared/types'
-import { runConsoleVisualImport } from './visual-import'
-import { estimateSceneMaximumMs } from './scene-estimate'
+import { REN_EXPRESSION_NAMES } from '../../shared/types'
+import type { ManagedVisualAsset } from '../../shared/types'
+import { importMediaBatch } from './media-import'
+import { MediaLibrary } from './MediaLibrary'
+import type { ImportedMedia, MediaImportRequest } from '../../shared/media-import'
+import { probeDraftVisualAsset } from './visual-asset-probe'
+import { SceneComposer } from './SceneComposer'
+import { SceneActionFields } from './SceneActionFields'
+import { PresentationEditor } from './PresentationEditor'
+import { DEFAULT_AUDIO_PREFERENCES } from '../../shared/audio-devices'
+import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 
 const PAGES = ['Overview', 'Avatar / Audio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
@@ -438,9 +445,22 @@ function OverviewPanel({
           <p className="console__eyebrow">Observation</p>
           <h2 id="console-overview">Overview</h2>
         </div>
-        <span className="console__status console__status--mock">{CONSOLE_UI_CONTRACT.overview.readinessLabel}</span>
       </div>
 
+      <div className="console__overview-grid console__overview-primary">
+        <OverviewField label="Mirror" value={displayValue(overview?.lifecycle)} />
+        <OverviewField label="Wake phrase" value={displayValue(activeConfig?.wake.phrase)} />
+        <OverviewField label="Published configuration" value={activeConfig ? `Version ${activeConfig.configVersion}` : 'Loading'} />
+      </div>
+      {state.status === 'failure' ? <p className="console__fault" role="alert">{state.error}: {state.reason}</p> : null}
+      <ul className="console__modules" aria-label="Needs attention">
+        {MODULES.filter(module => overview && ['failed', 'degraded'].includes(overview.modules[module].status)).map(module =>
+          <li key={module} className="console__module-card">
+            <div className="console__module-heading"><strong>{module}</strong><span className={statusClass(overview!.modules[module].status)}>{overview!.modules[module].status}</span></div>
+            <ModuleSummary label="Reason" summary={overview!.modules[module].lastError ?? overview!.modules[module].lastFallback} />
+          </li>)}
+      </ul>
+      <details className="console__technical"><summary>Technical health and runtime details</summary>
       <article className="console__module-card" aria-label="Wake lifecycle">
         <div className="console__module-heading">
           <strong>Wake lifecycle</strong>
@@ -456,7 +476,7 @@ function OverviewPanel({
             name="mic owner"
             value={overview === null ? undefined : overview.lifecycle === 'active' ? 'realtime' : overview.lifecycle === 'dormant' || overview.lifecycle === 'offlineLoop' ? 'wake' : 'handoff'}
           />
-          <MetadataEntry name="idle timer" value={overview === null ? undefined : overview.lifecycle === 'active' ? 'armed' : 'cancelled'} />
+          <MetadataEntry name="idle policy" value="Resets after user input and avatar playback; paused during speech" />
           <MetadataEntry name="idle seconds" value={activeConfig?.idleSeconds} />
         </dl>
       </article>
@@ -495,17 +515,20 @@ function OverviewPanel({
           <ModuleCard key={module} module={module} observation={overview?.modules[module]} />
         ))}
       </ul>
+      </details>
     </section>
   )
 }
 
 function LifecycleControls({
+  lifecycle,
   bridgeAvailable,
   state,
   onStartConversation,
   onInterrupt,
   onDisconnect,
 }: {
+  readonly lifecycle?: string
   readonly bridgeAvailable: boolean
   readonly state: LifecycleActionState
   readonly onStartConversation: () => void
@@ -515,10 +538,9 @@ function LifecycleControls({
   const controlsDisabled = !bridgeAvailable || state.status === 'loading'
 
   return (
-    <section className="console__panel" aria-labelledby="console-lifecycle">
+    <section className="console__panel console__lifecycle" aria-labelledby="console-lifecycle">
       <div className="console__panel-heading">
         <div>
-          <p className="console__eyebrow">Conversation lifecycle</p>
           <h2 id="console-lifecycle">Conversation Controls</h2>
         </div>
         <span className={bridgeAvailable ? 'console__status console__status--success' : 'console__status console__status--disabled'}>
@@ -526,15 +548,14 @@ function LifecycleControls({
         </span>
       </div>
 
-      <p className="console__muted">{CONSOLE_UI_CONTRACT.lifecycle.outcomeCopy}</p>
       <div className="console__command-list" aria-label="Conversation lifecycle controls">
-        <button type="button" disabled={controlsDisabled} onClick={onStartConversation}>
+        <button type="button" disabled={controlsDisabled || lifecycle === 'active' || lifecycle === 'activating' || lifecycle === 'suspending'} onClick={onStartConversation}>
           Start Conversation
         </button>
-        <button type="button" disabled={controlsDisabled} onClick={onInterrupt}>
+        <button type="button" disabled={controlsDisabled || lifecycle !== 'active'} onClick={onInterrupt}>
           Interrupt
         </button>
-        <button type="button" disabled={controlsDisabled} onClick={onDisconnect}>
+        <button type="button" disabled={controlsDisabled || lifecycle === 'dormant' || lifecycle === 'starting'} onClick={onDisconnect}>
           Disconnect
         </button>
       </div>
@@ -639,6 +660,8 @@ function AvatarAudioPanel({
   readonly onCommand: (command: AvatarControlCommand) => void
 }): React.JSX.Element {
   const value = state.status === 'success' ? state.value : null
+  const audioDevices = value?.audioDevices
+  const preferences = audioDevices?.preferences ?? DEFAULT_AUDIO_PREFERENCES
   return (
     <section className="console__panel" aria-labelledby="console-avatar-audio">
       <div className="console__panel-heading">
@@ -650,6 +673,7 @@ function AvatarAudioPanel({
       </div>
 
       {state.status === 'failure' ? <p className="console__fault">{state.error}; {state.reason}</p> : null}
+      <details><summary>Renderer measurements</summary>
       <div className="console__overview-grid">
         <OverviewField label="state" value={displayValue(value?.state)} />
         <OverviewField label="FPS" value={value ? value.fps.toFixed(1) : '—'} />
@@ -664,6 +688,37 @@ function AvatarAudioPanel({
         </label>
       </div>
 
+      </details>
+      <p className="console__label">Sound devices</p>
+      <div className="console__gain-controls">
+        {(['audioinput', 'audiooutput'] as const).map((kind) => {
+          const devices = audioDevices?.devices.filter((device) => device.kind === kind) ?? []
+          const input = kind === 'audioinput'
+          const selected = input ? preferences.inputId : preferences.outputId
+          const systemDefault = devices.find((device) => device.deviceId === 'default')?.label.replace(/^(Default|預設)\s*-\s*/i, '')
+          return <label key={kind}>{input ? 'Microphone' : 'Speakers'}
+            <select aria-label={input ? 'Microphone device' : 'Speaker device'} value={selected} disabled={disabled || !audioDevices}
+              onChange={(event) => {
+                const id = event.currentTarget.value
+                const device = devices.find((entry) => entry.deviceId === id)
+                onCommand({ type: 'audio_devices', preferences: input
+                  ? { ...preferences, inputId: id, inputLabel: id ? device?.label ?? '' : '' }
+                  : { ...preferences, outputId: id } })
+              }}>
+              <option value="">Windows default{systemDefault ? ` — ${systemDefault}` : ''}</option>
+              {selected && !devices.some((device) => device.deviceId === selected) ? <option value={selected}>Selected device unavailable</option> : null}
+              {devices.filter((device) => device.deviceId && device.deviceId !== 'default' && device.deviceId !== 'communications').map((device) => (
+                <option key={device.deviceId} value={device.deviceId} disabled={input && !device.label}>{device.label || 'Unnamed device'}</option>
+              ))}
+            </select>
+          </label>
+        })}
+      </div>
+      <p className="console__detail">Speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start; use Start Conversation, then Disconnect to update both. Windows default follows the system selection on acquisition.</p>
+      <p className="console__detail" role="status">{audioDevices?.reason ?? 'Loading sound devices…'}</p>
+      <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
+
+      <details className="console__technical"><summary>Avatar motions, expressions and test tools</summary>
       <p className="console__label">States / motions</p>
       <div className="console__command-list">
         {AVATAR_RUNTIME_STATES.filter((stateName) => stateName !== 'OfflineLoop').map((stateName) => (
@@ -690,6 +745,7 @@ function AvatarAudioPanel({
         <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'play' })}>Play music</button>
         <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'stop' })}>Stop music</button>
       </div>
+      </details>
       <div className="console__gain-controls">
         <label>Voice gain
           <input type="range" min="0" max="1" step="0.05" value={value?.voiceGain ?? 1} disabled={disabled} onChange={(event) => onCommand({ type: 'voice_gain', value: Number(event.currentTarget.value) })} />
@@ -889,8 +945,9 @@ export function PhaseTestsPanel({
   )
 }
 
-function safeDraftFromConfig(value: ConsoleConfigPayload['draft']): ConsoleConfigDraftInput {
+function safeDraftFromConfig(value: ConsoleConfigDraftInput): ConsoleConfigDraftInput {
   return {
+    ...(value.presentation ? { presentation: structuredClone(value.presentation) } : {}),
     personaName: value.personaName,
     voice: value.voice,
     idleSeconds: value.idleSeconds,
@@ -935,21 +992,31 @@ export function ConfigPanel({
   const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(
     config === null ? null : safeDraftFromConfig(config.draft),
   )
+  const [result, setResult] = useState('')
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (config !== null) setDraft(safeDraftFromConfig(config.draft))
   }, [config])
 
-  const disabled = !bridgeAvailable || bridge === null || draft === null
+  const disabled = !bridgeAvailable || bridge === null || draft === null || config === null || busy
+  const dirty = draft !== null && config !== null
+    && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(config.draft))
   const updateDraft = (update: (current: ConsoleConfigDraftInput) => ConsoleConfigDraftInput): void => {
-    setDraft((current) => current === null ? current : update(current))
+    // Read event-backed values while the change handler still owns currentTarget.
+    if (draft !== null) setDraft(update(draft))
   }
-  const run = async (action: () => Promise<unknown>): Promise<void> => {
+  const run = async (action: () => Promise<ConsoleResponse<unknown>>): Promise<void> => {
+    setBusy(true)
     try {
-      await action()
-      onChanged()
+      const response = await action()
+      setResult(response.ok ? 'Operation completed.' : `${response.error}: ${response.reason}${response.fields?.length
+        ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
+      if (response.ok) onChanged()
     } catch {
-      onChanged()
+      setResult('Console operation failed.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -1140,8 +1207,9 @@ export function ConfigPanel({
 
       <div className="console__action-row">
         <button type="button" disabled={disabled} onClick={() => bridge && draft && void run(() => bridge.saveDraft(draft))}>Save Draft</button>
-        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
+        <button type="button" disabled={disabled || dirty} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
       </div>
+      <p role="status">{result}{dirty ? ' · Unsaved edits — Save Draft first.' : ''}</p>
 
       {config?.draftTest ? (
         <p className={config.draftTest.result === 'mock_passed' ? 'console__success' : 'console__fault'} role="status">
@@ -1166,7 +1234,7 @@ export function ConfigPanel({
             <span>complete confirmation required</span>
             <button
               type="button"
-              disabled={bridge === null || diff === undefined}
+              disabled={disabled || dirty || diff === undefined || label === 'Publish' && config?.draftTest?.result !== 'mock_passed'}
               onClick={() => bridge && diff && void run(() => label === 'Publish'
                 ? bridge.publish(confirmationFromDiff(diff))
                 : bridge.rollback(confirmationFromDiff(diff)))}
@@ -1187,23 +1255,10 @@ interface ModelsPanelProps {
   readonly onChanged: () => void
 }
 
-type SceneActionKind = SceneActionDefinition['kind']
-
-function newSceneAction(kind: SceneActionKind, index: number): SceneActionDefinition {
-  const base = { id: `action-${Date.now()}-${index}`, name: 'New action', enabled: true }
-  if (kind === 'avatar_dialogue') return { ...base, kind, text: 'Speak these words exactly.' }
-  if (kind === 'avatar_motion') return { ...base, kind, motionGroup: 'Scene' }
-  if (kind === 'avatar_expression') return { ...base, kind, expression: 'exp_01' }
-  if (kind === 'lighting' || kind === 'fog') {
-    return { ...base, kind, command: 'on', presetId: 'default' }
-  }
-  if (kind === 'visual') {
-    return { ...base, kind, assetId: '', fit: 'contain', playback: 'still', audio: 'muted', gain: 0 }
-  }
-  return { ...base, kind: 'music', command: 'stop', fadeDurationMs: 0 }
-}
 
 interface ScenesPanelProps {
+  readonly visible?: boolean
+  readonly dialogueOnly?: boolean
   readonly state: ConfigState
   readonly bridge: ConsoleBridge | null
   readonly bridgeAvailable: boolean
@@ -1215,10 +1270,44 @@ export function ScenesPanel({
   bridge,
   bridgeAvailable,
   onChanged,
+  visible = true,
+  dialogueOnly = false,
 }: ScenesPanelProps): React.JSX.Element {
-  const payload = state.status === 'success' ? state.value : null
+  // Keep the editor mounted while Save/Test/Publish refresh their read model.
+  const lastPayload = useRef<ConsoleConfigPayload | null>(null)
+  if (state.status === 'success') lastPayload.current = state.value
+  const payload = lastPayload.current
   const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(null)
   const [result, setResult] = useState('Draft not tested in this view.')
+  const [busy, setBusy] = useState(false)
+  const [mediaTestFailed, setMediaTestFailed] = useState(false)
+  const [editorView, setEditorView] = useState('scenes')
+  const [importFailures, setImportFailures] = useState<{ name: string; reason: string }[]>([])
+  const importMedia = async (request: MediaImportRequest, actionId?: string): Promise<void> => {
+    if (!bridge || busy) return
+    setBusy(true); setImportFailures([]); setResult('Importing media…')
+    try {
+      const response = await importMediaBatch(bridge, request)
+      setImportFailures(response.failures)
+      setDraft(current => {
+        if (!current) return current
+        const visuals = response.assets.filter((a): a is ManagedVisualAsset => 'kind' in a)
+        const music = response.assets.filter((a): a is Exclude<ImportedMedia, ManagedVisualAsset> => !('kind' in a))
+        const first = response.assets[0]
+        return { ...current,
+          visualAssets: [...current.visualAssets, ...visuals.filter(a => !current.visualAssets.some(old => old.id === a.id))].filter((a, i, all) => all.findIndex(b => b.id === a.id) === i),
+          musicAssets: [...current.musicAssets, ...music.filter(a => !current.musicAssets.some(old => old.id === a.id))].filter((a, i, all) => all.findIndex(b => b.id === a.id) === i),
+          sceneActions: current.sceneActions.map(a => {
+            if (!first || a.id !== actionId) return a
+            if (a.kind === 'visual' && 'kind' in first) return { ...a, assetId: first.id, playback: first.kind === 'video' ? 'once' as const : 'still' as const, audio: 'muted' as const, gain: 0 }
+            if (a.kind === 'music' && !('kind' in first)) return { id: a.id, name: a.name, enabled: a.enabled, kind: 'music' as const, command: 'play' as const, assetId: first.id, gain: 0.5, loop: false }
+            return a
+          }),
+        }
+      })
+      setResult(response.cancelled ? 'Media import cancelled.' : `Imported ${response.assets.length} file(s)${response.failures.length ? `; ${response.failures.length} failed` : ''}. ${actionId && response.assets.length ? 'Selected in this action. ' : ''}Save Draft to keep the links.`)
+    } finally { setBusy(false) }
+  }
 
   useEffect(() => {
     if (payload !== null) setDraft(safeDraftFromConfig(payload.draft))
@@ -1232,26 +1321,54 @@ export function ScenesPanel({
     }
   }), [bridge])
 
-  const disabled = !bridgeAvailable || bridge === null || draft === null
+  const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || state.status === 'loading'
+  const dirty = draft !== null && payload !== null
+    && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(payload.draft))
   const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
     setDraft((current) => current === null ? current : {
       ...current,
       sceneActions: current.sceneActions.map((action) => action.id === actionId ? next : action),
     })
   }
-  const replaceScene = (sceneId: string, next: SceneDefinition): void => {
-    setDraft((current) => current === null ? current : {
-      ...current,
-      scenes: current.scenes.map((scene) => scene.id === sceneId ? next : scene),
-    })
-  }
-  const runResponse = async (operation: () => Promise<ConsoleResponse<unknown>>): Promise<void> => {
+  const runResponse = async (
+    operation: () => Promise<ConsoleResponse<unknown>>,
+    message = 'Operation completed.',
+    refresh = true,
+  ): Promise<void> => {
+    if (refresh) setBusy(true)
     try {
       const response = await operation()
-      setResult(response.ok ? 'Operation completed.' : `${response.error}: ${response.reason}`)
-      onChanged()
+      const testFailed = response.ok && typeof response.value === 'object' && response.value !== null
+        && 'result' in response.value && response.value.result === 'failed'
+      setResult(response.ok ? testFailed ? 'Draft test failed; check saved media and configuration.' : message : `${response.error}: ${response.reason}${response.fields?.length
+        ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
+      if (response.ok && refresh) onChanged()
     } catch {
       setResult('Console operation failed.')
+    } finally {
+      if (refresh) setBusy(false)
+    }
+  }
+
+  const testSceneDraft = async (): Promise<void> => {
+    if (bridge === null || payload === null) return
+    setBusy(true)
+    setMediaTestFailed(false)
+    try {
+      for (const asset of payload.draft.visualAssets) {
+        const probe = await probeDraftVisualAsset(asset)
+        if (probe.width !== asset.width || probe.height !== asset.height
+          || asset.kind === 'video' && (!('durationMs' in probe)
+            || Math.abs(probe.durationMs - (asset.durationMs ?? 0)) > Math.max(1000, (asset.durationMs ?? 0) * 0.02))) {
+          throw new Error('visual_asset_probe_mismatch')
+        }
+      }
+      await runResponse(() => bridge.testDraft(), 'Saved Draft media decoded; configuration test completed.')
+    } catch {
+      setMediaTestFailed(true)
+      setResult('Draft media test failed: decode unavailable or metadata mismatch. Active is unchanged.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -1260,221 +1377,50 @@ export function ScenesPanel({
       <div className="console__panel-heading">
         <div>
           <p className="console__eyebrow">Phase 4 · Draft / Test / Publish</p>
-          <h2 id="console-scenes">Scenes</h2>
+          <h2 id="console-scenes">{dialogueOnly ? 'Wake & sleep dialogue' : 'Scenes'}</h2>
         </div>
-        <span className="console__status console__status--mock">
+        <span hidden={dialogueOnly} className="console__status console__status--mock">
           Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical'
             ? 'Physical not connected'
             : 'Mock'}
         </span>
       </div>
 
-      <p className="console__notice">
-        Each Stage has one explicit end condition. Ending a Stage never implicitly turns off, stops,
-        undoes, or resets an authored action.
-      </p>
+      <p className="console__detail">{dialogueOnly ? 'Uses the configured avatar voice. Published changes apply to the next conversation.' : 'Say a spell, play a few steps, return to the avatar.'}</p>
       {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason}</p> : null}
-      <p className="console__muted" aria-live="polite">{result}</p>
+      <p className="console__sr-only" aria-live="polite">{result}</p>
 
-      <fieldset>
-        <legend>Managed visuals</legend>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => bridge && void runConsoleVisualImport(bridge).then((response) => {
-            if (!response.ok) {
-              setResult(`Visual import failed: ${response.reason}.`)
-              return
-            }
-            const asset = response.asset
-            if (asset === null) {
-              setResult('Visual import cancelled.')
-              return
-            }
-            setDraft((current) => current === null || current.visualAssets.some((item) => item.id === asset.id)
-              ? current
-              : { ...current, visualAssets: [...current.visualAssets, asset] })
-            setResult(`Imported ${asset.name} (${asset.width}×${asset.height}). Save Draft to link it.`)
-          })}
-        >Import image / video…</button>
-        <ul className="console__path-list">
-          {(draft?.visualAssets ?? []).map((asset) => (
-            <li key={asset.id}>
-              {asset.name} · {asset.kind} · {asset.width}×{asset.height}
-              {asset.kind === 'video' ? ` · ${asset.durationMs} ms · audio ${asset.audioTrack}` : ''}
-              {' · '}{asset.id}
-            </li>
-          ))}
-        </ul>
-      </fieldset>
-
-      <fieldset>
-        <legend>Managed music</legend>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => bridge && void bridge.uploadMusic().then((response) => {
-            if (!response.ok) {
-              setResult(`${response.error}: ${response.reason}`)
-              return
-            }
-            const asset = response.value
-            if (asset === null) {
-              setResult('Music import cancelled.')
-              return
-            }
-            setDraft((current) => current === null || current.musicAssets.some((item) => item.id === asset.id)
-              ? current
-              : { ...current, musicAssets: [...current.musicAssets, asset] })
-            setResult(`Imported ${asset.name} as ${asset.id}. Save Draft to link it.`)
-          })}
-        >Upload music…</button>
-        <ul className="console__path-list">
-          {(draft?.musicAssets ?? []).map((asset) => (
-            <li key={asset.id}>{asset.name} · {asset.mimeType} · {asset.id}</li>
-          ))}
-        </ul>
-      </fieldset>
-
-      <fieldset>
-        <legend>Spells</legend>
-        <button
-          type="button"
-          disabled={disabled || (draft?.scenes.length ?? 0) === 0}
-          onClick={() => setDraft((current) => current === null || current.scenes[0] === undefined
-            ? current
-            : {
-                ...current,
-                spells: [...current.spells, {
-                  id: `spell-${Date.now()}-${current.spells.length}`,
-                  name: 'New spell',
-                  phrase: 'New exact phrase',
-                  sceneId: current.scenes[0].id,
-                  enabled: true,
-                  cooldownMs: 5000,
-                }],
-              })}
-        >Add spell</button>
-        <div className="console__scene-list">
-          {(draft?.spells ?? []).map((spell) => (
-            <article className="console__scene-card" key={spell.id}>
-              <label>Name<input value={spell.name} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, name: event.currentTarget.value } : item) })} /></label>
-              <label>Exact phrase<input value={spell.phrase} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, phrase: event.currentTarget.value } : item) })} /></label>
-              <label>Scene<select value={spell.sceneId} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, sceneId: event.currentTarget.value } : item) })}>{(draft?.scenes ?? []).map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select></label>
-              <label>Cooldown ms<input type="number" min="0" value={spell.cooldownMs} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, cooldownMs: Number(event.currentTarget.value) } : item) })} /></label>
-              <label><input type="checkbox" checked={spell.enabled} onChange={(event) => setDraft((current) => current === null ? current : { ...current, spells: current.spells.map((item) => item.id === spell.id ? { ...item, enabled: event.currentTarget.checked } : item) })} /> Enabled</label>
-              <button type="button" onClick={() => setDraft((current) => current === null ? current : { ...current, spells: current.spells.filter((item) => item.id !== spell.id) })}>Delete</button>
-            </article>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Reusable actions</legend>
-        <div className="console__action-row">
-          {(['avatar_dialogue', 'avatar_motion', 'avatar_expression', 'lighting', 'fog', 'music', 'visual'] as const).map((kind) => (
-            <button key={kind} type="button" disabled={disabled} onClick={() => setDraft((current) => current === null ? current : { ...current, sceneActions: [...current.sceneActions, newSceneAction(kind, current.sceneActions.length)] })}>+ {kind}</button>
-          ))}
-        </div>
-        <div className="console__scene-list">
-          {(draft?.sceneActions ?? []).map((action) => (
-            <article className="console__scene-card" key={action.id}>
-              <label>Name<input value={action.name} onChange={(event) => replaceAction(action.id, { ...action, name: event.currentTarget.value })} /></label>
-              <label>Kind<select value={action.kind} onChange={(event) => replaceAction(action.id, { ...newSceneAction(event.currentTarget.value as SceneActionKind, 0), id: action.id, name: action.name })}>{(['avatar_dialogue', 'avatar_motion', 'avatar_expression', 'lighting', 'fog', 'music', 'visual'] as const).map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
-              {action.kind === 'avatar_dialogue' ? <label>Text<textarea value={action.text} onChange={(event) => replaceAction(action.id, { ...action, text: event.currentTarget.value })} /></label> : null}
-              {action.kind === 'avatar_motion' ? <label>Cubism motion group<select value={action.motionGroup} onChange={(event) => replaceAction(action.id, { ...action, motionGroup: event.currentTarget.value })}>{REN_MOTION_GROUPS.map((group) => <option key={group} value={group}>{group}</option>)}</select></label> : null}
-              {action.kind === 'avatar_expression' ? <label>Cubism expression<select value={action.expression} onChange={(event) => replaceAction(action.id, { ...action, expression: event.currentTarget.value })}>{REN_EXPRESSION_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}</select></label> : null}
-              {action.kind === 'lighting' || action.kind === 'fog' ? <>
-                <label>Command<select value={action.command} onChange={(event) => replaceAction(action.id, event.currentTarget.value === 'value' ? { ...action, command: 'value', value: 0.5 } : { id: action.id, name: action.name, enabled: action.enabled, kind: action.kind, command: event.currentTarget.value as 'on' | 'off', presetId: action.presetId })}><option value="on">ON</option><option value="off">OFF</option><option value="value">Value</option></select></label>
-                <label>Approved preset<input value={action.presetId} onChange={(event) => replaceAction(action.id, { ...action, presetId: event.currentTarget.value })} /></label>
-                {action.command === 'value' ? <label>Value 0–1<input type="number" min="0" max="1" step="0.05" value={action.value} onChange={(event) => replaceAction(action.id, { ...action, value: Number(event.currentTarget.value) })} /></label> : null}
-              </> : null}
-              {action.kind === 'music' ? <>
-                <label>Command<select value={action.command} onChange={(event) => {
-                  const command = event.currentTarget.value
-                  replaceAction(action.id, command === 'play'
-                    ? { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'play', assetId: draft?.musicAssets[0]?.id ?? '', gain: 1, loop: false }
-                    : command === 'fade'
-                      ? { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'fade', targetGain: 0, durationMs: 1000 }
-                      : { id: action.id, name: action.name, enabled: action.enabled, kind: 'music', command: 'stop', fadeDurationMs: 0 })
-                }}><option value="play">Play</option><option value="stop">Stop</option><option value="fade">Fade</option></select></label>
-                {action.command === 'play' ? <><label>Asset<select value={action.assetId} onChange={(event) => replaceAction(action.id, { ...action, assetId: event.currentTarget.value })}><option value="">Select asset</option>{(draft?.musicAssets ?? []).map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label><label>Gain<input type="number" min="0" max="1" step="0.05" value={action.gain} onChange={(event) => replaceAction(action.id, { ...action, gain: Number(event.currentTarget.value) })} /></label><label><input type="checkbox" checked={action.loop} onChange={(event) => replaceAction(action.id, { ...action, loop: event.currentTarget.checked })} /> Loop</label></> : null}
-                {action.command === 'stop' ? <label>Fade ms<input type="number" min="0" value={action.fadeDurationMs} onChange={(event) => replaceAction(action.id, { ...action, fadeDurationMs: Number(event.currentTarget.value) })} /></label> : null}
-                {action.command === 'fade' ? <><label>Target gain<input type="number" min="0" max="1" step="0.05" value={action.targetGain} onChange={(event) => replaceAction(action.id, { ...action, targetGain: Number(event.currentTarget.value) })} /></label><label>Duration ms<input type="number" min="1" value={action.durationMs} onChange={(event) => replaceAction(action.id, { ...action, durationMs: Number(event.currentTarget.value) })} /></label></> : null}
-              </> : null}
-              {action.kind === 'visual' ? <>
-                <label>Asset<select value={action.assetId} onChange={(event) => {
-                  const assetId = event.currentTarget.value
-                  const asset = draft?.visualAssets.find((item) => item.id === assetId)
-                  replaceAction(action.id, {
-                    ...action,
-                    assetId,
-                    playback: asset?.kind === 'video' ? 'once' : 'still',
-                    audio: 'muted',
-                    gain: 0,
-                  })
-                }}><option value="">Select asset</option>{(draft?.visualAssets ?? []).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} ({asset.kind})</option>)}</select></label>
-                <label>Fit<select value={action.fit} onChange={(event) => replaceAction(action.id, { ...action, fit: event.currentTarget.value as 'contain' | 'cover' })}><option value="contain">Contain</option><option value="cover">Cover</option></select></label>
-                {draft?.visualAssets.find((asset) => asset.id === action.assetId)?.kind === 'video' ? <>
-                  <label>Playback<select value={action.playback} onChange={(event) => replaceAction(action.id, { ...action, playback: event.currentTarget.value as 'once' | 'loop' })}><option value="once">Once</option><option value="loop">Loop</option></select></label>
-                  <label>Audio<select value={action.audio} onChange={(event) => replaceAction(action.id, { ...action, audio: event.currentTarget.value as 'muted' | 'embedded', gain: event.currentTarget.value === 'muted' ? 0 : Math.max(action.gain, 0.5) })}><option value="muted">Muted</option><option value="embedded">Embedded track</option></select></label>
-                  {action.audio === 'embedded' ? <label>Gain<input type="number" min="0" max="1" step="0.05" value={action.gain} onChange={(event) => replaceAction(action.id, { ...action, gain: Number(event.currentTarget.value) })} /></label> : null}
-                  {action.audio === 'embedded' && draft?.visualAssets.find((asset) => asset.id === action.assetId)?.audioTrack === 'unknown' ? <p className="console__muted">Audio track could not be verified; test this Draft on Windows before Publish.</p> : null}
-                </> : null}
-              </> : null}
-              <button type="button" onClick={() => setDraft((current) => current === null ? current : { ...current, sceneActions: current.sceneActions.filter((item) => item.id !== action.id) })}>Delete</button>
-            </article>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Ordered scene stages</legend>
-        <button type="button" disabled={disabled} onClick={() => setDraft((current) => current === null ? current : { ...current, scenes: [...current.scenes, { id: `scene-${Date.now()}-${current.scenes.length}`, name: 'New scene', enabled: true, stages: [{ id: `stage-${Date.now()}-0`, name: 'Stage 1', endCondition: { kind: 'duration', durationMs: 1000 }, actionIds: [] }] }] })}>Add scene</button>
-        <div className="console__scene-list">
-          {(draft?.scenes ?? []).map((scene) => (
-            <article className="console__scene-card" key={scene.id}>
-              <label>Scene name<input value={scene.name} onChange={(event) => replaceScene(scene.id, { ...scene, name: event.currentTarget.value })} /></label>
-              <p className="console__muted">Estimated maximum: {(() => {
-                const duration = estimateSceneMaximumMs(scene, draft?.sceneActions ?? [], draft?.visualAssets ?? [])
-                return duration === null ? 'incomplete configuration' : `${duration} ms`
-              })()}</p>
-              <div className="console__action-row"><button type="button" onClick={() => bridge && void runResponse(() => bridge.runScene(scene.id))}>Run Published Scene</button><button type="button" onClick={() => replaceScene(scene.id, { ...scene, stages: [...scene.stages, { id: `stage-${Date.now()}-${scene.stages.length}`, name: `Stage ${scene.stages.length + 1}`, endCondition: { kind: 'duration', durationMs: 1000 }, actionIds: [] }] })}>Add Stage</button></div>
-              {scene.stages.map((stage, stageIndex) => (
-                <div className="console__stage-card" key={stage.id}>
-                  <strong>Stage {stageIndex + 1}</strong>
-                  <label>Name<input value={stage.name} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, name: event.currentTarget.value } : item) })} /></label>
-                  <label>Ends when<select value={stage.endCondition.kind} onChange={(event) => {
-                    const kind = event.currentTarget.value
-                    const visualAction = draft?.sceneActions.find((action) =>
-                      stage.actionIds.includes(action.id) && action.kind === 'visual' && action.playback === 'once')
-                    const endCondition = kind === 'duration'
-                      ? { kind: 'duration' as const, durationMs: 1000 }
-                      : kind === 'video_complete'
-                        ? { kind: 'video_complete' as const, visualActionId: visualAction?.id ?? '' }
-                        : { kind: 'until_stopped' as const, maxRuntimeMs: 60_000 }
-                    replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition } : item) })
-                  }}><option value="duration">Duration</option><option value="video_complete">Once video completes</option><option value="until_stopped">Stopped / maximum</option></select></label>
-                  {stage.endCondition.kind === 'duration' ? <label>Duration ms<input type="number" min="1" value={stage.endCondition.durationMs} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'duration', durationMs: Number(event.currentTarget.value) } } : item) })} /></label> : null}
-                  {stage.endCondition.kind === 'video_complete' ? <label>Once-video action<select value={stage.endCondition.visualActionId} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'video_complete', visualActionId: event.currentTarget.value } } : item) })}><option value="">Select action</option>{(draft?.sceneActions ?? []).filter((action) => stage.actionIds.includes(action.id) && action.kind === 'visual' && action.playback === 'once').map((action) => <option key={action.id} value={action.id}>{action.name}</option>)}</select></label> : null}
-                  {stage.endCondition.kind === 'until_stopped' ? <label>Maximum runtime ms<input type="number" min="1" value={stage.endCondition.maxRuntimeMs} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id === stage.id ? { ...item, endCondition: { kind: 'until_stopped', maxRuntimeMs: Number(event.currentTarget.value) } } : item) })} /></label> : null}
-                  <span>Actions start together:</span>
-                  {(draft?.sceneActions ?? []).map((action) => <label key={action.id}><input type="checkbox" checked={stage.actionIds.includes(action.id)} onChange={(event) => replaceScene(scene.id, { ...scene, stages: scene.stages.map((item) => item.id !== stage.id ? item : { ...item, actionIds: event.currentTarget.checked ? [...item.actionIds, action.id] : item.actionIds.filter((id) => id !== action.id) }) })} />{action.name}</label>)}
-                  <div className="console__action-row"><button type="button" disabled={stageIndex === 0} onClick={() => { const stages = [...scene.stages]; [stages[stageIndex - 1], stages[stageIndex]] = [stages[stageIndex]!, stages[stageIndex - 1]!]; replaceScene(scene.id, { ...scene, stages }) }}>Up</button><button type="button" disabled={stageIndex === scene.stages.length - 1} onClick={() => { const stages = [...scene.stages]; [stages[stageIndex], stages[stageIndex + 1]] = [stages[stageIndex + 1]!, stages[stageIndex]!]; replaceScene(scene.id, { ...scene, stages }) }}>Down</button><button type="button" disabled={scene.stages.length === 1} onClick={() => replaceScene(scene.id, { ...scene, stages: scene.stages.filter((item) => item.id !== stage.id) })}>Delete Stage</button></div>
-                  {stageIndex < scene.stages.length - 1 ? <p className="console__muted">When this end condition is satisfied → next Stage</p> : null}
-                </div>
-              ))}
-            </article>
-          ))}
-        </div>
-      </fieldset>
+      {dialogueOnly && draft ? <fieldset disabled={disabled}><legend>Spoken lines</legend><div className="console__form-grid">
+        <label>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></label>
+        <label>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></label>
+        <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
+      </div></fieldset> : null}
+      <nav hidden={dialogueOnly} className="console__subnav" aria-label="Scene workspace">
+        {([['scenes', 'Spell scenes'], ['presentation', 'Avatar presentation'], ['media', 'Media library'], ['library', 'Action library']] as const).map(([key, label]) =>
+          <button type="button" key={key} aria-pressed={editorView === key} onClick={() => setEditorView(key)}>{label}</button>)}
+      </nav>
+      {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
+      {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
+      {!dialogueOnly && draft && payload && editorView === 'scenes' ? <SceneComposer draft={draft} active={payload.active} disabled={disabled} onChange={setDraft}
+        onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
+        onRun={id => bridge && void runResponse(() => bridge.runScene(id), 'Published Scene requested.', false)} /> : null}
+      {visible && !dialogueOnly && draft && editorView === 'presentation' ? <PresentationEditor draft={draft} disabled={disabled} onChange={setDraft} /> : null}
+      {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
+        <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
+        {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
+          <SceneActionFields action={action} draft={draft} onChange={next => replaceAction(action.id, next)} onImport={kind => void importMedia({ kind, multiple: false }, action.id)} />
+          <button type="button" disabled={draft.scenes.some(s => s.stages.some(st => st.actionIds.includes(action.id)))}
+            onClick={() => setDraft({ ...draft, sceneActions: draft.sceneActions.filter(a => a.id !== action.id) })}>Delete unused action</button>
+        </details>)}
+      </fieldset> : null}
 
       <div className="console__action-row console__publish-bar">
-        <span>Active v{payload?.active.configVersion ?? '—'} · Draft {payload?.publishDiff.changed.length ?? 0} changes</span>
-        <button type="button" disabled={disabled} onClick={() => bridge && draft && void runResponse(() => bridge.saveDraft(draft))}>Save Draft</button>
-        <button type="button" disabled={disabled} onClick={() => bridge && void runResponse(() => bridge.testDraft())}>Test Draft</button>
-        <button type="button" disabled={disabled || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)))}>Publish</button>
-        <button type="button" disabled={disabled} onClick={() => bridge && void runResponse(() => bridge.stopScenes())}>Stop All</button>
+        <span>Active v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved edits — Save Draft first' : `Draft ${payload?.publishDiff.changed.length ?? 0} changes`}</span>
+        <button type="button" disabled={disabled} onClick={() => bridge && draft && void runResponse(() => bridge.saveDraft(draft), 'Draft saved.')}>Save Draft</button>
+        <button type="button" disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Test Draft</button>
+        <button type="button" disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.')}>Publish</button>
+        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void runResponse(() => bridge.stopScenes(), 'All Scenes stopped.', false)}>Stop All</button>
+        <p className="console__scene-result" role="status">{result}</p>
       </div>
     </section>
   )
@@ -1629,6 +1575,7 @@ export function App(): React.JSX.Element {
   const mountedRef = useRef(false)
   const didNotifyReadyRef = useRef(false)
   const didLoadOverviewRef = useRef(false)
+  const overviewRequestIdRef = useRef(0)
   const eventsRequestIdRef = useRef(0)
   const phaseTestsRequestIdRef = useRef(0)
 
@@ -1642,10 +1589,10 @@ export function App(): React.JSX.Element {
 
   const requestOverview = async (bridge: ConsoleBridge): Promise<void> => {
     if (!mountedRef.current) return
-    setOverviewState({ status: 'loading' })
+    const requestId = ++overviewRequestIdRef.current
     try {
       const overviewResponse = await bridge.getOverview()
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== overviewRequestIdRef.current) return
       const failure = requestFailure(overviewResponse)
       if (failure) {
         setOverviewState({ status: 'failure', ...failure })
@@ -1673,7 +1620,7 @@ export function App(): React.JSX.Element {
         })
       }
     } catch {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== overviewRequestIdRef.current) return
       setOverviewState({ status: 'failure', ...BRIDGE_FAILURE })
     }
   }
@@ -1848,6 +1795,17 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const bridge = bridgeRef.current
     if (bridge === null || !bridgeAvailable) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = bridge.onSnapshot(() => {
+      if (timer !== undefined) return
+      timer = setTimeout(() => { timer = undefined; void requestOverview(bridge) }, 50)
+    })
+    return () => { unsubscribe(); clearTimeout(timer); overviewRequestIdRef.current += 1 }
+  }, [bridgeAvailable])
+
+  useEffect(() => {
+    const bridge = bridgeRef.current
+    if (bridge === null || !bridgeAvailable) return
     void requestPhaseTests(bridge, selectedPhase)
   }, [bridgeAvailable, selectedPhase])
 
@@ -1955,6 +1913,7 @@ export function App(): React.JSX.Element {
     void bridge.controlAvatar(command).then(
       (response) => {
         if (mountedRef.current && response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
+        else if (mountedRef.current && !response.ok) setAvatarRuntimeState({ status: 'failure', error: response.error, reason: response.reason })
       },
       () => {
         if (mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
@@ -1974,11 +1933,9 @@ export function App(): React.JSX.Element {
     <main className="console">
       <header className="console__header">
         <div>
-          <p className="console__eyebrow">Phase 0 · Main observation</p>
           <h1 className="console__title">Magic Mirror Console</h1>
-          <p className="console__detail">A bounded, non-gating view of the mirror runtime.</p>
         </div>
-        <span className="console__status console__status--mock">Mock / simulator</span>
+        <span className="console__status">{overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
       </header>
 
       {bridgeError ? (
@@ -1986,6 +1943,7 @@ export function App(): React.JSX.Element {
       ) : null}
 
       <LifecycleControls
+        lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
         bridgeAvailable={bridgeAvailable}
         state={lifecycleActionState}
         onStartConversation={startConversation}
@@ -1994,17 +1952,14 @@ export function App(): React.JSX.Element {
       />
 
       <nav className="console__tabs" aria-label="Console pages">
-        {CONSOLE_UI_CONTRACT.tabs.map((page) => (
-          <button
-            key={page}
-            type="button"
-            className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
-            aria-selected={activePage === page}
-            onClick={() => setActivePage(page)}
-          >
-            {page}
-          </button>
-        ))}
+        {(['Overview', 'Scenes', 'Avatar / Audio'] as const).map(page => <button key={page} type="button"
+          className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
+          aria-current={activePage === page ? 'page' : undefined} onClick={() => setActivePage(page)}>{page}</button>)}
+        {([['Settings', ['Config', 'Models']], ['Diagnostics', ['Events', 'Simulator', 'Phase Tests']]] as const).map(([label, pages]) =>
+          <details className="console__nav-menu" key={label}><summary>{label}{pages.some(p => p === activePage) ? ' · ' + activePage : ''}</summary>
+            <div>{pages.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
+              onClick={e => { setActivePage(page); e.currentTarget.closest('details')?.removeAttribute('open') }}>{page}</button>)}</div>
+          </details>)}
       </nav>
 
       <div className="console__panels">
@@ -2018,8 +1973,10 @@ export function App(): React.JSX.Element {
             onCommand={controlAvatar}
           />
         </div>
-        <div hidden={activePage !== 'Scenes'}>
+        <div hidden={activePage !== 'Scenes' && activePage !== 'Avatar / Audio'}>
           <ScenesPanel
+            visible={activePage === 'Scenes' || activePage === 'Avatar / Audio'}
+            dialogueOnly={activePage === 'Avatar / Audio'}
             state={configState}
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}

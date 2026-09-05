@@ -10,7 +10,12 @@ export async function runConsoleVisualImport(
   bridge: Pick<ConsoleBridge, 'uploadVisual' | 'finalizeVisual' | 'cancelVisual'>,
   probe: (candidate: PendingVisualAsset) => Promise<VisualAssetProbe> = probePendingVisualAsset,
 ): Promise<VisualImportResult> {
-  const uploaded = await bridge.uploadVisual()
+  let uploaded: Awaited<ReturnType<typeof bridge.uploadVisual>>
+  try {
+    uploaded = await bridge.uploadVisual()
+  } catch {
+    return { ok: false, reason: 'visual_asset_import_failed' }
+  }
   if (!uploaded.ok) return { ok: false, reason: uploaded.reason }
   if (uploaded.value === null) return { ok: true, asset: null }
   const pending = uploaded.value
@@ -24,7 +29,7 @@ export async function runConsoleVisualImport(
     return { ok: true, asset: finalized.value }
   } catch (error) {
     await bridge.cancelVisual(pending.token).catch(() => undefined)
-    const reason = error instanceof Error && /^[A-Za-z0-9._:-]{1,96}$/.test(error.message)
+    const reason = error instanceof Error && ['visual_asset_probe_timeout', 'visual_asset_decode_failed'].includes(error.message)
       ? error.message
       : 'visual_asset_import_failed'
     return { ok: false, reason }

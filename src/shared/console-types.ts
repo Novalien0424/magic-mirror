@@ -203,6 +203,7 @@ export interface DeveloperModeDecision {
 }
 
 export interface ConsoleConfigSafeView {
+  readonly presentation?: import('./presentation').PresentationConfig
   readonly configVersion: number
   readonly personaName: string
   readonly voice: string
@@ -227,6 +228,7 @@ export interface ConsoleConfigSafeView {
 }
 
 export interface ConsoleConfigDraftInput {
+  readonly presentation?: import('./presentation').PresentationConfig
   readonly personaName: string
   readonly voice: string
   readonly idleSeconds: number

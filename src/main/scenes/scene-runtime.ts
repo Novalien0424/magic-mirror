@@ -85,6 +85,7 @@ interface VisualState {
   readonly context: SceneVisualPlaybackReport
   readonly asset?: ManagedVisualAsset
   playing: boolean
+  lastCurrentTimeMs: number
   startTimer: unknown | null
   progressTimer: unknown | null
   absoluteTimer: unknown | null
@@ -311,6 +312,9 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
       await terminate(run, 'completed')
       return
     }
+    if (run.resources.has('visual') && await releaseCategory(run, 'visual')) {
+      run.resources.delete('visual')
+    }
     beginStage(run, nextIndex)
   }
 
@@ -320,6 +324,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
     const result = run.actionResults.find((candidate) =>
       candidate.actionId === visual.action.id && candidate.stageId === run.stageId)
     if (result !== undefined) setResult(result, { status: 'failed', errorCode })
+    diagnostic(errorCode, run.scene.id, 'visual')
     clearVisualTimers(run)
     run.visual = null
     const stage = run.scene.stages[run.stageIndex]
@@ -327,17 +332,22 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
       await advanceStage(run)
       return
     }
-    void releaseCategory(run, 'visual')
+    if (await releaseCategory(run, 'visual')) run.resources.delete('visual')
   }
 
   const setFogSafety = (run: ActiveRun, action: SceneActionDefinition): void => {
     if (action.kind !== 'fog') return
-    if (run.fogSafetyTimer !== null) scheduler.clear(run.fogSafetyTimer)
-    run.fogSafetyTimer = null
-    if (action.command === 'off') return
+    if (action.command === 'off') {
+      if (run.fogSafetyTimer !== null) scheduler.clear(run.fogSafetyTimer)
+      run.fogSafetyTimer = null
+      return
+    }
+    // ON/value updates do not interrupt continuous fog exposure.
+    if (run.fogSafetyTimer !== null) return
     run.fogSafetyTimer = scheduler.schedule(() => {
       void enqueue(async () => {
         if (activeRun !== run || run.status !== 'running') return
+        run.fogSafetyTimer = null
         const released = await releaseCategory(run, 'fog')
         if (released) run.resources.delete('fog')
         diagnostic(released ? 'fog_safety_released' : 'fog_safety_release_failed', run.scene.id, 'fog')
@@ -362,6 +372,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
       context,
       asset,
       playing: false,
+      lastCurrentTimeMs: 0,
       startTimer: null,
       progressTimer: null,
       absoluteTimer: null,
@@ -409,7 +420,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
         }, run.abortController.signal)
         setResult(result, dispatch)
         if (category !== null && !isFailure(result)) run.resources.add(category)
-        setFogSafety(run, action)
+        if (!isFailure(result)) setFogSafety(run, action)
         if (action.kind === 'visual' && !isFailure(result)) installVisualState(run, action)
         if (dispatch.feedback !== undefined) {
           void dispatch.feedback.then((feedback) => enqueue(() => {
@@ -555,6 +566,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
         }
         if (report.type === 'playing') {
           if (visual.asset?.kind === 'image' || !Number.isFinite(report.durationMs) || report.durationMs < 1) return 'invalid'
+          if (visual.playing) return 'accepted'
           clearTimer(run, visual.startTimer)
           visual.startTimer = null
           const importedDuration = visual.asset?.durationMs
@@ -577,7 +589,10 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
         }
         if (report.type === 'progress') {
           if (!visual.playing || !Number.isFinite(report.currentTimeMs) || report.currentTimeMs < 0) return 'invalid'
-          resetProgressWatchdog(run)
+          if (report.currentTimeMs !== visual.lastCurrentTimeMs) {
+            visual.lastCurrentTimeMs = report.currentTimeMs
+            resetProgressWatchdog(run)
+          }
           return 'accepted'
         }
         if (report.type === 'failed') {
@@ -590,7 +605,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
         clearVisualTimers(run)
         run.visual = null
         if (stage?.endCondition.kind === 'video_complete') await advanceStage(run)
-        else void releaseCategory(run, 'visual')
+        else if (await releaseCategory(run, 'visual')) run.resources.delete('visual')
         return 'accepted'
       })
     },

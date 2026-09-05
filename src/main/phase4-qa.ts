@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, NativeImage } from 'electron'
 
 import type { BootRuntime } from './boot'
 import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../shared/types'
+import { runPhase4ConsoleQa } from './phase4-console-qa'
+import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
 
-type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents'>
+type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'>
 
 export interface Phase4QaEvidence {
   readonly step: string
@@ -24,8 +26,9 @@ export interface Phase4QaResult {
   readonly expressionCount: number
   readonly sceneCount: number
   readonly screenshotCount: number
-  readonly musicAnalyser: 'active'
+  readonly musicAnalyser: 'active' | 'not_executed'
   readonly visualCount: number
+  readonly consoleCheckCount?: number
 }
 
 export interface Phase4QaInput {
@@ -35,6 +38,9 @@ export interface Phase4QaInput {
   readonly outputDir: string
   readonly musicOnly?: boolean
   readonly live?: boolean
+  readonly consoleOnly?: boolean
+  readonly editorOnly?: boolean
+  readonly lifecycleLive?: boolean
   readonly onEvidence: (evidence: Phase4QaEvidence) => void
 }
 
@@ -97,12 +103,16 @@ async function waitForActualOutputMouth(input: Phase4QaInput): Promise<number> {
   throw new Error('phase4_qa_realtime_lipsync_not_observed')
 }
 
-async function capture(
+export async function capture(
   win: QaWindow,
   outputDir: string,
   fileName: string,
 ): Promise<{ sha256: string; nonblackPixels: number }> {
   const image = await win.capturePage()
+  return saveCapture(image, outputDir, fileName)
+}
+
+async function saveCapture(image: NativeImage, outputDir: string, fileName: string): Promise<{ sha256: string; nonblackPixels: number }> {
   const bitmap = image.toBitmap()
   let nonblackPixels = 0
   for (let index = 0; index + 3 < bitmap.length; index += 4) {
@@ -177,6 +187,8 @@ async function injectFinalTranscriptStart(
 export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult> {
   await mkdir(input.outputDir, { recursive: true })
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
+  if (input.lifecycleLive) return runPhase4LifecycleQa(input)
+  if (input.consoleOnly) return runPhase4ConsoleQa(input)
   if (input.live === true) {
     await startLiveRealtime(input)
     input.onEvidence({ step: 'realtime_session', status: 'connected' })
@@ -258,16 +270,22 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
     const responsePromise = injectFinalTranscript(input.mirror, phrase, turnId)
     let activeStage: { sha256: string; nonblackPixels: number } | undefined
     let endingStage: { sha256: string; nonblackPixels: number } | undefined
+    let openingFrame: NativeImage | undefined
+    let endingFrame: NativeImage | undefined
     if (!input.musicOnly && sceneId === 'scene-avatar-music') {
       await delay(350)
-      activeStage = await capture(input.mirror, input.outputDir, 'spell-stage-opening.png')
-      screenshotCount += 1
+      openingFrame = await input.mirror.capturePage()
       await delay(1_550)
-      endingStage = await capture(input.mirror, input.outputDir, 'spell-stage-ending.png')
-      screenshotCount += 1
-      if (activeStage.sha256 === endingStage.sha256) throw new Error('phase4_qa_spell_stage_static')
+      endingFrame = await input.mirror.capturePage()
     }
     const response = await responsePromise
+    // PNG encoding is synchronous and must not stall Main's scene timers.
+    if (openingFrame && endingFrame) {
+      activeStage = await saveCapture(openingFrame, input.outputDir, 'spell-stage-opening.png')
+      endingStage = await saveCapture(endingFrame, input.outputDir, 'spell-stage-ending.png')
+      screenshotCount += 2
+      if (activeStage.sha256 === endingStage.sha256) throw new Error('phase4_qa_spell_stage_static')
+    }
     const status = response.decision === 'triggered' ? response.result?.status : undefined
     const expectedStatus = input.live === true || sceneId === 'scene-fog-light'
       ? 'completed'
@@ -314,7 +332,7 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
       }
       const durationMs = response.result?.durationMs
       if (durationMs === undefined || durationMs < 2_350 || durationMs > 3_200) {
-        throw new Error('phase4_qa_stage_timing_failed')
+        throw new Error('phase4_qa_stage_timing_failed_' + durationMs)
       }
       if (activeStage !== undefined && endingStage !== undefined) {
         input.onEvidence({

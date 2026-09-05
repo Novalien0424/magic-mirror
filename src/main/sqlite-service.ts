@@ -898,7 +898,7 @@ function validateExistingV5PhaseRows(driver: SqliteDatabaseDriver): boolean {
       build: row.build,
       time: row.time,
       result: row.result,
-      note: row.note,
+      note: projectStoredPhaseNote(row.phase, row.note),
     })
     return typeof row.sequence === 'number'
       && Number.isSafeInteger(row.sequence)
@@ -1016,6 +1016,14 @@ function isCanonicalPhaseTime(value: unknown): value is string {
   } catch {
     return false
   }
+}
+
+function projectStoredPhaseNote(phase: unknown, note: unknown): unknown {
+  // The Windows Phase 3 checkpoint predates the strict note format. Keep its
+  // original evidence in SQLite; never expose unvalidated prose to Console.
+  return phase === '3' && typeof note === 'string' && !isSafeMetadata(note, PHASE_TEST_NOTE_PATTERN)
+    ? 'legacy_note_redacted'
+    : note
 }
 
 function validatePhaseTestRecord(value: unknown): Result<PhaseTestRecord, SqliteFailure> {
@@ -1247,7 +1255,7 @@ function createService(
             build: row.build,
             time: row.time,
             result: row.result,
-            note: row.note,
+            note: projectStoredPhaseNote(row.phase, row.note),
           })
           if (!recordValidation.ok || recordValidation.value.phase !== phase) {
             const failure = phaseRecordReadFailure()

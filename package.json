@@ -21,7 +21,11 @@
     "test": "vitest run",
     "test:phase1:live": "node scripts/run-phase1-live-smoke.mjs",
     "test:phase4:qa": "node scripts/run-phase4-qa.mjs",
+    "test:phase4:qa:console": "node scripts/run-phase4-qa.mjs --console",
+    "test:phase4:qa:editor": "node scripts/run-phase4-qa.mjs --editor",
+    "test:phase4:qa:manual": "node scripts/run-phase4-qa.mjs --manual",
     "test:phase4:qa:live": "node scripts/run-phase4-qa.mjs --live",
+    "test:phase4:qa:lifecycle-live": "node scripts/run-phase4-qa.mjs --lifecycle-live",
     "evaluate:wake": "node scripts/evaluate-wake-models.mjs"
   },
   "dependencies": {

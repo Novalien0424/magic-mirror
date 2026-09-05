@@ -132,7 +132,7 @@ export interface RealtimeRuntimeOwnerDependencies {
   readonly createSession: (
     bundle: Readonly<RealtimeSessionStartBundleValue>,
     stream: MediaStream,
-    audioElement: HTMLAudioElement,
+    audioElement: HTMLAudioElement, greet?: boolean,
   ) => MaybePromise<RealtimeRuntimeSession>
   readonly createMicOwner: (
     session: RealtimeRuntimeSession,
@@ -445,7 +445,7 @@ export function createRealtimeRuntimeOwner(
       partial.session = await dependencies.createSession(
         bundle,
         partial.stream,
-        partial.audioOutput.audioElement,
+        partial.audioOutput.audioElement, true,
       )
       stage = 'mic_owner_create'
       partial.micOwner = await dependencies.createMicOwner(partial.session)

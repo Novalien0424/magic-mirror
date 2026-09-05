@@ -1369,6 +1369,21 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
     expect(readRecordsForPhase(service, '4')).toEqual([])
   })
 
+  it('preserves legacy Phase 3 notes during migration but only exposes a metadata placeholder', async () => {
+    const record = validPhase3Record({ note: 'Synthetic legacy audio check accepted' })
+    const dbPath = await seedExactV5PhaseDatabase(record)
+    const opened = openPhaseService(dbPath)
+    const service = requireService(opened)
+    expect(service.health().schemaVersion).toBe(6)
+    expect(readRecordsForPhase(service, '3')).toEqual([{ ...record, note: 'legacy_note_redacted' }])
+    expect(service.appendPhaseTestRecord(record).ok).toBe(false)
+    const database = new DatabaseSync(dbPath, { readOnly: true })
+    try {
+      expect(database.prepare('SELECT note FROM phase_test_records').get()?.note).toBe(record.note)
+    } finally { database.close() }
+    expect(JSON.stringify(opened.telemetry.events)).not.toContain(record.note)
+  })
+
   it('round-trips all Phase 4 demo records independently', async () => {
     const service = requireService(openPhaseService(await makeTemporaryDatabasePath()))
     const records = (['P4-D1', 'P4-D2', 'P4-D3', 'P4-D4', 'P4-D5', 'P4-D6', 'P4-D7', 'P4-D8'] as const)

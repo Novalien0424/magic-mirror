@@ -246,6 +246,7 @@ export interface BootOptions {
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
   readonly validateWakeConfig?: ConsoleConfigControllerOptions['validateWakeConfig']
+  readonly validateSceneAssets?: ConsoleConfigControllerOptions['validateSceneAssets']
   readonly mockDraftProbe?: ConsoleConfigControllerOptions['mockDraftProbe']
   readonly now?: () => string
   readonly createActivationId?: () => string
@@ -297,7 +298,7 @@ export interface BootRuntime {
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
   requestSleep(): Promise<Record<string, unknown>>
-  noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback'): void
+  noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback' | 'assistant_playback_started', sessionId?: string): void
   rolloverAtSafeBoundary(): Promise<Record<string, unknown>>
   handleSimulator(command: unknown): Promise<SimulatorResult>
   /** Main-owned phase-record writer; never exposed through renderer IPC. */
@@ -863,6 +864,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let realtimeIdleTimerHandle: unknown = null
   let realtimeIdleTimerOwned = false
   let realtimeIdleTimerToken = 0
+  let realtimePlaybackSessionId: string | null = null
   let activeIdleSeconds = 300
   let recoveryProbeCycle: RecoveryProbeCycle | null = null
   let recoveryProbeCycleToken = 0
@@ -1015,7 +1017,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   function armRealtimeIdleTimer(reason: string): void {
     cancelRealtimeIdleTimer()
-    if (lifecycleState() !== 'active') return
+    if (lifecycleState() !== 'active' || realtimePlaybackSessionId !== null) return
     const token = realtimeIdleTimerToken + 1
     realtimeIdleTimerToken = token
     realtimeIdleTimerOwned = true
@@ -1041,7 +1043,29 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
   }
 
-  function noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback'): void {
+  function noteRealtimeActivity(
+    kind: 'user_turn' | 'assistant_playback' | 'assistant_playback_started',
+    sessionId?: string,
+  ): void {
+    const identity = lifecycleState() === 'activating'
+      ? pendingRealtimeSessionIdentity
+      : authoritativeRealtimeSessionIdentity()
+    if (sessionId !== undefined && sessionId !== identity?.realtimeSessionId
+      && sessionId !== pendingRealtimeRolloverSessionIdentity?.realtimeSessionId) {
+      emitMetadata(telemetry, { module: 'app', event: 'idle_timer', status: 'info', reason: 'ignored=stale_session_activity', source: 'runtime' })
+      return
+    }
+    if (kind === 'assistant_playback_started') {
+      if (sessionId === undefined || (lifecycleState() !== 'active' && lifecycleState() !== 'activating')) return
+      realtimePlaybackSessionId = sessionId
+      cancelRealtimeIdleTimer()
+      emitMetadata(telemetry, { module: 'app', event: 'idle_timer', status: 'info', reason: 'paused=assistant_playback', source: 'runtime' })
+      return
+    }
+    if (kind === 'assistant_playback') {
+      if (sessionId === undefined || (realtimePlaybackSessionId !== null && sessionId !== realtimePlaybackSessionId)) return
+      realtimePlaybackSessionId = null
+    }
     if (lifecycleState() === 'active') armRealtimeIdleTimer(kind)
   }
 
@@ -1116,6 +1140,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       || event.type === 'IDLE_TIMEOUT'
     if (clearsPendingIdentity) pendingRealtimeSessionIdentity = null
     if (clearsRollover) {
+      realtimePlaybackSessionId = null
       pendingRealtimeRolloverSessionIdentity = null
       cancelRealtimeRolloverTimer()
       cancelRealtimeIdleTimer()
@@ -1700,6 +1725,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     lastRealtimeRuntimeOutcomeReason = null
     pendingRealtimeRolloverSessionIdentity = null
+    realtimePlaybackSessionId = null
     cancelRecoveryProbeCycle()
     cancelRealtimeRolloverTimer()
     cancelRealtimeIdleTimer()
@@ -2103,6 +2129,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
 
     const sessionId = authority.realtimeSessionId
+    if (reportedReason === 'realtime_cleanup_failed') {
+      recordRealtimeStopFailure()
+      return Object.freeze({ status: 'failed', reason: 'realtime_cleanup_failed' })
+    }
     const errorCode = `realtime_${kind}_failed`
     const failureReason = safeReason(
       `failure_kind=${kind};cause=${reportedReason}`,
@@ -2358,6 +2388,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         refreshSnapshot()
         notifyListeners()
         armRealtimeRolloverTimer()
+        if (realtimePlaybackSessionId !== pendingIdentity.realtimeSessionId) realtimePlaybackSessionId = null
         armRealtimeIdleTimer('realtime_rollover')
         return emitRealtimeRuntimeResult('rollover', 'success', reason)
       }
@@ -2512,6 +2543,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     emit: (event) => emitMetadata(telemetry, event),
     now: () => nowValue(now),
     validateWakeConfig: options.validateWakeConfig,
+    validateSceneAssets: options.validateSceneAssets,
     mockDraftProbe: options.mockDraftProbe,
   })
 

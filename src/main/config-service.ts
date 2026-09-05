@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { parsePresentation, type PresentationConfig } from '../shared/presentation'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
   managedMusicAssetSchema,
@@ -152,6 +153,7 @@ const mirrorConfigBaseEnvelope = z.object({
 }).strict()
 
 const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
+  presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null).optional(),
   reasoningEffort: reasoningEffortSchema,
   turnDetectionProfile: turnDetectionProfileSchema,
   visualAssets: z.array(managedVisualAssetSchema).max(256),
@@ -160,6 +162,15 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
   spells: z.array(spellConfigSchema).max(128),
   scenes: z.array(sceneDefinitionSchema).max(128),
 }).strict().superRefine((value, context) => {
+  if (value.presentation) {
+    const p = value.presentation
+    if (p.backgroundId && !value.visualAssets.some(asset => asset.id === p.backgroundId)) {
+      context.addIssue({ code: 'custom', path: ['presentation', 'backgroundId'], message: 'Unknown visual asset' })
+    }
+    if (p.ambienceId && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
+      context.addIssue({ code: 'custom', path: ['presentation', 'ambienceId'], message: 'Unknown music asset' })
+    }
+  }
   const parsed = sceneCollectionsSchema.safeParse({
     visualAssets: value.visualAssets,
     musicAssets: value.musicAssets,

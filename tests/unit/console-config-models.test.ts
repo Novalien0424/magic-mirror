@@ -106,6 +106,7 @@ interface ConsoleConfigController {
 }
 
 interface ControllerOptions {
+  readonly validateSceneAssets?: (config: MirrorConfig) => Promise<boolean>
   readonly getConfigService: () => ConfigService
   readonly getModelSettings: () => ModelSettingsResolution
   readonly refreshConfig: () => Promise<RefreshResult>
@@ -339,6 +340,7 @@ function makeMemoryHarness(options: MemoryHarnessOptions = {}): MemoryHarness {
 }
 
 interface ControllerOverrides extends MemoryHarnessOptions {
+  readonly validateSceneAssets?: (config: MirrorConfig) => Promise<boolean>
   readonly developerMode?: boolean
   readonly refreshFails?: boolean
   readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
@@ -371,6 +373,7 @@ function makeController(overrides: ControllerOverrides = {}): ControllerHarness 
     },
     now: () => '2026-08-19T00:00:00.000Z',
     validateWakeConfig: overrides.validateWakeConfig,
+    validateSceneAssets: overrides.validateSceneAssets,
     mockDraftProbe: async (...args) => {
       void args
       harness.metrics.mockProbeCalls += 1
@@ -627,6 +630,21 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expectEvent(harness.events, 'config_publish_requested')
     expectNoSensitiveOutput({ blocked, tested, published, events: harness.events })
     expectMetadataOnly(harness.events)
+  })
+
+  it('rejects a failed Scene asset test and rechecks assets immediately before Publish', async () => {
+    let available = false
+    const harness = makeController({ validateSceneAssets: async () => available })
+    expect(await harness.controller.testDraft()).toMatchObject({ ok: true, value: { result: 'failed' } })
+    expect(await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish'))))
+      .toMatchObject({ ok: false })
+    available = true
+    expect(await harness.controller.testDraft()).toMatchObject({ ok: true, value: { result: 'mock_passed' } })
+    available = false
+    expect(await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish'))))
+      .toMatchObject({ ok: false, error: 'console_config_test_failed' })
+    expect(harness.metrics.publishCalls).toBe(0)
+    expect(await activeRevision(harness)).toBe(7)
   })
 
   it('keeps Active unchanged when the Draft wake package does not validate', async () => {

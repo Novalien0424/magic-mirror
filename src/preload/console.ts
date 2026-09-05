@@ -158,6 +158,9 @@ const bridge: ConsoleBridge = {
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>> {
     return ipcRenderer.invoke(UPLOAD_MUSIC_CHANNEL) as Promise<ConsoleResponse<ManagedMusicAsset | null>>
   },
+  importMedia(request) {
+    return ipcRenderer.invoke('console:import-media', request)
+  },
 
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>> {
     return ipcRenderer.invoke(UPLOAD_VISUAL_CHANNEL) as Promise<ConsoleResponse<PendingVisualAsset | null>>

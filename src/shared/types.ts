@@ -232,6 +232,7 @@ export interface SceneRunResult {
 }
 
 export interface MirrorConfig {
+  presentation?: import('./presentation').PresentationConfig;
   configVersion: number;                     // bumped on every publish
   persona: { name: string; instructions: string };
   voice: string;

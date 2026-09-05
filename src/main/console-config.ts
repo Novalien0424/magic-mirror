@@ -127,6 +127,7 @@ export type ConsoleConfigRefreshResult =
     }
 
 export interface ConsoleConfigControllerOptions {
+  readonly validateSceneAssets?: (config: MirrorConfig) => boolean | PromiseLike<boolean>
   readonly getConfigService: () => ConfigService | null | undefined
   readonly getModelSettings: () => ModelSettingsResolution | null | undefined
   readonly refreshConfig: () => Promise<ConsoleConfigRefreshResult>
@@ -338,6 +339,7 @@ function publicDiff(
 
 function safeConfigView(config: MirrorConfig): ConsoleConfigSafeView {
   return {
+    ...(config.presentation ? { presentation: structuredClone(config.presentation) } : {}),
     configVersion: config.configVersion,
     personaName: config.persona.name,
     voice: config.voice,
@@ -466,7 +468,7 @@ function confirmationMatches(
 function draftInputValidation(value: unknown):
   | { readonly ok: true; readonly value: ConsoleConfigDraftInput }
   | { readonly ok: false; readonly fields: readonly ConsoleFieldError[] } {
-  if (!exactKeys(value, SAFE_DRAFT_KEYS)) {
+  if (!exactKeys(value, SAFE_DRAFT_KEYS) && !exactKeys(value, [...SAFE_DRAFT_KEYS, 'presentation'])) {
     return { ok: false, fields: [safeFieldError('$', 'unrecognized_keys')] }
   }
 
@@ -515,6 +517,9 @@ function draftInputValidation(value: unknown):
   return {
     ok: true,
     value: {
+      ...(readProperty(value, 'presentation') === undefined ? {} : {
+        presentation: structuredClone(readProperty(value, 'presentation')) as ConsoleConfigDraftInput['presentation'],
+      }),
       personaName: readProperty(value, 'personaName') as string,
       voice: readProperty(value, 'voice') as string,
       idleSeconds: idleSeconds as number,
@@ -604,6 +609,7 @@ function copyConfigInput(
     faceModel: { ...input.faceModel },
     assets: { ...input.assets },
     adapters: { ...input.adapters },
+    ...(input.presentation === undefined ? {} : { presentation: structuredClone(input.presentation) }),
     visualAssets: structuredClone(input.visualAssets) as MirrorConfig['visualAssets'],
     musicAssets: structuredClone(input.musicAssets) as MirrorConfig['musicAssets'],
     sceneActions: structuredClone(input.sceneActions) as MirrorConfig['sceneActions'],
@@ -888,7 +894,8 @@ export function createConsoleConfigController(
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
       let probeResult: ConsoleDraftProbeResult
-      if (wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+      if (!(await sceneAssetsAreValid(state.slots.draft))
+        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
         probeResult = { result: 'failed', reason: 'cause=draft_invalid' }
       } else try {
         probeResult = options.mockDraftProbe === undefined
@@ -922,6 +929,14 @@ export function createConsoleConfigController(
   function invalidConfirmation<T>(): ConsoleResponse<T> {
     emitAction(options, 'config_diff_rejected', 'failed', 'cause=confirmation_invalid', 'console_config_confirmation_invalid')
     return responseError('console_config_confirmation_invalid', 'cause=confirmation_invalid')
+  }
+
+  async function sceneAssetsAreValid(config: MirrorConfig): Promise<boolean> {
+    try {
+      return options.validateSceneAssets === undefined || await options.validateSceneAssets(config)
+    } catch {
+      return false
+    }
   }
 
   async function refreshAfterMutation(): Promise<ConsoleResponse<ConsoleConfigPayload>> {
@@ -967,7 +982,8 @@ export function createConsoleConfigController(
       if (matchingTest.result !== 'mock_passed') {
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
-      if (wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+      if (!(await sceneAssetsAreValid(state.slots.draft))
+        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
         draftTest = null
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }

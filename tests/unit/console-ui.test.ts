@@ -226,13 +226,13 @@ function classTokens(markup: string): string[] {
 }
 
 describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
-  it('shows the configured wake package, mic owner, and idle timer in one bounded card', () => {
+  it('shows wake configuration and the idle policy without guessing a live timer state', () => {
     expect(CONSOLE_APP_SOURCE).toMatch(/Wake lifecycle/)
     expect(CONSOLE_APP_SOURCE).toMatch(/wake\.phrase/)
     expect(CONSOLE_APP_SOURCE).toMatch(/wake\.packageId/)
     expect(CONSOLE_APP_SOURCE).toMatch(/wake\.modelVersion/)
     expect(CONSOLE_APP_SOURCE).toMatch(/mic owner/)
-    expect(CONSOLE_APP_SOURCE).toMatch(/idle timer/)
+    expect(CONSOLE_APP_SOURCE).toMatch(/idle policy/)
   })
 
   it('renders the complete Console tabs and exposes the phase-exit Phase Tests ownership sentence', () => {

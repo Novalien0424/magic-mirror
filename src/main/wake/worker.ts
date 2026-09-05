@@ -52,13 +52,14 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
     }
   }
 
-  const acquire = async (requestId: string): Promise<void> => {
+  const acquire = async (requestId: string, inputLabel?: string): Promise<void> => {
     if (capture !== null) {
       post({ type: 'microphone_acquired', requestId })
       return
     }
     if (detector === null || activePackage === null) throw new Error('wake_not_initialized')
     capture = await openCapture({
+      ...(inputLabel ? { inputLabel } : {}),
       onSamples(samples) {
         if (capture === null || detector === null || activePackage === null) return
         try {
@@ -95,7 +96,7 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
       return
     }
     if (command.type === 'acquire_microphone') {
-      await acquire(command.requestId)
+      await acquire(command.requestId, command.inputLabel)
       return
     }
     if (command.type === 'release_microphone') {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   bootSequence,
@@ -478,6 +478,7 @@ function registerTestIpcHandlers(
   windows: unknown,
   events: MetadataEvent[],
   emit: (event: MetadataEvent) => void = (event) => events.push({ ...event }),
+  extra: Record<string, unknown> = {},
 ): RegisteredIpcHarness {
   const registered = makeIpcMainRegistrar()
   const register = registerIpcHandlers as unknown as (options: {
@@ -487,6 +488,7 @@ function registerTestIpcHandlers(
     telemetry: { emit(event: MetadataEvent): void }
   }) => void
   register({
+    ...extra,
     ipcMain: registered.ipcMain,
     runtime,
     windows,
@@ -549,6 +551,27 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('limits media imports to valid Console picker requests and sanitizes failures', async () => {
+    const fixtures = makeTrackedRendererWindows()
+    const events: MetadataEvent[] = []
+    const importer = vi.fn(async () => [])
+    const runtime = makeLifecycleNeutralMetadataRuntime([], startingSnapshot())
+    const registered = registerTestIpcHandlers(runtime, fixtures.windows, events, undefined, { importMedia: importer })
+    const handler = registered.handlers.get('console:import-media')!
+    const consoleEvent = { sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }
+    const mirrorEvent = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    await expect(handler(mirrorEvent, { kind: 'all', multiple: true })).resolves.toMatchObject({ ok: false })
+    for (const request of [{ kind: 'all', multiple: true, path: 'private-path' }, { kind: 'all' }, { kind: 'invalid', multiple: true }]) {
+      await expect(handler(consoleEvent, request)).resolves.toMatchObject({ ok: false, error: 'console_request_invalid' })
+    }
+    expect(importer).not.toHaveBeenCalled()
+    await expect(handler(consoleEvent, { kind: 'all', multiple: true })).resolves.toEqual({ ok: true, value: [] })
+    expect(importer).toHaveBeenCalledWith({ kind: 'all', multiple: true })
+    importer.mockRejectedValueOnce(new Error('private-path'))
+    const failure = await handler(consoleEvent, { kind: 'visual', multiple: false })
+    expect(failure).toMatchObject({ ok: false, reason: 'cause=runtime_action_failed' })
+    expect(JSON.stringify({ events, failure })).not.toContain('private-path')
+  })
   it('creates the renderer-safe Starting snapshot before local initialization', () => {
     const snapshot = startingSnapshot()
 
@@ -847,6 +870,25 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
   })
 
   describe('P1-U7F3 Mirror renderer realtime metadata transport', () => {
+    it('forwards only exact session playback boundaries to idle tracking', async () => {
+      const events: MetadataEvent[] = []
+      const fixtures = makeTrackedRendererWindows()
+      const noteRealtimeActivity = vi.fn()
+      const runtime = { ...makeLifecycleNeutralMetadataRuntime([], startingSnapshot()), noteRealtimeActivity }
+      const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
+      const handler = registered.handlers.get(REPORT_REALTIME_METADATA_CHANNEL) as IpcHandler
+      const sender = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+      for (const reason of ['cause=output_started', 'cause=output_stopped', 'cause=output_interrupted']) {
+        await handler(sender, { kind: 'session', status: 'success', reason, sessionId: 'session-7' })
+      }
+      await handler(sender, { kind: 'playback', status: 'degraded', reason: 'audio_device_enumeration_failed' })
+      await handler(sender, { kind: 'session', status: 'success', reason: 'cause=output_started' })
+      await handler(sender, { kind: 'session', status: 'failed', reason: 'cause=output_started', sessionId: 'session-7' })
+      expect(noteRealtimeActivity.mock.calls).toEqual([
+        ['assistant_playback_started', 'session-7'], ['assistant_playback', 'session-7'], ['assistant_playback', 'session-7'],
+      ])
+    })
+
     const validReports: ReadonlyArray<{
       readonly report: RendererMetadataReport
       readonly event: string

@@ -3,6 +3,7 @@ import type { LifecycleState } from '../../../shared/types'
 import type { RealtimeAudioOutput } from '../../realtime/realtime-audio-output'
 import type { AvatarAudioActivity, AvatarAudioOutput } from './avatar-audio-coordinator'
 import { createMusicDuckingController } from './music-ducking'
+import { getAudioDeviceRouter } from '../../audio-devices'
 
 export interface AvatarMediaSnapshot {
   readonly voiceGain: number
@@ -43,6 +44,12 @@ export function createAvatarMediaController(
   input: CreateAvatarMediaControllerInput,
 ): AvatarMediaController {
   const context = new AudioContext()
+  // Electron supports AudioContext.setSinkId; TypeScript's DOM lib omits it.
+  const outputRouting = getAudioDeviceRouter().attach(context as AudioContext & { setSinkId(id: string): Promise<void> }, () => disposed)
+  const resumeAudio = async (): Promise<void> => {
+    await outputRouting
+    if (!disposed) await context.resume()
+  }
   const music = new Audio()
   music.crossOrigin = 'anonymous'
   music.src = '/audio/test-music.wav'
@@ -185,7 +192,7 @@ export function createAvatarMediaController(
       sceneVideoGain.gain.value = unit(gain)
       sceneVideoSource.connect(sceneVideoGain)
       sceneVideoGain.connect(backgroundAnalyser)
-      void context.resume().catch(() => input.eventSink('avatar_video_audio_resume_failed'))
+      void resumeAudio().catch(() => input.eventSink('avatar_video_audio_resume_failed'))
     } catch {
       sceneVideoSource = null
       sceneVideoGain = null
@@ -231,7 +238,7 @@ export function createAvatarMediaController(
     input.onRecordedOutput(recordedOutput)
     input.onActivity('output_started')
     source.start()
-    await context.resume()
+    await resumeAudio()
   }
 
   return Object.freeze({
@@ -282,7 +289,7 @@ export function createAvatarMediaController(
           window.clearTimeout(fadePauseTimer)
           fadePauseTimer = null
         }
-        void context.resume().then(() => {
+        void resumeAudio().then(() => {
           ducking.restore()
           return music.play()
         }).then(() => { musicPlaying = true }).catch(() => input.eventSink(musicPlayFailureReason()))
@@ -327,7 +334,7 @@ export function createAvatarMediaController(
         musicGainNode.gain.value = effectiveMusicGain
         void loadManagedMusic(command.assetId).then(async (loaded) => {
           if (!loaded) return false
-          await context.resume()
+          await resumeAudio()
           await music.play()
           return true
         }).then((played) => {
@@ -359,6 +366,7 @@ export function createAvatarMediaController(
     dispose: (): void => {
       if (disposed) return
       disposed = true
+      void outputRouting.then((detach) => detach())
       stopRecorded()
       music.pause()
       setSceneVideoAudio(null)

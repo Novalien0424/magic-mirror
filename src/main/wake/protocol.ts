@@ -32,7 +32,7 @@ const wakeWorkerCommandSchema = z.discriminatedUnion('type', [
     requestId,
     package: packageSchema,
   }).strict(),
-  z.object({ type: z.literal('acquire_microphone'), requestId }).strict(),
+  z.object({ type: z.literal('acquire_microphone'), requestId, inputLabel: z.string().min(1).max(512).optional() }).strict(),
   z.object({ type: z.literal('release_microphone'), requestId }).strict(),
   z.object({ type: z.literal('shutdown'), requestId }).strict(),
 ])

@@ -8,6 +8,7 @@ import type {
 import { computePortraitLayout, type PortraitLayout } from './portrait-layout'
 
 export interface AvatarCanvasProps {
+  readonly embedded?: boolean
   readonly state: AvatarState
   readonly forceFallback?: boolean
   readonly onRenderer: (renderer: CubismAvatarRenderer | null) => void
@@ -15,15 +16,16 @@ export interface AvatarCanvasProps {
   readonly onMetrics: (metrics: CubismAvatarMetrics) => void
 }
 
-function currentLayout(): PortraitLayout {
+function currentLayout(host?: HTMLElement | null): PortraitLayout {
   return computePortraitLayout(
-    window.innerWidth,
-    window.innerHeight,
+    host?.clientWidth || window.innerWidth,
+    host?.clientHeight || window.innerHeight,
     window.devicePixelRatio || 1,
   )
 }
 
 export function AvatarCanvas({
+  embedded = false,
   state,
   forceFallback = false,
   onRenderer,
@@ -33,20 +35,25 @@ export function AvatarCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<CubismAvatarRenderer | null>(null)
   const [layout, setLayout] = useState<PortraitLayout>(() => currentLayout())
+  const layoutRef = useRef(layout); layoutRef.current = layout
+  const stateRef = useRef(state); stateRef.current = state
   const [loadFailed, setLoadFailed] = useState(false)
   const fallback = loadFailed || forceFallback
 
   useEffect(() => {
     const onResize = (): void => {
       try {
-        setLayout(currentLayout())
+        setLayout(currentLayout(embedded ? canvasRef.current?.parentElement : null))
       } catch {
         setLoadFailed(true)
       }
     }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+    const observer = embedded ? new ResizeObserver(onResize) : null
+    if (canvasRef.current?.parentElement) observer?.observe(canvasRef.current.parentElement)
+    onResize()
+    return () => { window.removeEventListener('resize', onResize); observer?.disconnect() }
+  }, [embedded])
 
   useEffect(() => {
     rendererRef.current?.resize(layout.pixelWidth, layout.pixelHeight)
@@ -73,7 +80,9 @@ export function AvatarCanvas({
           },
         })
         rendererRef.current = renderer
-        renderer.resize(layout.pixelWidth, layout.pixelHeight)
+        // Loading the Cubism module is asynchronous. The embedded host may
+        // already have resized while it loaded; do not restore viewport size.
+        renderer.resize(layoutRef.current.pixelWidth, layoutRef.current.pixelHeight)
         return renderer.initialize()
       },
       () => {
@@ -82,7 +91,7 @@ export function AvatarCanvas({
     ).then(
       () => {
         if (!mounted || renderer === null) return
-        renderer.setState(state)
+        renderer.setState(stateRef.current)
         onRenderer(renderer)
       },
       () => {

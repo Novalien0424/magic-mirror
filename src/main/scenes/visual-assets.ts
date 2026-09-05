@@ -281,3 +281,20 @@ export async function verifyManagedVisualAsset(input: {
     throw new VisualAssetError('visual_asset_read_failed')
   }
 }
+
+export function createVisualPlaybackVerifier(verify = verifyManagedVisualAsset) {
+  const cache = new Map<string, { stamp: string; pending: Promise<void> }>()
+  return async (input: Parameters<typeof verifyManagedVisualAsset>[0]): Promise<void> => {
+    const path = join(input.storageDir, input.asset.fileName)
+    let info: Awaited<ReturnType<typeof stat>>
+    try { info = await stat(path) } catch { throw new VisualAssetError('visual_asset_read_failed') }
+    const stamp = `${input.asset.sha256}:${input.asset.byteLength}:${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}`
+    const cached = cache.get(path)
+    if (cached?.stamp === stamp) return cached.pending
+    const entry = { stamp, pending: verify(input) }
+    cache.delete(path); cache.set(path, entry)
+    if (cache.size > 256) cache.delete(cache.keys().next().value!)
+    try { await entry.pending }
+    catch (error) { if (cache.get(path) === entry) cache.delete(path); throw error }
+  }
+}

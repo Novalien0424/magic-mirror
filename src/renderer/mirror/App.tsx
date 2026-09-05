@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { getAudioDeviceRouter } from '../audio-devices'
+import { PresentationStage } from '../avatar/PresentationStage'
+import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
+import type { PresentationPhase } from '../avatar/presentation-controller'
 import type {
   AvatarRuntimeSnapshot,
   MirrorBridge,
@@ -51,6 +55,7 @@ type MirrorInterruptBridge = Pick<MirrorBridge, 'onInterrupt'>
 type MirrorInterruptTarget = Pick<RealtimeRuntimeOwner, 'interrupt'>
 type MirrorRealtimeRuntimeBridge = Pick<
   MirrorBridge,
+  | 'getPresentation'
   | 'requestRealtimeClientSecret'
   | 'reportRealtimeRuntimeOutcome'
   | 'reportRealtimeMetadata'
@@ -415,6 +420,7 @@ function createMirrorRealtimeRuntimeOwner(
   }
 
   owner = createBrowserRealtimeRuntimeOwner({
+    audioDevices: getAudioDeviceRouter(),
     eventSink: ignoreDuplicateRuntimeOutcome,
     sessionEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'session', event),
     micEventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'mic', event),
@@ -433,6 +439,13 @@ function createMirrorRealtimeRuntimeOwner(
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
     },
     onReturnToDormant: () => bridge.requestSleep(),
+    getAvatarDialogue: async () => {
+      try { return (await bridge.getPresentation?.())?.config ?? DEFAULT_PRESENTATION }
+      catch {
+        bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable' })
+        return DEFAULT_PRESENTATION
+      }
+    },
     onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
     onCompletedInputTranscript: async (input) => {
       reportMirrorRealtimeMetadata(bridge, 'transcript', {
@@ -728,6 +741,22 @@ function OfflineLoopScreen(): React.JSX.Element {
 
 export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
+  const [presentation, setPresentation] = useState<PresentationPayload>({ config: { ...DEFAULT_PRESENTATION }, background: null })
+  const [presentationPhase, setPresentationPhase] = useState<PresentationPhase>('asleep')
+  const publishedVersion = readProperty(snapshot, 'configVersion')
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (!bridge || !('getPresentation' in bridge) || !bridge.getPresentation) return
+    let disposed = false
+    void bridge.getPresentation().then(value => {
+      if (!disposed) setPresentation(value ?? { config: { ...DEFAULT_PRESENTATION }, background: null })
+    }).catch(() => {
+      if (!disposed && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
+        kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable',
+      })
+    })
+    return () => { disposed = true }
+  }, [publishedVersion])
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
   const [avatarFallbackInjected, setAvatarFallbackInjected] = useState(false)
@@ -788,6 +817,23 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     return coordinator
   }
   ensureAvatarAudioCoordinator()
+  useEffect(() => {
+    const router = getAudioDeviceRouter()
+    const unsubscribe = router.subscribe((audioDevices) => {
+      reportAvatarRuntime({ audioDevices })
+      if (audioDevices.reason !== 'audio_devices_ready') {
+        const bridge = window.magicMirror
+        if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'playback', status: 'degraded', reason: audioDevices.reason })
+      }
+    })
+    const refresh = (): void => { void router.refresh() }
+    refresh()
+    navigator.mediaDevices?.addEventListener('devicechange', refresh)
+    return () => {
+      unsubscribe()
+      navigator.mediaDevices?.removeEventListener('devicechange', refresh)
+    }
+  }, [])
   const view = projectMirrorSnapshot(snapshot)
   const avatarState = projectAvatarState({
     lifecycle: view.state,
@@ -840,10 +886,11 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         onActivity: (activity) => coordinator?.handleActivity(activity),
         onChanged: (metrics: AvatarMediaSnapshot) => reportAvatarRuntime(metrics),
         eventSink: (reason) => {
-          reportAvatarRuntime({ status: 'degraded', reason })
+          const failed = /failed|unavailable|inactive|underrun/.test(reason)
+          reportAvatarRuntime({ ...(failed ? { status: 'degraded' as const } : {}), reason })
           const bridge = window.magicMirror
           if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
-            bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
+            bridge.reportRealtimeMetadata({ kind: 'avatar', status: failed ? 'degraded' : 'success', reason })
           }
           const context = pendingSceneMusicRef.current
           if (context !== null) {
@@ -1020,6 +1067,14 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     const bridge = window.magicMirror
     if (bridge === undefined || !('onAvatarControl' in bridge)) return
     return bridge.onAvatarControl((command) => {
+      if (command.type === 'audio_devices') {
+        void getAudioDeviceRouter().select(command.preferences)
+        return
+      }
+      if (command.type === 'refresh_audio_devices') {
+        void getAudioDeviceRouter().refresh()
+        return
+      }
       if (command.type === 'asset_failure') {
         const injected = command.action === 'inject'
         setAvatarFallbackInjected(injected)
@@ -1128,8 +1183,14 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   if (avatarState !== null) {
     return (
       <>
+        <PresentationStage payload={presentation} lifecycle={view.state} onPhase={setPresentationPhase}
+          onFailure={reason => {
+            reportAvatarRuntime({ status: 'degraded', reason })
+            const bridge = window.magicMirror
+            if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
+          }}>
         <AvatarCanvas
-          state={avatarState}
+          state={presentationPhase === 'entering' ? 'Waking' : presentationPhase === 'exiting' ? 'Suspending' : avatarState}
           forceFallback={avatarFallbackInjected}
           onRenderer={(renderer) => {
           avatarRendererRef.current = renderer
@@ -1173,6 +1234,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           })
           }}
         />
+        </PresentationStage>
         <div
           className="scene-visual"
           aria-hidden="true"

@@ -115,6 +115,47 @@ describe('BootRuntime realtime runtime outcome reason', () => {
 })
 
 describe('BootRuntime configured model availability probe', () => {
+  it('pauses idle throughout avatar speech, ignores late transcripts, and grants a full interval after playback', async () => {
+    vi.useFakeTimers()
+    const operations: string[] = []
+    const runtime = createTestRuntime({
+      dispatchRealtimeRuntimeCommand: (command) => {
+        operations.push(command.operation)
+        return { status: 'success', reason: 'runtime_command_delivered' }
+      },
+      scheduleRealtimeTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+      cancelRealtimeTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    })
+    try {
+      await startRuntime(runtime)
+      runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+      const sessionId = runtime.snapshot().realtimeSessionId!
+      await vi.advanceTimersByTimeAsync(29_000)
+      runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
+      runtime.noteRealtimeActivity('user_turn', sessionId)
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      expect(operations).toEqual(['start'])
+      runtime.noteRealtimeActivity('assistant_playback', 'stale-session')
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(operations).toEqual(['start'])
+      runtime.noteRealtimeActivity('assistant_playback', sessionId)
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(operations).toEqual(['start'])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(operations).toEqual(['start', 'stop'])
+      runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+      await startRuntime(runtime)
+      runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+      runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(operations).toEqual(['start', 'stop', 'start', 'stop'])
+    } finally {
+      await runtime.shutdown()
+      vi.useRealTimers()
+    }
+  })
+
   it('owns one resettable 30-second Developer Mode idle timer and dispatches idle stop', async () => {
     const timers = new Map<number, { callback: () => void; delayMs: number }>()
     let nextHandle = 0
@@ -239,6 +280,19 @@ describe('BootRuntime configured model availability probe', () => {
 
     expect(result).toEqual({ status: 'failed', reason: 'wake_microphone_acquire_failed' })
     expect(runtime.snapshot().lifecycle).toBe('maintenance')
+  })
+
+  it('does not reacquire wake or enter cloud recovery when renderer cleanup failed', async () => {
+    const acquire = vi.fn(async () => ({ status: 'success' as const, reason: 'wake_microphone_acquired' }))
+    const runtime = createTestRuntime({ wakeMicrophoneHandoff: {
+      release: async () => ({ status: 'success', reason: 'wake_microphone_released' }), acquire,
+    } })
+    await runtime.ready; await runtime.manualStart()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    const realtimeSessionId = runtime.snapshot().realtimeSessionId!
+    await runtime.handleRealtimeFailure({ kind: 'ice', realtimeSessionId, reason: 'realtime_cleanup_failed' })
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+    expect(acquire).not.toHaveBeenCalled()
   })
 
   it('publishes the Main-only wake config and updates wake status without gating lifecycle', async () => {

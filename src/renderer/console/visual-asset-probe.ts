@@ -1,4 +1,4 @@
-import type { PendingVisualAsset, VisualAssetProbe } from '../../shared/types'
+import type { ManagedVisualAsset, PendingVisualAsset, VisualAssetProbe } from '../../shared/types'
 
 interface ProbeImageElement {
   src: string
@@ -39,6 +39,21 @@ export function probePendingVisualAsset(
   candidate: PendingVisualAsset,
   dependencies: VisualAssetProbeDependencies = {},
 ): Promise<VisualAssetProbe> {
+  return probeVisualAsset(candidate.kind, pendingUrl(candidate.token), dependencies)
+}
+
+export function probeDraftVisualAsset(
+  asset: ManagedVisualAsset,
+  dependencies: VisualAssetProbeDependencies = {},
+): Promise<VisualAssetProbe> {
+  return probeVisualAsset(asset.kind, `magic-mirror-media://visual-draft/${encodeURIComponent(asset.id)}`, dependencies)
+}
+
+function probeVisualAsset(
+  kind: ManagedVisualAsset['kind'],
+  url: string,
+  dependencies: VisualAssetProbeDependencies,
+): Promise<VisualAssetProbe> {
   const schedule = dependencies.schedule ?? ((callback, delayMs) => globalThis.setTimeout(callback, delayMs))
   const clear = dependencies.clear ?? ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>))
 
@@ -62,7 +77,7 @@ export function probePendingVisualAsset(
       reject(new Error(reason))
     }
 
-    if (candidate.kind === 'image') {
+    if (kind === 'image') {
       const image = (dependencies.createImage ?? (() => new Image()))()
       cleanup = () => {
         image.onload = null
@@ -78,7 +93,7 @@ export function probePendingVisualAsset(
         finish({ width, height, audioTrack: 'absent' })
       }
       image.onerror = () => finishError('visual_asset_decode_failed')
-      image.src = pendingUrl(candidate.token)
+      image.src = url
       return
     }
 
@@ -106,6 +121,6 @@ export function probePendingVisualAsset(
       finish({ width, height, durationMs, audioTrack: 'unknown' })
     }
     video.onerror = () => finishError('visual_asset_decode_failed')
-    video.src = pendingUrl(candidate.token)
+    video.src = url
   })
 }

@@ -100,6 +100,40 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('keeps a ready session alive after a rejected request, without leaking provider text', async () => {
+    const probe = makeAdapterProbe();
+    const sink = vi.fn(); const onFailure = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onFailure });
+    await handle.connect();
+    for (const channel of ['transport_event', 'error']) probe.emit(channel, {
+      type: 'error', error: { type: 'invalid_request_error', code: 'response_cancel_not_active', message: 'private provider text' },
+    });
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'realtime_request_rejected', status: 'degraded' }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('private provider text');
+    handle.speakVerbatim('Synthetic follow-up.');
+    expect(probe.sendMessage).toHaveBeenCalled();
+  });
+
+  it('reports actual playback boundaries and interruption for idle tracking, never generation completion', async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    eventSink.mockClear();
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', realtimeSessionId: 'session-a' });
+    probe.emit('audio_stopped', {});
+    expect(eventSink.mock.calls.map(([event]) => event.reason)).toEqual(['cause=output_started']);
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', realtimeSessionId: 'session-a' });
+    probe.emit('audio_interrupted', {});
+    expect(eventSink.mock.calls.map(([event]) => [event.realtimeSessionId, event.reason])).toEqual([
+      ['session-a', 'cause=output_started'], ['session-a', 'cause=output_stopped'], ['session-a', 'cause=output_interrupted'],
+    ]);
+    await handle.close('manual_stop');
+    eventSink.mockClear();
+    probe.emit('audio_interrupted', {});
+    expect(eventSink.mock.calls.some(([event]) => event.reason === 'cause=output_interrupted')).toBe(false);
+  });
+
   it("sends operator-authored scene dialogue as one best-effort verbatim Realtime message", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
@@ -208,7 +242,7 @@ describe("RealtimeSession adapter", () => {
     expect(onReturnToDormant).toHaveBeenCalledTimes(1);
   });
 
-  it("requests dormant when goodbye playback starts before the sleep tool executes", async () => {
+  it("does not count pre-tool acknowledgement audio as the configured farewell", async () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
     const onReturnToDormant = vi.fn(async () => undefined);
@@ -236,7 +270,30 @@ describe("RealtimeSession adapter", () => {
     });
     await Promise.resolve();
 
+    expect(onReturnToDormant).not.toHaveBeenCalled();
+    probe.emit("transport_event", { type: "output_audio_buffer.started", realtimeSessionId: "session-a" });
+    probe.emit("transport_event", { type: "output_audio_buffer.stopped", realtimeSessionId: "session-a" });
+    await Promise.resolve();
     expect(onReturnToDormant).toHaveBeenCalledTimes(1);
+  });
+
+  it("greets once after successful connection using only the configured text", async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), eventSink, probe), wakeGreeting: "Welcome." });
+    expect(probe.sendMessage).not.toHaveBeenCalled();
+    await handle.connect(); await handle.connect();
+    expect(probe.sendMessage).toHaveBeenCalledTimes(1);
+    expect(probe.sendMessage.mock.calls[0]?.[0]).toContain("\nWelcome.");
+    expect(JSON.stringify(eventSink.mock.calls)).not.toContain("Welcome.");
+  });
+
+  it("uses the configured farewell rather than a hardcoded response", async () => {
+    const probe = makeAdapterProbe();
+    createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), sleepFarewell: "Rest now." });
+    const options = probe.agentConstructorCalls[0]?.[0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] };
+    expect(await options.tools[0]!.invoke({}, "{}")).toBe("Say exactly Rest now. now and no other words.");
+    expect(probe.interrupt).not.toHaveBeenCalled();
   });
 
   it("instructs the sleep tool path to say only the Persona goodbye", async () => {

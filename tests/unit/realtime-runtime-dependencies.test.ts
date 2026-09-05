@@ -138,6 +138,22 @@ function makeFixture(): DependencyFixture {
   }
 }
 
+describe('browser failure cleanup', () => {
+  it('closes the old session and releases its mic before reporting a cloud failure', async () => {
+    const f = makeFixture(); const order: string[] = [];
+    vi.mocked(f.stream.getTracks).mockReturnValue([{ stop: () => { order.push('release') } } as MediaStreamTrack]);
+    vi.mocked(f.session.close).mockImplementation(async () => { order.push('close') });
+    f.onFailure.mockImplementation(() => { order.push('report') });
+    const owner = createBrowserRealtimeRuntimeOwner({ ...f.input, createMicOwner: undefined });
+    await owner.start(makeBundle());
+    const input = f.createSession.mock.calls[0]![0] as { onFailure(failure: unknown): Promise<void> };
+    await input.onFailure({ kind: 'ice', realtimeSessionId: 'runtime-session-42', reason: 'transport_error' });
+    expect(order).toContain('close'); expect(order).toContain('release');
+    expect(order.at(-1)).toBe('report');
+    expect(owner.getSnapshot().state).toBe('idle');
+  });
+});
+
 type AudioAnalyserFixture = {
   readonly output: RealtimeRuntimeAudioOutput
   readonly audioElement: HTMLAudioElement
@@ -326,6 +342,16 @@ function makeAudioAnalyserFixture(): AudioAnalyserFixture {
 }
 
 describe('Realtime runtime dependency composition core', () => {
+  it('includes greeting only for fresh starts, while retaining the farewell on rollover', async () => {
+    const fixture = makeFixture()
+    const deps = createRealtimeRuntimeOwnerDependencies({ ...fixture.input,
+      getAvatarDialogue: async () => ({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' }) })
+    await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement, true)
+    await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement)
+    expect(fixture.createSession.mock.calls[0]?.[0]).toMatchObject({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' })
+    expect(fixture.createSession.mock.calls[1]?.[0]).toMatchObject({ sleepFarewell: 'Rest.' })
+    expect(fixture.createSession.mock.calls[1]?.[0]).not.toHaveProperty('wakeGreeting')
+  })
   it('constructs dependencies and a browser owner purely, leaving the owner idle', () => {
     const fixture = makeFixture()
 
