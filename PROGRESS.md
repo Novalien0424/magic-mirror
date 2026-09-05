@@ -1,7 +1,7 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-08-31 — Phase 3 Avatar/Audio remains accepted as a
-Windows development checkpoint; Phase 4 Scenes is ready for Windows human testing.**
+**Current dashboard — 2026-09-05 — Phase 3 Avatar/Audio remains accepted as a
+Windows development checkpoint; Phase 4 Scenes is waiting for Windows human testing.**
 Phase 0 is accepted and tagged `phase0-v0.3.1` at `9237dc7`. Phase 1 product
 tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
 released as `phase1-v0.3.1`. Phase 2 is released as `phase2-v0.3.1`; it
@@ -23,6 +23,26 @@ metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
 failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
+
+## Clock-out handoff — 2026-09-05
+
+- Phase 4 implementation and its automated Windows readiness evidence are
+  committed as `6e6c126` and pushed to `origin/main`. This supersedes the
+  working-copy wording in the 2026-08-31 handoff.
+- Human QA was deliberately deferred by the operator and has not failed or
+  passed. Phase 4 remains active, unaccepted, and untagged. Do not advance to
+  Phase 5 or infer real-device, Mac, or live dialogue-ducking evidence.
+- Resume with the single minimal `Magic Vision` journey: run `npm run dev`, open
+  Console with `Ctrl+Shift+D`, import
+  `resources/phase4-trial-assets/phase4-finite-silent.webm`, create one `visual`
+  action using Cover / Once / Muted, add one Scene and link that action to its
+  only Stage, set `Ends when` to `Once video completes`, then Save Draft, Test
+  Draft, Publish, and Run Published Scene.
+- The human pass condition for that first journey is simple: the Avatar remains
+  until media is ready, the three-second video replaces it, and the Avatar
+  returns automatically without any black frame. Record the exact visible
+  error and stop if any step fails. The broader optional follow-up remains in
+  `docs/testing/phase4-scene-media-windows-checklist.md`.
 
 ## Clock-out handoff — 2026-08-31
 
