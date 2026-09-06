@@ -24,6 +24,21 @@ failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
 
+## Spell-scene editor usability — 2026-09-06
+
+- Local implementation ready for operator validation: vertical steps, nearby
+  ordering controls, Copy/Delete options, scoped Save step/scene, real draft
+  Test action/step/scene, hover/focus help and visible unavailable reasons.
+- Draft media passes Main/preload/Mirror without publication or avatar switch.
+  Stop All cancels pending tests; failures show reasons. Saved-state comparison
+  handles legacy defaults/key ordering without losing unfinished edits.
+- Windows Console QA: 29 checks / 27 captures, exit 0. Native disabled-button
+  help/Escape and finite-step completion/Avatar return verified. Full suite
+  passed 896 tests before later targeted fixes; final affected tests, typechecks
+  and build pass. Normal canonical development app restored and running.
+- [Scope, exact evidence and remaining operator checks](docs/testing/scene-editor-usability-2026-09-06.md).
+  Phase status unchanged; the separate first-boot wake report below is not fixed.
+
 ## Wake input investigation — 2026-09-06
 
 - Added and loaded live wake-stream diagnostics in Avatar / Audio: level,

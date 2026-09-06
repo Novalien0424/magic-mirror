@@ -106,7 +106,7 @@ export function createSceneVisualController(input: Readonly<{
     }
     active = visual
     media.className = `scene-visual__media scene-visual__media--${command.fit}`
-    media.src = `magic-mirror-media://visual/${encodeURIComponent(command.assetId)}`
+    media.src = `magic-mirror-media://${command.preview ? 'visual-draft' : 'visual'}/${encodeURIComponent(command.assetId)}`
 
     if (command.playback === 'still') {
       listen(visual, 'load', () => {

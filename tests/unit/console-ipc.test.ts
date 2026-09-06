@@ -65,6 +65,7 @@ interface RegisteredIpc {
 }
 
 interface HarnessOptions {
+  readonly draftSceneConfig?: Record<string, unknown>
   readonly getWakeInput?: () => import('../../src/shared/wake-input').WakeInputSnapshot
   readonly destroyed?: boolean
   readonly mismatchedTrackedId?: boolean
@@ -230,6 +231,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
     getOverview,
     getEvents,
     getPhaseTests,
+    getConfig: async () => ({ ok: true, value: { active: options.sceneConfig, draft: options.draftSceneConfig } }),
   }
   const handleSimulator = vi.fn(async () => ({ op: 'success' as const }))
   const handleRealtimeFailure = vi.fn(() => undefined)
@@ -521,6 +523,61 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expect(await read(authorizedEvent(registered))).toMatchObject({ ok: true, value: { wakeInput: input } })
     expect(JSON.stringify(registered.events)).not.toContain('lastBlockAgeMs')
     expectNoSensitiveOutput(registered.events)
+  })
+
+  it('tests an unpublished draft step and keeps its feedback on the preview runtime', async () => {
+    const active = { configVersion: 1, wake: {}, visualAssets: [], musicAssets: [], scenes: [], spells: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock', music: 'mock' } }
+    const draft = { ...active, sceneActions: [{ id: 'v', name: 'Draft video', enabled: true, kind: 'visual', assetId: 'asset', fit: 'cover', playback: 'once', audio: 'muted', gain: 0 }],
+      scenes: [{ id: 'draft-scene', name: 'Draft', enabled: true, stages: [{ id: 'step', name: 'Step', actionIds: ['v'], endCondition: { kind: 'video_complete', visualActionId: 'v' } }] }] }
+    const registered = makeHarness({ sceneConfig: active, draftSceneConfig: draft })
+    const result = await getHandler(registered, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(registered), 'draft-scene', { stageId: 'step' }, 'draft')
+    expect(result).toMatchObject({ ok: true, value: { status: 'accepted' } })
+    await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl,
+      expect.objectContaining({ type: 'scene_visual', assetId: 'asset', preview: true })))
+    const runId = (result as { value: { runId: string } }).value.runId
+    // Catalog reads and renderer feedback must not replace the draft runtime.
+    await getHandler(registered, MIRROR_IPC_CHANNELS.getSceneCatalog)(authorizedMirrorEvent(registered))
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneVisual)(authorizedMirrorEvent(registered), {
+      runId, sceneId: 'draft-scene', stageId: 'step', actionId: 'v', type: 'playing', durationMs: 3000,
+    })
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneVisual)(authorizedMirrorEvent(registered), {
+      runId, sceneId: 'draft-scene', stageId: 'step', actionId: 'v', type: 'ended',
+    })
+    await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.sceneStatus,
+      expect.objectContaining({ type: 'finished', result: expect.objectContaining({ runId, status: 'completed' }) })))
+    draft.sceneActions[0]!.assetId = 'edited-asset'
+    const next = await getHandler(registered, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(registered), 'draft-scene', null, 'draft')
+    expect((next as { value: { runId: string } }).value.runId).not.toBe(runId)
+    await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl,
+      expect.objectContaining({ assetId: 'edited-asset', preview: true })))
+    await getHandler(registered, CONSOLE_IPC_CHANNELS.stopScenes)(authorizedEvent(registered))
+    expect(active.scenes).toEqual([])
+    expect(registered.events.some(e => e.event === 'config_published')).toBe(false)
+  })
+
+  it('rejects draft tests for a different loaded avatar and unauthorized senders', async () => {
+    const active = { configVersion: 1, avatarCatalog: { activeAvatarId: 'a', locks: [] }, sceneActions: [] }
+    const registered = makeHarness({ sceneConfig: active, draftSceneConfig: { ...active, avatarCatalog: { activeAvatarId: 'b', locks: [] } } })
+    const run = getHandler(registered, CONSOLE_IPC_CHANNELS.runScene)
+    expect(await run(authorizedEvent(registered), 'scene', null, 'draft')).toMatchObject({ ok: false })
+    expect(await run(authorizedMirrorEvent(registered), 'scene', null, 'draft')).toMatchObject({ ok: false })
+    expect(await run(authorizedEvent(registered), 'scene', null, 'untrusted')).toMatchObject({ ok: false })
+    expect(registered.mirrorSender.send).not.toHaveBeenCalled()
+  })
+
+  it('stops a scene even when Stop All arrives while its configuration is loading', async () => {
+    const config = { configVersion: 1, wake: {}, visualAssets: [], musicAssets: [], spells: [],
+      adapters: { lighting: 'mock', fog: 'mock', music: 'mock' },
+      sceneActions: [{ id: 'v', name: 'Visual', enabled: true, kind: 'visual', assetId: 'asset', fit: 'cover', playback: 'loop', audio: 'muted', gain: 0 }],
+      scenes: [{ id: 's', name: 'Scene', enabled: true, stages: [{ id: 'step', name: 'Step', actionIds: ['v'], endCondition: { kind: 'duration', durationMs: 10000 } }] }],
+    }
+    const h = makeHarness({ sceneConfig: config, draftSceneConfig: config })
+    const start = getHandler(h, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(h), 's', null, 'draft')
+    const stop = getHandler(h, CONSOLE_IPC_CHANNELS.stopScenes)(authorizedEvent(h))
+    expect(await start).toMatchObject({ ok: true, value: { status: 'accepted' } })
+    expect(await stop).toMatchObject({ ok: true, value: { status: 'stopped' } })
+    expect(h.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.sceneStatus,
+      expect.objectContaining({ type: 'finished', result: expect.objectContaining({ status: 'stopped' }) }))
   })
 
   it('returns an immediate Scene start and publishes correlated completion as an event', async () => {

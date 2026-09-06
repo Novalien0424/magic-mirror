@@ -1,7 +1,7 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
-import { parseAvatarModelReference } from '../shared/avatar-profiles'
+import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import type {
   AppSnapshot,
@@ -1207,7 +1207,14 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     voiceGain: 1,
     musicGain: 1,
   })
-  let cachedSceneRuntime: { readonly configVersion: number; readonly value: SceneRuntime } | null = null
+  let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
+  let sceneRuntimeGeneration = 0
+  let sceneOperations: Promise<unknown> = Promise.resolve()
+  const enqueueSceneOperation = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = sceneOperations.then(operation)
+    sceneOperations = result.catch(() => undefined)
+    return result
+  }
   let unavailableSceneRunSequence = 0
 
   const unavailableSceneResult = (): SceneStartResult => ({
@@ -1252,7 +1259,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (event.type === 'finished') emitSceneResult(event.result, 'runtime')
   }
 
-  const loadSceneRuntime = async (): Promise<{
+  const loadSceneRuntime = async (source: 'published' | 'draft' = 'published'): Promise<{
     readonly config: Readonly<Pick<
       MirrorConfig,
       'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
@@ -1263,11 +1270,22 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (getConfig === undefined) return null
     let config: Awaited<ReturnType<NonNullable<typeof getConfig>>>
     try {
-      config = await getConfig()
+      if (source === 'draft') {
+        const response = await consoleFacade(options)?.getConfig()
+        if (!response?.ok) return null
+        const { draft, active } = response.value
+        const avatarId = active.avatarCatalog?.activeAvatarId ?? ''
+        if ((draft.avatarCatalog?.activeAvatarId ?? '') !== avatarId) return null
+        config = { ...draft, visualAssets: [...draft.visualAssets], musicAssets: [...draft.musicAssets],
+          scenes: [...draft.scenes], spells: [...draft.spells], sceneActions: draft.sceneActions.filter(action =>
+          canUseAvatarAction(draft.avatarCatalog, avatarId, action)
+          && canUseAvatarAction(active.avatarCatalog, avatarId, action)) }
+      } else config = await getConfig()
     } catch {
       return null
     }
-    if (cachedSceneRuntime?.configVersion === config.configVersion) {
+    const key = source + ':' + (source === 'draft' ? JSON.stringify(config) : config.configVersion)
+    if (cachedSceneRuntime?.key === key) {
       return { config, value: cachedSceneRuntime.value }
     }
     if (cachedSceneRuntime !== null) await cachedSceneRuntime.value.stopAll()
@@ -1279,6 +1297,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     const lighting = physicalAdapter('lighting')
     const fog = physicalAdapter('fog')
     const value = createSceneRuntime({
+      runIdPrefix: sceneRuntimeGeneration++ === 0 ? 'scene' : `scene-${sceneRuntimeGeneration}`,
       spells: config.spells,
       scenes: config.scenes,
       actions: config.sceneActions,
@@ -1294,10 +1313,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
             }
           }
           const context: SceneActionCommandContext = { ...actionContext, actionId: action.id }
-          const command = sceneRendererCommand(action, context)
+          let command = sceneRendererCommand(action, context)
           if (command === null) {
             return { status: 'failed', errorCode: 'scene_renderer_unavailable' }
           }
+          if (source === 'draft' && (command.type === 'scene_visual' && command.action === 'start'
+            || command.type === 'scene_music' && command.action === 'play')) command = { ...command, preview: true }
           if (!dispatchMirrorAvatarControl(command, windows)) {
             return { status: 'failed', errorCode: 'scene_renderer_unavailable' }
           }
@@ -1327,7 +1348,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         },
       },
     })
-    cachedSceneRuntime = { configVersion: config.configVersion, value }
+    cachedSceneRuntime = { key, value }
     return { config, value }
   }
 
@@ -1451,7 +1472,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneActionRendererReport
-    void loadSceneRuntime().then((loaded) => loaded?.value.reportAction(report))
+    cachedSceneRuntime?.value.reportAction(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneVisual, (event, ...args) => {
@@ -1465,7 +1486,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneVisualPlaybackReport
-    void loadSceneRuntime().then((loaded) => loaded?.value.reportVisual(report))
+    cachedSceneRuntime?.value.reportVisual(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
@@ -1615,12 +1636,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return { configVersion: 0, stopPhrase: '', spells: [] } satisfies ScenePublicCatalog
     }
-    const loaded = await loadSceneRuntime()
-    if (loaded === null) return { configVersion: 0, stopPhrase: '', spells: [] }
+    const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
+    if (!config) return { configVersion: 0, stopPhrase: '', spells: [] }
     return {
-      configVersion: loaded.config.configVersion,
-      stopPhrase: loaded.config.wake.phrase,
-      spells: loaded.config.spells
+      configVersion: config.configVersion,
+      stopPhrase: config.wake.phrase,
+      spells: config.spells
         .filter((spell) => spell.enabled)
         .map((spell) => ({ id: spell.id, phrase: spell.phrase })),
     } satisfies ScenePublicCatalog
@@ -1642,13 +1663,14 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return unavailableSceneResult()
     }
-    const loaded = await loadSceneRuntime()
-    if (loaded === null) return unavailableSceneResult()
-    const result = await loaded.value.triggerSpell({
-      spellId: readProperty(request, 'spellId') as string,
-      turnId: readProperty(request, 'turnId') as string,
+    return enqueueSceneOperation(async () => {
+      const loaded = await loadSceneRuntime()
+      if (loaded === null) return unavailableSceneResult()
+      return loaded.value.triggerSpell({
+        spellId: readProperty(request, 'spellId') as string,
+        turnId: readProperty(request, 'turnId') as string,
+      })
     })
-    return result
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.stopScene, async (event, ...args) => {
@@ -1667,11 +1689,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return 'stale' as const
     }
-    const loaded = await loadSceneRuntime()
-    if (loaded === null) return 'stale' as const
-    return loaded.value.stopRun({
-      runId: readProperty(request, 'runId') as string,
-      turnId: readProperty(request, 'turnId') as string,
+    return enqueueSceneOperation(async () => {
+      if (cachedSceneRuntime === null) return 'stale' as const
+      return cachedSceneRuntime.value.stopRun({
+        runId: readProperty(request, 'runId') as string,
+        turnId: readProperty(request, 'turnId') as string,
+      })
     })
   })
 
@@ -1808,16 +1831,20 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       senderRejected(telemetry, authorization.reason)
       return consoleFailure('console_request_rejected', 'cause=sender_rejected')
     }
-    if ((args.length !== 1 && args.length !== 2) || typeof args[0] !== 'string' || !SAFE_ID_PATTERN.test(args[0]) || args.length === 2 && !parseSceneTestScope(args[1])) {
+    const isDraft = args.length === 3 && args[2] === 'draft'
+    const scope = args.length >= 2 ? parseSceneTestScope(args[1]) : undefined
+    if (args.length < 1 || args.length > 3 || args.length === 3 && !isDraft
+      || typeof args[0] !== 'string' || !SAFE_ID_PATTERN.test(args[0])
+      || args.length >= 2 && !scope && !(isDraft && args[1] === null)) {
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
-    const loaded = await loadSceneRuntime()
-    if (loaded === null) {
-      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
-    }
-    const result = await loaded.value.runScene(args[0] as string, args.length === 2 ? parseSceneTestScope(args[1])! : undefined)
-    return { ok: true, value: result }
+    return enqueueSceneOperation(async () => {
+      const loaded = await loadSceneRuntime(isDraft ? 'draft' : 'published')
+      if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+      const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
+      return { ok: true, value: result }
+    })
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.stopScenes, async (event, ...args) => {
@@ -1830,12 +1857,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
-    const loaded = await loadSceneRuntime()
-    if (loaded === null) {
-      return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
-    }
-    await loaded.value.stopAll()
-    return { ok: true, value: { status: 'stopped' as const } }
+    return enqueueSceneOperation(async () => {
+      await cachedSceneRuntime?.value.stopAll()
+      return { ok: true, value: { status: 'stopped' as const } }
+    })
   })
 
   ipcMain.handle('console:import-media', async (event, ...args) => {
@@ -2182,7 +2207,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
 
   return Object.freeze({
     async stopAll(): Promise<void> {
-      await cachedSceneRuntime?.value.stopAll()
+      await enqueueSceneOperation(async () => { await cachedSceneRuntime?.value.stopAll() })
     },
   })
 }

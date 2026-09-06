@@ -56,6 +56,14 @@ function harness() {
 }
 
 describe('Mirror Scene visual controller', () => {
+  it('loads draft media only for an explicit preview command', () => {
+    const h = harness()
+    h.controller.handleCommand(command({ preview: true }))
+    expect(h.videos[0]!.src).toBe('magic-mirror-media://visual-draft/visual-one')
+    h.controller.handleCommand(command())
+    expect(h.videos[1]!.src).toBe('magic-mirror-media://visual/visual-one')
+    h.controller.dispose()
+  })
   it('keeps the prior surface visible until an image is decoded and fences stale replacement events', () => {
     const h = harness()
     h.controller.handleCommand(command({ playback: 'still' }))

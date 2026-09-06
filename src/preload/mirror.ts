@@ -175,19 +175,22 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   }
   if (type === 'scene_music') {
     const action = readProperty(value, 'action')
+    const preview = readProperty(value, 'preview')
+    if (preview !== undefined && (preview !== true || action !== 'play')) return null
+    const previewKeys = preview === true ? ['preview'] : []
     const rawContext = readProperty(value, 'context')
     const context = rawContext === undefined ? undefined : sanitizeSceneActionContext(rawContext)
     if (context === null) return null
     if (action === 'play' && (
-      exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop'])
-      || exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop', 'context'])
+      exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop', ...previewKeys])
+      || exactKeys(value, ['type', 'action', 'assetId', 'gain', 'loop', 'context', ...previewKeys])
     )) {
       const assetId = readProperty(value, 'assetId')
       const gain = readProperty(value, 'gain')
       const loop = readProperty(value, 'loop')
       return typeof assetId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(assetId)
         && unitNumber(gain) && typeof loop === 'boolean'
-        ? Object.freeze({ type, action, assetId, gain, loop, ...(context === undefined ? {} : { context }) })
+        ? Object.freeze({ type, action, assetId, gain, loop, ...(preview === true ? { preview: true as const } : {}), ...(context === undefined ? {} : { context }) })
         : null
     }
     if (action === 'stop' && (
@@ -214,8 +217,11 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   }
   if (type === 'scene_visual') {
     const action = readProperty(value, 'action')
+    const preview = readProperty(value, 'preview')
+    if (preview !== undefined && (preview !== true || action !== 'start')) return null
     if (action === 'start' && exactKeys(value, [
       'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context',
+      ...(preview === true ? ['preview'] : []),
     ])) {
       const assetId = readProperty(value, 'assetId')
       const fit = readProperty(value, 'fit')
@@ -228,7 +234,7 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
         && (playback === 'still' || playback === 'once' || playback === 'loop')
         && (audio === 'muted' || audio === 'embedded')
         && unitNumber(gain) && context !== null
-        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, context })
+        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, context, ...(preview === true ? { preview: true as const } : {}) })
         : null
     }
     if (action === 'stop' && exactKeys(value, ['type', 'action', 'runId', 'sceneId'])) {

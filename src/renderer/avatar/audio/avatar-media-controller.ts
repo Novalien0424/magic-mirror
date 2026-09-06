@@ -168,9 +168,9 @@ export function createAvatarMediaController(
     }, DUCKING.fadeOutMs)
   }
 
-  const loadManagedMusic = async (assetId: string): Promise<boolean> => {
+  const loadManagedMusic = async (assetId: string, preview = false): Promise<boolean> => {
     const generation = ++sceneMusicLoadGeneration
-    const response = await fetch(`magic-mirror-media://music/${encodeURIComponent(assetId)}`)
+    const response = await fetch(`magic-mirror-media://${preview ? 'music-draft' : 'music'}/${encodeURIComponent(assetId)}`)
     if (!response.ok) throw new Error('managed_music_fetch_failed')
     const blob = await response.blob()
     if (disposed || generation !== sceneMusicLoadGeneration) return false
@@ -332,7 +332,7 @@ export function createAvatarMediaController(
         musicGainSetting = unit(command.gain)
         effectiveMusicGain = musicGainSetting
         musicGainNode.gain.value = effectiveMusicGain
-        void loadManagedMusic(command.assetId).then(async (loaded) => {
+        void loadManagedMusic(command.assetId, command.preview === true).then(async (loaded) => {
           if (!loaded) return false
           await resumeAudio()
           await music.play()

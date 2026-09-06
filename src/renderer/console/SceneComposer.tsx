@@ -5,6 +5,7 @@ import { SceneActionFields, newSceneAction } from './SceneActionFields'
 import { duplicateStage } from './scene-editor-model'
 import { estimateSceneMaximumMs } from './scene-estimate'
 import type { SceneTestScope } from '../../shared/scene-test-scope'
+import { HelpButton } from './HelpButton'
 
 const ACTION_NAMES = { visual: 'Image / video', music: 'Music', avatar_dialogue: 'Dialogue',
   avatar_motion: 'Avatar motion', avatar_expression: 'Expression', lighting: 'Lighting', fog: 'Fog' } as const
@@ -12,20 +13,31 @@ const id = () => crypto.randomUUID()
 const newStep = (index: number): SceneStageDefinition => ({ id: id(), name: `Step ${index + 1}`,
   actionIds: [], endCondition: { kind: 'duration', durationMs: 3000 } })
 
-export function SceneComposer({ draft, active, onChange, onRun, onImport, disabled }: {
+export function SceneComposer({ draft, active, onChange, onRun, onImport, disabled,
+  onSave, onTest, onStop, isSaved, saveUnavailableReason, testUnavailableReason, result }: {
   draft: ConsoleConfigDraftInput; active: ConsoleConfigSafeView
   onChange(draft: ConsoleConfigDraftInput): void; onRun(id: string, scope?: SceneTestScope): void; disabled: boolean
   onImport(kind: 'visual' | 'music', actionId: string): void
+  onSave(sceneId: string, stepId?: string): void
+  onTest(sceneId: string, scope?: SceneTestScope): void
+  onStop(): void
+  isSaved(sceneId: string, stepId?: string): boolean
+  saveUnavailableReason: string
+  testUnavailableReason: string
+  result: string
 }) {
   const [sceneId, setSceneId] = useState('')
   const [stepId, setStepId] = useState('')
   const [actionId, setActionId] = useState('')
   const [undo, setUndo] = useState<ConsoleConfigDraftInput | null>(null)
-  const [testScope, setTestScope] = useState('scene')
   const scene = draft.scenes.find(s => s.id === sceneId) ?? draft.scenes[0]
   const step = scene?.stages.find(s => s.id === stepId) ?? scene?.stages[0]
   const action = draft.sceneActions.find(a => a.id === actionId && step?.actionIds.includes(a.id))
     ?? draft.sceneActions.find(a => step?.actionIds.includes(a.id))
+  const stepIndex = scene && step ? scene.stages.indexOf(step) : -1
+  const testReason = testUnavailableReason || (!scene?.enabled ? 'Enable this scene to test it.' : '')
+  const publishedReason = !active.scenes.some(s => s.id === scene?.id && s.enabled)
+    ? 'Publish an enabled version of this scene for the loaded avatar first.' : ''
   const change = (next: ConsoleConfigDraftInput) => { setUndo(null); onChange(next) }
   const editScene = (next: SceneDefinition) => change({ ...draft, scenes: draft.scenes.map(s => s.id === next.id ? next : s) })
   const editStep = (next: SceneStageDefinition) => {
@@ -45,6 +57,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
   }
   return <fieldset className="scene-composer" disabled={disabled}>
     <legend>Spell scenes</legend>
+    <p className="scene-composer__intro">Steps play from top to bottom. Actions inside a step start together.</p>
     <div className="scene-composer__layout">
       <aside className="scene-composer__list" aria-label="Scene selection">
         <button type="button" className="console__primary" onClick={() => {
@@ -77,12 +90,27 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
           <button type="button" onClick={() => change({ ...draft, spells: [...draft.spells, { id: id(), name: 'New spell', phrase: '', sceneId: scene.id, enabled: true, cooldownMs: 5000 }] })}>Add spell</button>
           <p className="console__muted">Only the complete, exact phrase triggers this scene.</p>
         </section>
+        <div className="scene-step-workspace">
+        <aside className="scene-step-navigation" aria-label="Step order">
+        <h3>Steps</h3>
         <div className="scene-steps" aria-label="Ordered steps">
           {scene.stages.map((s, index) => <button type="button" key={s.id} aria-pressed={s.id === step?.id}
             onClick={() => { setStepId(s.id); setActionId('') }}><span>{index + 1}</span> {s.name}</button>)}
           <button type="button" onClick={() => { const next = newStep(scene.stages.length); editScene({ ...scene, stages: [...scene.stages, next] }); setStepId(next.id); setActionId('') }}>Add step</button>
         </div>
+        {step ? <div className="scene-step-order">
+          {([-1, 1] as const).map(direction => <HelpButton key={direction}
+            help={stepIndex + direction < 0 ? 'Already the first step.' : stepIndex + direction >= scene.stages.length ? 'Already the last step.' : `Play this step ${direction < 0 ? 'before the previous' : 'after the next'} step. Save scene to keep the new order.`}
+            disabled={disabled || stepIndex + direction < 0 || stepIndex + direction >= scene.stages.length}
+            onClick={() => { const stages = [...scene.stages]; const j = stepIndex + direction
+              ;[stages[stepIndex], stages[j]] = [stages[j]!, stages[stepIndex]!]; editScene({ ...scene, stages })
+            }}>{direction < 0 ? 'Move up' : 'Move down'}</HelpButton>)}
+          <p>{stepIndex === 0 ? 'First step.' : ''} {stepIndex === scene.stages.length - 1 ? 'Last step.' : ''} Save scene to keep order changes.</p>
+        </div> : null}
+        </aside>
         {step ? <section className="console__stage-card" aria-label="Selected step">
+          <div className="scene-step-heading"><h3>Step {stepIndex + 1}: {step.name}</h3>
+            <span>{isSaved(scene.id, step.id) ? 'Step saved' : 'Unsaved step changes'}</span></div>
           <div className="console__form-grid">
             <label>Step name<input value={step.name} onChange={e => editStep({ ...step, name: e.currentTarget.value })} /></label>
             <label>Ends when<select value={step.endCondition.kind} onChange={e => {
@@ -96,18 +124,15 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
               <option value="">Select video action</option>{draft.sceneActions.filter(a => step.actionIds.includes(a.id) && a.kind === 'visual' && a.playback === 'once').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select></label> : null}
           </div>
-          <div className="console__action-row">
-            {([-1, 1] as const).map(direction => <button type="button" key={direction} disabled={disabled || scene.stages.indexOf(step) + direction < 0 || scene.stages.indexOf(step) + direction >= scene.stages.length} onClick={() => {
-              const stages = [...scene.stages]; const i = stages.indexOf(step); const j = i + direction
-              ;[stages[i], stages[j]] = [stages[j]!, stages[i]!]; editScene({ ...scene, stages })
-            }}>{direction === -1 ? 'Move earlier' : 'Move later'}</button>)}
-            <button type="button" onClick={() => {
+          <details><summary>Step options</summary><div className="console__action-row">
+            <HelpButton help="Create an independent copy of this step and its actions immediately below it. Media files are reused, not copied." onClick={() => {
               const copy = duplicateStage(step, draft.sceneActions)
               const stages = [...scene.stages]; stages.splice(stages.indexOf(step) + 1, 0, copy.stage)
               change({ ...draft, sceneActions: [...draft.sceneActions, ...copy.actions], scenes: draft.scenes.map(s => s.id === scene.id ? { ...s, stages } : s) }); setStepId(copy.stage.id)
-            }}>Duplicate step</button>
-            <button type="button" disabled={disabled || scene.stages.length === 1} onClick={() => { editScene({ ...scene, stages: scene.stages.filter(s => s.id !== step.id) }); setUndo(draft) }}>Remove step</button>
-          </div>
+            }}>Copy step</HelpButton>
+            <HelpButton help={scene.stages.length === 1 ? 'A scene needs at least one step.' : 'Remove this step from the draft. Its actions and media stay in the library. Undo is available until the next edit.'} disabled={disabled || scene.stages.length === 1} onClick={() => { editScene({ ...scene, stages: scene.stages.filter(s => s.id !== step.id) }); setUndo(draft) }}>Delete step</HelpButton>
+            {scene.stages.length === 1 ? <p>A scene needs at least one step.</p> : null}
+          </div></details>
           <h3>Actions in this step</h3><p className="console__muted">These start together. Add another step to play something afterward.</p>
           <div className="console__action-row" aria-label="Add action">
             {(Object.keys(ACTION_NAMES) as Array<keyof typeof ACTION_NAMES>).map(kind => <button type="button" key={kind} onClick={() => addAction(kind)}>+ {ACTION_NAMES[kind]}</button>)}
@@ -118,19 +143,39 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
           {action ? <article className="scene-action-editor" aria-label="Selected action">
             {(draft.avatarCatalog?.avatars.flatMap(a => a.scenes) ?? draft.scenes).flatMap(s => s.stages).filter(s => s.actionIds.includes(action.id)).length > 1 ? <p className="console__notice">Shared action: edits affect every linked step and avatar. Duplicate this step to make an independent copy.</p> : null}
             <SceneActionFields action={action} draft={draft} onChange={next => change({ ...draft, sceneActions: draft.sceneActions.map(a => a.id === next.id ? next : a) })} onImport={kind => onImport(kind, action.id)} />
-            <button type="button" onClick={() => { editStep({ ...step, actionIds: step.actionIds.filter(a => a !== action.id) }); setUndo(draft) }}>Remove from step</button>
+            <div className="console__action-row">
+            <HelpButton help={testReason || 'Save this step, then play only this action on the Mirror. Other actions in the step do not run. Tests stop after 10 seconds; finite videos finish naturally.'} disabled={disabled || !!testReason || !action.enabled}
+              onClick={() => onTest(scene.id, { stageId: step.id, actionId: action.id })}>Test action</HelpButton>
+            <HelpButton help="Unlink this action from this step. The action and its media remain in the library." onClick={() => { editStep({ ...step, actionIds: step.actionIds.filter(a => a !== action.id) }); setUndo(draft) }}>Remove from step</HelpButton>
+            {!action.enabled ? <p>Enable this action to test it.</p> : null}
+            </div>
           </article> : <p className="console__empty">Add an action above, or link one from the library below.</p>}
           <details><summary>Link a reusable action</summary><div className="console__form-grid">
             {draft.sceneActions.map(a => <label key={a.id} className="console__check"><input type="checkbox" checked={step.actionIds.includes(a.id)} onChange={e => editStep({ ...step, actionIds: e.currentTarget.checked ? [...step.actionIds, a.id] : step.actionIds.filter(k => k !== a.id) })} />{a.name}</label>)}
           </div></details>
+          <div className="scene-step-controls">
+            <div className="console__action-row">
+              <HelpButton className="console__primary" help={saveUnavailableReason || 'Save this step and its linked actions/media to the draft. Other unfinished steps and settings stay unsaved. Shared action edits affect all linked steps. Nothing is published.'}
+                disabled={disabled || !!saveUnavailableReason} onClick={() => onSave(scene.id, step.id)}>Save step</HelpButton>
+              <HelpButton help={testReason || 'Save this step, then play its current draft on the Mirror using the loaded avatar. Nothing is published.'}
+                disabled={disabled || !!testReason} onClick={() => onTest(scene.id, { stageId: step.id })}>Test step</HelpButton>
+              <HelpButton help="Stop scene playback and release scene music, visuals and hardware effects." onClick={onStop}>Stop test</HelpButton>
+            </div>
+            {saveUnavailableReason || testReason ? <p className="console__notice">{saveUnavailableReason || testReason}</p> : null}
+            <p className="scene-step-result" role="status">{result}</p>
+          </div>
         </section> : null}
+        </div>
         <p className="console__muted">Maximum scene length: {(() => { const ms = estimateSceneMaximumMs(scene, draft.sceneActions, draft.visualAssets); return ms === null ? 'Finish configuring the steps' : `${(ms / 1000).toFixed(1)} seconds` })()}. Step endings do not undo actions; author explicit stops for music and hardware.</p>
         <div className="console__action-row">
-          <label>Test scope<select value={testScope} onChange={e => setTestScope(e.currentTarget.value)}><option value="scene">Whole scene</option><option value="stage">Selected step</option><option value="action">Selected action</option></select></label>
-          <button type="button" disabled={disabled || !active.scenes.some(s => s.id === scene.id && s.enabled) || testScope !== 'scene' && !step || testScope === 'action' && !action}
-            onClick={() => onRun(scene.id, testScope === 'scene' || !step ? undefined : { stageId: step.id, ...(testScope === 'action' && action ? { actionId: action.id } : {}) })}>{testScope === 'scene' ? 'Run Published Scene' : testScope === 'stage' ? 'Test Published Step' : 'Test Published Action'}</button>
-          <span className="console__muted">Runs the loaded avatar’s published version. Action tests stop after 10 seconds (finite videos finish naturally). Stop All cancels any test.</span>
+          <HelpButton help={saveUnavailableReason || 'Save this scene, its spell phrases, step order and linked actions/media. Other scenes and avatar settings stay unsaved.'} disabled={disabled || !!saveUnavailableReason} onClick={() => onSave(scene.id)}>Save scene</HelpButton>
+          <HelpButton help={testReason || 'Save and play the whole draft scene, from the first step to the last. Nothing is published.'} disabled={disabled || !!testReason} onClick={() => onTest(scene.id)}>Test scene</HelpButton>
+          <span>{isSaved(scene.id) ? 'Scene saved' : 'Unsaved scene changes'}</span>
         </div>
+        <details><summary>Published playback</summary><div className="console__action-row">
+          <HelpButton help={publishedReason || 'Run the live, published version. Unsaved and saved draft edits are not included.'} disabled={disabled || !!publishedReason} onClick={() => onRun(scene.id)}>Run Published Scene</HelpButton>
+          <p>{publishedReason || 'Runs the live version, not your draft edits.'}</p>
+        </div></details>
         <details><summary>Scene options</summary><button type="button" onClick={() => { change({ ...draft, scenes: draft.scenes.filter(s => s.id !== scene.id), spells: draft.spells.filter(s => s.sceneId !== scene.id) }); setUndo(draft) }}>Remove scene and its spells</button></details>
       </div>}
     </div>

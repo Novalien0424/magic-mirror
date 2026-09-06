@@ -37,6 +37,8 @@ import { MediaLibrary } from './MediaLibrary'
 import type { ImportedMedia, MediaImportRequest } from '../../shared/media-import'
 import { probeDraftVisualAsset } from './visual-asset-probe'
 import { SceneComposer } from './SceneComposer'
+import { buildSceneDraftSave, draftFingerprint, isSceneDraftSaved } from './scene-editor-model'
+import { HelpButton } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { DEFAULT_AUDIO_PREFERENCES } from '../../shared/audio-devices'
@@ -1299,6 +1301,10 @@ export function ScenesPanel({
   if (state.status === 'success') lastPayload.current = state.value
   const payload = lastPayload.current
   const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const retainLocalDraft = useRef(false)
+  const sceneTestGeneration = useRef(0)
+  const latestSceneDraft = useRef(rawDraft)
+  latestSceneDraft.current = rawDraft
   const [editingAvatarId, setEditingAvatarId] = useState('')
   const editingId = rawDraft?.avatarCatalog?.avatars.some(a => a.id === editingAvatarId)
     ? editingAvatarId : rawDraft?.avatarCatalog?.activeAvatarId ?? ''
@@ -1326,7 +1332,7 @@ export function ScenesPanel({
     musicAssets: [...current.musicAssets.filter(a => !resourceDraft?.musicAssets.some(b => a.id === b.id)), ...next.musicAssets],
     sceneActions: [...current.sceneActions.filter(a => !resourceDraft?.sceneActions.some(b => a.id === b.id)), ...next.sceneActions],
   } : next)
-  const [result, setResult] = useState('Draft not tested in this view.')
+  const [result, setResult] = useState('Choose a step to edit or test. Tests play on the Mirror.')
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
   const [editorView, setEditorView] = useState('scenes')
@@ -1359,20 +1365,27 @@ export function ScenesPanel({
   }
 
   useEffect(() => {
+    if (retainLocalDraft.current) { retainLocalDraft.current = false; return }
     if (payload !== null) setRawDraft(safeDraftFromConfig(payload.draft))
   }, [payload])
 
   useEffect(() => bridge?.onSceneStatus((event) => {
+    const sceneId = event.type === 'finished' ? event.result.sceneId : event.sceneId
+    const config = latestSceneDraft.current
+    const scene = (config?.avatarCatalog?.avatars.flatMap(a => a.scenes) ?? config?.scenes)?.find(s => s.id === sceneId)
+    const name = scene?.name ?? 'Playback'
     if (event.type === 'finished') {
-      setResult(`Scene ${event.result.sceneId ?? event.result.runId}: ${event.result.status}.`)
+      const reasons = [...new Set(event.result.actions.flatMap(a => a.errorCode ? [a.errorCode] : []))]
+      setResult(`${name}: ${event.result.status}.${reasons.length ? ` Reason: ${reasons.join(', ')}.` : ''}`)
     } else {
-      setResult(`Scene ${event.sceneId}: ${event.type === 'started' ? 'started' : `Stage ${event.stageId} started`}.`)
+      const step = scene?.stages.find(s => s.id === event.stageId)
+      setResult(`${name}: ${event.type === 'started' ? 'started' : `${step?.name ?? 'Step'} started`}.`)
     }
   }), [bridge])
 
   const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || state.status === 'loading'
   const dirty = rawDraft !== null && payload !== null
-    && JSON.stringify(safeDraftFromConfig(rawDraft)) !== JSON.stringify(safeDraftFromConfig(payload.draft))
+    && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
   const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
     setDraft((current) => current === null ? current : {
       ...current,
@@ -1419,6 +1432,47 @@ export function ScenesPanel({
     } finally {
       setBusy(false)
     }
+  }
+
+  const saveUnavailableReason = payload?.draft.avatarCatalog && !payload.draft.avatarCatalog.avatars.some(a => a.id === editingId)
+    ? 'Save Draft first to create this avatar, then save individual steps.' : ''
+  const testUnavailableReason = saveUnavailableReason || (payload?.active.avatarCatalog && editingId !== payload.active.avatarCatalog.activeAvatarId
+    ? 'Load this avatar before testing its scenes. You can still edit and save its draft.' : '')
+  const isSceneSaved = (sceneId: string, stepId?: string): boolean => {
+    if (!rawDraft || !payload || saveUnavailableReason) return false
+    const saved = safeDraftFromConfig(payload.draft)
+    return isSceneDraftSaved(saved, rawDraft, editingId, sceneId, stepId)
+  }
+  const saveScene = async (sceneId: string, stepId?: string, test?: import('../../shared/scene-test-scope').SceneTestScope | 'scene'): Promise<void> => {
+    if (!bridge || !payload || !rawDraft || busy) return
+    const generation = ++sceneTestGeneration.current
+    setBusy(true)
+    setResult(`Saving ${stepId ? 'step' : 'scene'}${test ? ' for playback' : ''}…`)
+    try {
+      const next = buildSceneDraftSave(safeDraftFromConfig(payload.draft), rawDraft, editingId, sceneId, stepId)
+      const saved = await bridge.saveDraft(next)
+      if (!saved.ok) {
+        setResult(`Cannot save: ${saved.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || saved.reason}`)
+        return
+      }
+      retainLocalDraft.current = true
+      onChanged()
+      if (generation !== sceneTestGeneration.current) return
+      const label = stepId ? 'Step' : 'Scene'
+      setResult(`${label} saved to draft. Nothing published; other unfinished edits remain in the editor.`)
+      if (test) {
+        const response = await bridge.runScene(sceneId, test === 'scene' ? undefined : test, 'draft')
+        if (generation !== sceneTestGeneration.current) return
+        setResult(!response.ok ? `Test unavailable: ${response.reason}` : response.value.status === 'skipped'
+          ? `Test did not start: ${response.value.skipReason}. Check that the scene and its actions are enabled and complete.`
+          : `${label} draft test started on the Mirror. Use Stop test to end playback.`)
+      }
+    } catch { setResult('Could not save or test this draft. Check the Console connection and try again.') }
+    finally { setBusy(false) }
+  }
+  const stopSceneTests = (message: string): void => {
+    ++sceneTestGeneration.current
+    if (bridge) void runResponse(() => bridge.stopScenes(), message, false)
   }
 
   return (
@@ -1500,6 +1554,10 @@ export function ScenesPanel({
       {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
       {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
+        onSave={(id, stepId) => void saveScene(id, stepId)} isSaved={isSceneSaved}
+        onTest={(id, scope) => void saveScene(id, scope?.stageId, scope ?? 'scene')}
+        onStop={() => stopSceneTests('Test stopped.')}
+        saveUnavailableReason={saveUnavailableReason} testUnavailableReason={testUnavailableReason} result={result}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
         onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
       {visible && resourceDraft && (dialogueOnly ? avatarView === 'appearance' : editorView === 'presentation') ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
@@ -1517,10 +1575,10 @@ export function ScenesPanel({
 
       <div className="console__action-row console__publish-bar">
         <span>Active v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved edits — Save Draft first' : `Draft ${payload?.publishDiff.changed.length ?? 0} changes`}</span>
-        <button type="button" disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save Draft</button>
-        <button type="button" disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Test Draft</button>
-        <button type="button" disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.')}>Publish</button>
-        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void runResponse(() => bridge.stopScenes(), 'All Scenes stopped.', false)}>Stop All</button>
+        <HelpButton help="Save all unfinished workspace edits, including other scenes and avatar settings. Nothing is published." disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save Draft</HelpButton>
+        <HelpButton help={dirty ? 'Save Draft first: validation checks the saved draft, not unfinished edits.' : 'Check saved configuration and decode media before publishing. This does not play the scene; use Test step or Test scene for playback.'} disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Validate draft</HelpButton>
+        <HelpButton help={dirty ? 'Save Draft and validate it before publishing.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Validate draft successfully before publishing.' : 'Make the entire saved draft live. This includes all changed avatars, scenes and settings.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.')}>Publish</HelpButton>
+        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         <p className="console__scene-result" role="status">{result}</p>
       </div>
     </section>

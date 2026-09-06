@@ -63,6 +63,7 @@ export type SceneRuntimeEvent =
     }>
 
 export interface SceneRuntimeOptions {
+  runIdPrefix?: string
   spells: readonly SpellConfig[]
   scenes: readonly SceneDefinition[]
   actions: readonly SceneActionDefinition[]
@@ -454,7 +455,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
   const skipped = (
     reason: SceneRunSkipReason | 'stopped_before_start',
   ): SceneStartResult => ({
-    runId: 'scene-skip-' + String(++runSequence),
+    runId: (options.runIdPrefix ?? 'scene') + '-skip-' + String(++runSequence),
     status: 'skipped',
     skipReason: reason,
   })
@@ -473,7 +474,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
     const firstStage = scene.stages[0]
     if (firstStage === undefined) return skipped('invalid_config')
     const run: ActiveRun = {
-      runId: 'scene-run-' + String(++runSequence),
+      runId: (options.runIdPrefix ?? 'scene') + '-run-' + String(++runSequence),
       scene,
       startedAt: scheduler.now(),
       abortController: new AbortController(),

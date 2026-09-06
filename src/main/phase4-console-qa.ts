@@ -69,16 +69,16 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   const save = async (): Promise<void> => {
     await edit("click(button('Save Draft'))")
     await wait("return status() === 'Draft saved.' || status() === 'Operation completed.'")
-    await wait("return !button('Save Draft').disabled && !button('Test Draft').disabled")
+    await wait("return !button('Save Draft').disabled && !button('Validate draft').disabled")
   }
   const testAndPublish = async (): Promise<void> => {
     // Failure text can render before the async refresh clears busy. Observe
     // readiness instead of assuming the previous edit's 50 ms is sufficient.
-    await wait("return !!button('Test Draft') && !button('Test Draft').disabled", 'console_test_ready')
-    await edit("click(button('Test Draft'))")
+    await wait("return !!button('Validate draft') && !button('Validate draft').disabled", 'console_test_ready')
+    await edit("click(button('Validate draft'))")
     await wait("return !button('Publish').disabled")
     await edit("click(button('Publish'))")
-    await wait("return !button('Save Draft').disabled && !button('Test Draft').disabled && button('Publish').disabled")
+    await wait("return !button('Save Draft').disabled && !button('Validate draft').disabled && button('Publish').disabled")
   }
   const picker = dialog.showOpenDialog
   let selection: string | string[] | null = null
@@ -165,6 +165,33 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         && r.value.draft.sceneActions[0].fit === 'cover';`)
     passed()
 
+    if (!input.editorOnly) {
+      step = 'console_unpublished_step_test'
+      await edit("set(control('Scene name', scene()), 'Keep this scene title unsaved')")
+      await edit("set(control('Step name', stage()), 'Saved preview step')")
+      await edit("click(button('Save step'))")
+      await wait("return status().includes('Step saved to draft') && !button('Test step').disabled")
+      await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
+        && r.value.draft.scenes[0].name === 'Magic Vision' && r.value.draft.scenes[0].stages[0].name === 'Saved preview step'
+        && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
+      await edit("click(button('Test step')); click(button('Stop All'))")
+      await wait("return status() === 'All Scenes stopped.' && !button('Test step').disabled")
+      await new Promise(resolveWait => setTimeout(resolveWait, 1000))
+      if (!await evaluate<boolean>("return status() === 'All Scenes stopped.'")) throw new Error('phase4_qa_pending_test_not_cancelled')
+      await edit("button('Test step').scrollIntoView({block:'center'}); button('Test step').focus()")
+      await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display !== 'none'")
+      await screenshot('console-step-test-help.png')
+      await edit("button('Test step').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))")
+      await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display === 'none'", 'console_tooltip_escape')
+      await edit("click(button('Test step'))")
+      await wait("return status().includes(': completed.')", step, 15000)
+      await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
+        && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
+      await edit("set(control('Scene name', scene()), 'Magic Vision')")
+      await edit("set(control('Step name', stage()), 'Vision')")
+      await save()
+      passed()
+    }
     step = 'console_publish_finite'
     await testAndPublish()
     await wait(`const r = await window.magicMirror.getConfig();
@@ -207,10 +234,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'console_unsaved_publish_blocked'
     await save()
-    await edit("click(button('Test Draft'))")
+    await edit("click(button('Validate draft'))")
     await wait("return !button('Publish').disabled")
     await edit("set(control('Scene name', scene()), 'Unpublished title')")
-    await wait("return button('Publish').disabled && button('Test Draft').disabled")
+    await wait("return button('Publish').disabled && button('Validate draft').disabled")
     await edit("click(button('Stop All'))")
     await wait("return control('Scene name', scene()).value === 'Unpublished title'")
     await edit("set(control('Scene name', scene()), 'Magic Vision')")
@@ -226,10 +253,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     passed()
 
     step = 'console_duplicate_isolation'
-    await edit("click(button('Duplicate step'))")
+    await edit("click(button('Copy step'))")
     await edit("set(control('Name', action()), 'Independent copy')")
     await edit("set(control('Ends when', stage()), 'duration')")
-    await edit("click(button('Move earlier'))")
+    await edit("click(button('Move up'))")
     await save()
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok
       && r.value.draft.scenes[0].stages.length === 2
@@ -238,13 +265,13 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     passed()
 
     step = 'console_stage_reorder_and_delete'
-    await edit("click(button('Move later'))")
+    await edit("click(button('Move down'))")
     await edit("click(button('Save Draft'))")
     await wait("return status().includes('console_config_invalid')")
-    await edit("click(button('Remove step'))")
+    await edit("click(button('Delete step'))")
     await edit("click(button('Undo removal'))")
     await wait("return scene().querySelectorAll('.scene-steps > button').length === 3")
-    await edit("click(button('Remove step'))")
+    await edit("click(button('Delete step'))")
     await save()
     passed()
 
@@ -280,7 +307,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     passed()
 
     step = 'console_asset_changed_before_publish'
-    await edit("click(button('Test Draft'))")
+    await edit("click(button('Validate draft'))")
     await wait("return !button('Publish').disabled")
     const config = await input.runtime.console.getConfig()
     if (!config.ok || !config.value.draft.visualAssets[0]) throw new Error('phase4_qa_console_asset_missing')
@@ -293,7 +320,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await edit("click(button('Publish'))")
       await wait("return status().includes('console_config_test_failed')")
       await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.configVersion === ${activeVersion};`)
-      await edit("click(button('Test Draft'))")
+      await edit("click(button('Validate draft'))")
       await wait("return (status().includes('Draft media test failed') || status().includes('Draft test failed')) && button('Publish').disabled")
     } finally {
       await writeFile(assetPath, original)
@@ -490,11 +517,9 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("const details = [...panel.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Link a reusable action'); click(details.querySelector('input'))")
     await save()
     await testAndPublish()
-    await edit("set(control('Test scope'), 'stage')")
-    await edit("click(button('Test Published Step'))")
+    await edit("click(button('Test step'))")
     await wait("return status().includes('completed')")
-    await edit("set(control('Test scope'), 'action')")
-    await edit("click(button('Test Published Action'))")
+    await edit("click(button('Test action'))")
     await wait("return status().includes('started') || status().includes('completed')")
     await edit("click(button('Stop All'))")
     await wait("return status() === 'All Scenes stopped.'")

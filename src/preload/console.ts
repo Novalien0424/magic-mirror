@@ -143,8 +143,8 @@ const bridge: ConsoleBridge = {
     return ipcRenderer.invoke(AVATAR_CONTROL_CHANNEL, command) as Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   },
 
-  runScene(sceneId: string, scope?: import('../shared/scene-test-scope').SceneTestScope): Promise<ConsoleResponse<SceneStartResult>> {
-    return ipcRenderer.invoke(RUN_SCENE_CHANNEL, sceneId, ...(scope ? [scope] : [])) as Promise<ConsoleResponse<SceneStartResult>>
+  runScene(sceneId: string, scope?: import('../shared/scene-test-scope').SceneTestScope, source?: 'draft'): Promise<ConsoleResponse<SceneStartResult>> {
+    return ipcRenderer.invoke(RUN_SCENE_CHANNEL, sceneId, ...(source ? [scope ?? null, source] : scope ? [scope] : [])) as Promise<ConsoleResponse<SceneStartResult>>
   },
 
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>> {

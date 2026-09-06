@@ -49,7 +49,7 @@ class FakeAudio {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Avatar shared background audio bus', () => {
-  it('feeds authored music and embedded video through one duck gain', () => {
+  it('feeds authored music and embedded video through one duck gain and uses explicit draft media', async () => {
     const sources: FakeNode[] = []
     const gains: FakeGain[] = []
     class FakeAudioContext {
@@ -67,6 +67,8 @@ describe('Avatar shared background audio bus', () => {
     vi.stubGlobal('Audio', FakeAudio)
     vi.stubGlobal('window', { setTimeout, clearTimeout })
     vi.stubGlobal('URL', { createObjectURL: vi.fn(), revokeObjectURL: vi.fn() })
+    const fetchMedia = vi.fn(async () => ({ ok: true, blob: async () => new Blob() }))
+    vi.stubGlobal('fetch', fetchMedia)
 
     const controller = createAvatarMediaController({
       onRecordedOutput: vi.fn(), onActivity: vi.fn(), onChanged: vi.fn(), eventSink: vi.fn(),
@@ -90,6 +92,8 @@ describe('Avatar shared background audio bus', () => {
     controller.setSceneVideoAudio(null)
     expect(videoSource.disconnect).toHaveBeenCalledTimes(1)
     expect(musicSource.disconnect).not.toHaveBeenCalled()
+    controller.handleCommand({ type: 'scene_music', action: 'play', assetId: 'preview-audio', gain: 0.5, loop: false, preview: true })
+    await vi.waitFor(() => expect(fetchMedia).toHaveBeenCalledWith('magic-mirror-media://music-draft/preview-audio'))
     controller.dispose()
   })
 })

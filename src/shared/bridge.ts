@@ -116,6 +116,7 @@ export type AvatarControlCommand =
       type: 'scene_music'
       action: 'play'
       assetId: string
+      preview?: true
       gain: number
       loop: boolean
       context?: SceneActionCommandContext
@@ -132,6 +133,7 @@ export type AvatarControlCommand =
       type: 'scene_visual'
       action: 'start'
       assetId: string
+      preview?: true
       fit: 'contain' | 'cover'
       playback: 'still' | 'once' | 'loop'
       audio: 'muted' | 'embedded'
@@ -270,7 +272,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
-  runScene(sceneId: string, scope?: import('./scene-test-scope').SceneTestScope): Promise<ConsoleResponse<SceneStartResult>>
+  runScene(sceneId: string, scope?: import('./scene-test-scope').SceneTestScope, source?: 'draft'): Promise<ConsoleResponse<SceneStartResult>>
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
   onSceneStatus(listener: SceneStatusListener): () => void
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>

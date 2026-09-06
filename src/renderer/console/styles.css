@@ -52,14 +52,35 @@ details[open] > :not(summary) { margin: .8rem; }
 .console .scene-composer__heading > label:first-child { flex: 1; }
 .console .scene-composer label, .console .presentation-editor label, .console .scene-action-fields label { display: grid; gap: .4rem; color: #dfebf6; align-items: start; }
 .console .console__check { display: flex; align-items: center; gap: .6rem; }
-.console .scene-composer label.console__check, .console .scene-action-fields label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: .6rem; }
+.console .scene-composer label.console__check, .console .scene-action-fields label:has(input[type="checkbox"]) { display: flex; flex-direction: row; align-items: center; gap: .6rem; }
 .console__form-grid, .scene-action-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .console__form-grid > p { grid-column: 1 / -1; }
 .console .scene-composer input:not([type="checkbox"]), .console .scene-composer select, .console .scene-composer textarea,
-.presentation-editor input, .presentation-editor select, .scene-action-fields input, .scene-action-fields select { width: 100%; min-width: 0; }
+.presentation-editor input, .presentation-editor select, .scene-action-fields input:not([type="checkbox"]), .scene-action-fields select { width: 100%; min-width: 0; }
 .scene-composer__triggers { border-bottom: 1px solid #42586d; padding: 1rem 0; }
 .scene-spell { margin-bottom: .8rem; }
 .scene-steps > button span { display: inline-grid; place-content: center; min-width: 25px; height: 25px; margin-right: .3rem; border-radius: 50%; background: #344e63; }
+.scene-composer__intro { color: #dfebf6; margin: 0 0 1rem; }
+.scene-step-workspace { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 1rem; }
+.scene-step-workspace .scene-steps { display: grid; margin: .6rem 0; }
+.scene-steps > button { text-align: left; overflow-wrap: anywhere; }
+.scene-step-order { display: grid; gap: .5rem; }
+.scene-step-order .console-help > button { width: 100%; }
+.scene-step-order p { font-size: .875rem; color: #c3d3df; margin: .25rem 0; }
+.scene-step-heading { margin-bottom: 1rem; }
+.scene-step-heading h3 { overflow-wrap: anywhere; }
+.scene-step-heading > span { display: block; margin-top: .4rem; color: #bfe4f1; }
+.scene-step-controls { border-top: 1px solid #64778a; margin-top: 1rem; padding-top: .75rem; }
+.scene-step-result { overflow-wrap: anywhere; color: #e5eff8; }
+.console-help { display: inline-flex; position: relative; max-width: 100%; }
+.console-help > [role="tooltip"] { display: none; position: absolute; z-index: 60; left: 0; bottom: calc(100% + 6px); width: 290px; max-width: 70vw; padding: .75rem; border: 1px solid #9dcbe0; border-radius: 8px; background: #0b1722; color: #f1f7fc; box-shadow: 0 4px 18px #0009; font-size: .9rem; line-height: 1.5; font-weight: 400; }
+.console-help::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 8px; }
+.console-help:not([data-dismissed]):hover > [role="tooltip"], .console-help:not([data-dismissed]):focus-within > [role="tooltip"] { display: block; }
+@media (max-width: 980px) {
+  .scene-step-workspace { grid-template-columns: 130px minmax(0, 1fr); }
+  .scene-step-workspace .console__form-grid, .scene-step-workspace .scene-action-fields { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) { .scene-step-workspace { grid-template-columns: 1fr; } }
 .scene-action-editor { padding: 1rem; background: #1b2a37; border: 1px solid #536d83; border-radius: 8px; }
 .scene-action-editor > button { margin-top: 1rem; }
 .console__empty { padding: 1.25rem; color: #c4d1de; border: 1px dashed #536d83; border-radius: 8px; }
@@ -665,8 +686,7 @@ th {
 }
 
 .console__publish-bar {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 2;
   padding: 0.8rem;
   border: 1px solid rgba(104, 185, 215, 0.35);
