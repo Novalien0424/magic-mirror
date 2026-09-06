@@ -24,6 +24,20 @@ failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
 
+## Wake input investigation — 2026-09-06
+
+- Added and loaded live wake-stream diagnostics in Avatar / Audio: level,
+  block count, report age, detections, and waiting/stalled/silent/inactive states.
+  Aggregate metadata stays in RAM; no additional mic owner or recording.
+- Normal Windows first-boot capture receives audio; native Start Conversation /
+  Disconnect correctly releases and reacquires it. Fresh/reset/post-silence
+  synthetic detector probes pass. 138 focused tests, typecheck and build pass.
+- Operator-reported first-boot-only wake failure remains unresolved; synthetic
+  speaker playback did not reproduce the before/after difference. Do not claim
+  a wake fix or phase acceptance. Next evidence is actual spoken attempts on a
+  failing first boot with the new meter. App remains running normally.
+- [Evidence and remaining check](docs/testing/wake-first-boot-2026-09-06.md).
+
 ## Multi-avatar Console extension — requested 2026-09-05
 
 - Status: implementation and automated/native QA complete; Windows development

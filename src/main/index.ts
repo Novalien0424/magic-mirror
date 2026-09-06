@@ -819,6 +819,7 @@ void app.whenReady().then(async () => {
     }
   })
   sceneRuntimeControl = registerIpcHandlers({
+    getWakeInput: () => wakeSupervisor?.snapshot().input,
     ipcMain,
     runtime,
     console: runtime.console,

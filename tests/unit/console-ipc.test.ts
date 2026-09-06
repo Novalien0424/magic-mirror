@@ -65,6 +65,7 @@ interface RegisteredIpc {
 }
 
 interface HarnessOptions {
+  readonly getWakeInput?: () => import('../../src/shared/wake-input').WakeInputSnapshot
   readonly destroyed?: boolean
   readonly mismatchedTrackedId?: boolean
   readonly sceneConfig?: Record<string, unknown>
@@ -287,6 +288,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
   }
 
   registerIpcHandlers({
+    getWakeInput: options.getWakeInput,
     ipcMain: {
       handle(channel: string, handler: IpcHandler): void {
         handlers.set(channel, handler)
@@ -507,6 +509,18 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       error: 'console_request_invalid',
       reason: 'cause=payload_schema_invalid',
     })
+  })
+
+  it('exposes wake input to Console only without accepting renderer-forged health', async () => {
+    const input = { state: 'stalled', blocks: 0, peak: 0, rms: 0, lastBlockAgeMs: null, detections: 0 } as const
+    const registered = makeHarness({ getWakeInput: () => input })
+    const read = getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)
+    expect(await read(authorizedEvent(registered))).toMatchObject({ ok: true, value: { wakeInput: input } })
+    expect(await read(authorizedMirrorEvent(registered))).toMatchObject({ ok: false })
+    getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)(authorizedMirrorEvent(registered), { wakeInput: { ...input, state: 'signal' } })
+    expect(await read(authorizedEvent(registered))).toMatchObject({ ok: true, value: { wakeInput: input } })
+    expect(JSON.stringify(registered.events)).not.toContain('lastBlockAgeMs')
+    expectNoSensitiveOutput(registered.events)
   })
 
   it('returns an immediate Scene start and publishes correlated completion as an event', async () => {

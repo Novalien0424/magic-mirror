@@ -42,6 +42,10 @@ describe('wake worker protocol', () => {
     { ...initialization, package: { ...initialization.package, engine: 'fallback' } },
     { type: 'failed', reason: 'raw provider error with spaces' },
     { type: 'wake_detected', transcript: 'private speech' },
+    { type: 'input_activity', blocks: 1, peak: 0.5, rms: 0.1, audio: [1, 2] },
+    { type: 'input_activity', blocks: 1, peak: 0.5, rms: 0.1, transcript: 'private speech' },
+    { type: 'input_activity', blocks: -1, peak: 0.5, rms: 0.1 },
+    { type: 'input_activity', blocks: 1, peak: Infinity, rms: 0.1 },
   ])('rejects malformed or content-bearing messages', (message) => {
     const command = parseWakeWorkerCommand(message)
     const outcome = parseWakeWorkerOutcome(message)

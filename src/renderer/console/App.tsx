@@ -720,6 +720,22 @@ function AvatarAudioPanel({
       </div>
       <p className="console__detail">Speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start; use Start Conversation, then Disconnect to update both. Windows default follows the system selection on acquisition.</p>
       <p className="console__detail" role="status">{audioDevices?.reason ?? 'Loading sound devices…'}</p>
+      <section aria-label="Wake microphone diagnostics">
+        <h3>Wake microphone — live input</h3>
+        <p role="status">{value?.wakeInput ? ({
+          inactive: 'Wake listener inactive — microphone released or unavailable.',
+          waiting: 'Waiting for the first audio blocks…',
+          stalled: 'No audio blocks for over 3 seconds — microphone stream may be stalled.',
+          silent: 'Audio blocks arriving, but the signal is silent or very quiet.',
+          signal: 'Sound is reaching the wake detector. Sound activity is not a wake-word match.',
+        } as const)[value.wakeInput.state] : 'Wake input diagnostics unavailable.'}</p>
+        <label className="console__overview-field">Input level
+          <meter aria-label="Wake microphone level" min="0" max="100"
+            value={value?.wakeInput?.peak ? Math.max(0, 100 + 100 * 20 * Math.log10(value.wakeInput.peak) / 60) : 0} />
+        </label>
+        <p className="console__detail">{value?.wakeInput ? `Peak ${value.wakeInput.peak > 0 ? (20 * Math.log10(value.wakeInput.peak)).toFixed(1) : '−∞'} dBFS · Blocks ${value.wakeInput.blocks} · Last block ${value.wakeInput.lastBlockAgeMs === null ? 'not received' : `${value.wakeInput.lastBlockAgeMs} ms ago`} · Wake detections ${value.wakeInput.detections}` : 'Waiting for wake worker…'}</p>
+        <p className="console__detail">Measures the existing wake stream only; no recording or transcription. Updates twice per second.</p>
+      </section>
       <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
 
       <details className="console__technical"><summary>Avatar motions, expressions and test tools</summary>

@@ -7,6 +7,36 @@ function flush(): Promise<void> {
 }
 
 describe('wake worker runtime', () => {
+  it('reports bounded input levels without audio and ignores callbacks after release', async () => {
+    let receive!: (event: { readonly data: unknown }) => void
+    let onSamples!: (samples: Int16Array) => void
+    let now = 0
+    const outcomes: unknown[] = []
+    startWakeWorker({ postMessage: (message) => outcomes.push(message), on: (_, listener) => { receive = listener } }, {
+      now: () => now,
+      createDetector: () => ({ sampleRateHz: 16000, process: () => ({ status: 'listening' }), reset() {}, close() {} }),
+      openCapture: async (input) => { onSamples = input.onSamples; return { stop() {} } },
+    })
+    receive({ data: { type: 'initialize', requestId: 'init', package: {
+      packageId: 'test', engine: 'sherpa', engineVersion: '1', modelVersion: 'test', phrase: 'test',
+      sampleRateHz: 16000, artifactPaths: {}, tuning: {},
+    } } })
+    receive({ data: { type: 'acquire_microphone', requestId: 'acquire' } })
+    await flush()
+    onSamples(new Int16Array([16384, -16384]))
+    expect(outcomes).toHaveLength(2)
+    now = 500
+    onSamples(new Int16Array([0, 0]))
+    expect(outcomes[2]).toEqual({ type: 'input_activity', blocks: 2, peak: 0.5, rms: Math.sqrt(0.125) })
+    now = 1000
+    onSamples(new Int16Array([0, 0]))
+    expect(outcomes[3]).toEqual({ type: 'input_activity', blocks: 3, peak: 0, rms: 0 })
+    receive({ data: { type: 'release_microphone', requestId: 'release' } })
+    await flush()
+    now = 2000
+    onSamples(new Int16Array([32767]))
+    expect(outcomes).toHaveLength(5)
+  })
   it('initializes, acquires, detects locally, and releases capture without content output', async () => {
     let receive!: (event: { readonly data: unknown }) => void
     let onSamples!: (samples: Int16Array) => void

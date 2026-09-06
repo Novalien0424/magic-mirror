@@ -147,6 +147,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
   readonly importAvatarModel?: () => Promise<import('../shared/avatar-profiles').AvatarModel | null>
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
@@ -1767,7 +1768,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
-    return { ok: true, value: avatarRuntime }
+    const wakeInput = options.getWakeInput?.()
+    return { ok: true, value: { ...avatarRuntime, ...(wakeInput ? { wakeInput } : {}) } }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarControl, (event, ...args) => {
@@ -1796,7 +1798,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       })
       return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
     }
-    return { ok: true, value: avatarRuntime }
+    const wakeInput = options.getWakeInput?.()
+    return { ok: true, value: { ...avatarRuntime, ...(wakeInput ? { wakeInput } : {}) } }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.runScene, async (event, ...args) => {

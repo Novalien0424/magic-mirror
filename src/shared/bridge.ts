@@ -145,6 +145,7 @@ export type AvatarControlCommand =
   | Readonly<{ type: 'music_gain'; value: number }>
 
 export interface AvatarRuntimeSnapshot {
+  readonly wakeInput?: import('./wake-input').WakeInputSnapshot
   readonly audioDevices?: import('./audio-devices').AudioDeviceState
   readonly status: 'not_ready' | 'ready' | 'degraded' | 'failed'
   readonly reason: string

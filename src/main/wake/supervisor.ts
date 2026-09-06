@@ -1,4 +1,5 @@
 import { getAudioPreferences } from '../audio-preferences'
+import type { WakeInputSnapshot } from '../../shared/wake-input'
 import {
   parseWakeWorkerOutcome,
   type WakeWorkerCommand,
@@ -21,6 +22,7 @@ export type WakeSupervisorStatus =
   | 'failed'
 
 export interface WakeSupervisorSnapshot {
+  readonly input: WakeInputSnapshot
   readonly status: WakeSupervisorStatus
   readonly packageId: string | null
   readonly engine: 'sherpa' | null
@@ -40,6 +42,7 @@ interface PendingRequest {
 }
 
 export interface WakeSupervisorOptions {
+  readonly now?: () => number
   readonly spawn: () => WakeWorkerChild
   readonly onWake: (packageId: string) => void
   readonly onStatus?: (snapshot: WakeSupervisorSnapshot) => void
@@ -65,6 +68,13 @@ export interface WakeSupervisor {
 }
 
 export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSupervisor {
+  const now = options.now ?? Date.now
+  let acquiredAt = 0
+  let lastBlockAt: number | null = null
+  let blocks = 0
+  let peak = 0
+  let rms = 0
+  let detections = 0
   const requestTimeoutMs = Number.isFinite(options.requestTimeoutMs) && (options.requestTimeoutMs ?? 0) > 0
     ? Math.floor(options.requestTimeoutMs ?? 0)
     : 5_000
@@ -84,7 +94,13 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   const pending = new Map<string, PendingRequest>()
 
   function snapshot(): WakeSupervisorSnapshot {
+    const age = lastBlockAt === null ? null : Math.max(0, now() - lastBlockAt)
+    const stale = now() - (lastBlockAt ?? acquiredAt) > 3000
+    const inputState = status !== 'listening' ? 'inactive' : stale ? 'stalled'
+      : lastBlockAt === null ? 'waiting' : peak < 0.001 ? 'silent' : 'signal'
     return Object.freeze({
+      input: Object.freeze({ state: inputState, blocks, peak: inputState === 'signal' ? peak : 0,
+        rms: inputState === 'signal' ? rms : 0, lastBlockAgeMs: age, detections }),
       status,
       packageId: initialization?.package.packageId ?? null,
       engine: initialization?.package.engine ?? null,
@@ -167,6 +183,14 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       return
     }
     const outcome = parsed.value
+    if (outcome.type === 'input_activity') {
+      if (status !== 'listening') return
+      lastBlockAt = now()
+      blocks = outcome.blocks
+      peak = outcome.peak
+      rms = outcome.rms
+      return
+    }
     if (outcome.type === 'wake_detected') {
       if (
         status !== 'listening'
@@ -175,6 +199,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
         || outcome.modelVersion !== initialization.package.modelVersion
       ) return
       shouldListen = false
+      detections += 1
       publishStatus('released')
       try {
         options.onWake(outcome.packageId)
@@ -206,6 +231,11 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       settlePending(outcome.requestId, action('failed', 'wake_worker_package_mismatch'))
       publishStatus('failed', 'wake_worker_package_mismatch')
       return
+    }
+    if (outcome.type === 'microphone_acquired') {
+      acquiredAt = now()
+      lastBlockAt = null
+      blocks = peak = rms = 0
     }
     if (outcome.type === 'ready') publishStatus('ready')
     else if (outcome.type === 'microphone_acquired') publishStatus('listening')

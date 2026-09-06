@@ -42,6 +42,32 @@ function flush(): Promise<void> {
 }
 
 describe('wake worker supervisor', () => {
+  it('distinguishes waiting, missing blocks, silence, signal and released input', async () => {
+    const child = new FakeChild()
+    let now = 0
+    const supervisor = createWakeSupervisor({ spawn: () => child, onWake() {}, now: () => now })
+    const started = supervisor.start({ package: wakePackage })
+    child.emitMessage({ type: 'ready', requestId: child.commands[0].requestId, packageId: wakePackage.packageId })
+    await started
+    const acquired = supervisor.acquire()
+    child.emitMessage({ type: 'microphone_acquired', requestId: child.commands[1].requestId })
+    await acquired
+    expect(supervisor.snapshot().input.state).toBe('waiting')
+    now = 3500
+    expect(supervisor.snapshot().input.state).toBe('stalled')
+    child.emitMessage({ type: 'input_activity', blocks: 10, peak: 0, rms: 0 })
+    expect(supervisor.snapshot().input).toMatchObject({ state: 'silent', blocks: 10, lastBlockAgeMs: 0 })
+    child.emitMessage({ type: 'input_activity', blocks: 15, peak: 0.5, rms: 0.1 })
+    expect(supervisor.snapshot().input).toMatchObject({ state: 'signal', peak: 0.5, detections: 0 })
+    now = 7000
+    expect(supervisor.snapshot().input).toMatchObject({ state: 'stalled', peak: 0, lastBlockAgeMs: 3500 })
+    const released = supervisor.release()
+    child.emitMessage({ type: 'microphone_released', requestId: child.commands[2].requestId })
+    await released
+    expect(supervisor.snapshot().input).toMatchObject({ state: 'inactive', peak: 0 })
+    child.emitMessage({ type: 'input_activity', blocks: 20, peak: 1, rms: 1 })
+    expect(supervisor.snapshot().input.state).toBe('inactive')
+  })
   it('tracks ready/acquire/release and emits one wake for duplicate worker messages', async () => {
     const child = new FakeChild()
     const wakes: string[] = []

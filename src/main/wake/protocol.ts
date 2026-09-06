@@ -38,6 +38,12 @@ const wakeWorkerCommandSchema = z.discriminatedUnion('type', [
 ])
 
 const wakeWorkerOutcomeSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('input_activity'),
+    blocks: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    peak: z.number().min(0).max(1),
+    rms: z.number().min(0).max(1),
+  }).strict(),
   z.object({ type: z.literal('ready'), requestId, packageId: safeToken }).strict(),
   z.object({ type: z.literal('microphone_acquired'), requestId }).strict(),
   z.object({ type: z.literal('microphone_released'), requestId }).strict(),

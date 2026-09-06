@@ -13,6 +13,7 @@ interface WorkerPort {
 }
 
 export interface WakeWorkerDependencies {
+  readonly now?: () => number
   readonly createDetector?: (
     wakePackage: Extract<WakeWorkerCommand, { type: 'initialize' }>['package'],
   ) => WakeDetector
@@ -28,6 +29,7 @@ function defaultCreateDetector(
 export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDependencies = {}): void {
   const createDetector = dependencies.createDetector ?? defaultCreateDetector
   const openCapture = dependencies.openCapture ?? openWakeCapture
+  const now = dependencies.now ?? Date.now
   let detector: WakeDetector | null = null
   let capture: WakeCapture | null = null
   let activePackage: Extract<WakeWorkerCommand, { type: 'initialize' }>['package'] | null = null
@@ -58,11 +60,30 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
       return
     }
     if (detector === null || activePackage === null) throw new Error('wake_not_initialized')
+    let lastReport = now()
+    let blocks = 0
+    let peak = 0
+    let squares = 0
+    let count = 0
     capture = await openCapture({
       ...(inputLabel ? { inputLabel } : {}),
       onSamples(samples) {
         if (capture === null || detector === null || activePackage === null) return
         try {
+          if (samples.length > 0) {
+            blocks += 1
+            for (const sample of samples) {
+              const value = sample / 32768
+              peak = Math.max(peak, Math.abs(value))
+              squares += value * value
+            }
+            count += samples.length
+            if (now() - lastReport >= 500) {
+              post({ type: 'input_activity', blocks, peak, rms: Math.sqrt(squares / count) })
+              lastReport = now()
+              peak = squares = count = 0
+            }
+          }
           if (detector.process(samples).status !== 'detected') return
           releaseCapture()
           detector.reset()
