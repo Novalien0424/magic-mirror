@@ -23,21 +23,9 @@ Windows is the engineering/verification host. Mac signing, TCC, packaging and
 device-performance proof belong to the later port. Never promote Windows
 evidence into Mac readiness.
 
-## A unit, not a ceremony
-
-For cross-cutting work, record observable outcomes, owners, risks and acceptance
-checks. Keep one current plan; do not create parallel ledgers of task status.
-For a bounded fix, inspect its owner, change the cause and run its focused check.
-
-Use practical RED/GREEN for durable behavior. Diagnostics/docs do not need a
-manufactured failing test. Self-check the diff once; repeat only for a concrete
-finding. The primary thread can implement and validate directly. Independent
-review is optional when it materially reduces risk, not a mandatory serial gate.
-
-After a real failure, retain the bounded reason, reproduce it at the smallest
-boundary, and add regression coverage. Do not replace assertions with delays,
-hide failing cases, or add unbounded retry chains. External actions get at most
-one retry under AGENTS.md.
+For cross-cutting phase work, keep one plan of observable outcomes, owners,
+risks and acceptance checks. Routine execution/review follows AGENTS, not a
+second workflow here. Never hide failing cases or replace assertions with delays.
 
 ## Demos and exit evidence
 
@@ -56,9 +44,5 @@ one retry under AGENTS.md.
 - Tag/publish only with the relevant authority and successful required evidence.
   Routine work does not advance phases, trigger a soak, or require a full suite.
 
-## Evidence hygiene
-
-Use command + exit code + key result and exact artifact links. Failures retain
-bounded metadata reasons. Do not save raw conversation traces, audio, private
-context or credentials for an agent eval. Synthetic fixtures can prove a
-mechanism; the user's separate acceptance establishes the experience.
+Evidence follows AGENTS privacy rules. Synthetic fixtures prove mechanisms;
+separate operator acceptance establishes the experience.

@@ -19,13 +19,9 @@ Use [AGENTS.md](../../../AGENTS.md) for execution policy and `mm-invariants`
 for applicable product constraints. This skill supplies Realtime-specific
 facts only. Evidence and examples remain metadata-only.
 
-Runtime model IDs come only from versioned configuration and frozen session/job
-snapshots. The configured extractor tiers include `gpt-5.6-luna` and
-`gpt-5.6-terra`; that product use is separate from the worker route. Preserve
-`gpt-realtime-2.1-mini`, `gpt-realtime-2.1`, `gpt-live-transcribe`,
-`gpt-4o-mini-transcribe`, and every configured extractor tier exactly. A failed
-configured ID must fail visibly and must never silently substitute the worker
-model or another runtime ID.
+Runtime model IDs come from versioned configuration and frozen session/job
+snapshots, never the worker route or a catalog in this skill. Preserve configured
+IDs exactly; unavailable models fail visibly without silent substitution.
 
 ## Packages and session creation
 
@@ -183,11 +179,8 @@ degrade visibly.
   `{ type: 'json_schema', name, schema, strict: true }`. Strict mode means all
   properties are required and `additionalProperties: false`. Use the helper
   `zodTextFormat()` from `openai/helpers/zod`.
-- Take the model from config. Current tiers are `gpt-5.6-luna`
-  ($0.20/$1.20 per 1M, cheapest, Structured Outputs OK,
-  `reasoning.effort: 'none'` available) as a sensible Draft baseline, and
-  `gpt-5.6-terra` as a mid-tier. Extraction jobs use the `JobModelSnapshot`
-  taken at enqueue.
+- Take the model from config and the `JobModelSnapshot` captured at enqueue.
+  Pricing and model selection are not fixed by this reference.
 - Snapshot boundary rule (P1-D5/D6, P6-D8): sessions freeze a
   `SessionModelSnapshot` at creation; jobs freeze a `JobModelSnapshot` at
   enqueue. A mid-session Publish never retargets live sessions or in-flight
@@ -205,23 +198,3 @@ degrade visibly.
   model and voice, barge-in stop, transcript-to-item-ID mapping,
   `updateAgent` on a clean session, close/fresh-reconnect, and that no
   audio/tracing content persists locally.
-
-## Active invariant reminders
-
-Apply these canonical checks whenever the domain task touches product
-behavior:
-
-1. Transcripts, conversation audio, extracted memory values, and injected
-   private context are RAM-only; diagnostics are metadata-only.
-4. A profile change closes old-owner history, confirms in a clean
-   Persona+Master-only session, then updates the agent.
-5. Extraction writes to `ownerProfileIdAtTurnStart` captured at turn start.
-6. Control turns skip personal-memory extraction.
-8. Exactly one microphone owner exists, with release then acquire.
-9. Ignore, drop, fallback, and degrade outcomes carry a visitor-visible or
-   metadata-only Console reason.
-10. Failures degrade without gating conversation or unrelated adapters.
-11. Model IDs come from versioned config; a failed ID never silently
-   substitutes another ID.
-12. Main alone loads the ignored root `.env` `OPENAI_API_KEY`; keys never enter
-    renderer data, logs, telemetry, exports, or agent evidence.

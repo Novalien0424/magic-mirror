@@ -4,6 +4,27 @@ Scope: the current Console/avatar work. No dependency upgrade, global plugin
 rewrite, phase promotion, deletion of historical evidence, or operator-data
 change. Final delivery status is owned by PROGRESS.md.
 
+## Clock-out compaction — 2026-09-06
+
+- AGENTS/PROGRESS/DECISIONS reduced from 95,494 to 22,597 characters (~76%).
+  Full progress/decision history is in `docs/archive/`, with relative links
+  rebased. Automated comparison confirms all historical text is retained.
+- All 12 canonical invariants are verbatim unchanged. Current handoff retains
+  product commits, running-app state, exact evidence links, unresolved first-boot
+  wake and the initial Cubism QA failure followed by one successful retry.
+- Workflow/Realtime skills drop repeated execution/invariant lists and pricing
+  advice; domain contracts remain. UI QA records the observed full-suite
+  Electron overlap and unsaved-edit restart hazards.
+- Other domain skills and short role/config files were reviewed and retained.
+  Protected `.claude/skills/`, concurrent `CLAUDE.md`, operator media, product
+  code/config and global plugins were not edited.
+- Validation: `quick_validate.py` passes all 8 skills; relative-link check passes
+  38 links in 13 files; `tomllib` parses all 5 TOML files; archive-content and
+  invariant comparisons pass; `git diff --check` exits 0. These are structural
+  checks, not new agent-routing benchmarks or product tests.
+- Normal server returned HTTP 200 at clock-out and remains running. No phase
+  acceptance, tag, runtime-model or dependency change.
+
 ## Follow-through — 2026-09-06 08:05 Windows
 
 The earlier failures below remain historical evidence. The production Windows
