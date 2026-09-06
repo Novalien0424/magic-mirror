@@ -12,6 +12,8 @@ import type {
   SpellConfig,
 } from '../../shared/types'
 
+import type { SceneTestScope } from '../../shared/scene-test-scope'
+
 export type SceneResourceCategory = 'visual' | 'music' | 'lighting' | 'fog'
 
 export interface SceneActionContext {
@@ -72,7 +74,7 @@ export interface SceneRuntimeOptions {
 
 export interface SceneRuntime {
   triggerSpell(trigger: { spellId: string; turnId: string }): Promise<SceneStartResult>
-  runScene(sceneId: string): Promise<SceneStartResult>
+  runScene(sceneId: string, scope?: SceneTestScope): Promise<SceneStartResult>
   reportAction(report: SceneActionRendererReport): Promise<'accepted' | 'stale'>
   reportVisual(report: SceneVisualPlaybackReport): Promise<'accepted' | 'stale' | 'invalid'>
   stopRun(target: { runId: string; turnId: string }): Promise<'stopped' | 'stale'>
@@ -513,9 +515,19 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
       })
     },
 
-    runScene(sceneId: string): Promise<SceneStartResult> {
+    runScene(sceneId: string, scope?: SceneTestScope): Promise<SceneStartResult> {
       const submittedBarrier = barrierVersion
       const scene = scenes.get(sceneId)
+      if (scene && scope) {
+        const stage = scene.stages.find(s => s.id === scope.stageId)
+        if (!scene.enabled || !stage || scope.actionId && !stage.actionIds.includes(scope.actionId)) return enqueue(() => skipped('invalid_config'))
+        const action = scope.actionId ? actions.get(scope.actionId) : undefined
+        if (scope.actionId && (!action || !action.enabled)) return enqueue(() => skipped('disabled'))
+        const selected = action ? { ...stage, actionIds: [action.id], endCondition: action.kind === 'visual' && action.playback === 'once'
+          ? { kind: 'video_complete' as const, visualActionId: action.id }
+          : { kind: 'duration' as const, durationMs: 10000 } } : stage
+        return startScene({ ...scene, stages: [selected] }, submittedBarrier)
+      }
       return scene === undefined || !scene.enabled
         ? enqueue(() => skipped('disabled'))
         : startScene(scene, submittedBarrier)

@@ -98,6 +98,9 @@ async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
   const image = new Image()
+  // Managed bundles use a different, CORS-enabled local protocol origin.
+  // Opt in before src so the decoded pixels are legal WebGL texture input.
+  if (url.startsWith('magic-mirror-media:')) image.crossOrigin = 'anonymous'
   image.src = url
   if (typeof image.decode === 'function') {
     await image.decode()
@@ -429,6 +432,9 @@ class MagicMirrorCubismModel extends CubismUserModel {
     for (const texture of this.#textures) this.#gl.deleteTexture(texture)
     this.#textures.length = 0
     super.release()
+    // A rig owns this canvas/context. Its pooled mask targets must not survive
+    // into the next rig: the renderer just destroyed the targets they reference.
+    CubismWebGLOffscreenManager.getInstance().removeContext(this.#gl)
   }
 }
 

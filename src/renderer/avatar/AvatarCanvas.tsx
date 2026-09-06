@@ -8,6 +8,7 @@ import type {
 import { computePortraitLayout, type PortraitLayout } from './portrait-layout'
 
 export interface AvatarCanvasProps {
+  readonly model?: import('../../shared/avatar-profiles').AvatarModelReference
   readonly embedded?: boolean
   readonly state: AvatarState
   readonly forceFallback?: boolean
@@ -25,6 +26,7 @@ function currentLayout(host?: HTMLElement | null): PortraitLayout {
 }
 
 export function AvatarCanvas({
+  model,
   embedded = false,
   state,
   forceFallback = false,
@@ -34,10 +36,12 @@ export function AvatarCanvas({
 }: AvatarCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<CubismAvatarRenderer | null>(null)
+  const initializationRef = useRef<Promise<void>>(Promise.resolve())
   const [layout, setLayout] = useState<PortraitLayout>(() => currentLayout())
   const layoutRef = useRef(layout); layoutRef.current = layout
   const stateRef = useRef(state); stateRef.current = state
   const [loadFailed, setLoadFailed] = useState(false)
+  const [ready, setReady] = useState(false)
   const fallback = loadFailed || forceFallback
 
   useEffect(() => {
@@ -64,11 +68,14 @@ export function AvatarCanvas({
     if (canvas === null) return
 
     let mounted = true
+    setLoadFailed(false)
+    setReady(false)
     let renderer: CubismAvatarRenderer | null = null
-    void import('./cubism-avatar').then(
+    const initialization = initializationRef.current.then(() => import('./cubism-avatar')).then(
       ({ createCubismAvatarRenderer }) => {
         if (!mounted) return
         renderer = createCubismAvatarRenderer({
+          ...(model ? { assetBaseUrl: `magic-mirror-media://avatar/${model.id}/`, manifestFileName: model.manifestFileName } : {}),
           canvas,
           eventSink: (event) => {
             if (!mounted) return
@@ -92,29 +99,33 @@ export function AvatarCanvas({
       () => {
         if (!mounted || renderer === null) return
         renderer.setState(stateRef.current)
+        setReady(true)
         onRenderer(renderer)
       },
       () => {
         if (mounted) setLoadFailed(true)
       },
     )
+    initializationRef.current = initialization
 
     return () => {
       mounted = false
       onRenderer(null)
       rendererRef.current = null
-      renderer?.dispose()
+      // Cubism loads native model data asynchronously. Release only after that
+      // load settles, and before the next rig touches this canvas/context.
+      initializationRef.current = initialization.then(() => { renderer?.dispose() })
     }
-    // Renderer lifetime is tied only to the mounted canvas.
+    // Changing a model disposes the old rig and its WebGL resources.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [model?.id, model?.manifestFileName])
 
   useEffect(() => {
     rendererRef.current?.setState(state)
   }, [state])
 
   return (
-    <div className="avatar-stage" data-avatar-state={state}>
+    <div className="avatar-stage" data-avatar-state={state} data-renderer-state={fallback ? 'failed' : ready ? 'ready' : 'loading'}>
       <canvas
         ref={canvasRef}
         className="avatar-stage__canvas"

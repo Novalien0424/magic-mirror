@@ -52,6 +52,10 @@ const FINALIZE_VISUAL_CHANNEL = 'console:finalize-visual' as const
 const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
+  importAvatarModel() { return ipcRenderer.invoke('console:import-avatar-model') },
+  loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke('console:load-avatar', id)
+  },
   notifyReady(): void {
     ipcRenderer.send(READY_CHANNEL)
   },
@@ -139,8 +143,8 @@ const bridge: ConsoleBridge = {
     return ipcRenderer.invoke(AVATAR_CONTROL_CHANNEL, command) as Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   },
 
-  runScene(sceneId: string): Promise<ConsoleResponse<SceneStartResult>> {
-    return ipcRenderer.invoke(RUN_SCENE_CHANNEL, sceneId) as Promise<ConsoleResponse<SceneStartResult>>
+  runScene(sceneId: string, scope?: import('../shared/scene-test-scope').SceneTestScope): Promise<ConsoleResponse<SceneStartResult>> {
+    return ipcRenderer.invoke(RUN_SCENE_CHANNEL, sceneId, ...(scope ? [scope] : [])) as Promise<ConsoleResponse<SceneStartResult>>
   },
 
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>> {

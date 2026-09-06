@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
 import type { ManagedVisualAsset } from '../../shared/types'
+import { ResourceAccess } from './ResourceAccess'
+import type { AvatarCatalog } from '../../shared/avatar-profiles'
 
 export function VisualThumbnail({ asset }: { asset: ManagedVisualAsset }) {
   const [failed, setFailed] = useState(false)
@@ -15,8 +17,9 @@ export function VisualThumbnail({ asset }: { asset: ManagedVisualAsset }) {
   </div>
 }
 
-export function MediaLibrary({ draft, bridge, disabled, onImport }: {
+export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '', onCatalogChange }: {
   draft: ConsoleConfigDraftInput; bridge: ConsoleBridge; disabled: boolean; onImport(): void
+  avatarId?: string; onCatalogChange?(catalog: AvatarCatalog): void
 }) {
   const [playing, setPlaying] = useState('')
   const [reason, setReason] = useState('')
@@ -48,14 +51,16 @@ export function MediaLibrary({ draft, bridge, disabled, onImport }: {
       onEnded={() => { setPlaying(''); setReason('Preview finished.') }} onError={() => { setPlaying(''); setReason('Audio preview failed: this file could not be decoded.') }} /> : null}
     <fieldset><legend>Managed visuals</legend><ul className="media-cards">
       {draft.visualAssets.map(asset => <li key={asset.id} className="media-card"><VisualThumbnail asset={asset} /><strong>{asset.name}</strong>
-        <span>{asset.width}×{asset.height}{asset.kind === 'video' ? ` · ${((asset.durationMs ?? 0) / 1000).toFixed(1)}s` : ''}</span></li>)}
+        <span>{asset.width}×{asset.height}{asset.kind === 'video' ? ` · ${((asset.durationMs ?? 0) / 1000).toFixed(1)}s` : ''}</span>
+        {onCatalogChange ? <ResourceAccess catalog={draft.avatarCatalog} avatarId={avatarId} kind="visual" resourceId={asset.id} disabled={disabled} onChange={onCatalogChange} /> : null}</li>)}
     </ul>{!draft.visualAssets.length ? <p className="console__empty">No images or videos yet.</p> : null}</fieldset>
     <fieldset><legend>Managed music</legend><ul className="media-cards">
       {draft.musicAssets.map(asset => <li key={asset.id} className="media-card"><div className="media-card__audio" aria-hidden="true">♫</div><strong>{asset.name}</strong>
         <span>{asset.mimeType.replace('audio/', '').toUpperCase()} · {(asset.byteLength / 1048576).toFixed(1)} MB</span>
         <button type="button" aria-label={`${playing === asset.id ? 'Stop' : 'Play'} ${asset.name}`} onClick={() => {
           setReason(playing === asset.id ? 'Preview stopped.' : 'Loading audio preview…'); setPlaying(playing === asset.id ? '' : asset.id)
-        }}>{playing === asset.id ? 'Stop preview' : 'Test play'}</button></li>)}
+        }}>{playing === asset.id ? 'Stop preview' : 'Test play'}</button>
+        {onCatalogChange ? <ResourceAccess catalog={draft.avatarCatalog} avatarId={avatarId} kind="music" resourceId={asset.id} disabled={disabled} onChange={onCatalogChange} /> : null}</li>)}
     </ul>{!draft.musicAssets.length ? <p className="console__empty">No audio yet.</p> : null}</fieldset>
   </section>
 }

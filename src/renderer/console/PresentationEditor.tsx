@@ -7,8 +7,9 @@ import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { PresentationPhase } from '../avatar/presentation-controller'
 
 const ignore = () => undefined
-export function PresentationEditor({ draft, onChange, disabled }: {
+export function PresentationEditor({ draft, onChange, disabled, model }: {
   draft: ConsoleConfigDraftInput; onChange(draft: ConsoleConfigDraftInput): void; disabled: boolean
+  model?: import('../../shared/avatar-profiles').AvatarModelReference
 }) {
   const config = draft.presentation ?? DEFAULT_PRESENTATION
   const [lifecycle, setLifecycle] = useState<LifecycleState>('dormant')
@@ -53,7 +54,7 @@ export function PresentationEditor({ draft, onChange, disabled }: {
         </div>
         <div className="presentation-preview">
           <PresentationStage payload={{ config: { ...config }, background: draft.visualAssets.find(a => a.id === config.backgroundId) ?? null }} lifecycle={previewing ? lifecycle : 'starting'} onPhase={setPhase} onFailure={setReason} draft>
-            <AvatarCanvas embedded state={phase === 'entering' ? 'Waking' : phase === 'exiting' ? 'Suspending' : phase === 'awake' ? 'Listening' : 'Dormant'}
+            <AvatarCanvas embedded model={model} state={phase === 'entering' ? 'Waking' : phase === 'exiting' ? 'Suspending' : phase === 'awake' ? 'Listening' : 'Dormant'}
               onRenderer={ignore} onMetrics={ignore} onEvent={e => { if (e.status === 'failed') setReason(e.reason) }} />
           </PresentationStage>
         </div>

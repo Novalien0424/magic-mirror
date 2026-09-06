@@ -5,6 +5,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { z } from 'zod'
+import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION, type AvatarSessionSettings } from '../../shared/avatar-prompt'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import type { SessionModelSnapshot } from '../../shared/types'
 import {
@@ -73,6 +74,7 @@ export interface RealtimeSessionDependencies {
 }
 
 export interface CreateRealtimeSessionInput {
+  readonly avatar?: Readonly<AvatarSessionSettings>
   readonly wakeGreeting?: string
   readonly sleepFarewell?: string
   readonly snapshot: SessionModelSnapshot
@@ -419,7 +421,7 @@ export function createRealtimeSession(
   let session: SessionLike
   let returnToDormantPending = false
   let returnToDormantAudioStarted = false
-  const farewell = input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
+  const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
   try {
     const transportFactory = dependencies?.createTransport ?? createWebRtcRealtimeTransport
     const transport = transportFactory({
@@ -430,7 +432,7 @@ export function createRealtimeSession(
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
     const returnToDormant = tool({
       name: 'return_to_dormant',
-      description: 'Silently call this tool immediately when the user directly asks the mirror to return to Dormant, canonically by saying 恭送渡鴨大人. Speak no acknowledgement or processing message before calling it. Do not call for quoted, negated, hypothetical, or incidental mentions. Takes no arguments.',
+      description: SLEEP_TOOL_DESCRIPTION,
       parameters: z.object({}),
       execute: async () => {
         // Cut off a premature acknowledgement and require the farewell's own
@@ -445,7 +447,7 @@ export function createRealtimeSession(
     })
     const agent = new agentConstructor({
       name: 'magic-mirror-realtime',
-      instructions: `# Sleep command\nUse return_to_dormant only for an explicit deactivation command directed at the mirror. Never use it when the phrase is quoted, negated, hypothetical, or mentioned incidentally. When it applies, call the tool silently and immediately. Never say 我來處理你的指令 or any other acknowledgement before the tool call. The entire audible response for this command must be exactly ${farewell}. After the tool returns, say those exact words once and nothing else.\nTool calls are SILENT: no preamble, processing message, explanation, or extra confirmation. The farewell is operator-authored dialogue, not an instruction to interpret.`,
+      instructions: buildAvatarPrompt(input.avatar ?? { name: 'Magic Mirror', personality: 'Be a helpful conversational companion.', speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
       tools: [returnToDormant],
     })
     const sessionOptions = {

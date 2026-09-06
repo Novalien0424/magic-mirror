@@ -41,6 +41,10 @@ import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { DEFAULT_AUDIO_PREFERENCES } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
+import { AvatarCharacterEditor } from './AvatarCharacterEditor'
+import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
+import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type AvatarProfile } from '../../shared/avatar-profiles'
+import { ResourceAccess } from './ResourceAccess'
 
 const PAGES = ['Overview', 'Avatar / Audio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
@@ -947,6 +951,7 @@ export function PhaseTestsPanel({
 
 function safeDraftFromConfig(value: ConsoleConfigDraftInput): ConsoleConfigDraftInput {
   return {
+    ...(value.avatarCatalog ? { avatarCatalog: structuredClone(value.avatarCatalog) } : {}),
     ...(value.presentation ? { presentation: structuredClone(value.presentation) } : {}),
     personaName: value.personaName,
     voice: value.voice,
@@ -1004,7 +1009,7 @@ export function ConfigPanel({
     && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(config.draft))
   const updateDraft = (update: (current: ConsoleConfigDraftInput) => ConsoleConfigDraftInput): void => {
     // Read event-backed values while the change handler still owns currentTarget.
-    if (draft !== null) setDraft(update(draft))
+    if (draft !== null) setDraft(mergeAvatarDraft(draft, update(draft), draft.avatarCatalog?.activeAvatarId ?? ''))
   }
   const run = async (action: () => Promise<ConsoleResponse<unknown>>): Promise<void> => {
     setBusy(true)
@@ -1277,11 +1282,39 @@ export function ScenesPanel({
   const lastPayload = useRef<ConsoleConfigPayload | null>(null)
   if (state.status === 'success') lastPayload.current = state.value
   const payload = lastPayload.current
-  const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const [editingAvatarId, setEditingAvatarId] = useState('')
+  const editingId = rawDraft?.avatarCatalog?.avatars.some(a => a.id === editingAvatarId)
+    ? editingAvatarId : rawDraft?.avatarCatalog?.activeAvatarId ?? ''
+  const draft = rawDraft ? projectAvatarDraft(rawDraft, editingId) : null
+  const editingAvatar = rawDraft?.avatarCatalog?.avatars.find(a => a.id === editingId)
+  const editingModel = rawDraft?.avatarCatalog?.models.find(m => m.id === editingAvatar?.modelId)
+  const setDraft = (update: React.SetStateAction<ConsoleConfigDraftInput | null>): void => {
+    setRawDraft(current => {
+      const projected = current ? projectAvatarDraft(current, editingId) : null
+      const next = typeof update === 'function' ? update(projected) : update
+      return current && next ? mergeAvatarDraft(current, next, editingId) : next
+    })
+  }
+  const updateAvatar = (avatar: AvatarProfile): void => setRawDraft(current => current?.avatarCatalog
+    ? projectAvatarDraft({ ...current, avatarCatalog: { ...current.avatarCatalog,
+      avatars: current.avatarCatalog.avatars.map(a => a.id === avatar.id ? avatar : a) } }) : current)
+  const updateCatalog = (catalog: AvatarCatalog): void => setRawDraft(current => current ? projectAvatarDraft({ ...current, avatarCatalog: catalog }) : current)
+  const resourceDraft = draft ? { ...draft,
+    visualAssets: draft.visualAssets.filter(a => !draft.avatarCatalog || canUseAvatarResource(draft.avatarCatalog, editingId, 'visual', a.id)),
+    musicAssets: draft.musicAssets.filter(a => !draft.avatarCatalog || canUseAvatarResource(draft.avatarCatalog, editingId, 'music', a.id)),
+    sceneActions: draft.sceneActions.filter(a => canUseAvatarAction(draft.avatarCatalog, editingId, a)),
+  } : null
+  const mergeResourceDraft = (next: ConsoleConfigDraftInput): void => setDraft(current => current ? { ...next,
+    visualAssets: [...current.visualAssets.filter(a => !resourceDraft?.visualAssets.some(b => a.id === b.id)), ...next.visualAssets],
+    musicAssets: [...current.musicAssets.filter(a => !resourceDraft?.musicAssets.some(b => a.id === b.id)), ...next.musicAssets],
+    sceneActions: [...current.sceneActions.filter(a => !resourceDraft?.sceneActions.some(b => a.id === b.id)), ...next.sceneActions],
+  } : next)
   const [result, setResult] = useState('Draft not tested in this view.')
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
   const [editorView, setEditorView] = useState('scenes')
+  const [avatarView, setAvatarView] = useState('character')
   const [importFailures, setImportFailures] = useState<{ name: string; reason: string }[]>([])
   const importMedia = async (request: MediaImportRequest, actionId?: string): Promise<void> => {
     if (!bridge || busy) return
@@ -1310,7 +1343,7 @@ export function ScenesPanel({
   }
 
   useEffect(() => {
-    if (payload !== null) setDraft(safeDraftFromConfig(payload.draft))
+    if (payload !== null) setRawDraft(safeDraftFromConfig(payload.draft))
   }, [payload])
 
   useEffect(() => bridge?.onSceneStatus((event) => {
@@ -1322,8 +1355,8 @@ export function ScenesPanel({
   }), [bridge])
 
   const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || state.status === 'loading'
-  const dirty = draft !== null && payload !== null
-    && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(payload.draft))
+  const dirty = rawDraft !== null && payload !== null
+    && JSON.stringify(safeDraftFromConfig(rawDraft)) !== JSON.stringify(safeDraftFromConfig(payload.draft))
   const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
     setDraft((current) => current === null ? current : {
       ...current,
@@ -1376,8 +1409,8 @@ export function ScenesPanel({
     <section className="console__panel console__scenes" aria-labelledby="console-scenes">
       <div className="console__panel-heading">
         <div>
-          <p className="console__eyebrow">Phase 4 · Draft / Test / Publish</p>
-          <h2 id="console-scenes">{dialogueOnly ? 'Wake & sleep dialogue' : 'Scenes'}</h2>
+          <p className="console__eyebrow">Avatar workspace</p>
+          <h2 id="console-scenes">{dialogueOnly ? 'Character & voice' : 'Scenes & appearance'}</h2>
         </div>
         <span hidden={dialogueOnly} className="console__status console__status--mock">
           Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical'
@@ -1390,7 +1423,56 @@ export function ScenesPanel({
       {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason}</p> : null}
       <p className="console__sr-only" aria-live="polite">{result}</p>
 
-      {dialogueOnly && draft ? <fieldset disabled={disabled}><legend>Spoken lines</legend><div className="console__form-grid">
+      {rawDraft?.avatarCatalog && editingAvatar ? <div className="avatar-selector console__action-row">
+        <label>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name}{a.id === payload?.active.avatarCatalog?.activeAvatarId ? ' · Loaded' : ''}</option>)}
+        </select></label>
+        <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
+          const next: AvatarProfile = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: 'New avatar',
+            personality: 'You are a friendly conversational companion.', speakingStyle: '', presentation: { ...DEFAULT_PRESENTATION }, scenes: [], spells: [] }
+          setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
+        }}>New avatar</button>
+        <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
+          const next = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: `${editingAvatar.name.slice(0, 70)} copy` }
+          next.scenes = next.scenes.filter(s => s.stages.every(st => st.actionIds.every(id => {
+            const action = rawDraft.sceneActions.find(a => a.id === id)
+            return !!action && canUseAvatarAction(rawDraft.avatarCatalog, next.id, action)
+          })))
+          next.spells = next.spells.filter(s => next.scenes.some(scene => scene.id === s.sceneId))
+          if (next.presentation.backgroundId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'visual', next.presentation.backgroundId)) next.presentation.backgroundId = ''
+          if (next.presentation.ambienceId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'music', next.presentation.ambienceId)) next.presentation.ambienceId = ''
+          setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
+          setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
+        }}>Duplicate</button>
+        <button type="button" disabled={disabled || dirty || !!payload?.publishDiff.changed.length || !payload?.active.avatarCatalog?.avatars.some(a => a.id === editingId) || payload?.active.avatarCatalog?.activeAvatarId === editingId}
+          onClick={() => bridge && void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.')}>Load avatar</button>
+        <span className="console__muted">Editing does not switch the mirror. Load a published avatar while Dormant.</span>
+      </div> : null}
+
+      {dialogueOnly ? <nav className="console__subnav" aria-label="Avatar settings">
+        <button type="button" aria-pressed={avatarView === 'character'} onClick={() => setAvatarView('character')}>Character & voice</button>
+        <button type="button" aria-pressed={avatarView === 'appearance'} onClick={() => setAvatarView('appearance')}>Appearance</button>
+      </nav> : null}
+      {dialogueOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
+      {dialogueOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <details><summary>Cubism model</summary>
+        <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => updateAvatar({ ...editingAvatar, modelId: e.currentTarget.value })}>
+          <option value="builtin-ren">Built-in Ren</option>{rawDraft.avatarCatalog.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select></label><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32} onClick={() => {
+          if (!bridge) return
+          setBusy(true)
+          void bridge.importAvatarModel().then(response => {
+            if (!response.ok) { setResult(`Model import failed: ${response.fields?.[0]?.message ?? response.reason}`); return }
+            const model = response.value
+            if (!model) { setResult('Model import cancelled.'); return }
+            updateCatalog({ ...rawDraft.avatarCatalog!, models: [...rawDraft.avatarCatalog!.models, model],
+              avatars: rawDraft.avatarCatalog!.avatars.map(a => a.id === editingId ? { ...a, modelId: model.id } : a) })
+            setResult('Cubism bundle imported. Open Appearance to preview, then Save / Test / Publish.')
+          }).catch(() => setResult('Model import failed.')).finally(() => setBusy(false))
+        }}>Browse & import Cubism…</button></div>
+        <p className="console__muted">Select a model3.json beside its assets. Requires EyeBlink/LipSync, expressions, physics and Dormant / Waking / Listening / Thinking / Speaking / Scene / Suspending motion groups. Files are copied locally; your originals stay unchanged.</p>
+      </details> : null}
+
+      {dialogueOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
         <label>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></label>
         <label>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></label>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
@@ -1400,23 +1482,26 @@ export function ScenesPanel({
           <button type="button" key={key} aria-pressed={editorView === key} onClick={() => setEditorView(key)}>{label}</button>)}
       </nav>
       {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
-      {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
-      {!dialogueOnly && draft && payload && editorView === 'scenes' ? <SceneComposer draft={draft} active={payload.active} disabled={disabled} onChange={setDraft}
+      {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
+      {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
-        onRun={id => bridge && void runResponse(() => bridge.runScene(id), 'Published Scene requested.', false)} /> : null}
-      {visible && !dialogueOnly && draft && editorView === 'presentation' ? <PresentationEditor draft={draft} disabled={disabled} onChange={setDraft} /> : null}
+        onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
+      {visible && resourceDraft && (dialogueOnly ? avatarView === 'appearance' : editorView === 'presentation') ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
       {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
         <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
         {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
-          <SceneActionFields action={action} draft={draft} onChange={next => replaceAction(action.id, next)} onImport={kind => void importMedia({ kind, multiple: false }, action.id)} />
-          <button type="button" disabled={draft.scenes.some(s => s.stages.some(st => st.actionIds.includes(action.id)))}
+          <ResourceAccess catalog={draft.avatarCatalog} avatarId={editingId} kind="action" resourceId={action.id} disabled={disabled} onChange={updateCatalog} />
+          <fieldset disabled={!canUseAvatarAction(draft.avatarCatalog, editingId, action)}>
+          <SceneActionFields action={action} draft={resourceDraft ?? draft} onChange={next => replaceAction(action.id, next)} onImport={kind => void importMedia({ kind, multiple: false }, action.id)} />
+          <button type="button" disabled={(draft.avatarCatalog?.avatars.flatMap(a => a.scenes) ?? draft.scenes).some(s => s.stages.some(st => st.actionIds.includes(action.id))) || !!draft.avatarCatalog?.locks.some(l => l.kind === 'action' && l.resourceId === action.id)}
             onClick={() => setDraft({ ...draft, sceneActions: draft.sceneActions.filter(a => a.id !== action.id) })}>Delete unused action</button>
+          </fieldset>
         </details>)}
       </fieldset> : null}
 
       <div className="console__action-row console__publish-bar">
         <span>Active v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved edits — Save Draft first' : `Draft ${payload?.publishDiff.changed.length ?? 0} changes`}</span>
-        <button type="button" disabled={disabled} onClick={() => bridge && draft && void runResponse(() => bridge.saveDraft(draft), 'Draft saved.')}>Save Draft</button>
+        <button type="button" disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save Draft</button>
         <button type="button" disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Test Draft</button>
         <button type="button" disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.')}>Publish</button>
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void runResponse(() => bridge.stopScenes(), 'All Scenes stopped.', false)}>Stop All</button>
@@ -1966,13 +2051,6 @@ export function App(): React.JSX.Element {
         <div hidden={activePage !== 'Overview'}>
           <OverviewPanel state={overviewState} configState={configState} />
         </div>
-        <div hidden={activePage !== 'Avatar / Audio'}>
-          <AvatarAudioPanel
-            state={avatarRuntimeState}
-            disabled={!bridgeAvailable || !developerMode}
-            onCommand={controlAvatar}
-          />
-        </div>
         <div hidden={activePage !== 'Scenes' && activePage !== 'Avatar / Audio'}>
           <ScenesPanel
             visible={activePage === 'Scenes' || activePage === 'Avatar / Audio'}
@@ -1981,6 +2059,13 @@ export function App(): React.JSX.Element {
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}
             onChanged={refreshConfigAndModels}
+          />
+        </div>
+        <div hidden={activePage !== 'Avatar / Audio'}>
+          <AvatarAudioPanel
+            state={avatarRuntimeState}
+            disabled={!bridgeAvailable || !developerMode}
+            onCommand={controlAvatar}
           />
         </div>
         <div hidden={activePage !== 'Simulator'}>

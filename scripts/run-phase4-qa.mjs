@@ -3,8 +3,14 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifyBuild } from './qa-build.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console']
+const args = process.argv.slice(2)
+if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
+  throw new Error('phase4_qa_mode_invalid')
+}
 const musicOnly = process.argv.includes('--music-only')
 const lifecycleLive = process.argv.includes('--lifecycle-live')
 const live = process.argv.includes('--live') || lifecycleLive
@@ -12,9 +18,13 @@ const manual = process.argv.includes('--manual')
 const editorOnly = process.argv.includes('--editor')
 const consoleOnly = process.argv.includes('--console') || editorOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
-if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()) {
+if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
+  || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()) {
   throw new Error('phase4_qa_requires_canonical_checkout_cwd')
 }
+const buildProvenance = await verifyBuild(repoRoot).catch(() => {
+  throw new Error('phase4_qa_build_unverified_run_npm_run_build')
+})
 
 const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
 const root = resolve(repoRoot, '.artifacts', 'phase4-qa', stamp)
@@ -24,6 +34,7 @@ const configDir = join(userDataDir, 'config')
 const musicDir = join(userDataDir, 'assets', 'music')
 const visualDir = join(userDataDir, 'assets', 'visual')
 await Promise.all([mkdir(configDir, { recursive: true }), mkdir(musicDir, { recursive: true }), mkdir(visualDir, { recursive: true }), mkdir(outputDir, { recursive: true })])
+await writeFile(join(root, 'build.json'), JSON.stringify(buildProvenance))
 
 function makeToneWav(durationSeconds = 4, sampleRate = 48_000) {
   const sampleCount = durationSeconds * sampleRate
@@ -167,9 +178,24 @@ config.spells = [
   { id: 'spell-visual-missing', name: 'Missing visual spell', phrase: 'Mirror play the missing vision', sceneId: 'scene-visual-missing', enabled: true, cooldownMs: 0 },
 ]
 config.adapters = { lighting: 'mock', fog: 'mock', music: 'mock' }
+// Greeting has its own lifecycle suite; scene speech must not race it here.
+if (live && !lifecycleLive) config.presentation = { mode: 'always_visible', backgroundId: '',
+  ambienceId: '', ambienceGain: 0.25, entranceMs: 800, exitMs: 900,
+  wakeGreeting: '', sleepFarewell: '如你所願，再會' }
 if (lifecycleLive) config.presentation = { mode: 'emerge', backgroundId: 'visual-qa-loop',
   ambienceId: 'music-qa-tone', ambienceGain: 0.25, entranceMs: 800, exitMs: 900,
   wakeGreeting: '我在，請說。', sleepFarewell: '如你所願，再會' }
+if (lifecycleLive) {
+  // Two public synthetic characters, no visitor profiles or private context.
+  config.visualAssets = config.visualAssets.filter(a => a.id !== 'visual-qa-missing')
+  config.sceneActions = config.sceneActions.filter(a => a.id !== 'visual-missing')
+  config.scenes = config.scenes.filter(s => s.id !== 'scene-visual-missing')
+  config.spells = config.spells.filter(s => s.id !== 'spell-visual-missing')
+  config.avatarCatalog = { activeAvatarId: 'qa-host', locks: [], models: [], avatars: [
+    { id: 'qa-host', name: 'QA Host', personality: 'QA warm host. Be welcoming and brief.', speakingStyle: 'Warm Traditional Chinese.', voice: 'coral', idleSeconds: 300, modelId: 'builtin-ren', presentation: { ...config.presentation }, scenes: config.scenes, spells: config.spells },
+    { id: 'qa-guide', name: 'QA Guide', personality: 'QA calm guide. Be curious and precise.', speakingStyle: 'Calm and unhurried.', voice: 'cedar', idleSeconds: 300, modelId: 'builtin-ren', presentation: { ...config.presentation, wakeGreeting: 'The guide is ready.', sleepFarewell: 'Goodbye.' }, scenes: [], spells: [] },
+  ] }
+}
 if (consoleOnly) {
   config.visualAssets = []
   config.sceneActions = []

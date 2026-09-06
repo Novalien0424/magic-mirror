@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
+import { canUseAvatarAction, canUseAvatarResource } from '../shared/avatar-profiles'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -880,6 +882,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let lastRealtimeRuntimeOutcomeReason: string | null = null
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
+  let publishedAvatarSettings: Readonly<AvatarSessionSettings> | undefined
+  let avatarSwitchInProgress = false
   let configService: ConfigService | null = options.configService ?? null
   let sqliteService: SqlitePhaseTestService | null = null
   const realtimeRecoveryUnavailable: Record<string, unknown> = Object.freeze({
@@ -1127,6 +1131,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function sendLifecycle(event: LifecycleEvent): boolean {
+    if (event.type === 'WAKE_DETECTED' && avatarSwitchInProgress) {
+      emitMetadata(telemetry, { module: 'avatar', event: 'wake_deferred', status: 'info', reason: 'avatar_switch_in_progress', source: 'runtime' })
+      return false
+    }
     const clearsPendingIdentity = event.type === 'REALTIME_READY'
       || event.type === 'CLOUD_FAILED'
       || event.type === 'LOCAL_AUDIO_FAILED'
@@ -1495,6 +1503,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     try {
       resolvedModelSettings = await Promise.resolve(resolveModelSettings(configSlots ?? ({} as ConfigSlots)))
+      if (configSlots?.active?.persona) publishedAvatarSettings = avatarSessionSettings(configSlots.active)
       const activeVersion = resolvedModelSettings.active.configVersion
       if (Number.isSafeInteger(activeVersion) && activeVersion >= 1) configVersion = activeVersion
     } catch (caught) {
@@ -1954,6 +1963,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     const issuer = createRealtimeSessionStartBundleIssuer({
       getPublishedSessionModelSnapshot: () => snapshot,
       getRealtimeSessionIdentity: () => identity,
+      ...(publishedAvatarSettings ? { getAvatarSettings: () => publishedAvatarSettings! } : {}),
       broker,
     })
     return issuer.issue()
@@ -1991,9 +2001,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return Object.freeze({
       configVersion: active.configVersion,
       wake: structuredClone(active.wake),
-      visualAssets: structuredClone(active.visualAssets),
-      musicAssets: structuredClone(active.musicAssets),
-      sceneActions: structuredClone(active.sceneActions),
+      visualAssets: structuredClone(active.visualAssets.filter(a => !active.avatarCatalog || canUseAvatarResource(active.avatarCatalog, active.avatarCatalog.activeAvatarId, 'visual', a.id))),
+      musicAssets: structuredClone(active.musicAssets.filter(a => !active.avatarCatalog || canUseAvatarResource(active.avatarCatalog, active.avatarCatalog.activeAvatarId, 'music', a.id))),
+      sceneActions: structuredClone(active.sceneActions.filter(a => canUseAvatarAction(active.avatarCatalog, active.avatarCatalog?.activeAvatarId ?? '', a))),
       spells: structuredClone(active.spells),
       scenes: structuredClone(active.scenes),
       adapters: structuredClone(active.adapters),
@@ -2505,6 +2515,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function refreshConfig(): Promise<ConsoleConfigRefreshResult> {
     const refreshFailure = (): ConsoleConfigRefreshResult => {
       resolvedModelSettings = null
+      publishedAvatarSettings = undefined
       configVersion = null
       refreshSnapshot()
       notifyListeners()
@@ -2523,6 +2534,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       }
       configVersion = activeVersion
       resolvedModelSettings = resolution
+      publishedAvatarSettings = slots.active?.persona ? avatarSessionSettings(slots.active) : undefined
       const configuredIdle = readProperty(readProperty(slots, 'active'), 'idleSeconds')
       if (typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle > 0) {
         activeIdleSeconds = configuredIdle
@@ -2536,6 +2548,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   const consoleConfigController = createConsoleConfigController({
+    getLifecycle: lifecycleState,
+    acquireAvatarSwitch: () => {
+      if (avatarSwitchInProgress || lifecycleState() !== 'dormant') return null
+      avatarSwitchInProgress = true
+      return () => { avatarSwitchInProgress = false }
+    },
     getConfigService: () => configService,
     getModelSettings: () => resolvedModelSettings,
     refreshConfig,

@@ -232,6 +232,7 @@ export interface SceneRunResult {
 }
 
 export interface MirrorConfig {
+  avatarCatalog?: import('./avatar-profiles').AvatarCatalog;
   presentation?: import('./presentation').PresentationConfig;
   configVersion: number;                     // bumped on every publish
   persona: { name: string; instructions: string };

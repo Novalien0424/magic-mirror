@@ -31,6 +31,7 @@ import type {
   PhaseTestPhase,
 } from './console-types'
 import type { RealtimeFailureInput } from './realtime-recovery'
+import type { AvatarSessionSettings } from './avatar-prompt'
 
 declare const transientRealtimeSecretBrand: unique symbol
 
@@ -45,6 +46,7 @@ export interface RealtimeSessionIdentity {
 
 /** The single atomic value crossing the existing Mirror IPC channel. */
 export interface RealtimeSessionStartBundleValue {
+  readonly avatar?: Readonly<AvatarSessionSettings>
   readonly snapshot: Readonly<SessionModelSnapshot>
   readonly identity: Readonly<RealtimeSessionIdentity>
   readonly clientSecret: TransientRealtimeSecretInput
@@ -192,6 +194,7 @@ export interface ConsoleChannelMap {
   readonly models: 'console:get-models'
   readonly saveModelDraft: 'console:save-model-draft'
   readonly saveDraft: 'console:save-draft'
+  readonly loadAvatar: 'console:load-avatar'
   readonly testDraft: 'console:test-draft'
   readonly publish: 'console:publish'
   readonly rollback: 'console:rollback'
@@ -257,6 +260,8 @@ export interface ConsoleBridge extends SharedRendererBridge {
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: ConsoleModelDraftInput): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  importAvatarModel(): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel | null>>
   testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>>
   publish(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
@@ -264,7 +269,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
-  runScene(sceneId: string): Promise<ConsoleResponse<SceneStartResult>>
+  runScene(sceneId: string, scope?: import('./scene-test-scope').SceneTestScope): Promise<ConsoleResponse<SceneStartResult>>
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
   onSceneStatus(listener: SceneStatusListener): () => void
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>

@@ -42,6 +42,8 @@ export type ConsoleErrorCode =
   | 'console_lifecycle_action_failed'
 
 export type ConsoleReason =
+  | 'cause=avatar_switch_requires_dormant'
+  | 'cause=avatar_draft_unsaved'
   | 'cause=developer_mode_disabled'
   | 'cause=console_data_plane_unavailable'
   | 'cause=payload_schema_invalid'
@@ -203,6 +205,7 @@ export interface DeveloperModeDecision {
 }
 
 export interface ConsoleConfigSafeView {
+  readonly avatarCatalog?: import('./avatar-profiles').AvatarCatalog
   readonly presentation?: import('./presentation').PresentationConfig
   readonly configVersion: number
   readonly personaName: string
@@ -228,6 +231,7 @@ export interface ConsoleConfigSafeView {
 }
 
 export interface ConsoleConfigDraftInput {
+  readonly avatarCatalog?: import('./avatar-profiles').AvatarCatalog
   readonly presentation?: import('./presentation').PresentationConfig
   readonly personaName: string
   readonly voice: string

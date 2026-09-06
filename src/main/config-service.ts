@@ -1,6 +1,8 @@
 import { mkdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { avatarCatalogSchema, validateAvatarReferences } from './avatar/avatar-config'
+import { projectActiveAvatar } from '../shared/avatar-profiles'
 import { parsePresentation, type PresentationConfig } from '../shared/presentation'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
@@ -153,6 +155,7 @@ const mirrorConfigBaseEnvelope = z.object({
 }).strict()
 
 const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
+  avatarCatalog: avatarCatalogSchema.optional(),
   presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null).optional(),
   reasoningEffort: reasoningEffortSchema,
   turnDetectionProfile: turnDetectionProfileSchema,
@@ -162,6 +165,7 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
   spells: z.array(spellConfigSchema).max(128),
   scenes: z.array(sceneDefinitionSchema).max(128),
 }).strict().superRefine((value, context) => {
+  if (value.avatarCatalog) validateAvatarReferences(value, value.avatarCatalog, context)
   if (value.presentation) {
     const p = value.presentation
     if (p.backgroundId && !value.visualAssets.some(asset => asset.id === p.backgroundId)) {
@@ -200,7 +204,7 @@ const mirrorConfigLegacyEnvelope = mirrorConfigBaseEnvelope.extend({
   scenes: z.unknown(),
 }).strict()
 
-export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope
+export const mirrorConfigSchema: z.ZodType<unknown> = mirrorConfigCoreEnvelope.transform(value => projectActiveAvatar(value))
 
 type ConfigSchemaVersion = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -413,7 +417,7 @@ function safePath(path: readonly (string | number)[] | undefined): string {
   }
   if (allowedCorePaths.has(result)) return result
   const root = path[0]
-  return root === 'musicAssets' || root === 'sceneActions' || root === 'spells' || root === 'scenes'
+  return root === 'avatarCatalog' || root === 'musicAssets' || root === 'sceneActions' || root === 'spells' || root === 'scenes'
     ? result
     : '$'
 }

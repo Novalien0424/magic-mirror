@@ -20,7 +20,7 @@ matching domain skill when its non-obvious facts are needed.
 
 | # | Rule | Doc anchor |
 |---|---|---|
-| 1 | Final transcripts and conversation audio stay in RAM only: never disk, DB, backups, telemetry, or debug logs, even temporarily. Extracted memory VALUE strings and injected private context follow the same bar. Diagnostics carry keys, enums, IDs, and counts only; the fact itself lives only in guest_memories. | PRD Section 11.2, Spec Section 6.3 |
+| 1 | Final transcripts and conversation audio stay in RAM only: never disk, DB, backups, telemetry, or debug logs, even temporarily. Extracted memory VALUE strings and injected private context follow the same bar. Diagnostics carry keys, enums, IDs, and counts only. Do not infer persistence authority from a future memory schema; AGENTS.md and current DECISIONS.md govern. | PRD Section 11.2, Spec Section 6.3 |
 | 2 | Face recognition only proposes a candidate. Private memory loads only after explicit verbal confirmation. | PRD US-ID-003, Spec Section 10 |
 | 3 | guestId and candidateProfileId stay only in Electron Main. No tool schema, model output, or renderer IPC payload may carry or substitute a guest ID; reject guest-id-shaped tool fields and log metadata. Public call names such as Nova may cross to the model, but identifiers may not. Clear the pending candidate on denial, a second ambiguous answer, owner switch, session close, or sleep. With multiple people, the model never disambiguates; the mirror asks who owns the conversation. | Spec Section 10.1 |
 | 4 | A profile scope change closes the session holding old-owner history, opens a clean Persona+Master-only confirmation session, confirms, then calls updateAgent in that same clean session. | Spec Section 7.4, Section 10.2 |

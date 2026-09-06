@@ -3,6 +3,7 @@ import type {
   ClientSecretIssueResult,
 } from './client-secret-broker'
 import type { SessionModelSnapshot } from '../../shared/types'
+import type { AvatarSessionSettings } from '../../shared/avatar-prompt'
 
 export interface RealtimeSessionIdentity {
   readonly realtimeSessionId: string
@@ -10,12 +11,14 @@ export interface RealtimeSessionIdentity {
 }
 
 export interface RealtimeSessionStartBundleIssuerOptions {
+  readonly getAvatarSettings?: () => Readonly<AvatarSessionSettings>
   readonly getPublishedSessionModelSnapshot: () => Readonly<SessionModelSnapshot>
   readonly getRealtimeSessionIdentity: () => Readonly<RealtimeSessionIdentity>
   readonly broker: Pick<ClientSecretBroker, 'issue'>
 }
 
 export interface RealtimeSessionStartBundle {
+  readonly avatar?: Readonly<AvatarSessionSettings>
   readonly snapshot: Readonly<SessionModelSnapshot>
   readonly identity: Readonly<RealtimeSessionIdentity>
   readonly clientSecret: ClientSecretIssueResult
@@ -32,11 +35,12 @@ export function createRealtimeSessionStartBundleIssuer(
     async issue(): Promise<Readonly<RealtimeSessionStartBundle>> {
       const snapshot = Object.freeze({ ...options.getPublishedSessionModelSnapshot() })
       const identity = Object.freeze({ ...options.getRealtimeSessionIdentity() })
+      const avatar = options.getAvatarSettings ? Object.freeze({ ...options.getAvatarSettings() }) : undefined
       const brokerResult = await options.broker.issue({
         modelId: snapshot.realtimeDialogue,
       })
       const clientSecret = Object.freeze({ ...brokerResult })
-      return Object.freeze({ snapshot, identity, clientSecret })
+      return Object.freeze({ snapshot, identity, clientSecret, ...(avatar ? { avatar } : {}) })
     },
   }
 }

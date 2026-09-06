@@ -695,6 +695,41 @@ th {
   font-size: 0.875rem;
 }
 
+.avatar-selector {
+  align-items: end;
+  padding: 1rem;
+  margin-block: 1rem;
+  background: #182630;
+  border: 1px solid #587081;
+  border-radius: 0.75rem;
+}
+
+.avatar-selector label { min-width: min(22rem, 100%); }
+.avatar-selector .console__muted { flex-basis: 100%; }
+.avatar-character { margin-block: 1.25rem; }
+.avatar-character .console__form-grid label,
+.avatar-spoken-lines .console__form-grid label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+.avatar-character textarea,
+.avatar-spoken-lines textarea { width: 100%; box-sizing: border-box; }
+.avatar-character textarea { min-height: 8rem; line-height: 1.6; }
+.avatar-prompt { margin-top: 1rem; }
+.avatar-prompt pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.65;
+  padding: 1.25rem;
+  color: #f2f6f9;
+  background: #101820;
+  border: 1px solid #587081;
+  border-radius: 0.5rem;
+}
+
 .console__runtime-evidence strong {
   color: #d5e0e8;
   font-weight: 500;

@@ -72,10 +72,13 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !button('Save Draft').disabled && !button('Test Draft').disabled")
   }
   const testAndPublish = async (): Promise<void> => {
+    // Failure text can render before the async refresh clears busy. Observe
+    // readiness instead of assuming the previous edit's 50 ms is sufficient.
+    await wait("return !!button('Test Draft') && !button('Test Draft').disabled", 'console_test_ready')
     await edit("click(button('Test Draft'))")
     await wait("return !button('Publish').disabled")
     await edit("click(button('Publish'))")
-    await wait("return !button('Save Draft').disabled && button('Publish').disabled")
+    await wait("return !button('Save Draft').disabled && !button('Test Draft').disabled && button('Publish').disabled")
   }
   const picker = dialog.showOpenDialog
   let selection: string | string[] | null = null
@@ -126,11 +129,16 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     input.onEvidence({ step: 'draft_avatar_canvas_size', item: canvasSize, status: 'measured' })
     const [actualSize, expectedSize] = canvasSize.split('_expected_')
     if (actualSize !== expectedSize) throw new Error('phase4_qa_preview_canvas_size_stale')
-    const playback = await evaluate<{ advanced: boolean; frames: number; dropped: number }>(`
+    const playback = await evaluate<{ advanced: boolean; frames: number; dropped: number; diagnostic: string }>(`
       const v=panel.querySelector('.presentation video'); const before=v.getVideoPlaybackQuality();
+      const startTime=v.currentTime; const started=performance.now(); const rect=v.getBoundingClientRect();
       await new Promise(r=>setTimeout(r,1200)); const after=v.getVideoPlaybackQuality();
       return {advanced: !v.paused && !panel.querySelector('.presentation audio').paused,
+        diagnostic: [Math.round(performance.now()-started), Math.round(startTime*1000), Math.round(v.currentTime*1000),
+          before.totalVideoFrames, after.totalVideoFrames, document.visibilityState,
+          Math.round(rect.top), Math.round(rect.bottom), innerHeight].join('_'),
         frames:after.totalVideoFrames-before.totalVideoFrames, dropped:after.droppedVideoFrames-before.droppedVideoFrames};`)
+    input.onEvidence({ step: 'draft_video_sample', item: playback.diagnostic, status: 'measured' })
     input.onEvidence({ step: 'draft_video_frames', item: `${playback.frames}_decoded_${playback.dropped}_dropped`, status: 'measured' })
     if (!playback.advanced || playback.frames < 10 || playback.dropped > playback.frames * 0.1) throw new Error('phase4_qa_preview_playback_stalled')
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.visualAssets.length === 0;`)
@@ -415,6 +423,99 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       && r.value.active.presentation.sleepFarewell === 'Rest now.'
       && r.value.active.visualAssets.length === 2 && r.value.active.musicAssets.length === 2;`)
     await screenshot('console-avatar-dialogue.png')
+    passed()
+
+    step = 'console_multi_avatar_authoring'
+    const originalAvatar = await evaluate<string>("return control('Editing avatar').value")
+    await edit("click(button('New avatar'))")
+    await edit("set(control('Avatar name'), 'QA Guide')")
+    await edit("set(control('Personality'), 'A patient museum guide. Prefer brief answers.')")
+    await edit("set(control('Speaking tone & style'), 'Calm and curious. Traditional Chinese.')")
+    await edit("set(control('Base voice'), 'cedar')")
+    await edit("set(control('Wake greeting'), 'The guide is ready.')")
+    const guideAvatar = await evaluate<string>("return control('Editing avatar').value")
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(originalAvatar)})`)
+    await wait("return control('Wake greeting').value === 'Welcome to the mirror.'")
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(guideAvatar)})`)
+    await wait("return control('Avatar name').value === 'QA Guide' && control('Base voice').value === 'cedar' && control('Wake greeting').value === 'The guide is ready.'")
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.avatars.length === 2 && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
+    await edit("click(button('Load avatar'))")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(guideAvatar)} && r.value.active.voice === 'cedar'`)
+    await edit("click(panel.querySelector('.avatar-prompt summary'))")
+    await wait("return panel.querySelector('[aria-label=\"Effective realtime prompt\"]').textContent.includes('A patient museum guide.')")
+    await screenshot('console-avatar-prompt.png')
+    passed()
+
+    step = 'console_cubism_bundle_import_preview'
+    await edit("click(button('Appearance'))")
+    selection = join(process.cwd(), 'resources', 'avatar', 'Ren', 'Ren.model3.json')
+    await edit("click(button('Browse & import Cubism…'))")
+    await wait("return status().startsWith('Cubism bundle imported.')")
+    await save()
+    await testAndPublish()
+    await edit("click(button('Scenes', document))")
+    await edit("click(button('Avatar presentation'))")
+    await edit("click(button('Preview full cycle'))")
+    await wait("return panel.querySelector('.presentation-preview .avatar-stage')?.dataset.rendererState === 'ready' && !panel.querySelector('.presentation-editor .console__fault')", 'managed_cubism_preview', 20000)
+    await wait("const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.status === 'ready'", 'managed_mirror_ready', 20000)
+    const mirrorReady = await input.mirror.webContents.executeJavaScript("document.querySelector('.avatar-stage')?.dataset.rendererState === 'ready'")
+    if (!mirrorReady) throw new Error('phase4_qa_managed_mirror_fallback')
+    const managed = await input.mirror.webContents.executeJavaScript("window.magicMirror.getPresentation().then(p => !!p.model && p.model.id.startsWith('model-'))")
+    if (!managed) throw new Error('phase4_qa_managed_model_not_loaded')
+    // The synthetic Ren rig has a broad light coat. A stale Cubism mask pool
+    // rendered only its collar/hand while still reporting ready; nonblack
+    // background pixels cannot detect that regression. Inspect the actual frame.
+    const rigFrame = await input.mirror.webContents.capturePage()
+    const rigPixels = rigFrame.toBitmap()
+    let lightPixels = 0
+    for (let i = 0; i < rigPixels.length; i += 4) {
+      if (rigPixels[i] > 145 && rigPixels[i + 1] > 145 && rigPixels[i + 2] > 145) lightPixels++
+    }
+    const lightRatio = lightPixels / (rigPixels.length / 4)
+    input.onEvidence({ step: 'managed_rig_light_coverage', item: lightRatio.toFixed(3), status: 'measured' })
+    if (lightRatio < 0.035) throw new Error('phase4_qa_managed_rig_incomplete')
+    await screenshot('console-managed-cubism-preview.png')
+    await screenshot('mirror-managed-cubism.png', true)
+    await edit("click(button('Stop preview'))")
+    passed()
+
+    step = 'console_avatar_shared_action_focused_tests'
+    await edit("click(button('Spell scenes'))")
+    await edit("click(button('Add scene'))")
+    await edit("set(control('Scene name'), 'Guide reveal')")
+    await edit("set(control('Exact phrase'), 'Guide reveal')")
+    await edit("set(control('Duration seconds'), '0.5')")
+    await edit("const details = [...panel.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Link a reusable action'); click(details.querySelector('input'))")
+    await save()
+    await testAndPublish()
+    await edit("set(control('Test scope'), 'stage')")
+    await edit("click(button('Test Published Step'))")
+    await wait("return status().includes('completed')")
+    await edit("set(control('Test scope'), 'action')")
+    await edit("click(button('Test Published Action'))")
+    await wait("return status().includes('started') || status().includes('completed')")
+    await edit("click(button('Stop All'))")
+    await wait("return status() === 'All Scenes stopped.'")
+    await screenshot('console-focused-test.png')
+    passed()
+
+    step = 'console_avatar_lock_and_active_switch_guard'
+    await edit("click(button('Media library'))")
+    await edit("click([...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1))")
+    await save()
+    await testAndPublish()
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(originalAvatar)})`)
+    await input.runtime.handleSimulator({ type: 'wake' })
+    await edit("click(button('Load avatar'))")
+    await wait("return status().includes('avatar_switch_requires_dormant')")
+    await input.runtime.handleSimulator({ type: 'sleep' })
+    await wait("return document.querySelector('.console__status').textContent === 'dormant'")
+    await edit("click(button('Load avatar'))")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
+    await wait("return [...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1).disabled")
+    await screenshot('console-avatar-resource-lock.png')
     passed()
 
     step = 'console_navigation'

@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
+import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
 import { parsePresentation } from '../shared/presentation'
 import type {
@@ -267,8 +269,9 @@ function sanitizeRealtimeRuntimeCommand(value: unknown): RealtimeRuntimeCommand 
 
 function isValidSessionStartBundleValue(value: unknown): value is RealtimeSessionStartBundleValue {
   if (!isRecord(value)) return false
-  const hasExpiry = exactKeys(value, ['snapshot', 'identity', 'clientSecret', 'expiresAt'])
-  if (!hasExpiry && !exactKeys(value, ['snapshot', 'identity', 'clientSecret'])) return false
+  const hasExpiry = 'expiresAt' in value
+  if (!exactKeys(value, ['snapshot', 'identity', 'clientSecret', ...(hasExpiry ? ['expiresAt'] : []), ...('avatar' in value ? ['avatar'] : [])])) return false
+  if ('avatar' in value && !parseAvatarSessionSettings(value.avatar)) return false
 
   const snapshot = readProperty(value, 'snapshot')
   if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
@@ -336,7 +339,8 @@ function sanitizeSessionStartBundleValue(value: unknown): RealtimeSessionStartBu
   const sanitizedValue = expiresAt === undefined
     ? { snapshot: sanitizedSnapshot, identity: sanitizedIdentity, clientSecret }
     : { snapshot: sanitizedSnapshot, identity: sanitizedIdentity, clientSecret, expiresAt: expiresAt as number }
-  return Object.freeze(sanitizedValue)
+  const avatar = parseAvatarSessionSettings(readProperty(value, 'avatar'))
+  return Object.freeze({ ...sanitizedValue, ...(avatar ? { avatar } : {}) })
 }
 
 function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretResult {
@@ -384,14 +388,16 @@ function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretRe
 const bridge: MirrorBridge = {
   async getPresentation() {
     const value = await ipcRenderer.invoke('mirror:get-presentation')
-    if (!isRecord(value) || !exactKeys(value, ['config', 'background'])) return null
+    if (!isRecord(value) || !exactKeys(value, ['config', 'background', ...('model' in value ? ['model'] : [])])) return null
+    const model = 'model' in value ? parseAvatarModelReference(value.model) : null
+    if ('model' in value && !model) return null
     const config = parsePresentation(value.config)
     if (!config) return null
     const background = value.background
-    if (background === null) return { config, background: null }
+    if (background === null) return { config, background: null, ...(model ? { model } : {}) }
     if (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
       || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video')) return null
-    return { config, background: { id: config.backgroundId, kind: background.kind } }
+    return { config, background: { id: config.backgroundId, kind: background.kind }, ...(model ? { model } : {}) }
   },
   async getAudioPreferences() {
     const result = await ipcRenderer.invoke('mirror:get-audio-preferences')

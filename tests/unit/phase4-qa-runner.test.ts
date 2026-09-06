@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const RUNNER_SOURCE = readFileSync(
@@ -15,9 +17,31 @@ const PACKAGE_JSON = JSON.parse(readFileSync(
 )) as { scripts?: Record<string, string> }
 
 describe('Phase 4 live QA runner', () => {
+  it.each([['--unknown'], ['--manual', '--live'], ['--editor', '--console'], ['--live', '--live']])(
+    'rejects ambiguous or unknown modes before any Electron launch: %j', (...args) => {
+      const run = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/run-phase4-qa.mjs', import.meta.url)), ...args], { encoding: 'utf8', windowsHide: true })
+      expect(run.status).not.toBe(0)
+      expect(run.stderr).toContain('phase4_qa_mode_invalid')
+      expect(run.stdout).not.toContain('PHASE4_QA_DISPLAY')
+    },
+  )
   it('keeps the isolated Realtime session alive through renderer capture', () => {
     expect(RUNNER_SOURCE).toContain('config.idleSeconds = 300')
     expect(RUNNER_SOURCE).toContain("MIRROR_DEVELOPER_MODE: 'disabled'")
+  })
+
+  it('isolates live scene input and finishes standalone motions before voice ownership', () => {
+    expect(QA_SOURCE.indexOf('for (const expression')).toBeLessThan(QA_SOURCE.indexOf('await startLiveRealtime(input)'))
+    expect(QA_SOURCE).toContain('navigator.mediaDevices.getUserMedia = async () =>')
+    expect(QA_SOURCE).toContain('gain.gain.value = 0')
+    expect(RUNNER_SOURCE).toContain("if (live && !lifecycleLive) config.presentation")
+    expect(RUNNER_SOURCE).toContain("wakeGreeting: ''")
+  })
+
+  it('checks the canonical Windows executable checkout, not just script-relative cwd', () => {
+    expect(RUNNER_SOURCE).toContain("repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()")
+    expect(RUNNER_SOURCE.indexOf('phase4_qa_requires_canonical_checkout_cwd'))
+      .toBeLessThan(RUNNER_SOURCE.indexOf('spawn(electron'))
   })
 
   it('observes a pending mouth probe when an earlier scene assertion fails', () => {

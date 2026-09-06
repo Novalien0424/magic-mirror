@@ -4,6 +4,18 @@ This ledger records durable boundaries, accepted design choices, and truth claim
 
 ## Authority, workflow, and progressive disclosure
 
+- On 2026-09-05 the operator explicitly pulled multi-avatar Console engineering
+  forward for immediate implementation: multiple operator-owned character
+  profiles, personality/style/voice, prompt inspection, reusable shared/locked
+  media and actions, and focused playback testing. This overrides the previous
+  deferral of that subset to Phase 8; it neither implements visitor identity or
+  memory nor accepts/promotes any phase. One avatar runs at a time. Avatar IDs
+  identify public character configuration, never guests or conversation owners.
+- The same request authorizes updating the PRD and relevant local harness/skills
+  for this work. Compact guidance must preserve historical evidence and privacy;
+  no global plugin/cache edits, dependency upgrades or reduced QA guarantees are
+  implied.
+
 - The interactive thread executes and reviews work directly. Use the smallest in-scope read, edit, and check that proves the requested boundary; routine work does not require a plan artifact, worker, independent tester, repeated review, full suite, or commit/push.
 - Optional built-in roles are used only when genuinely independent parallel work, isolated noisy investigation, or high-risk fresh validation materially improves the result. Delegation is not a serial gate and uses a short outcome/scope/evidence prompt.
 - The retired H6 external-process launcher and prompt-envelope protocol must not be restored. `AGENTS.md` owns execution policy; repository skills contain domain facts and proportional verification guidance only.

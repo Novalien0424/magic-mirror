@@ -11,6 +11,7 @@ export interface PresentationConfig {
   sleepFarewell?: string
 }
 export interface PresentationPayload {
+  model?: import('./avatar-profiles').AvatarModelReference
   config: PresentationConfig
   background: Pick<ManagedVisualAsset, 'id' | 'kind'> | null
 }

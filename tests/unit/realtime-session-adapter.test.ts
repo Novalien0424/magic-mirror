@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION } from '../../src/shared/avatar-prompt';
 
 import {
   createRealtimeSession,
@@ -100,6 +101,19 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('transmits the same public character prompt shown by the Console with the captured voice', async () => {
+    const probe = makeAdapterProbe(); const sink = vi.fn();
+    const avatar = { name: 'Guide', personality: 'Patient museum guide.', speakingStyle: 'Calm and concise.', wakeGreeting: 'Ready.', sleepFarewell: 'Goodbye.' };
+    const snapshot = { ...makeSnapshot(), voice: 'cedar' };
+    const handle = createRealtimeSession({ ...makeSessionInput(snapshot, sink, probe), avatar });
+    const agent = probe.agentConstructorCalls[0]?.[0] as { instructions: string; tools: { description: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
+    expect(agent.instructions).toBe(buildAvatarPrompt(avatar));
+    expect(agent.tools[0].description).toBe(SLEEP_TOOL_DESCRIPTION);
+    expect(await agent.tools[0].invoke({}, '{}')).toBe('Say exactly Goodbye. now and no other words.');
+    await handle.connect();
+    expect(probe.constructorCalls[0]?.[1]).toMatchObject({ config: { audio: { output: { voice: 'cedar' } } } });
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(avatar.personality);
+  });
   it('keeps a ready session alive after a rejected request, without leaking provider text', async () => {
     const probe = makeAdapterProbe();
     const sink = vi.fn(); const onFailure = vi.fn();

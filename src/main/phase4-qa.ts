@@ -69,6 +69,13 @@ async function waitForAvatarReason(
 }
 
 async function startLiveRealtime(input: Phase4QaInput): Promise<void> {
+  await input.mirror.webContents.executeJavaScript(`(() => { navigator.mediaDevices.getUserMedia = async () => {
+    const context = new AudioContext(); const sink = context.createMediaStreamDestination();
+    const source = context.createOscillator(); const gain = context.createGain(); gain.gain.value = 0;
+    source.connect(gain).connect(sink); source.start(); await context.resume();
+    for (const track of sink.stream.getTracks()) { const stop = track.stop.bind(track); track.stop = () => { stop(); void context.close(); }; }
+    return sink.stream;
+  }; })()`, true)
   const start = await invokeConsole<{
     ok?: boolean
     value?: { status?: string }
@@ -189,10 +196,6 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
   if (input.lifecycleLive) return runPhase4LifecycleQa(input)
   if (input.consoleOnly) return runPhase4ConsoleQa(input)
-  if (input.live === true) {
-    await startLiveRealtime(input)
-    input.onEvidence({ step: 'realtime_session', status: 'connected' })
-  }
   let screenshotCount = 0
 
   for (const group of input.musicOnly ? [] : REN_MOTION_GROUPS) {
@@ -226,6 +229,12 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
     })
   }
 
+  // Manual motion QA belongs before voice ownership; normal Speaking/Listening
+  // transitions correctly preempt those motions and are not animation failures.
+  if (input.live === true) {
+    await startLiveRealtime(input)
+    input.onEvidence({ step: 'realtime_session', status: 'connected' })
+  }
   const assetProbe = await input.mirror.webContents.executeJavaScript(`(async () => {
     const response = await fetch('magic-mirror-media://music/music-qa-tone')
     const blob = await response.blob()

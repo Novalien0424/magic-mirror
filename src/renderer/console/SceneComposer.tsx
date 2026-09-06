@@ -4,6 +4,7 @@ import type { SceneActionDefinition, SceneDefinition, SceneStageDefinition, Spel
 import { SceneActionFields, newSceneAction } from './SceneActionFields'
 import { duplicateStage } from './scene-editor-model'
 import { estimateSceneMaximumMs } from './scene-estimate'
+import type { SceneTestScope } from '../../shared/scene-test-scope'
 
 const ACTION_NAMES = { visual: 'Image / video', music: 'Music', avatar_dialogue: 'Dialogue',
   avatar_motion: 'Avatar motion', avatar_expression: 'Expression', lighting: 'Lighting', fog: 'Fog' } as const
@@ -13,13 +14,14 @@ const newStep = (index: number): SceneStageDefinition => ({ id: id(), name: `Ste
 
 export function SceneComposer({ draft, active, onChange, onRun, onImport, disabled }: {
   draft: ConsoleConfigDraftInput; active: ConsoleConfigSafeView
-  onChange(draft: ConsoleConfigDraftInput): void; onRun(id: string): void; disabled: boolean
+  onChange(draft: ConsoleConfigDraftInput): void; onRun(id: string, scope?: SceneTestScope): void; disabled: boolean
   onImport(kind: 'visual' | 'music', actionId: string): void
 }) {
   const [sceneId, setSceneId] = useState('')
   const [stepId, setStepId] = useState('')
   const [actionId, setActionId] = useState('')
   const [undo, setUndo] = useState<ConsoleConfigDraftInput | null>(null)
+  const [testScope, setTestScope] = useState('scene')
   const scene = draft.scenes.find(s => s.id === sceneId) ?? draft.scenes[0]
   const step = scene?.stages.find(s => s.id === stepId) ?? scene?.stages[0]
   const action = draft.sceneActions.find(a => a.id === actionId && step?.actionIds.includes(a.id))
@@ -114,7 +116,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
             {step.actionIds.map(aid => { const a = draft.sceneActions.find(item => item.id === aid); return <button type="button" key={aid} aria-pressed={a?.id === action?.id} onClick={() => setActionId(aid)}>{a?.name ?? 'Missing action'}</button> })}
           </div>
           {action ? <article className="scene-action-editor" aria-label="Selected action">
-            {draft.scenes.flatMap(s => s.stages).filter(s => s.actionIds.includes(action.id)).length > 1 ? <p className="console__notice">Shared action: edits affect every linked step. Duplicate this step to make an independent copy.</p> : null}
+            {(draft.avatarCatalog?.avatars.flatMap(a => a.scenes) ?? draft.scenes).flatMap(s => s.stages).filter(s => s.actionIds.includes(action.id)).length > 1 ? <p className="console__notice">Shared action: edits affect every linked step and avatar. Duplicate this step to make an independent copy.</p> : null}
             <SceneActionFields action={action} draft={draft} onChange={next => change({ ...draft, sceneActions: draft.sceneActions.map(a => a.id === next.id ? next : a) })} onImport={kind => onImport(kind, action.id)} />
             <button type="button" onClick={() => { editStep({ ...step, actionIds: step.actionIds.filter(a => a !== action.id) }); setUndo(draft) }}>Remove from step</button>
           </article> : <p className="console__empty">Add an action above, or link one from the library below.</p>}
@@ -124,8 +126,10 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
         </section> : null}
         <p className="console__muted">Maximum scene length: {(() => { const ms = estimateSceneMaximumMs(scene, draft.sceneActions, draft.visualAssets); return ms === null ? 'Finish configuring the steps' : `${(ms / 1000).toFixed(1)} seconds` })()}. Step endings do not undo actions; author explicit stops for music and hardware.</p>
         <div className="console__action-row">
-          <button type="button" disabled={disabled || !active.scenes.some(s => s.id === scene.id && s.enabled)} onClick={() => onRun(scene.id)}>Run Published Scene</button>
-          <span className="console__muted">Runs the live version, not these draft edits.</span>
+          <label>Test scope<select value={testScope} onChange={e => setTestScope(e.currentTarget.value)}><option value="scene">Whole scene</option><option value="stage">Selected step</option><option value="action">Selected action</option></select></label>
+          <button type="button" disabled={disabled || !active.scenes.some(s => s.id === scene.id && s.enabled) || testScope !== 'scene' && !step || testScope === 'action' && !action}
+            onClick={() => onRun(scene.id, testScope === 'scene' || !step ? undefined : { stageId: step.id, ...(testScope === 'action' && action ? { actionId: action.id } : {}) })}>{testScope === 'scene' ? 'Run Published Scene' : testScope === 'stage' ? 'Test Published Step' : 'Test Published Action'}</button>
+          <span className="console__muted">Runs the loaded avatar’s published version. Action tests stop after 10 seconds (finite videos finish naturally). Stop All cancels any test.</span>
         </div>
         <details><summary>Scene options</summary><button type="button" onClick={() => { change({ ...draft, scenes: draft.scenes.filter(s => s.id !== scene.id), spells: draft.spells.filter(s => s.sceneId !== scene.id) }); setUndo(draft) }}>Remove scene and its spells</button></details>
       </div>}

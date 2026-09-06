@@ -1,184 +1,89 @@
 ---
 name: mm-live2d-avatar
-description: Use when implementing or reviewing Magic Mirror Live2D avatar rendering, actual-output-audio lip sync, Cubism and MotionSync motions or expressions, avatar state transitions, Web Audio routing, or designer asset deliverables.
+description: Use for Magic Mirror Cubism rendering, output-audio lip sync, motions, expressions, presentation transitions, Web Audio routing, or designer asset validation. Not for unrelated Console forms or ordinary media-library metadata.
 ---
 
-# Magic Mirror Live2D Avatar
+# Magic Mirror Cubism and presentation
 
-## Overview
+[AGENTS.md](../../../AGENTS.md) owns execution policy and invariant IDs. This
+reference records repository boundaries, not upstream version/license advice.
+Check installed code first; consult official documentation when changing SDKs.
+Windows evidence does not establish Mac performance or deployment readiness.
 
-Verified 2026-08-16. Use the official Cubism 5 SDK for Web R5 with the
-MotionSync plugin R2. Build the RMS/AnalyserNode -> ParamMouthOpenY path first
-(about 20 lines, unblocking Phase 3), then layer MotionSync after it.
+## Inspect the owner first
 
-## Codex routing
+- Model loading/rendering: `src/renderer/avatar/cubism-avatar.ts`,
+  `avatar-model-source.ts`, `AvatarCanvas.tsx`.
+- Model contract: `src/main/avatar/model-bundle.ts`; bundled source assets in
+  `resources/avatar/`, copied by `scripts/prepare-avatar-assets.mjs`.
+- Audio/lifecycle coordination: `src/renderer/realtime/`; use
+  [Realtime voice](../mm-realtime-voice/SKILL.md) when touching that boundary.
+- Presentation and scene media: `src/renderer/avatar/PresentationStage.tsx` and
+  `src/renderer/mirror/`; managed file access belongs to Main.
 
-Use [AGENTS.md](../../../AGENTS.md) for execution policy. Load `mm-invariants`
-for the IDs implicated by the change and `mm-realtime-voice` only when the
-Realtime boundary is touched. This skill supplies Live2D and audio-rendering
-facts only.
+## Cubism contract
 
-## SDK, renderer, and loading rules
+Use the vendored official Framework. Core is a proprietary global script,
+not an ESM import; preserve the build copy and CSP path. Do not introduce a
+wrapper or upgrade the SDK as an incidental fix.
 
-Use the official `CubismWebFramework` directly for full control of motion
-managers and the MotionSync path. Avoid `guansss/pixi-live2d-display`, which
-is stale and uses Pixi v6. If a Pixi wrapper is ever wanted, use only
-`untitled-pixi-live2d-engine`, which is current on Pixi v8. Its
-`-lipsyncpatch` forks use Pixi 7 and are a known trap.
+Validate `.model3.json` and every referenced moc, texture, physics, motion and
+expression file. EyeBlink/LipSync groups and the product's required lifecycle
+motion groups are an explicit contract, not something every external rig has.
+Reject unsafe paths and make missing/incompatible assets visibly fail.
 
-Cubism Core (`live2dcubismcore.js`) is a proprietary global script. It is not
-an npm package and must never be imported as ESM. MotionSync Core ships only
-in the manual download and expects the SDK as a sibling directory. Commit or
-vendor both, add an explicit build step, and allow the global script in CSP.
+Motion priority does not replace lifecycle ownership. Gate starts by current
+state, cancel obsolete work, and keep expressions separate from body motions.
+Parameter writes are order-dependent: body motion, physics, blink, expression
+and mouth blending must be checked in the actual update loop before changing
+their order. A body curve must not erase the final mouth value.
 
-The publication license applies only at release. Small-scale users with
-sales below 10M JPY are exempt; the single-venue prototype owes nothing.
-Accept the SDK agreements at download.
+## Output audio is the speaking clock
 
-## Actual-output-audio lip sync
+Drive lip sync from the Realtime remote audio, never transcripts or room-mic
+input. The SDK audio element is the audible path. An analyser tap must not also
+connect to `destination` and double-play it. Keep lip-sync values bounded and
+write the rig's declared LipSync parameter before `model.update()`.
 
-Use the fallback-first analyser path on the Realtime remote stream. The
-actual output audio is the clock: do not drive mouth motion from subtitle or
-transcript timing. The SDK audio element is the only audible path and stays
-unmuted. Make the analyser a silent tap from
-`audioElement.srcObject` with `audioCtx.createMediaStreamSource(...)` and an
-`AnalyserNode`; never connect that tap to `destination`, because doing so
-would double-play audio. Drive it from the WebRTC remote track, never a room
-mic, to avoid feedback.
+Generation completion is not physical buffer completion. Preserve raw
+`output_audio_buffer.stopped` handling for Speaking -> Listening, idle timing,
+rollover and farewell completion. On interruption/disconnect, clear mouth and
+obsolete speaking motions with the audio path. See Realtime skill for privacy
+flags; do not duplicate or weaken that configuration here.
 
-On WebRTC, `audio_stopped` means generation is done, not that speaker output
-has ended. Use raw `output_audio_buffer.stopped` through
-`session.transport.on(...)` as the true playback-end boundary when
-coordinating Speaking -> Listening, the idle timer, or safe rollover.
+RMS is the implemented fallback. Treat MotionSync as separate, explicitly
+scoped integration; verify the vendored API, source sample rate and processing
+order against its official sample before claiming support.
 
-Build the RMS path first:
+## Async layout and media ownership
 
-```ts
-// Dedicated CubismMotionManager for the mouth.
-const rms = computeRms(analyserData);            // 0..1, per frame
-model.addParameterValueById(lipSyncId, rms, 0.8); // official sample blend weight
-// Call before model.update(); a value outside 0..1 silently breaks lip sync.
-```
+Model loading can finish after a preview resizes or changes state. Apply the
+latest layout/state after initialization, not the values captured before
+`await`. Dispose superseded models and ignore stale completion callbacks.
+Serialize asynchronous rig replacement on a reused canvas. After releasing a
+rig, remove its context from Cubism's offscreen mask pool; retained destroyed
+targets caused a complete-looking ready status with only collar/hand visible.
+Managed protocol images must set `crossOrigin = 'anonymous'` before `src`;
+otherwise WebGL texture upload can fail despite successful image decoding.
 
-Lip-sync parameter IDs come from `model3.json` `Groups -> LipSync` through
-`GetLipSyncParameterId(i)`; the usual ID is `ParamMouthOpenY`. Keep the value
-in the 0..1 range and call the mouth write before `model.update()`.
+Canvas size matters: compare backing width/height with current CSS size × DPR.
+The 2026-09-05 RCA measured a stale 706×1256 preview backing store where 329×584
+was expected. Texture dimensions, pixel fill, masks and model complexity can
+all affect performance; measure rather than promising a universal FPS.
 
-For MotionSync R2, process each frame in this order:
+Preview must resolve saved-draft assets, including unpublished media, through
+the managed draft path. Verify actual `readyState`, advancing playback time,
+audio activity, frame counts/drops, and resource cleanup. A successful config
+validation or a nonblack screenshot does not prove playback.
 
-```text
-push samples -> setSoundBuffer(idx, buf, 0) ->
-updateParameters(model, dt) -> splice off getLastTotalProcessedCount()
-```
+Dormant ambience and scene audio have distinct owners. On wake, pause/hide
+dormant media as configured; on sleep, finish farewell before dormant. Normal
+sleep is not a cloud failure and must not transiently claim OfflineLoop.
 
-Feed `SetSampleRate` the source stream sample rate. Using
-`AudioContext.sampleRate` desynchronizes the result; the official sample
-warns about this. The RMS/AnalyserNode lip-sync path remains first, with
-MotionSync layered after it.
+## Smallest relevant proof
 
-When audio is interrupted or disconnected, zero the mouth parameter and stop
-pending speaking motions in the same frame that audio stops. This preserves
-the audio-to-mouth stop-sync requirement.
-
-## States, motions, and parameter order
-
-Use these eight avatar states:
-
-```text
-Dormant, Waking, Listening, Thinking, Speaking, Scene, Suspending,
-OfflineLoop
-```
-
-`OfflineLoop` is the video asset, not Live2D.
-
-Start motions with
-`CubismMotionManager.startMotionPriority(motion, autoDelete, priority)`.
-Priority is advisory only: the manager does not stop a lower-priority motion
-from starting. Lifecycle code must gate which motion may start in each state;
-otherwise idle behavior can stomp speaking behavior. Treat priority as state
-gating, not as a state machine.
-
-Load `.exp3.json` expressions through `CubismExpressionMotion` on its own
-motion manager. Its modes are Add, Multiply, and Overwrite; expressions are
-static and have no curves.
-
-Create blink with `CubismEyeBlink.create(setting)`, which reads
-`Groups -> EyeBlink`. `setBlinkingInterval(sec)` randomizes the interval from
-0 to 2 times the supplied value, providing natural variance for free.
-
-Use `CubismBreath` with `BreathParameterData` for breath and micro head
-motion. Sample defaults are:
-
-```text
-ParamBreath:      0.5 / 0.5 / 3.23s
-ParamAngleX:     +/-15 degrees / 6.53s
-ParamAngleY:      +/-8 degrees / 3.53s
-ParamAngleZ:     +/-10 degrees / 5.53s
-ParamBodyAngleX:  +/-4 degrees / 15.53s
-```
-
-Parameter writes are additive and order-dependent. Apply all of these before
-`model.update()` in this order:
-
-```text
-breath -> blink -> expression -> lip sync
-```
-
-Use `CubismFramework.initialize(1024*1024*32)`. Under-allocation makes
-models silently stop updating.
-
-Never use one motion manager for all curves: body `motion3` curves can
-overwrite lip-sync writes. The mouth needs its own `CubismMotionManager`, and
-expressions use their own manager as described above.
-
-## Designer asset contract
-
-Hand these required deliverables to the artist:
-
-- `.moc3`
-- `.model3.json`, with `Groups` entries for both `EyeBlink` and `LipSync`,
-  and `Motions` groups named for the avatar states
-- Texture atlas PNG files
-- One `.motion3.json` per motion, with fades authored in the Editor
-- One `.exp3.json` per expression
-- `.physics3.json`
-- `.motionsync3.json` when MotionSync is used; author it in Editor 5+ against
-  a 16-bit, 44.1 kHz WAV
-
-The stable Editor version is 5.3.
-
-## Performance and verification notes
-
-The target is 60 FPS on M4. Texture or canvas size does not matter. The cost
-order is parameters per object (keep multiplicative blends at 2 or fewer and
-use blend shapes), polygon count, ArtMesh count, deformer depth, blend modes,
-then masks.
-
-Physics evaluates at the real frame rate, so Editor preview is not runtime.
-Bake critical sway into motions when determinism matters. One detailed model
-at 60 FPS on Apple Silicon is expected but unbenchmarked; measure FPS in the
-Console from day one because telemetry already requires it.
-
-Keep privacy flags explicit in the voice path: set
-`historyStoreAudio: false`, `tracingDisabled: true`, and server-side
-`config.tracing = null` before connect. The Main environment uses
-`OPENAI_AGENTS_DISABLE_TRACING=1`, `OPENAI_AGENTS_DONT_LOG_MODEL_DATA=1`,
-and `OPENAI_AGENTS_DONT_LOG_TOOL_DATA=1`; do not set
-`DEBUG=openai-agents*` in production. Final transcripts, conversation audio,
-extracted memory values, and injected private context remain RAM-only.
-
-Every ignore, drop, fallback, or degrade must be visitor-visible or a
-metadata-only Console event with a reason. Camera, extractor, or single
-adapter failure must not block conversation or unrelated adapters; failures
-degrade visibly.
-
-## Non-negotiable mistakes to avoid
-
-- Do not drive the mouth from subtitle or transcript timing. Use the
-  analyser on actual output audio only (Spec section 9.1).
-- Do not use one motion manager for everything; body `motion3` curves can
-  overwrite lip-sync writes, so the mouth gets its own manager.
-- Do not trust `startMotionPriority` to police states; it does not. The state
-  machine must gate motions.
-- Do not bundle Cubism Core as an import. It is a global script; handle it in
-  CSP and the build configuration.
+Use focused unit tests for loading, ownership and stale callbacks. For visual
+changes use [UI QA](../mm-ui-qa/SKILL.md): real Electron rendering plus screenshot
+inspection, and runtime playback assertions when media is involved. Preserve
+synthetic-only captures and explicitly separate physical sound/smoothness and
+operator acceptance from automation.

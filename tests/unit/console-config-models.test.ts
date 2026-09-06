@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
+import { avatarCatalogFor } from '../../src/shared/avatar-profiles'
 
 import { createConsoleConfigController } from '../../src/main/console-config'
 import {
@@ -94,6 +95,7 @@ type RefreshResult =
   | { readonly ok: false; readonly error: 'console_config_refresh_failed'; readonly reason: 'cause=refresh_failed' }
 
 interface ConsoleConfigController {
+  loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
@@ -106,6 +108,7 @@ interface ConsoleConfigController {
 }
 
 interface ControllerOptions {
+  readonly getLifecycle?: () => string
   readonly validateSceneAssets?: (config: MirrorConfig) => Promise<boolean>
   readonly getConfigService: () => ConfigService
   readonly getModelSettings: () => ModelSettingsResolution
@@ -340,6 +343,7 @@ function makeMemoryHarness(options: MemoryHarnessOptions = {}): MemoryHarness {
 }
 
 interface ControllerOverrides extends MemoryHarnessOptions {
+  readonly getLifecycle?: () => string
   readonly validateSceneAssets?: (config: MirrorConfig) => Promise<boolean>
   readonly developerMode?: boolean
   readonly refreshFails?: boolean
@@ -356,6 +360,7 @@ function makeController(overrides: ControllerOverrides = {}): ControllerHarness 
   let resolution = resolveModelSettings(harness.initialSlots)
 
   const controller = controllerFactory({
+    getLifecycle: overrides.getLifecycle,
     getConfigService: () => harness.service,
     getModelSettings: () => resolution,
     refreshConfig: async () => {
@@ -448,7 +453,8 @@ function expectNoSensitiveOutput(value: unknown, allowModels = false): void {
     .replace(/aiModels\.(?:realtimeDialogue|inputTranscription|memoryExtractor)\.modelId/g, '')
   for (const sentinel of PRIVACY_SENTINELS) expect(serialized).not.toContain(sentinel)
   expect(serialized).not.toContain('contract_passed')
-  if (!allowModels) expect(serialized).not.toContain('modelId')
+  // Cubism resource IDs are public character configuration, not runtime AI models.
+  if (!allowModels) expect(serialized.replace(/"modelId":"builtin-ren"/g, '')).not.toContain('modelId')
   const forbidden = collectKeys(value).some((key) => /^(?:guestId|candidateProfileId|activeProfileId|profileId|credential|credentials|apiKey|clientSecret|transcript|audio|privateContext|image|embedding)$/i.test(key))
   expect(forbidden).toBe(false)
 }
@@ -470,6 +476,71 @@ function expectEvent(events: readonly ConfigEvent[], event: string, reason?: str
 }
 
 describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', () => {
+  it('restores the original draft when loading a published avatar fails', async () => {
+    const harness = makeController({ getLifecycle: () => 'dormant' })
+    const catalog = avatarCatalogFor(harness.initialSlots.draft)
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'second', name: 'Second' })
+    await harness.controller.saveDraft({ ...safeDraftInput(harness.initialSlots.draft), avatarCatalog: catalog })
+    await harness.controller.testDraft()
+    await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish')))
+    const before = await harness.service.read()
+    vi.spyOn(harness.service, 'publish').mockRejectedValueOnce(new ConfigServiceError('config_write_failed'))
+    expect(await harness.controller.loadAvatar('second')).toMatchObject({ ok: false, reason: 'cause=atomic_publish_failed' })
+    expect(await harness.service.read()).toEqual(before)
+    expect((await harness.controller.loadAvatar('second')).ok).toBe(true)
+  })
+
+  it('does not let a concurrent draft save interleave with avatar validation and load', async () => {
+    let resume: (() => void) | undefined
+    let pause = false
+    const harness = makeController({ getLifecycle: () => 'dormant', validateSceneAssets: async () => {
+      if (pause) await new Promise<void>(resolve => { resume = resolve })
+      return true
+    } })
+    const catalog = avatarCatalogFor(harness.initialSlots.draft)
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'second', name: 'Second' })
+    await harness.controller.saveDraft({ ...safeDraftInput(harness.initialSlots.draft), avatarCatalog: catalog })
+    await harness.controller.testDraft()
+    await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish')))
+    pause = true
+    const loading = harness.controller.loadAvatar('second')
+    await vi.waitFor(() => expect(resume).toBeDefined())
+    const saveSpy = vi.spyOn(harness.service, 'saveDraft')
+    const saving = harness.controller.saveDraft({ ...safeDraftInput(harness.initialSlots.draft), avatarCatalog: catalog })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(saveSpy).not.toHaveBeenCalled()
+    resume!()
+    expect((await loading).ok).toBe(true)
+    expect((await saving).ok).toBe(true)
+    expect((await harness.service.read()).active.avatarCatalog?.activeAvatarId).toBe('second')
+  })
+
+  it('round-trips character content but refuses to switch avatars during a conversation', async () => {
+    let lifecycle = 'Active'
+    const harness = makeController({ getLifecycle: () => lifecycle })
+    const catalog = avatarCatalogFor(harness.initialSlots.draft)
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'second', name: 'Second', personality: 'Patient guide', voice: 'cedar' })
+    catalog.activeAvatarId = 'second'
+    const saved = await harness.controller.saveDraft({ ...safeDraftInput(harness.initialSlots.draft), avatarCatalog: catalog })
+    expect(saved.ok).toBe(true)
+    const payload = await readConfigPayload(harness.controller)
+    expect(payload.draft.avatarCatalog?.avatars[1].personality).toBe('Patient guide')
+    expect(payload.draft.voice).toBe('cedar')
+    await harness.controller.testDraft()
+    const confirmation = diffConfirmation(await readDiff(harness.controller, 'publish'))
+    expect(await harness.controller.publish(confirmation)).toMatchObject({ ok: false, reason: 'cause=avatar_switch_requires_dormant' })
+    lifecycle = 'dormant'
+    expect((await harness.controller.publish(confirmation)).ok).toBe(true)
+    expect((await harness.service.read()).active.persona.instructions).toBe('Patient guide')
+    expect((await harness.controller.loadAvatar('default-avatar')).ok).toBe(true)
+    expect((await harness.service.read()).active.avatarCatalog?.activeAvatarId).toBe('default-avatar')
+    const slots = await harness.service.read()
+    await harness.service.saveDraft({ ...slots.draft, idleSeconds: 900, avatarCatalog: { ...slots.draft.avatarCatalog!, avatars: slots.draft.avatarCatalog!.avatars.map(a => ({ ...a, idleSeconds: 900 })) } })
+    expect(await harness.controller.loadAvatar('second')).toMatchObject({ ok: false, reason: 'cause=avatar_draft_unsaved' })
+  })
   it('exposes safe Active, Draft, Previous views and a complete value-free diff', async () => {
     const harness = makeController()
     const payload = await readConfigPayload(harness.controller)
@@ -477,6 +548,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expect(Object.keys(payload.active).sort()).toEqual([
       'adapters',
       'assets',
+      'avatarCatalog',
       'configVersion',
       'faceModel',
       'idleSeconds',
@@ -575,7 +647,7 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
         draft: config.value.draft,
         previous: config.value.previous,
       }) ?? ''
-      expect(safeConfig).not.toContain('modelId')
+      expect(safeConfig.replace(/"modelId":"builtin-ren"/g, '')).not.toContain('modelId')
       expect(safeConfig).not.toContain(fixtureModelValue('realtimeDialogue'))
     }
     expect(harness.metrics.draftSaveCalls).toBe(1)

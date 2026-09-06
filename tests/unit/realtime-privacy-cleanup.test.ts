@@ -206,6 +206,7 @@ type ExistingConsoleIpcChannelKey =
   | 'models'
   | 'saveModelDraft'
   | 'saveDraft'
+  | 'loadAvatar'
   | 'testDraft'
   | 'publish'
   | 'rollback'

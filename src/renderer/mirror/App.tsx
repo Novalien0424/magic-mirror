@@ -439,13 +439,6 @@ function createMirrorRealtimeRuntimeOwner(
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
     },
     onReturnToDormant: () => bridge.requestSleep(),
-    getAvatarDialogue: async () => {
-      try { return (await bridge.getPresentation?.())?.config ?? DEFAULT_PRESENTATION }
-      catch {
-        bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable' })
-        return DEFAULT_PRESENTATION
-      }
-    },
     onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
     onCompletedInputTranscript: async (input) => {
       reportMirrorRealtimeMetadata(bridge, 'transcript', {
@@ -1190,6 +1183,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
           }}>
         <AvatarCanvas
+          model={presentation.model}
           state={presentationPhase === 'entering' ? 'Waking' : presentationPhase === 'exiting' ? 'Suspending' : avatarState}
           forceFallback={avatarFallbackInjected}
           onRenderer={(renderer) => {

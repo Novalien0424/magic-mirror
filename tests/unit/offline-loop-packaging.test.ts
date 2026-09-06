@@ -533,8 +533,9 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
       'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio',
     )
     expect(packageJson.scripts.prebuild).toBe(
-      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio',
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/qa-build.mjs --begin',
     )
+    expect(packageJson.scripts.postbuild).toBe('node scripts/qa-build.mjs --finish')
     expect(packageJson.scripts.package).toBe('electron-builder --dir --publish never')
     expect(packageJson.scripts.smoke).toBe('electron .')
 

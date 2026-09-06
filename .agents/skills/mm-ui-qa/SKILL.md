@@ -23,8 +23,12 @@ cases; preserve the operator's normal user data and uncommitted changes.
   output integration. Use only when live provider/microphone work is in scope.
 
 Run `npm run build` after code changes before Electron QA; the runners execute
-`out/`, not the source tree. Use named npm scripts on PowerShell: an extra CLI
-flag can be consumed by npm instead of reaching the runner.
+`out/`, not the source tree. The Phase 4 runner requires a completed build stamp
+and verifies input/output content hashes before launching. Missing, interrupted,
+stale or altered builds must be rebuilt, not bypassed. Each run retains the
+hashes and build time in `build.json`; credentials/user data are never inputs.
+Use one named npm mode on PowerShell: extra flags can be consumed by npm instead
+of reaching the runner. Unknown/combined modes are rejected.
 
 ## Host and interaction boundaries
 
@@ -46,6 +50,13 @@ paths. Read-only bridge assertions may check saved state. Do not mutate config
 through the bridge to claim that the editor authored it. Native picker interaction
 itself remains outside this automation.
 
+Wait for the next control to be enabled, not just for success/failure text:
+React can render the message before an async refresh clears the busy state.
+Keep playback thresholds strict. Measure elapsed time alongside frame counts
+and use metadata-only probes to distinguish a stalled video from a slow host.
+Do not turn a diagnostic decoder flag or altered media source into a QA pass
+for the normal production path.
+
 ## Judge and retain evidence
 
 The runner creates `.artifacts/phase4-qa/<timestamp>/` with isolated config,
@@ -65,6 +76,12 @@ readability, error visibility, selected values, portrait framing, Avatar visibil
 and active/returned media frames. Nonblack pixels and changing hashes prove only
 mechanical frame properties; they do not replace visual judgment. Static images
 cannot prove smoothness, physical sound, conversational timing, or real fog/lights.
+Test managed Cubism both at fresh start and after switching from another rig.
+The Ren fixture's light-coat pixel coverage catches the observed partial-mask
+regression; keep that fixture-specific assertion separate from general assets.
+Live dialogue comparisons may normalize punctuation/case, not extra words or
+changed wording. On timeout retain only comparison categories, counts and
+settings-match booleans, never provider text.
 
 Record commands, exit codes, case counts, exact artifact locations, display evidence,
 visual observations, and remaining manual checks in a task report. Only the operator's

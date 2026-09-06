@@ -266,8 +266,9 @@ export function createRealtimeRuntimeOwnerDependencies(
         throw new Error('invalid_session_generation')
       }
 
-      const dialogue = await input.getAvatarDialogue?.()
+      const dialogue = bundle.avatar ?? await input.getAvatarDialogue?.()
       return sessionFactory({
+        ...(bundle.avatar ? { avatar: bundle.avatar } : {}),
         ...(greet && dialogue?.wakeGreeting !== undefined ? { wakeGreeting: dialogue.wakeGreeting } : {}),
         ...(dialogue?.sleepFarewell !== undefined ? { sleepFarewell: dialogue.sleepFarewell } : {}),
         snapshot: bundle.snapshot,

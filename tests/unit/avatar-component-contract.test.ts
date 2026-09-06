@@ -28,6 +28,14 @@ describe('portrait visitor avatar component', () => {
     expect(component).toContain('forceFallback')
   })
 
+  it('serializes model replacement and clears the retired rig mask pool', () => {
+    const component = read('src/renderer/avatar/AvatarCanvas.tsx')
+    const renderer = read('src/renderer/avatar/cubism-avatar.ts')
+    expect(component).toContain("initializationRef.current.then(() => import('./cubism-avatar'))")
+    expect(component).toContain('initialization.then(() => { renderer?.dispose() })')
+    expect(renderer).toContain('CubismWebGLOffscreenManager.getInstance().removeContext(this.#gl)')
+  })
+
   it('stops both actual and recorded output at the interrupt boundary', () => {
     const mirror = read('src/renderer/mirror/App.tsx')
     const media = read('src/renderer/avatar/audio/avatar-media-controller.ts')

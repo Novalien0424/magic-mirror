@@ -96,6 +96,7 @@ export interface ConsoleBaseDataPlane {
 }
 
 export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
+  loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
@@ -706,6 +707,7 @@ export function createConsoleDataPlane(
     getOverview,
     getEvents,
     simulate,
+    loadAvatar: (id) => invokeConfig((controller) => controller.loadAvatar(id)),
     getConfig: () => invokeConfig((controller) => controller.getConfig()),
     getModels: () => invokeConfig((controller) => controller.getModels()),
     saveModelDraft: (input) => invokeConfig((controller) => controller.saveModelDraft(input)),

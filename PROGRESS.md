@@ -1,6 +1,6 @@
 # Magic Mirror — Progress
 
-**Current dashboard — 2026-09-05 — Phase 3 Avatar/Audio remains accepted as a
+**Current dashboard — 2026-09-06 — Phase 3 Avatar/Audio remains accepted as a
 Windows development checkpoint; Phase 4 Scenes is waiting for Windows human testing.**
 Phase 0 is accepted and tagged `phase0-v0.3.1` at `9237dc7`. Phase 1 product
 tip `4bd241f` is accepted from the real Windows microphone/speaker path and is
@@ -23,6 +23,46 @@ metadata-only marker, and supervises full process-tree cleanup. The 2026-08-26
 failures were caused by the live flag not selecting isolated `userData`, which
 allowed a local mock model ID to leak into the run. The 2026-08-27 correction
 passes the real provider path.
+
+## Multi-avatar Console extension — requested 2026-09-05
+
+- Status: implementation and automated/native QA complete; delivery in progress.
+  No Phase 4 acceptance or Phase 5/8 promotion. Public character
+  profiles are separate from visitor identity/private memory.
+- Implemented multiple loadable avatars; character/style/voice and exact public
+  prompt; per-avatar appearance/scenes/spells; shared/owner-locked resources;
+  managed Cubism import; one action/step/scene test scope control. PRD §18 and
+  [implementation plan](docs/superpowers/plans/2026-09-05-multi-avatar.md) record
+  the journey. No dependencies or runtime model IDs changed.
+- **BUG-PREVIEW-STALL-002 corrected on this Windows host:** scoped software video
+  decoding preserves WebGL. Probe-free preview advances 36 frames/1.2 seconds,
+  zero drops; finite/loop/replacement/embedded-audio regressions pass. Personal
+  high-resolution media and physical sound remain operator checks.
+- Native QA exposed managed-model CORS upload and stale offscreen-mask targets
+  after rig switching. Corrected both; complete avatar capture and fixture coat
+  coverage pass. Async replacement serializes load/dispose on the same canvas.
+- Failed-load draft restoration and concurrent-save isolation have focused
+  RED/GREEN coverage. Main keeps avatar switch Dormant-only with a wake guard.
+- Checks: typecheck/build exit 0; final full suite exit 0, 883 tests / 96 files.
+  Final Console: 28 checks/26 captures,
+  `.artifacts/phase4-qa/2026-09-06T00-16-34-619Z/`. Portrait: 7 motions,
+  5 expressions, 3 scenes, 5 visuals/28 captures, exit 0,
+  `.artifacts/phase4-qa/2026-09-06T00-05-59-344Z/` (non-provider dialogue is
+  intentionally unavailable, not claimed spoken).
+- Two-avatar real-provider greeting/sleep and voice/personality comparisons:
+  exit 0, `.artifacts/phase4-qa/2026-09-06T00-07-54-873Z/`; no OfflineLoop,
+  background paused awake and input tracks ended. Earlier strict transcript
+  mismatches/timeouts remain historical failures; comparison now normalizes
+  spoken-equivalent punctuation/case only.
+- Full live scenes/media: exit 0,
+  `.artifacts/phase4-qa/2026-09-06T00-14-43-009Z/`; all three scenes completed,
+  actual lip-sync maximum 0.176, seven motions/five expressions/five visuals.
+  Native final switch from managed rig to built-in and back renders the full
+  character; no remaining partial-mask view. [QA report](docs/testing/multi-avatar-qa-2026-09-06.md).
+- [Harness audit](docs/testing/harness-audit-2026-09-06.md): build provenance,
+  bounded readiness, incomplete-rig detection and compacted domain guidance.
+  Normal development server is stopped during isolated QA. Commit/push/restart
+  are not yet claimed.
 
 ## Avatar/media corrective work — 2026-09-05
 

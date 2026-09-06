@@ -49,10 +49,13 @@ import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
 import { selectPortraitDisplay } from './portrait-display'
 import { validateCubismModelBundle } from './avatar/model-bundle'
+import { importAvatarModel, verifyAvatarModel, safeAvatarFile } from './avatar/model-import'
+import type { AvatarModel } from '../shared/avatar-profiles'
 import { importManagedMusicAsset } from './scenes/music-assets'
 import { createVisualAssetManager, createVisualPlaybackVerifier, verifyManagedVisualAsset } from './scenes/visual-assets'
 import { serveMediaFile } from './scenes/media-file-response'
 import { runPhase4Qa } from './phase4-qa'
+import { configureVideoDecoding } from './video-decoding-policy'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
@@ -64,6 +67,7 @@ const phase4QaEnabled = process.env['MIRROR_PHASE4_QA'] === '1'
 // A kiosk wake/Console command has no click inside the mirror renderer. Permit
 // those trusted Main-routed actions to start the local output graph.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+const videoDecodingReason = configureVideoDecoding(process.platform, name => app.commandLine.appendSwitch(name))
 protocol.registerSchemesAsPrivileged([{
   scheme: 'magic-mirror-media',
   privileges: {
@@ -699,6 +703,9 @@ void app.whenReady().then(async () => {
       platform: `${process.platform}-${process.arch}`,
     })).ok,
     validateSceneAssets: async (config) => {
+      for (const model of config.avatarCatalog?.models ?? []) {
+        if (!(await verifyAvatarModel(model, join(app.getPath('userData'), 'assets', 'avatars')))) return false
+      }
       for (const asset of config.visualAssets) {
         await verifyManagedVisualAsset({ asset, storageDir: join(app.getPath('userData'), 'assets', 'visual') })
       }
@@ -709,11 +716,15 @@ void app.whenReady().then(async () => {
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
+  void runtime.ready.then(() => runtime.telemetry.emit({ module: 'avatar', event: 'video_decode_policy',
+    status: 'info', reason: videoDecodingReason, source: 'runtime' }))
   const visualStorageDir = join(app.getPath('userData'), 'assets', 'visual')
   const visualAssetManager = createVisualAssetManager({ storageDir: visualStorageDir })
   const verifyPlaybackVisual = createVisualPlaybackVerifier()
   // Imported-but-unsaved assets can be previewed without publishing the draft.
   const importedPreviews = new Map<string, ImportedMedia>()
+  const importedModels = new Map<string, AvatarModel>()
+  const avatarStorageDir = join(app.getPath('userData'), 'assets', 'avatars')
   const rememberPreview = <T extends ImportedMedia>(asset: T): T => {
     importedPreviews.delete(asset.id); importedPreviews.set(asset.id, asset)
     if (importedPreviews.size > 512) importedPreviews.delete(importedPreviews.keys().next().value!)
@@ -749,6 +760,16 @@ void app.whenReady().then(async () => {
       await visualAssetReady
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
       const url = new URL(request.url)
+      if (url.hostname === 'avatar') {
+        const [id, ...segments] = decodeURIComponent(url.pathname.slice(1)).split('/')
+        if (!/^model-[a-z0-9-]{1,80}$/.test(id)) return new Response(null, { status: 404 })
+        const file = segments.join('/')
+        const config = await runtime.console.getConfig()
+        const model = importedModels.get(id) ?? (config.ok ? [...(config.value.active.avatarCatalog?.models ?? []), ...(config.value.draft.avatarCatalog?.models ?? [])].find(m => m.id === id) : undefined)
+        if (!model?.files.includes(file)) return new Response(null, { status: 404 })
+        const path = await safeAvatarFile(join(avatarStorageDir, id), file)
+        return serveMediaFile(request, path, file.endsWith('.png') ? 'image/png' : /\.jpe?g$/i.test(file) ? 'image/jpeg' : file.endsWith('.json') ? 'application/json' : 'application/octet-stream')
+      }
       const opaqueId = decodeURIComponent(url.pathname.replace(/^\//, ''))
       if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(opaqueId)) {
         return new Response(null, { status: 404 })
@@ -803,6 +824,16 @@ void app.whenReady().then(async () => {
     console: runtime.console,
     windows,
     telemetry: runtime.telemetry,
+    importAvatarModel: async () => {
+      const picker: Electron.OpenDialogOptions = { title: 'Import Cubism model3.json and referenced assets', properties: ['openFile'], filters: [{ name: 'Cubism model manifest', extensions: ['json'] }] }
+      const owner = windows.get('console')
+      const selected = owner ? await dialog.showOpenDialog(owner, picker) : await dialog.showOpenDialog(picker)
+      if (selected.canceled || !selected.filePaths[0]) return null
+      const model = await importAvatarModel(selected.filePaths[0], avatarStorageDir)
+      importedModels.set(model.id, model)
+      if (importedModels.size > 32) importedModels.delete(importedModels.keys().next().value!)
+      return model
+    },
     importMedia: async (request) => {
       await visualAssetReady
       const visualExtensions = ['png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm']

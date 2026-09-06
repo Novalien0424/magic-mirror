@@ -29,3 +29,25 @@ deployment remain pending. No Phase 5 engineering is included.
 Use synthetic fixtures and isolated user data. Do not capture operator content,
 conversation audio/transcripts, credentials, or unrelated desktop windows.
 The native Windows picker itself is outside automated selection coverage.
+
+## Multi-avatar extension coverage (2026-09-06)
+
+- Catalog: legacy preservation, independent scenes/spells, valid model/voice
+  references, owner-only direct/transitive resource checks, bounded IPC.
+- Author two avatars through Console controls; verify editing/loaded separation,
+  dirty-draft guard, Save/Test/Publish, load in Dormant and reject during Active.
+- Force load publication failure and concurrent save with unit seams; verify
+  previous active/draft preservation and serialized writes.
+- Import the complete public Ren model through the managed route; test unsafe
+  paths, junctions and missing files; inspect both preview and switched Mirror.
+  Require fixture light-coat coverage to catch partial-mask rendering.
+- Execute selected action/step/whole scene through normal dispatch and Stop All.
+  Run standalone motions before voice ownership. Use silent synthetic input for
+  provider scene tests and a separate two-avatar greeting/sleep lifecycle suite.
+- Compare actual provider voice/instructions and spoken-line classifications in
+  RAM; retain only enums, counts, matches and playback/track state. Normalize
+  punctuation/case, never changed or added dialogue.
+- Native Windows check: select/load each profile, open Appearance, preview and
+  stop selected media, verify full rig and readable controls. No operator data.
+
+Results: [multi-avatar QA report](multi-avatar-qa-2026-09-06.md).

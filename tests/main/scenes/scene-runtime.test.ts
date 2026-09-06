@@ -140,6 +140,26 @@ function createHarness(input: {
   return { clock, events, dispatches, releases, runtime }
 }
 
+describe('focused published scene tests', () => {
+  it('runs only the selected action through normal resource cleanup', async () => {
+    const h = createHarness()
+    expect((await h.runtime.runScene('scene-duration', { stageId: 'stage-one', actionId: 'fog-on' })).status).toBe('accepted')
+    expect(h.dispatches.map(d => d.actionId)).toEqual(['fog-on'])
+    await h.clock.advance(10000)
+    expect(h.runtime.activeRunId()).toBeNull()
+    expect(h.releases.some(r => r.endsWith(':fog'))).toBe(true)
+    expect(h.dispatches.map(d => d.actionId)).toEqual(['fog-on'])
+  })
+  it('runs a selected step and rejects an action outside that step', async () => {
+    const h = createHarness()
+    expect(await h.runtime.runScene('scene-duration', { stageId: 'stage-two', actionId: 'fog-on' })).toMatchObject({ status: 'skipped', skipReason: 'invalid_config' })
+    await h.runtime.runScene('scene-duration', { stageId: 'stage-two' })
+    expect(h.dispatches.map(d => d.actionId)).toEqual(['light-off'])
+    await h.runtime.stopAll()
+    expect(h.runtime.activeRunId()).toBeNull()
+  })
+})
+
 function visualReport(
   runId: string,
   type: SceneVisualPlaybackReport['type'],

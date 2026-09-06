@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
+import { avatarCatalogSchema } from './avatar/avatar-config'
 
 import type {
   ConfigService,
@@ -127,6 +129,8 @@ export type ConsoleConfigRefreshResult =
     }
 
 export interface ConsoleConfigControllerOptions {
+  readonly getLifecycle?: () => string
+  readonly acquireAvatarSwitch?: () => (() => void) | null
   readonly validateSceneAssets?: (config: MirrorConfig) => boolean | PromiseLike<boolean>
   readonly getConfigService: () => ConfigService | null | undefined
   readonly getModelSettings: () => ModelSettingsResolution | null | undefined
@@ -141,6 +145,7 @@ export interface ConsoleConfigControllerOptions {
 }
 
 export interface ConsoleConfigController {
+  loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
@@ -339,6 +344,7 @@ function publicDiff(
 
 function safeConfigView(config: MirrorConfig): ConsoleConfigSafeView {
   return {
+    avatarCatalog: avatarCatalogFor(config),
     ...(config.presentation ? { presentation: structuredClone(config.presentation) } : {}),
     configVersion: config.configVersion,
     personaName: config.persona.name,
@@ -468,11 +474,17 @@ function confirmationMatches(
 function draftInputValidation(value: unknown):
   | { readonly ok: true; readonly value: ConsoleConfigDraftInput }
   | { readonly ok: false; readonly fields: readonly ConsoleFieldError[] } {
-  if (!exactKeys(value, SAFE_DRAFT_KEYS) && !exactKeys(value, [...SAFE_DRAFT_KEYS, 'presentation'])) {
+  if (!exactKeys(value, [...SAFE_DRAFT_KEYS,
+    ...(readProperty(value, 'presentation') === undefined ? [] : ['presentation']),
+    ...(readProperty(value, 'avatarCatalog') === undefined ? [] : ['avatarCatalog'])])) {
     return { ok: false, fields: [safeFieldError('$', 'unrecognized_keys')] }
   }
 
   const stringFields = ['personaName', 'voice'] as const
+  const catalog = readProperty(value, 'avatarCatalog')
+  if (catalog !== undefined && !avatarCatalogSchema.safeParse(catalog).success) {
+    return { ok: false, fields: [safeFieldError('avatarCatalog', 'invalid_avatar_catalog')] }
+  }
   for (const field of stringFields) {
     const fieldValue = readProperty(value, field)
     if (!nonEmptyString(fieldValue)) {
@@ -517,6 +529,9 @@ function draftInputValidation(value: unknown):
   return {
     ok: true,
     value: {
+      ...(readProperty(value, 'avatarCatalog') === undefined ? {} : {
+        avatarCatalog: structuredClone(readProperty(value, 'avatarCatalog')) as ConsoleConfigDraftInput['avatarCatalog'],
+      }),
       ...(readProperty(value, 'presentation') === undefined ? {} : {
         presentation: structuredClone(readProperty(value, 'presentation')) as ConsoleConfigDraftInput['presentation'],
       }),
@@ -600,8 +615,9 @@ function copyConfigInput(
   config: MirrorConfig,
   input: ConsoleConfigDraftInput,
 ): MirrorConfig {
-  return {
+  return projectActiveAvatar({
     ...config,
+    ...(input.avatarCatalog ? { avatarCatalog: structuredClone(input.avatarCatalog) } : {}),
     persona: { ...config.persona, name: input.personaName },
     voice: input.voice,
     idleSeconds: input.idleSeconds,
@@ -615,7 +631,7 @@ function copyConfigInput(
     sceneActions: structuredClone(input.sceneActions) as MirrorConfig['sceneActions'],
     spells: structuredClone(input.spells) as MirrorConfig['spells'],
     scenes: structuredClone(input.scenes) as MirrorConfig['scenes'],
-  }
+  })
 }
 
 function copyModelInput(
@@ -987,10 +1003,19 @@ export function createConsoleConfigController(
         draftTest = null
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
-      await state.service.publish()
-      if (runtimeCurrent !== null) runtimeOld = runtimeCurrent
-      runtimeNew = null
-      return refreshAfterMutation()
+      if (avatarCatalogFor(state.slots.active).activeAvatarId !== avatarCatalogFor(state.slots.draft).activeAvatarId
+        && options.getLifecycle?.() !== 'dormant') {
+        return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant')
+      }
+      const switching = avatarCatalogFor(state.slots.active).activeAvatarId !== avatarCatalogFor(state.slots.draft).activeAvatarId
+      const release = switching ? options.acquireAvatarSwitch?.() : undefined
+      if (release === null) return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant')
+      try {
+        await state.service.publish()
+        if (runtimeCurrent !== null) runtimeOld = runtimeCurrent
+        runtimeNew = null
+        return await refreshAfterMutation()
+      } finally { release?.() }
     } catch (error) {
       return mapConfigError(error, 'publish')
     }
@@ -1010,10 +1035,19 @@ export function createConsoleConfigController(
       }
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
-      await state.service.rollback()
-      if (runtimeCurrent !== null) runtimeOld = runtimeCurrent
-      runtimeNew = null
-      return refreshAfterMutation()
+      if (avatarCatalogFor(state.slots.active).activeAvatarId !== avatarCatalogFor(state.slots.previous).activeAvatarId
+        && options.getLifecycle?.() !== 'dormant') {
+        return responseError('console_config_rollback_failed', 'cause=avatar_switch_requires_dormant')
+      }
+      const switching = avatarCatalogFor(state.slots.active).activeAvatarId !== avatarCatalogFor(state.slots.previous).activeAvatarId
+      const release = switching ? options.acquireAvatarSwitch?.() : undefined
+      if (release === null) return responseError('console_config_rollback_failed', 'cause=avatar_switch_requires_dormant')
+      try {
+        await state.service.rollback()
+        if (runtimeCurrent !== null) runtimeOld = runtimeCurrent
+        runtimeNew = null
+        return await refreshAfterMutation()
+      } finally { release?.() }
     } catch (error) {
       return mapConfigError(error, 'rollback')
     }
@@ -1071,16 +1105,60 @@ export function createConsoleConfigController(
     }
   }
 
+  async function loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
+    if (options.getLifecycle?.() !== 'dormant') return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant')
+    try {
+      const state = await readState()
+      if (!state) return responseError('console_not_ready', 'cause=config_service_unavailable')
+      const catalog = avatarCatalogFor(state.slots.active)
+      if (!catalog.avatars.some(a => a.id === id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
+      if ((await state.service.diff('active', 'draft')).changed.length) return responseError('console_config_publish_failed', 'cause=avatar_draft_unsaved')
+      if (catalog.activeAvatarId === id) return getConfig()
+      const candidate = projectActiveAvatar({ ...state.slots.active, avatarCatalog: { ...catalog, activeAvatarId: id } })
+      if (!(await sceneAssetsAreValid(candidate))) return responseError('console_config_test_failed', 'cause=draft_test_failed')
+      const release = options.acquireAvatarSwitch?.()
+      if (release === null || options.getLifecycle?.() !== 'dormant') { release?.(); return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant') }
+      try {
+        await state.service.saveDraft(candidate)
+        try {
+          await state.service.publish()
+        } catch (error) {
+          // publish compensates its slot transaction, whose starting draft is
+          // our temporary load candidate. Restore the operator's original draft.
+          const after = await state.service.read()
+          if (after.active.configVersion === state.slots.active.configVersion) {
+            await state.service.saveDraft(state.slots.draft)
+          }
+          throw error
+        }
+        runtimeNew = null
+        return await refreshAfterMutation()
+      } finally { release?.() }
+    } catch (error) { return mapConfigError(error, 'publish') }
+  }
+
+  // Keep Console reads and mutations outside another operation's multi-slot
+  // transaction. Internal calls use the functions directly (no recursive queue).
+  let pending: Promise<unknown> = Promise.resolve()
+  function serial<A extends unknown[], R>(operation: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+    return (...args) => {
+      const result = pending.then(() => operation(...args))
+      pending = result.catch(() => undefined)
+      return result
+    }
+  }
   return {
-    getConfig,
-    getModels,
-    saveModelDraft,
-    saveDraft,
-    testDraft,
-    publish,
-    rollback,
-    createNextRuntimeSnapshots,
-    createInitialRuntimeSnapshotsForTest,
+    loadAvatar: serial(loadAvatar),
+    getConfig: serial(getConfig),
+    getModels: serial(getModels),
+    saveModelDraft: serial(saveModelDraft),
+    saveDraft: serial(saveDraft),
+    testDraft: serial(testDraft),
+    publish: serial(publish),
+    rollback: serial(rollback),
+    createNextRuntimeSnapshots: serial(createNextRuntimeSnapshots),
+    createInitialRuntimeSnapshotsForTest: serial(createInitialRuntimeSnapshotsForTest),
   }
 }
 

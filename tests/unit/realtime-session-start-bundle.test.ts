@@ -31,6 +31,23 @@ function mutableSnapshot(
 }
 
 describe('P1-U7C1 atomic Realtime session-start bundle issuer', () => {
+  it('captures character instructions before credential issuance can overlap a publish', async () => {
+    const avatar = { name: 'First', personality: 'Patient', speakingStyle: 'Calm', wakeGreeting: 'Hello', sleepFarewell: 'Bye' }
+    let release!: (value: ClientSecretIssueResult) => void
+    const issuer = createRealtimeSessionStartBundleIssuer({
+      getPublishedSessionModelSnapshot: () => mutableSnapshot(7, CONFIGURED_REALTIME_MODEL),
+      getRealtimeSessionIdentity: () => ({ realtimeSessionId: 'session', sessionGeneration: 1 }),
+      getAvatarSettings: () => avatar,
+      broker: { issue: () => new Promise(resolve => { release = resolve }) },
+    })
+    const pending = issuer.issue()
+    avatar.personality = 'Changed after publish'
+    release({ value: SHORT_CLIENT_SECRET })
+    const bundle = await pending
+    expect(bundle.avatar?.personality).toBe('Patient')
+    expect(Object.isFrozen(bundle.avatar)).toBe(true)
+    expect(bundle.snapshot).not.toHaveProperty('personality')
+  })
   it('copies caller and broker results across the deferred credential boundary', async () => {
     const callerSnapshot = mutableSnapshot(7, CONFIGURED_REALTIME_MODEL)
     const callerIdentity = {

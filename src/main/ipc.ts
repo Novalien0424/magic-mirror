@@ -1,4 +1,7 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
+import { parseSceneTestScope } from '../shared/scene-test-scope'
+import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import type {
   AppSnapshot,
@@ -91,6 +94,7 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   models: 'console:get-models',
   saveModelDraft: 'console:save-model-draft',
   saveDraft: 'console:save-draft',
+  loadAvatar: 'console:load-avatar',
   testDraft: 'console:test-draft',
   publish: 'console:publish',
   rollback: 'console:rollback',
@@ -143,6 +147,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly importAvatarModel?: () => Promise<import('../shared/avatar-profiles').AvatarModel | null>
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
     readonly console?: ConsoleDataPlane
@@ -600,7 +605,8 @@ class InvalidRealtimeSessionStartBundleError extends Error {
 function isValidRealtimeSessionStartBundle(
   value: unknown,
 ): value is RealtimeSessionStartBundle {
-  if (!isRecord(value) || !exactKeys(value, ['snapshot', 'identity', 'clientSecret'])) return false
+  if (!isRecord(value) || !exactKeys(value, ['snapshot', 'identity', 'clientSecret', ...('avatar' in value ? ['avatar'] : [])])) return false
+  if ('avatar' in value && !parseAvatarSessionSettings(value.avatar)) return false
 
   const snapshot = readProperty(value, 'snapshot')
   if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
@@ -653,6 +659,7 @@ function mapRealtimeSessionStartBundle(
 
   const clientSecret = readProperty(bundle, 'clientSecret') as Record<string, unknown>
   const mappedValue: RealtimeSessionStartBundleValue = {
+    ...(bundle.avatar ? { avatar: parseAvatarSessionSettings(bundle.avatar)! } : {}),
     snapshot: readProperty(bundle, 'snapshot') as RealtimeSessionStartBundleValue['snapshot'],
     identity: readProperty(bundle, 'identity') as RealtimeSessionStartBundleValue['identity'],
     clientSecret: readProperty(clientSecret, 'value') as TransientRealtimeSecretInput,
@@ -1798,7 +1805,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       senderRejected(telemetry, authorization.reason)
       return consoleFailure('console_request_rejected', 'cause=sender_rejected')
     }
-    if (args.length !== 1 || !SAFE_ID_PATTERN.test(args[0] as string)) {
+    if ((args.length !== 1 && args.length !== 2) || typeof args[0] !== 'string' || !SAFE_ID_PATTERN.test(args[0]) || args.length === 2 && !parseSceneTestScope(args[1])) {
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
@@ -1806,7 +1813,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (loaded === null) {
       return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
     }
-    const result = await loaded.value.runScene(args[0] as string)
+    const result = await loaded.value.runScene(args[0] as string, args.length === 2 ? parseSceneTestScope(args[1])! : undefined)
     return { ok: true, value: result }
   })
 
@@ -1868,6 +1875,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         source: 'runtime',
       })
       return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle('console:import-avatar-model', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return consoleFailure('console_request_rejected', 'cause=sender_rejected') }
+    if (!eventArgsAreEmpty(args)) { payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid') }
+    if (!options.importAvatarModel) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.importAvatarModel() } }
+    catch (error) {
+      const reason = error instanceof Error && /^avatar_[a-z_]{1,80}$/.test(error.message) ? error.message : 'avatar_import_failed'
+      emit(telemetry, { module: 'avatar', event: 'avatar_import_failed', status: 'failed', reason, source: 'runtime' })
+      return { ...consoleFailure('console_request_rejected', 'cause=runtime_action_failed'), fields: [{ path: 'avatarCatalog.models', message: reason }] }
     }
   })
 
@@ -1988,7 +2008,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     const config = response.value.active.presentation
     if (!config) return null
     const asset = response.value.active.visualAssets.find(asset => asset.id === config.backgroundId)
-    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null }
+    const catalog = response.value.active.avatarCatalog
+    const avatar = catalog?.avatars.find(a => a.id === catalog.activeAvatarId)
+    const source = catalog?.models.find(m => m.id === avatar?.modelId)
+    const model = source ? parseAvatarModelReference({ id: source.id, manifestFileName: source.manifestFileName }) : null
+    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null, ...(model ? { model } : {}) }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.config, async (event, ...args) => {
@@ -2138,6 +2162,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     senderRejected(telemetry, mirrorAuthorization.reason === 'unknown_sender'
       ? consoleAuthorization.reason
       : mirrorAuthorization.reason)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.loadAvatar, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), facade => facade.loadAvatar(args[0]), telemetry)
   })
 
   return Object.freeze({

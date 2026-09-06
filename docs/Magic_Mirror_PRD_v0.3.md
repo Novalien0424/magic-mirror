@@ -1,7 +1,7 @@
 # 魔鏡 AI Avatar：Software PRD
 
-**版本：** 0.3.2
-**日期：** 2026-08-28
+**版本：** 0.4.0
+**日期：** 2026-09-05
 **狀態：** Build-ready baseline  
 **產品類型：** 單一私人招待所、單場域客製 Prototype  
 **相關文件：** `Magic_Mirror_Tech_Spec_v0.3.md`、`Magic_Mirror_Implementation_Plan_v0.3.md`、`Magic_Mirror_Phase4_UIUX_Design_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
@@ -14,7 +14,7 @@
 
 ## 1. 產品定義
 
-一面具備固定人格、能以中文自然交談、辨認回訪賓客並記得過往互動的魔鏡。它以半寫實 2D Avatar 呈現；訪客說出完整咒語時，系統會同步控制燈光、煙霧或本機音樂，形成一個連續而可信的魔幻角色體驗。
+一面以 Avatar 為設定單位、能以中文自然交談、辨認回訪賓客並記得過往互動的魔鏡。主持人可保存與載入多個角色；同一時間只演出一個角色。每個角色有獨立人格、說話方式、內建聲線、Cubism 外觀與演出設定；訪客說出完整咒語時，系統會同步控制燈光、煙霧或本機音樂，形成一個連續而可信的魔幻角色體驗。
 
 Phase 1 不是商業化平台，而是在一台 Mac mini、單一房間內完成的可長期調整 Prototype。軟體必須容易由人、Codex 或 Claude Code 逐步修改、測試與觀察。
 
@@ -464,11 +464,15 @@ Telemetry queue、RAM timeline與本機 rotating logs 都必須有固定上限�
 ## 13. Phase 2
 
 - 訪客主動查看、修正、刪除或完整忘記自己的記憶。
-- 客製 Voice、多 Persona、多 Avatar／Persona Pack。
+- 客製／複製 Voice 仍屬後續範圍；多 Persona／Avatar 設定已於 2026-09-05 提前納入以下 Console extension。
 - 同名 Profile 的進階 alias／disambiguation。
 - 只有實測證明需要時，才評估 semantic memory search、voiceprint 或 speaker diarization。
 
 ## 14. Implementation Phases
+
+2026-09-05 主持人要求立即完成 Multi-avatar Console extension（§18）。這是現有
+Windows 工程的明確範圍擴充，不代表 Phase 5 訪客身分、Phase 6 記憶或 Phase 8
+美術調校已完成，也不取代逐 Phase 的人工驗收。
 
 完整 Entry／Build／Demo／Exit／Console／Mock 定義見 `Magic_Mirror_Implementation_Plan_v0.3.md`。
 
@@ -521,6 +525,74 @@ Telemetry queue、RAM timeline與本機 rotating logs 都必須有固定上限�
 2. Avatar 穩定後再換 reSpeaker Flex，選 Linear-4，因訪客主要站在鏡子正面；不需要為本案購買 XIAO 或 voice satellite。
 3. 最終模式採 reSpeaker 的 USB 48 kHz firmware 候選，AI voice 與 music 都由它的 playback output送至喇叭；Phase 3 Audio Spike 實測 AEC、barge-in與音樂品質後才固定 firmware。
 4. 不使用 HDMI 電視喇叭作正式對話輸出，否則 XVF3800 可能拿不到同一路播放 reference，現場回音與插話表現會變得難以預測。
+
+## 18. Multi-avatar Console extension — 2026-09-05
+
+此節是主持人要求立即實作的產品基準；優先於本文先前「固定人格／先一個角色」
+及多 Avatar 延後的文字。Avatar profile 是公開角色設定，不是賓客 Profile。
+
+### 18.1 角色與設定邊界
+
+- **US-AVATAR-001：** 主持人可建立、複製、重新命名與載入多個 Avatar profiles；
+  重開 app 保留上次發布的角色。同時間只有一個 Avatar、一個對話 session。
+  原設定轉為第一個角色，保留人格、聲線、媒體、場景與咒語，不覆蓋個人素材。
+- **US-AVATAR-002：** 每個角色保存名稱、人格／背景指令、說話語氣、內建基礎
+  Voice、idle 秒數、招呼／逐字告別、Cubism model、沉睡背景／音樂與進出場設定。
+  支援匯入符合現有 Cubism contract 的本機 model3 bundle；不包含新角色美術製作、
+  rigging、voice cloning、任意 script 或同時多角色聊天。
+- 音訊輸入／輸出、wake package、模型 ID、hardware adapters 是此台裝置共用設定。
+  切 Avatar 不可暗中換設備、模型或啟用實體效果。Voice 在新 Realtime session 生效。
+- 切換已發布 Avatar 僅在 Dormant 可執行；Active／Activating／Suspending 明確提示
+  先結束對話。不得把舊角色的對話 history 帶給新角色。編輯非即時變更。
+
+### 18.2 Console 與使用旅程
+
+1. 開啟 Console，清楚看到目前 live Avatar 與正在編輯的 Avatar；選擇器保留在角色
+   工作區。新增從安全預設開始；複製保留角色設定並獨立保存 scenes／spells。
+2. **Character & Voice：** 名稱、人格與說話方式，Voice 下拉，招呼／告別；進階
+   「Effective prompt」預設收合。裝置選擇另放共用 Audio 區，不和人格混在一起。
+3. **Appearance：** 選 Cubism model、匯入 bundle，沿用實際媒體／Cubism preview；
+   always-visible 與 emerge 都可測試，Preview 不啟動麥克風或改變 live Avatar。
+4. **Scenes：** 只編輯選中角色的咒語與 scenes。沿用 Scene → Step → Action，
+   同一份共享 library 選媒體／action，不建立第二套資產管理器。
+5. Save Draft → Test Draft → Publish 保留可回復版本。已發布且無未保存／未發布
+   編輯時，可 Load 選中角色；新角色／改動需先測試與發布。不能默默丟棄草稿。
+6. 每個 selected action／step／scene 用相同的 Test 控制與清楚的 scope 選擇，
+   顯示實際 dispatch／completion／timeout／failure，並共用 Stop All。不得以 schema
+   通過冒充實際播放通過；Dialogue 測試需要實際 live session，否則說明原因。
+
+### 18.3 Prompt 可見性
+
+- **US-AVATAR-003：** 顯示系統實際送給 Realtime 的 application instructions：
+  角色名稱／人格、語氣、固定控制規則、tool 名稱／描述／參數，以及招呼、告別與
+  scene dialogue 的一次性逐字指令範本。UI 和 runtime 共用同一個 prompt builder。
+- 分別標示 Draft、Published 與 session 生效時機；模型 ID、Voice、VAD／reasoning
+  是設定而非 prompt，提供對應欄位／入口，不把它们藏在提示詞中。
+- 不宣稱可看到供應商內部 system prompt。未實作的 Master／私人記憶注入明示
+  not implemented，不編造內容；將來的私密 context 不放進設定、匯出、log 或截图。
+- 人格／語氣是主持人可編輯的內容；安全、隱私、exact spell、mic ownership 與
+  控制工具規則由程式保護，不提供能關閉這些 invariant 的自由開關。
+
+### 18.4 共享與鎖定
+
+- **US-AVATAR-004：** Media 與 actions 預設 shared。Locked 的工作定義為「限指定
+  Avatar 使用」，不是帳號權限／加密 DRM。主持人仍可管理與解除鎖定。
+- 其他 Avatar 的選擇器不列出 locked 項目；Main 在 Save／Test／Publish／runtime
+  邊界驗證，不能只靠 UI 隱藏。間接引用同樣受限：shared action 不能讓其他角色
+  偷用 owner-only media。跨角色引用仍存在時，不允許發布破壞引用的 lock／刪除。
+- 修改 shared action 明確告知影響所有連結；需要獨立版本時複製 action／step。
+  Scenes／spells 為角色專屬，exact phrase collision 在各角色內驗證。
+
+### 18.5 驗收
+
+- 舊 config round-trip、建立／複製兩角色、各別個性／Voice／背景、切換與重開、
+  Active 切換拒絕、草稿保留、shared reuse、direct／indirect lock 拒絕均有測試。
+- 驗證 runtime prompt 與 Console builder 一致、session 啟動快照不受晚到變更污染、
+  無私密內容持久化；實際 provider 連線測試兩種 Voice／角色設定及 sleep cleanup。
+- 實際 Windows Console journey，選中 action／step／scene 的播放與停止、負向
+  missing-media cases、Cubism preview、字體／對比／版面與原有功能 regression。
+- 技術驗證、synthetic/live-provider、native computer use、physical human listening
+  分開記錄。未做的實體硬體／聲學／Mac 驗收不標示通過。
 
 ## 17. 2026-08 研究依據
 
