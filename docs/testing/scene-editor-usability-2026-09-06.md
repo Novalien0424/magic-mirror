@@ -73,6 +73,28 @@ ready, smoke off. Saved operator configuration and `sample/` unchanged. The
 concurrent unrelated `CLAUDE.md` change was not edited. Local implementation;
 no phase acceptance, release tag or external deployment claimed.
 
+## Trigger Phrase compact-row follow-up
+
+Renamed trigger labels and Add Trigger Phrase; phrase, Enabled, cooldown seconds
+and accessible trash-icon removal now share a row (wraps on narrow windows).
+Removed the options disclosure and redundant name editor; existing stored names,
+matching, cooldown conversion and Undo behavior are preserved.
+
+Focused Vitest run (scene-composer, scene-editor-model, console-config-ui):
+12 tests passed, exit 0. `npm run typecheck` and `npm run build`: exit 0.
+The new render regression failed before the UI change. Electron checks verified
+adding/removing phrases, collision rejection, 1.2 seconds saved as 1200 ms, and
+enabled state publication. Inspected `console-trigger-phrase-inline.png`:
+readable labels, aligned controls, no disclosure, and a clear removal icon.
+
+`npm run test:phase4:qa:editor`: first run `2026-09-06T03-27-38-615Z` passed
+the trigger checks but failed the later Cubism coverage probe
+(`phase4_qa_managed_rig_incomplete`, exit 1). One unchanged retry
+`2026-09-06T03-28-46-350Z` passed 26 checks / 20 captures, exit 0.
+Both runs are under `.artifacts/phase4-qa/`; the initial probe failure is
+retained, not treated as a trigger regression or a proven Cubism fix.
+The user authorized restarting without saving the pending Console edits.
+
 ## Remaining operator checks
 
 Delivery verification (2026-09-06): the final nine-file affected subset passed

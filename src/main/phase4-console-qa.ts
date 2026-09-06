@@ -149,7 +149,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Spell scenes'))")
     await edit("click(button('Add scene'))")
     await edit("set(control('Scene name', scene()), 'Magic Vision')")
-    await edit("set(control('Exact phrase', scene()), 'Mirror show the vision')")
+    await edit("set(control('Trigger Phrase', scene()), 'Mirror show the vision')")
     await edit("set(control('Step name', stage()), 'Vision')")
     await edit("click(button('+ Image / video'))")
     await edit("click(button('Browse & upload image / video…'))")
@@ -277,21 +277,24 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'console_spell_edit_and_collision'
     const spellRoot = "panel.querySelector('.scene-spell')"
-    await edit(`set(control('Spell name', ${spellRoot}), 'Vision spell')`)
-    await edit(`set(control('Exact phrase', ${spellRoot}), 'Mirror show the vision')`)
-    await edit(`set(control('Cooldown seconds', ${spellRoot}), '1.2')`)
+    await wait(`const row = ${spellRoot}; return row && !row.querySelector('details')
+      && control('Enabled', row).getBoundingClientRect().height > 0
+      && button('Remove Trigger Phrase', row).querySelector('svg[aria-hidden="true"]');`)
+    await edit(`set(control('Trigger Phrase', ${spellRoot}), 'Mirror show the vision')`)
+    await edit(`set(control('Cooldown (s)', ${spellRoot}), '1.2')`)
     await save()
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok
       && r.value.draft.spells[0].phrase === 'Mirror show the vision' && r.value.draft.spells[0].cooldownMs === 1200;`)
-    await edit("click(button('Add spell'))")
-    await edit("set(control('Exact phrase', panel.querySelectorAll('.scene-spell')[1]), 'Mirror show the vision!')")
+    await edit("click(button('Add Trigger Phrase'))")
+    await edit("set(control('Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]), 'Mirror show the vision!')")
     await edit("click(button('Save Draft'))")
     await wait("return status().includes('console_config_invalid') && panel.querySelectorAll('.scene-spell').length === 2")
-    await edit("click(button('Remove spell', panel.querySelectorAll('.scene-spell')[1]))")
+    await edit("click(button('Remove Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]))")
+    await screenshot('console-trigger-phrase-inline.png')
     passed()
 
     step = 'console_enabled_controls'
-    await edit(`click(control('Spell enabled', ${spellRoot}))`)
+    await edit(`click(control('Enabled', ${spellRoot}))`)
     await edit("click(control('Enabled', scene()))")
     await edit("click(control('Enabled', action()))")
     await save()
@@ -301,7 +304,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       && button('Run Published Scene', scene()).disabled;`)
     await edit("click(control('Enabled', action()))")
     await edit("click(control('Enabled', scene()))")
-    await edit(`click(control('Spell enabled', ${spellRoot}))`)
+    await edit(`click(control('Enabled', ${spellRoot}))`)
     await save()
     await testAndPublish()
     passed()
@@ -512,7 +515,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Spell scenes'))")
     await edit("click(button('Add scene'))")
     await edit("set(control('Scene name'), 'Guide reveal')")
-    await edit("set(control('Exact phrase'), 'Guide reveal')")
+    await edit("set(control('Trigger Phrase'), 'Guide reveal')")
     await edit("set(control('Duration seconds'), '0.5')")
     await edit("const details = [...panel.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Link a reusable action'); click(details.querySelector('input'))")
     await save()

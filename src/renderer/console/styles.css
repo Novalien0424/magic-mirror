@@ -58,7 +58,17 @@ details[open] > :not(summary) { margin: .8rem; }
 .console .scene-composer input:not([type="checkbox"]), .console .scene-composer select, .console .scene-composer textarea,
 .presentation-editor input, .presentation-editor select, .scene-action-fields input:not([type="checkbox"]), .scene-action-fields select { width: 100%; min-width: 0; }
 .scene-composer__triggers { border-bottom: 1px solid #42586d; padding: 1rem 0; }
-.scene-spell { margin-bottom: .8rem; }
+.scene-spell { display: grid; grid-template-columns: minmax(160px, 1fr) auto 125px 44px; gap: .75rem; align-items: end; margin-bottom: .75rem; }
+.scene-spell > label { min-width: 0; }
+.scene-spell > .console__check { min-height: 44px; }
+.scene-spell__remove { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; color: #ffbdba; }
+.scene-spell > .console-help > [role="tooltip"] { left: auto; right: 0; }
+.scene-trigger-footer { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; }
+.scene-trigger-footer p { flex: 1 1 230px; margin: 0; }
+@media (max-width: 900px) {
+  .scene-spell { grid-template-columns: 1fr 125px 44px; }
+  .scene-spell__phrase { grid-column: 1 / -1; }
+}
 .scene-steps > button span { display: inline-grid; place-content: center; min-width: 25px; height: 25px; margin-right: .3rem; border-radius: 50%; background: #344e63; }
 .scene-composer__intro { color: #dfebf6; margin: 0 0 1rem; }
 .scene-step-workspace { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 1rem; }

@@ -26,6 +26,9 @@ passes the real provider path.
 
 ## Spell-scene editor usability — 2026-09-06
 
+- Trigger Phrase follow-up: inline Enabled/cooldown/remove icon, no options
+  disclosure. Focused 12 tests, typecheck/build pass; editor QA 26 checks passes
+  on one retry after an unrelated Cubism coverage probe failure. Evidence below.
 - Local implementation ready for operator validation: vertical steps, nearby
   ordering controls, Copy/Delete options, scoped Save step/scene, real draft
   Test action/step/scene, hover/focus help and visible unavailable reasons.

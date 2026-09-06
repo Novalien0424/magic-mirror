@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import type { ConsoleConfigDraftInput, ConsoleConfigSafeView } from '../../shared/console-types'
 import type { SceneActionDefinition, SceneDefinition, SceneStageDefinition, SpellConfig } from '../../shared/types'
 import { SceneActionFields, newSceneAction } from './SceneActionFields'
@@ -25,7 +25,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
   saveUnavailableReason: string
   testUnavailableReason: string
   result: string
-}) {
+}): React.JSX.Element {
   const [sceneId, setSceneId] = useState('')
   const [stepId, setStepId] = useState('')
   const [actionId, setActionId] = useState('')
@@ -63,7 +63,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
         <button type="button" className="console__primary" onClick={() => {
           const next = { id: id(), name: 'New scene', enabled: true, stages: [newStep(0)] }
           change({ ...draft, scenes: [...draft.scenes, next], spells: [...draft.spells, {
-            id: id(), name: 'New spell', phrase: '', sceneId: next.id, enabled: true, cooldownMs: 5000 }] })
+            id: id(), name: 'Trigger Phrase', phrase: '', sceneId: next.id, enabled: true, cooldownMs: 5000 }] })
           setSceneId(next.id); setStepId(''); setActionId('')
         }}>Add scene</button>
         {draft.scenes.map(s => <button type="button" key={s.id} aria-pressed={s.id === scene?.id}
@@ -77,18 +77,19 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
           <label>Scene name<input value={scene.name} onChange={e => editScene({ ...scene, name: e.currentTarget.value })} /></label>
           <label className="console__check"><input type="checkbox" checked={scene.enabled} onChange={e => editScene({ ...scene, enabled: e.currentTarget.checked })} />Enabled</label>
         </div>
-        <section aria-label="Spell triggers" className="scene-composer__triggers">
+        <section aria-label="Trigger Phrases" className="scene-composer__triggers">
           {draft.spells.filter(s => s.sceneId === scene.id).map(spell => <div key={spell.id} className="scene-spell">
-            <label>Exact phrase<input placeholder="Say this to play the scene" value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></label>
-            <details><summary>Spell options</summary><div className="console__form-grid">
-              <label>Spell name<input value={spell.name} onChange={e => editSpell({ ...spell, name: e.currentTarget.value })} /></label>
-              <label>Cooldown seconds<input type="number" min="0" step="0.1" value={spell.cooldownMs / 1000} onChange={e => editSpell({ ...spell, cooldownMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></label>
-              <label className="console__check"><input type="checkbox" checked={spell.enabled} onChange={e => editSpell({ ...spell, enabled: e.currentTarget.checked })} />Spell enabled</label>
-              <button type="button" onClick={() => { change({ ...draft, spells: draft.spells.filter(s => s.id !== spell.id) }); setUndo(draft) }}>Remove spell</button>
-            </div></details>
+            <label className="scene-spell__phrase">Trigger Phrase<input placeholder="Say this to play the scene" value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></label>
+            <label className="console__check" title="Allow this phrase to trigger the scene. Turn off to keep it without triggering."><input type="checkbox" checked={spell.enabled} onChange={e => editSpell({ ...spell, enabled: e.currentTarget.checked })} />Enabled</label>
+            <label className="scene-spell__cooldown" title="Seconds before this phrase can trigger again. Use 0 for no cooldown.">Cooldown (s)<input type="number" min="0" step="0.1" value={spell.cooldownMs / 1000} onChange={e => editSpell({ ...spell, cooldownMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></label>
+            <HelpButton className="scene-spell__remove" aria-label="Remove Trigger Phrase" help="Remove only this trigger phrase. The scene and its actions stay. Undo is available until the next edit."
+              onClick={() => { change({ ...draft, spells: draft.spells.filter(s => s.id !== spell.id) }); setUndo(draft) }}>
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg>
+            </HelpButton>
           </div>)}
-          <button type="button" onClick={() => change({ ...draft, spells: [...draft.spells, { id: id(), name: 'New spell', phrase: '', sceneId: scene.id, enabled: true, cooldownMs: 5000 }] })}>Add spell</button>
-          <p className="console__muted">Only the complete, exact phrase triggers this scene.</p>
+          <div className="scene-trigger-footer"><HelpButton help="Add another spoken phrase that starts this same scene. Any enabled phrase can trigger it."
+            onClick={() => change({ ...draft, spells: [...draft.spells, { id: id(), name: 'Trigger Phrase', phrase: '', sceneId: scene.id, enabled: true, cooldownMs: 5000 }] })}>Add Trigger Phrase</HelpButton>
+            <p className="console__muted">Say any enabled phrase in full to start this scene.</p></div>
         </section>
         <div className="scene-step-workspace">
         <aside className="scene-step-navigation" aria-label="Step order">
