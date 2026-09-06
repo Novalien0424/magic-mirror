@@ -67,7 +67,8 @@ with visitor identity and adds an unnecessary migration.
   original Console + portrait regressions, two-avatar real-provider tests,
   native Windows interaction with isolated synthetic fixtures. Record exact
   commands/results/artifacts and remaining physical checks.
-- [ ] Delivery: commit/push the verified candidate and restart the normal app.
+- [x] Delivery: `33e93a8` committed/pushed; normal server restarted, Main and
+  both renderers ready. Physical/operator acceptance remains separate.
 
 Evidence: [Windows QA report](../../testing/multi-avatar-qa-2026-09-06.md).
 Implementation self-review caught model-mask cleanup, asynchronous replacement,

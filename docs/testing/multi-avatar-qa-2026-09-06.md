@@ -111,3 +111,9 @@ recognition, personal-media performance, lighting/fog and subjective dialogue
 quality require the operator. Automation does not certify those observations.
 
 Harness changes and evidence limitations: [audit](harness-audit-2026-09-06.md).
+
+Delivery: implementation commit `33e93a8`, push exit 0 to `origin/main`.
+Native isolated QA exited through File → Exit (exit 0), with no canonical
+Electron left before restart. Normal `npm run dev` is running on localhost:5173;
+Main and both renderers reported ready with smoke off. No user configuration,
+personal media, `sample/`, dependency lockfile or runtime model config changed.

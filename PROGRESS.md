@@ -26,7 +26,8 @@ passes the real provider path.
 
 ## Multi-avatar Console extension — requested 2026-09-05
 
-- Status: implementation and automated/native QA complete; delivery in progress.
+- Status: implementation and automated/native QA complete; Windows development
+  candidate delivered as `33e93a8`, pushed to `origin/main` on 2026-09-06.
   No Phase 4 acceptance or Phase 5/8 promotion. Public character
   profiles are separate from visitor identity/private memory.
 - Implemented multiple loadable avatars; character/style/voice and exact public
@@ -61,8 +62,12 @@ passes the real provider path.
   character; no remaining partial-mask view. [QA report](docs/testing/multi-avatar-qa-2026-09-06.md).
 - [Harness audit](docs/testing/harness-audit-2026-09-06.md): build provenance,
   bounded readiness, incomplete-rig detection and compacted domain guidance.
-  Normal development server is stopped during isolated QA. Commit/push/restart
-  are not yet claimed.
+  Normal development server restarted at `http://localhost:5173/`; Main and both
+  renderers report ready, smoke off. Isolated QA exited cleanly and no canonical
+  Electron process remained before restart. User configuration and `sample/`
+  were not changed. Rebuild before future QA: dev output is not the stamped
+  production artifact. Physical sound/wake/hardware and operator acceptance
+  remain the explicit next boundary, not unfinished engineering or a phase exit.
 
 ## Avatar/media corrective work — 2026-09-05
 
