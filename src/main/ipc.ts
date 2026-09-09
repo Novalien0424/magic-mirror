@@ -2,6 +2,7 @@ import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
 import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
+import { parseAvatarLibraryLabelRequest } from '../shared/avatar-library'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import type {
   AppSnapshot,
@@ -149,6 +150,8 @@ export type SenderRejectionReason =
 export interface RegisterIpcHandlersOptions {
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
   readonly importAvatarModel?: () => Promise<import('../shared/avatar-profiles').AvatarModel | null>
+  readonly listAvatarModels?: () => Promise<import('../shared/avatar-library').AvatarLibrary>
+  readonly saveAvatarModelLabel?: (request: import('../shared/avatar-library').AvatarLibraryLabelRequest) => Promise<import('../shared/avatar-profiles').AvatarModel>
   readonly ipcMain: IpcMainRegistrar
   readonly runtime: Pick<BootRuntime, 'snapshot' | 'handleSimulator' | 'manualStart' | 'manualStop'> & {
     readonly console?: ConsoleDataPlane
@@ -1902,6 +1905,31 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         reason: 'cause=import_failed',
         source: 'runtime',
       })
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle('console:save-avatar-model-label', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return consoleFailure('console_request_rejected', 'cause=sender_rejected') }
+    const request = args.length === 1 ? parseAvatarLibraryLabelRequest(args[0]) : null
+    if (!request) { payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid') }
+    if (!options.saveAvatarModelLabel) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.saveAvatarModelLabel(request) } }
+    catch {
+      emit(telemetry, { module: 'avatar', event: 'avatar_label_failed', status: 'failed', reason: 'avatar_label_save_failed', source: 'runtime' })
+      return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
+    }
+  })
+
+  ipcMain.handle('console:list-avatar-models', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return consoleFailure('console_request_rejected', 'cause=sender_rejected') }
+    if (!eventArgsAreEmpty(args)) { payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid') }
+    if (!options.listAvatarModels) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.listAvatarModels() } }
+    catch {
+      emit(telemetry, { module: 'avatar', event: 'avatar_library_failed', status: 'failed', reason: 'avatar_library_unavailable', source: 'runtime' })
       return consoleFailure('console_request_rejected', 'cause=runtime_action_failed')
     }
   })

@@ -12,6 +12,13 @@ cases; preserve the operator's normal user data and uncommitted changes.
 
 ## Choose the evidence needed
 
+- `npm run test:phase4:qa:cubism`: dedicated Live2D Cubism page, every motion
+  index/expression/actual MOC parameter, reset/cancellation and rig replacement.
+  Mirror stays hidden; no portrait, speech or scene-playback claim. Built-in
+  Ren and managed Ren with a second Scene clip are always covered. Set
+  `MIRROR_CUBISM_QA_MODEL` to an external manifest to cover that rig too; an
+  omitted value does **not** test Raven. Read the [Cubism rerun handoff](../../../docs/testing/cubism-console-2026-09-08.md#independent-qa-handoff)
+  for the supplied Raven fixture, expected evidence and native checks.
 - `npm run test:phase4:qa:editor`: real Console import, authoring, validation,
   Test/Publish and failure cases. Mirror stays hidden. No portrait or playback
   evidence is claimed by this mode.
@@ -44,7 +51,8 @@ dimensions. A physically rotated panel still needs the correct Windows display
 orientation. Ask which panel and whether to change orientation if Windows
 reports all panels as landscape; do not guess. Editor-only work can continue.
 
-The Console harness in `src/main/phase4-console-qa.ts` drives rendered DOM controls
+The Console harnesses in `src/main/phase4-console-qa.ts` and
+`src/main/cubism-console-qa.ts` drive rendered DOM controls
 through Electron's `executeJavaScript`. It substitutes only the native file
 picker's return value inside the isolated process, restoring it in `finally`.
 Import, decode, React edits, IPC, validation, and publication remain production
@@ -79,6 +87,17 @@ and active/returned media frames. Nonblack pixels and changing hashes prove only
 mechanical frame properties; they do not replace visual judgment. Static images
 cannot prove smoothness, physical sound, conversational timing, or real fog/lights.
 Test managed Cubism both at fresh start and after switching from another rig.
+For framing changes, compare fresh model instances at identical 9:16 canvas
+pixels/DPR and neutral state; record MOC canvas/origin/PPU and Layout. Inspect
+head/body extremes, combined eye/mouth poses, resize and reference rigs.
+Read back combined parameters after React and the observed-value refresh settle;
+an input event alone does not prove the intended pose. Empty canvas alpha
+readback is not a valid reference image; use actual window capture to distinguish
+capture-path failure from missing rendering. Retain partial/failed evidence.
+For the dedicated page, compare actual parameter readback to MOC bounds/defaults,
+not only slider text. Timed Test/reset/unload/page leave must clear overrides.
+Separate writable-but-unrigged IDs from visible motion; inspect meaningful
+eye, mouth and head changes. Never publish the operator's draft to test a rig.
 The Ren fixture's light-coat pixel coverage catches the observed partial-mask
 regression; keep that fixture-specific assertion separate from general assets.
 Live dialogue comparisons may normalize punctuation/case, not extra words or

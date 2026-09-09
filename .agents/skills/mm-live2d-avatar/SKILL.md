@@ -16,6 +16,9 @@ Windows evidence does not establish Mac performance or deployment readiness.
   `avatar-model-source.ts`, `AvatarCanvas.tsx`.
 - Model contract: `src/main/avatar/model-bundle.ts`; bundled source assets in
   `resources/avatar/`, copied by `scripts/prepare-avatar-assets.mjs`.
+- Dedicated Console tester: `src/renderer/console/CubismStudio.tsx`,
+  `src/renderer/avatar/cubism-preview.ts`; managed library discovery/import
+  lives in `src/main/avatar/model-import.ts` via Console-only typed IPC.
 - Audio/lifecycle coordination: `src/renderer/realtime/`; use
   [Realtime voice](../mm-realtime-voice/SKILL.md) when touching that boundary.
 - Presentation and scene media: `src/renderer/avatar/PresentationStage.tsx` and
@@ -38,6 +41,18 @@ Parameter writes are order-dependent: body motion, physics, blink, expression
 and mouth blending must be checked in the actual update loop before changing
 their order. A body curve must not erase the final mouth value.
 
+The dedicated Live2D Cubism section loads a local silent preview, not the live
+Mirror or a published character. List validated managed imports independently
+of draft assignment; invalid bundles need a visible skipped reason/count.
+Load every motion group/index (lifecycle defaults still use index zero), every
+expression and actual MOC parameters. Use Core bounds/defaults/readback; HTML
+range steps must not quantize valid values (`step="any"` preserves defaults).
+Preview-only parameter overrides follow automatic effects. Reset stops
+motions/expressions and restores defaults; replacement, unload and page leave
+cancel timed tests and release the canvas. Keep these controls opt-in, out of
+the normal Mirror. An exported writable parameter need not have visible art;
+Raven's Speaking clip needs separate mouth input to open the beak.
+
 ## Output audio is the speaking clock
 
 Drive lip sync from the Realtime remote audio, never transcripts or room-mic
@@ -56,6 +71,14 @@ scoped integration; verify the vendored API, source sample rate and processing
 order against its official sample before claiming support.
 
 ## Async layout and media ownership
+
+Framing belongs to `avatar-framing.ts`: preserve CubismModelMatrix's initial
+height fit and the model's explicit Layout. Draw/resize compose a fresh MVP,
+never mutate the model matrix or branch on `getCanvasWidth() > 1` (export PPU
+and horizontal padding must not change subject scale). Console and Mirror use
+the same renderer. Test equivalent physical vertices across PPU values, Layout
+width/height/translation, repeated draws and DPR/resize. Fixed height is not
+automatic artistic crop acceptance: inspect extreme poses separately.
 
 Model loading can finish after a preview resizes or changes state. Apply the
 latest layout/state after initialization, not the values captured before

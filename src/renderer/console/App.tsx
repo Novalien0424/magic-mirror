@@ -47,8 +47,9 @@ import { AvatarCharacterEditor } from './AvatarCharacterEditor'
 import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
 import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type AvatarProfile } from '../../shared/avatar-profiles'
 import { ResourceAccess } from './ResourceAccess'
+import { CubismStudio } from './CubismStudio'
 
-const PAGES = ['Overview', 'Avatar / Audio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const PAGES = ['Overview', 'Avatar / Audio', 'Live2D Cubism', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
   'app',
   'openai',
@@ -1337,6 +1338,18 @@ export function ScenesPanel({
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
   const [editorView, setEditorView] = useState('scenes')
   const [avatarView, setAvatarView] = useState('character')
+  const [libraryModels, setLibraryModels] = useState<import('../../shared/avatar-profiles').AvatarModel[]>([])
+  const availableModels = [...new Map([...(rawDraft?.avatarCatalog?.models ?? []), ...libraryModels].map(model => [model.id, model])).values()]
+  useEffect(() => {
+    if (!visible || !dialogueOnly || !bridge?.listAvatarModels) return
+    let current = true
+    void bridge.listAvatarModels().then(response => {
+      if (!current) return
+      if (response.ok) setLibraryModels(response.value.models)
+      else setResult(`Cubism library unavailable: ${response.reason}`)
+    }).catch(() => { if (current) setResult('Cubism library unavailable.') })
+    return () => { current = false }
+  }, [visible, dialogueOnly, bridge])
   const [importFailures, setImportFailures] = useState<{ name: string; reason: string }[]>([])
   const importMedia = async (request: MediaImportRequest, actionId?: string): Promise<void> => {
     if (!bridge || busy) return
@@ -1525,8 +1538,15 @@ export function ScenesPanel({
       </nav> : null}
       {dialogueOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <details><summary>Cubism model</summary>
-        <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => updateAvatar({ ...editingAvatar, modelId: e.currentTarget.value })}>
-          <option value="builtin-ren">Built-in Ren</option>{rawDraft.avatarCatalog.models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
+          const modelId = e.currentTarget.value
+          const model = availableModels.find(item => item.id === modelId)
+          const catalog = rawDraft.avatarCatalog!
+          if (model && !catalog.models.some(item => item.id === model.id) && catalog.models.length >= 32) { setResult('Avatar catalog is full (32 models).'); return }
+          updateCatalog({ ...catalog, models: model && !catalog.models.some(item => item.id === model.id) ? [...catalog.models, model] : catalog.models,
+            avatars: catalog.avatars.map(avatar => avatar.id === editingAvatar.id ? { ...avatar, modelId } : avatar) })
+        }}>
+          <option value="builtin-ren">Built-in Ren</option>{availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select></label><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32} onClick={() => {
           if (!bridge) return
           setBusy(true)
@@ -2111,7 +2131,7 @@ export function App(): React.JSX.Element {
       />
 
       <nav className="console__tabs" aria-label="Console pages">
-        {(['Overview', 'Scenes', 'Avatar / Audio'] as const).map(page => <button key={page} type="button"
+        {(['Overview', 'Scenes', 'Avatar / Audio', 'Live2D Cubism'] as const).map(page => <button key={page} type="button"
           className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
           aria-current={activePage === page ? 'page' : undefined} onClick={() => setActivePage(page)}>{page}</button>)}
         {([['Settings', ['Config', 'Models']], ['Diagnostics', ['Events', 'Simulator', 'Phase Tests']]] as const).map(([label, pages]) =>
@@ -2122,6 +2142,9 @@ export function App(): React.JSX.Element {
       </nav>
 
       <div className="console__panels">
+        <div hidden={activePage !== 'Live2D Cubism'}>
+          <CubismStudio bridge={bridgeRef.current} visible={activePage === 'Live2D Cubism'} />
+        </div>
         <div hidden={activePage !== 'Overview'}>
           <OverviewPanel state={overviewState} configState={configState} />
         </div>

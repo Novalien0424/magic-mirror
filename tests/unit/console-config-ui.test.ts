@@ -14,6 +14,7 @@ import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 const EXPECTED_TABS = [
   'Overview',
   'Avatar / Audio',
+  'Live2D Cubism',
   'Scenes',
   'Simulator',
   'Events',

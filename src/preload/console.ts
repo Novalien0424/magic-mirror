@@ -53,6 +53,8 @@ const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
   importAvatarModel() { return ipcRenderer.invoke('console:import-avatar-model') },
+  listAvatarModels() { return ipcRenderer.invoke('console:list-avatar-models') },
+  saveAvatarModelLabel(request) { return ipcRenderer.invoke('console:save-avatar-model-label', request) },
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>> {
     return ipcRenderer.invoke('console:load-avatar', id)
   },

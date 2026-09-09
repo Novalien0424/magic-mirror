@@ -12,6 +12,10 @@ PRD/Tech Spec/Implementation Plan/Stack Review → PROGRESS → relevant
 PROGRESS owns current task/branch/phase status; DECISIONS owns durable rulings.
 Do not copy their history into instructions or infer completion from stale text.
 
+For another-session QA, start from PROGRESS's current evidence/runbook links
+and the matching UI QA skill. Recorded passes are prior evidence, not a fresh
+QA result; historical handoffs are not instructions to restart or publish.
+
 This file owns execution policy. Root-only orchestration, fresh workers for
 every action, Luna/max everywhere, H6, mandatory tester gates, complete
 successful stdout and repeated reviews in legacy skills/docs are superseded.

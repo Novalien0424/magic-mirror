@@ -265,6 +265,8 @@ export interface ConsoleBridge extends SharedRendererBridge {
   saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   importAvatarModel(): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel | null>>
+  listAvatarModels(): Promise<ConsoleResponse<import('./avatar-library').AvatarLibrary>>
+  saveAvatarModelLabel(request: import('./avatar-library').AvatarLibraryLabelRequest): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel>>
   testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>>
   publish(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: ConsoleDiffConfirmation): Promise<ConsoleResponse<ConsoleConfigPayload>>

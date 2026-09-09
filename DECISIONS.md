@@ -121,7 +121,63 @@ credential instructions; all other canonical invariants remain unchanged.
   approved presets alone control hardware. Public scene/trigger/action IDs
   are not guest IDs. Draft tests must not silently publish or switch avatars.
 
+## Dedicated Cubism Console — 2026-09-08
+
+- The operator pulled forward a separate **Live2D Cubism** library/test page.
+  A rig is a reusable asset, not a public character profile or guest identity.
+  Validated managed imports are rediscovered after restart; rejected bundles
+  are reported. Draft assignment remains an explicit Appearance edit.
+- Select/load in this section owns only a local, silent preview: no publication,
+  live Mirror switch, microphone acquisition or provider call. Preview controls
+  are opt-in and unavailable to the normal Mirror.
+- Expose every exported motion group/index and expression, plus actual MOC
+  parameter IDs/bounds/defaults/readback. Lifecycle playback still defaults
+  to clip zero. Writable parameters do not guarantee visible rigged artwork;
+  a Speaking motion does not replace external audio-driven mouth input.
+- Timed tests, reset, replacement, unload and page leave have explicit cleanup.
+  Reset stops motions/expressions and restores actual defaults; parameter
+  overrides follow automatic effects only in the test preview. Preserve exact
+  bounds/defaults without HTML range-step quantization.
+- Dedicated Cubism QA uses isolated data and production controls. Optional
+  external rig coverage must be explicitly supplied and identified; built-in
+  fixture success cannot stand in for Raven. Hidden-Mirror Console coverage
+  is not portrait-display, physical speech or phase-acceptance evidence.
+
+## Avatar framing — 2026-09-08
+
+- Default framing is model canvas height, followed by any explicit model3
+  Layout. Per-frame drawing and resize create the projection/MVP without
+  changing the model matrix. Canvas width in export units is not a framing
+  threshold; horizontal padding and equivalent PPU must not shrink artwork.
+- Console and Mirror share this renderer. Keep the existing 9:16 viewport,
+  aspect preservation, DPR handling, model assets and parameter/motion ranges.
+  No per-ID multiplier, dynamic alpha-bounds fit or CSS zoom workaround.
+- Matching the v07 baseline does not certify safe crop for every v08 extreme.
+  Model-specific fixed Layout calibration is separate from the product scale
+  regression; do not silently alter exports or publish an unfinished draft.
+
+## Project-owned Raven assets — 2026-09-09
+
+- User-approved v10 master lives in `resources/avatar/Raven/v10/`, with
+  exported files in `runtime/` and editable CMO/PSD sources kept separately.
+  Preserve versioned masters; new authoring creates a new version.
+- Console still imports a validated copy into user data `assets/avatars/`.
+  Do not edit managed runtime files or auto-publish to synchronize a master.
+  This archival change does not automatically bundle Raven or archive every
+  future external import; the build's Ren-only copy remains unchanged.
+- Runtime and checksum inventory are Git-eligible. The large editable/QA
+  archive is explicitly ignored and requires separate out-of-band backup.
+  A local project copy is not a commit, push or off-machine backup. See
+  [asset storage policy](resources/avatar/Raven/README.md).
+
 ## Evidence and protected history
+
+- 2026-09-09: Library names/versions are explicit operator metadata in a
+  managed `avatar-label.json` sidecar, not filename/UUID guesses or published
+  character configuration. Missing versions remain visibly unknown; invalid
+  labels degrade visibly without hiding an otherwise valid rig. The same
+  optional sidecar can travel with future exports. See
+  [persistent label contract](docs/testing/avatar-library-labels-2026-09-09.md).
 
 Mock, unavailable and real evidence remain distinct. A deterministic recorder
 cannot label a non-real result passed; automation does not establish physical

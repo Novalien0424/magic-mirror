@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console']
+const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -15,7 +15,8 @@ const musicOnly = process.argv.includes('--music-only')
 const lifecycleLive = process.argv.includes('--lifecycle-live')
 const live = process.argv.includes('--live') || lifecycleLive
 const manual = process.argv.includes('--manual')
-const editorOnly = process.argv.includes('--editor')
+const cubismOnly = process.argv.includes('--cubism')
+const editorOnly = process.argv.includes('--editor') || cubismOnly
 const consoleOnly = process.argv.includes('--console') || editorOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
@@ -217,10 +218,11 @@ const environment = {
   MIRROR_PHASE4_QA_LIFECYCLE_LIVE: lifecycleLive ? '1' : '0',
   MIRROR_PHASE4_QA_CONSOLE: consoleOnly ? '1' : '0',
   MIRROR_PHASE4_QA_EDITOR: editorOnly ? '1' : '0',
+  MIRROR_PHASE4_QA_CUBISM: cubismOnly ? '1' : '0',
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly ? '300000' : '120000',
   MIRROR_DEVELOPER_MODE: 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -256,7 +258,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : 130_000)
+  }, manual ? 1_810_000 : cubismOnly ? 310_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)

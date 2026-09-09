@@ -2,6 +2,29 @@
   color-scheme: dark;
   font-size: 18px;
 }
+.cubism-studio__toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.cubism-studio__toolbar label { display: grid; gap: .4rem; flex: 1 1 240px; }
+.cubism-studio__layout { display: grid; grid-template-columns: minmax(240px, 34%) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.cubism-studio__preview-panel { position: sticky; top: 1rem; min-width: 0; }
+.cubism-studio__preview { position: relative; width: 100%; aspect-ratio: 9 / 16; max-height: 65vh; overflow: hidden; margin: .75rem 0; border: 1px solid #526b7c; border-radius: 12px; background: radial-gradient(ellipse at 50% 30%, #334657, #0b121a); }
+.cubism-studio__preview .avatar-stage { position: absolute; inset: 0; }
+.cubism-studio__preview canvas { position: absolute; }
+.cubism-studio__empty { text-align: center; padding: 3rem 1rem; }
+.cubism-studio__controls { display: grid; gap: 1rem; min-width: 0; }
+.cubism-studio__controls fieldset { min-width: 0; margin: 0; }
+.cubism-studio__buttons { display: flex; flex-wrap: wrap; gap: .45rem; }
+.cubism-studio__buttons button { padding: .5rem .65rem; }
+.cubism-studio__parameter { border-top: 1px solid #364a59; padding: .9rem 0; }
+.cubism-studio__parameter small { display: block; color: #aec3d3; overflow-wrap: anywhere; }
+.cubism-studio__parameter-input { display: flex; align-items: center; gap: 1rem; margin: .5rem 0; }
+.cubism-studio__parameter-input input { flex: 1; min-width: 0; }
+.cubism-studio__parameter-input output { width: 4rem; text-align: right; font-variant-numeric: tabular-nums; }
+.cubism-studio__status { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .cubism-studio__layout { grid-template-columns: 1fr; }
+  .cubism-studio__preview-panel { position: static; }
+  .cubism-studio__preview { max-width: 280px; }
+}
 .media-cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 1rem; }
 .media-card { min-width: 0; display: flex; flex-direction: column; gap: .5rem; padding: .75rem; border: 1px solid #536d83; border-radius: 10px; background: #172331; }
 .media-card strong { overflow-wrap: anywhere; }

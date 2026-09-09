@@ -28,6 +28,13 @@ assets/avatar/
 assets/music/
 assets/offline/
 
+# Raven master: track the runtime + inventory; editable sources/QA are local
+# out-of-band assets (see resources/avatar/Raven/README.md). No automatic LFS.
+/resources/avatar/Raven/v10/*
+!/resources/avatar/Raven/v10/runtime/
+!/resources/avatar/Raven/v10/README.md
+!/resources/avatar/Raven/v10/MANIFEST-SHA256.json
+
 # SDD orchestration scratch (ledger/briefs/reports live on disk, not in git)
 .superpowers/
 .worktrees/

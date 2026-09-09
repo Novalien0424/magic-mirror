@@ -49,7 +49,7 @@ import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
 import { selectPortraitDisplay } from './portrait-display'
 import { validateCubismModelBundle } from './avatar/model-bundle'
-import { importAvatarModel, verifyAvatarModel, safeAvatarFile } from './avatar/model-import'
+import { importAvatarModel, verifyAvatarModel, safeAvatarFile, listAvatarModels, saveAvatarModelLabel } from './avatar/model-import'
 import type { AvatarModel } from '../shared/avatar-profiles'
 import { importManagedMusicAsset } from './scenes/music-assets'
 import { createVisualAssetManager, createVisualPlaybackVerifier, verifyManagedVisualAsset } from './scenes/visual-assets'
@@ -551,7 +551,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     try {
       await writeFile(join(outputDir, '..', 'evidence.json'), JSON.stringify({
         platform: process.platform,
-        mode: editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
+        mode: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
         live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
         display: { count: displays.length, mirror: portrait?.id, width: portrait?.bounds.width,
           height: portrait?.bounds.height, verified: !editorOnly, console: consoleDisplay?.id },
@@ -573,6 +573,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     lifecycleLive: process.env['MIRROR_PHASE4_QA_LIFECYCLE_LIVE'] === '1',
     consoleOnly: process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1',
     editorOnly,
+    cubismOnly: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1',
     onEvidence: (step) => { evidence.push({ ...step }); marker('PHASE4_QA_STEP', { ...step }) },
   }).then((result) => {
     return finish({
@@ -825,6 +826,18 @@ void app.whenReady().then(async () => {
     console: runtime.console,
     windows,
     telemetry: runtime.telemetry,
+    listAvatarModels: async () => {
+      const library = await listAvatarModels(avatarStorageDir)
+      for (const model of library.models) importedModels.set(model.id, model)
+      if (library.rejectedCount > 0) runtime.telemetry.emit({ module: 'avatar', event: 'avatar_library_degraded', status: 'degraded', reason: 'avatar_invalid_bundles_skipped', source: 'runtime' })
+      if (library.labelWarningCount) runtime.telemetry.emit({ module: 'avatar', event: 'avatar_library_degraded', status: 'degraded', reason: 'avatar_invalid_labels_ignored', source: 'runtime' })
+      return library
+    },
+    saveAvatarModelLabel: async request => {
+      const model = await saveAvatarModelLabel(avatarStorageDir, request)
+      importedModels.set(model.id, model)
+      return model
+    },
     importAvatarModel: async () => {
       const picker: Electron.OpenDialogOptions = { title: 'Import Cubism model3.json and referenced assets', properties: ['openFile'], filters: [{ name: 'Cubism model manifest', extensions: ['json'] }] }
       const owner = windows.get('console')

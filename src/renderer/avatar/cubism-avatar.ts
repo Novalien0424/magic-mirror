@@ -8,7 +8,6 @@ import {
 } from '../../vendor/live2d/Framework/dist/effect/cubismbreath'
 import { CubismEyeBlink } from '../../vendor/live2d/Framework/dist/effect/cubismeyeblink'
 import { CubismFramework, Option } from '../../vendor/live2d/Framework/dist/live2dcubismframework'
-import { CubismMatrix44 } from '../../vendor/live2d/Framework/dist/math/cubismmatrix44'
 import { CubismUserModel } from '../../vendor/live2d/Framework/dist/model/cubismusermodel'
 import type { ACubismMotion } from '../../vendor/live2d/Framework/dist/motion/acubismmotion'
 import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
@@ -21,6 +20,8 @@ import {
   resolveCubismShaderBaseUrl,
 } from './avatar-model-source'
 import type { AvatarState } from './avatar-state'
+import { createAvatarMvp } from './avatar-framing'
+import { clampPreviewParameter, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
 
 const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
@@ -57,7 +58,8 @@ export interface CubismAvatarMetrics {
 export interface CubismAvatarRenderer {
   initialize(): Promise<void>
   setState(state: AvatarState): void
-  playMotion(group: string): boolean
+  playMotion(group: string, index?: number): boolean
+  getPreviewControls?(): CubismPreviewControls | null
   setExpression(name: string): void
   setMouthOpen(value: number): void
   stopSpeakingMotion(): void
@@ -67,6 +69,7 @@ export interface CubismAvatarRenderer {
 }
 
 export interface CreateCubismAvatarRendererInput {
+  readonly preview?: boolean
   readonly canvas: HTMLCanvasElement
   readonly assetBaseUrl?: string
   readonly manifestFileName?: string
@@ -137,6 +140,9 @@ class MagicMirrorCubismModel extends CubismUserModel {
   #mouthOpen = 0
   #oneShotGroup: string | null = null
   #resumeLifecycleMotion = false
+  #previewNeutral = false
+  readonly #previewValues = new Map<string, number>()
+  readonly #motionEntries: CubismCapabilities['motions'] = []
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -226,9 +232,10 @@ class MagicMirrorCubismModel extends CubismUserModel {
     const tasks: Promise<void>[] = []
     for (let groupIndex = 0; groupIndex < setting.getMotionGroupCount(); groupIndex += 1) {
       const group = setting.getMotionGroupName(groupIndex)
-      if (setting.getMotionCount(group) === 0) continue
+      for (let index = 0; index < setting.getMotionCount(group); index += 1) {
+      this.#motionEntries.push({ group, index, file: setting.getMotionFileName(group, index) })
       tasks.push((async () => {
-        const file = setting.getMotionFileName(group, 0)
+        const file = setting.getMotionFileName(group, index)
         const buffer = await fetchBuffer(`${this.#assetBaseUrl}${file}`)
         const motion = this.loadMotion(
           buffer,
@@ -238,14 +245,15 @@ class MagicMirrorCubismModel extends CubismUserModel {
           undefined,
           setting,
           group,
-          0,
+          index,
           true,
         )
         if (motion != null) {
           motion.setEffectIds(this.#eyeBlinkIds, this.#lipSyncIds)
-          this.#motions.set(group, motion)
+          this.#motions.set(motionKey(group, index), motion)
         }
       })())
+      }
     }
     await Promise.all(tasks)
   }
@@ -291,6 +299,8 @@ class MagicMirrorCubismModel extends CubismUserModel {
   }
 
   setState(state: AvatarState): void {
+    this.#previewNeutral = false
+    this.#previewValues.clear()
     this.#state = state
     this.#oneShotGroup = null
     this.#resumeLifecycleMotion = false
@@ -301,15 +311,15 @@ class MagicMirrorCubismModel extends CubismUserModel {
     }
     const expressionName = renExpressionForState(state)
     if (expressionName !== null) this.setExpression(expressionName)
-    const motion = this.#motions.get(state)
+    const motion = this.#motions.get(motionKey(state, 0))
     if (motion === undefined) return
     this._motionManager.stopAllMotions()
     this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
   }
 
-  playMotion(group: string): boolean {
+  playMotion(group: string, index = 0): boolean {
     if (this.#state === 'OfflineLoop') return false
-    const motion = this.#motions.get(group)
+    const motion = this.#motions.get(motionKey(group, index))
     if (motion === undefined) return false
     this.#oneShotGroup = group
     this.#resumeLifecycleMotion = false
@@ -347,22 +357,53 @@ class MagicMirrorCubismModel extends CubismUserModel {
     this.#mouthOpen = unit(value)
   }
 
+  previewControls(): CubismPreviewControls {
+    const parameters = Array.from({ length: this._model.getParameterCount() }, (_, index) => ({
+      id: this._model.getParameterId(index).getString(), index,
+      min: this._model.getParameterMinimumValue(index),
+      max: this._model.getParameterMaximumValue(index),
+      defaultValue: this._model.getParameterDefaultValue(index),
+    }))
+    return {
+      capabilities: { motions: [...this.#motionEntries], expressions: [...this.#expressions.keys()].sort(), parameters },
+      reset: () => {
+        this.#previewNeutral = true
+        this.#oneShotGroup = null
+        this.#resumeLifecycleMotion = false
+        this.#previewValues.clear()
+        this.#mouthOpen = 0
+        this._motionManager.stopAllMotions()
+        this._expressionManager.stopAllMotions()
+        for (const p of parameters) this._model.setParameterValueByIndex(p.index, p.defaultValue)
+        this._model.saveParameters()
+      },
+      setParameter: (id, value) => {
+        const bounded = clampPreviewParameter(parameters.find(p => p.id === id), value)
+        if (bounded === null) return false
+        this.#previewValues.set(id, bounded)
+        return true
+      },
+      readParameters: () => Object.fromEntries(parameters.map(p => [p.id, this._model.getParameterValueByIndex(p.index)])),
+    }
+  }
+
   update(deltaSeconds: number): void {
     if (!this.isInitialized()) return
     try { this._model.loadParameters() } catch { throw new Error('avatar_parameter_load_failed') }
     try {
-      if (this.#resumeLifecycleMotion && this.#state !== 'OfflineLoop') {
+      if (!this.#previewNeutral && this.#resumeLifecycleMotion && this.#state !== 'OfflineLoop') {
         this.#resumeLifecycleMotion = false
-        const motion = this.#motions.get(this.#state)
+        const motion = this.#motions.get(motionKey(this.#state, 0))
         if (motion !== undefined) {
           this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
         }
       } else if (
         this.#oneShotGroup === null
+        && !this.#previewNeutral
         && this._motionManager.isFinished()
         && this.#state !== 'OfflineLoop'
       ) {
-        const motion = this.#motions.get(this.#state)
+        const motion = this.#motions.get(motionKey(this.#state, 0))
         if (motion !== undefined) {
           this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
         }
@@ -378,9 +419,11 @@ class MagicMirrorCubismModel extends CubismUserModel {
     try { this._model.saveParameters() } catch { throw new Error('avatar_parameter_save_failed') }
 
     try {
-      this._physics?.evaluate(this._model, deltaSeconds)
-      this._breath?.updateParameters(this._model, deltaSeconds)
-      this._eyeBlink?.updateParameters(this._model, deltaSeconds)
+      if (!this.#previewNeutral) {
+        this._physics?.evaluate(this._model, deltaSeconds)
+        this._breath?.updateParameters(this._model, deltaSeconds)
+        this._eyeBlink?.updateParameters(this._model, deltaSeconds)
+      }
       this._expressionManager.updateMotion(this._model, deltaSeconds)
       this._pose?.updateParameters(this._model, deltaSeconds)
     } catch {
@@ -389,7 +432,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
 
     const setting = this.#setting
     try {
-      if (setting !== null) {
+      if (setting !== null && !this.#previewNeutral) {
         for (let index = 0; index < setting.getLipSyncParameterCount(); index += 1) {
           this._model.setParameterValueById(
             setting.getLipSyncParameterId(index),
@@ -402,6 +445,9 @@ class MagicMirrorCubismModel extends CubismUserModel {
       throw new Error('avatar_lip_update_failed')
     }
     try {
+      for (const [id, value] of this.#previewValues) {
+        this._model.setParameterValueById(CubismFramework.getIdManager().getId(id), value)
+      }
       this._model.update()
     } catch {
       throw new Error('avatar_model_update_failed')
@@ -412,14 +458,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
     if (!this.isInitialized()) return
     const width = this.#canvas.width
     const height = this.#canvas.height
-    const projection = new CubismMatrix44()
-    if (this._model.getCanvasWidth() > 1 && width < height) {
-      this._modelMatrix.setWidth(2)
-      projection.scale(1, width / height)
-    } else {
-      projection.scale(height / width, 1)
-    }
-    projection.multiplyByMatrix(this._modelMatrix)
+    const projection = createAvatarMvp(width, height, this._modelMatrix)
     this.getRenderer().setMvpMatrix(projection)
     this.getRenderer().setRenderState(
       this.#gl.getParameter(this.#gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer,
@@ -565,7 +604,8 @@ export function createCubismAvatarRenderer(
       state = next
       model?.setState(next)
     },
-    playMotion: (group: string): boolean => model?.playMotion(group) ?? false,
+    playMotion: (group: string, index = 0): boolean => model?.playMotion(group, index) ?? false,
+    getPreviewControls: (): CubismPreviewControls | null => input.preview && model ? model.previewControls() : null,
     setExpression: (name: string): void => model?.setExpression(name),
     setMouthOpen: (value: number): void => {
       mouthOpen = unit(value)

@@ -7,6 +7,7 @@ import type { BootRuntime } from './boot'
 import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../shared/types'
 import { runPhase4ConsoleQa } from './phase4-console-qa'
 import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
+import { runCubismConsoleQa } from './cubism-console-qa'
 
 type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'>
 
@@ -40,6 +41,7 @@ export interface Phase4QaInput {
   readonly live?: boolean
   readonly consoleOnly?: boolean
   readonly editorOnly?: boolean
+  readonly cubismOnly?: boolean
   readonly lifecycleLive?: boolean
   readonly onEvidence: (evidence: Phase4QaEvidence) => void
 }
@@ -195,6 +197,7 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
   await mkdir(input.outputDir, { recursive: true })
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
   if (input.lifecycleLive) return runPhase4LifecycleQa(input)
+  if (input.cubismOnly) return runCubismConsoleQa(input)
   if (input.consoleOnly) return runPhase4ConsoleQa(input)
   let screenshotCount = 0
 

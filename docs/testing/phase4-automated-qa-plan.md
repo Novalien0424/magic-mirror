@@ -51,3 +51,30 @@ The native Windows picker itself is outside automated selection coverage.
   stop selected media, verify full rig and readable controls. No operator data.
 
 Results: [multi-avatar QA report](multi-avatar-qa-2026-09-06.md).
+
+## Dedicated Cubism Console coverage (2026-09-08)
+
+Use `npm run test:phase4:qa:cubism` for this boundary; the older full scene
+mode is not a substitute for the dedicated Console journey. Read the
+[independent QA runbook](cubism-console-2026-09-08.md#independent-qa-handoff)
+for Raven's explicit fixture path, commands, prior results and native checks.
+This mode hides Mirror: the portrait requirement above applies to visual/scene
+modes, not this one. Apply proportionate checks per AGENTS, not every historical
+plan step to every rerun. Never overlap normal Electron, QA or full `npm test`.
+
+- Discover/select/load built-in and managed rigs without draft publication or
+  live character switching. Import through production validation/managed copy;
+  cover cancellation, invalid directories and Console IPC bounds in focused tests.
+- Test every exported motion group/index (including the second Scene clip),
+  every expression and actual MOC parameter min/max/default readback. Preserve
+  exact range values; HTML slider quantization is a real failure.
+- Check timed-test cancellation, reset, unload, page leave, model replacement
+  and return to intact Ren rendering. Compare configuration before/after.
+- Supply `MIRROR_CUBISM_QA_MODEL` for Raven; omission tests only Ren fixtures.
+  Inspect meaningful blink/beak/head poses; writable-but-unrigged parameters
+  are not evidence of visible artistic action.
+- Inspect captures and run native Windows selection/dialog/control checks.
+  DOM picker substitution is not native picker evidence. No physical speech,
+  hardware, camera tracking, Mac or phase-acceptance claim.
+
+Results and retained failed runs: [Cubism Console report](cubism-console-2026-09-08.md).

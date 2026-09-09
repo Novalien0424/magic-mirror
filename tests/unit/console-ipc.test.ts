@@ -65,6 +65,8 @@ interface RegisteredIpc {
 }
 
 interface HarnessOptions {
+  readonly saveAvatarModelLabel?: (request: import('../../src/shared/avatar-library').AvatarLibraryLabelRequest) => Promise<import('../../src/shared/avatar-profiles').AvatarModel>
+  readonly listAvatarModels?: () => Promise<{ models: import('../../src/shared/avatar-profiles').AvatarModel[]; rejectedCount: number }>
   readonly draftSceneConfig?: Record<string, unknown>
   readonly getWakeInput?: () => import('../../src/shared/wake-input').WakeInputSnapshot
   readonly destroyed?: boolean
@@ -290,6 +292,8 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
   }
 
   registerIpcHandlers({
+    saveAvatarModelLabel: options.saveAvatarModelLabel,
+    listAvatarModels: options.listAvatarModels,
     getWakeInput: options.getWakeInput,
     ipcMain: {
       handle(channel: string, handler: IpcHandler): void {
@@ -352,6 +356,37 @@ function authorizedMirrorEvent(registered: RegisteredIpc): Record<string, unknow
 }
 
 describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
+  it('saves bounded library labels only from Console and redacts failures', async () => {
+    const save = vi.fn(async () => ({ id: 'model-test', name: 'Raven · v10', manifestFileName: 'raven.model3.json', files: [] }))
+    const h = makeHarness({ saveAvatarModelLabel: save })
+    const handler = h.handlers.get('console:save-avatar-model-label')!
+    const request = { id: 'model-test', name: 'Raven', version: 'v10' }
+    expect(await handler(authorizedMirrorEvent(h), request)).toMatchObject({ ok: false, reason: 'cause=sender_rejected' })
+    expect(await handler(authorizedEvent(h), { ...request, path: 'outside' })).toMatchObject({ ok: false, reason: 'cause=payload_schema_invalid' })
+    expect(await handler(authorizedEvent(h), request, 'extra')).toMatchObject({ ok: false })
+    expect(save).not.toHaveBeenCalled()
+    expect(await handler(authorizedEvent(h), request)).toMatchObject({ ok: true, value: { name: 'Raven · v10' } })
+    const broken = makeHarness({ saveAvatarModelLabel: async () => { throw new Error(TEST_PRIVATE_MEMORY_SENTINEL) } })
+    const failed = await broken.handlers.get('console:save-avatar-model-label')!(authorizedEvent(broken), request)
+    expect(failed).toMatchObject({ ok: false, reason: 'cause=runtime_action_failed' })
+    expect(JSON.stringify(failed)).not.toContain(TEST_PRIVATE_MEMORY_SENTINEL)
+  })
+  it('lists rig metadata only for the Console with no caller-supplied path', async () => {
+    const list = vi.fn(async () => ({ models: [], rejectedCount: 1 }))
+    const registered = makeHarness({ listAvatarModels: list })
+    const handler = registered.handlers.get('console:list-avatar-models')!
+    expect(await handler(authorizedEvent(registered))).toEqual({ ok: true, value: { models: [], rejectedCount: 1 } })
+    expect(await handler(authorizedMirrorEvent(registered))).toMatchObject({ ok: false, reason: 'cause=sender_rejected' })
+    expect(await handler(authorizedEvent(registered), { path: '../' })).toMatchObject({ ok: false, reason: 'cause=payload_schema_invalid' })
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+  it('reports a library failure without returning raw filesystem errors', async () => {
+    const registered = makeHarness({ listAvatarModels: async () => { throw new Error(TEST_PRIVATE_MEMORY_SENTINEL) } })
+    const response = await registered.handlers.get('console:list-avatar-models')!(authorizedEvent(registered))
+    expect(response).toMatchObject({ ok: false, reason: 'cause=runtime_action_failed' })
+    expectNoSensitiveOutput(response)
+    expectNoSensitiveOutput(registered.events)
+  })
   it('registers the 9A Console channels while preserving Task 8 snapshot, simulate, ready, and Mirror contracts', async () => {
     const registered = makeHarness()
 

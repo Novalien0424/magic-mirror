@@ -8,6 +8,7 @@ import type {
 import { computePortraitLayout, type PortraitLayout } from './portrait-layout'
 
 export interface AvatarCanvasProps {
+  readonly preview?: boolean
   readonly model?: import('../../shared/avatar-profiles').AvatarModelReference
   readonly embedded?: boolean
   readonly state: AvatarState
@@ -26,6 +27,7 @@ function currentLayout(host?: HTMLElement | null): PortraitLayout {
 }
 
 export function AvatarCanvas({
+  preview = false,
   model,
   embedded = false,
   state,
@@ -75,6 +77,7 @@ export function AvatarCanvas({
       ({ createCubismAvatarRenderer }) => {
         if (!mounted) return
         renderer = createCubismAvatarRenderer({
+          preview,
           ...(model ? { assetBaseUrl: `magic-mirror-media://avatar/${model.id}/`, manifestFileName: model.manifestFileName } : {}),
           canvas,
           eventSink: (event) => {
