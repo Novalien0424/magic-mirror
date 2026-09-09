@@ -17,6 +17,10 @@ const PACKAGE_JSON = JSON.parse(readFileSync(
 )) as { scripts?: Record<string, string> }
 
 describe('Phase 4 live QA runner', () => {
+  it('creates an owned run before fixtures and finishes its marker only after Electron closes', () => {
+    expect(RUNNER_SOURCE.indexOf('await createQaArtifact(repoRoot, stamp)')).toBeLessThan(RUNNER_SOURCE.indexOf('await Promise.all([mkdir'))
+    expect(RUNNER_SOURCE.indexOf('await finishQaArtifact(repoRoot, stamp, exitCode)')).toBeGreaterThan(RUNNER_SOURCE.indexOf("child.once('close'"))
+  })
   it.each([['--unknown'], ['--manual', '--live'], ['--editor', '--console'], ['--live', '--live']])(
     'rejects ambiguous or unknown modes before any Electron launch: %j', (...args) => {
       const run = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/run-phase4-qa.mjs', import.meta.url)), ...args], { encoding: 'utf8', windowsHide: true })

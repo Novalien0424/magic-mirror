@@ -1,5 +1,16 @@
 # Magic Mirror — Current handoff
 
+## QA artifact ownership — 2026-09-10
+
+New Phase 4 runs receive exclusive ownership markers, completion status and
+an explicit review record before scoped deletion. Cleanup defaults to dry run;
+unfinished/unmarked runs, changed evidence and filesystem links are rejected.
+Harness, CLI, tests and QA skill updated under explicit user authority.
+[Workflow and proof](docs/testing/qa-artifact-cleanup.md): **21 tests / 2 files,
+exit 0**, both script syntax checks and whitespace check passed. No Electron
+restart or product change. Existing unmarked profile QA artifacts remain
+retained; this workflow does not bypass their earlier tool-policy rejection.
+
 ## Profile Console Windows delivery — 2026-09-09 23:36 Asia/Taipei
 
 Console now uses Mirror / Avatars / System. Avatar profiles own Persona,

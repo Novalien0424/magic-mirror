@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
+import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles']
@@ -29,7 +30,7 @@ const buildProvenance = await verifyBuild(repoRoot).catch(() => {
 })
 
 const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-const root = resolve(repoRoot, '.artifacts', 'phase4-qa', stamp)
+const root = await createQaArtifact(repoRoot, stamp)
 const userDataDir = join(root, 'user-data')
 const outputDir = join(root, 'screenshots')
 const configDir = join(userDataDir, 'config')
@@ -271,6 +272,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
   })
 })
 const exitCode = timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
+await finishQaArtifact(repoRoot, stamp, exitCode)
 
 process.stdout.write(`${JSON.stringify({ marker: 'PHASE4_QA_ARTIFACTS', root, outputDir, exit: exitCode, timedOut, resultCount })}\n`)
 process.exitCode = exitCode
