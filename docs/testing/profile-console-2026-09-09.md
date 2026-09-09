@@ -143,6 +143,12 @@ Cleanup remains incomplete. Operator user data and pre-existing artifacts are
 unchanged. The written evidence is complete enough to remove these exact
 directories once policy permits it.
 
+On 2026-09-10 the user explicitly reauthorized cleanup. Rechecked all 13
+absolute directory paths and confirmed only the normal operator Electron
+runtime was active. The literal-path PowerShell deletion was again rejected
+before execution with "blocked by policy". No files were deleted; the remaining
+block is tool policy, not missing user authorization.
+
 ## Windows deployment and Git delivery
 
 The verified 23:27 build was restored as the normal canonical Windows app at

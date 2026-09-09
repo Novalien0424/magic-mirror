@@ -32,6 +32,11 @@ ignored; exact run IDs are in the delivery report. Next action: remove those
 exact directories when policy permits. Earlier sections below are historical;
 existing human acoustic/performance gates remain open.
 
+Cleanup retry, 2026-09-10: user explicitly reauthorized deletion. All 13 exact
+paths were rechecked; the tool again rejected deletion before execution with
+"blocked by policy". Nothing deleted; normal Main 46096 left running. No further
+user permission is needed; tool policy must permit the operation.
+
 ## Committed Windows deployment — 2026-09-09 16:39 Asia/Taipei
 
 Product commit **bbd0256** contains Voice Studio, shared processed Realtime
