@@ -1,5 +1,26 @@
 # Magic Mirror — Current handoff
 
+## Committed Windows deployment — 2026-09-09 16:39 Asia/Taipei
+
+Product commit **bbd0256** contains Voice Studio, shared processed Realtime
+output, Cubism preview loops, retained operator instructions/config and research,
+and sample provenance. Delivery target: **origin/main**; the accompanying
+delivery record is committed with it. Verify remote tip against HEAD.
+
+Fresh `npm test`: **938 tests / 102 files, exit 0** (including Electron smoke).
+Node/web typechecks, build and build/source fingerprint check: **exit 0**.
+Normal canonical Windows Electron Main **38996**, started **16:36:44**, runs
+that build; Mirror/Console loaded and ready, Mirror shown, smoke off. Runtime
+is left running. [Delivery evidence](docs/testing/voice-studio-delivery-2026-09-09.md).
+
+All Git-eligible changes are included. Downloaded Mixkit WAV/WebM fixtures stay
+local under explicit Git ignores because this repository is public; their
+source/processing notes and the project-owned crop image are committed.
+Existing ignored secrets, generated output and large editable assets remain
+local. No operator draft publication, installer/Mac deployment or phase promotion.
+Next: human default/Raven sound tuning and the remaining acoustic/performance
+checks in the implementation report. Earlier runtime/commit states below are historical.
+
 ## Voice Studio delivery — 2026-09-09 15:49 Asia/Taipei
 
 Implemented the operator-authorized single-library voice plan locally:
