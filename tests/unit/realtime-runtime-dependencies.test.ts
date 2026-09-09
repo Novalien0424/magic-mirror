@@ -427,7 +427,8 @@ describe('Realtime runtime dependency composition core', () => {
     expect(sessionInput.eventSink).toBe(fixture.sessionEventSink)
     expect(sessionInput.onFailure).toBe(fixture.onFailure)
     expect(sessionInput.onReturnToDormant).toBe(onReturnToDormant)
-    expect(sessionInput.onAudioActivity).toBe(onAudioActivity)
+    ;(sessionInput.onAudioActivity as (activity: string) => void)('output_started')
+    expect(onAudioActivity).toHaveBeenCalledWith('output_started')
     expect(JSON.stringify(fixture.sessionEventSink.mock.calls)).not.toContain(
       bundle.clientSecret,
     )
@@ -702,7 +703,7 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
       onAudioOutputDisposed,
     })
 
-    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput())
+    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
 
     expect(onAudioOutputAvailable).toHaveBeenCalledOnce()
     expect(onAudioOutputAvailable).toHaveBeenCalledWith(audioFixture.output)
@@ -723,7 +724,7 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
 
     expect(fixture.createAudioOutput).not.toHaveBeenCalled()
 
-    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput())
+    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
     const returnedAnalyser = returnedAudioOutput.analyser as unknown as {
       readonly readPeakLevel: () => number
     }
@@ -742,7 +743,7 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
     const audioFixture = makeAudioAnalyserFixture()
     fixture.createAudioOutput.mockReturnValue(audioFixture.output)
     const dependencies = createRealtimeRuntimeOwnerDependencies(fixture.input)
-    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput())
+    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
     const returnedAnalyser = returnedAudioOutput.analyser as unknown as {
       readonly readPeakLevel: () => number
     }
@@ -774,7 +775,7 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
     const audioFixture = makeAudioAnalyserFixture()
     fixture.createAudioOutput.mockReturnValue(audioFixture.output)
     const dependencies = createRealtimeRuntimeOwnerDependencies(fixture.input)
-    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput())
+    const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
 
     expect(returnedAudioOutput.dispose).toBe(audioFixture.dispose)
 

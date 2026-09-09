@@ -1,5 +1,53 @@
 # Magic Mirror — Current handoff
 
+## Voice Studio delivery — 2026-09-09 15:49 Asia/Taipei
+
+Implemented the operator-authorized single-library voice plan locally:
+Voice Studio, per-avatar voice/speed/style and DSP controls, Ethereal/Dark oracle
+presets, local A/B/loop and isolated provider audition, frozen session settings,
+and one processed Realtime audio output. Exact Signalsmith Stretch 1.3.2; local
+WASM/worklet asset and MIT notice. Active operator configuration not published.
+
+User requested relaxing the delay standard: p95 target **<=180 ms**. Actual
+20-pulse loopback-WebRTC p95 **149.333 ms**, engine estimate 146 ms. Strengthened
+immediate reset initially exposed native-node stale audio; native+WASM reset
+fixed it, identical proof now **exit 0**, stale/muted RMS **0**. Failed evidence
+retained. [Implementation, proof, UI evidence and remaining gates](docs/testing/voice-studio-implementation-2026-09-09.md).
+
+Checks: **779 tests / 79 files**, Node/web typechecks, build and local Console QA
+all **exit 0**. Actual provider auditions at **0.75/1/1.25** completed, exit 0.
+Final preview cleanup/Console-audio restoration check: six tests, exit 0.
+Default/Raven screenshots inspected. Human bilingual sound tuning, physical
+speaker/echo and interruption checks, long-run performance and Mac evidence
+remain open; no phase acceptance/promotion.
+
+Claude-in-Codex actual user-level launcher is corrected. Fresh MCP from actual
+TOML passes ready/status/result/terminal cancel, exit 0; one Fable/high review
+recovered (concerns, USD 0.757796). Existing attached connection requires a
+Codex restart to adopt that launcher. [Repair](docs/testing/claude-in-codex-windows-repair-2026-09-09.md),
+[review](docs/testing/avatar-voice-effects-design-review-2026-09-09.md).
+No new review is needed merely to repeat those findings.
+
+Runtime: isolated QA exited; latest process check found **no Electron**. No
+normal app was running at voice clock-in. Changes remain local/uncommitted;
+prior operator/config/motion-loop edits preserved. No push or config publication.
+Next: listen and tune default/Raven in Voice Studio with intended speakerphone,
+then capture the outstanding acoustic/performance evidence before acceptance.
+[Superseded voice/repair handoffs](docs/archive/voice-handoffs-through-2026-09-09-clockin.md).
+
+## Console preview loops — 2026-09-09
+
+Preview motions now repeat; expressions retain their SDK pose hold. Active
+buttons and status explain each mode. Normal Mirror one-shot playback remains
+unchanged. Focused 17 tests / 3 files, typechecks and build exit 0. Initial
+Console QA caught SDK V2 loop-boundary completion; callback guard corrected,
+rerun **224 checks**, exit 0. Updated normal Main **47112** running; native
+Raven v10 Waking remained active after 18 seconds and expression replacement
+worked. Saved Draft 64 / Active v12 hashes unchanged. No publication or rig
+edits. Changes for this follow-up are local/uncommitted; prior delivery below
+does not include preview looping.
+[Implementation and QA handoff](docs/testing/cubism-loop-preview-2026-09-09.md).
+
 ## Committed Windows delivery — 2026-09-09
 
 Product commit **979a0ca** contains the versioned Cubism Console, framing fix,

@@ -6,6 +6,15 @@ deployment remain pending. No Phase 5 engineering is included.
 
 ## Execution and acceptance
 
+Voice Studio extension: after building, set `MIRROR_VOICE_QA=1` and run
+`npm run test:phase4:qa:editor` for isolated default/Raven controls, approved
+synthetic local sample, A/B/loop/stop and draft isolation. Add
+`MIRROR_VOICE_QA_LIVE=1` only for an authorized provider-backed run at
+0.75/1/1.25 speeds. Remove both environment variables afterwards. Never overlap
+these Electron runs with normal runtime or other Electron QA. The standalone
+`node scripts/run-voice-effects-proof.cjs` measures actual loopback-WebRTC DSP
+timing and reset with metadata-only synthetic signals. [Voice evidence](voice-studio-implementation-2026-09-09.md).
+
 1. Verify the canonical Electron firewall rules and the connected displays.
    Require the Mirror on the portrait display; keep Console on another display.
 2. Extend the isolated Phase 4 harness with a Console mode. Substitute only
@@ -76,5 +85,12 @@ plan step to every rerun. Never overlap normal Electron, QA or full `npm test`.
 - Inspect captures and run native Windows selection/dialog/control checks.
   DOM picker substitution is not native picker evidence. No physical speech,
   hardware, camera tracking, Mac or phase-acceptance claim.
+
+September 9 loop regression: with Raven v10 supplied, the dedicated harness
+also keeps the authored 3-second Waking clip active beyond 6.5 seconds,
+compares expression parameter readback after settling and a further 5.5-second
+hold, and checks that Stop/reset clears the active loop. Motion buttons now
+repeat indefinitely in Console only; expressions hold their pose. See
+[loop-preview evidence](cubism-loop-preview-2026-09-09.md).
 
 Results and retained failed runs: [Cubism Console report](cubism-console-2026-09-08.md).

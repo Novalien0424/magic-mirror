@@ -14,6 +14,7 @@
 .cubism-studio__controls fieldset { min-width: 0; margin: 0; }
 .cubism-studio__buttons { display: flex; flex-wrap: wrap; gap: .45rem; }
 .cubism-studio__buttons button { padding: .5rem .65rem; }
+.cubism-studio__buttons button[aria-pressed="true"] { background: #245e87; color: #fff; outline: 2px solid #71c9f0; outline-offset: 1px; }
 .cubism-studio__parameter { border-top: 1px solid #364a59; padding: .9rem 0; }
 .cubism-studio__parameter small { display: block; color: #aec3d3; overflow-wrap: anywhere; }
 .cubism-studio__parameter-input { display: flex; align-items: center; gap: 1rem; margin: .5rem 0; }
@@ -801,3 +802,10 @@ th {
     grid-template-columns: 1fr;
   }
 }
+/* Voice controls share the existing per-avatar draft and portrait preview. */
+.voice-studio__layout { display: grid; grid-template-columns: minmax(340px, 1.4fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
+.voice-studio__preview { display: grid; gap: 12px; position: sticky; top: 16px; }
+.voice-studio .presentation-preview { width: 100%; max-width: 340px; height: 440px; margin: 0 auto; }
+.voice-studio fieldset { margin-bottom: 16px; }
+.voice-studio input[type="file"] { max-width: 100%; }
+@media (max-width: 850px) { .voice-studio__layout { grid-template-columns: 1fr; } .voice-studio__preview { position: static; } }

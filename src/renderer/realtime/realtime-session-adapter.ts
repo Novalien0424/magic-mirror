@@ -74,6 +74,7 @@ export interface RealtimeSessionDependencies {
 }
 
 export interface CreateRealtimeSessionInput {
+  readonly preview?: boolean
   readonly avatar?: Readonly<AvatarSessionSettings>
   readonly wakeGreeting?: string
   readonly sleepFarewell?: string
@@ -447,8 +448,9 @@ export function createRealtimeSession(
     })
     const agent = new agentConstructor({
       name: 'magic-mirror-realtime',
-      instructions: buildAvatarPrompt(input.avatar ?? { name: 'Magic Mirror', personality: 'Be a helpful conversational companion.', speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
-      tools: [returnToDormant],
+      instructions: input.preview ? `Read the supplied synthetic audition text clearly. Delivery style: ${input.avatar?.speakingStyle ?? ''}`
+        : buildAvatarPrompt(input.avatar ?? { name: 'Magic Mirror', personality: 'Be a helpful conversational companion.', speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
+      tools: input.preview ? [] : [returnToDormant],
     })
     const sessionOptions = {
       transport,
@@ -458,7 +460,7 @@ export function createRealtimeSession(
       config: {
         tracing: null,
         audio: {
-          input: {
+          input: input.preview ? { turnDetection: null, transcription: null } : {
             noiseReduction: { type: 'far_field' },
             transcription: {
               model: input.snapshot.inputTranscription,
@@ -468,7 +470,7 @@ export function createRealtimeSession(
             },
             turnDetection,
           },
-          output: { voice: input.snapshot.voice },
+          output: { voice: input.snapshot.voice, speed: input.snapshot.voiceSpeed ?? 1 },
         },
         reasoning: {
           effort: input.snapshot.reasoningEffort,
@@ -834,6 +836,12 @@ export function createRealtimeSession(
     )
     try {
       await session.connect({ apiKey: clientSecret })
+      if (closed) {
+        // Stop may run while the SDK is still establishing its transport.
+        // Close again after that late completion so no connection survives it.
+        await session.close()
+        throw new RealtimeSessionAdapterError('session_closed')
+      }
       if (failureReported) {
         throw new RealtimeSessionAdapterError('connect_failed')
       }

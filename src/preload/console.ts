@@ -52,6 +52,13 @@ const FINALIZE_VISUAL_CHANNEL = 'console:finalize-visual' as const
 const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
+  acquireVoicePreview(request) { return ipcRenderer.invoke('console:voice-preview-acquire', request) },
+  releaseVoicePreview(token) { return ipcRenderer.invoke('console:voice-preview-release', token) },
+  onVoicePreviewCancelled(listener) {
+    const handler = (_event: IpcRendererEvent, reason: string): void => listener(reason)
+    ipcRenderer.on('console:voice-preview-cancelled', handler)
+    return () => ipcRenderer.removeListener('console:voice-preview-cancelled', handler)
+  },
   importAvatarModel() { return ipcRenderer.invoke('console:import-avatar-model') },
   listAvatarModels() { return ipcRenderer.invoke('console:list-avatar-models') },
   saveAvatarModelLabel(request) { return ipcRenderer.invoke('console:save-avatar-model-label', request) },

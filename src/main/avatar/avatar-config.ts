@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { AVATAR_VOICES, canUseAvatarResource, type AvatarCatalog } from '../../shared/avatar-profiles'
+import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
+import { voiceEffectsSchema } from '../../shared/voice-effects-schema'
 import { parsePresentation, type PresentationConfig } from '../../shared/presentation'
 import type { MirrorConfig } from '../../shared/types'
 import { sceneCollectionsSchema, sceneDefinitionSchema, spellConfigSchema } from '../scenes/scene-config'
@@ -16,6 +18,8 @@ export const avatarCatalogSchema = z.object({
     idleSeconds: z.number().int().min(1).max(86400), modelId: id,
     presentation: z.custom<PresentationConfig>(value => value !== undefined && parsePresentation(value) !== null),
     scenes: z.array(sceneDefinitionSchema).max(128), spells: z.array(spellConfigSchema).max(128),
+    voiceSpeed: z.number().finite().min(0.5).max(1.5).default(1),
+    voiceEffects: voiceEffectsSchema.default(DEFAULT_VOICE_EFFECTS),
   }).strict()).min(1).max(32),
   locks: z.array(z.object({ kind: z.enum(['visual', 'music', 'action']), resourceId: id, avatarId: id }).strict()).max(1024),
   models: z.array(z.object({ id, name: z.string().trim().min(1).max(80),

@@ -21,7 +21,7 @@ import {
 } from './avatar-model-source'
 import type { AvatarState } from './avatar-state'
 import { createAvatarMvp } from './avatar-framing'
-import { clampPreviewParameter, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
+import { clampPreviewParameter, configureMotionPlayback, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
 
 const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
@@ -317,18 +317,18 @@ class MagicMirrorCubismModel extends CubismUserModel {
     this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
   }
 
-  playMotion(group: string, index = 0): boolean {
+  playMotion(group: string, index = 0, loop = false): boolean {
     if (this.#state === 'OfflineLoop') return false
     const motion = this.#motions.get(motionKey(group, index))
     if (motion === undefined) return false
     this.#oneShotGroup = group
     this.#resumeLifecycleMotion = false
-    motion.setLoop(false)
+    configureMotionPlayback(motion, loop)
     motion.setBeganMotionHandler(() => {
-      if (this.#oneShotGroup === group) this.#motionEventSink('started', group)
+      if (!loop && this.#oneShotGroup === group) this.#motionEventSink('started', group)
     })
     motion.setFinishedMotionHandler(() => {
-      if (this.#oneShotGroup !== group) return
+      if (loop || this.#oneShotGroup !== group) return
       this.#oneShotGroup = null
       this.#resumeLifecycleMotion = true
       motion.setBeganMotionHandler(() => {})
@@ -336,8 +336,11 @@ class MagicMirrorCubismModel extends CubismUserModel {
       this.#motionEventSink('completed', group)
     })
     this._motionManager.stopAllMotions()
-    return this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+    const started = this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
       !== InvalidMotionQueueEntryHandleValue
+    // Emit once here; SDK V2 finished callbacks also signal loop boundaries.
+    if (started && loop) this.#motionEventSink('started', group)
+    return started
   }
 
   setExpression(name: string): void {
@@ -604,7 +607,7 @@ export function createCubismAvatarRenderer(
       state = next
       model?.setState(next)
     },
-    playMotion: (group: string, index = 0): boolean => model?.playMotion(group, index) ?? false,
+    playMotion: (group: string, index = 0): boolean => model?.playMotion(group, index, input.preview === true) ?? false,
     getPreviewControls: (): CubismPreviewControls | null => input.preview && model ? model.previewControls() : null,
     setExpression: (name: string): void => model?.setExpression(name),
     setMouthOpen: (value: number): void => {

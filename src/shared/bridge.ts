@@ -253,6 +253,9 @@ export interface MirrorBridge extends SharedRendererBridge {
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
+  acquireVoicePreview?(request: import('./voice-preview').VoicePreviewRequest): Promise<import('./voice-preview').VoicePreviewResult>
+  releaseVoicePreview?(token: string): Promise<boolean>
+  onVoicePreviewCancelled?(listener: (reason: string) => void): () => void
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
   startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
   disconnect(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>

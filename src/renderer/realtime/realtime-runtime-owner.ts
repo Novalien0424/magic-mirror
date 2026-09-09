@@ -128,7 +128,7 @@ export type RealtimeRuntimeEventSink = (
 
 export interface RealtimeRuntimeOwnerDependencies {
   readonly acquireMediaStream: () => MaybePromise<MediaStream>
-  readonly createAudioOutput: () => MaybePromise<RealtimeRuntimeAudioOutput>
+  readonly createAudioOutput: (bundle: Readonly<RealtimeSessionStartBundleValue>) => MaybePromise<RealtimeRuntimeAudioOutput>
   readonly createSession: (
     bundle: Readonly<RealtimeSessionStartBundleValue>,
     stream: MediaStream,
@@ -440,7 +440,7 @@ export function createRealtimeRuntimeOwner(
     try {
       partial.stream = await dependencies.acquireMediaStream()
       stage = 'audio_output'
-      partial.audioOutput = await dependencies.createAudioOutput()
+      partial.audioOutput = await dependencies.createAudioOutput(bundle)
       stage = 'session_create'
       partial.session = await dependencies.createSession(
         bundle,
@@ -550,7 +550,7 @@ export function createRealtimeRuntimeOwner(
     let nextCleanup: RealtimeRuntimeCleanup | undefined
 
     try {
-      nextAudio = await dependencies.createAudioOutput()
+      nextAudio = await dependencies.createAudioOutput(bundle)
       nextSession = await dependencies.createSession(bundle, old.stream, nextAudio.audioElement)
       nextPlayback = await dependencies.createPlaybackTransport(nextSession)
       nextCleanup = await dependencies.createCleanup(nextSession)

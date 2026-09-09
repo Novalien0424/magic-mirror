@@ -48,8 +48,9 @@ import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
 import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type AvatarProfile } from '../../shared/avatar-profiles'
 import { ResourceAccess } from './ResourceAccess'
 import { CubismStudio } from './CubismStudio'
+import { VoiceStudio } from './VoiceStudio'
 
-const PAGES = ['Overview', 'Avatar / Audio', 'Live2D Cubism', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const PAGES = ['Overview', 'Avatar / Audio', 'Live2D Cubism', 'Voice Studio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
 const MODULES = [
   'app',
   'openai',
@@ -1281,6 +1282,7 @@ interface ModelsPanelProps {
 
 
 interface ScenesPanelProps {
+  readonly voiceOnly?: boolean
   readonly visible?: boolean
   readonly dialogueOnly?: boolean
   readonly state: ConfigState
@@ -1296,6 +1298,7 @@ export function ScenesPanel({
   onChanged,
   visible = true,
   dialogueOnly = false,
+  voiceOnly = false,
 }: ScenesPanelProps): React.JSX.Element {
   // Keep the editor mounted while Save/Test/Publish refresh their read model.
   const lastPayload = useRef<ConsoleConfigPayload | null>(null)
@@ -1493,7 +1496,7 @@ export function ScenesPanel({
       <div className="console__panel-heading">
         <div>
           <p className="console__eyebrow">Avatar workspace</p>
-          <h2 id="console-scenes">{dialogueOnly ? 'Character & voice' : 'Scenes & appearance'}</h2>
+          <h2 id="console-scenes">{voiceOnly ? 'Voice Studio' : dialogueOnly ? 'Character & voice' : 'Scenes & appearance'}</h2>
         </div>
         <span hidden={dialogueOnly} className="console__status console__status--mock">
           Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical'
@@ -1532,12 +1535,13 @@ export function ScenesPanel({
         <span className="console__muted">Editing does not switch the mirror. Load a published avatar while Dormant.</span>
       </div> : null}
 
-      {dialogueOnly ? <nav className="console__subnav" aria-label="Avatar settings">
+      {visible && voiceOnly && editingAvatar ? <VoiceStudio key={editingId} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
+      {dialogueOnly && !voiceOnly ? <nav className="console__subnav" aria-label="Avatar settings">
         <button type="button" aria-pressed={avatarView === 'character'} onClick={() => setAvatarView('character')}>Character & voice</button>
         <button type="button" aria-pressed={avatarView === 'appearance'} onClick={() => setAvatarView('appearance')}>Appearance</button>
       </nav> : null}
-      {dialogueOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
-      {dialogueOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <details><summary>Cubism model</summary>
+      {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
+      {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <details><summary>Cubism model</summary>
         <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
           const model = availableModels.find(item => item.id === modelId)
@@ -1562,7 +1566,7 @@ export function ScenesPanel({
         <p className="console__muted">Select a model3.json beside its assets. Requires EyeBlink/LipSync, expressions, physics and Dormant / Waking / Listening / Thinking / Speaking / Scene / Suspending motion groups. Files are copied locally; your originals stay unchanged.</p>
       </details> : null}
 
-      {dialogueOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
+      {dialogueOnly && !voiceOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
         <label>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></label>
         <label>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></label>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
@@ -1580,7 +1584,7 @@ export function ScenesPanel({
         saveUnavailableReason={saveUnavailableReason} testUnavailableReason={testUnavailableReason} result={result}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
         onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
-      {visible && resourceDraft && (dialogueOnly ? avatarView === 'appearance' : editorView === 'presentation') ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
+      {visible && resourceDraft && (dialogueOnly ? !voiceOnly && avatarView === 'appearance' : editorView === 'presentation') ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
       {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
         <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
         {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
@@ -2131,7 +2135,7 @@ export function App(): React.JSX.Element {
       />
 
       <nav className="console__tabs" aria-label="Console pages">
-        {(['Overview', 'Scenes', 'Avatar / Audio', 'Live2D Cubism'] as const).map(page => <button key={page} type="button"
+        {(['Overview', 'Scenes', 'Avatar / Audio', 'Live2D Cubism', 'Voice Studio'] as const).map(page => <button key={page} type="button"
           className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
           aria-current={activePage === page ? 'page' : undefined} onClick={() => setActivePage(page)}>{page}</button>)}
         {([['Settings', ['Config', 'Models']], ['Diagnostics', ['Events', 'Simulator', 'Phase Tests']]] as const).map(([label, pages]) =>
@@ -2148,10 +2152,11 @@ export function App(): React.JSX.Element {
         <div hidden={activePage !== 'Overview'}>
           <OverviewPanel state={overviewState} configState={configState} />
         </div>
-        <div hidden={activePage !== 'Scenes' && activePage !== 'Avatar / Audio'}>
+        <div hidden={activePage !== 'Scenes' && activePage !== 'Avatar / Audio' && activePage !== 'Voice Studio'}>
           <ScenesPanel
-            visible={activePage === 'Scenes' || activePage === 'Avatar / Audio'}
-            dialogueOnly={activePage === 'Avatar / Audio'}
+            visible={activePage === 'Scenes' || activePage === 'Avatar / Audio' || activePage === 'Voice Studio'}
+            dialogueOnly={activePage === 'Avatar / Audio' || activePage === 'Voice Studio'}
+            voiceOnly={activePage === 'Voice Studio'}
             state={configState}
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}

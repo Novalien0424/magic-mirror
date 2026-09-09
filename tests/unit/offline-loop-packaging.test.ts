@@ -530,10 +530,10 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(packageJson.dependencies.decibri).toBe('5.7.0')
     expect(packageJson.scripts['generate:offline-loop']).toBe('node scripts/generate-offline-loop.mjs')
     expect(packageJson.scripts.predev).toBe(
-      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio',
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs',
     )
     expect(packageJson.scripts.prebuild).toBe(
-      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/qa-build.mjs --begin',
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs && node scripts/qa-build.mjs --begin',
     )
     expect(packageJson.scripts.postbuild).toBe('node scripts/qa-build.mjs --finish')
     expect(packageJson.scripts.package).toBe('electron-builder --dir --publish never')

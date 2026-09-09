@@ -429,6 +429,7 @@ function createMirrorRealtimeRuntimeOwner(
     onAudioOutputAvailable: avatarAudio.onOutputAvailable,
     onAudioOutputDisposed: avatarAudio.onOutputDisposed,
     onAudioActivity: avatarAudio.onActivity,
+    onAudioDegraded: reason => reportMirrorRealtimeMetadata(bridge, 'avatar', { status: 'degraded', reason }),
     playbackCompletion: {
       scheduler: createBrowserPlaybackScheduler(),
       fallbackAfterMs: REALTIME_PLAYBACK_FALLBACK_AFTER_MS,

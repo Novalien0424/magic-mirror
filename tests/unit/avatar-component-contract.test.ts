@@ -9,6 +9,14 @@ function read(path: string): string {
 }
 
 describe('portrait visitor avatar component', () => {
+  it('restricts repeated action playback to the Console preview', () => {
+    const renderer = read('src/renderer/avatar/cubism-avatar.ts')
+    expect(renderer).toContain('model?.playMotion(group, index, input.preview === true)')
+    expect(renderer).toContain('configureMotionPlayback(motion, loop)')
+    expect(renderer).toContain('if (loop || this.#oneShotGroup !== group) return')
+    expect(renderer).toContain("if (started && loop) this.#motionEventSink('started', group)")
+  })
+
   it('renders the official Cubism canvas in a fixed 9:16 composition', () => {
     const component = read('src/renderer/avatar/AvatarCanvas.tsx')
     const styles = read('src/renderer/mirror/styles.css')

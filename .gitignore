@@ -28,6 +28,11 @@ assets/avatar/
 assets/music/
 assets/offline/
 
+# Downloaded Mixkit test media stays local; source/provenance notes are tracked.
+# The public repository does not redistribute standalone stock media files.
+/sample/_media/**/*.wav
+/sample/_media/**/*.webm
+
 # Raven master: track the runtime + inventory; editable sources/QA are local
 # out-of-band assets (see resources/avatar/Raven/README.md). No automatic LFS.
 /resources/avatar/Raven/v10/*

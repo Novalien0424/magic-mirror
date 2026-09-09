@@ -2,6 +2,7 @@ import { dialog } from 'electron'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
+import { runVoiceConsoleQa } from './voice-console-qa'
 
 // This driver runs only in the isolated Phase 4 QA process. It substitutes the
 // native file-picker selection; import, Chromium decode, edits, and publication
@@ -37,6 +38,7 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)
   let checkCount = 0
   let screenshotCount = 0
   let step = 'console_ready'

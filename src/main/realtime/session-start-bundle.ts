@@ -28,12 +28,18 @@ export interface RealtimeSessionStartBundleIssuer {
   issue(): Promise<Readonly<RealtimeSessionStartBundle>>
 }
 
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  return Object.freeze(value)
+}
+
 export function createRealtimeSessionStartBundleIssuer(
   options: RealtimeSessionStartBundleIssuerOptions,
 ): RealtimeSessionStartBundleIssuer {
   return {
     async issue(): Promise<Readonly<RealtimeSessionStartBundle>> {
-      const snapshot = Object.freeze({ ...options.getPublishedSessionModelSnapshot() })
+      const snapshot = deepFreeze(structuredClone(options.getPublishedSessionModelSnapshot()))
       const identity = Object.freeze({ ...options.getRealtimeSessionIdentity() })
       const avatar = options.getAvatarSettings ? Object.freeze({ ...options.getAvatarSettings() }) : undefined
       const brokerResult = await options.broker.issue({

@@ -15,6 +15,7 @@ const EXPECTED_TABS = [
   'Overview',
   'Avatar / Audio',
   'Live2D Cubism',
+  'Voice Studio',
   'Scenes',
   'Simulator',
   'Events',

@@ -1,5 +1,6 @@
 import { DEFAULT_PRESENTATION, type PresentationConfig } from './presentation'
 import type { MirrorConfig, SceneActionDefinition, SceneDefinition, SpellConfig } from './types'
+import { DEFAULT_VOICE_EFFECTS, type VoiceEffects } from './voice-effects'
 
 // Built-in Realtime voices; model IDs remain exclusively in versioned config.
 export const AVATAR_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'] as const
@@ -14,6 +15,9 @@ export interface AvatarProfile {
   presentation: PresentationConfig
   scenes: SceneDefinition[]
   spells: SpellConfig[]
+  /** Optional in source configs for backwards compatibility; Main normalizes it. */
+  voiceSpeed?: number
+  voiceEffects?: VoiceEffects
 }
 export interface AvatarResourceLock {
   kind: 'visual' | 'music' | 'action'
@@ -49,6 +53,7 @@ export function avatarCatalogFor(config: MirrorConfig): AvatarCatalog {
     speakingStyle: '', voice: config.voice, idleSeconds: config.idleSeconds, modelId: 'builtin-ren',
     presentation: { ...DEFAULT_PRESENTATION, ...config.presentation },
     scenes: structuredClone(config.scenes), spells: structuredClone(config.spells),
+    voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
   }] }
 }
 

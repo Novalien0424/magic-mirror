@@ -1,0 +1,98 @@
+[
+  {
+    "file": "bgm-forest-treasure-45s.wav",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "45.000000"
+    }
+  },
+  {
+    "file": "bgm-spirit-in-the-woods-45s.wav",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "45.000000"
+    }
+  },
+  {
+    "file": "sfx-harp-sweep.wav",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "sample_rate": "44100",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "6.330476"
+    }
+  },
+  {
+    "file": "sfx-light-rain.wav",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "sample_rate": "44100",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "39.374989"
+    }
+  },
+  {
+    "file": "sfx-magic-sparkle.wav",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "pcm_s16le",
+        "codec_type": "audio",
+        "sample_rate": "44100",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "3.500000"
+    }
+  },
+  {
+    "file": "video-rain-leaves-embedded-audio-25s.webm",
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "vp9",
+        "codec_type": "video",
+        "width": 720,
+        "height": 1280
+      },
+      {
+        "codec_name": "opus",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2
+      }
+    ],
+    "format": {
+      "duration": "25.008000"
+    }
+  }
+]

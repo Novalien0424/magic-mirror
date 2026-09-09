@@ -83,6 +83,26 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         await click(name); await wait("return status().startsWith('Expression:')")
         await delay(120); pass(name); expressions++
       }
+      // Raven Waking is authored finite (3 seconds): prove preview survives two cycles.
+      if (modelIndex === 2 && inventory.motionButtons.includes('Play motion Waking 1')) {
+        step = 'cubism_preview_motion_loop'
+        await click('Play motion Waking 1'); await delay(6500)
+        await wait("return b('Play motion Waking 1').getAttribute('aria-pressed') === 'true' && status().includes('looping')")
+        pass(); await snap('cubism-raven-looping.png')
+        step = 'cubism_preview_expression_hold'
+        const name = inventory.expressionButtons.at(-1)!
+        await click(name); await delay(1500)
+        const pose = await evaluate<string>("return JSON.stringify([...p.querySelectorAll('output')].map(e=>e.textContent))")
+        await delay(5500)
+        const held = await evaluate<string>("return JSON.stringify([...p.querySelectorAll('output')].map(e=>e.textContent))")
+        if (pose !== held) throw new Error('cubism_expression_pose_not_held')
+        await wait(`return b(${JSON.stringify(name)}).getAttribute('aria-pressed') === 'true' && !p.querySelector('button[aria-label^="Play motion"][aria-pressed="true"]') && status().includes('held')`)
+        pass(); await snap('cubism-raven-expression-held.png')
+        step = 'cubism_preview_loop_reset'
+        await click('Play motion Waking 1'); await click('Stop / reset'); await delay(3500)
+        await wait("return !p.querySelector('button[aria-pressed=\"true\"]') && status() === 'Stopped · neutral pose'")
+        pass()
+      }
       await click('Stop / reset')
       for (const parameter of inventory.parameters) {
         step = `cubism_model_${modelIndex}_parameter`

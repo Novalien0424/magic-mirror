@@ -1,3 +1,11 @@
+import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
+
+/** Console repeats clips without fading in again at each loop boundary. */
+export function configureMotionPlayback(motion: Pick<CubismMotion, 'setLoop' | 'setLoopFadeIn'>, loop: boolean): void {
+  motion.setLoop(loop)
+  motion.setLoopFadeIn(!loop)
+}
+
 /** Public rig metadata only; parameter IDs originate in the loaded MOC. */
 export interface CubismParameter {
   id: string

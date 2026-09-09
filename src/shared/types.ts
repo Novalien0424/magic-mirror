@@ -262,6 +262,8 @@ export interface SessionModelSnapshot {
   sdkVersion: '0.16.1';
   realtimeDialogue: string; inputTranscription: string; memoryExtractor: string;
   voice: string; reasoningEffort: string; turnDetectionProfile: string;
+  voiceSpeed?: number;
+  voiceEffects?: import('./voice-effects').VoiceEffects;
   takenAt: string;
 }
 export interface JobModelSnapshot {

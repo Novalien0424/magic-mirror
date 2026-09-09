@@ -4,6 +4,7 @@ import { parseSceneTestScope } from '../shared/scene-test-scope'
 import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAvatarLibraryLabelRequest } from '../shared/avatar-library'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
+import { voiceEffectsSchema } from '../shared/voice-effects-schema'
 import type {
   AppSnapshot,
   MirrorEvent,
@@ -148,6 +149,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
   readonly importAvatarModel?: () => Promise<import('../shared/avatar-profiles').AvatarModel | null>
   readonly listAvatarModels?: () => Promise<import('../shared/avatar-library').AvatarLibrary>
@@ -589,6 +591,7 @@ const SESSION_SNAPSHOT_KEYS = [
   'turnDetectionProfile',
   'takenAt',
 ] as const
+const OPTIONAL_SESSION_SNAPSHOT_KEYS = ['voiceSpeed', 'voiceEffects'] as const
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
@@ -613,7 +616,9 @@ function isValidRealtimeSessionStartBundle(
   if ('avatar' in value && !parseAvatarSessionSettings(value.avatar)) return false
 
   const snapshot = readProperty(value, 'snapshot')
-  if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
+  if (!isRecord(snapshot)) return false
+  const snapshotKeys = OPTIONAL_SESSION_SNAPSHOT_KEYS.filter(key => Object.prototype.hasOwnProperty.call(snapshot, key))
+  if (!exactKeys(snapshot, [...SESSION_SNAPSHOT_KEYS, ...snapshotKeys])) return false
   if (
     typeof readProperty(snapshot, 'configVersion') !== 'number'
     || !Number.isSafeInteger(readProperty(snapshot, 'configVersion'))
@@ -622,6 +627,13 @@ function isValidRealtimeSessionStartBundle(
   ) {
     return false
   }
+  if (snapshotKeys.includes('voiceSpeed') && (
+    typeof readProperty(snapshot, 'voiceSpeed') !== 'number'
+    || !Number.isFinite(readProperty(snapshot, 'voiceSpeed'))
+    || (readProperty(snapshot, 'voiceSpeed') as number) < 0.5
+    || (readProperty(snapshot, 'voiceSpeed') as number) > 1.5
+  )) return false
+  if (snapshotKeys.includes('voiceEffects') && !voiceEffectsSchema.safeParse(readProperty(snapshot, 'voiceEffects')).success) return false
   for (const key of SESSION_SNAPSHOT_KEYS) {
     if (key === 'configVersion' || key === 'sdkVersion') continue
     if (!nonEmptyString(readProperty(snapshot, key))) return false
@@ -1199,6 +1211,17 @@ function sceneRendererCommand(
 
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneRuntimeControl {
   const { ipcMain, runtime, windows, telemetry } = options
+  ipcMain.handle('console:voice-preview-acquire', async (event, ...args) => {
+    const auth = authorizeSender(event, 'console', windows)
+    if (!auth.ok) { senderRejected(telemetry, auth.reason); return { ok: false, reason: 'unauthorized_sender' } }
+    if (args.length !== 1 || !options.voicePreview) return { ok: false, reason: 'voice_preview_unavailable' }
+    return options.voicePreview.acquire(args[0])
+  })
+  ipcMain.handle('console:voice-preview-release', (event, ...args) => {
+    const auth = authorizeSender(event, 'console', windows)
+    if (!auth.ok) { senderRejected(telemetry, auth.reason); return false }
+    return args.length === 1 && options.voicePreview?.release(args[0]) === true
+  })
   let avatarRuntime: AvatarRuntimeSnapshot = Object.freeze({
     status: 'not_ready',
     reason: 'avatar_renderer_not_ready',

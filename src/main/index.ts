@@ -15,6 +15,7 @@ import {
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import type { ImportedMedia, MediaImportEntry } from '../shared/media-import'
+import { createVoicePreviewLease, type VoicePreviewLease } from './realtime/voice-preview'
 import { bootSequence, type BootRuntime } from './boot'
 import { initializeAudioPreferences } from './audio-preferences'
 import { createCrashRecovery } from './crash-recovery'
@@ -668,6 +669,7 @@ void app.whenReady().then(async () => {
   const deferredCredentialEvents = createDeferredCredentialEventSink()
   initializeAudioPreferences(join(app.getPath('userData'), 'audio-devices.json'))
   const credentialSource = createEnvironmentCredentialSource()
+  let voicePreview: VoicePreviewLease | undefined
   const clientSecretBroker = createClientSecretBroker({
     credentialStore: credentialSource,
     events: deferredCredentialEvents.sink,
@@ -712,8 +714,10 @@ void app.whenReady().then(async () => {
       }
       return true
     },
-    dispatchRealtimeRuntimeCommand: (command) =>
-      dispatchMirrorRealtimeRuntimeCommand(command, windows),
+    dispatchRealtimeRuntimeCommand: (command) => {
+      if (command.operation === 'start') voicePreview?.preempt()
+      return dispatchMirrorRealtimeRuntimeCommand(command, windows)
+    },
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
@@ -819,7 +823,19 @@ void app.whenReady().then(async () => {
       return new Response(null, { status: 404 })
     }
   })
+  voicePreview = createVoicePreviewLease({
+    isDormant: () => runtime.snapshot().lifecycle === 'dormant',
+    snapshot: () => runtime.getPublishedSessionModelSnapshotForDiagnostics(),
+    broker: clientSecretBroker,
+    suppressOutput: () => windows.get('console')?.webContents.setAudioMuted(true),
+    enableOutput: () => windows.get('console')?.webContents.setAudioMuted(false),
+    notify: reason => {
+      windows.get('console')?.webContents.send('console:voice-preview-cancelled', reason)
+      runtime.telemetry.emit({ module: 'avatar', event: 'voice_preview_stopped', status: 'info', reason, source: 'runtime' })
+    },
+  })
   sceneRuntimeControl = registerIpcHandlers({
+    voicePreview,
     getWakeInput: () => wakeSupervisor?.snapshot().input,
     ipcMain,
     runtime,

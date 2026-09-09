@@ -4,6 +4,8 @@ export interface RealtimeAudioOutputDependencies {
 }
 
 export interface CreateRealtimeAudioOutputInput {
+  readonly voiceEffects?: import('../../shared/voice-effects').VoiceEffects
+  readonly onDegraded?: (reason: string) => void
   readonly dependencies?: Partial<RealtimeAudioOutputDependencies>
 }
 
@@ -63,6 +65,12 @@ export class RealtimeAudioOutputDisposalError extends Error {
 }
 
 export interface RealtimeAudioOutput {
+  readonly updateEffects?: (settings: import('../../shared/voice-effects').VoiceEffects) => Promise<void>
+  readonly sink?: { setSinkId(id: string): Promise<void> }
+  readonly completionAnalyser?: AnalyserNode
+  readonly waitForTail?: (signal?: AbortSignal) => Promise<void>
+  readonly handleActivity?: (activity: import('../avatar/audio/avatar-audio-coordinator').AvatarAudioActivity,
+    notify: (activity: import('../avatar/audio/avatar-audio-coordinator').AvatarAudioActivity) => void) => void
   readonly audioElement: HTMLAudioElement
   readonly analyser: AnalyserNode
   attachAnalyserTap(): void

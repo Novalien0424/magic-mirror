@@ -5,7 +5,7 @@ import type { AvatarModel } from '../../shared/avatar-profiles'
 import { parseAvatarLibraryLabel, type AvatarLibraryLabel } from '../../shared/avatar-library'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { CubismAvatarRenderer } from '../avatar/cubism-avatar'
-import type { CubismCapabilities, CubismParameter, CubismPreviewControls } from '../avatar/cubism-preview'
+import { motionKey, type CubismCapabilities, type CubismParameter, type CubismPreviewControls } from '../avatar/cubism-preview'
 
 const BUILTIN: AvatarModel = { id: 'builtin-ren', name: 'Built-in Ren', manifestFileName: 'Ren.model3.json', files: [] }
 const EMPTY: CubismCapabilities = { motions: [], expressions: [], parameters: [] }
@@ -32,6 +32,8 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
   const [fault, setFault] = useState('')
   const [libraryWarning, setLibraryWarning] = useState('')
   const [fps, setFps] = useState(0)
+  const [activeMotion, setActiveMotion] = useState<string | null>(null)
+  const [activeExpression, setActiveExpression] = useState<string | null>(null)
   const [values, setValues] = useState<Record<string, number>>({})
   const [observed, setObserved] = useState<Readonly<Record<string, number>>>({})
   const renderer = useRef<CubismAvatarRenderer | null>(null)
@@ -52,6 +54,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
     cancelTest()
     controls.current?.reset()
     setValues({})
+    setActiveMotion(null); setActiveExpression(null)
   }
   const refresh = async () => {
     if (!bridge) return
@@ -77,7 +80,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
   useEffect(() => {
     if (visible) void refresh()
     else {
-      cancelTest(); renderer.current = null; controls.current = null
+      reset(); renderer.current = null; controls.current = null
       setReady(false); setCapabilities(EMPTY); setLoaded(null)
     }
     // Library refresh is tied to page entry, not preview updates.
@@ -181,10 +184,10 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
             }}
             onMetrics={metrics => { setFps(metrics.fps); if (controls.current) setObserved(controls.current.readParameters()) }}
             onEvent={event => {
-              if (event.status === 'failed') { cancelTest(); setFault(event.reason); setReady(false) }
+              if (event.status === 'failed') { reset(); setFault(event.reason); setReady(false) }
               else if (event.status === 'degraded') setFault(event.reason)
-              else if (event.reason.startsWith('avatar_motion_started:')) setMessage(`Motion started: ${event.reason.split(':').slice(1).join(':')}`)
-              else if (event.reason.startsWith('avatar_motion_completed:')) setMessage(`Motion finished: ${event.reason.split(':').slice(1).join(':')}`)
+              else if (event.reason.startsWith('avatar_motion_started:')) setMessage(`Motion started: ${event.reason.split(':').slice(1).join(':')} · looping until Stop / reset`)
+              else if (event.reason.startsWith('avatar_motion_completed:')) { setActiveMotion(null); setMessage(`Motion finished: ${event.reason.split(':').slice(1).join(':')}`) }
             }} /> : <p className="cubism-studio__empty">Select an avatar to begin</p>}
         </div>
         <div className="console__action-row">
@@ -197,17 +200,21 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
       </div>
       <div className="cubism-studio__controls">
         <fieldset disabled={!ready}><legend>Motions · {capabilities.motions.length}</legend>
-          <p className="console__muted">Every exported clip, including multiple clips in the same group.</p>
+          <p className="console__muted">Clips loop until Stop / reset or another action. Includes every exported clip in each group.</p>
           <div className="cubism-studio__buttons">{capabilities.motions.map(motion => <button type="button" key={`${motion.group}:${motion.index}`}
-            title={motion.file} aria-label={`Play motion ${motion.group} ${motion.index + 1}`} onClick={() => {
+            title={motion.file} aria-pressed={activeMotion === motionKey(motion.group, motion.index)} aria-label={`Play motion ${motion.group} ${motion.index + 1}`} onClick={() => {
               reset(); setFault(''); renderer.current?.setState('Dormant'); renderer.current?.clearExpression()
-              if (renderer.current?.playMotion(motion.group, motion.index)) setMessage(`Starting ${motion.group} · clip ${motion.index + 1}`)
+              if (renderer.current?.playMotion(motion.group, motion.index)) {
+                setActiveMotion(motionKey(motion.group, motion.index))
+                setMessage(`Motion started: ${motion.group} · clip ${motion.index + 1} · looping until Stop / reset`)
+              }
               else setFault(`Motion unavailable: ${motion.group} ${motion.index + 1}`)
             }}>{motion.group} · {motion.index + 1}</button>)}</div>
         </fieldset>
         <fieldset disabled={!ready}><legend>Expressions · {capabilities.expressions.length}</legend>
-          <div className="cubism-studio__buttons">{capabilities.expressions.map(name => <button type="button" key={name} aria-label={`Test expression ${name}`} onClick={() => {
-            reset(); setFault(''); renderer.current?.setExpression(name); setMessage(`Expression: ${name}`)
+          <p className="console__muted">Expressions fade in and hold until Stop / reset or another action; they are poses, not repeating clips.</p>
+          <div className="cubism-studio__buttons">{capabilities.expressions.map(name => <button type="button" key={name} aria-pressed={activeExpression === name} aria-label={`Test expression ${name}`} onClick={() => {
+            reset(); setFault(''); renderer.current?.setExpression(name); setActiveExpression(name); setMessage(`Expression: ${name} · held until Stop / reset`)
           }}>{name}</button>)}</div>
         </fieldset>
         <fieldset disabled={!ready}><legend>Parameters · {capabilities.parameters.length}</legend>

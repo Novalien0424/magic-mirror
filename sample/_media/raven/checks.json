@@ -1,0 +1,150 @@
+{
+  "assets": [
+    {
+      "file": "fog.webm",
+      "bytes": 1876805,
+      "sha256": "7b3a265e4ffc7fe509099b8d2af660f87cdfefb205c70dcf1598e3f6d49e27dd",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "vp9",
+          "codec_type": "video",
+          "width": 720,
+          "height": 1280,
+          "start_time": "0.000000"
+        }
+      ],
+      "format": {
+        "duration": "8.000000"
+      }
+    },
+    {
+      "file": "idle.webm",
+      "bytes": 12214406,
+      "sha256": "21e04bae188989a9fccdc1b76734b3fd87175fef0e703f63592dfbbba46f95b7",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "vp9",
+          "codec_type": "video",
+          "width": 720,
+          "height": 1280,
+          "start_time": "0.000000"
+        },
+        {
+          "codec_name": "opus",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2,
+          "start_time": "-0.007000"
+        }
+      ],
+      "format": {
+        "duration": "48.008000"
+      }
+    },
+    {
+      "file": "spell.webm",
+      "bytes": 2494245,
+      "sha256": "ac5cc029d8f1b3ff3c45260308cec53c49d4ac6d6c58eba8c1d5c25893fff56c",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "vp9",
+          "codec_type": "video",
+          "width": 720,
+          "height": 1280,
+          "start_time": "0.000000"
+        },
+        {
+          "codec_name": "opus",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2,
+          "start_time": "-0.007000"
+        }
+      ],
+      "format": {
+        "duration": "7.008000"
+      }
+    },
+    {
+      "file": "spell-silent.webm",
+      "bytes": 2403584,
+      "sha256": "2e85f76fa93e7c09f185026eadb3c261421c7e5d32a7a2a3c9a4e467516357bd",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "vp9",
+          "codec_type": "video",
+          "width": 720,
+          "height": 1280,
+          "start_time": "0.000000"
+        }
+      ],
+      "format": {
+        "duration": "7.000000"
+      }
+    },
+    {
+      "file": "bgm.wav",
+      "bytes": 9216044,
+      "sha256": "6f6c5bc621f0555621e9756443c630aa1765ee1e19af78392571e168526e598e",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "48.000000"
+      }
+    },
+    {
+      "file": "wake.wav",
+      "bytes": 460844,
+      "sha256": "a3b1c3798f386aa65088c8481ad64ee6ff02326e1b9a50c5e1de719d9511883d",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "2.400000"
+      }
+    },
+    {
+      "file": "ending.wav",
+      "bytes": 2688044,
+      "sha256": "c601c546c5f5382d9c4d4c4d2e074923f8c456a751511ed3b842253e204dbc10",
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "14.000000"
+      }
+    }
+  ],
+  "bgm_seam_step": [
+    0.00286865234375,
+    0.00177001953125
+  ],
+  "fog_boundary_mean_delta": 3.683125,
+  "fog_adjacent_p95": 4.50625,
+  "decode_checks": "passed",
+  "silent_tracks": "absent",
+  "spell_visual_pair": "identical"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "fog",
+    "source": "https://mixkit.co/free-stock-video/swirling-smoke-with-black-background-1965/",
+    "download": "https://assets.mixkit.co/videos/1965/1965-1080.mp4",
+    "kind": "video"
+  },
+  {
+    "name": "spell",
+    "source": "https://mixkit.co/free-stock-video/blue-and-green-powder-explosion-in-slow-motion-51799/",
+    "download": "https://assets.mixkit.co/videos/51799/51799-1080.mp4",
+    "kind": "video"
+  },
+  {
+    "name": "spell-sound",
+    "source": "https://mixkit.co/free-sound-effects/magic/",
+    "download": "https://assets.mixkit.co/active_storage/sfx/2629/2629.wav",
+    "kind": "audio"
+  },
+  {
+    "name": "drone",
+    "source": "https://mixkit.co/free-stock-music/mood/mysterious/",
+    "download": "https://assets.mixkit.co/music/890/890.mp3",
+    "kind": "music"
+  },
+  {
+    "name": "wake",
+    "source": "https://mixkit.co/free-sound-effects/magic/",
+    "download": "https://assets.mixkit.co/active_storage/sfx/930/930.wav",
+    "kind": "audio"
+  }
+]

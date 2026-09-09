@@ -7,6 +7,30 @@ decisions that change implementation. Detailed historical records are
 
 ## Scope and sequence
 
+- **2026-09-09, relaxed voice-effects delay:** operator requested relaxing the
+  delay standard and proceeding with the implementation plan. Use measured
+  added direct-speech p95 <=180 ms and <=40 ms overhead above engine latency.
+  Preserve <=50 ms interruption mute and zero stale cancelled audio; human
+  sound, speakerphone echo and Mac acceptance remain separate. Replace the
+  failed MediaElementAudioSource candidate with a muted SDK receiver and one
+  MediaStreamAudioSource/AudioContext output. [Current design](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md).
+
+- **2026-09-09, narrowed avatar voice-effects scope:** operator accepted the
+  research direction but requires one embedded open-source implementation,
+  supernatural default/Raven presets and per-avatar controls. Design selects
+  Signalsmith Stretch with native Web Audio; no neural engine, Python worker,
+  virtual cable or separate voice-changer application. Provider speech speed
+  and model delivery instructions are distinct from local pitch/formant DSP.
+  One Fable design review plus self-review was requested; external review and
+  runtime/acoustic acceptance remain open. [Design and gates](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md).
+
+- **2026-09-09, Console action previews:** clicking an exported motion loops
+  it using Cubism's native loop mode, without a fresh fade-in each cycle.
+  Expressions retain the SDK's indefinite pose hold, not a restarting fade.
+  Active controls remain highlighted until reset/replacement. Stop/reset,
+  another action, unload and page leave clear the preview. This is gated by
+  `preview: true`; normal Mirror one-shot playback stays unchanged.
+
 - **2026-09-05:** the operator pulled multi-avatar Console work forward:
   one loaded public character at a time; personality/style/base voice, public
   prompt inspection, per-avatar presentation/scenes/triggers and shared/locked

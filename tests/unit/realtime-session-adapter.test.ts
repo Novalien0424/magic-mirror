@@ -101,6 +101,26 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('closes a transport that completes connecting after cancellation', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    let complete!: () => void;
+    probe.connect.mockImplementation(() => new Promise<void>(resolve => { complete = resolve }));
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), sink, probe));
+    const pending = handle.connect();
+    await handle.close('user_requested'); complete();
+    await expect(pending).rejects.toThrow();
+    expect(probe.close).toHaveBeenCalledTimes(2);
+    expect(sink.mock.calls.some(([event]) => event.reason === 'cause=connect_succeeded')).toBe(false);
+  });
+  it.each([0.75, 1, 1.25])('isolates generated auditions and transmits speed %s', async speed => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput({ ...makeSnapshot(), voiceSpeed: speed }, sink, probe), preview: true });
+    expect(probe.agentConstructorCalls[0]?.[0]).toMatchObject({ tools: [] });
+    expect(probe.constructorCalls[0]?.[1]).toMatchObject({ config: { audio: {
+      input: { turnDetection: null, transcription: null }, output: { speed },
+    } } });
+    await handle.close('user_requested');
+  });
   it('transmits the same public character prompt shown by the Console with the captured voice', async () => {
     const probe = makeAdapterProbe(); const sink = vi.fn();
     const avatar = { name: 'Guide', personality: 'Patient museum guide.', speakingStyle: 'Calm and concise.', wakeGreeting: 'Ready.', sleepFarewell: 'Goodbye.' };

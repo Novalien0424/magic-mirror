@@ -1,5 +1,6 @@
 import type { RealtimeSessionStartBundleValue } from '../../shared/bridge'
 import type { AudioDeviceRouter } from '../audio-devices'
+import { createProcessedRealtimeAudioOutput } from './processed-audio-output'
 import type {
   RealtimeFailureCallback,
   RealtimeMetadataEventSink,
@@ -21,7 +22,6 @@ import {
   type PlaybackCompletionTransport,
 } from './playback-completion'
 import {
-  createRealtimeAudioOutput,
   type CreateRealtimeAudioOutputInput,
   type RealtimeAudioOutput,
 } from './realtime-audio-output'
@@ -47,6 +47,7 @@ const MAX_REALTIME_ANALYSER_SAMPLE_SIZE = 32768
 
 type RealtimeRuntimeAnalyser = Readonly<{
   readPeakLevel: () => number
+  waitForTail?: (signal: AbortSignal) => Promise<void>
 }>
 
 function isPlaybackCompletionTransport(
@@ -95,6 +96,7 @@ function adaptRealtimeAudioOutput(
   let analyserTapAttached = false
 
   const analyser: RealtimeRuntimeAnalyser = Object.freeze({
+    ...(output.waitForTail ? { waitForTail: output.waitForTail } : {}),
     readPeakLevel: (): number => {
       if (!analyserTapAttempted) {
         analyserTapAttempted = true
@@ -109,8 +111,9 @@ function adaptRealtimeAudioOutput(
       if (!analyserTapAttached) return 0
 
       try {
-        const samples = new Float32Array(safeAnalyserSampleSize(output.analyser))
-        output.analyser.getFloatTimeDomainData(samples)
+        const node = output.completionAnalyser ?? output.analyser
+        const samples = new Float32Array(safeAnalyserSampleSize(node))
+        node.getFloatTimeDomainData(samples)
 
         let peakLevel = 0
         for (const sample of samples) {
@@ -148,6 +151,7 @@ function adaptRealtimeAudioOutput(
 }
 
 export interface CreateRealtimeRuntimeOwnerDependenciesInput {
+  readonly onAudioDegraded?: (reason: string) => void
   readonly audioDevices?: AudioDeviceRouter
   readonly eventSink: RealtimeRuntimeEventSink
   readonly sessionEventSink: RealtimeMetadataEventSink
@@ -198,7 +202,8 @@ export function createRealtimeRuntimeOwnerDependencies(
 ): RealtimeRuntimeOwnerDependencies {
   const sessionFactory = input.createSession ?? createRealtimeSession
   const micOwnerFactory = input.createMicOwner ?? createMicOwner
-  const audioOutputFactory = input.createAudioOutput ?? createRealtimeAudioOutput
+  const audioOutputFactory = input.createAudioOutput ?? createProcessedRealtimeAudioOutput
+  const outputs = new WeakMap<HTMLAudioElement, RealtimeAudioOutput>()
   const playbackTransportFactory =
     input.createPlaybackTransport ??
     ((session: RealtimeRuntimeSession): PlaybackCompletionTransportAdapter =>
@@ -222,11 +227,16 @@ export function createRealtimeRuntimeOwnerDependencies(
         throw new Error('invalid_playback_completion_configuration')
       }
 
-      return new PlaybackCompletion({
+      const completion = new PlaybackCompletion({
         ...input.playbackCompletion,
         transport: playbackTransport,
         analyser,
       })
+      return { async waitForActualEnd(signal: AbortSignal) {
+        const result = await completion.waitForActualEnd(signal)
+        await (analyser as RealtimeRuntimeAnalyser).waitForTail?.(signal)
+        return result
+      } }
     })
 
   return {
@@ -235,9 +245,10 @@ export function createRealtimeRuntimeOwnerDependencies(
       if (input.audioDevices) return input.audioDevices.inputConstraints().then((audio) => mediaDevices.getUserMedia({ audio, video: false }))
       return mediaDevices.getUserMedia({ audio: true, video: false })
     },
-    createAudioOutput: (): MaybePromise<RealtimeRuntimeAudioOutput> => {
-      const output = audioOutputFactory()
+    createAudioOutput: (bundle): MaybePromise<RealtimeRuntimeAudioOutput> => {
+      const output = audioOutputFactory({ voiceEffects: bundle.snapshot.voiceEffects, onDegraded: input.onAudioDegraded })
       const adapt = (resolved: RealtimeAudioOutput): RealtimeRuntimeAudioOutput => {
+        outputs.set(resolved.audioElement, resolved)
         try {
           input.onAudioOutputAvailable?.(resolved)
         } catch {
@@ -246,7 +257,8 @@ export function createRealtimeRuntimeOwnerDependencies(
         return adaptRealtimeAudioOutput(resolved, input.onAudioOutputDisposed)
       }
       if (input.audioDevices) return Promise.resolve(output).then(async (resolved) => {
-        const detach = await input.audioDevices!.attach(resolved.audioElement)
+        outputs.set(resolved.audioElement, resolved)
+        const detach = await input.audioDevices!.attach(resolved.sink ?? resolved.audioElement)
         try { input.onAudioOutputAvailable?.(resolved) } catch { /* observation cannot gate audio */ }
         return adaptRealtimeAudioOutput(resolved, (disposed) => {
           detach()
@@ -280,7 +292,12 @@ export function createRealtimeRuntimeOwnerDependencies(
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
-        onAudioActivity: input.onAudioActivity,
+        onAudioActivity: activity => {
+          const output = outputs.get(audioElement)
+          const notify = input.onAudioActivity ?? (() => undefined)
+          if (output?.handleActivity) output.handleActivity(activity, notify)
+          else notify(activity)
+        },
       })
     },
     createMicOwner: (
