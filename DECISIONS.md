@@ -169,6 +169,9 @@ credential instructions; all other canonical invariants remain unchanged.
   archive is explicitly ignored and requires separate out-of-band backup.
   A local project copy is not a commit, push or off-machine backup. See
   [asset storage policy](resources/avatar/Raven/README.md).
+- Git stores versioned Raven export files byte-for-byte (`-text` in
+  `.gitattributes`); do not normalize their line endings and invalidate the
+  delivery's SHA-256 inventory during checkout.
 
 ## Evidence and protected history
 

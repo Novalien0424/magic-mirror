@@ -1,5 +1,21 @@
 # Magic Mirror — Current handoff
 
+## Committed Windows delivery — 2026-09-09
+
+Product commit **979a0ca** contains the versioned Cubism Console, framing fix,
+Raven v10 runtime/master inventory and QA handoffs. Delivery target is
+`origin/main`; verify the remote tip against local HEAD for synchronization.
+Fresh pre-push focused verification: **82 tests / 9 files**, exit 0. Build
+fingerprint verification exit 0; normal Windows Main **61564** is running the
+matching built source/output from canonical checkout. This is local development
+deployment, not an installer/Mac release or phase promotion. No Appearance
+publication. [Delivery verification](docs/testing/avatar-delivery-2026-09-09.md).
+
+Raven export bytes are protected from Git newline conversion by `.gitattributes`;
+all 19 tracked master files match original bytes in the Git index. Large ignored
+editable/QA assets remain local, not in Git. Unrelated `.codex/config.toml`,
+concurrent `CLAUDE.md`, survey and `sample/` changes are deliberately excluded.
+
 ## Versioned Console library — 2026-09-09
 
 Live2D Cubism now edits/saves persistent Name + Version labels, with explicit
@@ -49,9 +65,10 @@ current status; [AGENTS.md](AGENTS.md) owns execution policy and
 
 ## Current delivery and runtime
 
-- Canonical checkout `C:\Project\magic-mirror`, branch `main`, HEAD `e4e36c9`.
-  Cubism implementation/tests and this handoff are **uncommitted**, not pushed.
-  Another Codex must use this working tree, not a fresh clone of HEAD.
+- Canonical checkout `C:\Project\magic-mirror`, branch `main`; product delivery
+  commit **979a0ca**, followed by delivery/byte-preservation documentation.
+  Another Codex can use the committed product source, but local-only rig sources,
+  QA captures and operator data require the existing machine or separate backup.
 - Separate **Live2D Cubism** Console page selects built-in Ren or managed Raven,
   browses/imports bundles, explicitly loads a local preview, and tests all
   exported motion indices, expressions and actual MOC parameters. Stop/reset,
