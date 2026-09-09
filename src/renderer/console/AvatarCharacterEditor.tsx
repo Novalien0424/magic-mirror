@@ -1,5 +1,4 @@
 import type { AvatarProfile } from '../../shared/avatar-profiles'
-import { AVATAR_VOICES } from '../../shared/avatar-profiles'
 import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION } from '../../shared/avatar-prompt'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 
@@ -9,15 +8,10 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled }: {
   const settings = { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle,
     wakeGreeting: avatar.presentation.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting!,
     sleepFarewell: avatar.presentation.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell! }
-  return <fieldset disabled={disabled} className="avatar-character"><legend>Character & voice</legend>
+  return <fieldset disabled={disabled} className="avatar-character"><legend className="console__sr-only">Persona</legend>
     <div className="console__form-grid">
       <label>Avatar name<input maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></label>
-      <label>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>
-        {!AVATAR_VOICES.some(v => v === avatar.voice) ? <option value={avatar.voice}>{avatar.voice} (choose a supported voice)</option> : null}
-        {AVATAR_VOICES.map(v => <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}</option>)}
-      </select></label>
       <label>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></label>
-      <label>Speaking tone & style<textarea rows={5} maxLength={2000} placeholder="For example: warm, concise, Traditional Chinese; unhurried delivery." value={avatar.speakingStyle} onChange={e => onChange({ ...avatar, speakingStyle: e.currentTarget.value })} /></label>
       <label>Sleep after inactivity (seconds)<input type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></label>
     </div>
     <p className="console__muted">Published voice and character changes apply to the next conversation. Both visitor and avatar speech keep the conversation awake.</p>

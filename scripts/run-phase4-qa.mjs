@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism']
+const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -16,7 +16,8 @@ const lifecycleLive = process.argv.includes('--lifecycle-live')
 const live = process.argv.includes('--live') || lifecycleLive
 const manual = process.argv.includes('--manual')
 const cubismOnly = process.argv.includes('--cubism')
-const editorOnly = process.argv.includes('--editor') || cubismOnly
+const profileOnly = process.argv.includes('--profiles')
+const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly
 const consoleOnly = process.argv.includes('--console') || editorOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
@@ -212,6 +213,7 @@ const electron = join(repoRoot, 'node_modules', 'electron', 'dist', process.plat
 const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
+  MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
   MIRROR_PHASE4_QA_LIVE: live ? '1' : '0',

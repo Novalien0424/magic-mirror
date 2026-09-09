@@ -49,8 +49,10 @@ import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type Avat
 import { ResourceAccess } from './ResourceAccess'
 import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
+import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection } from './profile-workspace'
 
-const PAGES = ['Overview', 'Avatar / Audio', 'Live2D Cubism', 'Voice Studio', 'Scenes', 'Simulator', 'Events', 'Phase Tests', 'Config', 'Models'] as const
+const PAGES = ['Mirror', 'Avatars', 'System'] as const
+const SYSTEM_PAGES = ['Devices', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 const MODULES = [
   'app',
   'openai',
@@ -675,7 +677,7 @@ function AvatarAudioPanel({
       <div className="console__panel-heading">
         <div>
           <p className="console__eyebrow">Actual renderer and output graph</p>
-          <h2 id="console-avatar-audio">Avatar / Audio</h2>
+          <h2 id="console-avatar-audio">Devices & runtime</h2>
         </div>
         <span className={statusClass(value?.status ?? state.status)}>{value?.status ?? state.status}</span>
       </div>
@@ -723,7 +725,7 @@ function AvatarAudioPanel({
         })}
       </div>
       <p className="console__detail">Speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start; use Start Conversation, then Disconnect to update both. Windows default follows the system selection on acquisition.</p>
-      <p className="console__detail" role="status">{audioDevices?.reason ?? 'Loading sound devices…'}</p>
+      <p className="console__detail" role="status">{audioDevices?.reason === 'audio_devices_ready' ? 'Audio devices ready.' : audioDevices?.reason?.replaceAll('_', ' ') ?? 'Loading sound devices…'}</p>
       <section aria-label="Wake microphone diagnostics">
         <h3>Wake microphone — live input</h3>
         <p role="status">{value?.wakeInput ? ({
@@ -733,7 +735,7 @@ function AvatarAudioPanel({
           silent: 'Audio blocks arriving, but the signal is silent or very quiet.',
           signal: 'Sound is reaching the wake detector. Sound activity is not a wake-word match.',
         } as const)[value.wakeInput.state] : 'Wake input diagnostics unavailable.'}</p>
-        <label className="console__overview-field">Input level
+        <label className="console__input-level">Input level
           <meter aria-label="Wake microphone level" min="0" max="100"
             value={value?.wakeInput?.peak ? Math.max(0, 100 + 100 * 20 * Math.log10(value.wakeInput.peak) / 60) : 0} />
         </label>
@@ -1001,6 +1003,7 @@ function confirmationFromDiff(
 }
 
 interface ConfigPanelProps {
+  readonly onEditingChange?: (editing: boolean) => void
   readonly state: ConfigState
   readonly bridge: ConsoleBridge | null
   readonly bridgeAvailable: boolean
@@ -1012,6 +1015,7 @@ export function ConfigPanel({
   bridge,
   bridgeAvailable,
   onChanged,
+  onEditingChange,
 }: ConfigPanelProps): React.JSX.Element {
   const config = state.status === 'success' ? state.value : null
   const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(
@@ -1027,6 +1031,7 @@ export function ConfigPanel({
   const disabled = !bridgeAvailable || bridge === null || draft === null || config === null || busy
   const dirty = draft !== null && config !== null
     && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(config.draft))
+  useEffect(() => onEditingChange?.(dirty || busy), [dirty, busy, onEditingChange])
   const updateDraft = (update: (current: ConsoleConfigDraftInput) => ConsoleConfigDraftInput): void => {
     // Read event-backed values while the change handler still owns currentTarget.
     if (draft !== null) setDraft(mergeAvatarDraft(draft, update(draft), draft.avatarCatalog?.activeAvatarId ?? ''))
@@ -1274,6 +1279,7 @@ export function ConfigPanel({
 }
 
 interface ModelsPanelProps {
+  readonly onEditingChange?: (editing: boolean) => void
   readonly state: ModelsState
   readonly bridge: ConsoleBridge | null
   readonly bridgeAvailable: boolean
@@ -1282,6 +1288,8 @@ interface ModelsPanelProps {
 
 
 interface ScenesPanelProps {
+  readonly lifecycle?: string
+  readonly onEditingChange?: (editing: boolean) => void
   readonly voiceOnly?: boolean
   readonly visible?: boolean
   readonly dialogueOnly?: boolean
@@ -1297,8 +1305,8 @@ export function ScenesPanel({
   bridgeAvailable,
   onChanged,
   visible = true,
-  dialogueOnly = false,
-  voiceOnly = false,
+  lifecycle,
+  onEditingChange,
 }: ScenesPanelProps): React.JSX.Element {
   // Keep the editor mounted while Save/Test/Publish refresh their read model.
   const lastPayload = useRef<ConsoleConfigPayload | null>(null)
@@ -1306,6 +1314,11 @@ export function ScenesPanel({
   const payload = lastPayload.current
   const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
   const retainLocalDraft = useRef(false)
+  const acceptRefresh = useRef(false)
+  const baseline = useRef<ConsoleConfigDraftInput | null>(null)
+  const [conflict, setConflict] = useState(false)
+  const [publishReview, setPublishReview] = useState(false)
+  const [previewRevision, setPreviewRevision] = useState(0)
   const sceneTestGeneration = useRef(0)
   const latestSceneDraft = useRef(rawDraft)
   latestSceneDraft.current = rawDraft
@@ -1314,7 +1327,8 @@ export function ScenesPanel({
     ? editingAvatarId : rawDraft?.avatarCatalog?.activeAvatarId ?? ''
   const draft = rawDraft ? projectAvatarDraft(rawDraft, editingId) : null
   const editingAvatar = rawDraft?.avatarCatalog?.avatars.find(a => a.id === editingId)
-  const editingModel = rawDraft?.avatarCatalog?.models.find(m => m.id === editingAvatar?.modelId)
+  const [libraryModels, setLibraryModels] = useState<import('../../shared/avatar-profiles').AvatarModel[]>([])
+  const editingModel = libraryModels.find(m => m.id === editingAvatar?.modelId) ?? rawDraft?.avatarCatalog?.models.find(m => m.id === editingAvatar?.modelId)
   const setDraft = (update: React.SetStateAction<ConsoleConfigDraftInput | null>): void => {
     setRawDraft(current => {
       const projected = current ? projectAvatarDraft(current, editingId) : null
@@ -1336,15 +1350,17 @@ export function ScenesPanel({
     musicAssets: [...current.musicAssets.filter(a => !resourceDraft?.musicAssets.some(b => a.id === b.id)), ...next.musicAssets],
     sceneActions: [...current.sceneActions.filter(a => !resourceDraft?.sceneActions.some(b => a.id === b.id)), ...next.sceneActions],
   } : next)
-  const [result, setResult] = useState('Choose a step to edit or test. Tests play on the Mirror.')
+  const [result, setResult] = useState('Edits stay in draft until you publish.')
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
-  const [editorView, setEditorView] = useState('scenes')
-  const [avatarView, setAvatarView] = useState('character')
-  const [libraryModels, setLibraryModels] = useState<import('../../shared/avatar-profiles').AvatarModel[]>([])
+  const [section, setSection] = useState<ProfileSection>('Persona')
+  const voiceOnly = section === 'Voice'
+  const dialogueOnly = PROFILE_SECTIONS.includes(section as typeof PROFILE_SECTIONS[number]) && section !== 'Spells & scenes'
+  const avatarView = section === 'Appearance' ? 'appearance' : 'character'
+  const editorView = section === 'Media library' ? 'media' : section === 'Action library' ? 'library' : section === 'Rig library' ? 'rigs' : 'scenes'
   const availableModels = [...new Map([...(rawDraft?.avatarCatalog?.models ?? []), ...libraryModels].map(model => [model.id, model])).values()]
   useEffect(() => {
-    if (!visible || !dialogueOnly || !bridge?.listAvatarModels) return
+    if (!visible || !bridge?.listAvatarModels) return
     let current = true
     void bridge.listAvatarModels().then(response => {
       if (!current) return
@@ -1352,7 +1368,7 @@ export function ScenesPanel({
       else setResult(`Cubism library unavailable: ${response.reason}`)
     }).catch(() => { if (current) setResult('Cubism library unavailable.') })
     return () => { current = false }
-  }, [visible, dialogueOnly, bridge])
+  }, [visible, section, bridge])
   const [importFailures, setImportFailures] = useState<{ name: string; reason: string }[]>([])
   const importMedia = async (request: MediaImportRequest, actionId?: string): Promise<void> => {
     if (!bridge || busy) return
@@ -1381,8 +1397,20 @@ export function ScenesPanel({
   }
 
   useEffect(() => {
+    if (!payload) return
+    const next = safeDraftFromConfig(payload.draft)
+    const previous = baseline.current
+    baseline.current = next
+    setPublishReview(false)
     if (retainLocalDraft.current) { retainLocalDraft.current = false; return }
-    if (payload !== null) setRawDraft(safeDraftFromConfig(payload.draft))
+    const decision = draftRefreshDecision(previous, next, latestSceneDraft.current, acceptRefresh.current)
+    if (decision !== 'accept') {
+      if (decision === 'conflict') setConflict(true)
+      return
+    }
+    acceptRefresh.current = false
+    setRawDraft(next)
+    setConflict(false)
   }, [payload])
 
   useEffect(() => bridge?.onSceneStatus((event) => {
@@ -1399,9 +1427,15 @@ export function ScenesPanel({
     }
   }), [bridge])
 
-  const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || state.status === 'loading'
+  const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || conflict || state.status !== 'success'
   const dirty = rawDraft !== null && payload !== null
     && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
+  useEffect(() => onEditingChange?.(dirty || busy || conflict), [dirty, busy, conflict, onEditingChange])
+  useEffect(() => { setPublishReview(false) }, [dirty, editingId, section])
+  const activeAvatar = payload?.active.avatarCatalog?.avatars.find(a => a.id === payload.active.avatarCatalog?.activeAvatarId)
+  const changes = payload ? workspaceChanges(safeDraftFromConfig(payload.active), safeDraftFromConfig(payload.draft)) : []
+  const unsavedChanges = payload && rawDraft ? workspaceChanges(safeDraftFromConfig(payload.draft), rawDraft) : []
+  const activationReason = avatarActivationReason(payload, editingId, dirty || conflict, lifecycle)
   const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
     setDraft((current) => current === null ? current : {
       ...current,
@@ -1420,7 +1454,7 @@ export function ScenesPanel({
         && 'result' in response.value && response.value.result === 'failed'
       setResult(response.ok ? testFailed ? 'Draft test failed; check saved media and configuration.' : message : `${response.error}: ${response.reason}${response.fields?.length
         ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
-      if (response.ok && refresh) onChanged()
+      if (response.ok && refresh) { acceptRefresh.current = true; onChanged() }
     } catch {
       setResult('Console operation failed.')
     } finally {
@@ -1493,30 +1527,31 @@ export function ScenesPanel({
 
   return (
     <section className="console__panel console__scenes" aria-labelledby="console-scenes">
-      <div className="console__panel-heading">
+      <div className="console__panel-heading profile-workspace-heading">
         <div>
           <p className="console__eyebrow">Avatar workspace</p>
-          <h2 id="console-scenes">{voiceOnly ? 'Voice Studio' : dialogueOnly ? 'Character & voice' : 'Scenes & appearance'}</h2>
+          <h2 id="console-scenes">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared library' : 'Avatars'}</h2>
         </div>
-        <span hidden={dialogueOnly} className="console__status console__status--mock">
-          Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical'
-            ? 'Physical not connected'
-            : 'Mock'}
-        </span>
       </div>
 
-      <p className="console__detail">{dialogueOnly ? 'Uses the configured avatar voice. Published changes apply to the next conversation.' : 'Say a spell, play a few steps, return to the avatar.'}</p>
-      {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason}</p> : null}
+      {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason} <button disabled={!bridgeAvailable} onClick={onChanged}>Retry loading saved configuration</button></p> : null}
       <p className="console__sr-only" aria-live="polite">{result}</p>
 
-      {rawDraft?.avatarCatalog && editingAvatar ? <div className="avatar-selector console__action-row">
-        <label>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
-          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name}{a.id === payload?.active.avatarCatalog?.activeAvatarId ? ' · Loaded' : ''}</option>)}
+      {conflict ? <div className="console__fault" role="alert">The saved configuration changed while you were editing. Your edits are retained; saving is blocked to prevent overwriting newer changes.
+        <button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false) }}>Discard my edits and reload saved changes</button>
+      </div> : null}
+      <div className="profile-workspace">
+      {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
+        <label>Editing avatar<select aria-label="Editing avatar" title={`${editingAvatar.name} · ${editingId}`} disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name} · {a.id.slice(-8)}{a.id === payload?.active.avatarCatalog?.activeAvatarId ? ' · On Mirror' : ''}</option>)}
         </select></label>
+        <p className="profile-rail__context"><strong>{editingAvatar.name}</strong><span>{editingId.slice(-8)}</span></p>
+        <p className="profile-rail__context"><small>ON MIRROR</small>{activeAvatar?.id === editingId ? <span>This avatar</span> : <strong>{activeAvatar?.name ?? 'Connecting…'}</strong>}</p>
+        <div className="console__action-row">
         <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
-          const next: AvatarProfile = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: 'New avatar',
-            personality: 'You are a friendly conversational companion.', speakingStyle: '', presentation: { ...DEFAULT_PRESENTATION }, scenes: [], spells: [] }
+          const next = newAvatar(crypto.randomUUID())
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
+          setSection('Persona'); setResult('New avatar created with neutral defaults. Configure its persona, appearance, voice and spells.')
         }}>New avatar</button>
         <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
           const next = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: `${editingAvatar.name.slice(0, 70)} copy` }
@@ -1530,18 +1565,26 @@ export function ScenesPanel({
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
           setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
         }}>Duplicate</button>
-        <button type="button" disabled={disabled || dirty || !!payload?.publishDiff.changed.length || !payload?.active.avatarCatalog?.avatars.some(a => a.id === editingId) || payload?.active.avatarCatalog?.activeAvatarId === editingId}
-          onClick={() => bridge && void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.')}>Load avatar</button>
-        <span className="console__muted">Editing does not switch the mirror. Load a published avatar while Dormant.</span>
-      </div> : null}
+        </div>
+        <button type="button" disabled={disabled || !!activationReason} aria-describedby="avatar-activation-reason"
+          onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</button>
+        <p id="avatar-activation-reason" className="console__muted">{activationReason || 'Switch the published character. Editing alone does not switch the Mirror.'}</p>
+        <nav aria-label="Shared library" className="profile-rail__library"><h3>Shared library</h3><p>Reusable across avatars</p>
+          {LIBRARY_SECTIONS.map(label => <button key={label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        </nav>
+      </aside> : null}
+      <div className="profile-workspace__editor">
+      <nav className="console__subnav profile-sections" aria-label="Avatar settings">
+        {PROFILE_SECTIONS.map(label => <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+      </nav>
+      <div className="profile-section-heading"><p hidden={!LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) && editingId === activeAvatar?.id} className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource' : `Editing ${editingAvatar?.name ?? 'avatar'}`}</p><h3>{section}</h3>
+        <p>{section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
+      </div>
 
-      {visible && voiceOnly && editingAvatar ? <VoiceStudio key={editingId} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
-      {dialogueOnly && !voiceOnly ? <nav className="console__subnav" aria-label="Avatar settings">
-        <button type="button" aria-pressed={avatarView === 'character'} onClick={() => setAvatarView('character')}>Character & voice</button>
-        <button type="button" aria-pressed={avatarView === 'appearance'} onClick={() => setAvatarView('appearance')}>Appearance</button>
-      </nav> : null}
+      {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
+      {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
-      {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <details><summary>Cubism model</summary>
+      {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
         <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
           const model = availableModels.find(item => item.id === modelId)
@@ -1563,18 +1606,16 @@ export function ScenesPanel({
             setResult('Cubism bundle imported. Open Appearance to preview, then Save / Test / Publish.')
           }).catch(() => setResult('Model import failed.')).finally(() => setBusy(false))
         }}>Browse & import Cubism…</button></div>
-        <p className="console__muted">Select a model3.json beside its assets. Requires EyeBlink/LipSync, expressions, physics and Dormant / Waking / Listening / Thinking / Speaking / Scene / Suspending motion groups. Files are copied locally; your originals stay unchanged.</p>
-      </details> : null}
+        <details><summary>Bundle requirements</summary><p>Select a model3.json beside its assets. Requires EyeBlink/LipSync, expressions, physics and Dormant / Waking / Listening / Thinking / Speaking / Scene / Suspending motion groups. Files are copied locally; originals stay unchanged.</p></details>
+        <p className="console__muted">Import adds a shared library rig and assigns it to this avatar’s draft. Save and publish to apply.</p>
+      </fieldset> : null}
+      {visible && section === 'Appearance' ? <details key={`rig-${editingId}`}><summary>Advanced rig preview · local only</summary><CubismStudio key={editingAvatar?.modelId} bridge={bridge} visible={visible} assignedModel={editingModel ?? null} /></details> : null}
 
       {dialogueOnly && !voiceOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
         <label>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></label>
         <label>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></label>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
       </div></fieldset> : null}
-      <nav hidden={dialogueOnly} className="console__subnav" aria-label="Scene workspace">
-        {([['scenes', 'Spell scenes'], ['presentation', 'Avatar presentation'], ['media', 'Media library'], ['library', 'Action library']] as const).map(([key, label]) =>
-          <button type="button" key={key} aria-pressed={editorView === key} onClick={() => setEditorView(key)}>{label}</button>)}
-      </nav>
       {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
       {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
@@ -1584,10 +1625,11 @@ export function ScenesPanel({
         saveUnavailableReason={saveUnavailableReason} testUnavailableReason={testUnavailableReason} result={result}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
         onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
-      {visible && resourceDraft && (dialogueOnly ? !voiceOnly && avatarView === 'appearance' : editorView === 'presentation') ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
+      {visible && resourceDraft && section === 'Appearance' ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
       {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
         <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
         {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
+          <p>Used by: {draft.avatarCatalog?.avatars.filter(a => a.scenes.some(s => s.stages.some(st => st.actionIds.includes(action.id)))).map(a => `${a.name} · ${a.id.slice(-8)}`).join(', ') || 'No avatars yet'}</p>
           <ResourceAccess catalog={draft.avatarCatalog} avatarId={editingId} kind="action" resourceId={action.id} disabled={disabled} onChange={updateCatalog} />
           <fieldset disabled={!canUseAvatarAction(draft.avatarCatalog, editingId, action)}>
           <SceneActionFields action={action} draft={resourceDraft ?? draft} onChange={next => replaceAction(action.id, next)} onImport={kind => void importMedia({ kind, multiple: false }, action.id)} />
@@ -1596,15 +1638,23 @@ export function ScenesPanel({
           </fieldset>
         </details>)}
       </fieldset> : null}
-
       <div className="console__action-row console__publish-bar">
-        <span>Active v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved edits — Save Draft first' : `Draft ${payload?.publishDiff.changed.length ?? 0} changes`}</span>
-        <HelpButton help="Save all unfinished workspace edits, including other scenes and avatar settings. Nothing is published." disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save Draft</HelpButton>
-        <HelpButton help={dirty ? 'Save Draft first: validation checks the saved draft, not unfinished edits.' : 'Check saved configuration and decode media before publishing. This does not play the scene; use Test step or Test scene for playback.'} disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Validate draft</HelpButton>
-        <HelpButton help={dirty ? 'Save Draft and validate it before publishing.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Validate draft successfully before publishing.' : 'Make the entire saved draft live. This includes all changed avatars, scenes and settings.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null} onClick={() => bridge && payload && void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.')}>Publish</HelpButton>
+        <div className="profile-publish-status"><span>Published v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved changes' : payload?.publishDiff.changed.length ? 'Awaiting publish' : 'Up to date'}</span>
+        {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
+        <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
+        <div className="profile-publish-actions">
+        <HelpButton help="Save all unfinished workspace edits, including other scenes and avatar settings. Nothing is published." disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save all changes</HelpButton>
+        <HelpButton help={dirty ? 'Save all changes first: checking uses the saved draft.' : 'Check saved configuration and decode media before publishing. Use Test step or Test scene for playback.'} disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Check saved changes</HelpButton>
+        <HelpButton help={dirty ? 'Save and check changes before publishing.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
+        </div>
+        {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>
+          <button disabled={disabled || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
+          <button onClick={() => setPublishReview(false)}>Keep editing</button>
+        </div>}
         <p className="console__scene-result" role="status">{result}</p>
       </div>
+      </div></div>
     </section>
   )
 }
@@ -1614,6 +1664,7 @@ export function ModelsPanel({
   bridge,
   bridgeAvailable,
   onChanged,
+  onEditingChange,
 }: ModelsPanelProps): React.JSX.Element {
   const payload = state.status === 'success' ? state.value : null
   const [draft, setDraft] = useState<ConsoleModelDraftInput>({
@@ -1621,6 +1672,9 @@ export function ModelsPanel({
     inputTranscription: '',
     memoryExtractor: '',
   })
+  const [busy, setBusy] = useState(false)
+  const dirty = payload !== null && Object.entries(draft).some(([role, value]) => value !== (payload.cards.find(c => c.role === role)?.draft.modelId ?? ''))
+  useEffect(() => onEditingChange?.(dirty || busy), [dirty, busy, onEditingChange])
 
   useEffect(() => {
     if (payload === null) return
@@ -1636,12 +1690,13 @@ export function ModelsPanel({
   }, [payload?.cards])
 
   const run = async (action: () => Promise<unknown>): Promise<void> => {
+    setBusy(true)
     try {
       await action()
       onChanged()
     } catch {
       onChanged()
-    }
+    } finally { setBusy(false) }
   }
 
   const cards = payload?.cards ?? []
@@ -1735,7 +1790,24 @@ export function ModelsPanel({
 }
 
 export function App(): React.JSX.Element {
-  const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Overview')
+  const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Mirror')
+  const [systemPage, setSystemPage] = useState<(typeof SYSTEM_PAGES)[number]>('Devices')
+  const [avatarEditing, setAvatarEditing] = useState(false)
+  const [configEditing, setConfigEditing] = useState(false)
+  const [modelsEditing, setModelsEditing] = useState(false)
+  const [navigationMessage, setNavigationMessage] = useState('')
+  const navigate = (page: typeof PAGES[number], subpage = systemPage): void => {
+    const owner = page === 'Avatars' ? 'Avatars' : page === 'System' && ['Config', 'Models'].includes(subpage) ? subpage : null
+    const locked = avatarEditing ? 'Avatars' : configEditing ? 'Config' : modelsEditing ? 'Models' : null
+    if (locked && owner && locked !== owner) { setNavigationMessage(`Save the unfinished changes in ${locked} before opening ${owner}. Your edits are retained.`); return }
+    setNavigationMessage(''); setActivePage(page); setSystemPage(subpage)
+  }
+  useEffect(() => {
+    if (!avatarEditing && !configEditing && !modelsEditing) return
+    const guard = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [avatarEditing, configEditing, modelsEditing])
   const [bridgeAvailable, setBridgeAvailable] = useState(false)
   const [bridgeError, setBridgeError] = useState<ConsoleFailure | null>(null)
   const [overviewState, setOverviewState] = useState<OverviewState>({ status: 'loading' })
@@ -1993,7 +2065,7 @@ export function App(): React.JSX.Element {
   }, [bridgeAvailable, selectedPhase])
 
   useEffect(() => {
-    if (activePage !== 'Avatar / Audio' || !bridgeAvailable) return
+    if (activePage !== 'System' || systemPage !== 'Devices' || !bridgeAvailable) return
     const bridge = bridgeRef.current
     if (bridge === null) return
     let stopped = false
@@ -2014,7 +2086,7 @@ export function App(): React.JSX.Element {
       stopped = true
       window.clearInterval(interval)
     }
-  }, [activePage, bridgeAvailable])
+  }, [activePage, systemPage, bridgeAvailable])
 
   const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
 
@@ -2125,52 +2197,49 @@ export function App(): React.JSX.Element {
         <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
       ) : null}
 
-      <LifecycleControls
+      <div hidden={activePage !== 'Mirror'}><LifecycleControls
         lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
         bridgeAvailable={bridgeAvailable}
         state={lifecycleActionState}
         onStartConversation={startConversation}
         onInterrupt={interrupt}
         onDisconnect={disconnect}
-      />
+      /></div>
 
       <nav className="console__tabs" aria-label="Console pages">
-        {(['Overview', 'Scenes', 'Avatar / Audio', 'Live2D Cubism', 'Voice Studio'] as const).map(page => <button key={page} type="button"
-          className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
-          aria-current={activePage === page ? 'page' : undefined} onClick={() => setActivePage(page)}>{page}</button>)}
-        {([['Settings', ['Config', 'Models']], ['Diagnostics', ['Events', 'Simulator', 'Phase Tests']]] as const).map(([label, pages]) =>
-          <details className="console__nav-menu" key={label}><summary>{label}{pages.some(p => p === activePage) ? ' · ' + activePage : ''}</summary>
-            <div>{pages.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
-              onClick={e => { setActivePage(page); e.currentTarget.closest('details')?.removeAttribute('open') }}>{page}</button>)}</div>
-          </details>)}
+        {PAGES.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
+          aria-current={activePage === page ? 'page' : undefined} onClick={() => navigate(page, page === 'System' ? 'Devices' : systemPage)}>{page}</button>)}
       </nav>
+      {navigationMessage && <div className="console__fault" role="alert">{navigationMessage}<button onClick={() => {
+        setActivePage(avatarEditing ? 'Avatars' : 'System'); setSystemPage(configEditing ? 'Config' : 'Models'); setNavigationMessage('')
+      }}>Return to unfinished changes</button></div>}
+      {activePage === 'System' && <nav className="console__subnav profile-sections" aria-label="System settings">
+        {SYSTEM_PAGES.map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page === 'Config' ? 'Advanced config' : page}</button>)}
+      </nav>}
 
       <div className="console__panels">
-        <div hidden={activePage !== 'Live2D Cubism'}>
-          <CubismStudio bridge={bridgeRef.current} visible={activePage === 'Live2D Cubism'} />
-        </div>
-        <div hidden={activePage !== 'Overview'}>
+        <div hidden={activePage !== 'Mirror'}>
           <OverviewPanel state={overviewState} configState={configState} />
         </div>
-        <div hidden={activePage !== 'Scenes' && activePage !== 'Avatar / Audio' && activePage !== 'Voice Studio'}>
+        <div hidden={activePage !== 'Avatars'}>
           <ScenesPanel
-            visible={activePage === 'Scenes' || activePage === 'Avatar / Audio' || activePage === 'Voice Studio'}
-            dialogueOnly={activePage === 'Avatar / Audio' || activePage === 'Voice Studio'}
-            voiceOnly={activePage === 'Voice Studio'}
+            visible={activePage === 'Avatars'}
+            lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
+            onEditingChange={setAvatarEditing}
             state={configState}
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}
             onChanged={refreshConfigAndModels}
           />
         </div>
-        <div hidden={activePage !== 'Avatar / Audio'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             state={avatarRuntimeState}
             disabled={!bridgeAvailable || !developerMode}
             onCommand={controlAvatar}
           />
         </div>
-        <div hidden={activePage !== 'Simulator'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Simulator'}>
           <SimulatorPanel
             developerMode={developerMode}
             bridgeAvailable={bridgeAvailable}
@@ -2178,7 +2247,7 @@ export function App(): React.JSX.Element {
             onSimulate={runSimulation}
           />
         </div>
-        <div hidden={activePage !== 'Events'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Events'}>
           <EventsPanel
             state={eventsState}
             moduleFilter={moduleFilter}
@@ -2191,7 +2260,7 @@ export function App(): React.JSX.Element {
             bridgeAvailable={bridgeAvailable}
           />
         </div>
-        <div hidden={activePage !== 'Phase Tests'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Phase Tests'}>
           <label htmlFor="console-phase-selector">Phase
             <select
               id="console-phase-selector"
@@ -2219,16 +2288,18 @@ export function App(): React.JSX.Element {
             selectedPhase={selectedPhase}
           />
         </div>
-        <div hidden={activePage !== 'Config'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Config'}>
           <ConfigPanel
+            onEditingChange={setConfigEditing}
             state={configState}
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}
             onChanged={refreshConfigAndModels}
           />
         </div>
-        <div hidden={activePage !== 'Models'}>
+        <div hidden={activePage !== 'System' || systemPage !== 'Models'}>
           <ModelsPanel
+            onEditingChange={setModelsEditing}
             state={modelsState}
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}

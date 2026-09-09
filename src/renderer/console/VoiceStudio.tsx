@@ -17,6 +17,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
 }) {
   const effects = avatar.voiceEffects ?? DEFAULT_VOICE_EFFECTS
   const [file, setFile] = useState<File>(), [loop, setLoop] = useState(false), [original, setOriginal] = useState(false)
+  const fileInput = useRef<HTMLInputElement | null>(null)
   const [running, setRunning] = useState(false), [status, setStatus] = useState('Select an approved speech fixture, or generate a test voice.')
   const [rigName, setRigName] = useState(model?.name ?? 'Built-in Ren')
   const audition = useRef<VoiceAudition | null>(null), controller = useRef<AbortController | null>(null), generation = useRef(0)
@@ -27,7 +28,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
   const onRenderer = useCallback((value: CubismAvatarRenderer | null) => { renderer.current = value }, [])
   useEffect(() => {
     let cancelled = false
-    setRigName(model ? `${model.name} · version not set` : 'Built-in Ren')
+    setRigName(model?.name ?? 'Built-in Ren')
     if (bridge && model) void bridge.listAvatarModels().then(result => {
       if (cancelled) return
       const label = result.ok ? result.value.labels?.[model.id] : undefined
@@ -83,7 +84,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
   const preset = presetKey === 'ethereal' ? 'Ethereal' : presetKey === 'darkOracle' ? 'Dark oracle' : effects.enabled ? 'Custom' : 'Bypassed'
   return <section className="voice-studio" aria-label="Voice Studio">
     <div className="voice-studio__layout"><div>
-      <p><strong>{avatar.name}</strong> · {rigName} · {preset}</p>
+      <p className="console__muted">Rig: {rigName} · Preset: {preset}</p>
       <p className="console__muted">Draft voice settings. Published changes apply to the next conversation.</p>
       <fieldset disabled={disabled}><legend>Voice and delivery</legend><div className="console__form-grid">
         <label>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></label>
@@ -95,13 +96,16 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
         <button onClick={() => onChange({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.darkOracle }, voiceSpeed: 0.9 })}>Raven · Dark oracle</button>
         <button onClick={() => { stop(); onChange({ ...avatar, voiceEffects: { ...DEFAULT_VOICE_EFFECTS }, voiceSpeed: 1 }); setStatus('Effects reset to bypass.') }}>Reset</button>
       </div><label><input type="checkbox" checked={effects.enabled} onChange={e => edit({ enabled: e.currentTarget.checked })} /> Effects enabled</label>
-        <div className="console__form-grid">{sliders.map(([key, label, min, max, step]) => <label key={key}>{label} · {effects[key].toFixed(2)}<input aria-label={label} type="range" min={min} max={max} step={step} value={effects[key]} onChange={e => edit({ [key]: Number(e.currentTarget.value) })} /></label>)}</div>
+        <details><summary>Fine tuning</summary><div className="console__form-grid">{sliders.map(([key, label, min, max, step]) => <label key={key}>{label} · {effects[key].toFixed(2)}<input aria-label={label} type="range" min={min} max={max} step={step} value={effects[key]} onChange={e => edit({ [key]: Number(e.currentTarget.value) })} /></label>)}</div>
         <label><input type="checkbox" checked={effects.formantCompensation} onChange={e => edit({ formantCompensation: e.currentTarget.checked })} /> Preserve formants when pitch changes</label>
         <label>Room size<select value={effects.roomSize} onChange={e => edit({ roomSize: e.currentTarget.value as VoiceEffects['roomSize'] })}><option value="short">Short · 120 ms</option><option value="medium">Medium · 250 ms</option></select></label>
-      </fieldset></div>
+      </details></fieldset></div>
       <div className="voice-studio__preview"><div className="presentation-preview"><AvatarCanvas embedded preview model={model ? { id: model.id, manifestFileName: model.manifestFileName } : undefined}
         state={running ? 'Speaking' : 'Listening'} onRenderer={onRenderer} onMetrics={() => undefined} onEvent={event => { if (event.status === 'failed') setStatus(event.reason) }} /></div>
-        <label>Approved local speech fixture<input type="file" accept="audio/*" onChange={e => { stop(); setFile(e.currentTarget.files?.[0]) }} /></label>
+        <div className="voice-file-picker"><p>Local speech sample</p><button onClick={() => fileInput.current?.click()}>Choose audio file</button>
+          <input ref={fileInput} hidden aria-label="Local speech sample" type="file" accept="audio/*" onChange={e => { stop(); setFile(e.currentTarget.files?.[0]) }} />
+          <p className="console__muted" style={{overflowWrap:'anywhere'}}>{file?.name ?? 'No audio selected'}</p>
+        </div>
         <label><input type="checkbox" checked={loop} onChange={e => { stop(); setLoop(e.currentTarget.checked) }} /> Loop local fixture</label>
         <div className="console__action-row"><button disabled={disabled || !file || running} onClick={() => void start(false)}>Play local fixture</button><button disabled={disabled || running} onClick={() => void start(true)}>Generate test voice</button><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
         <div className="console__action-row"><button aria-pressed={original} onClick={() => setOriginal(true)}>Original</button><button aria-pressed={!original} onClick={() => setOriginal(false)}>Processed</button></div>

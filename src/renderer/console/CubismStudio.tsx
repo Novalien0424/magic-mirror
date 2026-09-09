@@ -18,7 +18,8 @@ const PARAMETER_NAMES: Record<string, string> = {
 }
 const number = (value: number) => Number(value.toFixed(3))
 
-export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null; visible: boolean }): React.JSX.Element {
+export function CubismStudio({ bridge, visible, assignedModel }: { bridge: ConsoleBridge | null; visible: boolean; assignedModel?: AvatarModel | null }): React.JSX.Element {
+  const bound = assignedModel !== undefined
   const [models, setModels] = useState<AvatarModel[]>([BUILTIN])
   const [labels, setLabels] = useState<Record<string, AvatarLibraryLabel>>({})
   const [labelName, setLabelName] = useState('')
@@ -41,7 +42,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   const mounted = useRef(true)
   const request = useRef(0)
-  const selected = models.find(model => model.id === selectedId)
+  const selected = bound ? assignedModel ?? BUILTIN : models.find(model => model.id === selectedId)
   const modelTitle = (model: AvatarModel) => model.id === BUILTIN.id ? model.name
     : `${model.name}${labels[model.id]?.version ? '' : ' · version not set'} · ${model.id.slice(-8)}`
   useEffect(() => {
@@ -85,6 +86,11 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
     }
     // Library refresh is tied to page entry, not preview updates.
   }, [visible, bridge])
+  useEffect(() => {
+    if (!bound || !visible) return
+    reset(); setReady(false); setCapabilities(EMPTY); setObserved({}); setFault('')
+    setLoaded(assignedModel ?? BUILTIN)
+  }, [bound, visible, assignedModel?.id])
 
   const importModel = async () => {
     if (!bridge) return
@@ -149,9 +155,9 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
   }
 
   return <section className="console__panel cubism-studio" aria-labelledby="cubism-studio-title">
-    <h2 id="cubism-studio-title">Live2D Cubism</h2>
-    <p>Load a rig and try its motions, expressions, eyes, mouth and movement in the Console preview.</p>
-    <div className="cubism-studio__toolbar">
+    <h2 id="cubism-studio-title">{bound ? 'Assigned rig preview' : 'Rig library'}</h2>
+    <p>{bound ? 'Preview-only poses and motions. Nothing here changes the saved rig or profile.' : 'Shared Cubism rigs. Import, label and test once, then assign them to avatars.'}</p>
+    <div className="cubism-studio__toolbar" hidden={bound}>
       <label>Avatar model<select aria-label="Cubism avatar model" value={selectedId} disabled={busy} onChange={e => setSelectedId(e.currentTarget.value)}>
         {models.map(model => <option key={model.id} value={model.id}>{modelTitle(model)}</option>)}
       </select></label>
@@ -159,7 +165,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
       <button type="button" disabled={!bridge || busy} onClick={() => void importModel()}>Browse & import Cubism…</button>
       <button type="button" disabled={!bridge || busy} onClick={() => void refresh()}>Refresh library</button>
     </div>
-    {selected && selected.id !== BUILTIN.id && <fieldset disabled={busy}>
+    {!bound && selected && selected.id !== BUILTIN.id && <fieldset disabled={busy}>
       <legend>Library name and version</legend>
       <div className="console__action-row">
         <label>Name<input aria-label="Avatar library name" maxLength={60} value={labelName} onChange={e => setLabelName(e.currentTarget.value)} /></label>
@@ -169,7 +175,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
       <p className="console__muted">Save before selecting another model. Labels persist across restarts; they do not rename rig files or change the published character.</p>
     </fieldset>}
     <p aria-label="Selected avatar model">Selected: {selected ? modelTitle(selected) : 'Unavailable — refresh the library'}</p>
-    <p className="console__muted">Imports stay in your local library. Preview tests are silent and local. To use a rig for conversations, assign it under Avatar / Audio → Appearance and publish that draft.</p>
+    <p className="console__muted">Imports stay in the shared library. Preview tests are silent and local. Assign a rig in Appearance, then save, check and publish.</p>
     {libraryWarning && <p className="console__fault" role="alert">{libraryWarning}</p>}
     <div className="cubism-studio__layout">
       <div className="cubism-studio__preview-panel">
@@ -192,7 +198,7 @@ export function CubismStudio({ bridge, visible }: { bridge: ConsoleBridge | null
         </div>
         <div className="console__action-row">
           <button type="button" disabled={!ready} onClick={() => { reset(); setMessage('Stopped · neutral pose') }}>Stop / reset</button>
-          <button type="button" disabled={!loaded} onClick={() => { reset(); setLoaded(null); setReady(false); setCapabilities(EMPTY); setMessage('Preview unloaded.') }}>Unload</button>
+          <button type="button" hidden={bound} disabled={!loaded} onClick={() => { reset(); setLoaded(null); setReady(false); setCapabilities(EMPTY); setMessage('Preview unloaded.') }}>Unload</button>
         </div>
         <p role="status" className="cubism-studio__status">{message}</p>
         {fault && <p className="console__fault" role="alert">{fault}</p>}

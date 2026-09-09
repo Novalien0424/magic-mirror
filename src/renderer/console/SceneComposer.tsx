@@ -68,7 +68,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
         }}>Add scene</button>
         {draft.scenes.map(s => <button type="button" key={s.id} aria-pressed={s.id === scene?.id}
           onClick={() => { setSceneId(s.id); setStepId(''); setActionId('') }}>
-          <strong>{s.name}</strong><span>{s.stages.length} steps{s.enabled ? '' : ' · Disabled'}</span>
+          <strong>{s.name}</strong><span>{s.stages.length} {s.stages.length === 1 ? 'step' : 'steps'}{s.enabled ? '' : ' · Disabled'}</span>
         </button>)}
       </aside>
       {!scene ? <div className="console__empty"><h3>Create a short spell scene</h3><p>Add a scene, enter the exact phrase, then add a few steps.</p><p>Import media from the Media library whenever you need it.</p></div> :

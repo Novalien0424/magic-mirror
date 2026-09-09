@@ -19,19 +19,20 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
   const shot = async (file: string): Promise<void> => { const image = await capture(input.console, input.outputDir, file); screenshots++; input.onEvidence({ step: 'voice_screenshot', status: 'captured', file, sha256: image.sha256 }) }
   const picker = dialog.showOpenDialog
   try {
-    await wait("return !!button('Voice Studio')", 'page_ready')
+    await wait("return !!button('Avatars')", 'page_ready')
     const before = await input.runtime.console.getConfig(); if (!before.ok) throw Error('voice_qa_config')
     const activeBefore = JSON.stringify(before.value.active)
-    await edit("click('Voice Studio')")
+    await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return !!button('Default · Ethereal') && !button('Default · Ethereal').disabled", 'editor_ready')
     await edit("click('Default · Ethereal')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='1'", 'default_preset')
     pass('voice_default_preset')
+    await edit("document.querySelector('.voice-studio details').open=true")
     for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB']) {
       await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');set(el,Number(el.min)+(Number(el.max)-Number(el.min))/2);`)
     }
-    await edit("click('Default · Ethereal')"); await edit("click('Save Draft')")
-    await wait("return !button('Save Draft').disabled && !button('Validate draft').disabled", 'save')
+    await edit("click('Default · Ethereal')"); await edit("click('Save all changes')")
+    await wait("return !button('Save all changes').disabled && !button('Check saved changes').disabled", 'save')
     pass('voice_controls_saved')
     await shot('voice-default.png')
     await edit("document.querySelector('.voice-studio fieldset:nth-of-type(2)').scrollIntoView({block:'start'})")
@@ -46,14 +47,14 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Local fixture playing')", 'local_playback')
     await edit("click('Original')"); await edit("click('Processed')"); await edit("click('Stop')")
     pass('voice_local_loop_ab_stop')
-    await edit("click('New avatar')"); await edit("click('Raven · Dark oracle')")
-    await edit("click('Avatar / Audio')"); await edit("click('Appearance')")
+    await edit("click('New avatar')"); await edit("click('Voice')"); await edit("click('Raven · Dark oracle')")
+    await edit("click('Avatars')"); await edit("click('Appearance')")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [resolve('resources/avatar/Raven/v10/runtime/raven-lord.model3.json')] })) as typeof dialog.showOpenDialog
-    await edit("const d=[...document.querySelectorAll('details')].find(e=>e.querySelector('summary')?.textContent==='Cubism model');d.open=true;click('Browse & import Cubism…')")
-    await wait("return !button('Save Draft').disabled", 'raven_import')
-    await edit("click('Voice Studio')")
+    await edit("click('Browse & import Cubism…')")
+    await wait("return !button('Save all changes').disabled", 'raven_import')
+    await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='-3'", 'rig_keeps_effect')
-    await edit("click('Save Draft')"); await wait("return !button('Validate draft').disabled", 'raven_save')
+    await edit("click('Save all changes')"); await wait("return !button('Check saved changes').disabled", 'raven_save')
     await edit("document.querySelector('.voice-studio').scrollIntoView({block:'start'})")
     await new Promise(r => setTimeout(r, 1200)); await shot('voice-raven.png')
     pass('voice_raven_rig_preserves_settings')
@@ -72,7 +73,7 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
         pass(`voice_provider_speed_${speed}`)
       }
     }
-    await edit("click('Overview')"); pass('voice_page_leave')
+    await edit("click('Mirror')"); pass('voice_page_leave')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0, musicAnalyser: 'not_executed', screenshotCount: screenshots, consoleCheckCount: checks }
   } catch (error) {
     input.onEvidence({ step: 'voice_failure', status: 'failed', item: error instanceof Error ? error.message.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 120) : 'unknown' })

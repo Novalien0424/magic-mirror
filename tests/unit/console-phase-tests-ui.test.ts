@@ -113,7 +113,7 @@ describe('Phase 0 Task 9 Gate 9C.1 Phase Tests UI RED contract', () => {
     })
     const contract = (CONSOLE_UI_CONTRACT as unknown as Record<string, unknown>).phaseTests
 
-    expect(CONSOLE_UI_CONTRACT.tabs).toContain('Phase Tests')
+    expect(CONSOLE_UI_CONTRACT.tabs).toContain('System')
     expect(contract).toEqual(expect.objectContaining({
       emptyCopy: EXACT_CONTRACT_EMPTY_COPY,
       ownershipCopy: EXACT_OWNERSHIP_COPY,

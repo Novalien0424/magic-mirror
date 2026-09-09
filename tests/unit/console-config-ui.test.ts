@@ -7,22 +7,22 @@ import {
   App,
   ConfigPanel,
   ModelsPanel,
+  ScenesPanel,
   CONSOLE_UI_CONTRACT,
 } from '../../src/renderer/console/App'
 import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 
-const EXPECTED_TABS = [
-  'Overview',
-  'Avatar / Audio',
-  'Live2D Cubism',
-  'Voice Studio',
-  'Scenes',
-  'Simulator',
-  'Events',
-  'Phase Tests',
-  'Config',
-  'Models',
-] as const
+const EXPECTED_TABS = ['Mirror', 'Avatars', 'System'] as const
+
+it('renders a recoverable profile configuration failure and blocks publication', () => {
+  const html = renderToStaticMarkup(createElement(ScenesPanel, {
+    state: { status: 'failure', error: 'console_request_rejected', reason: 'cause=configuration_read_failed' },
+    bridge: null, bridgeAvailable: true, onChanged: () => undefined,
+  }))
+  expect(html).toContain('cause=configuration_read_failed')
+  expect(html).toMatch(/<button[^>]*>Retry loading saved configuration<\/button>/)
+  expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Publish all changes<\/button>/)
+})
 
 const EXPECTED_EVENT_COLUMNS = [
   'time',

@@ -12,6 +12,12 @@ cases; preserve the operator's normal user data and uncommitted changes.
 
 ## Choose the evidence needed
 
+- `npm run test:phase4:qa:profiles`: new Avatar journey plus local Voice QA,
+  independent persona/rig/voice/scenes, draft retention, invalid Save, guarded
+  navigation/reload, saved scope after reload, Publish and Dormant activation.
+  Captures 1440x900 and 1024x768 Console states. Active-conversation switch
+  denial remains separate Main/unit evidence; this mode makes no provider call.
+
 - `npm run test:phase4:qa:cubism`: dedicated Live2D Cubism page, every motion
   index/expression/actual MOC parameter, reset/cancellation and rig replacement.
   Mirror stays hidden; no portrait, speech or scene-playback claim. Built-in
@@ -86,6 +92,24 @@ readability, error visibility, selected values, portrait framing, Avatar visibil
 and active/returned media frames. Nonblack pixels and changing hashes prove only
 mechanical frame properties; they do not replace visual judgment. Static images
 cannot prove smoothness, physical sound, conversational timing, or real fog/lights.
+
+For profile Console visual QA, capture both the top-of-page hierarchy and the
+actual action/error/disclosure being assessed. A screenshot named "publish
+scope" is not evidence if its scope panel is below the frame. Move the pointer
+to a neutral location before overview captures so incidental help popovers do
+not hide fields. Inspect sticky action bars for discoverability AND obstruction;
+check that long/duplicate names have a visible full-name/ID alternative, shared
+resource scope is explicit, and narrow layouts keep controls and previews in
+the page. Keep stable React keys distinct for simultaneous preview siblings;
+rig-ready status and the assigned rig ID must agree after a selection change.
+
+When the user requests an independent visual review, provide actual synthetic
+images to the reviewer and record which were opened, concrete findings and
+corrections. A text-only design review is not a visual review. Keep screenshots
+until the requested reviews finish. If the user requests artifact cleanup,
+record results/build hashes and the exact run roots first, then remove only
+verified task-created isolated roots. Preserve reusable harnesses, written
+findings and pre-existing operator artifacts.
 Test managed Cubism both at fresh start and after switching from another rig.
 For framing changes, compare fresh model instances at identical 9:16 canvas
 pixels/DPR and neutral state; record MOC canvas/origin/PPU and Layout. Inspect

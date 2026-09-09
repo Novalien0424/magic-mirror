@@ -1,5 +1,37 @@
 # Magic Mirror — Current handoff
 
+## Profile Console Windows delivery — 2026-09-09 23:36 Asia/Taipei
+
+Console now uses Mirror / Avatars / System. Avatar profiles own Persona,
+Appearance, Voice and Spells & scenes; shared rigs/media/actions remain clearly
+scoped. Unsaved drafts survive navigation, publication names all affected
+profiles/shared resources, and activation stays separate. No operator draft
+publication. Current design, journey, failure ledger and validation:
+[delivery report](docs/testing/profile-console-2026-09-09.md).
+
+Two Fable planning reviews and two actual-image visual reviews completed;
+Codex inspected and corrected the final captures. Findings and model-reporting
+caveat: [review record](docs/testing/profile-console-reviews-2026-09-09.md).
+Full tests: 942 / 103 files, exit 0; additional focused render/state checks:
+11 / 2 files, exit 0. Node/web typechecks, build and fingerprint check exit 0.
+Windows editor QA 26 checks, profile journey 16 checks and 21 captures,
+Cubism including Raven 224 checks: all exit 0. No Mac/physical sound/hardware
+acceptance or phase promotion is claimed.
+
+Normal canonical Main **46096**, started **23:35:48**, is running the verified
+23:27 build. Mirror/Console loaded and ready, Mirror shown, smoke off; stderr
+empty. Runtime metadata: `.artifacts/profile-console-deployment-20260909`.
+Prior operator edits were saved (92 draft changes) before stopping old Main;
+active configuration was never published for testing.
+
+Delivery target is origin/main; verify HEAD against the remote tip after push.
+**Outstanding:** user-requested cleanup of this task's 12 isolated QA runs and
+temporary review directory was rejected by automatic approval review, including
+the literal-path retry, with only "blocked by policy". They remain local and
+ignored; exact run IDs are in the delivery report. Next action: remove those
+exact directories when policy permits. Earlier sections below are historical;
+existing human acoustic/performance gates remain open.
+
 ## Committed Windows deployment — 2026-09-09 16:39 Asia/Taipei
 
 Product commit **bbd0256** contains Voice Studio, shared processed Realtime

@@ -33,7 +33,7 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   dialog.showOpenDialog = (async () => ({ canceled: !selection, filePaths: selection ? [selection] : [] })) as typeof dialog.showOpenDialog
   try {
     const before = await evaluate<string>('return JSON.stringify(await window.magicMirror.getConfig());')
-    await input.console.webContents.executeJavaScript("[...document.querySelectorAll('nav button')].find(e=>e.textContent==='Live2D Cubism').click()", true)
+    await input.console.webContents.executeJavaScript("(async()=>{[...document.querySelectorAll('nav button')].find(e=>e.textContent==='Avatars').click(); await new Promise(r=>setTimeout(r,100)); [...document.querySelectorAll('nav button')].find(e=>e.textContent==='Rig library').click()})()", true)
     await wait("return !!p && !b('Refresh library').disabled")
     await click('Browse & import Cubism…')
     await wait("return status() === 'Import cancelled.' && !b('Refresh library').disabled")
@@ -128,7 +128,7 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     pass(); await snap('cubism-ren-return.png')
     step = 'cubism_leave_cleanup'
     await click('Test parameter ParamAngleX')
-    await input.console.webContents.executeJavaScript("[...document.querySelectorAll('nav button')].find(e=>e.textContent==='Overview').click()", true)
+    await input.console.webContents.executeJavaScript("[...document.querySelectorAll('nav button')].find(e=>e.textContent==='Mirror').click()", true)
     await delay(3100)
     await wait("return !p.querySelector('canvas')")
     const after = await evaluate<string>('return JSON.stringify(await window.magicMirror.getConfig());')
