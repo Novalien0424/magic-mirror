@@ -1,7 +1,16 @@
+export interface AudioVolumes {
+  readonly bgm: number
+  readonly avatar: number
+  readonly effects: number
+}
+
+export const DEFAULT_AUDIO_VOLUMES: AudioVolumes = Object.freeze({ bgm: 1, avatar: 1, effects: 1 })
+
 export interface AudioPreferences {
   readonly inputId: string
   readonly inputLabel: string
   readonly outputId: string
+  readonly volumes?: AudioVolumes
 }
 
 export interface AudioDeviceState {
@@ -15,11 +24,21 @@ export const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = Object.freeze({ input
 export function parseAudioPreferences(value: unknown): AudioPreferences | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
-  if (Object.keys(record).sort().join(',') !== 'inputId,inputLabel,outputId') return null
+  const keys = Object.keys(record).sort().join(',')
+  if (keys !== 'inputId,inputLabel,outputId' && keys !== 'inputId,inputLabel,outputId,volumes') return null
   if (!['inputId', 'inputLabel', 'outputId'].every((key) => typeof record[key] === 'string'
     && record[key].length <= 512 && !/[\u0000-\u001f]/.test(record[key]))) return null
   if ((record.inputId === '') !== (record.inputLabel === '')) return null
-  return Object.freeze({ inputId: record.inputId as string, inputLabel: record.inputLabel as string, outputId: record.outputId as string })
+  let volumes: AudioVolumes | undefined
+  if ('volumes' in record) {
+    const value = record.volumes as Record<string, unknown> | null
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== 'avatar,bgm,effects'
+      || !Object.values(value).every(gain => typeof gain === 'number' && Number.isFinite(gain) && gain >= 0 && gain <= 1)) return null
+    volumes = Object.freeze({ bgm: value.bgm as number, avatar: value.avatar as number, effects: value.effects as number })
+  }
+  return Object.freeze({ inputId: record.inputId as string, inputLabel: record.inputLabel as string, outputId: record.outputId as string,
+    ...(volumes ? { volumes } : {}) })
 }
 
 export function isAudioDeviceState(value: unknown): value is AudioDeviceState {

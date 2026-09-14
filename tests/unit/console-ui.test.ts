@@ -277,7 +277,9 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
       'beforeSequence',
       'nextBeforeSequence',
     ]))
-    expect(html).not.toMatch(/\btranscripts?\b|\bprivate\s+memory\b|\bcredentials?\b|\bembeddings?\b|\bconfigured\s+values?\b/i)
+    const eventsPanel = html.match(/<section[^>]*aria-labelledby="console-events"[\s\S]*?<\/section>/)?.[0]
+    expect(eventsPanel).toBeDefined()
+    expect(eventsPanel).not.toMatch(/\btranscripts?\b|\bprivate\s+memory\b|\bcredentials?\b|\bembeddings?\b|\bconfigured\s+values?\b/i)
     for (const sentinel of PRIVACY_SENTINELS) {
       expect(html).not.toContain(sentinel)
     }

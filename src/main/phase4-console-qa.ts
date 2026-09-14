@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { runVoiceConsoleQa } from './voice-console-qa'
 import { runProfileConsoleQa } from './profile-console-qa'
+import { runFieldHelpConsoleQa } from './field-help-console-qa'
 
 // This driver runs only in the isolated Phase 4 QA process. It substitutes the
 // native file-picker selection; import, Chromium decode, edits, and publication
@@ -39,6 +40,7 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
   if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
   if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)
   let checkCount = 0
@@ -90,6 +92,40 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   dialog.showOpenDialog = (async () => ({ canceled: selection === null,
     filePaths: selection === null ? [] : Array.isArray(selection) ? selection : [selection] })) as typeof dialog.showOpenDialog
   try {
+    step = 'console_volume_controls'
+    await wait("return !!button('System', document)")
+    await edit("click(button('System', document))")
+    await wait("return !!document.querySelector('[aria-label=\"BGM volume\"]') && !document.querySelector('[aria-label=\"BGM volume\"]').disabled")
+    for (const [label, channel, value] of [['BGM', 'bgm', 30], ['Avatar audio', 'avatar', 70], ['Sound effects', 'effects', 0]] as const) {
+      await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '${value}')`)
+      await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === ${value / 100}`)
+    }
+    await wait('const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.voiceGain === 0.7', 'avatar_volume_applied')
+    const savedVolumes = JSON.parse(await readFile(join(resolve(input.outputDir, '..'), 'user-data', 'audio-devices.json'), 'utf8')).volumes
+    if (JSON.stringify(savedVolumes) !== JSON.stringify({ bgm: 0.3, avatar: 0.7, effects: 0 })) throw new Error('phase4_qa_volume_persistence')
+    await screenshot('console-volume-controls.png')
+    passed()
+    step = 'console_volume_reload'
+    input.console.webContents.reload()
+    await wait("return !!button('System', document)")
+    await edit("click(button('System', document))")
+    await wait(`return ['BGM', 'Avatar audio', 'Sound effects'].every((label, i) =>
+      document.querySelector('[aria-label="' + label + ' volume"]')?.value === ['30', '70', '0'][i])`)
+    const volumeSize = input.console.getSize()
+    input.console.setSize(1024, 768)
+    await new Promise(resolveWait => setTimeout(resolveWait, 150))
+    await edit("document.querySelector('.console__volume-controls').scrollIntoView({block:'center'})")
+    await screenshot('console-volume-controls-1024.png')
+    input.console.setSize(volumeSize[0]!, volumeSize[1]!)
+    passed()
+    for (const [label, channel] of [['BGM', 'bgm'], ['Avatar audio', 'avatar'], ['Sound effects', 'effects']] as const) {
+      await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '100')`)
+      await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === 1`)
+    }
+    if (process.env['MIRROR_AUDIO_VOLUME_QA'] === '1') {
+      return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0,
+        screenshotCount, musicAnalyser: 'not_executed', consoleCheckCount: checkCount }
+    }
     await wait("return !!button('Avatars', document)")
     await edit("click(button('Avatars', document))")
     await edit("click(button('Spells & scenes'))")

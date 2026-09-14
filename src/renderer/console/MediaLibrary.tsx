@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
 import type { ManagedVisualAsset } from '../../shared/types'
+import { getAudioDeviceRouter } from '../audio-devices'
 import { ResourceAccess } from './ResourceAccess'
 import type { AvatarCatalog } from '../../shared/avatar-profiles'
 
@@ -29,19 +30,22 @@ export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '',
     const audio = audioRef.current
     if (!audio) return
     let cancelled = false
+    const router = getAudioDeviceRouter()
+    const stopVolumes = router.watchVolumes(volumes => { audio.volume = 0.5 * volumes.bgm })
     setReason('Loading audio preview…')
     void (async () => {
       const runtime = await bridge.getAvatarRuntime()
-      const outputId = runtime.ok ? runtime.value.audioDevices?.preferences.outputId ?? '' : ''
+      if (cancelled) return
+      if (runtime.ok && runtime.value.audioDevices) await router.select(runtime.value.audioDevices.preferences)
+      const outputId = router.snapshot().preferences.outputId
       let fallback = false
       try { await audio.setSinkId(outputId) }
       catch { await audio.setSinkId(''); fallback = true }
       if (cancelled) return
-      audio.volume = 0.5
       await audio.play()
-      if (!cancelled) setReason(fallback ? 'Playing locally · 50% volume · Selected speakers unavailable; using Windows default.' : 'Playing locally · 50% volume')
+      if (!cancelled) setReason(fallback ? 'Playing locally · 50% preview level × BGM volume · Selected speakers unavailable; using Windows default.' : 'Playing locally · 50% preview level × BGM volume')
     })().catch(() => { if (!cancelled) { setReason('Audio preview failed. Check the file and selected speakers.'); setPlaying('') } })
-    return () => { cancelled = true; audio.pause(); audio.removeAttribute('src'); audio.load() }
+    return () => { cancelled = true; stopVolumes(); audio.pause(); audio.removeAttribute('src'); audio.load() }
   }, [playing, bridge])
   return <section className="media-library" aria-label="Media library">
     <div className="console__action-row"><button type="button" className="console__primary" disabled={disabled} onClick={onImport}>Browse & upload media…</button><span className="console__muted">Select images, videos and audio together · up to 32 files</span></div>

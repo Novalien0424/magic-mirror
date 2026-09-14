@@ -37,3 +37,17 @@ it('makes unreadable settings visible and rejects malformed saves without overwr
   expect(() => saveAudioPreferences({ ...DEFAULT_AUDIO_PREFERENCES, inputId: 'missing-label' })).toThrow('audio_preferences_save_failed')
   expect(readFileSync(path, 'utf8')).toBe('invalid synthetic settings')
 })
+
+it('restores independent output volumes without changing device preferences', () => {
+  const path = fixture()
+  initializeAudioPreferences(path)
+  const preferences = { ...DEFAULT_AUDIO_PREFERENCES, volumes: { bgm: 0.3, avatar: 0.7, effects: 0 } }
+  saveAudioPreferences(preferences)
+  initializeAudioPreferences(path)
+  expect(getAudioPreferences().preferences).toEqual(preferences)
+  for (const invalid of [-0.1, 1.1, NaN, Infinity, '0.5']) {
+    expect(() => saveAudioPreferences({ ...preferences, volumes: { ...preferences.volumes, bgm: invalid } } as never))
+      .toThrow('audio_preferences_save_failed')
+  }
+  expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(preferences)
+})

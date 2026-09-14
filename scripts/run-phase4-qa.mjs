@@ -7,7 +7,7 @@ import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles']
+const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -18,7 +18,9 @@ const live = process.argv.includes('--live') || lifecycleLive
 const manual = process.argv.includes('--manual')
 const cubismOnly = process.argv.includes('--cubism')
 const profileOnly = process.argv.includes('--profiles')
-const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly
+const audioOnly = process.argv.includes('--audio')
+const fieldHelpOnly = process.argv.includes('--field-help')
+const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
 const consoleOnly = process.argv.includes('--console') || editorOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
@@ -215,6 +217,8 @@ const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
   MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
+  MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
+  MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
   MIRROR_PHASE4_QA_LIVE: live ? '1' : '0',

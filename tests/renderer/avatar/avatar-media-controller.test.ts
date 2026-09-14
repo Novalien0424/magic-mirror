@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAvatarMediaController } from '../../../src/renderer/avatar/audio/avatar-media-controller'
+import { getAudioDeviceRouter } from '../../../src/renderer/audio-devices'
+import { DEFAULT_AUDIO_PREFERENCES } from '../../../src/shared/audio-devices'
 
 class FakeNode {
   readonly connections: FakeNode[] = []
@@ -61,6 +63,7 @@ describe('Avatar shared background audio bus', () => {
       createBufferSource = () => new FakeNode()
       decodeAudioData = vi.fn()
       resume = vi.fn(async () => undefined)
+      setSinkId = vi.fn(async () => undefined)
       close = vi.fn(async () => undefined)
     }
     vi.stubGlobal('AudioContext', FakeAudioContext)
@@ -80,14 +83,37 @@ describe('Avatar shared background audio bus', () => {
     const videoSource = sources[1]!
     const musicAnalyser = musicSource.connections[0]!
     const musicAuthoredGain = musicAnalyser.connections[0]!
-    const sharedAnalyser = musicAuthoredGain.connections[0]!
+    const musicMaster = musicAuthoredGain.connections[0] as FakeGain
+    const sharedAnalyser = musicMaster.connections[0]!
     const videoAuthoredGain = videoSource.connections[0]!
-    expect(videoAuthoredGain.connections[0]).toBe(sharedAnalyser)
+    const effectsMaster = videoAuthoredGain.connections[0] as FakeGain
+    expect(effectsMaster.connections[0]).toBe(sharedAnalyser)
+
+    const realtime = { setVolume: vi.fn(), audioElement: new FakeAudio() }
+    controller.setRealtimeOutput(realtime as never)
+    await getAudioDeviceRouter().select({ ...DEFAULT_AUDIO_PREFERENCES, volumes: { bgm: 0.3, avatar: 0.7, effects: 0 } })
+    expect(musicMaster.gain.value).toBe(0.3)
+    expect(effectsMaster.gain.value).toBe(0)
+    expect((videoAuthoredGain as FakeGain).gain.value).toBe(0.4)
+    expect(realtime.setVolume).toHaveBeenLastCalledWith(0.7)
 
     controller.handleActivity('output_started')
     const sharedDuckGain = sharedAnalyser.connections[0] as FakeGain
     expect(sharedDuckGain.ramps.at(-1)).toBe(0.22)
     expect(gains).toContain(sharedDuckGain)
+    controller.handleCommand({ type: 'scene_music', action: 'fade', targetGain: 0.5, durationMs: 100 })
+    expect((musicAuthoredGain as FakeGain).gain.value).toBe(0.5)
+    expect(musicMaster.gain.value).toBe(0.3)
+    expect(sharedDuckGain.gain.value).toBe(0.22)
+    expect(controller.snapshot().musicGain).toBeCloseTo(0.033)
+
+    await getAudioDeviceRouter().select({ ...DEFAULT_AUDIO_PREFERENCES, volumes: { bgm: 0, avatar: 0, effects: 0.8 } })
+    expect(musicMaster.gain.value).toBe(0)
+    expect(effectsMaster.gain.value).toBe(0.8)
+    expect(realtime.setVolume).toHaveBeenLastCalledWith(0)
+    controller.handleActivity('output_stopped')
+    expect(musicMaster.gain.value).toBe(0)
+    expect(sharedDuckGain.ramps.at(-1)).toBe(1)
 
     controller.setSceneVideoAudio(null)
     expect(videoSource.disconnect).toHaveBeenCalledTimes(1)
@@ -95,5 +121,7 @@ describe('Avatar shared background audio bus', () => {
     controller.handleCommand({ type: 'scene_music', action: 'play', assetId: 'preview-audio', gain: 0.5, loop: false, preview: true })
     await vi.waitFor(() => expect(fetchMedia).toHaveBeenCalledWith('magic-mirror-media://music-draft/preview-audio'))
     controller.dispose()
+    await getAudioDeviceRouter().select(DEFAULT_AUDIO_PREFERENCES)
+    expect(musicMaster.gain.value).toBe(0)
   })
 })

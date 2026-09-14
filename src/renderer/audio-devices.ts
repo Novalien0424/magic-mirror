@@ -1,4 +1,4 @@
-import { DEFAULT_AUDIO_PREFERENCES, type AudioDeviceState, type AudioPreferences } from '../shared/audio-devices'
+import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES, type AudioDeviceState, type AudioPreferences, type AudioVolumes } from '../shared/audio-devices'
 
 interface AudioSink { setSinkId(id: string): Promise<void> }
 
@@ -22,6 +22,13 @@ export class AudioDeviceRouter {
   subscribe(listener: (state: AudioDeviceState) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+  watchVolumes(listener: (volumes: AudioVolumes) => void): () => void {
+    let disposed = false
+    const notify = (): void => { if (!disposed) listener(this.preferences.volumes ?? DEFAULT_AUDIO_VOLUMES) }
+    const unsubscribe = this.subscribe(notify)
+    void this.ready.then(notify)
+    return () => { disposed = true; unsubscribe() }
   }
   private changed(): void { for (const listener of this.listeners) listener(this.snapshot()) }
   async inputConstraints(): Promise<true | MediaTrackConstraints> {
@@ -47,9 +54,12 @@ export class AudioDeviceRouter {
   select(preferences: AudioPreferences): Promise<void> {
     const operation = this.queue.then(async () => {
       await this.ready
+      const outputChanged = this.preferences.outputId !== preferences.outputId
       this.preferences = preferences
-      this.reason = 'audio_devices_ready'
-      await Promise.all([...this.sinks].map((sink) => this.route(sink)))
+      if (outputChanged) {
+        this.reason = 'audio_devices_ready'
+        await Promise.all([...this.sinks].map((sink) => this.route(sink)))
+      }
       this.changed()
     })
     this.queue = operation.catch(() => undefined)

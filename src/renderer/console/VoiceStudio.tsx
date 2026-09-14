@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { HelpField } from './HelpField'
+import { FIELD_HELP, VOICE_FIELD_HELP } from './field-help-text'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { AVATAR_VOICES, type AvatarProfile, type AvatarModel } from '../../shared/avatar-profiles'
 import { DEFAULT_VOICE_EFFECTS, VOICE_EFFECT_PRESETS, type VoiceEffects } from '../../shared/voice-effects'
@@ -18,6 +20,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
   const effects = avatar.voiceEffects ?? DEFAULT_VOICE_EFFECTS
   const [file, setFile] = useState<File>(), [loop, setLoop] = useState(false), [original, setOriginal] = useState(false)
   const fileInput = useRef<HTMLInputElement | null>(null)
+  const localSpeechHelpId = useId()
   const [running, setRunning] = useState(false), [status, setStatus] = useState('Select an approved speech fixture, or generate a test voice.')
   const [rigName, setRigName] = useState(model?.name ?? 'Built-in Ren')
   const audition = useRef<VoiceAudition | null>(null), controller = useRef<AbortController | null>(null), generation = useRef(0)
@@ -87,26 +90,27 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
       <p className="console__muted">Rig: {rigName} · Preset: {preset}</p>
       <p className="console__muted">Draft voice settings. Published changes apply to the next conversation.</p>
       <fieldset disabled={disabled}><legend>Voice and delivery</legend><div className="console__form-grid">
-        <label>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></label>
-        <label>Speech speed · {(avatar.voiceSpeed ?? 1).toFixed(2)}×<input type="range" min="0.5" max="1.5" step="0.05" value={avatar.voiceSpeed ?? 1} onChange={e => onChange({ ...avatar, voiceSpeed: Number(e.currentTarget.value) })} /></label>
-        <label>Delivery style<textarea value={avatar.speakingStyle} maxLength={2000} rows={3} onChange={e => onChange({ ...avatar, speakingStyle: e.currentTarget.value })} /></label>
+        <HelpField help={FIELD_HELP.baseVoice}>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></HelpField>
+        <HelpField help={FIELD_HELP.speechSpeed}>Speech speed · {(avatar.voiceSpeed ?? 1).toFixed(2)}×<input type="range" min="0.5" max="1.5" step="0.05" value={avatar.voiceSpeed ?? 1} onChange={e => onChange({ ...avatar, voiceSpeed: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField help={FIELD_HELP.deliveryStyle}>Delivery style<textarea value={avatar.speakingStyle} maxLength={2000} rows={3} onChange={e => onChange({ ...avatar, speakingStyle: e.currentTarget.value })} /></HelpField>
       </div><div className="console__action-row">{[['Natural', 'Speak naturally, clearly and warmly.'], ['Solemn', 'Speak slowly and solemnly, with clear consonants.'], ['Ethereal', 'Use a gentle, mysterious delivery, while remaining clear and intelligible.']].map(([name, style]) => <button key={name} onClick={() => onChange({ ...avatar, speakingStyle: style! })}>{name}</button>)}</div></fieldset>
       <fieldset disabled={disabled}><legend>Local voice effects</legend><div className="console__action-row">
         <button onClick={() => onChange({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.ethereal }, voiceSpeed: 0.95 })}>Default · Ethereal</button>
         <button onClick={() => onChange({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.darkOracle }, voiceSpeed: 0.9 })}>Raven · Dark oracle</button>
         <button onClick={() => { stop(); onChange({ ...avatar, voiceEffects: { ...DEFAULT_VOICE_EFFECTS }, voiceSpeed: 1 }); setStatus('Effects reset to bypass.') }}>Reset</button>
-      </div><label><input type="checkbox" checked={effects.enabled} onChange={e => edit({ enabled: e.currentTarget.checked })} /> Effects enabled</label>
-        <details><summary>Fine tuning</summary><div className="console__form-grid">{sliders.map(([key, label, min, max, step]) => <label key={key}>{label} · {effects[key].toFixed(2)}<input aria-label={label} type="range" min={min} max={max} step={step} value={effects[key]} onChange={e => edit({ [key]: Number(e.currentTarget.value) })} /></label>)}</div>
-        <label><input type="checkbox" checked={effects.formantCompensation} onChange={e => edit({ formantCompensation: e.currentTarget.checked })} /> Preserve formants when pitch changes</label>
-        <label>Room size<select value={effects.roomSize} onChange={e => edit({ roomSize: e.currentTarget.value as VoiceEffects['roomSize'] })}><option value="short">Short · 120 ms</option><option value="medium">Medium · 250 ms</option></select></label>
+      </div><HelpField help={FIELD_HELP.effectsEnabled}><input type="checkbox" checked={effects.enabled} onChange={e => edit({ enabled: e.currentTarget.checked })} /> Effects enabled</HelpField>
+        <details><summary>Fine tuning</summary><div className="console__form-grid">{sliders.map(([key, label, min, max, step]) => <HelpField help={VOICE_FIELD_HELP[key]} key={key}>{label} · {effects[key].toFixed(2)}<input aria-label={label} type="range" min={min} max={max} step={step} value={effects[key]} onChange={e => edit({ [key]: Number(e.currentTarget.value) })} /></HelpField>)}</div>
+        <HelpField help={FIELD_HELP.formantCompensation}><input type="checkbox" checked={effects.formantCompensation} onChange={e => edit({ formantCompensation: e.currentTarget.checked })} /> Preserve formants when pitch changes</HelpField>
+        <HelpField help={FIELD_HELP.roomSize}>Room size<select value={effects.roomSize} onChange={e => edit({ roomSize: e.currentTarget.value as VoiceEffects['roomSize'] })}><option value="short">Short · 120 ms</option><option value="medium">Medium · 250 ms</option></select></HelpField>
       </details></fieldset></div>
       <div className="voice-studio__preview"><div className="presentation-preview"><AvatarCanvas embedded preview model={model ? { id: model.id, manifestFileName: model.manifestFileName } : undefined}
         state={running ? 'Speaking' : 'Listening'} onRenderer={onRenderer} onMetrics={() => undefined} onEvent={event => { if (event.status === 'failed') setStatus(event.reason) }} /></div>
-        <div className="voice-file-picker"><p>Local speech sample</p><button onClick={() => fileInput.current?.click()}>Choose audio file</button>
-          <input ref={fileInput} hidden aria-label="Local speech sample" type="file" accept="audio/*" onChange={e => { stop(); setFile(e.currentTarget.files?.[0]) }} />
+        <div className="voice-file-picker"><HelpField help={FIELD_HELP.localSpeech} descriptionId={localSpeechHelpId}>Local speech sample
+          <input ref={fileInput} hidden aria-label="Local speech sample" type="file" accept="audio/*" onChange={e => { stop(); setFile(e.currentTarget.files?.[0]) }} /></HelpField>
+          <button aria-describedby={localSpeechHelpId} onClick={() => fileInput.current?.click()}>Choose audio file</button>
           <p className="console__muted" style={{overflowWrap:'anywhere'}}>{file?.name ?? 'No audio selected'}</p>
         </div>
-        <label><input type="checkbox" checked={loop} onChange={e => { stop(); setLoop(e.currentTarget.checked) }} /> Loop local fixture</label>
+        <HelpField help={FIELD_HELP.loopFixture}><input type="checkbox" checked={loop} onChange={e => { stop(); setLoop(e.currentTarget.checked) }} /> Loop local fixture</HelpField>
         <div className="console__action-row"><button disabled={disabled || !file || running} onClick={() => void start(false)}>Play local fixture</button><button disabled={disabled || running} onClick={() => void start(true)}>Generate test voice</button><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
         <div className="console__action-row"><button aria-pressed={original} onClick={() => setOriginal(true)}>Original</button><button aria-pressed={!original} onClick={() => setOriginal(false)}>Processed</button></div>
         <p role="status">{status}</p><p className="console__muted">Generate sends this draft voice/style to the provider for one audition, up to 20 seconds. No microphone. Voice, speed and style changes require Generate again.</p>

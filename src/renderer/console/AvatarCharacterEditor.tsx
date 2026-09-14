@@ -1,3 +1,5 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP } from './field-help-text'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
 import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION } from '../../shared/avatar-prompt'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
@@ -10,9 +12,9 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled }: {
     sleepFarewell: avatar.presentation.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell! }
   return <fieldset disabled={disabled} className="avatar-character"><legend className="console__sr-only">Persona</legend>
     <div className="console__form-grid">
-      <label>Avatar name<input maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></label>
-      <label>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></label>
-      <label>Sleep after inactivity (seconds)<input type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></label>
+      <HelpField help={FIELD_HELP.avatarName}>Avatar name<input maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></HelpField>
+      <HelpField help={FIELD_HELP.personality}>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></HelpField>
+      <HelpField help={FIELD_HELP.idle}>Sleep after inactivity (seconds)<input type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></HelpField>
     </div>
     <p className="console__muted">Published voice and character changes apply to the next conversation. Both visitor and avatar speech keep the conversation awake.</p>
     <details className="avatar-prompt"><summary>Effective realtime prompt & tool</summary>

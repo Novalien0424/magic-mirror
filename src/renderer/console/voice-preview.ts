@@ -19,10 +19,11 @@ export async function startVoiceAudition(input: {
   let session: RealtimeSessionHandle | undefined, silentTrack: MediaStreamTrack | undefined, detach: (() => void) | undefined
   let token: string | undefined, stopped = false, timeout: ReturnType<typeof setTimeout> | undefined
   let matchTimer: ReturnType<typeof setInterval> | undefined
+  let stopVolumes: (() => void) | undefined, avatarVolume = 0, matchedVolume = 1
   let cleanup: Promise<void> = Promise.resolve(), ended = false
   const end = (): void => { if (ended) return; ended = true; void stop().then(input.onEnded) }
   const stop = async (): Promise<void> => {
-    stopped = true; clearTimeout(timeout); clearInterval(matchTimer); signal.removeEventListener('abort', abort)
+    stopped = true; stopVolumes?.(); stopVolumes = undefined; clearTimeout(timeout); clearInterval(matchTimer); signal.removeEventListener('abort', abort)
     const resources = { graph, output, source, session, context, silentContext, silentTrack, detach, token }
     graph = undefined; output = undefined; source = undefined; session = undefined; context = undefined
     silentContext = undefined; silentTrack = undefined; detach = undefined; token = undefined
@@ -52,6 +53,14 @@ export async function startVoiceAudition(input: {
     token = lease.token
     if (stopped || signal.aborted) { await bridge.releaseVoicePreview?.(token); throw new DOMException('Preview cancelled', 'AbortError') }
     const router = getAudioDeviceRouter()
+    const runtime = await bridge.getAvatarRuntime(); assertCurrent()
+    if (runtime.ok && runtime.value.audioDevices) await router.select(runtime.value.audioDevices.preferences)
+    assertCurrent()
+    stopVolumes = router.watchVolumes(volumes => {
+      avatarVolume = volumes.avatar
+      graph?.setVolume(matchedVolume * avatarVolume)
+      output?.setVolume(avatarVolume)
+    })
     if (input.file) {
       if (input.file.size > 20 * 1024 * 1024) throw new Error('Choose an audio fixture smaller than 20 MB.')
       context = new AudioContext(); await context.resume()
@@ -59,6 +68,7 @@ export async function startVoiceAudition(input: {
       if (data.duration > 30) throw new Error('Choose a speech fixture up to 30 seconds.')
       graph = await createVoiceEffectGraph(context, effects, input.onStatus); assertCurrent()
       detach = await router.attach(context as AudioContext & { setSinkId(id: string): Promise<void> }, () => stopped); assertCurrent()
+      graph.setVolume(matchedVolume * avatarVolume)
       source = context.createBufferSource(); source.buffer = data; source.loop = input.loop
       source.connect(graph.input)
       graph.output.connect(context.destination)
@@ -66,11 +76,10 @@ export async function startVoiceAudition(input: {
       // Match processed and original against the same decoded fixture window.
       // Only attenuate; ignore silence. This keeps A/B loudness from favoring DSP.
       const startedAt = context.currentTime, meter = new Float32Array(graph.completionAnalyser.fftSize)
-      let matchedVolume = 1
       matchTimer = setInterval(() => {
-        if (stopped || !graph || !context) return
+        if (stopped || !graph || !context || avatarVolume === 0) return
         graph.completionAnalyser.getFloatTimeDomainData(meter)
-        const actual = Math.sqrt(meter.reduce((sum, x) => sum + x * x, 0) / meter.length)
+        const actual = Math.sqrt(meter.reduce((sum, x) => sum + x * x, 0) / meter.length) / avatarVolume
         const offset = Math.max(0, Math.floor((context.currentTime - startedAt - graph.latencySeconds) * data.sampleRate) - meter.length)
         let energy = 0
         for (let i = 0; i < meter.length; i++) {
@@ -81,7 +90,7 @@ export async function startVoiceAudition(input: {
         const reference = Math.sqrt(energy / meter.length)
         if (actual > 0.005 && reference > 0.005) {
           matchedVolume += (Math.min(1, matchedVolume * reference * 0.5 / actual) - matchedVolume) * 0.4
-          graph.setVolume(matchedVolume)
+          graph.setVolume(matchedVolume * avatarVolume)
         }
       }, 100)
       source.onended = () => { if (!stopped) timeout = setTimeout(end, graph!.tailSeconds * 1000 + 60) }
@@ -90,6 +99,7 @@ export async function startVoiceAudition(input: {
       if (!lease.snapshot || !lease.clientSecret) throw new Error('voice_preview_credentials_unavailable')
       output = await createProcessedRealtimeAudioOutput({ voiceEffects: effects, onDegraded: input.onStatus }); assertCurrent()
       detach = await router.attach(output.sink!, () => stopped); assertCurrent()
+      output.setVolume(avatarVolume)
       silentContext = new AudioContext(); const silent = silentContext.createMediaStreamDestination()
       silentTrack = silent.stream.getAudioTracks()[0]; await silentContext.resume(); assertCurrent()
       session = createRealtimeSession({ preview: true, snapshot: lease.snapshot, clientSecret: lease.clientSecret,

@@ -1,3 +1,5 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP, cubismParameterHelp } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
@@ -158,9 +160,9 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
     <h2 id="cubism-studio-title">{bound ? 'Assigned rig preview' : 'Rig library'}</h2>
     <p>{bound ? 'Preview-only poses and motions. Nothing here changes the saved rig or profile.' : 'Shared Cubism rigs. Import, label and test once, then assign them to avatars.'}</p>
     <div className="cubism-studio__toolbar" hidden={bound}>
-      <label>Avatar model<select aria-label="Cubism avatar model" value={selectedId} disabled={busy} onChange={e => setSelectedId(e.currentTarget.value)}>
+      <HelpField help={FIELD_HELP.libraryModel}>Avatar model<select aria-label="Cubism avatar model" value={selectedId} disabled={busy} onChange={e => setSelectedId(e.currentTarget.value)}>
         {models.map(model => <option key={model.id} value={model.id}>{modelTitle(model)}</option>)}
-      </select></label>
+      </select></HelpField>
       <button type="button" disabled={!selected || busy || loaded?.id === selected.id} onClick={load}>Load preview</button>
       <button type="button" disabled={!bridge || busy} onClick={() => void importModel()}>Browse & import Cubism…</button>
       <button type="button" disabled={!bridge || busy} onClick={() => void refresh()}>Refresh library</button>
@@ -168,8 +170,8 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
     {!bound && selected && selected.id !== BUILTIN.id && <fieldset disabled={busy}>
       <legend>Library name and version</legend>
       <div className="console__action-row">
-        <label>Name<input aria-label="Avatar library name" maxLength={60} value={labelName} onChange={e => setLabelName(e.currentTarget.value)} /></label>
-        <label>Version<input aria-label="Avatar library version" maxLength={16} placeholder="e.g. v10" value={labelVersion} onChange={e => setLabelVersion(e.currentTarget.value)} /></label>
+        <HelpField help={FIELD_HELP.libraryName}>Name<input aria-label="Avatar library name" maxLength={60} value={labelName} onChange={e => setLabelName(e.currentTarget.value)} /></HelpField>
+        <HelpField help={FIELD_HELP.libraryVersion}>Version<input aria-label="Avatar library version" maxLength={16} placeholder="e.g. v10" value={labelVersion} onChange={e => setLabelVersion(e.currentTarget.value)} /></HelpField>
         <button type="button" disabled={!bridge} onClick={() => void saveLabel()}>Save library label</button>
       </div>
       <p className="console__muted">Save before selecting another model. Labels persist across restarts; they do not rename rig files or change the published character.</p>
@@ -227,9 +229,11 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
           <p className="console__muted">Test runs minimum → maximum → default. Stop / reset clears all tests. Speaking clips need a separate mouth / beak input.</p>
           {capabilities.parameters.map(parameter => <div className="cubism-studio__parameter" key={parameter.id}>
             <div><strong>{PARAMETER_NAMES[parameter.id] ?? parameter.id}</strong><small>{parameter.id}</small></div>
-            <div className="cubism-studio__parameter-input"><input type="range" aria-label={parameter.id} min={parameter.min} max={parameter.max} step="any"
+            <div className="cubism-studio__parameter-input"><HelpField helpLabel={PARAMETER_NAMES[parameter.id] ?? parameter.id}
+              help={cubismParameterHelp(parameter.id, PARAMETER_NAMES[parameter.id] ?? parameter.id, parameter.min, parameter.max, parameter.defaultValue)}>
+              <input type="range" aria-label={parameter.id} min={parameter.min} max={parameter.max} step="any"
               value={values[parameter.id] ?? observed[parameter.id] ?? parameter.defaultValue}
-              onChange={e => { if (Object.keys(values).length === 0) reset(); writeParameter(parameter, Number(e.currentTarget.value)) }} />
+              onChange={e => { if (Object.keys(values).length === 0) reset(); writeParameter(parameter, Number(e.currentTarget.value)) }} /></HelpField>
               <output aria-label={`${parameter.id} observed`}>{number(observed[parameter.id] ?? parameter.defaultValue)}</output></div>
             <div className="cubism-studio__buttons">
               {([['Min', parameter.min], ['Default', parameter.defaultValue], ['Max', parameter.max]] as const).map(([label, value]) => <button type="button" key={label} aria-label={`${parameter.id} ${label}`} onClick={() => { reset(); writeParameter(parameter, value) }}>{label}</button>)}

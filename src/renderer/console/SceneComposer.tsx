@@ -1,3 +1,5 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP } from './field-help-text'
 import React, { useState } from 'react'
 import type { ConsoleConfigDraftInput, ConsoleConfigSafeView } from '../../shared/console-types'
 import type { SceneActionDefinition, SceneDefinition, SceneStageDefinition, SpellConfig } from '../../shared/types'
@@ -74,14 +76,14 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
       {!scene ? <div className="console__empty"><h3>Create a short spell scene</h3><p>Add a scene, enter the exact phrase, then add a few steps.</p><p>Import media from the Media library whenever you need it.</p></div> :
       <div className="scene-composer__body">
         <div className="scene-composer__heading">
-          <label>Scene name<input value={scene.name} onChange={e => editScene({ ...scene, name: e.currentTarget.value })} /></label>
-          <label className="console__check"><input type="checkbox" checked={scene.enabled} onChange={e => editScene({ ...scene, enabled: e.currentTarget.checked })} />Enabled</label>
+          <HelpField help={FIELD_HELP.sceneName}>Scene name<input value={scene.name} onChange={e => editScene({ ...scene, name: e.currentTarget.value })} /></HelpField>
+          <HelpField help={FIELD_HELP.sceneEnabled} className="console__check"><input type="checkbox" checked={scene.enabled} onChange={e => editScene({ ...scene, enabled: e.currentTarget.checked })} />Enabled</HelpField>
         </div>
         <section aria-label="Trigger Phrases" className="scene-composer__triggers">
           {draft.spells.filter(s => s.sceneId === scene.id).map(spell => <div key={spell.id} className="scene-spell">
-            <label className="scene-spell__phrase">Trigger Phrase<input placeholder="Say this to play the scene" value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></label>
-            <label className="console__check" title="Allow this phrase to trigger the scene. Turn off to keep it without triggering."><input type="checkbox" checked={spell.enabled} onChange={e => editSpell({ ...spell, enabled: e.currentTarget.checked })} />Enabled</label>
-            <label className="scene-spell__cooldown" title="Seconds before this phrase can trigger again. Use 0 for no cooldown.">Cooldown (s)<input type="number" min="0" step="0.1" value={spell.cooldownMs / 1000} onChange={e => editSpell({ ...spell, cooldownMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></label>
+            <HelpField help={FIELD_HELP.triggerPhrase} className="scene-spell__phrase">Trigger Phrase<input placeholder="Say this to play the scene" value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></HelpField>
+            <HelpField help={FIELD_HELP.triggerEnabled} className="console__check" ><input type="checkbox" checked={spell.enabled} onChange={e => editSpell({ ...spell, enabled: e.currentTarget.checked })} />Enabled</HelpField>
+            <HelpField help={FIELD_HELP.cooldown} className="scene-spell__cooldown" >Cooldown (s)<input type="number" min="0" step="0.1" value={spell.cooldownMs / 1000} onChange={e => editSpell({ ...spell, cooldownMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
             <HelpButton className="scene-spell__remove" aria-label="Remove Trigger Phrase" help="Remove only this trigger phrase. The scene and its actions stay. Undo is available until the next edit."
               onClick={() => { change({ ...draft, spells: draft.spells.filter(s => s.id !== spell.id) }); setUndo(draft) }}>
               <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg>
@@ -113,17 +115,17 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
           <div className="scene-step-heading"><h3>Step {stepIndex + 1}: {step.name}</h3>
             <span>{isSaved(scene.id, step.id) ? 'Step saved' : 'Unsaved step changes'}</span></div>
           <div className="console__form-grid">
-            <label>Step name<input value={step.name} onChange={e => editStep({ ...step, name: e.currentTarget.value })} /></label>
-            <label>Ends when<select value={step.endCondition.kind} onChange={e => {
+            <HelpField help={FIELD_HELP.stepName}>Step name<input value={step.name} onChange={e => editStep({ ...step, name: e.currentTarget.value })} /></HelpField>
+            <HelpField help={FIELD_HELP.endsWhen}>Ends when<select value={step.endCondition.kind} onChange={e => {
               const kind = e.currentTarget.value
               editStep({ ...step, endCondition: kind === 'duration' ? { kind, durationMs: 3000 } : kind === 'until_stopped'
                 ? { kind, maxRuntimeMs: 60000 } : { kind: 'video_complete', visualActionId: draft.sceneActions.find(a => step.actionIds.includes(a.id) && a.kind === 'visual' && a.playback === 'once')?.id ?? '' } })
-            }}><option value="duration">After a duration</option><option value="video_complete">When video finishes</option><option value="until_stopped">Until stopped (final step)</option></select></label>
-            {step.endCondition.kind === 'duration' ? <label>Duration seconds<input type="number" min="0.1" step="0.1" value={step.endCondition.durationMs / 1000} onChange={e => editStep({ ...step, endCondition: { kind: 'duration', durationMs: Math.round(Number(e.currentTarget.value) * 1000) } })} /></label> : null}
-            {step.endCondition.kind === 'until_stopped' ? <label>Maximum seconds<input type="number" min="1" value={step.endCondition.maxRuntimeMs / 1000} onChange={e => editStep({ ...step, endCondition: { kind: 'until_stopped', maxRuntimeMs: Math.round(Number(e.currentTarget.value) * 1000) } })} /></label> : null}
-            {step.endCondition.kind === 'video_complete' ? <label>Completion video<select value={step.endCondition.visualActionId} onChange={e => editStep({ ...step, endCondition: { kind: 'video_complete', visualActionId: e.currentTarget.value } })}>
+            }}><option value="duration">After a duration</option><option value="video_complete">When video finishes</option><option value="until_stopped">Until stopped (final step)</option></select></HelpField>
+            {step.endCondition.kind === 'duration' ? <HelpField help={FIELD_HELP.stepDuration}>Duration seconds<input type="number" min="0.1" step="0.1" value={step.endCondition.durationMs / 1000} onChange={e => editStep({ ...step, endCondition: { kind: 'duration', durationMs: Math.round(Number(e.currentTarget.value) * 1000) } })} /></HelpField> : null}
+            {step.endCondition.kind === 'until_stopped' ? <HelpField help={FIELD_HELP.maximumTime}>Maximum seconds<input type="number" min="1" value={step.endCondition.maxRuntimeMs / 1000} onChange={e => editStep({ ...step, endCondition: { kind: 'until_stopped', maxRuntimeMs: Math.round(Number(e.currentTarget.value) * 1000) } })} /></HelpField> : null}
+            {step.endCondition.kind === 'video_complete' ? <HelpField help={FIELD_HELP.completionVideo}>Completion video<select value={step.endCondition.visualActionId} onChange={e => editStep({ ...step, endCondition: { kind: 'video_complete', visualActionId: e.currentTarget.value } })}>
               <option value="">Select video action</option>{draft.sceneActions.filter(a => step.actionIds.includes(a.id) && a.kind === 'visual' && a.playback === 'once').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select></label> : null}
+            </select></HelpField> : null}
           </div>
           <details><summary>Step options</summary><div className="console__action-row">
             <HelpButton help="Create an independent copy of this step and its actions immediately below it. Media files are reused, not copied." onClick={() => {
@@ -152,7 +154,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
             </div>
           </article> : <p className="console__empty">Add an action above, or link one from the library below.</p>}
           <details><summary>Link a reusable action</summary><div className="console__form-grid">
-            {draft.sceneActions.map(a => <label key={a.id} className="console__check"><input type="checkbox" checked={step.actionIds.includes(a.id)} onChange={e => editStep({ ...step, actionIds: e.currentTarget.checked ? [...step.actionIds, a.id] : step.actionIds.filter(k => k !== a.id) })} />{a.name}</label>)}
+            {draft.sceneActions.map(a => <HelpField help={FIELD_HELP.assignedAction} key={a.id} className="console__check"><input type="checkbox" checked={step.actionIds.includes(a.id)} onChange={e => editStep({ ...step, actionIds: e.currentTarget.checked ? [...step.actionIds, a.id] : step.actionIds.filter(k => k !== a.id) })} />{a.name}</HelpField>)}
           </div></details>
           <div className="scene-step-controls">
             <div className="console__action-row">

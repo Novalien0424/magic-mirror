@@ -1,3 +1,5 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP } from './field-help-text'
 import type { AvatarCatalog, AvatarResourceLock } from '../../shared/avatar-profiles'
 
 export function ResourceAccess({ catalog, avatarId, kind, resourceId, disabled, onChange }: {
@@ -7,9 +9,9 @@ export function ResourceAccess({ catalog, avatarId, kind, resourceId, disabled, 
   if (!catalog) return null
   const lock = catalog.locks.find(l => l.kind === kind && l.resourceId === resourceId)
   const owner = lock && catalog.avatars.find(a => a.id === lock.avatarId)
-  return <label className="console__check"><input type="checkbox" checked={!!lock}
+  return <HelpField help={FIELD_HELP.resourceLock} className="console__check"><input type="checkbox" checked={!!lock}
     disabled={disabled || !!lock && lock.avatarId !== avatarId} onChange={e => onChange({ ...catalog,
       locks: [...catalog.locks.filter(l => l !== lock), ...(e.currentTarget.checked ? [{ kind, resourceId, avatarId }] : [])] })} />
     {lock ? `Only ${owner?.name ?? 'owner'}` : 'Shared · lock to this avatar'}
-  </label>
+  </HelpField>
 }

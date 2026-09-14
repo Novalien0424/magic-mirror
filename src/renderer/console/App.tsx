@@ -1,5 +1,8 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { getAudioDeviceRouter } from '../audio-devices'
 
 import {
   AVATAR_RUNTIME_STATES,
@@ -41,7 +44,7 @@ import { buildSceneDraftSave, draftFingerprint, isSceneDraftSaved } from './scen
 import { HelpButton } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
-import { DEFAULT_AUDIO_PREFERENCES } from '../../shared/audio-devices'
+import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { AvatarCharacterEditor } from './AvatarCharacterEditor'
 import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
@@ -663,10 +666,12 @@ function SimulatorPanel({
 function AvatarAudioPanel({
   state,
   disabled,
+  developerMode,
   onCommand,
 }: {
   readonly state: AvatarRuntimeState
   readonly disabled: boolean
+  readonly developerMode: boolean
   readonly onCommand: (command: AvatarControlCommand) => void
 }): React.JSX.Element {
   const value = state.status === 'success' ? state.value : null
@@ -699,6 +704,25 @@ function AvatarAudioPanel({
       </div>
 
       </details>
+      <fieldset className="console__volume-controls"><legend>Volume</legend>
+        <div className="console__gain-controls">
+          {([
+            ['bgm', 'BGM', 'Music and sleep ambience'],
+            ['avatar', 'Avatar audio', 'Conversation and recorded speech'],
+            ['effects', 'Sound effects', 'Embedded scene-video audio'],
+          ] as const).map(([channel, label, description]) => {
+            const volume = (preferences.volumes ?? DEFAULT_AUDIO_VOLUMES)[channel]
+            return <HelpField help={FIELD_HELP[channel === 'bgm' ? 'bgmVolume' : channel === 'avatar' ? 'avatarVolume' : 'effectsVolume']} key={channel}>{label} · {Math.round(volume * 100)}%{volume === 0 ? ' · Muted' : ''}
+              <input aria-label={`${label} volume`} type="range" min="0" max="100" step="1"
+                value={Math.round(volume * 100)} disabled={disabled || !audioDevices}
+                onChange={event => onCommand({ type: 'audio_devices', preferences: { ...preferences,
+                  volumes: { ...(preferences.volumes ?? DEFAULT_AUDIO_VOLUMES), [channel]: Number(event.currentTarget.value) / 100 } } })} />
+              <small>{description}</small>
+            </HelpField>
+          })}
+        </div>
+        <p className="console__detail">Applies immediately and saves automatically for all avatars. 0% mutes a channel. Scene levels and speech ducking still apply.</p>
+      </fieldset>
       <p className="console__label">Sound devices</p>
       <div className="console__gain-controls">
         {(['audioinput', 'audiooutput'] as const).map((kind) => {
@@ -706,7 +730,7 @@ function AvatarAudioPanel({
           const input = kind === 'audioinput'
           const selected = input ? preferences.inputId : preferences.outputId
           const systemDefault = devices.find((device) => device.deviceId === 'default')?.label.replace(/^(Default|預設)\s*-\s*/i, '')
-          return <label key={kind}>{input ? 'Microphone' : 'Speakers'}
+          return <HelpField help={FIELD_HELP[input ? 'microphone' : 'speakers']} key={kind}>{input ? 'Microphone' : 'Speakers'}
             <select aria-label={input ? 'Microphone device' : 'Speaker device'} value={selected} disabled={disabled || !audioDevices}
               onChange={(event) => {
                 const id = event.currentTarget.value
@@ -721,7 +745,7 @@ function AvatarAudioPanel({
                 <option key={device.deviceId} value={device.deviceId} disabled={input && !device.label}>{device.label || 'Unnamed device'}</option>
               ))}
             </select>
-          </label>
+          </HelpField>
         })}
       </div>
       <p className="console__detail">Speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start; use Start Conversation, then Disconnect to update both. Windows default follows the system selection on acquisition.</p>
@@ -748,7 +772,7 @@ function AvatarAudioPanel({
       <p className="console__label">States / motions</p>
       <div className="console__command-list">
         {AVATAR_RUNTIME_STATES.filter((stateName) => stateName !== 'OfflineLoop').map((stateName) => (
-          <button key={stateName} type="button" disabled={disabled} onClick={() => onCommand({ type: 'state', state: stateName })}>
+          <button key={stateName} type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'state', state: stateName })}>
             {stateName}
           </button>
         ))}
@@ -756,30 +780,23 @@ function AvatarAudioPanel({
       <p className="console__label">Expressions</p>
       <div className="console__command-list">
         {REN_EXPRESSION_NAMES.map((name) => (
-          <button key={name} type="button" disabled={disabled} onClick={() => onCommand({ type: 'expression', name })}>{name}</button>
+          <button key={name} type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'expression', name })}>{name}</button>
         ))}
       </div>
       <p className="console__label">Fallback check</p>
       <div className="console__command-list">
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'asset_failure', action: 'inject' })}>Inject avatar asset failure</button>
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'asset_failure', action: 'clear' })}>Clear avatar asset failure</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'asset_failure', action: 'inject' })}>Inject avatar asset failure</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'asset_failure', action: 'clear' })}>Clear avatar asset failure</button>
       </div>
       <p className="console__label">Audio checks</p>
       <div className="console__command-list">
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'recorded_audio', action: 'play' })}>Play recorded AI</button>
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'recorded_audio', action: 'stop' })}>Stop recorded AI</button>
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'play' })}>Play music</button>
-        <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'music', action: 'stop' })}>Stop music</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'recorded_audio', action: 'play' })}>Play recorded AI</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'recorded_audio', action: 'stop' })}>Stop recorded AI</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'music', action: 'play' })}>Play music</button>
+        <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'music', action: 'stop' })}>Stop music</button>
       </div>
       </details>
-      <div className="console__gain-controls">
-        <label>Voice gain
-          <input type="range" min="0" max="1" step="0.05" value={value?.voiceGain ?? 1} disabled={disabled} onChange={(event) => onCommand({ type: 'voice_gain', value: Number(event.currentTarget.value) })} />
-        </label>
-        <label>Music gain
-          <input type="range" min="0" max="1" step="0.05" value={value?.musicGain ?? 1} disabled={disabled} onChange={(event) => onCommand({ type: 'music_gain', value: Number(event.currentTarget.value) })} />
-        </label>
-      </div>
+
     </section>
   )
 }
@@ -843,7 +860,7 @@ function EventsPanel({
       ) : null}
 
       <div className="console__filters" aria-label="Event filters">
-        <label>
+        <HelpField help={FIELD_HELP.eventModule}>
           <span>module</span>
           <select
             aria-label="module"
@@ -853,8 +870,8 @@ function EventsPanel({
             <option value="all">All</option>
             {MODULES.map((module) => <option key={module} value={module}>{module}</option>)}
           </select>
-        </label>
-        <label>
+        </HelpField>
+        <HelpField help={FIELD_HELP.eventStatus}>
           <span>status</span>
           <select
             aria-label="status"
@@ -864,8 +881,8 @@ function EventsPanel({
             <option value="all">All</option>
             {EVENT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-        </label>
-        <label>
+        </HelpField>
+        <HelpField help={FIELD_HELP.eventSource}>
           <span>source</span>
           <select
             aria-label="source"
@@ -875,7 +892,7 @@ function EventsPanel({
             <option value="all">All</option>
             {EVENT_SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
           </select>
-        </label>
+        </HelpField>
       </div>
 
       <div className="console__table-wrap">
@@ -1097,7 +1114,7 @@ export function ConfigPanel({
 
         <fieldset>
           <legend>Draft safe fields</legend>
-          <label>
+          <HelpField help={FIELD_HELP.configPersona}>
             <span>personaName</span>
             <input
               type="text"
@@ -1105,8 +1122,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, personaName: event.currentTarget.value }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.configVoice}>
             <span>voice</span>
             <input
               type="text"
@@ -1114,8 +1131,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, voice: event.currentTarget.value }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.idle}>
             <span>idleSeconds</span>
             <input
               type="number"
@@ -1123,8 +1140,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, idleSeconds: Number(event.currentTarget.value) }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.wakePhrase}>
             <span>wake.phrase</span>
             <input
               type="text"
@@ -1132,8 +1149,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, phrase: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.wakeVersion}>
             <span>wake.modelVersion</span>
             <input
               type="text"
@@ -1141,8 +1158,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, modelVersion: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.wakePackage}>
             <span>wake.packageId</span>
             <input
               type="text"
@@ -1153,8 +1170,8 @@ export function ConfigPanel({
                 wake: { ...current.wake, packageId: event.currentTarget.value },
               }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.faceDetector}>
             <span>faceModel.detectorId</span>
             <input
               type="text"
@@ -1162,8 +1179,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, detectorId: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.faceRecognizer}>
             <span>faceModel.recognizerId</span>
             <input
               type="text"
@@ -1171,8 +1188,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, recognizerId: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.offlineVideo}>
             <span>assets.offlineLoopVideo</span>
             <input
               type="text"
@@ -1180,8 +1197,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, offlineLoopVideo: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.avatarDirectory}>
             <span>assets.avatarDir</span>
             <input
               type="text"
@@ -1189,8 +1206,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, avatarDir: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.musicDirectory}>
             <span>assets.musicDir</span>
             <input
               type="text"
@@ -1198,8 +1215,8 @@ export function ConfigPanel({
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, musicDir: event.currentTarget.value } }))}
             />
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.lightingAdapter}>
             <span>adapters.lighting</span>
             <select
               value={draft?.adapters.lighting ?? 'mock'}
@@ -1209,8 +1226,8 @@ export function ConfigPanel({
               <option value="mock">mock</option>
               <option value="physical">physical</option>
             </select>
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.fogAdapter}>
             <span>adapters.fog</span>
             <select
               value={draft?.adapters.fog ?? 'mock'}
@@ -1220,8 +1237,8 @@ export function ConfigPanel({
               <option value="mock">mock</option>
               <option value="physical">physical</option>
             </select>
-          </label>
-          <label>
+          </HelpField>
+          <HelpField help={FIELD_HELP.musicAdapter}>
             <span>adapters.music</span>
             <select
               value={draft?.adapters.music ?? 'mock'}
@@ -1231,7 +1248,7 @@ export function ConfigPanel({
               <option value="mock">mock</option>
               <option value="physical">physical</option>
             </select>
-          </label>
+          </HelpField>
         </fieldset>
       </div>
 
@@ -1542,9 +1559,9 @@ export function ScenesPanel({
       </div> : null}
       <div className="profile-workspace">
       {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
-        <label>Editing avatar<select aria-label="Editing avatar" title={`${editingAvatar.name} · ${editingId}`} disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+        <HelpField help={`${FIELD_HELP.editingAvatar} Selected: ${editingAvatar.name} (${editingId}).`}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
           {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name} · {a.id.slice(-8)}{a.id === payload?.active.avatarCatalog?.activeAvatarId ? ' · On Mirror' : ''}</option>)}
-        </select></label>
+        </select></HelpField>
         <p className="profile-rail__context"><strong>{editingAvatar.name}</strong><span>{editingId.slice(-8)}</span></p>
         <p className="profile-rail__context"><small>ON MIRROR</small>{activeAvatar?.id === editingId ? <span>This avatar</span> : <strong>{activeAvatar?.name ?? 'Connecting…'}</strong>}</p>
         <div className="console__action-row">
@@ -1585,7 +1602,7 @@ export function ScenesPanel({
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
-        <div className="console__action-row"><label>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
+        <div className="console__action-row"><HelpField help={FIELD_HELP.modelBundle}>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
           const model = availableModels.find(item => item.id === modelId)
           const catalog = rawDraft.avatarCatalog!
@@ -1594,7 +1611,7 @@ export function ScenesPanel({
             avatars: catalog.avatars.map(avatar => avatar.id === editingAvatar.id ? { ...avatar, modelId } : avatar) })
         }}>
           <option value="builtin-ren">Built-in Ren</option>{availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select></label><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32} onClick={() => {
+        </select></HelpField><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32} onClick={() => {
           if (!bridge) return
           setBusy(true)
           void bridge.importAvatarModel().then(response => {
@@ -1612,8 +1629,8 @@ export function ScenesPanel({
       {visible && section === 'Appearance' ? <details key={`rig-${editingId}`}><summary>Advanced rig preview · local only</summary><CubismStudio key={editingAvatar?.modelId} bridge={bridge} visible={visible} assignedModel={editingModel ?? null} /></details> : null}
 
       {dialogueOnly && !voiceOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
-        <label>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></label>
-        <label>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></label>
+        <HelpField help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
+        <HelpField help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
       </div></fieldset> : null}
       {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
@@ -1723,18 +1740,18 @@ export function ModelsPanel({
 
       <p className="console__muted">Draft values are bounded inputs; only an explicit next session/job action creates simulated runtime evidence.</p>
       <div className="console__model-draft-form">
-        <label>
+        <HelpField help={FIELD_HELP.dialogueModel}>
           <span>realtimeDialogue</span>
           <input type="text" value={draft.realtimeDialogue} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, realtimeDialogue: event.currentTarget.value }))} />
-        </label>
-        <label>
+        </HelpField>
+        <HelpField help={FIELD_HELP.transcriptionModel}>
           <span>inputTranscription</span>
           <input type="text" value={draft.inputTranscription} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, inputTranscription: event.currentTarget.value }))} />
-        </label>
-        <label>
+        </HelpField>
+        <HelpField help={FIELD_HELP.extractionModel}>
           <span>memoryExtractor</span>
           <input type="text" value={draft.memoryExtractor} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, memoryExtractor: event.currentTarget.value }))} />
-        </label>
+        </HelpField>
         <button
           type="button"
           disabled={!bridgeAvailable || bridge === null}
@@ -2164,10 +2181,14 @@ export function App(): React.JSX.Element {
 
   const controlAvatar = (command: AvatarControlCommand): void => {
     const bridge = bridgeRef.current
-    if (bridge === null || !bridgeAvailable || !developerMode) return
+    if (bridge === null || !bridgeAvailable) return
+    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices') return
     void bridge.controlAvatar(command).then(
       (response) => {
-        if (mountedRef.current && response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
+        if (mountedRef.current && response.ok) {
+          setAvatarRuntimeState({ status: 'success', value: response.value })
+          if (command.type === 'audio_devices') void getAudioDeviceRouter().select(command.preferences)
+        }
         else if (mountedRef.current && !response.ok) setAvatarRuntimeState({ status: 'failure', error: response.error, reason: response.reason })
       },
       () => {
@@ -2235,7 +2256,8 @@ export function App(): React.JSX.Element {
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             state={avatarRuntimeState}
-            disabled={!bridgeAvailable || !developerMode}
+            developerMode={developerMode}
+            disabled={!bridgeAvailable}
             onCommand={controlAvatar}
           />
         </div>
@@ -2261,7 +2283,7 @@ export function App(): React.JSX.Element {
           />
         </div>
         <div hidden={activePage !== 'System' || systemPage !== 'Phase Tests'}>
-          <label htmlFor="console-phase-selector">Phase
+          <HelpField help={FIELD_HELP.phase} htmlFor="console-phase-selector">Phase
             <select
               id="console-phase-selector"
               value={selectedPhase}
@@ -2282,7 +2304,7 @@ export function App(): React.JSX.Element {
               <option value="1">Phase 1</option>
               <option value="0">Phase 0</option>
             </select>
-          </label>
+          </HelpField>
           <PhaseTestsPanel
             state={phaseTestsState}
             selectedPhase={selectedPhase}

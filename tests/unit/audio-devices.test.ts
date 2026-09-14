@@ -5,6 +5,33 @@ import { DEFAULT_AUDIO_PREFERENCES, parseAudioPreferences, matchMicrophoneName }
 const preferences = { inputId: 'mic-1', inputLabel: 'Headset (2-SRS-NB10)', outputId: 'speaker-1' }
 
 describe('audio device selection', () => {
+  it('applies saved and live volumes without rerouting speakers, and releases listeners', async () => {
+    const saved = { ...preferences, volumes: { bgm: 0.3, avatar: 0.7, effects: 0 } }
+    const router = new AudioDeviceRouter(async () => saved, async () => [])
+    const changed = vi.fn()
+    const stop = router.watchVolumes(changed)
+    const sink = { setSinkId: vi.fn(async () => undefined) }
+    await router.attach(sink)
+    expect(changed).toHaveBeenLastCalledWith(saved.volumes)
+    await router.select({ ...saved, volumes: { bgm: 0, avatar: 0.6, effects: 1 } })
+    expect(changed).toHaveBeenLastCalledWith({ bgm: 0, avatar: 0.6, effects: 1 })
+    expect(sink.setSinkId).toHaveBeenCalledTimes(1)
+    stop()
+    await router.select(preferences)
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses unity volumes for legacy settings and ignores listeners disposed during startup', async () => {
+    const router = new AudioDeviceRouter(async () => preferences, async () => [])
+    const changed = vi.fn(), disposed = vi.fn()
+    router.watchVolumes(changed)
+    router.watchVolumes(disposed)()
+    await router.inputConstraints()
+    expect(changed).toHaveBeenLastCalledWith({ bgm: 1, avatar: 1, effects: 1 })
+    expect(disposed).not.toHaveBeenCalled()
+    expect(parseAudioPreferences({ ...preferences, volumes: { bgm: 1, avatar: 1 } })).toBeNull()
+    expect(parseAudioPreferences({ ...preferences, volumes: { bgm: 1, avatar: 1, effects: 1, extra: 1 } })).toBeNull()
+  })
   it('does not register an audio graph disposed while preferences are loading', async () => {
     const router = new AudioDeviceRouter(async () => DEFAULT_AUDIO_PREFERENCES, async () => [])
     const sink = { setSinkId: vi.fn(async () => undefined) }

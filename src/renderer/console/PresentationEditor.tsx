@@ -1,3 +1,5 @@
+import { HelpField } from './HelpField'
+import { FIELD_HELP } from './field-help-text'
 import { useEffect, useState } from 'react'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
 import type { LifecycleState } from '../../shared/types'
@@ -30,18 +32,18 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
     <p>Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep.</p>
     <div className="presentation-editor__layout">
       <div className="console__form-grid">
-        <label>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
+        <HelpField help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
           <option value="always_visible">Always visible</option><option value="emerge">Emerge from mist</option>
-        </select></label>
-        <label>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
+        </select></HelpField>
+        <HelpField help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
           <option value="">Built-in atmosphere</option>{draft.visualAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
-        </select></label>
-        <label>Sleep ambience (loops)<select value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
+        </select></HelpField>
+        <HelpField help={FIELD_HELP.ambience}>Sleep ambience (loops)<select value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
           <option value="">No ambience</option>{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
-        </select></label>
-        <label>Ambience volume · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></label>
-        <label>Entrance seconds<input type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></label>
-        <label>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></label>
+        </select></HelpField>
+        <HelpField help={FIELD_HELP.ambienceVolume}>Ambience volume · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField help={FIELD_HELP.entrance}>Entrance seconds<input type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+        <HelpField help={FIELD_HELP.exit}>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
         <p className="console__muted">Cubism motions: Waking → Listening → Suspending → Dormant. Mist is a built-in effect. Background video is muted; ambience fades out on wake and uses your selected speakers.</p>
         <p className="console__muted">Import media in the Media library. Save, Test and Publish below to apply this presentation to the mirror.</p>
       </div>

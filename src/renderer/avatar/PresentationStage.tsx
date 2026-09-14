@@ -12,6 +12,8 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const { config, background } = payload
   const [phase, setPhase] = useState<PresentationPhase>(lifecycle === 'starting' ? 'inactive' : 'asleep')
   const [readyId, setReadyId] = useState<string | null>(null)
+  const [bgmVolume, setBgmVolume] = useState(0)
+  useEffect(() => getAudioDeviceRouter().watchVolumes(volumes => setBgmVolume(volumes.bgm)), [])
   const failure = useRef(onFailure); failure.current = onFailure
   const phaseListener = useRef(onPhase); phaseListener.current = onPhase
   const controller = useRef<ReturnType<typeof createPresentationController> | null>(null)
@@ -69,7 +71,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     if (!audio) return
     let cancelled = false
     let frame = 0
-    const target = phase === 'asleep' || phase === 'exiting' ? config.ambienceGain : 0
+    const target = phase === 'asleep' || phase === 'exiting' ? config.ambienceGain * bgmVolume : 0
     const start = audio.volume
     const started = performance.now()
     if (target > 0) void routeReady.current.then(() => { if (!cancelled) return audio.play() }).catch(() => { if (!cancelled) failure.current?.('presentation_ambience_play_failed') })
@@ -82,7 +84,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     }
     if (phase === 'inactive') { audio.volume = 0; audio.pause() } else tick()
     return () => { cancelled = true; cancelAnimationFrame(frame) }
-  }, [phase, config.ambienceId, config.ambienceGain, silent])
+  }, [phase, config.ambienceId, config.ambienceGain, silent, bgmVolume])
 
   const backgroundReady = !background || readyId === background.id
   const hidden = config.mode === 'emerge' && phase === 'asleep' && backgroundReady
