@@ -1,101 +1,15 @@
 ---
 name: mm-wake-word
-description: Use when implementing or tuning the sherpa-onnx Chinese wake-word worker, custom keyword encoding, mic capture for the wake path, false-wake tuning, or the wake-to-realtime mic handoff (Phase 2).
+description: "Implement or tune Magic Mirror sherpa-onnx wake detection, keyword packages, capture or wake-to-Realtime microphone handoff."
 ---
 
-# sherpa-onnx Chinese Wake Word - Magic Mirror Reference
+# Wake word
 
-## Overview
+Main owns one replaceable hashed sherpa-onnx package binding model, tokens, phrase, platform and tuning. Package/lockfile pins are authoritative; no runtime engine fallback or incidental dependency change.
 
-Verified **2026-08-16**. Baseline stack: `sherpa-onnx-node@1.13.5` or newer + `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` (int8) + `decibri` capture, in a worker process owned by Electron Main. Re-verify versions when Phase 2 pins the lockfile.
+- For encoding, worker config and false-wake tuning: [keyword package](references/keyword-package.md). Use model-owned tokens, 16 kHz / featureDim 80, and reset the spotter after detection. Keyword tuning is not neural training; configured thresholds are not measured per-event confidence.
+- For release/acquire ownership, crashes or Mac port constraints: [handoff/platform](references/handoff-platform.md). Mac version caveats need verification at the port, not a current Windows gate.
 
-## Codex routing
+The worker listens in Dormant; it confirms stream release before Realtime acquires. Caller-owned renderer tracks must stop before wake reacquires. Handoff failure is local Maintenance. Sleep uses the current avatar's directed command/farewell; it is not a wake keyword.
 
-Use [AGENTS.md](../../../AGENTS.md) for execution policy. Apply invariants 8,
-9, and 10 when the microphone or failure boundary changes. This skill supplies
-wake-word and handoff facts only.
-
-## Critical Version Pin
-
-**Pin sherpa-onnx >= 1.13.5.** On SME-capable Apple Silicon (M4 - our target
-Mac mini), **1.13.4's KeywordSpotter detects nothing, ever, silently** -
-bundled onnxruntime 1.27.0 KleidiAI miscomputes the zipformer frontend conv
-(k2-fsa/sherpa-onnx#3791, fixed by ORT 1.27.1 in 1.13.5). 1.13.5 also fixed
-macOS release codesigning (#3794). If ever stuck on 1.13.4:
-`mlas.disable_kleidiai=1`.
-
-## Model & Keywords
-
-- Model: `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01` (Chinese;
-  encoder/decoder/joiner ONNX + int8 variants + `tokens.txt`). Tarball:
-  `github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/<name>.tar.bz2`.
-  Fixed 16 kHz / featureDim 80. Alternative zh-en model:
-  `...-kws-zipformer-zh-en-3M-2025-12-20` (needs `en.phone` lexicon).
-- Keywords workflow: human `keywords_raw.txt` -> encoded `keywords.txt` via
-  `sherpa-onnx-cli text2token --tokens tokens.txt --tokens-type ppinyin`
-  (needs `pip install pypinyin`). Line syntax:
-  `<phrase> :<boost> #<threshold> @<display>` - e.g. the source example
-  `\u9b54\u93e1\u9b54\u93e1 :2.0 #0.45 @\u9b54\u93e1\u9b54\u93e1` (ASCII-normalized
-  code-point escape form; display text may not contain spaces; use `_`).
-  Per-keyword values of 0/absent fall back to globals.
-
-## Node Worker Config (camelCase)
-
-```js
-const kws = new sherpa_onnx.KeywordSpotter({
-  featConfig: { sampleRate: 16000, featureDim: 80 },
-  modelConfig: { transducer: { encoder, decoder, joiner }, tokens, numThreads: 2, provider: 'cpu' },
-  keywordsFile, maxActivePaths: 4, numTrailingBlanks: 2, // raise to 4-8 vs false wakes
-  keywordsScore: 1.0, keywordsThreshold: 0.45,           // default 0.25 is loose
-});
-// loop: stream.acceptWaveform -> while isReady -> decode -> getResult
-// ALWAYS kws.reset(stream) after every detection - the official Node example
-// omits this and repeat detections misbehave without it.
-```
-
-- Capture: `decibri@5.x` (maintained, darwin-arm64 prebuilt; Int16->Float32 via
-  /32768) or `node-cpal` + `LinearResampler(nativeRate, 16000)`.
-  `node-record-lpcm16` is dead - do not use. Python fallback path: PyPI
-  `sherpa-onnx==1.13.5` + `sounddevice` (the better-trodden example).
-
-## Tuning False Wakes
-
-- Trigger = trailing blanks exceeded AND mean per-token probability >=
-  threshold. Raise `#threshold` (0.35-0.6 for a 4-syllable phrase), lower
-  `:boost`, raise `numTrailingBlanks`. Boost makes triggering easier,
-  threshold harder - tune in opposite directions.
-- **No confidence score is surfaced** - result JSON has only
-  keyword/timestamps/tokens. Telemetry "wake confidence" must therefore log
-  the configured threshold + keyword, not a per-event score (or derive a
-  proxy offline by threshold binary-search on the corpus).
-- Wake phrase: 3-6 syllables, not a daily-conversation string (PRD Section
-  15). Validate with the recorded-WAV corpus runner in Console (Phase 2) and
-  the 30-min ambient/TV negative test.
-
-## Mic Handoff (invariant #8)
-
-Worker holds the mic only in Dormant. On detection: worker closes its stream
-and confirms release -> Main tells renderer to acquire -> Realtime session
-owns mic. Reverse on Suspending/OfflineLoop - and note the Realtime SDK's
-`close()` does NOT stop app-owned mic tracks: the renderer must `track.stop()`
-each track before Main hands the mic back (Spec Section 8.1), or this worker
-hits device-busy. Handoff failure = local audio fault -> Maintenance (never
-OfflineLoop). During Active the worker must not reopen the mic; a wake phrase
-said mid-conversation is just a normal utterance.
-
-The Active-only deactivation phrase is exactly `恭送渡鴨大人`. It is a
-Realtime tool intent, never a wake keyword. After goodbye playback completes,
-Main owns the payload-free transition back to Dormant and the release-then-
-acquire mic handoff.
-
-## macOS Gotchas
-
-- TCC attributes the mic prompt to the nearest signed ancestor (the app that
-  spawned the worker), not the worker binary. Dev from Terminal: grant
-  Terminal the mic. Production: worker lives inside the signed `.app` bundle
-  with `NSMicrophoneUsageDescription`; silence-with-no-error = permission
-  denial, surface it as a Console `wake_worker` failure, do not spin.
-- Node `types.js` mistypes `KeywordSpotterConfig.modelConfig` as offline -
-  cosmetic; the runtime wants the transducer shape above.
-- Worker crash -> Main restarts once; still failing -> Maintenance + Console
-  `Failed` (Spec Section 14). Wake must keep working with the network down.
+Use the current PROGRESS links for unresolved first-boot and corpus evidence. Synthetic success does not establish real wake accuracy; deferred field gates stay deferred until the requested phase acceptance. [AGENTS](../../../AGENTS.md) owns phase, privacy and execution rules.

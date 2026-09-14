@@ -1,89 +1,20 @@
 ---
 name: mm-invariants
-description: Use when implementing, reviewing, testing, or debugging any Magic Mirror behavior, especially transcript persistence, profile isolation, guest ID binding, silent failure, mic ownership, spell matching, or model fallback.
+description: "Resolve Magic Mirror privacy, guest identity, memory ownership, mic exclusivity, exact spell matching or visible degradation boundaries."
 ---
 
-# Magic Mirror Hard Invariants
+# Invariant interpretation
 
-## Scope and acceptance
+[AGENTS](../../../AGENTS.md#canonical-product-invariants) is the single owner of the 12 canonical IDs; [DECISIONS](../../../DECISIONS.md) supplies dated implementation rulings. Apply only the IDs implicated by the task.
 
-Use [AGENTS.md](../../../AGENTS.md) for execution policy. This file contains
-only product-behavior constraints. Apply the IDs implicated by the changed
-boundary; do not turn unrelated IDs into workflow gates.
+## Non-obvious distinctions
 
-## Applicability and domain route
+- **1 / 12:** diagnostics contain metadata, never utterances, conversation audio, extracted values, private prompts, credentials, camera frames or embeddings. The RAM Console transcript clears on Dormant/restart. Future memory schemas do not authorize persistence under today's ruling.
+- **2 / 3 / 4:** public avatar/scene IDs and spoken names are not private guest IDs. Model confirmation returns only yes/no/unclear; Main resolves its pending candidate. Clear that candidate on denial, second ambiguous response, owner switch, session close or sleep. Multiple people require explicit conversation-owner selection, not model disambiguation.
+- **5 / 6:** freeze extraction ownership at turn start, not completion; any control intent skips extraction. Keep debug decisions content-free and Main-local where they include private IDs.
+- **7:** normalize and compare the entire final transcript. Partial adapter failure still consumes the turn's one scene trigger. Only approved typed presets control hardware.
+- **8 / 10:** a failed mic handoff is local Maintenance, not cloud OfflineLoop. SDK session close does not release caller-owned tracks. An unrelated camera, extractor or adapter cannot block speech.
+- **9:** repeated identical failures may collapse into a reasoned counter, never disappear. Sanitize raw errors before telemetry. Mock adapters require operator configuration, not automatic substitution.
+- **11:** a bounded retry uses the same configured ID. Publish of a tested draft or whole-config rollback changes configuration; runtime failure never selects another model.
 
-Name only canonical IDs applicable to the exact changed behavior. Load one
-matching domain skill when its non-obvious facts are needed.
-
-## The 12 invariants
-
-| # | Rule | Doc anchor |
-|---|---|---|
-| 1 | Final transcripts and conversation audio stay in RAM only: never disk, DB, backups, telemetry, or debug logs, even temporarily. Extracted memory VALUE strings and injected private context follow the same bar. Diagnostics carry keys, enums, IDs, and counts only. Do not infer persistence authority from a future memory schema; AGENTS.md and current DECISIONS.md govern. | PRD Section 11.2, Spec Section 6.3 |
-| 2 | Face recognition only proposes a candidate. Private memory loads only after explicit verbal confirmation. | PRD US-ID-003, Spec Section 10 |
-| 3 | guestId and candidateProfileId stay only in Electron Main. No tool schema, model output, or renderer IPC payload may carry or substitute a guest ID; reject guest-id-shaped tool fields and log metadata. Public call names such as Nova may cross to the model, but identifiers may not. Clear the pending candidate on denial, a second ambiguous answer, owner switch, session close, or sleep. With multiple people, the model never disambiguates; the mirror asks who owns the conversation. | Spec Section 10.1 |
-| 4 | A profile scope change closes the session holding old-owner history, opens a clean Persona+Master-only confirmation session, confirms, then calls updateAgent in that same clean session. | Spec Section 7.4, Section 10.2 |
-| 5 | Memory extraction jobs write only to ownerProfileIdAtTurnStart, snapshotted when the turn began; never re-read current owner at completion. | PRD FR-MEM-03, Spec Section 11.1 |
-| 6 | Control turns-identity confirmation, name-giving, switching, group selection, sleep, and spell-never enter personal-memory extraction. controlIntent != none means skip. | Spec Section 11.1 |
-| 7 | Scenes trigger only when normalized exact full-transcript equals the spell: no substring, similarity, or LLM intent. One trigger per turnId; a scene that ran with partial adapter failure still consumes that turn's trigger. The LLM never emits DMX/fog/hardware parameters; approved presets alone control hardware. | PRD US-SCENE-001, Spec Section 12 |
-| 8 | Exactly one mic owner exists at a time: wake worker XOR renderer, with explicit release -> acquire handshake. Handoff failure is local Maintenance, not cloud OfflineLoop. | Spec Section 8.1 |
-| 9 | No silent failure: every ignore, drop, fallback, or degrade produces a visitor-visible state or a Console event with a reason. Metadata-only event schema: {time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?}. Repeated identical errors may collapse into a counter on the same card; collapse, never discard. Catching an error is fine; swallowing it is not. | Spec Section 6.3, Section 14.1 |
-| 10 | Failures degrade, never gate: camera, extractor, or one adapter failing must not block conversation or other adapters. Cloud failure -> OfflineLoop; local core failure -> Maintenance. A black screen is never acceptable. | PRD Section 5.1, Spec Section 14 |
-| 11 | Model IDs come only from versioned config (active.json). No source-code model literals and no silent fallback to a different model when the configured one fails; fail visibly instead. One bounded retry of the same configured ID is allowed, at most once per user action; when configured options are exhausted, use OfflineLoop rather than substitution. | Impl Plan Section 5 Phase 0 Scope+Exit, Section 1 principle 3, Phase 1 Exit |
-| 12 | For this personal build, Electron Main alone loads `OPENAI_API_KEY` from the ignored repository-root `.env`. There is no Console provisioning, keystore, inherited-environment fallback, or alternate key. The renderer receives only a short-lived Realtime credential. Values never enter config, logs, telemetry, exports, or agent evidence. | DECISIONS current personal-build credential ruling |
-
-## Privacy boundary
-
-Diagnostics, worker evidence, logs, telemetry, reports, and Console events use
-only IDs, enums, counts, timings, statuses, reasons, hashes, paths, and exit
-codes. Never place raw transcript text, audio, extracted memory values, private
-context, credentials, images, embeddings, or prompts containing user content
-there. User content remains in RAM; the Console transcript panel is RAM-only
-and clears on dormant/restart.
-
-## Correction patterns for classic shortcuts
-
-- **Debug extraction:** log a content-free decision record:
-  extractionId, guestIdAtTurnStart, guestIdAtWrite, model, decision,
-  subject_key, confidence, latencyMs, and errorCode. Join bad DB rows to those
-  records; keep the transcript panel in RAM and clear it on dormant/restart.
-- **Fallback model:** validate the configured model ID at startup and expose
-  Console Test Connection/Test Draft preflight. The only sanctioned model
-  changes are Publish of a tested Draft or Rollback Entire Config to Previous:
-  one configured ID per role, no candidate lists, no auto-latest. Runtime failure
-  of the configured model goes to OfflineLoop/visible degraded, never
-  substitution.
-- **Model-owned guest ID:** the tool returns only answer: yes, no, or unclear.
-  Main resolves it against pendingCandidateProfileId and rejects payloads
-  carrying IDs.
-- **Noisy adapter:** catch and map the error to status: timeout and an
-  errorCode, continue other cues, mark the scene partial, collapse repeated
-  identical errors into a counter, and mark the Console adapter degraded. If
-  hardware is dead, switching that adapter to mock is an operator decision in
-  Console/config; a worker agent proposes it and never flips it unilaterally.
-
-## Red flags - stop and re-check the contract
-
-- Writing user or assistant utterance text to any file.
-- A tool or IPC schema with guestId, profileId, or a similar field crossing into
-  or out of the model.
-- catch{} or a dropped promise rejection with no Console event.
-- A model ID string in a .ts file.
-- Reusing a Realtime session across a profile change because reconnecting is
-  slow.
-- Making a feature wait on camera, memory, or an adapter before letting the
-  visitor talk.
-- Two components holding the microphone, or skipping the release/acquire
-  handshake even temporarily.
-
-## Accepted scope limits
-
-- No speaker diarization; conversation owner is a product convention.
-- No continuous face tracking after confirmation.
-- No guest-facing list, forget, or forget-me memory tools in Phase 1.
-- Backup rotation may retain deleted-profile data until it ages out; Phase 1
-  claims no privacy-grade erasure.
-
-Product safety, privacy, and runtime model IDs outrank convenience wording in
-a skill.
+No speaker diarization or continuous post-confirmation face tracking is implied. Guest-facing memory-management tools and privacy-grade backup erasure require their own scoped product work; historical/future plans are not authorization.

@@ -1,5 +1,5 @@
 name = "tester"
-description = "Fresh command-oriented validator for explicitly bounded checks. Use for high-risk acceptance, release/phase gates, ambiguous prior evidence, or when the user asks—not after every edit."
+description = "Run named validation for requested testing, release gates or ambiguous evidence."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"

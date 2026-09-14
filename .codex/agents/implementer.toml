@@ -1,5 +1,5 @@
 name = "implementer"
-description = "Rare delegated implementer for one clear, independent, surgically bounded change that can run in parallel with the primary thread. Routine edits stay in the primary Sol thread."
+description = "Implement one independent bounded change; routine work stays in the interactive thread."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"

@@ -1,6 +1,6 @@
 ---
 name: mm-phase-workflow
-description: Use for Magic Mirror phase slicing, runnable demos, exit evidence or promotion decisions. Not for routine status reads, single-file fixes or ordinary unit tests.
+description: "Slice Magic Mirror phase work or assess requested demos, exit evidence and promotion; not routine fixes or status reads."
 ---
 
 # Magic Mirror phase work
@@ -23,9 +23,7 @@ Windows is the engineering/verification host. Mac signing, TCC, packaging and
 device-performance proof belong to the later port. Never promote Windows
 evidence into Mac readiness.
 
-For cross-cutting phase work, keep one plan of observable outcomes, owners,
-risks and acceptance checks. Routine execution/review follows AGENTS, not a
-second workflow here. Never hide failing cases or replace assertions with delays.
+For cross-cutting phase work, capture observable outcomes, risks and acceptance checks at the useful level of detail. Never hide failing cases or replace assertions with delays.
 
 ## Demos and exit evidence
 

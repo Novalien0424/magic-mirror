@@ -1,217 +1,62 @@
 # Magic Mirror — Durable rulings
 
-[AGENTS.md](AGENTS.md) owns execution policy and canonical invariants;
-[PROGRESS.md](PROGRESS.md) owns current status and evidence. This ledger keeps
-decisions that change implementation. Detailed historical records are
-[archived](docs/archive/decisions-through-2026-09-06.md), not deleted.
+[AGENTS](AGENTS.md) owns execution policy and canonical invariants; [PROGRESS](PROGRESS.md) owns current delivery/evidence. This file records implementation decisions, not task status. The [pre-compaction ledger](docs/archive/decisions-before-harness-2026-09-13.md) preserves complete dated wording and earlier source links.
 
-## Scope and sequence
+## Scope and platform
 
-- **2026-09-09, relaxed voice-effects delay:** operator requested relaxing the
-  delay standard and proceeding with the implementation plan. Use measured
-  added direct-speech p95 <=180 ms and <=40 ms overhead above engine latency.
-  Preserve <=50 ms interruption mute and zero stale cancelled audio; human
-  sound, speakerphone echo and Mac acceptance remain separate. Replace the
-  failed MediaElementAudioSource candidate with a muted SDK receiver and one
-  MediaStreamAudioSource/AudioContext output. [Current design](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md).
+- **2026-08-27:** Windows is the engineering/functional host. Mac mini M4 port, TCC, signing, workers, LaunchAgent, power and wake revalidation follow PC development; Windows tags cannot establish Mac readiness.
+- Phase order is Foundation → Realtime → Wake → Avatar/Audio → Scenes → Identity → Memory → Field Hardening (0–7). Remaining Phase 8 covers custom Cubism authoring/calibration and character/voice quality. Rigging is not ML training.
+- Phase 2 deferred P2-D2 offline wake, 19/20 live-wake sampling, multi-speaker accuracy and 30-minute ambient/TV negatives to Phase 7; these are not passes. Dated prep-only/engineering overlap exceptions are not standing parallel-phase authority.
+- **2026-09-05:** multi-avatar Console was pulled forward: one public character loaded at a time; per-avatar personality/voice/presentation/scenes/triggers and shared/locked media/actions. Public avatar IDs are not guest identities. This changes scope, not phase acceptance or Identity/Memory sequence.
+- **2026-09-13:** user authorized personal skill and related harness compaction following [OpenAI guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra). Preserve general principles and domain safeguards; no runtime-model, dependency or phase changes are implied.
 
-- **2026-09-09, narrowed avatar voice-effects scope:** operator accepted the
-  research direction but requires one embedded open-source implementation,
-  supernatural default/Raven presets and per-avatar controls. Design selects
-  Signalsmith Stretch with native Web Audio; no neural engine, Python worker,
-  virtual cable or separate voice-changer application. Provider speech speed
-  and model delivery instructions are distinct from local pitch/formant DSP.
-  One Fable design review plus self-review was requested; external review and
-  runtime/acoustic acceptance remain open. [Design and gates](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md).
+## Credentials, ownership and persistence
 
-- **2026-09-09, Console action previews:** clicking an exported motion loops
-  it using Cubism's native loop mode, without a fresh fade-in each cycle.
-  Expressions retain the SDK's indefinite pose hold, not a restarting fade.
-  Active controls remain highlighted until reset/replacement. Stop/reset,
-  another action, unload and page leave clear the preview. This is gated by
-  `preview: true`; normal Mirror one-shot playback stays unchanged.
+- **2026-08-23 personal build:** Main alone loads `OPENAI_API_KEY` from ignored root `.env`; no Console provisioning, keystore, inherited environment or alternate source. Missing/empty/read failures are metadata-only. Agents never inspect the value. Only the short-lived Realtime secret crosses to the renderer. This supersedes older credential plans.
+- One Main lifecycle owner: cloud failure → OfflineLoop; local core failure → Maintenance. Unrelated adapters never gate conversation. One failed renderer recreation precedes exit 1; LaunchAgent `KeepAlive={SuccessfulExit=false}` alone owns process restart.
+- Config has separate schema/config versions, atomic migrations preserving operator values, and visible Maintenance for unsupported schemas. Active→Previous→packaged Default recovery is for corrupt/missing/unreadable data, never silent model substitution.
+- Main-only `node:sqlite`: `app_migrations`, foreign keys, WAL, integrity check, transactional migrations, defensive health, idempotent close. Online backup is exported `backup(sourceDb, path, options)`, not `db.backup`. DB failure does not block unrelated conversation/adapters.
+- Telemetry: RAM ring 2,000; JSONL 5 MB × 5; queue 1,000 with oldest-overflow `telemetryDroppedCount`. Only time/module/event/status and optional timing, bounded error/session/scene ID/reason/source; never raw content/errors, credentials, frames or embeddings. Overflow/delivery failures remain visible and nonblocking.
+- Transcript/audio, extracted memory values and injected private context stay RAM-only under canonical invariant 1. A future memory schema is not present persistence authority. Historical worker envelopes/H6 are retired.
 
-- **2026-09-05:** the operator pulled multi-avatar Console work forward:
-  one loaded public character at a time; personality/style/base voice, public
-  prompt inspection, per-avatar presentation/scenes/triggers and shared/locked
-  media/actions. Avatar IDs are public character configuration, never guest
-  identity or memory ownership. This subset overrides its former Phase 8
-  deferral, not phase acceptance or guest-identity/memory sequencing.
-- That request permits relevant PRD/local harness changes; no global plugin
-  rewrites, dependency upgrades or weaker privacy/QA guarantees are implied.
-- Phase order: 0 Foundation/Console → 1 Realtime Voice → 2 Wake Lifecycle →
-  3 Avatar/Audio → 4 Scenes → 5 Identity/Profiles → 6 Memory → 7 Field Hardening.
-  Remaining Phase 8 scope is custom Cubism authoring/calibration and
-  character/voice quality. Cubism rigging is not ML training.
-- **2026-08-27:** Windows is the engineering and functional-verification host.
-  Mac mini M4 port, TCC, signing/entitlements, packaged workers, LaunchAgent,
-  power/performance and wake revalidation follow PC development. Windows tags
-  do not establish Mac deployment readiness.
-- The accepted Phase 2 Windows checkpoint explicitly deferred P2-D2 offline
-  wake, 19/20 live-wake sampling, multi-speaker accuracy and the 30-minute
-  ambient/TV negative run to Phase 7. They are not Phase 2 passes.
-- Historical prep-only permission (2026-08-24) covered isolated synthetic
-  P2/P3/P4/P7 artifacts, not runtime wiring, IPC/schema/dependencies/config,
-  device/network access, demos or promotion. The separate 2026-08-27 overlap
-  allowed Phase 2 engineering from a frozen Phase 1 candidate; human acceptance
-  and tags still followed phase order. Neither is a standing parallel-phase waiver.
+## Voice, identity and microphone
 
-## Personal-build credential ruling — 2026-08-23 (current)
+- Runtime IDs/voices are versioned config. Session snapshots freeze at creation, job snapshots at enqueue; Publish affects future sessions/jobs. Worker model routing is separate.
+- Main atomically snapshots model + Realtime identity before minting; renderer receives validated/frozen identity + secret, expiry 600 seconds. Missing identity never calls the broker.
+- One browser runtime owns start/rollover/stop/interrupt/dispose. `realtimeSessionId` rejects stale events; generation is diagnostic except the positive Main start-bundle generation that commits activation. Main owns pending activation/rollover and reasoned stale/wrong-state drops.
+- Mic ownership is explicit release→acquire; stop caller-owned renderer tracks before returning to wake. Handoff failure is local Maintenance.
+- Profile changes close old-owner history, confirm in a clean Persona+Master session, then update the agent. Guest/candidate IDs stay in Main. Final transcripts are bounded session RAM and clear on stop/offline/rollover/restart. Extraction uses turn-start ownership and skips control turns.
+- Audible playback completion, including processed output tail, governs idle, rollover and farewell. Interruption stops output and coalesces duplicates.
+- Rollover timer: 60 minutes. After cloud failure, one Main schedule probes the ephemeral broker at 5/15/30/60 seconds, discards secrets in RAM, and returns Dormant on success/exhaustion. Manual Start owns the next full session; no automatic session reconnect. Shutdown cancels probes.
+- Console Start/Disconnect and payload-free interrupt use validated Console-only IPC through the tracked Mirror; preserve `handleSimulator` response shape. No guest IDs in model tools.
+- **2026-08-27 RCA:** mock model IDs once leaked from non-isolated userData into live runs. Live flags select isolated data; provider prose is not entitlement proof. Use bounded status/transport reasons and retain failed evidence.
 
-Electron Main alone loads `OPENAI_API_KEY` from ignored root `.env`.
-No Console provisioning, `safeStorage`, Keychain, DPAPI, process-environment
-or alternate-key fallback. Missing/empty/read failures are metadata-only reasons.
-The master key never enters renderer data, config, logs, exports, tests or
-agent evidence; agents/workers never inspect its value. Only the short-lived
-Realtime credential crosses to the renderer. This supersedes older product
-credential instructions; all other canonical invariants remain unchanged.
+## Voice Studio — 2026-09-09
 
-## Ownership, persistence and recovery
+One embedded implementation: Signalsmith Stretch + native Web Audio, per-avatar controls and supernatural default/Raven presets. Provider speed/delivery instructions are separate from pitch/formant DSP. No neural engine, Python voice worker, virtual cable or separate changer app.
 
-- One Main lifecycle owner; cloud failure → OfflineLoop, local core failure →
-  Maintenance. An unrelated adapter cannot gate conversation. One failed
-  renderer recreation precedes exit 1; the user LaunchAgent
-  `KeepAlive={SuccessfulExit=false}` is the sole restart owner.
-- Config separates `schemaVersion` from `configVersion`. Migrations are atomic,
-  preserving operator values; unsupported schemas visibly enter Maintenance.
-  Active → Previous → packaged Default recovery is only for corrupt/missing/
-  unreadable data, never silent model substitution.
-- Main-only `node:sqlite`: foundation `app_migrations` table, foreign keys, WAL,
-  integrity check, transactional migrations, defensive health and idempotent
-  close. Online backup uses exported `backup(sourceDb, path, options)`, not
-  `db.backup`. SQLite failure cannot block unrelated adapters/conversation.
-- Metadata telemetry: RAM ring 2,000; rotating JSONL 5 MB × 5; writer queue
-  1,000; oldest overflow increments `telemetryDroppedCount`. Allowed fields:
-  time/module/event/status, optional duration/error code/session or scene ID/
-  reason/source. No raw content, raw errors, credentials, frames or embeddings.
-  Delivery failure stays visible and non-blocking.
-- Robustness uses explicit ownership, bounded cleanup/retry and focused
-  failure tests, not shadow controllers or hard-coded provider taxonomies.
-  Historical H6 external workers/envelopes are retired.
+The operator relaxed added direct-speech p95 to <=180 ms and overhead above engine latency to <=40 ms. Preserve <=50 ms interruption mute and zero stale cancelled audio. The SDK receiver is muted; one MediaStreamAudioSource/shared AudioContext graph is audible. The rejected MediaElementAudioSource candidate is historical. Human sound, speakerphone echo and Mac acceptance remain distinct. [Design](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md); current proof belongs in PROGRESS.
 
-## Voice and microphone contracts
+## Wake and scenes
 
-- Runtime IDs and voices come from versioned configuration. Session snapshots
-  freeze at creation; job snapshots freeze at enqueue. Publish affects only
-  future sessions/jobs. Worker-model settings are separate from product models.
-- Main atomically snapshots the published model and realtime identity before
-  credential minting; the renderer receives a validated/frozen identity+secret
-  DTO with 600-second expiry. Missing identity does not call the broker.
-- One browser runtime handles start/rollover/stop/interrupt/dispose.
-  `realtimeSessionId` authorizes stale-event rejection; generation is diagnostic,
-  except the positive Main start-bundle generation required to commit activation.
-  Main owns pending activation/rollover; old or wrong-state outcomes are reasoned
-  metadata-only ignores.
-- Exactly one microphone owner, explicit release then acquire. Stop
-  caller-owned renderer tracks before returning ownership to wake. Handoff
-  failure is Maintenance, not cloud OfflineLoop.
-- Profile change closes old-owner history, confirms in a clean Persona+Master
-  session, then updates the agent. Guest/candidate IDs remain Main-only.
-  Final transcripts are bounded session RAM; stop/offline/rollover/restart
-  clear them. Extraction uses the turn-start owner and skips control turns.
-- Audible playback completion, not generation completion, governs idle,
-  rollover and farewell. Use the accepted output-buffer event/analyser path;
-  interruptions stop output and coalesce duplicate requests.
-- Rollover timer is 60 minutes. One Main probe schedule at 5/15/30/60 seconds
-  checks via the ephemeral broker after cloud failure, discards secrets in RAM,
-  and returns Dormant on success or exhaustion. No automatic full-session
-  reconnect; Manual Start owns the next session; shutdown cancels probes.
-- Console Start/Disconnect and zero-argument interrupt use validated
-  Console-only IPC through tracked Mirror webContents. No guest IDs in tools.
-  Keep the authoritative `handleSimulator` response shape.
-- **2026-08-27 RCA:** earlier model-access failures actually loaded a mock ID
-  from non-isolated userData. The live flag now selects isolated data.
-  Provider prose is not proof of entitlement; use bounded transport/status
-  categories. Historical failed runs remain failed.
+- One hashed sherpa package binds phrase/platform/version/tuning/corpus. Custom phrases use its token encoding, not training; no engine fallback. Changed wake packages take effect at next app start.
+- Chinese KWS uses model-owned tokens, ppinyin, 16 kHz / featureDim 80 and reset after detection. Package/corpus tuning, not invented event confidence, governs acceptance; revalidate final Mac hardware.
+- Customizable wake baseline: `魔鏡阿魔鏡`. Sleep is Active-only directed intent, never a wake keyword. Preserve the current avatar's exact farewell and finish playback before Realtime close, mic release and Dormant. Quoted/negated/hypothetical/incidental mentions do not sleep.
+- Scene spells require normalized exact full-transcript match once per turn. Approved typed presets alone control hardware. Public scene/trigger/action IDs are not guest IDs. Draft tests never silently publish or activate another avatar.
 
-## Wake, avatar and scene decisions
+## Cubism, previews and asset ownership
 
-- One replaceable, hashed sherpa-onnx package binds phrase, platform/version,
-  tuning and corpus evidence; no Porcupine or runtime engine fallback.
-  Custom phrases use the chosen model's token encoding, not neural training.
-  Publish requires next app start for a changed wake package.
-- Chinese KWS uses model-owned tokens, ppinyin, 16 kHz / featureDim 80 and
-  reset after detection. Package tuning/corpus, not a fabricated per-event
-  confidence score, controls acceptance. Revalidate on final Mac hardware.
-- Default wake phrase is customizable (`魔鏡阿魔鏡`). Sleep is an Active-only
-  directed command, never a wake keyword. Preserve configured exact farewell,
-  finish actual playback, close Realtime, release mic and become Dormant.
-  Quoted/negated/hypothetical/incidental mentions do not execute sleep.
-  Current avatar configuration supersedes historical fixed farewell wording.
-- Cubism uses official vendored Framework/Core, WebGL2 and closest 9:16 display.
-  Actual output-audio RMS/envelope is the lip-sync baseline; MotionSync is
-  optional, not a retroactive Phase 3 gate. Custom rig work remains scoped.
-- Scene trigger is normalized exact full-transcript match once per turn;
-  approved presets alone control hardware. Public scene/trigger/action IDs
-  are not guest IDs. Draft tests must not silently publish or switch avatars.
+- Official vendored Framework/Core, WebGL2 and closest 9:16 display; actual output RMS/envelope drives lip sync. MotionSync is separate scope, not a retroactive Phase 3 gate.
+- **2026-09-08:** dedicated Cubism library/test page. A rig is reusable art, not a public profile or guest. Managed imports validate and rediscover; rejection is visible. Appearance assignment is an explicit draft edit.
+- Selection/load owns a silent local preview, without publication, Mirror switch, mic or provider call. Expose all motion groups/indices, expressions and actual MOC IDs/bounds/defaults/readback; lifecycle uses index zero. Writable parameters need not have artwork; Speaking clips do not replace audio mouth input.
+- Reset stops actions and restores defaults. Replacement/unload/page leave release timed work and overrides. Preview overrides follow automatic effects; preserve actual bounds/defaults without range-step quantization.
+- **2026-09-09:** Console motion previews loop natively without repeated fade-in; expressions retain SDK indefinite pose hold. Active highlight persists until reset/replacement. This is `preview: true` only; normal Mirror playback stays one-shot.
+- **2026-09-08 framing:** preserve initial model canvas-height fit and explicit Layout. Draw/resize compose fresh projection/MVP without model-matrix mutation. PPU/horizontal padding must not shrink art. Console/Mirror share renderer, 9:16 viewport, aspect and DPR. No per-ID multiplier, dynamic alpha-fit or CSS zoom workaround. Artistic extreme-pose crop calibration is separate.
+- **2026-09-09 labels:** operator name/version lives in managed `avatar-label.json`; no filename/UUID guesses. Unknown stays unknown; invalid labels fail visibly without hiding valid rigs. Sidecars may travel with future exports. [Label contract](docs/testing/avatar-library-labels-2026-09-09.md).
+- **2026-09-09 Raven master:** `resources/avatar/Raven/v10/` separates runtime from editable CMO/PSD. Preserve masters; new authoring gets a new version. Managed userData copies stay distinct; no direct edits or automatic publication/synchronization. Build remains Ren-only. Runtime/checksum inventory is Git-eligible with byte-preserving `-text`; large editable/QA files remain ignored and need separate backup. [Storage policy](resources/avatar/Raven/README.md).
 
-## Dedicated Cubism Console — 2026-09-08
+## Evidence
 
-- The operator pulled forward a separate **Live2D Cubism** library/test page.
-  A rig is a reusable asset, not a public character profile or guest identity.
-  Validated managed imports are rediscovered after restart; rejected bundles
-  are reported. Draft assignment remains an explicit Appearance edit.
-- Select/load in this section owns only a local, silent preview: no publication,
-  live Mirror switch, microphone acquisition or provider call. Preview controls
-  are opt-in and unavailable to the normal Mirror.
-- Expose every exported motion group/index and expression, plus actual MOC
-  parameter IDs/bounds/defaults/readback. Lifecycle playback still defaults
-  to clip zero. Writable parameters do not guarantee visible rigged artwork;
-  a Speaking motion does not replace external audio-driven mouth input.
-- Timed tests, reset, replacement, unload and page leave have explicit cleanup.
-  Reset stops motions/expressions and restores actual defaults; parameter
-  overrides follow automatic effects only in the test preview. Preserve exact
-  bounds/defaults without HTML range-step quantization.
-- Dedicated Cubism QA uses isolated data and production controls. Optional
-  external rig coverage must be explicitly supplied and identified; built-in
-  fixture success cannot stand in for Raven. Hidden-Mirror Console coverage
-  is not portrait-display, physical speech or phase-acceptance evidence.
+Mocks, unavailable cases and real results stay distinct. Required unavailable evidence is pending, never passed. Automation does not prove physical sound/effects, operator acceptance or Mac readiness. Cubism QA must explicitly identify external rigs; built-in success cannot stand in for Raven, and hidden-Mirror Console coverage cannot establish portrait/speech acceptance.
 
-## Avatar framing — 2026-09-08
-
-- Default framing is model canvas height, followed by any explicit model3
-  Layout. Per-frame drawing and resize create the projection/MVP without
-  changing the model matrix. Canvas width in export units is not a framing
-  threshold; horizontal padding and equivalent PPU must not shrink artwork.
-- Console and Mirror share this renderer. Keep the existing 9:16 viewport,
-  aspect preservation, DPR handling, model assets and parameter/motion ranges.
-  No per-ID multiplier, dynamic alpha-bounds fit or CSS zoom workaround.
-- Matching the v07 baseline does not certify safe crop for every v08 extreme.
-  Model-specific fixed Layout calibration is separate from the product scale
-  regression; do not silently alter exports or publish an unfinished draft.
-
-## Project-owned Raven assets — 2026-09-09
-
-- User-approved v10 master lives in `resources/avatar/Raven/v10/`, with
-  exported files in `runtime/` and editable CMO/PSD sources kept separately.
-  Preserve versioned masters; new authoring creates a new version.
-- Console still imports a validated copy into user data `assets/avatars/`.
-  Do not edit managed runtime files or auto-publish to synchronize a master.
-  This archival change does not automatically bundle Raven or archive every
-  future external import; the build's Ren-only copy remains unchanged.
-- Runtime and checksum inventory are Git-eligible. The large editable/QA
-  archive is explicitly ignored and requires separate out-of-band backup.
-  A local project copy is not a commit, push or off-machine backup. See
-  [asset storage policy](resources/avatar/Raven/README.md).
-- Git stores versioned Raven export files byte-for-byte (`-text` in
-  `.gitattributes`); do not normalize their line endings and invalidate the
-  delivery's SHA-256 inventory during checkout.
-
-## Evidence and protected history
-
-- 2026-09-09: Library names/versions are explicit operator metadata in a
-  managed `avatar-label.json` sidecar, not filename/UUID guesses or published
-  character configuration. Missing versions remain visibly unknown; invalid
-  labels degrade visibly without hiding an otherwise valid rig. The same
-  optional sidecar can travel with future exports. See
-  [persistent label contract](docs/testing/avatar-library-labels-2026-09-09.md).
-
-Mock, unavailable and real evidence remain distinct. A deterministic recorder
-cannot label a non-real result passed; automation does not establish physical
-sound, hardware effects, operator acceptance or Mac readiness.
-
-Historical `.claude/skills/` inputs, protected review/product documents and
-the user-owned installer remain protected under AGENTS. Do not change model
-pins/dependencies or phase state during harness compaction. The archived ledger
-retains exact unit/commit identifiers, fixed old settings, source links and
-failed/superseded claims; consult it only for history.
+Protected product/review documents, historical `.claude/skills` inputs and installer remain under AGENTS boundaries. [Archived ledger](docs/archive/decisions-before-harness-2026-09-13.md) retains complete rulings and links to older archives; read it only for details/history absent here.

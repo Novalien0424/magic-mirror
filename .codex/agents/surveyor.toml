@@ -1,5 +1,5 @@
 name = "surveyor"
-description = "Focused read-only evidence tracer for one independent, bounded repository question. Use only when delegation can run in parallel or isolate noisy read context."
+description = "Trace one independent repository question without edits."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

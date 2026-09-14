@@ -1,5 +1,5 @@
 name = "deep_reviewer"
-description = "Luna/max quality-first reviewer for a difficult but precisely bounded correctness, privacy, security, architecture, or root-cause audit. Keep it off the serial critical path when possible."
+description = "Audit a difficult bounded correctness, privacy, security or architecture question."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "max"
 sandbox_mode = "read-only"
