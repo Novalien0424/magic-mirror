@@ -129,3 +129,9 @@ The connected GitHub integration may now deliver the same 30-file scope to
 `Novalien0424/magic-mirror` on `raven-v11-calm-performance`. This authorization
 does not change the outstanding rendered/Windows acceptance gates. The draft
 PR is the remote delivery record; the earlier Git bundle remains a checkpoint.
+
+Remote delivery completed after that approval: [draft PR #1](https://github.com/Novalien0424/magic-mirror/pull/1),
+branch `raven-v11-calm-performance`, containing the 30-file candidate. The
+uploaded candidate tree `282ed050eea94fad189d14f02e566ecddab5e672` matched the
+reviewed local tree exactly. This follow-up changes delivery documentation only.
+The PR remains unmerged and current Windows visual acceptance is still open.

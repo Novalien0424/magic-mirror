@@ -6,7 +6,7 @@ Built on `7072a1c` in the isolated cloud checkout, branch `raven-v11-calm-perfor
 
 Focused Linux checks passed 92 tests / 9 files, web typecheck, skill validation and actual Core structural inspection (27 parameters, 22 drawables). Current rendered QA is **blocked**: no Windows desktop connection, and cloud browser policy rejected local/file preview URLs. No Windows/Electron or visual naturalness acceptance is claimed. The existing Windows runtime and operator drafts were not accessed or changed; previous runtime statements below are historical. Use the new code plus separate V11 import for canonical Windows QA; no automatic model activation, merge or phase promotion.
 
-The first remote delivery attempt was blocked by missing HTTPS Git credentials and automatic approval review. The user subsequently explicitly approved uploading the 30-file V11 payload and creating a draft PR in `Novalien0424/magic-mirror`. Delivery proceeds through the connected GitHub integration; the draft PR records the remote result. The existing Git bundle remains the pre-upload checkpoint. Live activation and Windows visual acceptance remain separate.
+Remote delivery completed after the user explicitly approved the 30-file payload: [draft PR #1](https://github.com/Novalien0424/magic-mirror/pull/1), branch `raven-v11-calm-performance`. The uploaded candidate tree was verified identical to the reviewed local tree. The initial HTTPS-credential failure and automatic approval rejection remain historical evidence in the audit. The existing Git bundle is the pre-upload checkpoint. Live activation and Windows visual acceptance remain separate.
 
 ## Clock-in and field-help delivery — 2026-09-14, Asia/Taipei
 
