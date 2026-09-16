@@ -1,6 +1,10 @@
 # Raven — project-owned master
 
-As of 2026-09-09, **v10** is the current project-owned Raven delivery.
+The new [V11 performance candidate](v11/README.md) (2026-09-16) adds restrained
+state motions and requires the matching renderer changes. It retains V10's MOC
+and artwork and is **not yet visually accepted**; see its [audit](v11/AUDIT.md).
+
+As of 2026-09-09, **v10** is the preceding project-owned Raven delivery.
 Use [v10/runtime/raven-lord.model3.json](v10/runtime/raven-lord.model3.json)
 in Console → Live2D Cubism → Browse/import. Keep its entire runtime directory.
 It has 17 files, seven motion groups and five expressions.
@@ -43,7 +47,7 @@ The 17-file runtime (~3.5 MiB), original README and checksum inventory are
 eligible for normal Git tracking, together with this index. The larger CMO,
 PSD/source, QA and supporting archive directories are explicitly ignored by
 the root `.gitignore` and delivered out-of-band. No LFS/dependency or remote
-upload was introduced. **Nothing was committed or pushed by this task.**
+upload was introduced. That original storage task did not commit or push its changes.
 
 A clone alone will not contain the ignored editable archive. Back up the whole
 `Raven/v10` directory separately when transporting/restoring editable sources,
