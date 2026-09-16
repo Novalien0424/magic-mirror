@@ -1,0 +1,110 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "raven-lord.moc3",
+    "Textures": [
+      "raven-lord.2048/texture_00.png"
+    ],
+    "Physics": "raven-lord.physics3.json",
+    "DisplayInfo": "raven-lord.cdi3.json",
+    "Expressions": [
+      {
+        "Name": "exp_01",
+        "File": "motions/exp_01.exp3.json"
+      },
+      {
+        "Name": "exp_02",
+        "File": "motions/exp_02.exp3.json"
+      },
+      {
+        "Name": "exp_03",
+        "File": "motions/exp_03.exp3.json"
+      },
+      {
+        "Name": "exp_04",
+        "File": "motions/exp_04.exp3.json"
+      },
+      {
+        "Name": "exp_05",
+        "File": "motions/exp_05.exp3.json"
+      }
+    ],
+    "Motions": {
+      "Dormant": [
+        {
+          "File": "motions/raven_dormant.motion3.json",
+          "FadeInTime": 0.6,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Waking": [
+        {
+          "File": "motions/raven_waking.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Listening": [
+        {
+          "File": "motions/raven_listening.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Thinking": [
+        {
+          "File": "motions/raven_thinking.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Speaking": [
+        {
+          "File": "motions/raven_speaking.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Scene": [
+        {
+          "File": "motions/raven_scene.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ],
+      "Suspending": [
+        {
+          "File": "motions/raven_suspending.motion3.json",
+          "FadeInTime": 0.45,
+          "FadeOutTime": 0.45
+        }
+      ]
+    }
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": [
+        "ParamEyeLOpen",
+        "ParamEyeROpen"
+      ]
+    },
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": [
+        "ParamMouthOpenY"
+      ]
+    }
+  ],
+  "Layout": {
+    "height": 1.9,
+    "x": 0.17,
+    "y": -0.05
+  },
+  "MagicMirror": {
+    "Version": 1,
+    "Performance": "raven-calm-v1"
+  }
+}

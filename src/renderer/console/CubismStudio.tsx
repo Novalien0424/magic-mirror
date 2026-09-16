@@ -194,7 +194,7 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
             onEvent={event => {
               if (event.status === 'failed') { reset(); setFault(event.reason); setReady(false) }
               else if (event.status === 'degraded') setFault(event.reason)
-              else if (event.reason.startsWith('avatar_motion_started:')) setMessage(`Motion started: ${event.reason.split(':').slice(1).join(':')} · looping until Stop / reset`)
+              else if (event.reason.startsWith('avatar_motion_started:')) setMessage(`Motion started: ${event.reason.split(':').slice(1).join(':')} · playing / holding until Stop / reset`)
               else if (event.reason.startsWith('avatar_motion_completed:')) { setActiveMotion(null); setMessage(`Motion finished: ${event.reason.split(':').slice(1).join(':')}`) }
             }} /> : <p className="cubism-studio__empty">Select an avatar to begin</p>}
         </div>
@@ -208,13 +208,13 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
       </div>
       <div className="cubism-studio__controls">
         <fieldset disabled={!ready}><legend>Motions · {capabilities.motions.length}</legend>
-          <p className="console__muted">Clips loop until Stop / reset or another action. Includes every exported clip in each group.</p>
+          <p className="console__muted">Clips loop or hold their final pose until Stop / reset or another action. Includes every exported clip in each group.</p>
           <div className="cubism-studio__buttons">{capabilities.motions.map(motion => <button type="button" key={`${motion.group}:${motion.index}`}
             title={motion.file} aria-pressed={activeMotion === motionKey(motion.group, motion.index)} aria-label={`Play motion ${motion.group} ${motion.index + 1}`} onClick={() => {
               reset(); setFault(''); renderer.current?.setState('Dormant'); renderer.current?.clearExpression()
               if (renderer.current?.playMotion(motion.group, motion.index)) {
                 setActiveMotion(motionKey(motion.group, motion.index))
-                setMessage(`Motion started: ${motion.group} · clip ${motion.index + 1} · looping until Stop / reset`)
+                setMessage(`Motion started: ${motion.group} · clip ${motion.index + 1} · playing / holding until Stop / reset`)
               }
               else setFault(`Motion unavailable: ${motion.group} ${motion.index + 1}`)
             }}>{motion.group} · {motion.index + 1}</button>)}</div>
