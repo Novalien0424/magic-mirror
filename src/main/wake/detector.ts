@@ -5,9 +5,11 @@ export type WakeDetectorResult =
 export interface WakeDetector {
   readonly sampleRateHz: 16_000
   process(samples: Int16Array): WakeDetectorResult
+  measurement?(): WakeScore | null
   reset(): void
   close(): void
 }
 
 export const WAKE_LISTENING: WakeDetectorResult = Object.freeze({ status: 'listening' })
 export const WAKE_DETECTED: WakeDetectorResult = Object.freeze({ status: 'detected' })
+import type { WakeScore } from '../../shared/wake-score'

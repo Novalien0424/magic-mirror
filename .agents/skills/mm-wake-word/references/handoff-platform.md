@@ -10,8 +10,9 @@ owns mic. Reverse on Suspending/OfflineLoop - and note the Realtime SDK's
 `close()` does NOT stop app-owned mic tracks: the renderer must `track.stop()`
 each track before Main hands the mic back (Spec Section 8.1), or this worker
 hits device-busy. Handoff failure = local audio fault -> Maintenance (never
-OfflineLoop). During Active the worker must not reopen the mic; a wake phrase
-said mid-conversation is just a normal utterance.
+OfflineLoop). During Active the worker must not reopen the mic. The active
+avatar's exact wake phrase may stop its running scene through the transcript
+controller; it does not start a second wake listener or request sleep.
 
 The Active-only sleep command uses the current avatar configuration and directed-intent contract, never a wake keyword. Preserve the configured exact farewell; reject quoted, negated, hypothetical or incidental mentions. After goodbye playback completes,
 Main owns the payload-free transition back to Dormant and the release-then-

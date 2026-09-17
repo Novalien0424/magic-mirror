@@ -1,4 +1,6 @@
+import { PromptInspector } from './PromptInspector'
 import { HelpField } from './HelpField'
+import { WakeRecoveryStatus } from './WakeRecoveryStatus'
 import { FIELD_HELP } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -53,6 +55,9 @@ import { ResourceAccess } from './ResourceAccess'
 import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
 import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection } from './profile-workspace'
+import { ActiveAvatarPanel } from './ActiveAvatarPanel'
+import { DeleteAvatarDialog } from './DeleteAvatarDialog'
+import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
 const PAGES = ['Mirror', 'Avatars', 'System'] as const
 const SYSTEM_PAGES = ['Devices', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
@@ -442,9 +447,17 @@ function ModuleCard({
 function OverviewPanel({
   state,
   configState,
+  bridge,
+  editing,
+  onChanged,
+  onEdit,
 }: {
   readonly state: OverviewState
   readonly configState: ConfigState
+  readonly bridge: ConsoleBridge | null
+  readonly editing: boolean
+  readonly onChanged: () => void
+  readonly onEdit: () => void
 }): React.JSX.Element {
   const overview = state.status === 'success' ? state.value : null
   const activeConfig = configState.status === 'success' ? configState.value.active : null
@@ -460,6 +473,8 @@ function OverviewPanel({
         </div>
       </div>
 
+      <ActiveAvatarPanel payload={configState.status === 'success' ? configState.value : null}
+        bridge={bridge} lifecycle={overview?.lifecycle} editing={editing} onChanged={onChanged} onEdit={onEdit} />
       <div className="console__overview-grid console__overview-primary">
         <OverviewField label="Mirror" value={displayValue(overview?.lifecycle)} />
         <OverviewField label="Wake phrase" value={displayValue(activeConfig?.wake.phrase)} />
@@ -756,19 +771,23 @@ function AvatarAudioPanel({
           inactive: 'Wake listener inactive — microphone released or unavailable.',
           waiting: 'Waiting for the first audio blocks…',
           stalled: 'No audio blocks for over 3 seconds — microphone stream may be stalled.',
+          recovering: 'Wake microphone stopped delivering audio. Restarting the listener…',
+          failed: 'Wake microphone unavailable. Check the microphone connection, save any draft edits, then close and restart Magic Mirror.',
           silent: 'Audio blocks arriving, but the signal is silent or very quiet.',
           signal: 'Sound is reaching the wake detector. Sound activity is not a wake-word match.',
         } as const)[value.wakeInput.state] : 'Wake input diagnostics unavailable.'}</p>
+        <WakeRecoveryStatus recovery={value?.wakeInput?.recovery} />
         <label className="console__input-level">Input level
           <meter aria-label="Wake microphone level" min="0" max="100"
             value={value?.wakeInput?.peak ? Math.max(0, 100 + 100 * 20 * Math.log10(value.wakeInput.peak) / 60) : 0} />
         </label>
-        <p className="console__detail">{value?.wakeInput ? `Peak ${value.wakeInput.peak > 0 ? (20 * Math.log10(value.wakeInput.peak)).toFixed(1) : '−∞'} dBFS · Blocks ${value.wakeInput.blocks} · Last block ${value.wakeInput.lastBlockAgeMs === null ? 'not received' : `${value.wakeInput.lastBlockAgeMs} ms ago`} · Wake detections ${value.wakeInput.detections}` : 'Waiting for wake worker…'}</p>
+        <p className="console__detail">{value?.wakeInput ? `Peak ${value.wakeInput.state === 'silent' || value.wakeInput.state === 'signal' ? `${value.wakeInput.peak > 0 ? (20 * Math.log10(value.wakeInput.peak)).toFixed(1) : '−∞'} dBFS` : 'unavailable'} · Blocks ${value.wakeInput.blocks} · Last block ${value.wakeInput.lastBlockAgeMs === null ? 'not received' : `${value.wakeInput.lastBlockAgeMs} ms ago`} · Wake detections ${value.wakeInput.detections}` : 'Waiting for wake worker…'}</p>
         <p className="console__detail">Measures the existing wake stream only; no recording or transcription. Updates twice per second.</p>
       </section>
       <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
 
       <details className="console__technical"><summary>Avatar motions, expressions and test tools</summary>
+      <button type="button" onClick={() => onCommand({ type: 'stop_avatar_test' })}>Stop avatar tests</button>
       <p className="console__label">States / motions</p>
       <div className="console__command-list">
         {AVATAR_RUNTIME_STATES.filter((stateName) => stateName !== 'OfflineLoop').map((stateName) => (
@@ -1146,6 +1165,7 @@ export function ConfigPanel({
             <input
               type="text"
               value={draft?.wake.phrase ?? ''}
+              readOnly={draft?.avatarCatalog !== undefined}
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, phrase: event.currentTarget.value } }))}
             />
@@ -1337,9 +1357,14 @@ export function ScenesPanel({
   const [publishReview, setPublishReview] = useState(false)
   const [previewRevision, setPreviewRevision] = useState(0)
   const sceneTestGeneration = useRef(0)
+  const saveCheckController = useRef<AbortController | null>(null)
+  const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'checking'>('idle')
   const latestSceneDraft = useRef(rawDraft)
   latestSceneDraft.current = rawDraft
   const [editingAvatarId, setEditingAvatarId] = useState('')
+  const [deletingAvatarId, setDeletingAvatarId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [nameFocusId, setNameFocusId] = useState<string | null>(null)
   const editingId = rawDraft?.avatarCatalog?.avatars.some(a => a.id === editingAvatarId)
     ? editingAvatarId : rawDraft?.avatarCatalog?.activeAvatarId ?? ''
   const draft = rawDraft ? projectAvatarDraft(rawDraft, editingId) : null
@@ -1444,12 +1469,15 @@ export function ScenesPanel({
     }
   }), [bridge])
 
-  const disabled = !bridgeAvailable || bridge === null || draft === null || payload === null || busy || conflict || state.status !== 'success'
+  const editorDisabled = !bridgeAvailable || bridge === null || draft === null || payload === null || (busy && savePhase === 'idle')
+  const disabled = editorDisabled || busy || conflict || state.status !== 'success'
   const dirty = rawDraft !== null && payload !== null
     && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
   useEffect(() => onEditingChange?.(dirty || busy || conflict), [dirty, busy, conflict, onEditingChange])
   useEffect(() => { setPublishReview(false) }, [dirty, editingId, section])
   const activeAvatar = payload?.active.avatarCatalog?.avatars.find(a => a.id === payload.active.avatarCatalog?.activeAvatarId)
+  const deletingAvatar = rawDraft?.avatarCatalog?.avatars.find(avatar => avatar.id === deletingAvatarId)
+  const deleteReason = avatarDeletionReason(rawDraft?.avatarCatalog, editingId, activeAvatar?.id ?? '')
   const changes = payload ? workspaceChanges(safeDraftFromConfig(payload.active), safeDraftFromConfig(payload.draft)) : []
   const unsavedChanges = payload && rawDraft ? workspaceChanges(safeDraftFromConfig(payload.draft), rawDraft) : []
   const activationReason = avatarActivationReason(payload, editingId, dirty || conflict, lifecycle)
@@ -1479,27 +1507,54 @@ export function ScenesPanel({
     }
   }
 
-  const testSceneDraft = async (): Promise<void> => {
-    if (bridge === null || payload === null) return
-    setBusy(true)
-    setMediaTestFailed(false)
+  const saveAndCheck = async (): Promise<void> => {
+    if (!bridge || !rawDraft || busy) return
+    const snapshot = projectAvatarDraft(rawDraft)
+    const fingerprint = draftFingerprint(safeDraftFromConfig(snapshot))
+    const abort = new AbortController()
+    saveCheckController.current = abort
+    const current = (): boolean => !abort.signal.aborted
+      && fingerprint === draftFingerprint(safeDraftFromConfig(latestSceneDraft.current!))
+    setBusy(true); setSavePhase('saving'); setMediaTestFailed(true)
+    setResult('Saving changes…')
+    let saved = false
     try {
-      for (const asset of payload.draft.visualAssets) {
-        const probe = await probeDraftVisualAsset(asset)
+      const response = await bridge.saveDraft(snapshot)
+      if (!response.ok) {
+        setResult(`Cannot save (${response.error}): ${response.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || response.reason}. Your edits are retained.`)
+        return
+      }
+      saved = true
+      if (!current()) { setResult('Draft saved. Newer edits or an aborted check remain unchecked; Save again.'); return }
+      setSavePhase('checking'); setResult('Saved. Checking configuration and media…')
+      for (const asset of snapshot.visualAssets) {
+        const probe = await probeDraftVisualAsset(asset, { signal: abort.signal })
+        if (!current()) { setResult('Newer edits remain unchecked; Save again.'); return }
         if (probe.width !== asset.width || probe.height !== asset.height
           || asset.kind === 'video' && (!('durationMs' in probe)
             || Math.abs(probe.durationMs - (asset.durationMs ?? 0)) > Math.max(1000, (asset.durationMs ?? 0) * 0.02))) {
           throw new Error('visual_asset_probe_mismatch')
         }
       }
-      await runResponse(() => bridge.testDraft(), 'Saved Draft media decoded; configuration test completed.')
+      const checked = await bridge.testDraft()
+      if (!current()) { setResult('Newer edits or an aborted check remain unchecked; Save again.'); return }
+      if (!checked.ok || checked.value.result !== 'mock_passed') {
+        setResult(`Saved, but checking failed: ${checked.ok ? checked.value.reason : checked.reason}. Check the media and configuration, then Save again.`)
+        return
+      }
+      setMediaTestFailed(false)
+      setResult('Saved and checked. Ready to publish.')
     } catch {
-      setMediaTestFailed(true)
-      setResult('Draft media test failed: decode unavailable or metadata mismatch. Active is unchanged.')
+      setResult(abort.signal.aborted ? 'Check aborted. Saved changes are retained; Save again to check.'
+        : 'Save / check failed. Your edits are retained. Check media decoding and the Console connection, then Save again.')
     } finally {
-      setBusy(false)
+      if (saved) { retainLocalDraft.current = true; onChanged() }
+      if (saveCheckController.current === abort) {
+        saveCheckController.current = null; setSavePhase('idle'); setBusy(false)
+      }
     }
   }
+  useEffect(() => () => { ++sceneTestGeneration.current; saveCheckController.current?.abort() }, [])
 
   const saveUnavailableReason = payload?.draft.avatarCatalog && !payload.draft.avatarCatalog.avatars.some(a => a.id === editingId)
     ? 'Save Draft first to create this avatar, then save individual steps.' : ''
@@ -1539,6 +1594,7 @@ export function ScenesPanel({
   }
   const stopSceneTests = (message: string): void => {
     ++sceneTestGeneration.current
+    saveCheckController.current?.abort()
     if (bridge) void runResponse(() => bridge.stopScenes(), message, false)
   }
 
@@ -1559,16 +1615,13 @@ export function ScenesPanel({
       </div> : null}
       <div className="profile-workspace">
       {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
-        <HelpField help={`${FIELD_HELP.editingAvatar} Selected: ${editingAvatar.name} (${editingId}).`}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
-          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name} · {a.id.slice(-8)}{a.id === payload?.active.avatarCatalog?.activeAvatarId ? ' · On Mirror' : ''}</option>)}
-        </select></HelpField>
-        <p className="profile-rail__context"><strong>{editingAvatar.name}</strong><span>{editingId.slice(-8)}</span></p>
-        <p className="profile-rail__context"><small>ON MIRROR</small>{activeAvatar?.id === editingId ? <span>This avatar</span> : <strong>{activeAvatar?.name ?? 'Connecting…'}</strong>}</p>
+        <p className="profile-rail__context"><small>EDITING NOW</small><strong>{editingAvatar.name || 'Unnamed avatar'}</strong><span>{editingId.slice(-8)}</span></p>
+        <p className="profile-rail__context"><small>ACTIVE ON MIRROR</small><strong>{activeAvatar?.name ?? 'Connecting…'}</strong></p>
         <div className="console__action-row">
         <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
           const next = newAvatar(crypto.randomUUID())
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
-          setSection('Persona'); setResult('New avatar created with neutral defaults. Configure its persona, appearance, voice and spells.')
+          setNameFocusId(next.id); setSection('Persona'); setResult('New avatar created with neutral defaults. Configure its persona, appearance, voice and spells.')
         }}>New avatar</button>
         <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
           const next = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: `${editingAvatar.name.slice(0, 70)} copy` }
@@ -1580,9 +1633,12 @@ export function ScenesPanel({
           if (next.presentation.backgroundId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'visual', next.presentation.backgroundId)) next.presentation.backgroundId = ''
           if (next.presentation.ambienceId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'music', next.presentation.ambienceId)) next.presentation.ambienceId = ''
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
-          setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
+          setNameFocusId(next.id); setSection('Persona'); setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
         }}>Duplicate</button>
+        <button type="button" className="console__danger" disabled={disabled || !!deleteReason} aria-describedby="avatar-delete-reason"
+          onClick={() => { setDeleteError(''); setDeletingAvatarId(editingId) }}>Delete avatar</button>
         </div>
+        {deleteReason && <p id="avatar-delete-reason" className="console__muted">{deleteReason}</p>}
         <button type="button" disabled={disabled || !!activationReason} aria-describedby="avatar-activation-reason"
           onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</button>
         <p id="avatar-activation-reason" className="console__muted">{activationReason || 'Switch the published character. Editing alone does not switch the Mirror.'}</p>
@@ -1591,16 +1647,25 @@ export function ScenesPanel({
         </nav>
       </aside> : null}
       <div className="profile-workspace__editor">
+      {rawDraft?.avatarCatalog && editingAvatar && <header className="profile-editing-header" aria-label="Current avatar being edited">
+        <p className="console__eyebrow">Editing avatar settings</p>
+        <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
+        <p>{editingId === activeAvatar?.id ? 'This avatar is active on Mirror. Edits apply after you publish.' : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
+        <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
+        </select></HelpField>
+      </header>}
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
         {PROFILE_SECTIONS.map(label => <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
       </nav>
-      <div className="profile-section-heading"><p hidden={!LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) && editingId === activeAvatar?.id} className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource' : `Editing ${editingAvatar?.name ?? 'avatar'}`}</p><h3>{section}</h3>
+      {rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
+      <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
         <p>{section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
       </div>
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
-      {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor avatar={editingAvatar} disabled={disabled} onChange={updateAvatar} /> : null}
+      {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
         <div className="console__action-row"><HelpField help={FIELD_HELP.modelBundle}>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
@@ -1660,8 +1725,8 @@ export function ScenesPanel({
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton help="Save all unfinished workspace edits, including other scenes and avatar settings. Nothing is published." disabled={disabled} onClick={() => bridge && rawDraft && void runResponse(() => bridge.saveDraft(projectAvatarDraft(rawDraft)), 'Draft saved.')}>Save all changes</HelpButton>
-        <HelpButton help={dirty ? 'Save all changes first: checking uses the saved draft.' : 'Check saved configuration and decode media before publishing. Use Test step or Test scene for playback.'} disabled={disabled || dirty} onClick={() => void testSceneDraft()}>Check saved changes</HelpButton>
+        <HelpButton aria-label="Save all changes" help="Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish; saving does not publish or switch avatars." disabled={disabled} onClick={() => void saveAndCheck()}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : 'Save all changes'}</HelpButton>
+        {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check aborted. Waiting for the pending save / check to finish safely…') }}>Abort check</button>}
         <HelpButton help={dirty ? 'Save and check changes before publishing.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         </div>
@@ -1672,6 +1737,33 @@ export function ScenesPanel({
         <p className="console__scene-result" role="status">{result}</p>
       </div>
       </div></div>
+      {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}
+        lockCount={rawDraft?.avatarCatalog?.locks.filter(lock => lock.avatarId === deletingAvatar.id).length ?? 0}
+        error={deleteError}
+        disabled={disabled || !!avatarDeletionReason(rawDraft?.avatarCatalog, deletingAvatar.id, activeAvatar?.id ?? '')}
+        onCancel={() => setDeletingAvatarId(null)} onConfirm={() => {
+          if (!rawDraft || !payload || disabled || avatarDeletionReason(rawDraft.avatarCatalog, deletingAvatar.id, activeAvatar?.id ?? '')) return
+          const target = deletingAvatar.id
+          const persisted = [payload.active, payload.draft].some(config => config.avatarCatalog?.avatars.some(avatar => avatar.id === target))
+          setBusy(true); setDeleteError('')
+          void (async () => {
+            try {
+              if (persisted) {
+                if (!bridge?.deleteAvatar) throw new Error('Avatar deletion is unavailable. Restart the Console and try again.')
+                const response = await bridge.deleteAvatar(target)
+                if (!response.ok) throw new Error(response.fields?.[0]?.message ?? response.reason)
+              }
+              setRawDraft(current => current ? removeAvatarFromDraft(current, target, activeAvatar?.id ?? '') : current)
+              setEditingAvatarId(rawDraft.avatarCatalog!.activeAvatarId)
+              setPreviewRevision(value => value + 1)
+              setDeletingAvatarId(null); setMediaTestFailed(true); setPublishReview(false); setSection('Persona')
+              setResult('Avatar deleted. Shared models and media are kept. Other unfinished edits remain in the editor.')
+              if (persisted) { retainLocalDraft.current = true; onChanged() }
+            } catch (error) {
+              setDeleteError(`Could not delete avatar: ${error instanceof Error ? error.message : 'Check the Console connection and try again.'}`)
+            } finally { setBusy(false) }
+          })()
+        }} />}
     </section>
   )
 }
@@ -2082,11 +2174,13 @@ export function App(): React.JSX.Element {
   }, [bridgeAvailable, selectedPhase])
 
   useEffect(() => {
-    if (activePage !== 'System' || systemPage !== 'Devices' || !bridgeAvailable) return
+    // Wake failures must remain visible on every Console page.
+    if (!bridgeAvailable) return
     const bridge = bridgeRef.current
     if (bridge === null) return
     let stopped = false
     const refresh = async (): Promise<void> => {
+      if (document.hidden) return
       try {
         const response = await bridge.getAvatarRuntime()
         if (stopped || !mountedRef.current) return
@@ -2103,7 +2197,7 @@ export function App(): React.JSX.Element {
       stopped = true
       window.clearInterval(interval)
     }
-  }, [activePage, systemPage, bridgeAvailable])
+  }, [bridgeAvailable])
 
   const developerMode = overviewState.status === 'success' && overviewState.value.developerMode === true
 
@@ -2182,7 +2276,7 @@ export function App(): React.JSX.Element {
   const controlAvatar = (command: AvatarControlCommand): void => {
     const bridge = bridgeRef.current
     if (bridge === null || !bridgeAvailable) return
-    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices') return
+    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices' && command.type !== 'stop_avatar_test') return
     void bridge.controlAvatar(command).then(
       (response) => {
         if (mountedRef.current && response.ok) {
@@ -2214,6 +2308,9 @@ export function App(): React.JSX.Element {
         <span className="console__status">{overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
       </header>
 
+      {avatarRuntimeState.status === 'success' && avatarRuntimeState.value.wakeInput?.recovery?.state !== 'recovered'
+        && <WakeRecoveryStatus recovery={avatarRuntimeState.value.wakeInput?.recovery} />}
+
       {bridgeError ? (
         <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
       ) : null}
@@ -2240,7 +2337,9 @@ export function App(): React.JSX.Element {
 
       <div className="console__panels">
         <div hidden={activePage !== 'Mirror'}>
-          <OverviewPanel state={overviewState} configState={configState} />
+          <OverviewPanel state={overviewState} configState={configState} bridge={bridgeRef.current}
+            editing={avatarEditing || configEditing || modelsEditing}
+            onChanged={refreshConfigAndModels} onEdit={() => navigate('Avatars', systemPage)} />
         </div>
         <div hidden={activePage !== 'Avatars'}>
           <ScenesPanel

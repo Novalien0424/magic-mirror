@@ -21,8 +21,11 @@ export async function startVoiceAudition(input: {
   let matchTimer: ReturnType<typeof setInterval> | undefined
   let stopVolumes: (() => void) | undefined, avatarVolume = 0, matchedVolume = 1
   let cleanup: Promise<void> = Promise.resolve(), ended = false
+  let leasePending = false
   const end = (): void => { if (ended) return; ended = true; void stop().then(input.onEnded) }
   const stop = async (): Promise<void> => {
+    const cancelling = leasePending ? bridge.cancelPendingVoicePreview?.() : undefined
+    leasePending = false
     stopped = true; stopVolumes?.(); stopVolumes = undefined; clearTimeout(timeout); clearInterval(matchTimer); signal.removeEventListener('abort', abort)
     const resources = { graph, output, source, session, context, silentContext, silentTrack, detach, token }
     graph = undefined; output = undefined; source = undefined; session = undefined; context = undefined
@@ -33,6 +36,7 @@ export async function startVoiceAudition(input: {
     }
     input.onAnalyser(null)
     cleanup = cleanup.then(async () => {
+      await cancelling?.catch(() => input.onStatus('Preview cancellation failed.'))
       const result = await Promise.allSettled([
         () => resources.session?.close('user_requested'), () => resources.output?.dispose(),
         () => resources.context?.close(), () => resources.silentContext?.close(), () => resources.detach?.(),
@@ -47,8 +51,10 @@ export async function startVoiceAudition(input: {
   signal.addEventListener('abort', abort, { once: true })
   try {
     assertCurrent()
+    leasePending = true
     const lease = await bridge.acquireVoicePreview?.({ kind: input.file ? 'local' : 'generated', voice: avatar.voice as 'cedar',
       voiceSpeed: avatar.voiceSpeed ?? 1, voiceEffects: effects, speakingStyle: avatar.speakingStyle })
+    leasePending = false
     if (!lease?.ok) throw new Error(lease?.reason ?? 'voice_preview_unavailable')
     token = lease.token
     if (stopped || signal.aborted) { await bridge.releaseVoicePreview?.(token); throw new DOMException('Preview cancelled', 'AbortError') }
@@ -104,7 +110,7 @@ export async function startVoiceAudition(input: {
       silentTrack = silent.stream.getAudioTracks()[0]; await silentContext.resume(); assertCurrent()
       session = createRealtimeSession({ preview: true, snapshot: lease.snapshot, clientSecret: lease.clientSecret,
         mediaStream: silent.stream, audioElement: output.audioElement, sessionId: token, sessionGeneration: 1,
-        avatar: { name: avatar.name, personality: 'Read the supplied synthetic audition text.', speakingStyle: avatar.speakingStyle,
+        avatar: { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle,
           wakeGreeting: '', sleepFarewell: '' },
         eventSink: event => { if (event.status === 'failed' || event.status === 'degraded') input.onStatus(event.reason) },
         onFailure: () => { input.onStatus('Voice preview connection failed.'); end() },

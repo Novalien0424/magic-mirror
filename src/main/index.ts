@@ -1,3 +1,4 @@
+import { allowPromptWindow } from '../shared/prompt-window'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import {
@@ -57,6 +58,8 @@ import { createVisualAssetManager, createVisualPlaybackVerifier, verifyManagedVi
 import { serveMediaFile } from './scenes/media-file-response'
 import { runPhase4Qa } from './phase4-qa'
 import { configureVideoDecoding } from './video-decoding-policy'
+import { createWakeWorkerPackage, wakeTuningIsActive } from './wake/runtime-config'
+import { createWakeCalibration } from './wake/calibration'
 
 const isDarwin = process.platform === 'darwin'
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
@@ -122,6 +125,7 @@ let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
 const phase4QaReadyKinds = new Set<MirrorWindowKind>()
 let phase4QaStarted = false
 let wakeSupervisor: WakeSupervisor | null = null
+let wakeCalibration: ReturnType<typeof createWakeCalibration> | null = null
 let shutdownPromise: Promise<void> | null = null
 let willQuitHandled = false
 let quitResourcesStopped = false
@@ -193,7 +197,20 @@ function spawnWakeWorker(): WakeWorkerChild {
   }
 }
 
-async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+let wakeConfigurationTask: Promise<void> = Promise.resolve()
+let configuredWakeSignature = ''
+function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+  const wasCalibrating = wakeCalibration?.isActive()
+  const stopped = wakeCalibration?.stop(false)
+  wakeConfigurationTask = wakeConfigurationTask.catch(() => undefined).then(async () => {
+    await stopped
+    if (wasCalibrating) configuredWakeSignature = ''
+    await applyWakeRuntimeConfig(runtime)
+  })
+  return wakeConfigurationTask
+}
+
+async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   if (
     typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
     || typeof runtime.setWakeRuntimeStatus !== 'function'
@@ -205,30 +222,37 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
     await runtime.setWakeRuntimeStatus('failed', 'wake_config_unavailable')
     return
   }
+  if (wake.tuning?.enabled === true && wake.tuning.phrase !== wake.phrase) {
+    runtime.telemetry.emit({ module: 'wake', event: 'wake_tuning_ignored', status: 'degraded',
+      reason: 'phrase_binding_mismatch', source: 'runtime' })
+  }
+  const signature = JSON.stringify(wake)
+  if (signature === configuredWakeSignature) return
   const loaded = await loadWakeModelPackage({
     rootDirectory: wakeModelRoot(),
     wake,
     platform: `${process.platform}-${process.arch}`,
+    customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+    forceCustomKeywords: wakeTuningIsActive(wake),
   })
   if (!loaded.ok) {
+    await wakeSupervisor?.release()
+    configuredWakeSignature = ''
     await runtime.setWakeRuntimeStatus('degraded', loaded.reason)
     return
   }
 
-  const tuning = loaded.manifest.tuning
-  const workerPackage: WakeWorkerPackage = {
-    packageId: loaded.manifest.packageId,
-    engine: loaded.manifest.engine,
-    engineVersion: loaded.manifest.engineVersion,
-    modelVersion: loaded.manifest.modelVersion,
-    phrase: loaded.manifest.phrase,
-    sampleRateHz: 16_000,
-    artifactPaths: Object.fromEntries(loaded.artifactPaths),
-    tuning: {
-      ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
-      ...(tuning.score === undefined ? {} : { score: tuning.score }),
-      ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
-    },
+  const workerPackage: WakeWorkerPackage = createWakeWorkerPackage(loaded, wake)
+  if (wakeSupervisor !== null) {
+    const released = await wakeSupervisor.release()
+    if (released.status !== 'success') return
+    const updated = await wakeSupervisor.updateConfig({ package: workerPackage })
+    if (updated.status !== 'success') return
+    configuredWakeSignature = signature
+    if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+      await wakeSupervisor.acquire()
+    }
+    return
   }
   let activation: ReturnType<typeof createWakeConversationActivation> | null = null
   const supervisor = createWakeSupervisor({
@@ -237,12 +261,14 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
       void activation?.handleWake()
     },
     onStatus: (snapshot) => {
-      const moduleStatus = snapshot.status === 'failed'
+      const moduleStatus = snapshot.status === 'failed' || snapshot.input.recovery?.state === 'failed'
         ? 'failed'
-        : snapshot.status === 'starting' || snapshot.status === 'stopped'
+        : snapshot.status === 'starting' || snapshot.status === 'stopped' || snapshot.status === 'acquiring' || snapshot.input.recovery?.state === 'restarting'
           ? 'degraded'
           : 'ready'
-      void runtime.setWakeRuntimeStatus(moduleStatus, snapshot.reason ?? `wake_worker_${snapshot.status}`)
+      const healthReason = snapshot.input.recovery?.state === 'failed' ? snapshot.input.recovery.reason
+        : snapshot.input.recovery?.state === 'restarting' ? 'wake_worker_restarting' : snapshot.reason
+      void runtime.setWakeRuntimeStatus(moduleStatus, healthReason ?? `wake_worker_${snapshot.status}`)
     },
   })
   activation = createWakeConversationActivation({
@@ -253,6 +279,7 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
   wakeSupervisor = supervisor
   const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
+  configuredWakeSignature = signature
   if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
     await supervisor.acquire()
   }
@@ -299,7 +326,17 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
     boot.lifecycle = 'starting'
   }
 
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => allowPromptWindow(kind, url, frameName)
+    ? { action: 'allow', overrideBrowserWindowOptions: { width: 1000, height: 800, minWidth: 600,
+        minHeight: 450, backgroundColor: '#101418', autoHideMenuBar: true } }
+    : { action: 'deny' })
+  win.webContents.on('did-create-window', child => {
+    // about:blank inherits the sandbox and isolation. Its sender is deliberately
+    // absent from `windows`: all privileged Console IPC remains unauthorized.
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    child.webContents.on('will-navigate', event => event.preventDefault())
+    child.webContents.on('will-frame-navigate', event => event.preventDefault())
+  })
   win.webContents.on('will-navigate', (event) => {
     event.preventDefault()
   })
@@ -691,20 +728,38 @@ void app.whenReady().then(async () => {
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,
     wakeMicrophoneHandoff: {
-      release: () => wakeSupervisor?.release() ?? Promise.resolve({
-        status: 'success' as const,
-        reason: 'wake_microphone_not_configured',
-      }),
+      release: async () => {
+        await wakeCalibration?.stop(false)
+        return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
+      },
       acquire: () => wakeSupervisor?.acquire() ?? Promise.resolve({
         status: 'success' as const,
         reason: 'wake_microphone_not_configured',
       }),
     },
-    validateWakeConfig: async (wake) => (await loadWakeModelPackage({
-      rootDirectory: wakeModelRoot(),
-      wake,
-      platform: `${process.platform}-${process.arch}`,
-    })).ok,
+    onWakeConfigChanged: () => configureWakeRuntime(runtime),
+    getWakeTuningDefaults: async wake => {
+      const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+        platform: `${process.platform}-${process.arch}`,
+        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+      })
+      if (!loaded.ok) return null
+      const defaults = createWakeWorkerPackage(loaded, wake).tuning
+      return { packageId: loaded.manifest.packageId, threshold: defaults.threshold!, score: defaults.score!,
+        numTrailingBlanks: defaults.numTrailingBlanks ?? 1 }
+    },
+    validateWakeConfig: async (wake, tuning) => {
+      const result = await loadWakeModelPackage({
+        rootDirectory: wakeModelRoot(),
+        wake,
+        platform: `${process.platform}-${process.arch}`,
+        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+        forceCustomKeywords: tuning?.enabled === true && tuning.phrase === wake.phrase,
+      })
+      if (!result.ok) runtime.telemetry.emit({ module: 'wake', event: 'wake_phrase_validation_failed',
+        status: 'failed', reason: result.reason, source: 'runtime' })
+      return result.ok
+    },
     validateSceneAssets: async (config) => {
       for (const model of config.avatarCatalog?.models ?? []) {
         if (!(await verifyAvatarModel(model, join(app.getPath('userData'), 'assets', 'avatars')))) return false
@@ -721,6 +776,21 @@ void app.whenReady().then(async () => {
   })
   deferredCredentialEvents.install(runtime.telemetry)
   bootRuntime = runtime
+  wakeCalibration = createWakeCalibration({
+    supervisor: () => wakeSupervisor,
+    canListen: () => runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop',
+    load: async settings => {
+      // Testing an unsaved avatar is safe: settings are temporary and cannot publish.
+      const published = await runtime.getPublishedWakeConfigForRuntime()
+      const wake = { ...published, phrase: settings.phrase, tuning: { enabled: true, phrase: settings.phrase,
+        threshold: settings.threshold, score: settings.score, numTrailingBlanks: settings.numTrailingBlanks } }
+      const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+        platform: `${process.platform}-${process.arch}`, forceCustomKeywords: true,
+        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords') })
+      if (!loaded.ok) throw new Error(loaded.reason)
+      return createWakeWorkerPackage(loaded, wake)
+    },
+  })
   void runtime.ready.then(() => runtime.telemetry.emit({ module: 'avatar', event: 'video_decode_policy',
     status: 'info', reason: videoDecodingReason, source: 'runtime' }))
   const visualStorageDir = join(app.getPath('userData'), 'assets', 'visual')
@@ -835,6 +905,10 @@ void app.whenReady().then(async () => {
     },
   })
   sceneRuntimeControl = registerIpcHandlers({
+    wakeCalibration: async command => {
+      if (command.type === 'start' || command.type === 'update') await wakeConfigurationTask
+      return wakeCalibration!.command(command)
+    },
     voicePreview,
     getWakeInput: () => wakeSupervisor?.snapshot().input,
     ipcMain,
@@ -1007,6 +1081,7 @@ function shutdownBootRuntime(): Promise<void> {
 
   shutdownPromise = Promise.resolve()
     .then(() => sceneRuntimeControl?.stopAll())
+    .then(() => wakeCalibration?.stop(false))
     .then(() => wakeSupervisor?.shutdown())
     .then(() => runtime.shutdown())
     .catch(() => {

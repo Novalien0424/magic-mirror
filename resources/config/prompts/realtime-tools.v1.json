@@ -1,0 +1,26 @@
+{
+  "version": "realtime-tools.v1",
+  "tools": [
+    {
+      "name": "return_to_dormant",
+      "handler": "return_to_dormant",
+      "enabled": true,
+      "availability": "conversation",
+      "routing": "model_intent",
+      "description": "End the conversation when the visitor directs {{sleepPhrase}} at you. Call instead of speaking; the application supplies farewell audio. Ignore quotes, negation, hypothetical discussion and incidental mentions.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": {
+        "useWhen": "On a directed {{sleepPhrase}}, your only action is to call return_to_dormant silently.",
+        "avoidWhen": "Ignore quoted, negated, hypothetical or incidental sleep mentions. The application handles waking.",
+        "speech": "Do not acknowledge, say goodbye or invite more conversation; the application supplies farewell audio."
+      },
+      "completion": "background",
+      "results": {
+        "accepted": { "status": "accepted", "code": "sleep_requested", "speech": "application" },
+        "ignored": { "status": "ignored", "code": "sleep_request_ignored", "speech": "none" },
+        "rejected": { "status": "rejected", "code": "tool_arguments_rejected", "speech": "none" },
+        "failed": { "status": "failed", "code": "tool_execution_failed", "speech": "none" }
+      }
+    }
+  ]
+}

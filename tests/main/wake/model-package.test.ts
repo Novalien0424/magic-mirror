@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { validateWakeModelPackage } from '../../../src/main/wake/model-package'
+import { loadWakeModelPackage, validateWakeModelPackage } from '../../../src/main/wake/model-package'
 
 const artifact = Buffer.from('deterministic-wake-model-fixture', 'utf8')
 
@@ -35,6 +38,31 @@ function manifest(overrides: Record<string, unknown> = {}) {
 }
 
 describe('wake model package', () => {
+  it('derives a custom keyword only after verifying the original model and token artifacts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mirror-keyword-test-'))
+    try {
+      const files = { 'model.onnx': artifact, 'tokens.txt': Buffer.from('n 1\nǐ 2\nh 3\nǎo 4\n'), 'keywords.txt': Buffer.from('original') }
+      const spec = manifest({ artifacts: Object.entries(files).map(([file, contents]) => ({
+        role: file === 'model.onnx' ? 'model' : file === 'tokens.txt' ? 'tokens' : 'keywords', file,
+        sha256: createHash('sha256').update(contents).digest('hex'),
+      })) })
+      const directory = join(root, spec.packageId)
+      await mkdir(directory)
+      for (const [file, contents] of Object.entries(files)) await writeFile(join(directory, file), contents)
+      await writeFile(join(directory, 'manifest.json'), JSON.stringify(spec))
+      const input = { rootDirectory: root, platform: 'darwin-arm64', customKeywordsDirectory: join(root, 'derived'),
+        wake: { phrase: '你好', packageId: spec.packageId, modelVersion: spec.modelVersion } }
+      const result = await loadWakeModelPackage(input)
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error(result.reason)
+      expect(await readFile(result.artifactPaths.get('keywords')!, 'utf8')).toBe('n ǐ h ǎo @avatar_wake\n')
+      expect(result.manifest.phrase).toBe('魔鏡阿魔鏡')
+      expect(await readFile(join(directory, 'keywords.txt'), 'utf8')).toBe('original')
+      await writeFile(join(directory, 'model.onnx'), 'corrupted')
+      expect(await loadWakeModelPackage(input)).toEqual({ ok: false, reason: 'wake_package_hash_mismatch' })
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
   it('accepts a hand-hashed replaceable package matching config and target platform', () => {
     const result = validateWakeModelPackage({
       manifest: manifest(),
@@ -48,6 +76,36 @@ describe('wake model package', () => {
     })
 
     expect(result.ok).toBe(true)
+  })
+
+  it('derives the default phrase when per-avatar tuning is enabled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mirror-keyword-tuning-test-'))
+    try {
+      const files = {
+        'model.onnx': artifact,
+        'tokens.txt': Buffer.from('n 1\nǐ 2\nh 3\nǎo 4\n'),
+        'keywords.txt': Buffer.from('n ǐ h ǎo :1.0 #0.45 @avatar_wake\n'),
+      }
+      const spec = manifest({ phrase: '你好', artifacts: Object.entries(files).map(([file, contents]) => ({
+        role: file === 'model.onnx' ? 'model' : file === 'tokens.txt' ? 'tokens' : 'keywords', file,
+        sha256: createHash('sha256').update(contents).digest('hex'),
+      })) })
+      const directory = join(root, spec.packageId)
+      await mkdir(directory)
+      for (const [file, contents] of Object.entries(files)) await writeFile(join(directory, file), contents)
+      await writeFile(join(directory, 'manifest.json'), JSON.stringify(spec))
+      const result = await loadWakeModelPackage({
+        rootDirectory: root,
+        platform: 'darwin-arm64',
+        customKeywordsDirectory: join(root, 'derived'),
+        forceCustomKeywords: true,
+        wake: { phrase: '你好', packageId: spec.packageId, modelVersion: spec.modelVersion },
+      })
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error(result.reason)
+      expect(await readFile(result.artifactPaths.get('keywords')!, 'utf8')).toBe('n ǐ h ǎo @avatar_wake\n')
+      expect(result.artifactPaths.get('keywords')).not.toBe(join(directory, 'keywords.txt'))
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('keeps sherpa trailing-blank tuning inside the immutable package', () => {

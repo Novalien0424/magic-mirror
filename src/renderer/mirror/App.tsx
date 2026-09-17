@@ -17,6 +17,7 @@ import type {
 import type { AppSnapshot, LifecycleState, SceneActionCommandContext, SceneRunResult } from '../../shared/types'
 import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-dependencies'
 import { createSceneTranscriptController, type SceneTranscriptDecision } from './scene-transcript-controller'
+import { createSpellAnnouncement } from './spell-announcement'
 import {
   createSceneVisualController,
   type SceneVisualController,
@@ -379,8 +380,9 @@ function createMirrorRealtimeRuntimeOwner(
       turnId?: string
     }) => Promise<SceneTranscriptDecision>) | null,
   ) => void,
-): Readonly<{ owner: RealtimeRuntimeOwner; disposeSceneStatus: () => void }> {
+): Readonly<{ owner: RealtimeRuntimeOwner; cancelAnnouncement: () => void; disposeSceneStatus: () => void }> {
   let owner: RealtimeRuntimeOwner
+  const announcement = createSpellAnnouncement({ speak: text => owner.speakVerbatim(text).status === 'dispatched' })
   const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
     // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
   }
@@ -388,6 +390,7 @@ function createMirrorRealtimeRuntimeOwner(
   const reportFailure = (
     failure: Parameters<MirrorBridge['reportRealtimeFailure']>[0],
   ): void => {
+    announcement.cancel()
     try {
       void Promise.resolve(bridge.reportRealtimeFailure(failure)).catch(() => undefined)
     } catch {
@@ -398,21 +401,36 @@ function createMirrorRealtimeRuntimeOwner(
   const sceneTranscript = createSceneTranscriptController({
     bridge,
     interrupt: async () => owner.interrupt(),
+    announceSpell: async () => {
+      const sessionId = owner.getSnapshot().currentIdentity?.realtimeSessionId
+      const result = await announcement.run()
+      const current = owner.getSnapshot()
+      return current.state === 'active' && current.currentIdentity?.realtimeSessionId === sessionId
+        ? result : { status: 'failed' as const, reason: 'spell_announcement_cancelled' }
+    },
     metadataSink: (reason, realtimeSessionId) => reportMirrorRealtimeMetadata(bridge, 'transcript', {
       status: reason === 'transcript_available' ? 'success' : 'info',
       reason: `cause=${reason}`,
       realtimeSessionId,
     }),
   })
-  const disposeSceneStatus = bridge.onSceneStatus((event) => sceneTranscript.handleStatus(event))
+  // Offline QA exercises matching/IPC/scenes without provider audio. Live QA
+  // uses the production announcement path; timing has focused playback tests.
+  const offlineQaTranscript = createSceneTranscriptController({ bridge, interrupt: async () => owner.interrupt() })
+  const unsubscribeSceneStatus = bridge.onSceneStatus((event) => {
+    sceneTranscript.handleStatus(event)
+    offlineQaTranscript.handleStatus(event)
+  })
+  const disposeSceneStatus = (): void => { announcement.dispose(); unsubscribeSceneStatus() }
   const handleQaTranscript = async (input: {
     transcript: string
     realtimeSessionId: string
     turnId?: string
   }): Promise<SceneTranscriptDecision> => {
     const itemId = `qa-${input.turnId ?? 'turn'}`
-    sceneTranscript.handleInputItemCreated(itemId, input.turnId)
-    return sceneTranscript.handleCompletedTranscript({
+    const target = owner.getSnapshot().state === 'active' ? sceneTranscript : offlineQaTranscript
+    target.handleInputItemCreated(itemId, input.turnId)
+    return target.handleCompletedTranscript({
       itemId,
       transcript: input.transcript,
       realtimeSessionId: input.realtimeSessionId,
@@ -427,8 +445,8 @@ function createMirrorRealtimeRuntimeOwner(
     createCleanup: (session) => createMirrorRuntimeCleanup(bridge, session),
     onFailure: reportFailure,
     onAudioOutputAvailable: avatarAudio.onOutputAvailable,
-    onAudioOutputDisposed: avatarAudio.onOutputDisposed,
-    onAudioActivity: avatarAudio.onActivity,
+    onAudioOutputDisposed: output => { announcement.cancel(); avatarAudio.onOutputDisposed(output) },
+    onAudioActivity: activity => { announcement.handleActivity(activity); avatarAudio.onActivity(activity) },
     onAudioDegraded: reason => reportMirrorRealtimeMetadata(bridge, 'avatar', { status: 'degraded', reason }),
     playbackCompletion: {
       scheduler: createBrowserPlaybackScheduler(),
@@ -449,7 +467,7 @@ function createMirrorRealtimeRuntimeOwner(
     },
   })
   onQaTranscriptHandler?.(handleQaTranscript)
-  return Object.freeze({ owner, disposeSceneStatus })
+  return Object.freeze({ owner, cancelAnnouncement: announcement.cancel, disposeSceneStatus })
 }
 
 export interface MirrorInterruptComposition {
@@ -758,6 +776,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const realtimeRuntimeOwnerRef = useRef<RealtimeRuntimeOwner | null>(null)
   const phase4QaTranscriptHandlerRef = useRef<Parameters<NonNullable<Parameters<typeof createMirrorRealtimeRuntimeOwner>[2]>>[0]>(null)
   const pendingSceneMotionRef = useRef(new Map<string, SceneActionCommandContext>())
+  const pendingSceneDialogueRef = useRef(new Set<AbortController>())
   const pendingSceneMusicRef = useRef<SceneActionCommandContext | null>(null)
   const avatarAudioOutputRef = useRef<RealtimeAudioOutput | null>(null)
   const avatarMediaControllerRef = useRef<AvatarMediaController | null>(null)
@@ -934,6 +953,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         onOutputDisposed: (output) => {
           if (avatarAudioOutputRef.current !== output) return
           avatarAudioOutputRef.current = null
+          pendingSceneDialogueRef.current.clear()
           avatarMediaControllerRef.current?.setRealtimeOutput(null)
           coordinator?.setAudioOutput(null)
         },
@@ -953,6 +973,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         bridge,
         owner,
         () => {
+          sceneRuntime.cancelAnnouncement()
           coordinator.handleActivity('interrupted')
           avatarMediaControllerRef.current?.handleActivity('interrupted')
         },
@@ -1033,10 +1054,12 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         if (host !== null) host.replaceChildren(...(media === null ? [] : [media as unknown as Node]))
       },
       report: (report) => bridge.reportSceneVisual(report),
-      setVideoAudio: (media, gain) => avatarMediaControllerRef.current?.setSceneVideoAudio(
+      setVideoAudio: (media, gain, durationMs) => avatarMediaControllerRef.current?.setSceneVideoAudio(
         media as unknown as HTMLVideoElement | null,
         gain,
+        durationMs,
       ),
+      prepareFade: (media) => { void getComputedStyle(media as unknown as Element).opacity },
     })
     sceneVisualControllerRef.current = visual
     return () => {
@@ -1061,6 +1084,19 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     const bridge = window.magicMirror
     if (bridge === undefined || !('onAvatarControl' in bridge)) return
     return bridge.onAvatarControl((command) => {
+      if (command.type === 'stop_avatar_test') {
+        pendingSceneMotionRef.current.clear()
+        for (const controller of pendingSceneDialogueRef.current) controller.abort()
+        pendingSceneDialogueRef.current.clear()
+        setAvatarFallbackInjected(false)
+        avatarRendererRef.current?.setState(avatarStateRef.current ?? 'Dormant')
+        avatarRendererRef.current?.clearExpression()
+        avatarRendererRef.current?.setMouthOpen(0)
+        avatarMediaControllerRef.current?.handleCommand({ type: 'recorded_audio', action: 'stop' })
+        avatarMediaControllerRef.current?.handleCommand({ type: 'music', action: 'stop' })
+        reportAvatarRuntime({ reason: 'avatar_tests_stopped' })
+        return
+      }
       if (command.type === 'audio_devices') {
         void getAudioDeviceRouter().select(command.preferences)
         return
@@ -1114,7 +1150,9 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         return
       }
       if (command.type === 'scene_dialogue') {
-        const result = realtimeRuntimeOwnerRef.current?.speakVerbatim(command.text)
+        const controller = new AbortController()
+        const result = realtimeRuntimeOwnerRef.current?.speakVerbatim(command.text, controller.signal, () => pendingSceneDialogueRef.current.delete(controller))
+        if (result?.status === 'dispatched') pendingSceneDialogueRef.current.add(controller)
         const status = result?.status ?? 'ignored'
         const reason = result?.reason ?? 'no_active_realtime_session'
         reportSceneAction(

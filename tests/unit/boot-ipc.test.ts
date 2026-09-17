@@ -859,6 +859,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       saveModelDraft: 'console:save-model-draft',
       saveDraft: 'console:save-draft',
       loadAvatar: 'console:load-avatar',
+      deleteAvatar: 'console:delete-avatar',
       testDraft: 'console:test-draft',
       publish: 'console:publish',
       rollback: 'console:rollback',

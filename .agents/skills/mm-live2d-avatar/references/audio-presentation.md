@@ -51,6 +51,13 @@ Dormant ambience and scene audio have distinct owners. On wake, pause/hide
 dormant media as configured; on sleep, finish farewell before dormant. Normal
 sleep is not a cloud failure and must not transiently claim OfflineLoop.
 
+Video actions own optional `fadeInMs`/`fadeOutMs` (0–10000, default 0). Coordinate
+opacity with the existing embedded-video gain, never BGM gain. Resolve initial
+CSS style before fading; use media position for the natural ending interval.
+Explicit stop fades, while replacement/disposal releases immediately and cancels
+old timers. Check real computed opacity and video gain, including overlapping
+fades on short clips; a CSS target value alone does not prove a transition.
+
 ## Smallest relevant proof
 
 Use focused unit tests for loading, ownership and stale callbacks. For visual

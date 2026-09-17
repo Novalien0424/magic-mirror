@@ -3,8 +3,13 @@ import { createSceneVisualController, type SceneVisualMedia } from '../../../src
 import type { AvatarControlCommand } from '../../../src/shared/bridge'
 
 class FakeMedia implements SceneVisualMedia {
-  src = ''
+  crossOrigin: string | null = null
+  crossOriginAtLoad: string | null = null
+  private source = ''
+  get src(): string { return this.source }
+  set src(value: string) { this.crossOriginAtLoad = this.crossOrigin; this.source = value }
   className = ''
+  style = { opacity: '1', transition: '' }
   currentTime = 0
   duration = 5
   loop = false
@@ -44,15 +49,38 @@ function harness() {
   const videos: FakeMedia[] = []
   const reports: unknown[] = []
   const presented: Array<SceneVisualMedia | null> = []
-  const audio: Array<{ element: SceneVisualMedia | null; gain: number }> = []
+  const audio: Array<{ element: SceneVisualMedia | null; gain: number; durationMs?: number }> = []
+  let clock = 0
+  let nextTimer = 0
+  const timers = new Map<number, { at: number; callback: () => void }>()
   const controller = createSceneVisualController({
     createImage: () => { const media = new FakeMedia(); images.push(media); return media },
     createVideo: () => { const media = new FakeMedia(); videos.push(media); return media },
     present: (media) => presented.push(media),
     report: (report) => reports.push(report),
-    setVideoAudio: (element, gain) => audio.push({ element, gain }),
+    setVideoAudio: (element, gain, durationMs) => audio.push(durationMs === undefined ? { element, gain } : { element, gain, durationMs }),
+    schedule: (callback, delayMs) => {
+      const handle = ++nextTimer
+      timers.set(handle, { at: clock + delayMs, callback })
+      return handle
+    },
+    clear: (handle) => { timers.delete(handle as number) },
   })
-  return { audio, controller, images, presented, reports, videos }
+  const advance = (durationMs: number): void => {
+    const target = clock + durationMs
+    while (true) {
+      const due = [...timers.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort(([, left], [, right]) => left.at - right.at)[0]
+      if (due === undefined) break
+      const [handle, timer] = due
+      timers.delete(handle)
+      clock = timer.at
+      timer.callback()
+    }
+    clock = target
+  }
+  return { advance, audio, controller, images, presented, reports, videos }
 }
 
 describe('Mirror Scene visual controller', () => {
@@ -83,6 +111,7 @@ describe('Mirror Scene visual controller', () => {
     const h = harness()
     h.controller.handleCommand(command({ audio: 'embedded', gain: 0.4 }))
     const video = h.videos[0]!
+    expect(video.crossOriginAtLoad).toBe('anonymous')
     video.emit('loadeddata')
     await Promise.resolve()
     expect(video.play).toHaveBeenCalledTimes(1)
@@ -112,5 +141,66 @@ describe('Mirror Scene visual controller', () => {
     expect(video.pause).toHaveBeenCalledTimes(1)
     expect(video.load).toHaveBeenCalledTimes(2)
     expect(h.presented.at(-1)).toBeNull()
+  })
+
+  it('fades video opacity and embedded audio together after the media is presented', async () => {
+    const h = harness()
+    h.controller.handleCommand(command({ audio: 'embedded', gain: 0.4, fadeInMs: 800 }))
+    const video = h.videos[0]!
+    expect(video.style.opacity).toBe('0')
+    video.emit('loadeddata')
+    await Promise.resolve()
+    expect(h.audio).toContainEqual({ element: video, gain: 0 })
+    video.emit('playing')
+    expect(h.presented.at(-1)).toBe(video)
+    h.advance(0)
+    expect(video.style.opacity).toBe('1')
+    expect(video.style.transition).toBe('opacity 800ms linear')
+    expect(h.audio.at(-1)).toEqual({ element: video, gain: 0.4, durationMs: 800 })
+    h.advance(800)
+    expect(video.style.transition).toBe('')
+  })
+
+  it('starts a one-shot fade during the final interval and releases after the fade', () => {
+    const h = harness()
+    h.controller.handleCommand(command({ audio: 'embedded', gain: 0.6, fadeOutMs: 1000 }))
+    const video = h.videos[0]!
+    video.emit('loadeddata')
+    video.emit('playing')
+    expect(video.style.opacity).toBe('1')
+    video.currentTime = 4
+    video.emit('timeupdate')
+    expect(video.style.opacity).toBe('0')
+    expect(video.style.transition).toBe('opacity 1000ms linear')
+    expect(h.audio.at(-1)).toEqual({ element: video, gain: 0, durationMs: 1000 })
+    h.advance(1000)
+    expect(h.reports).toContainEqual(expect.objectContaining({ type: 'ended' }))
+    expect(video.pause).toHaveBeenCalledTimes(1)
+    expect(h.audio.at(-1)).toEqual({ element: null, gain: 0 })
+  })
+
+  it('fades an explicit stop, but replacement and dispose cancel pending fades immediately', () => {
+    const h = harness()
+    h.controller.handleCommand(command({ audio: 'embedded', gain: 0.5, fadeOutMs: 1000 }))
+    const first = h.videos[0]!
+    first.emit('loadeddata')
+    first.emit('playing')
+    h.controller.handleCommand({ type: 'scene_visual', action: 'stop', runId: context.runId, sceneId: context.sceneId })
+    expect(first.style.opacity).toBe('0')
+    expect(first.pause).not.toHaveBeenCalled()
+    h.controller.handleCommand(command({ assetId: 'visual-two', audio: 'muted' }))
+    const second = h.videos[1]!
+    h.advance(1000)
+    expect(first.pause).toHaveBeenCalledTimes(1)
+    expect(second.style.opacity).toBe('1')
+    h.controller.handleCommand(command({ assetId: 'visual-three', audio: 'muted', fadeOutMs: 1000 }))
+    const third = h.videos[2]!
+    third.emit('loadeddata')
+    third.emit('playing')
+    h.controller.dispose()
+    expect(third.pause).toHaveBeenCalledTimes(1)
+    expect(third.style.transition).toBe('')
+    h.advance(1000)
+    expect(third.pause).toHaveBeenCalledTimes(1)
   })
 })

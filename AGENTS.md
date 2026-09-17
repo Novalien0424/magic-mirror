@@ -20,6 +20,8 @@ Latest user request/routing → this file → newer DECISIONS rulings → produc
 
 Write skill and harness instructions in English; preserve exact product phrases and necessary non-English examples. Load skills for their actual workflow, not a keyword match. Keep descriptions short; put conditional detail in references. Skills add domain facts, not blanket preloads, approval loops, fixed itineraries or repeated test/review gates.
 
+Realtime function definitions, rules and results come from the versioned tool catalog shared by runtime and inspector. Bind and validate handlers explicitly; keep exact spell authorization in the application. See `mm-realtime-voice` for the contract.
+
 Use the session's selected model/effort. Optional roles in `.codex/agents/` are bounded tools, not required stages. Work directly by default; use at most one subagent for independent parallel work or noisy read isolation when it adds value. Never delegate a small edit, lookup, command or status capture. Subagents do not delegate.
 
 Match verification to the changed boundary: reads need no tests; docs/config need static checks; small behavior changes need focused tests and/or narrow typecheck. Use practical TDD for durable behavior, not investigation or one-run diagnostics. Temporary diagnostics stay narrowly enabled, content-free and are removed in the same task unless retention is requested.

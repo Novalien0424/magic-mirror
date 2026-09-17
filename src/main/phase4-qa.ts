@@ -7,6 +7,7 @@ import type { BootRuntime } from './boot'
 import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../shared/types'
 import { runPhase4ConsoleQa } from './phase4-console-qa'
 import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
+import { runSpellLiveQa } from './spell-live-qa'
 import { runCubismConsoleQa } from './cubism-console-qa'
 
 type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'>
@@ -116,8 +117,9 @@ export async function capture(
   win: QaWindow,
   outputDir: string,
   fileName: string,
+  stayHidden = false,
 ): Promise<{ sha256: string; nonblackPixels: number }> {
-  const image = await win.capturePage()
+  const image = stayHidden ? await win.capturePage(undefined, { stayHidden: true }) : await win.capturePage()
   return saveCapture(image, outputDir, fileName)
 }
 
@@ -196,6 +198,7 @@ async function injectFinalTranscriptStart(
 export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult> {
   await mkdir(input.outputDir, { recursive: true })
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
+  if (process.env['MIRROR_SPELL_QA'] === '1') return runSpellLiveQa(input)
   if (input.lifecycleLive) return runPhase4LifecycleQa(input)
   if (input.cubismOnly) return runCubismConsoleQa(input)
   if (input.consoleOnly) return runPhase4ConsoleQa(input)

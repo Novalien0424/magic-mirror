@@ -23,6 +23,7 @@ interface ProbeVideoElement {
 }
 
 export interface VisualAssetProbeDependencies {
+  readonly signal?: AbortSignal
   readonly createImage?: () => ProbeImageElement
   readonly createVideo?: () => ProbeVideoElement
   readonly schedule?: (callback: () => void, delayMs: number) => unknown
@@ -58,6 +59,8 @@ function probeVisualAsset(
   const clear = dependencies.clear ?? ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>))
 
   return new Promise((resolve, reject) => {
+    const signal = dependencies.signal
+    if (signal?.aborted) { reject(new Error('visual_asset_probe_aborted')); return }
     let settled = false
     let cleanup = (): void => undefined
     const timer = schedule(() => finishError('visual_asset_probe_timeout'), PROBE_TIMEOUT_MS)
@@ -66,22 +69,27 @@ function probeVisualAsset(
       if (settled) return
       settled = true
       clear(timer)
+      signal?.removeEventListener('abort', abort)
       cleanup()
       resolve(probe)
     }
-    function finishError(reason: 'visual_asset_probe_timeout' | 'visual_asset_decode_failed'): void {
+    function finishError(reason: 'visual_asset_probe_timeout' | 'visual_asset_decode_failed' | 'visual_asset_probe_aborted'): void {
       if (settled) return
       settled = true
       clear(timer)
+      signal?.removeEventListener('abort', abort)
       cleanup()
       reject(new Error(reason))
     }
+    const abort = (): void => finishError('visual_asset_probe_aborted')
+    signal?.addEventListener('abort', abort, { once: true })
 
     if (kind === 'image') {
       const image = (dependencies.createImage ?? (() => new Image()))()
       cleanup = () => {
         image.onload = null
         image.onerror = null
+        if (signal?.aborted) image.src = ''
       }
       image.onload = () => {
         const width = image.naturalWidth

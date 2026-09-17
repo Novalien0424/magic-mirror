@@ -1,11 +1,13 @@
+import { REALTIME_PROMPTS, buildAuditionPrompt, buildSpeechResponse } from '../../shared/realtime-prompts'
 import {
   RealtimeAgent,
   RealtimeSession,
-  tool,
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
-import { z } from 'zod'
-import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION, type AvatarSessionSettings } from '../../shared/avatar-prompt'
+import { buildAvatarPrompt, type AvatarSessionSettings } from '../../shared/avatar-prompt'
+import { resolveRealtimeTools } from '../../shared/realtime-tools'
+import { bindRealtimeTools } from './realtime-tool-bindings'
+import { DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import type { SessionModelSnapshot } from '../../shared/types'
 import {
@@ -87,6 +89,7 @@ export interface CreateRealtimeSessionInput {
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: () => void | PromiseLike<void>
+  readonly waitForOutputTail?: () => Promise<void>
   readonly onAudioActivity?: (
     activity:
       | 'speech_started'
@@ -105,7 +108,7 @@ export interface RealtimeSessionHandle {
   connect(): Promise<void>
   interrupt(): Promise<void>
   close(reason: string): Promise<void>
-  speakVerbatim(text: string): void
+  speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void
   onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
   onInputItemCreated?(listener: InputItemCreatedListener): () => void
   onInputTranscriptCompleted?(listener: InputTranscriptCompletedListener): () => void
@@ -420,37 +423,54 @@ export function createRealtimeSession(
 
   const dependencies = input.dependencies
   let session: SessionLike
+  let transport: ReturnType<RealtimeTransportFactory>
   let returnToDormantPending = false
   let returnToDormantAudioStarted = false
+  let farewellRequested = false
+  let farewellResponseId: string | undefined
+  let farewellAudioStarted = false
+  let sleepAudioSuppressed = false
+  let farewellSequence = 0
+  let farewellCueId = ''
   const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
+  const toolSpecs = resolveRealtimeTools(input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, input.preview)
+  const sleepToolNames = new Set(toolSpecs.filter(spec => spec.handler === 'return_to_dormant').map(spec => spec.name))
   try {
     const transportFactory = dependencies?.createTransport ?? createWebRtcRealtimeTransport
-    const transport = transportFactory({
+    transport = transportFactory({
       mediaStream: input.mediaStream,
       audioElement: input.audioElement,
     })
     const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
-    const returnToDormant = tool({
-      name: 'return_to_dormant',
-      description: SLEEP_TOOL_DESCRIPTION,
-      parameters: z.object({}),
-      execute: async () => {
+    const tools = bindRealtimeTools(toolSpecs, {
+      return_to_dormant: async () => {
+        if (closed || returnToDormantPending || farewellRequested) return 'ignored'
         // Cut off a premature acknowledgement and require the farewell's own
         // output start/end pair, never the previous response's completion.
         const wasPlaying = returnToDormantAudioStarted
         returnToDormantPending = false
         returnToDormantAudioStarted = false
         if (wasPlaying) await session.interrupt()
+        if (closed) return 'ignored'
+        sleepAudioSuppressed = true
+        notifyAudioActivity('interrupted')
         returnToDormantPending = true
-        return `Say exactly ${farewell} now and no other words.`
+        farewellCueId = `sleep-${sessionGeneration}-${++farewellSequence}`
+        farewellResponseId = undefined
+        farewellAudioStarted = false
+        // The SDK commits this result without generating a conversational reply.
+        return 'accepted'
       },
+    }, reason => {
+      if (!returnToDormantPending && !farewellRequested) sleepAudioSuppressed = false
+      emitMetadata(input, 'realtime_observer_event', 'degraded', reason, sessionGeneration, createdAt)
     })
     const agent = new agentConstructor({
       name: 'magic-mirror-realtime',
-      instructions: input.preview ? `Read the supplied synthetic audition text clearly. Delivery style: ${input.avatar?.speakingStyle ?? ''}`
-        : buildAvatarPrompt(input.avatar ?? { name: 'Magic Mirror', personality: 'Be a helpful conversational companion.', speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
-      tools: input.preview ? [] : [returnToDormant],
+      instructions: input.preview ? buildAuditionPrompt(input.avatar?.speakingStyle ?? '')
+        : buildAvatarPrompt(input.avatar ?? { ...REALTIME_PROMPTS.defaults, speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
+      tools,
     })
     const sessionOptions = {
       transport,
@@ -464,9 +484,10 @@ export function createRealtimeSession(
             noiseReduction: { type: 'far_field' },
             transcription: {
               model: input.snapshot.inputTranscription,
-              languages: ['zh-tw', 'en'],
-              keywords: ['恭送渡鴨大人'],
-              delay: 'medium',
+              languages: [...REALTIME_PROMPTS.transcription.languages],
+              keywords: [...new Set([input.avatar?.wakePhrase ?? DEFAULT_WAKE_PHRASE,
+                input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, ...(input.avatar?.spellPhrases ?? [])])],
+              delay: REALTIME_PROMPTS.transcription.delay,
             },
             turnDetection,
           },
@@ -491,6 +512,29 @@ export function createRealtimeSession(
   }
 
   let closed = false
+  let cueSequence = 0
+  const cues = new Map<string, { signal: AbortSignal; abort: () => void; finish?: () => void; responseId?: string; done: boolean; cleared: boolean; played: boolean }>()
+  let cueMuted: boolean | undefined
+  let cueCancelTimer: ReturnType<typeof setTimeout> | undefined
+  const resetCues = () => {
+    clearTimeout(cueCancelTimer); cueCancelTimer = undefined
+    for (const cue of cues.values()) { cue.signal.removeEventListener('abort', cue.abort); cue.finish?.() }
+    cues.clear()
+    if (cueMuted !== undefined) { input.audioElement.muted = cueMuted; cueMuted = undefined }
+  }
+  const releaseFinishedCues = () => {
+    for (const [id, cue] of cues) {
+      if (cue.signal.aborted ? !cue.done || !cue.cleared : !cue.played) continue
+      cue.signal.removeEventListener('abort', cue.abort)
+      cues.delete(id)
+      cue.finish?.()
+    }
+    if (![...cues.values()].some(cue => cue.signal.aborted) && cueMuted !== undefined) {
+      clearTimeout(cueCancelTimer); cueCancelTimer = undefined
+      input.audioElement.muted = cueMuted
+      cueMuted = undefined
+    }
+  }
   let readyEmitted = false
   let failureReported = false
   let latestConnectFailureToken: string | undefined
@@ -569,6 +613,7 @@ export function createRealtimeSession(
     if (closed) return
     closed = true
     closeWithoutMetadata(session)
+    resetCues()
   }
 
   const reportFailure = (
@@ -612,6 +657,10 @@ export function createRealtimeSession(
     activity: Parameters<NonNullable<CreateRealtimeSessionInput['onAudioActivity']>>[0],
   ): void => {
     if (closed) return
+    if (activity === 'output_started' && [...cues.values()].some(cue => cue.signal.aborted)) {
+      emitMetadata(input, 'realtime_observer_event', 'info', 'scene_dialogue_cancel_pending', sessionGeneration, createdAt)
+      return
+    }
     if (activity === 'output_started' || activity === 'output_stopped' || activity === 'interrupted') {
       emitMetadata(
         input,
@@ -637,16 +686,61 @@ export function createRealtimeSession(
   }
 
   const handleTransportEvent = (event: unknown): void => {
+    if (closed) return
     if (rawEventIsStale(event, input.sessionId)) {
       emitStale()
       return
     }
     const type = readEventType(event)
+    if (type === 'response.output_item.added') {
+      const item = readProperty(event, 'item')
+      if (readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string)) {
+        sleepAudioSuppressed = true
+        notifyAudioActivity('interrupted')
+      }
+    }
+    if (type === 'response.created' || type === 'response.done') {
+      const response = readProperty(event, 'response')
+      if (readProperty(readProperty(response, 'metadata'), 'mirror_sleep_cue') === farewellCueId && farewellRequested) {
+        const responseId = readProperty(response, 'id')
+        if (typeof responseId === 'string') farewellResponseId = responseId
+        if (type === 'response.done' && readProperty(response, 'status') !== 'completed') {
+          returnToDormantPending = false
+          farewellRequested = false
+          farewellResponseId = undefined
+          farewellAudioStarted = false
+          sleepAudioSuppressed = false
+          emitMetadata(input, 'realtime_observer_event', 'degraded', 'sleep_request_failed', sessionGeneration, createdAt)
+        }
+      }
+      const cueId = readProperty(readProperty(response, 'metadata'), 'mirror_scene_cue')
+      const cue = (typeof cueId === 'string' ? cues.get(cueId) : undefined)
+        ?? [...cues.values()].find(value => value.responseId !== undefined && value.responseId === readProperty(response, 'id'))
+      if (cue) {
+        const responseId = readProperty(response, 'id')
+        if (typeof responseId === 'string') cue.responseId = responseId
+        if (type === 'response.done') { cue.done = true; releaseFinishedCues() }
+        else if (cue.signal.aborted) cue.abort()
+      }
+    }
+    if (type === 'output_audio_buffer.stopped') {
+      const responseId = readProperty(event, 'response_id')
+      for (const cue of cues.values()) if (cue.responseId === responseId && responseId) cue.played = true
+      releaseFinishedCues()
+    }
+    if (type === 'output_audio_buffer.cleared') {
+      const responseId = readProperty(event, 'response_id')
+      for (const cue of cues.values()) if (cue.signal.aborted && cue.responseId && cue.responseId === responseId) cue.cleared = true
+      releaseFinishedCues()
+    }
     if (type === 'ready' || (type === 'connection_change' && rawEventStatus(event) === 'connected')) {
       emitReady('cause=connect_succeeded')
       return
     }
     if (type === 'error') {
+      const rejectedId = readProperty(readProperty(event, 'error'), 'event_id')
+      const cue = typeof rejectedId === 'string' ? cues.get(rejectedId) : undefined
+      if (cue) { cue.done = true; cue.cleared = true; cue.played = true; releaseFinishedCues() }
       if (reportRequestRejection(event)) return
       if (!readyEmitted) latestConnectFailureToken = classifyConnectFailure(event)
       reportFailure(
@@ -658,16 +752,20 @@ export function createRealtimeSession(
       return
     }
     if (type === 'output_audio_buffer.started') {
+      if (sleepAudioSuppressed && (!farewellResponseId || readProperty(event, 'response_id') !== farewellResponseId)) {
+        emitMetadata(input, 'realtime_observer_event', 'info', 'sleep_nonfarewell_output_suppressed', sessionGeneration, createdAt)
+        return
+      }
       returnToDormantAudioStarted = true
+      if (farewellResponseId && readProperty(event, 'response_id') === farewellResponseId) farewellAudioStarted = true
       notifyAudioActivity('output_started')
       return
     }
     if (type === 'output_audio_buffer.stopped') {
-      const audioStarted = returnToDormantAudioStarted
       returnToDormantAudioStarted = false
       notifyOutputAudioBufferStopped()
       notifyAudioActivity('output_stopped')
-      if (returnToDormantPending && audioStarted) {
+      if (returnToDormantPending && farewellAudioStarted && farewellResponseId && readProperty(event, 'response_id') === farewellResponseId) {
         returnToDormantPending = false
         const request = input.onReturnToDormant
         if (request === undefined) {
@@ -682,7 +780,10 @@ export function createRealtimeSession(
           return
         }
         try {
-          void Promise.resolve(request()).catch(() => {
+          const ownerResponseId = farewellResponseId
+          void Promise.resolve(input.waitForOutputTail?.()).then(() => {
+            if (!closed && farewellRequested && farewellResponseId === ownerResponseId) return request()
+          }).catch(() => {
             emitMetadata(
               input,
               'realtime_observer_event',
@@ -793,10 +894,30 @@ export function createRealtimeSession(
 
   session.on('transport_event', handleTransportEvent)
   session.on('error', handleSessionError)
+  session.on('agent_tool_end', (_context, _agent, completedTool) => {
+    if (closed || !returnToDormantPending || farewellRequested || !sleepToolNames.has(readProperty(completedTool, 'name') as string)) return
+    farewellRequested = true
+    try {
+      // One response with no conversation input: no invitation or tool follow-up.
+      const response = { ...buildSpeechResponse(farewell, input.avatar?.speakingStyle ?? ''),
+        metadata: { mirror_sleep_cue: farewellCueId } }
+      if (transport.requestResponse) transport.requestResponse(response)
+      else transport.sendEvent({ type: 'response.create', response })
+    } catch {
+      returnToDormantPending = false
+      farewellRequested = false
+      sleepAudioSuppressed = false
+      emitMetadata(input, 'realtime_observer_event', 'failed', 'sleep_request_failed', sessionGeneration, createdAt)
+    }
+  })
   // Interruption and completion stay on official RealtimeSession event surfaces.
   session.on('audio_interrupted', () => {
     returnToDormantPending = false
     returnToDormantAudioStarted = false
+    farewellRequested = false
+    farewellResponseId = undefined
+    farewellAudioStarted = false
+    sleepAudioSuppressed = false
     notifyAudioActivity('interrupted')
   })
   session.on('audio_stopped', () => {})
@@ -883,6 +1004,7 @@ export function createRealtimeSession(
   async function close(reason: string): Promise<void> {
     if (closed) return
     closed = true
+    clearTimeout(cueCancelTimer)
     outputAudioBufferStoppedSubscriptions.clear()
     inputTranscriptCompletedListeners.clear()
     inputItemCreatedListeners.clear()
@@ -893,6 +1015,7 @@ export function createRealtimeSession(
     } catch {
       closeFailed = true
     }
+    resetCues()
     const disconnectReason = stableCloseReason(reason)
     emitDisconnected(closeFailed ? 'cause=close_failed' : disconnectReason)
   }
@@ -917,16 +1040,53 @@ export function createRealtimeSession(
     }
   }
 
-  function speakVerbatim(text: string): void {
+  function speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void {
     if (closed) throw new RealtimeSessionAdapterError('session_closed')
     if (text.trim().length === 0 || text.length > 1000) {
       throw new RealtimeSessionAdapterError('scene_dialogue_invalid')
     }
-    session.sendMessage(
-      'The entire audible response must be exactly the following operator-authored text. '
-        + 'Do not add, omit, translate, paraphrase, or acknowledge it:\n'
-        + text,
-    )
+    const response = buildSpeechResponse(text, input.avatar?.speakingStyle ?? '')
+    if (!signal) {
+      // Application speech is not a visitor command. In particular, the wake
+      // greeting must never invoke return_to_dormant instead of greeting.
+      transport.sendEvent({ type: 'response.create', response })
+      return
+    }
+    if (signal.aborted) return
+    const id = `scene-${sessionGeneration}-${++cueSequence}`
+    const cue: { signal: AbortSignal; abort: () => void; finish?: () => void; responseId?: string; done: boolean; cleared: boolean; played: boolean } = {
+      signal, finish: onFinished, done: false, cleared: false, played: false,
+      abort: () => {
+        if (closed) return
+        // Keep queued SDK requests inaudible until their own cancellation and
+        // buffer-clear acknowledgements arrive. Unrelated output cannot release them.
+        cueMuted ??= input.audioElement.muted
+        input.audioElement.muted = true
+        // Interrupt also silences and drains the processed Web Audio graph.
+        // Its begin/output_started hook stays blocked until cancellation resolves.
+        notifyAudioActivity('interrupted')
+        const failCancellation = () => {
+          reportFailure('ice', 'realtime_observer_event', 'failed', 'scene_dialogue_cancel_failed')
+          void close('scene_dialogue_cancel_failed')
+        }
+        cueCancelTimer ??= setTimeout(failCancellation, 8000)
+        if (!cue.responseId) return
+        try {
+          if (!cue.done) transport.sendEvent({ type: 'response.cancel', response_id: cue.responseId })
+          transport.sendEvent({ type: 'output_audio_buffer.clear' })
+        } catch { failCancellation() }
+      },
+    }
+    cues.set(id, cue)
+    signal.addEventListener('abort', cue.abort, { once: true })
+    try {
+      transport.sendEvent({ type: 'response.create', event_id: id, response: { ...response, metadata: { mirror_scene_cue: id } } })
+    } catch (error) {
+      signal.removeEventListener('abort', cue.abort)
+      cues.delete(id)
+      cue.finish?.()
+      throw error
+    }
   }
 
   function onOutputAudioBufferStopped(

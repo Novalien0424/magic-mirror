@@ -13,13 +13,19 @@ export function createVoicePreviewLease(options: {
   let token: string | null = null, timer: ReturnType<typeof setTimeout> | undefined
   let suppressedToken: string | null = null
   let delivered = false
+  let cancelPreparation: (() => void) | undefined
   const preempt = (reason = 'voice_preview_preempted'): void => {
     if (!token) return
     if (delivered) { suppressedToken = token; options.suppressOutput() }
-    token = null; clearTimeout(timer); options.notify(reason)
+    token = null; clearTimeout(timer); cancelPreparation?.(); cancelPreparation = undefined; options.notify(reason)
   }
   return {
     preempt,
+    cancelPending(): boolean {
+      if (!token || delivered) return false
+      token = null; clearTimeout(timer); cancelPreparation?.(); cancelPreparation = undefined
+      return true
+    },
     release(value: unknown): boolean {
       if (typeof value === 'string' && suppressedToken === value) {
         // Renderer acknowledges only after muting/disposing every preview resource.
@@ -37,18 +43,25 @@ export function createVoicePreviewLease(options: {
       timer = setTimeout(() => preempt('voice_preview_timeout'), parsed.data.kind === 'generated' ? 20000 : 300000)
       try {
         if (parsed.data.kind === 'local') { options.enableOutput(); delivered = true; return { ok: true, token: current } }
-        const base = await options.snapshot()
+        const abort = new AbortController()
+        const cancelled = new Promise<undefined>(resolve => {
+          cancelPreparation = () => { abort.abort(); resolve(undefined) }
+        })
+        const base = await Promise.race([options.snapshot(), cancelled])
+        if (!base || token !== current) return { ok: false, reason: 'voice_preview_preempted' }
         const snapshot = Object.freeze({ ...base, voice: parsed.data.voice, voiceSpeed: parsed.data.voiceSpeed,
           voiceEffects: Object.freeze({ ...parsed.data.voiceEffects }) })
-        const issued = await options.broker.issue({ modelId: snapshot.realtimeDialogue })
-        if (token !== current || !options.isDormant()) {
+        const issued = await Promise.race([options.broker.issue({ modelId: snapshot.realtimeDialogue, signal: abort.signal }), cancelled])
+        if (!issued || token !== current || !options.isDormant()) {
           if (token === current) preempt()
           return { ok: false, reason: 'voice_preview_preempted' }
         }
         options.enableOutput()
+        cancelPreparation = undefined
         delivered = true
         return { ok: true, token: current, snapshot, clientSecret: issued.value }
       } catch {
+        if (token !== current) return { ok: false, reason: 'voice_preview_preempted' }
         if (token === current) preempt('voice_preview_connection_failed')
         return { ok: false, reason: 'voice_preview_connection_failed' }
       }

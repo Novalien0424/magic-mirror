@@ -1,3 +1,4 @@
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import { HelpField } from './HelpField'
 import { FIELD_HELP, VOICE_FIELD_HELP } from './field-help-text'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -25,6 +26,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
   const [rigName, setRigName] = useState(model?.name ?? 'Built-in Ren')
   const audition = useRef<VoiceAudition | null>(null), controller = useRef<AbortController | null>(null), generation = useRef(0)
   const pending = useRef<Promise<VoiceAudition> | null>(null)
+  const cleanup = useRef<Promise<void>>(Promise.resolve())
   const latestEffects = useRef(effects)
   latestEffects.current = original ? { ...effects, enabled: false } : effects
   const renderer = useRef<CubismAvatarRenderer | null>(null), analyser = useRef<AnalyserNode | null>(null)
@@ -46,7 +48,8 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
     ++generation.current; controller.current?.abort(); controller.current = null
     audition.current = null; analyser.current = null
     renderer.current?.setMouthOpen(0); setRunning(false)
-    await Promise.allSettled([previous?.stop(), preparing?.then(value => value.stop())])
+    cleanup.current = Promise.allSettled([cleanup.current, previous?.stop(), preparing?.then(value => value.stop())]).then(() => undefined)
+    await cleanup.current
   }, [])
   useEffect(() => () => { void stop() }, [avatar.id, stop])
   useEffect(() => bridge?.onVoicePreviewCancelled?.(reason => { stop(); setStatus(reason) }), [bridge, stop])
@@ -66,10 +69,12 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
     tick(); return () => { cancelAnimationFrame(frame); renderer.current?.setMouthOpen(0) }
   }, [running])
   const start = async (generated: boolean): Promise<void> => {
-    await stop(); if (!bridge) return
+    const retiring = stop(); if (!bridge) return
     const current = ++generation.current, abort = new AbortController(); controller.current = abort
     setRunning(true); setStatus('Preparing voice preview…')
     try {
+      await retiring
+      if (generation.current !== current || abort.signal.aborted) return
       const preparing = startVoiceAudition({ bridge, avatar: { ...avatar, voiceEffects: original ? { ...effects, enabled: false } : effects },
         ...(generated ? {} : { file }), loop, signal: abort.signal,
         onAnalyser: node => { if (generation.current === current) analyser.current = node },
@@ -93,7 +98,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
         <HelpField help={FIELD_HELP.baseVoice}>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></HelpField>
         <HelpField help={FIELD_HELP.speechSpeed}>Speech speed · {(avatar.voiceSpeed ?? 1).toFixed(2)}×<input type="range" min="0.5" max="1.5" step="0.05" value={avatar.voiceSpeed ?? 1} onChange={e => onChange({ ...avatar, voiceSpeed: Number(e.currentTarget.value) })} /></HelpField>
         <HelpField help={FIELD_HELP.deliveryStyle}>Delivery style<textarea value={avatar.speakingStyle} maxLength={2000} rows={3} onChange={e => onChange({ ...avatar, speakingStyle: e.currentTarget.value })} /></HelpField>
-      </div><div className="console__action-row">{[['Natural', 'Speak naturally, clearly and warmly.'], ['Solemn', 'Speak slowly and solemnly, with clear consonants.'], ['Ethereal', 'Use a gentle, mysterious delivery, while remaining clear and intelligible.']].map(([name, style]) => <button key={name} onClick={() => onChange({ ...avatar, speakingStyle: style! })}>{name}</button>)}</div></fieldset>
+      </div><div className="console__action-row">{REALTIME_PROMPTS.authoring.deliveryPresets.map(({name, instructions}) => <button key={name} onClick={() => onChange({ ...avatar, speakingStyle: instructions })}>{name}</button>)}</div></fieldset>
       <fieldset disabled={disabled}><legend>Local voice effects</legend><div className="console__action-row">
         <button onClick={() => onChange({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.ethereal }, voiceSpeed: 0.95 })}>Default · Ethereal</button>
         <button onClick={() => onChange({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.darkOracle }, voiceSpeed: 0.9 })}>Raven · Dark oracle</button>

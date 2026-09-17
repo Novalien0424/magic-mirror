@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { normalizeTranscript } from './spell-trigger'
-import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../../shared/types'
+import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS, VISUAL_FADE_MAX_MS } from '../../shared/types'
 
 const idSchema = z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/)
 const nameSchema = z.string().trim().min(1).max(120)
@@ -85,6 +85,8 @@ export const sceneActionSchema = z.union([
     playback: z.enum(['still', 'once', 'loop']),
     audio: z.enum(['muted', 'embedded']),
     gain: z.number().min(0).max(1),
+    fadeInMs: z.number().int().min(0).max(VISUAL_FADE_MAX_MS).default(0),
+    fadeOutMs: z.number().int().min(0).max(VISUAL_FADE_MAX_MS).default(0),
   }).strict(),
   z.object({
     ...actionBase,
@@ -332,4 +334,6 @@ export const sceneCollectionsSchema = z.object({
   })
 })
 
-export type SceneCollections = z.infer<typeof sceneCollectionsSchema>
+// Authoring inputs retain backward compatibility with pre-fade action JSON;
+// parsing supplies the 0 defaults used by the runtime output.
+export type SceneCollections = z.input<typeof sceneCollectionsSchema>

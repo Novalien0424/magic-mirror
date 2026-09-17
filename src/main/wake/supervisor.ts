@@ -17,6 +17,7 @@ export type WakeSupervisorStatus =
   | 'stopped'
   | 'starting'
   | 'ready'
+  | 'acquiring'
   | 'listening'
   | 'released'
   | 'failed'
@@ -65,6 +66,7 @@ export interface WakeSupervisor {
   updateConfig(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult>
   shutdown(): Promise<WakeSupervisorResult>
   snapshot(): WakeSupervisorSnapshot
+  configuration(): WakeWorkerPackage | null
 }
 
 export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSupervisor {
@@ -75,6 +77,9 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   let peak = 0
   let rms = 0
   let detections = 0
+  let lastDetectionAt: number | null = null
+  let detector: WakeInputSnapshot['detector'] = null
+  let recovery: WakeInputSnapshot['recovery'] = null
   const requestTimeoutMs = Number.isFinite(options.requestTimeoutMs) && (options.requestTimeoutMs ?? 0) > 0
     ? Math.floor(options.requestTimeoutMs ?? 0)
     : 5_000
@@ -91,16 +96,23 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   let requestSequence = 0
   let shouldListen = false
   let shuttingDown = false
+  let audioWatchdog: unknown = null
   const pending = new Map<string, PendingRequest>()
 
   function snapshot(): WakeSupervisorSnapshot {
     const age = lastBlockAt === null ? null : Math.max(0, now() - lastBlockAt)
     const stale = now() - (lastBlockAt ?? acquiredAt) > 3000
-    const inputState = status !== 'listening' ? 'inactive' : stale ? 'stalled'
+    const inputState = status === 'failed' ? 'failed'
+      : status === 'starting' && restartCount > 0 ? 'recovering'
+      : status !== 'listening' && status !== 'acquiring' ? 'inactive' : stale ? 'stalled'
       : lastBlockAt === null ? 'waiting' : peak < 0.001 ? 'silent' : 'signal'
     return Object.freeze({
-      input: Object.freeze({ state: inputState, blocks, peak: inputState === 'signal' ? peak : 0,
-        rms: inputState === 'signal' ? rms : 0, lastBlockAgeMs: age, detections }),
+      input: Object.freeze({ state: inputState, blocks,
+        peak: inputState === 'signal' || inputState === 'silent' ? peak : 0,
+        rms: inputState === 'signal' || inputState === 'silent' ? rms : 0, lastBlockAgeMs: age, detections,
+        detector: inputState === 'signal' || inputState === 'silent' ? detector : null,
+        recovery,
+        lastDetectionAgeMs: lastDetectionAt === null ? null : Math.max(0, now() - lastDetectionAt) }),
       status,
       packageId: initialization?.package.packageId ?? null,
       engine: initialization?.package.engine ?? null,
@@ -110,6 +122,8 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   }
 
   function publishStatus(nextStatus: WakeSupervisorStatus, nextReason: string | null = null): void {
+    if (nextStatus === 'failed') recovery = { state: 'failed', attempts: recovery?.attempts ?? 0,
+      reason: nextReason === 'wake_worker_exit_repeated' && recovery ? recovery.reason : nextReason ?? 'wake_worker_failed' }
     status = nextStatus
     reason = nextReason
     try {
@@ -121,6 +135,26 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   function action(statusValue: WakeSupervisorResult['status'], reasonValue: string): WakeSupervisorResult {
     return Object.freeze({ status: statusValue, reason: reasonValue })
+  }
+
+  function cancelAudioWatchdog(): void {
+    if (audioWatchdog !== null) clearScheduledTimeout(audioWatchdog)
+    audioWatchdog = null
+  }
+
+  function armAudioWatchdog(): void {
+    cancelAudioWatchdog()
+    const owner = child
+    audioWatchdog = scheduleTimeout(() => {
+      audioWatchdog = null
+      if (child !== owner || !shouldListen || shuttingDown) return
+      if (status !== 'listening' && status !== 'acquiring') return
+      publishStatus('failed', 'wake_audio_stalled')
+      // Process exit confirms the old native stream is gone before reacquisition.
+      try { owner?.kill() } catch { /* Failure remains visible; never open a second owner. */ }
+    }, 3000)
+    // Health monitoring must not keep a stopped application or isolated test alive.
+    ;(audioWatchdog as { unref?: () => void } | null)?.unref?.()
   }
 
   function settlePending(requestId: string, result: WakeSupervisorResult): void {
@@ -158,6 +192,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
           resolve(action('failed', 'wake_worker_timeout'))
         }, requestTimeoutMs)
       } catch {
+        publishStatus('failed', 'wake_worker_timer_failed')
         resolve(action('failed', 'wake_worker_timer_failed'))
         return
       }
@@ -165,6 +200,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       try {
         currentChild.postMessage({ ...command, requestId } as WakeWorkerCommand)
       } catch {
+        publishStatus('failed', 'wake_worker_send_failed')
         settlePending(requestId, action('failed', 'wake_worker_send_failed'))
       }
     })
@@ -184,22 +220,34 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     }
     const outcome = parsed.value
     if (outcome.type === 'input_activity') {
-      if (status !== 'listening') return
+      if (!shouldListen || (status !== 'listening' && status !== 'acquiring')) return
+      if (outcome.blocks <= blocks) return
       lastBlockAt = now()
       blocks = outcome.blocks
       peak = outcome.peak
       rms = outcome.rms
+      detector = outcome.detector ?? null
+      if (recovery && recovery.state !== 'recovered') {
+        recovery = { ...recovery, state: 'recovered' }
+        publishStatus('listening', 'wake_audio_recovered')
+      }
+      armAudioWatchdog()
+      if (status === 'acquiring') publishStatus('listening')
       return
     }
     if (outcome.type === 'wake_detected') {
       if (
-        status !== 'listening'
+        (status !== 'listening' && status !== 'acquiring')
+        || !shouldListen
         || initialization === null
         || outcome.packageId !== initialization.package.packageId
         || outcome.modelVersion !== initialization.package.modelVersion
       ) return
-      shouldListen = false
       detections += 1
+      lastDetectionAt = now()
+      if (initialization.package.calibration === true) return
+      shouldListen = false
+      cancelAudioWatchdog()
       publishStatus('released')
       try {
         options.onWake(outcome.packageId)
@@ -209,10 +257,11 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       return
     }
     if (outcome.type === 'failed') {
+      cancelAudioWatchdog()
       publishStatus('failed', outcome.reason)
       if (outcome.requestId !== undefined) settlePending(outcome.requestId, action('failed', outcome.reason))
       else failAllPending(outcome.reason)
-      if (outcome.reason === 'wake_microphone_failed' && shouldListen) {
+      if (outcome.reason.startsWith('wake_microphone_') && shouldListen) {
         try {
           child?.kill()
         } catch {
@@ -236,9 +285,13 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       acquiredAt = now()
       lastBlockAt = null
       blocks = peak = rms = 0
+      detector = null
     }
     if (outcome.type === 'ready') publishStatus('ready')
-    else if (outcome.type === 'microphone_acquired') publishStatus('listening')
+    else if (outcome.type === 'microphone_acquired') {
+      publishStatus('acquiring')
+      if (shouldListen) armAudioWatchdog()
+    }
     else if (outcome.type === 'microphone_released') publishStatus('released')
     else if (outcome.type === 'stopped') publishStatus('stopped')
     settlePending(
@@ -249,7 +302,8 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   function spawnAndInitialize(): Promise<WakeSupervisorResult> {
     if (initialization === null) return Promise.resolve(action('failed', 'wake_worker_not_configured'))
-    publishStatus('starting')
+    if (recovery) recovery = { ...recovery, state: 'restarting', attempts: recovery.attempts + 1 }
+    publishStatus('starting', recovery ? 'wake_worker_restarting' : null)
     let nextChild: WakeWorkerChild
     try {
       nextChild = options.spawn()
@@ -258,23 +312,24 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
       return Promise.resolve(action('failed', 'wake_worker_spawn_failed'))
     }
     child = nextChild
-    nextChild.on('message', handleOutcome)
+    nextChild.on('message', (value) => { if (child === nextChild) handleOutcome(value) })
     nextChild.on('exit', () => {
       if (child !== nextChild) return
+      cancelAudioWatchdog()
       child = null
       failAllPending('wake_worker_exited')
       if (shuttingDown) {
         publishStatus('stopped')
         return
       }
+      if (status !== 'failed') publishStatus('failed', 'wake_worker_exited')
       if (restartCount === 1) {
         publishStatus('failed', 'wake_worker_exit_repeated')
         return
       }
       restartCount = 1
-      const reacquire = shouldListen
       void spawnAndInitialize().then(async (result) => {
-        if (result.status === 'success' && reacquire) await acquire()
+        if (result.status === 'success' && shouldListen && !shuttingDown) await acquire()
       })
     })
     return request({ type: 'initialize', ...initialization }, 'ready')
@@ -301,6 +356,11 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   async function release(): Promise<WakeSupervisorResult> {
     shouldListen = false
+    cancelAudioWatchdog()
+    if (child === null) {
+      if (status !== 'failed') publishStatus('released')
+      return action('success', 'wake_microphone_released')
+    }
     return request({ type: 'release_microphone' }, 'microphone_released')
   }
 
@@ -317,6 +377,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   async function shutdown(): Promise<WakeSupervisorResult> {
     shuttingDown = true
     shouldListen = false
+    cancelAudioWatchdog()
     if (child === null) {
       publishStatus('stopped')
       return action('success', 'wake_worker_stopped')
@@ -332,5 +393,6 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     return result
   }
 
-  return { start, acquire, release, updateConfig, shutdown, snapshot }
+  return { start, acquire, release, updateConfig, shutdown, snapshot,
+    configuration: () => initialization?.package ?? null }
 }

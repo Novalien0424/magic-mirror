@@ -22,6 +22,7 @@ import {
 import type { AvatarState } from './avatar-state'
 import { createAvatarMvp } from './avatar-framing'
 import { clampPreviewParameter, configureMotionPlayback, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
+import { CONTINUOUS_PARAMETERS, drainMotionQueue, lifecycleLoops, ownsBlink, performanceState, PerformanceContinuity, readPerformanceProfile, type PerformanceProfile } from './cubism-performance'
 
 const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
@@ -131,16 +132,22 @@ class MagicMirrorCubismModel extends CubismUserModel {
   readonly #manifestUrl: string
   readonly #motionEventSink: (phase: 'started' | 'completed', group: string) => void
   readonly #motions = new Map<string, CubismMotion>()
+  readonly #motionBuffers = new Map<string, ArrayBuffer>()
   readonly #expressions = new Map<string, ACubismMotion>()
   readonly #textures: WebGLTexture[] = []
   readonly #eyeBlinkIds: CubismIdHandle[] = []
   readonly #lipSyncIds: CubismIdHandle[] = []
   #setting: CubismModelSettingJson | null = null
+  #performance: PerformanceProfile = null
+  readonly #continuity = new PerformanceContinuity()
   #state: AvatarState = 'Dormant'
   #mouthOpen = 0
   #oneShotGroup: string | null = null
+  #previewMotion = false
+  #playbackGeneration = 0
   #resumeLifecycleMotion = false
   #previewNeutral = false
+  #lifecycleStarted = false
   readonly #previewValues = new Map<string, number>()
   readonly #motionEntries: CubismCapabilities['motions'] = []
 
@@ -161,6 +168,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
 
   async load(): Promise<void> {
     const model3 = await fetchBuffer(this.#manifestUrl)
+    this.#performance = readPerformanceProfile(JSON.parse(new TextDecoder().decode(model3)))
     const setting = new CubismModelSettingJson(model3, model3.byteLength)
     this.#setting = setting
     for (let index = 0; index < setting.getEyeBlinkParameterCount(); index += 1) {
@@ -194,6 +202,11 @@ class MagicMirrorCubismModel extends CubismUserModel {
     await this.#loadTextures(setting)
     this.getRenderer().setIsPremultipliedAlpha(true)
 
+    if (this.#performance !== null) {
+      for (const id of this.#eyeBlinkIds) this._model.setParameterValueById(id, 0)
+      this._model.setParameterValueById(CubismFramework.getIdManager().getId('ParamAngleY'), -0.7)
+      this._model.setParameterValueById(CubismFramework.getIdManager().getId('ParamAngleZ'), 0.3)
+    }
     this._model.saveParameters()
     this.setInitialized(true)
     this.setUpdating(false)
@@ -249,6 +262,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
           true,
         )
         if (motion != null) {
+          this.#motionBuffers.set(motionKey(group, index), buffer)
           motion.setEffectIds(this.#eyeBlinkIds, this.#lipSyncIds)
           this.#motions.set(motionKey(group, index), motion)
         }
@@ -299,44 +313,80 @@ class MagicMirrorCubismModel extends CubismUserModel {
   }
 
   setState(state: AvatarState): void {
+    if (this.#performance !== null && state === this.#state && !this.#previewNeutral
+      && this.#oneShotGroup === null && this.#lifecycleStarted) return
     this.#previewNeutral = false
     this.#previewValues.clear()
     this.#state = state
+    this.#playbackGeneration += 1
+    this.#lifecycleStarted = true
     this.#oneShotGroup = null
+    this.#previewMotion = false
     this.#resumeLifecycleMotion = false
-    this._expressionManager.stopAllMotions()
+    drainMotionQueue(this._expressionManager)
     if (state === 'OfflineLoop') {
-      this._motionManager.stopAllMotions()
+      drainMotionQueue(this._motionManager)
       return
     }
-    const expressionName = renExpressionForState(state)
+    // Raven's authored eyelids must not receive Ren's additive poses. Manual
+    // expression previews remain available through setExpression().
+    const expressionName = this.#performance === null ? renExpressionForState(state) : null
     if (expressionName !== null) this.setExpression(expressionName)
-    const motion = this.#motions.get(motionKey(state, 0))
+    const motion = this.#motionForPlayback(state, 0)
     if (motion === undefined) return
-    this._motionManager.stopAllMotions()
-    this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+    if (this.#performance === null) drainMotionQueue(this._motionManager)
+    this.#prepareLifecycleMotion(motion)
+    this._motionManager.startMotionPriority(motion, this.#performance !== null, STATE_PRIORITY)
+  }
+
+  #motionForPlayback(group: string, index: number): CubismMotion | undefined {
+    if (this.#performance === null) return this.#motions.get(motionKey(group, index))
+    const buffer = this.#motionBuffers.get(motionKey(group, index))
+    if (buffer === undefined || this.#setting === null) return undefined
+    // Crossfading entries must never share mutable loop flags or callbacks.
+    const motion = this.loadMotion(buffer, buffer.byteLength, group, undefined,
+      undefined, this.#setting, group, index, true)
+    motion.setEffectIds(this.#eyeBlinkIds, this.#lipSyncIds)
+    return motion
+  }
+
+  #prepareLifecycleMotion(motion: CubismMotion): void {
+    if (this.#performance === null) return
+    configureMotionPlayback(motion, lifecycleLoops(this.#performance, this.#state))
+    // Configure each entry explicitly; Meta.Loop alone does not set SDK playback.
+    motion.setBeganMotionHandler(() => {})
+    motion.setFinishedMotionHandler(() => {})
   }
 
   playMotion(group: string, index = 0, loop = false): boolean {
     if (this.#state === 'OfflineLoop') return false
-    const motion = this.#motions.get(motionKey(group, index))
+    const motion = this.#motionForPlayback(group, index)
     if (motion === undefined) return false
+    this.#previewNeutral = false
     this.#oneShotGroup = group
+    this.#previewMotion = loop
+    const generation = ++this.#playbackGeneration
     this.#resumeLifecycleMotion = false
     configureMotionPlayback(motion, loop)
+    // The Console requests repeat for ordinary clips. Finite Raven actions
+    // instead play once and hold, preserving the selected group's ownership.
+    if (loop && this.#performance !== null && !lifecycleLoops(this.#performance, performanceState(this.#state, group))) {
+      configureMotionPlayback(motion, false)
+    }
     motion.setBeganMotionHandler(() => {
-      if (!loop && this.#oneShotGroup === group) this.#motionEventSink('started', group)
+      if (!loop && generation === this.#playbackGeneration && this.#oneShotGroup === group) this.#motionEventSink('started', group)
     })
     motion.setFinishedMotionHandler(() => {
       if (loop || this.#oneShotGroup !== group) return
+      if (generation !== this.#playbackGeneration) return
       this.#oneShotGroup = null
       this.#resumeLifecycleMotion = true
       motion.setBeganMotionHandler(() => {})
       motion.setFinishedMotionHandler(() => {})
       this.#motionEventSink('completed', group)
     })
-    this._motionManager.stopAllMotions()
-    const started = this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+    if (this.#performance === null) drainMotionQueue(this._motionManager)
+    const started = this._motionManager.startMotionPriority(motion, this.#performance !== null, STATE_PRIORITY)
       !== InvalidMotionQueueEntryHandleValue
     // Emit once here; SDK V2 finished callbacks also signal loop boundaries.
     if (started && loop) this.#motionEventSink('started', group)
@@ -349,11 +399,15 @@ class MagicMirrorCubismModel extends CubismUserModel {
   }
 
   clearExpression(): void {
-    this._expressionManager.stopAllMotions()
+    drainMotionQueue(this._expressionManager)
   }
 
   stopSpeakingMotion(): void {
-    if (this.#state === 'Speaking') this._motionManager.stopAllMotions()
+    if (this.#state === 'Speaking') {
+      this.#playbackGeneration += 1
+      this.#oneShotGroup = null
+      drainMotionQueue(this._motionManager)
+    }
   }
 
   setMouthOpen(value: number): void {
@@ -371,12 +425,16 @@ class MagicMirrorCubismModel extends CubismUserModel {
       capabilities: { motions: [...this.#motionEntries], expressions: [...this.#expressions.keys()].sort(), parameters },
       reset: () => {
         this.#previewNeutral = true
+        this.#playbackGeneration += 1
+        this.#lifecycleStarted = false
         this.#oneShotGroup = null
+        this.#previewMotion = false
         this.#resumeLifecycleMotion = false
         this.#previewValues.clear()
         this.#mouthOpen = 0
-        this._motionManager.stopAllMotions()
-        this._expressionManager.stopAllMotions()
+        this.#continuity.reset()
+        drainMotionQueue(this._motionManager)
+        drainMotionQueue(this._expressionManager)
         for (const p of parameters) this._model.setParameterValueByIndex(p.index, p.defaultValue)
         this._model.saveParameters()
       },
@@ -396,19 +454,22 @@ class MagicMirrorCubismModel extends CubismUserModel {
     try {
       if (!this.#previewNeutral && this.#resumeLifecycleMotion && this.#state !== 'OfflineLoop') {
         this.#resumeLifecycleMotion = false
-        const motion = this.#motions.get(motionKey(this.#state, 0))
+        const motion = this.#motionForPlayback(this.#state, 0)
         if (motion !== undefined) {
-          this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+          this.#prepareLifecycleMotion(motion)
+          this._motionManager.startMotionPriority(motion, this.#performance !== null, STATE_PRIORITY)
         }
       } else if (
         this.#oneShotGroup === null
         && !this.#previewNeutral
         && this._motionManager.isFinished()
         && this.#state !== 'OfflineLoop'
+        && lifecycleLoops(this.#performance, this.#state)
       ) {
-        const motion = this.#motions.get(motionKey(this.#state, 0))
+        const motion = this.#motionForPlayback(this.#state, 0)
         if (motion !== undefined) {
-          this._motionManager.startMotionPriority(motion, false, STATE_PRIORITY)
+          this.#prepareLifecycleMotion(motion)
+          this._motionManager.startMotionPriority(motion, this.#performance !== null, STATE_PRIORITY)
         }
       }
     } catch {
@@ -421,11 +482,14 @@ class MagicMirrorCubismModel extends CubismUserModel {
     }
     try { this._model.saveParameters() } catch { throw new Error('avatar_parameter_save_failed') }
 
+    const actingState = performanceState(this.#state, this.#oneShotGroup)
     try {
       if (!this.#previewNeutral) {
-        this._physics?.evaluate(this._model, deltaSeconds)
-        this._breath?.updateParameters(this._model, deltaSeconds)
-        this._eyeBlink?.updateParameters(this._model, deltaSeconds)
+        if (this.#performance === null) {
+          this._physics?.evaluate(this._model, deltaSeconds)
+          this._breath?.updateParameters(this._model, deltaSeconds)
+        }
+        if (!ownsBlink(this.#performance, actingState)) this._eyeBlink?.updateParameters(this._model, deltaSeconds)
       }
       this._expressionManager.updateMotion(this._model, deltaSeconds)
       this._pose?.updateParameters(this._model, deltaSeconds)
@@ -434,13 +498,16 @@ class MagicMirrorCubismModel extends CubismUserModel {
     }
 
     const setting = this.#setting
+    // Live action gestures must not silence an ongoing utterance. Only the
+    // silent Console preview takes its mouth policy from the selected clip.
+    const mouthState = this.#previewMotion ? actingState : this.#state
     try {
       if (setting !== null && !this.#previewNeutral) {
         for (let index = 0; index < setting.getLipSyncParameterCount(); index += 1) {
           this._model.setParameterValueById(
             setting.getLipSyncParameterId(index),
-            this.#mouthOpen,
-            0.8,
+            this.#performance !== null && mouthState !== 'Speaking' && mouthState !== 'Scene' ? 0 : this.#mouthOpen,
+            this.#performance === null ? 0.8 : 1,
           )
         }
       }
@@ -448,6 +515,13 @@ class MagicMirrorCubismModel extends CubismUserModel {
       throw new Error('avatar_lip_update_failed')
     }
     try {
+      if (this.#performance !== null && !this.#previewNeutral) {
+        for (const name of CONTINUOUS_PARAMETERS) {
+          const id = CubismFramework.getIdManager().getId(name)
+          this._model.setParameterValueById(id,
+            this.#continuity.sample(name, this._model.getParameterValueById(id), deltaSeconds))
+        }
+      }
       for (const [id, value] of this.#previewValues) {
         this._model.setParameterValueById(CubismFramework.getIdManager().getId(id), value)
       }

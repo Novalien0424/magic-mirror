@@ -13,6 +13,20 @@ const base: PendingVisualAsset = {
 }
 
 describe('visual asset Chromium probe', () => {
+  it('aborts a pending decode and releases its media before a late frame arrives', async () => {
+    const abort = new AbortController()
+    const video = { src: '', preload: '', muted: true, videoWidth: 100, videoHeight: 100, duration: 2,
+      onloadeddata: null as (() => void) | null, onerror: null as (() => void) | null,
+      pause: vi.fn(), removeAttribute: vi.fn(), load: vi.fn() }
+    const result = probePendingVisualAsset({ ...base, kind: 'video' }, { createVideo: () => video, signal: abort.signal })
+    const lateFrame = video.onloadeddata
+    abort.abort()
+    await expect(result).rejects.toThrow('visual_asset_probe_aborted')
+    lateFrame?.()
+    expect(video.onloadeddata).toBeNull()
+    expect(video.pause).toHaveBeenCalledOnce()
+    expect(video.removeAttribute).toHaveBeenCalledWith('src')
+  })
   it('returns decoded image dimensions and never exposes a source path', async () => {
     const image = {
       naturalWidth: 1080,

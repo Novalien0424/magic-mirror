@@ -1,9 +1,31 @@
 import { DEFAULT_PRESENTATION, type PresentationConfig } from './presentation'
 import type { MirrorConfig, SceneActionDefinition, SceneDefinition, SpellConfig } from './types'
 import { DEFAULT_VOICE_EFFECTS, type VoiceEffects } from './voice-effects'
+import { LEGACY_SLEEP_PHRASE } from './avatar-commands'
 
 // Built-in Realtime voices; model IDs remain exclusively in versioned config.
 export const AVATAR_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'] as const
+
+/**
+ * Per-avatar spotter parameter overrides. This is detector tuning, not neural
+ * training. The phrase binds the values to the exact pronunciation request;
+ * Main must ignore/reject a stale binding before it reaches the worker.
+ */
+export interface AvatarWakeTuning {
+  phrase: string
+  enabled: boolean
+  threshold?: number
+  score?: number
+  numTrailingBlanks?: number
+}
+
+export interface WakeRuntimeConfig {
+  phrase: string
+  modelVersion: string
+  packageId: string
+  tuning?: AvatarWakeTuning
+}
+
 export interface AvatarProfile {
   id: string
   name: string
@@ -18,6 +40,9 @@ export interface AvatarProfile {
   /** Optional in source configs for backwards compatibility; Main normalizes it. */
   voiceSpeed?: number
   voiceEffects?: VoiceEffects
+  wakePhrase?: string
+  sleepPhrase?: string
+  wakeTuning?: AvatarWakeTuning
 }
 export interface AvatarResourceLock {
   kind: 'visual' | 'music' | 'action'
@@ -47,23 +72,30 @@ export interface AvatarCatalog {
 }
 
 export function avatarCatalogFor(config: MirrorConfig): AvatarCatalog {
-  if (config.avatarCatalog) return structuredClone(config.avatarCatalog)
+  if (config.avatarCatalog) {
+    const catalog = structuredClone(config.avatarCatalog)
+    catalog.avatars = catalog.avatars.map(avatar => ({ ...avatar,
+      wakePhrase: avatar.wakePhrase ?? config.wake.phrase,
+      sleepPhrase: avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE }))
+    return catalog
+  }
   return { activeAvatarId: 'default-avatar', locks: [], models: [], avatars: [{
     id: 'default-avatar', name: config.persona.name, personality: config.persona.instructions,
     speakingStyle: '', voice: config.voice, idleSeconds: config.idleSeconds, modelId: 'builtin-ren',
     presentation: { ...DEFAULT_PRESENTATION, ...config.presentation },
     scenes: structuredClone(config.scenes), spells: structuredClone(config.spells),
     voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
+    wakePhrase: config.wake.phrase, sleepPhrase: LEGACY_SLEEP_PHRASE,
   }] }
 }
 
 /** Root fields are compatibility projections, never a second source of truth. */
 export function projectActiveAvatar<T extends MirrorConfig>(config: T): T {
-  const catalog = config.avatarCatalog
-  if (!catalog) return config
+  if (!config.avatarCatalog) return config
+  const catalog = avatarCatalogFor(config)
   const avatar = catalog.avatars.find(item => item.id === catalog.activeAvatarId)
   if (!avatar) throw new Error('avatar_active_unknown')
-  return { ...config, persona: { name: avatar.name, instructions: avatar.personality },
+  return { ...config, avatarCatalog: catalog, wake: { ...config.wake, phrase: avatar.wakePhrase! }, persona: { name: avatar.name, instructions: avatar.personality },
     voice: avatar.voice, idleSeconds: avatar.idleSeconds, presentation: avatar.presentation,
     scenes: avatar.scenes, spells: avatar.spells }
 }

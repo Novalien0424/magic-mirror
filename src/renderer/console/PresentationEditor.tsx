@@ -27,11 +27,11 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
     const timer = setTimeout(() => { setLifecycle('dormant'); setCycle(false) }, 2000 + config.entranceMs + 2500)
     return () => { clearTimeout(enter); clearTimeout(timer) }
   }, [cycle, config.entranceMs])
-  return <fieldset className="presentation-editor" disabled={disabled}>
+  return <fieldset className="presentation-editor">
     <legend>Avatar presentation</legend>
     <p>Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep.</p>
     <div className="presentation-editor__layout">
-      <div className="console__form-grid">
+      <fieldset className="console__form-grid" disabled={disabled}>
         <HelpField help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
           <option value="always_visible">Always visible</option><option value="emerge">Emerge from mist</option>
         </select></HelpField>
@@ -46,19 +46,19 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
         <HelpField help={FIELD_HELP.exit}>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
         <p className="console__muted">Cubism motions: Waking → Listening → Suspending → Dormant. Mist is a built-in effect. Background video is muted; ambience fades out on wake and uses your selected speakers.</p>
         <p className="console__muted">Import media in the Media library. Save, Test and Publish below to apply this presentation to the mirror.</p>
-      </div>
+      </fieldset>
       <div className="presentation-editor__preview-panel">
         <div className="console__action-row">
-          <button type="button" aria-label="Preview entrance" onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('active') }}>Entrance</button>
-          <button type="button" aria-label="Preview exit" onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('dormant') }}>Exit / sleep</button>
+          <button type="button" aria-label="Preview entrance" disabled={disabled} onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('active') }}>Entrance</button>
+          <button type="button" aria-label="Preview exit" disabled={disabled} onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('dormant') }}>Exit / sleep</button>
           <button type="button" aria-label="Preview full cycle" disabled={disabled || cycle} onClick={() => { setReason(''); setPreviewing(true); setCycle(true) }}>Preview draft</button>
-          <button type="button" disabled={disabled || !previewing} onClick={() => { setPreviewing(false); setCycle(false) }}>Stop preview</button>
+          <button type="button" disabled={!previewing} onClick={() => { setPreviewing(false); setCycle(false) }}>Stop preview</button>
         </div>
         <div className="presentation-preview">
-          <PresentationStage payload={{ config: { ...config }, background: draft.visualAssets.find(a => a.id === config.backgroundId) ?? null }} lifecycle={previewing ? lifecycle : 'starting'} onPhase={setPhase} onFailure={setReason} draft>
+          {previewing ? <PresentationStage payload={{ config: { ...config }, background: draft.visualAssets.find(a => a.id === config.backgroundId) ?? null }} lifecycle={previewing ? lifecycle : 'starting'} onPhase={setPhase} onFailure={setReason} draft>
             <AvatarCanvas embedded model={model} state={phase === 'entering' ? 'Waking' : phase === 'exiting' ? 'Suspending' : phase === 'awake' ? 'Listening' : 'Dormant'}
               onRenderer={ignore} onMetrics={ignore} onEvent={e => { if (e.status === 'failed') setReason(e.reason) }} />
-          </PresentationStage>
+          </PresentationStage> : <p>Preview stopped. Choose Entrance, Exit / sleep or Preview draft.</p>}
         </div>
         <p role="status">Local draft preview · {previewing ? phase : 'stopped'} · uses selected media and speakers</p>
         {reason ? <p className="console__fault" role="alert">Preview: {reason}</p> : null}

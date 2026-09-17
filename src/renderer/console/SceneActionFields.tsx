@@ -1,20 +1,21 @@
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import { HelpField } from './HelpField'
 import { FIELD_HELP } from './field-help-text'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
-import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS, type SceneActionDefinition } from '../../shared/types'
+import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS, VISUAL_FADE_MAX_MS, type SceneActionDefinition } from '../../shared/types'
 
 type SceneActionKind = SceneActionDefinition['kind']
 
 export function newSceneAction(kind: SceneActionKind, index: number): SceneActionDefinition {
   const base = { id: `action-${Date.now()}-${index}`, name: 'New action', enabled: true }
-  if (kind === 'avatar_dialogue') return { ...base, kind, text: 'Speak these words exactly.' }
+  if (kind === 'avatar_dialogue') return { ...base, kind, text: REALTIME_PROMPTS.authoring.sceneDialogue }
   if (kind === 'avatar_motion') return { ...base, kind, motionGroup: 'Scene' }
   if (kind === 'avatar_expression') return { ...base, kind, expression: 'exp_01' }
   if (kind === 'lighting' || kind === 'fog') {
     return { ...base, kind, command: 'on', presetId: 'default' }
   }
   if (kind === 'visual') {
-    return { ...base, kind, assetId: '', fit: 'contain', playback: 'still', audio: 'muted', gain: 0 }
+    return { ...base, kind, assetId: '', fit: 'contain', playback: 'still', audio: 'muted', gain: 0, fadeInMs: 0, fadeOutMs: 0 }
   }
   return { ...base, kind: 'music', command: 'stop', fadeDurationMs: 0 }
 }
@@ -57,6 +58,8 @@ export function SceneActionFields({ action, draft, onChange, onImport }: { actio
                     playback: asset?.kind === 'video' ? 'once' : 'still',
                     audio: 'muted',
                     gain: 0,
+                    fadeInMs: asset?.kind === 'video' ? action.fadeInMs ?? 0 : 0,
+                    fadeOutMs: asset?.kind === 'video' ? action.fadeOutMs ?? 0 : 0,
                   })
                 }}><option value="">Select asset</option>{(draft?.visualAssets ?? []).map((asset) => <option key={asset.id} value={asset.id}>{asset.name} ({asset.kind})</option>)}</select></HelpField>
                 <HelpField help={FIELD_HELP.fit}>Fit<select value={action.fit} onChange={(event) => onChange({ ...action, fit: event.currentTarget.value as 'contain' | 'cover' })}><option value="contain">Contain</option><option value="cover">Cover</option></select></HelpField>
@@ -64,6 +67,8 @@ export function SceneActionFields({ action, draft, onChange, onImport }: { actio
                   <HelpField help={FIELD_HELP.playback}>Playback<select value={action.playback} onChange={(event) => onChange({ ...action, playback: event.currentTarget.value as 'once' | 'loop' })}><option value="once">Once</option><option value="loop">Loop</option></select></HelpField>
                   <HelpField help={FIELD_HELP.videoAudio}>Audio<select value={action.audio} onChange={(event) => onChange({ ...action, audio: event.currentTarget.value as 'muted' | 'embedded', gain: event.currentTarget.value === 'muted' ? 0 : Math.max(action.gain, 0.5) })}><option value="muted">Muted</option><option value="embedded">Embedded track</option></select></HelpField>
                   {action.audio === 'embedded' ? <HelpField help={FIELD_HELP.videoGain}>Gain<input type="number" min="0" max="1" step="0.05" value={action.gain} onChange={(event) => onChange({ ...action, gain: Number(event.currentTarget.value) })} /></HelpField> : null}
+                  <HelpField help={FIELD_HELP.videoFadeIn}>Fade in ms<input aria-label="Visual fade in milliseconds" type="number" min="0" max={VISUAL_FADE_MAX_MS} step="100" value={action.fadeInMs ?? 0} onChange={(event) => onChange({ ...action, fadeInMs: Number(event.currentTarget.value) })} /></HelpField>
+                  <HelpField help={FIELD_HELP.videoFadeOut}>Fade out ms<input aria-label="Visual fade out milliseconds" type="number" min="0" max={VISUAL_FADE_MAX_MS} step="100" value={action.fadeOutMs ?? 0} onChange={(event) => onChange({ ...action, fadeOutMs: Number(event.currentTarget.value) })} /></HelpField>
                   {action.audio === 'embedded' && draft?.visualAssets.find((asset) => asset.id === action.assetId)?.audioTrack === 'unknown' ? <p className="console__muted">Audio track could not be verified; test this Draft on Windows before Publish.</p> : null}
                 </> : null}
               </> : null}

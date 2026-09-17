@@ -4,10 +4,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Explicit build inputs only: never walk the checkout root or read .env/user data.
-const inputs = ['src', 'resources/generated', 'resources/avatar', 'resources/config',
+const inputs = ['src', 'resources/generated', 'resources/avatar', 'resources/config', 'resources/wake-native',
   'resources/offline-loop', 'package.json', 'package-lock.json', 'electron.vite.config.ts',
   'tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json',
-  'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs', 'scripts/generate-avatar-audio.mjs']
+  'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs', 'scripts/generate-avatar-audio.mjs',
+  'scripts/native', 'scripts/build-wake-score-native.ps1', 'scripts/prepare-wake-score-native.mjs']
 const requiredOutputs = ['main/index.js', 'preload/mirror.js', 'preload/console.js',
   'renderer/mirror/index.html', 'renderer/console/index.html']
 const manifestName = '.qa-build.json'

@@ -314,4 +314,11 @@ describe("createSpellTriggerGuard", () => {
     expect((thrown as Error).message).toBe("normalized_spell_collision");
     expect((thrown as Error).message).not.toContain("AX7");
   });
+
+  test("rejects two spells differing only in the fixed prefix's script", () => {
+    expect(() => createSpellTriggerGuard([
+      { spellId: 'rain-a', phrase: '施放咒語，下雨' },
+      { spellId: 'rain-b', phrase: '施放咒语，下雨' },
+    ])).toThrow('normalized_spell_collision');
+  });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { bootSequence } from '../../src/main/boot'
+import { DEFAULT_VOICE_EFFECTS } from '../../src/shared/voice-effects'
 import {
   createRealtimeIpcContract,
 } from '../../src/main/ipc'
@@ -347,6 +348,36 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
       status: 'accepted',
       value: { snapshot: { sdkVersion: 'synthetic-sdk-version' } },
     })
+  })
+
+  it('preserves published Voice Studio settings through Main and preload', async () => {
+    const bundle = makeSessionBundle()
+    const effects = { ...DEFAULT_VOICE_EFFECTS, enabled: true, pitchSemitones: -3 }
+    bundle.snapshot = { ...(bundle.snapshot as object), voiceSpeed: 0.9, voiceEffects: effects }
+    const contract = makeContract(async () => bundle)
+    const result = await contract.handleTransientSecretRequest({ sender: { identity: 'mirror' } })
+    expect(result).toMatchObject({ status: 'accepted' })
+    const bridge = await mirrorBridge()
+    electronHarness.invoke.mockResolvedValueOnce(result)
+    const returned = await bridge.requestRealtimeClientSecret() as { status: string; value: { snapshot: { voiceSpeed: number; voiceEffects: typeof effects } } }
+    expect(returned).toMatchObject({ status: 'accepted', value: { snapshot: { voiceSpeed: 0.9, voiceEffects: effects } } })
+    expect(returned.value.snapshot.voiceEffects).not.toBe(effects)
+    expect(Object.isFrozen(returned.value.snapshot.voiceEffects)).toBe(true)
+  })
+
+  it.each([
+    { voiceSpeed: 0.49 },
+    { voiceSpeed: Number.NaN },
+    { voiceEffects: undefined },
+    { voiceEffects: { ...DEFAULT_VOICE_EFFECTS, roomMix: 1 } },
+    { voiceEffects: { ...DEFAULT_VOICE_EFFECTS, privateContext: 'synthetic' } },
+  ])('rejects malformed Voice Studio settings at the preload boundary', async fields => {
+    const contract = makeContract(async () => makeSessionBundle())
+    const result = await contract.handleTransientSecretRequest({ sender: { identity: 'mirror' } }) as { value: { snapshot: object } }
+    const malformed = { ...result, value: { ...result.value, snapshot: { ...result.value.snapshot, ...fields } } }
+    const bridge = await mirrorBridge()
+    electronHarness.invoke.mockResolvedValueOnce(malformed)
+    await expect(bridge.requestRealtimeClientSecret()).resolves.toEqual({ status: 'rejected', reason: 'invalid_payload' })
   })
 
   it('returns frozen sanitized copies instead of mutable IPC references', async () => {

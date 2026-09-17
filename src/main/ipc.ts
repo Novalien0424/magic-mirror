@@ -1,10 +1,12 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
 import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAvatarLibraryLabelRequest } from '../shared/avatar-library'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import { voiceEffectsSchema } from '../shared/voice-effects-schema'
+import { VISUAL_FADE_MAX_MS } from '../shared/types'
 import type {
   AppSnapshot,
   MirrorEvent,
@@ -97,6 +99,7 @@ export const CONSOLE_IPC_CHANNELS: ConsoleChannelMap = Object.freeze({
   saveModelDraft: 'console:save-model-draft',
   saveDraft: 'console:save-draft',
   loadAvatar: 'console:load-avatar',
+  deleteAvatar: 'console:delete-avatar',
   testDraft: 'console:test-draft',
   publish: 'console:publish',
   rollback: 'console:rollback',
@@ -149,6 +152,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
   readonly importAvatarModel?: () => Promise<import('../shared/avatar-profiles').AvatarModel | null>
@@ -165,6 +169,7 @@ export interface RegisterIpcHandlersOptions {
       report: RealtimeFailureReport,
     ) => unknown | PromiseLike<unknown>
     readonly requestSleep?: () => unknown | PromiseLike<unknown>
+    readonly noteSceneActivity?: BootRuntime['noteSceneActivity']
     readonly noteRealtimeActivity?: BootRuntime['noteRealtimeActivity']
     readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
   }
@@ -298,7 +303,7 @@ function isValidAvatarRuntimeSnapshot(value: unknown): value is AvatarRuntimeSna
 
 function validateAvatarControl(value: unknown): value is AvatarControlCommand {
   const type = readProperty(value, 'type')
-  if (type === 'refresh_audio_devices') return exactKeys(value, ['type'])
+  if (type === 'refresh_audio_devices' || type === 'stop_avatar_test') return exactKeys(value, ['type'])
   if (type === 'audio_devices') return exactKeys(value, ['type', 'preferences'])
     && parseAudioPreferences(readProperty(value, 'preferences')) !== null
   if (type === 'state') {
@@ -344,6 +349,30 @@ function validateAvatarControl(value: unknown): value is AvatarControlCommand {
         && isUnitNumber(readProperty(value, 'targetGain'))
         && typeof duration === 'number' && Number.isSafeInteger(duration)
         && duration >= 1 && duration <= 60_000
+    }
+    return false
+  }
+  if (type === 'scene_visual') {
+    const action = readProperty(value, 'action')
+    if (action === 'start') {
+      const fadeInMs = readProperty(value, 'fadeInMs')
+      const fadeOutMs = readProperty(value, 'fadeOutMs')
+      return (
+        exactKeys(value, ['type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain'])
+        || exactKeys(value, ['type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'fadeInMs', 'fadeOutMs'])
+      )
+        && SAFE_ID_PATTERN.test(readProperty(value, 'assetId') as string)
+        && (readProperty(value, 'fit') === 'contain' || readProperty(value, 'fit') === 'cover')
+        && (readProperty(value, 'playback') === 'still' || readProperty(value, 'playback') === 'once' || readProperty(value, 'playback') === 'loop')
+        && (readProperty(value, 'audio') === 'muted' || readProperty(value, 'audio') === 'embedded')
+        && isUnitNumber(readProperty(value, 'gain'))
+        && (fadeInMs === undefined || (typeof fadeInMs === 'number' && Number.isSafeInteger(fadeInMs) && fadeInMs >= 0 && fadeInMs <= VISUAL_FADE_MAX_MS))
+        && (fadeOutMs === undefined || (typeof fadeOutMs === 'number' && Number.isSafeInteger(fadeOutMs) && fadeOutMs >= 0 && fadeOutMs <= VISUAL_FADE_MAX_MS))
+    }
+    if (action === 'stop') {
+      return exactKeys(value, ['type', 'action', 'runId', 'sceneId'])
+        && SAFE_ID_PATTERN.test(readProperty(value, 'runId') as string)
+        && SAFE_ID_PATTERN.test(readProperty(value, 'sceneId') as string)
     }
     return false
   }
@@ -1203,6 +1232,8 @@ function sceneRendererCommand(
       playback: action.playback,
       audio: action.audio,
       gain: action.gain,
+      fadeInMs: action.fadeInMs ?? 0,
+      fadeOutMs: action.fadeOutMs ?? 0,
       context,
     }
   }
@@ -1211,6 +1242,12 @@ function sceneRendererCommand(
 
 export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneRuntimeControl {
   const { ipcMain, runtime, windows, telemetry } = options
+  ipcMain.handle('console:voice-preview-cancel-pending', (event, ...args) => {
+    const auth = authorizeSender(event, 'console', windows)
+    if (!auth.ok) { senderRejected(telemetry, auth.reason); return false }
+    if (args.length !== 0) { payloadRejected(telemetry); return false }
+    return options.voicePreview?.cancelPending() ?? false
+  })
   ipcMain.handle('console:voice-preview-acquire', async (event, ...args) => {
     const auth = authorizeSender(event, 'console', windows)
     if (!auth.ok) { senderRejected(telemetry, auth.reason); return { ok: false, reason: 'unauthorized_sender' } }
@@ -1235,6 +1272,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
   let sceneRuntimeGeneration = 0
+  let consoleSceneGeneration = 0
   let sceneOperations: Promise<unknown> = Promise.resolve()
   const enqueueSceneOperation = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = sceneOperations.then(operation)
@@ -1281,6 +1319,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       })
       return
     }
+    if (event.type === 'started') options.runtime.noteSceneActivity?.('started', event.runId)
+    if (event.type === 'finished') options.runtime.noteSceneActivity?.('finished', event.result.runId)
     dispatchSceneStatus(event)
     if (event.type === 'finished') emitSceneResult(event.result, 'runtime')
   }
@@ -1823,6 +1863,17 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       ...(wakeInput ? { wakeInput } : {}) } }
   })
 
+  ipcMain.handle('console:wake-calibration', async (event, ...args) => {
+    if (!authorizeSender(event, 'console', windows).ok) {
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    const parsed = args.length === 1 ? wakeCalibrationCommandSchema.safeParse(args[0]) : null
+    if (!parsed?.success) return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    if (!options.wakeCalibration) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.wakeCalibration(parsed.data) } }
+    catch { return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable') }
+  })
+
   ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarControl, (event, ...args) => {
     const authorization = authorizeSender(event, 'console', windows)
     if (!authorization.ok) {
@@ -1869,8 +1920,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
+    const generation = consoleSceneGeneration
     return enqueueSceneOperation(async () => {
+      if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       const loaded = await loadSceneRuntime(isDraft ? 'draft' : 'published')
+      if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
       const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
       return { ok: true, value: result }
@@ -1887,7 +1941,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
+    consoleSceneGeneration += 1
+    dispatchMirrorAvatarControl({ type: 'stop_avatar_test' }, windows)
+    const stopping = cachedSceneRuntime?.value.stopAll()
     return enqueueSceneOperation(async () => {
+      await stopping
       await cachedSceneRuntime?.value.stopAll()
       return { ok: true, value: { status: 'stopped' as const } }
     })
@@ -2258,6 +2316,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     return invokeConsole(consoleFacade(options), facade => facade.loadAvatar(args[0]), telemetry)
+  })
+
+  ipcMain.handle(CONSOLE_IPC_CHANNELS.deleteAvatar, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'console', windows)
+    if (!authorization.ok) {
+      senderRejected(telemetry, authorization.reason)
+      return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    if (args.length !== 1) {
+      payloadRejected(telemetry)
+      return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    return invokeConsole(consoleFacade(options), facade => facade.deleteAvatar(args[0]), telemetry)
   })
 
   return Object.freeze({

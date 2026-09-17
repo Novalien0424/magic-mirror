@@ -1,3 +1,4 @@
+import { REALTIME_PROMPTS } from './realtime-prompts'
 import type { ManagedVisualAsset } from './types'
 
 export interface PresentationConfig {
@@ -18,7 +19,7 @@ export interface PresentationPayload {
 export const DEFAULT_PRESENTATION: Readonly<PresentationConfig> = Object.freeze({
   mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
   entranceMs: 1800, exitMs: 1800,
-  wakeGreeting: '我在，請說。', sleepFarewell: '如你所願，再會',
+  wakeGreeting: REALTIME_PROMPTS.defaults.wakeGreeting, sleepFarewell: REALTIME_PROMPTS.defaults.sleepFarewell,
 })
 
 export function parsePresentation(value: unknown): PresentationConfig | null {

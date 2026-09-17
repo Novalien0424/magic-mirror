@@ -52,6 +52,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('Avatar shared background audio bus', () => {
   it('feeds authored music and embedded video through one duck gain and uses explicit draft media', async () => {
+    const audioElements: FakeAudio[] = []
     const sources: FakeNode[] = []
     const gains: FakeGain[] = []
     class FakeAudioContext {
@@ -67,7 +68,7 @@ describe('Avatar shared background audio bus', () => {
       close = vi.fn(async () => undefined)
     }
     vi.stubGlobal('AudioContext', FakeAudioContext)
-    vi.stubGlobal('Audio', FakeAudio)
+    vi.stubGlobal('Audio', class extends FakeAudio { constructor() { super(); audioElements.push(this) } })
     vi.stubGlobal('window', { setTimeout, clearTimeout })
     vi.stubGlobal('URL', { createObjectURL: vi.fn(), revokeObjectURL: vi.fn() })
     const fetchMedia = vi.fn(async () => ({ ok: true, blob: async () => new Blob() }))
@@ -77,6 +78,7 @@ describe('Avatar shared background audio bus', () => {
       onRecordedOutput: vi.fn(), onActivity: vi.fn(), onChanged: vi.fn(), eventSink: vi.fn(),
     })
     const video = new FakeAudio() as unknown as HTMLVideoElement
+    controller.setLifecycle('dormant')
     controller.setSceneVideoAudio(video, 0.4)
 
     const musicSource = sources[0]!
@@ -85,9 +87,13 @@ describe('Avatar shared background audio bus', () => {
     const musicAuthoredGain = musicAnalyser.connections[0]!
     const musicMaster = musicAuthoredGain.connections[0] as FakeGain
     const sharedAnalyser = musicMaster.connections[0]!
+    expect((sharedAnalyser.connections[0] as FakeGain).gain.value).toBe(1)
     const videoAuthoredGain = videoSource.connections[0]!
     const effectsMaster = videoAuthoredGain.connections[0] as FakeGain
     expect(effectsMaster.connections[0]).toBe(sharedAnalyser)
+    controller.setSceneVideoAudio(video, 0.4, 120)
+    expect(sources).toHaveLength(2)
+    expect((videoAuthoredGain as FakeGain).ramps.at(-1)).toBe(0.4)
 
     const realtime = { setVolume: vi.fn(), audioElement: new FakeAudio() }
     controller.setRealtimeOutput(realtime as never)
@@ -100,6 +106,8 @@ describe('Avatar shared background audio bus', () => {
     controller.handleActivity('output_started')
     const sharedDuckGain = sharedAnalyser.connections[0] as FakeGain
     expect(sharedDuckGain.ramps.at(-1)).toBe(0.22)
+    controller.handleCommand({ type: 'music', action: 'stop' })
+    expect(sharedDuckGain.gain.value).toBe(0.22)
     expect(gains).toContain(sharedDuckGain)
     controller.handleCommand({ type: 'scene_music', action: 'fade', targetGain: 0.5, durationMs: 100 })
     expect((musicAuthoredGain as FakeGain).gain.value).toBe(0.5)
@@ -120,6 +128,14 @@ describe('Avatar shared background audio bus', () => {
     expect(musicSource.disconnect).not.toHaveBeenCalled()
     controller.handleCommand({ type: 'scene_music', action: 'play', assetId: 'preview-audio', gain: 0.5, loop: false, preview: true })
     await vi.waitFor(() => expect(fetchMedia).toHaveBeenCalledWith('magic-mirror-media://music-draft/preview-audio'))
+    await vi.waitFor(() => expect(audioElements[0]!.play).toHaveBeenCalledTimes(1))
+    let completeFetch!: (value: { ok: boolean; blob: () => Promise<Blob> }) => void
+    fetchMedia.mockImplementationOnce(() => new Promise(resolve => { completeFetch = resolve }))
+    controller.handleCommand({ type: 'scene_music', action: 'play', assetId: 'late-audio', gain: 0.5, loop: false })
+    controller.setLifecycle('offlineLoop')
+    completeFetch({ ok: true, blob: async () => new Blob() })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(audioElements[0]!.play).toHaveBeenCalledTimes(1)
     controller.dispose()
     await getAudioDeviceRouter().select(DEFAULT_AUDIO_PREFERENCES)
     expect(musicMaster.gain.value).toBe(0)

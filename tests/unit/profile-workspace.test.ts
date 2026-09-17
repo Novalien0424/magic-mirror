@@ -39,6 +39,9 @@ describe('profile workspace ownership', () => {
     expect(avatarActivationReason(payload, 'b', false, 'dormant')).toBe('')
     expect(avatarActivationReason(payload, 'a', false, 'dormant')).toBe('Already on the Mirror.')
     expect(avatarActivationReason(payload, 'b', true, 'dormant')).toContain('Save all')
+    const pending = { ...payload, publishDiff: { ...payload.publishDiff, changed: [{} as never] } }
+    expect(avatarActivationReason(pending, 'a', true, 'dormant')).toBe('Already on the Mirror.')
+    expect(avatarActivationReason(pending, 'b', false, 'dormant')).toContain('Avatars')
   })
 })
 type AvatarProfileScenes = ReturnType<typeof newAvatar>['scenes']

@@ -668,13 +668,14 @@ describe('Mirror scene-action feedback transport', () => {
         stageId: 'stage-opening', actionId: 'dialogue-opening',
       }
       const commands = [
+        { type: 'stop_avatar_test' },
         { type: 'asset_failure', action: 'inject' },
         { type: 'scene_dialogue', text: 'The mirror awakens now.', context },
         { type: 'motion', group: 'Scene', context: { ...context, actionId: 'motion-scene' } },
         { type: 'expression', name: 'exp_01', context: { ...context, actionId: 'expression-one' } },
         { type: 'scene_music', action: 'play', assetId: 'music-tone', gain: 0.65, loop: false, context: { ...context, actionId: 'music-play' } },
         { type: 'scene_music', action: 'play', assetId: 'music-tone', gain: 0.65, loop: false, preview: true, context },
-        { type: 'scene_visual', action: 'start', assetId: 'draft-video', fit: 'cover', playback: 'once', audio: 'muted', gain: 0, preview: true, context },
+        { type: 'scene_visual', action: 'start', assetId: 'draft-video', fit: 'cover', playback: 'once', audio: 'muted', gain: 0, fadeInMs: 0, fadeOutMs: 0, preview: true, context },
       ]
       for (const command of commands) registration.listener({}, command)
       registration.listener({}, { ...commands.at(-1), preview: 'true' })

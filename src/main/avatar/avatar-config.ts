@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { AVATAR_VOICES, canUseAvatarResource, type AvatarCatalog } from '../../shared/avatar-profiles'
+import { AVATAR_VOICES, canUseAvatarResource, type AvatarCatalog, type AvatarWakeTuning } from '../../shared/avatar-profiles'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
 import { voiceEffectsSchema } from '../../shared/voice-effects-schema'
+import { validSpokenPhrase } from '../../shared/avatar-commands'
 import { parsePresentation, type PresentationConfig } from '../../shared/presentation'
 import type { MirrorConfig } from '../../shared/types'
 import { sceneCollectionsSchema, sceneDefinitionSchema, spellConfigSchema } from '../scenes/scene-config'
@@ -20,6 +21,15 @@ export const avatarCatalogSchema = z.object({
     scenes: z.array(sceneDefinitionSchema).max(128), spells: z.array(spellConfigSchema).max(128),
     voiceSpeed: z.number().finite().min(0.5).max(1.5).default(1),
     voiceEffects: voiceEffectsSchema.default(DEFAULT_VOICE_EFFECTS),
+    wakePhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake phrase').optional(),
+    sleepPhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid sleep phrase').optional(),
+    wakeTuning: z.object({
+      phrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake tuning phrase'),
+      enabled: z.boolean(),
+      threshold: z.number().finite().min(0).max(1).optional(),
+      score: z.number().finite().positive().max(100).optional(),
+      numTrailingBlanks: z.number().int().min(1).max(100).optional(),
+    }).strict().optional(),
   }).strict()).min(1).max(32),
   locks: z.array(z.object({ kind: z.enum(['visual', 'music', 'action']), resourceId: id, avatarId: id }).strict()).max(1024),
   models: z.array(z.object({ id, name: z.string().trim().min(1).max(80),
@@ -45,7 +55,7 @@ export const avatarCatalogSchema = z.object({
   })
 })
 
-export function validateAvatarReferences(config: Pick<MirrorConfig, 'visualAssets' | 'musicAssets' | 'sceneActions'>,
+export function validateAvatarReferences(config: Pick<MirrorConfig, 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions'>,
   catalog: AvatarCatalog, context: z.RefinementCtx): void {
   const resources = { visual: config.visualAssets, music: config.musicAssets, action: config.sceneActions }
   const fail = (path: (string | number)[]) => context.addIssue({ code: 'custom', path: ['avatarCatalog', ...path], message: 'Unavailable avatar resource' })
@@ -53,6 +63,11 @@ export function validateAvatarReferences(config: Pick<MirrorConfig, 'visualAsset
     if (!resources[lock.kind].some(item => item.id === lock.resourceId)) fail(['locks', index])
   })
   catalog.avatars.forEach((avatar, index) => {
+    const wakePhrase = avatar.wakePhrase ?? config.wake.phrase
+    const tuning = avatar.wakeTuning as AvatarWakeTuning | undefined
+    if (tuning && tuning.phrase !== wakePhrase) {
+      context.addIssue({ code: 'custom', path: ['avatarCatalog', 'avatars', index, 'wakeTuning', 'phrase'], message: 'Wake tuning is bound to a different phrase' })
+    }
     const allowed = (kind: 'visual' | 'music' | 'action', resourceId: string) =>
       resources[kind].some(item => item.id === resourceId) && canUseAvatarResource(catalog, avatar.id, kind, resourceId)
     const p = avatar.presentation

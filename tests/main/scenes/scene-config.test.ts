@@ -122,6 +122,23 @@ describe('sceneCollectionsSchema', () => {
     expect(sceneCollectionsSchema.safeParse(validCollections()).success).toBe(true)
   })
 
+  it('defaults legacy visual actions to immediate fades and bounds authored durations', () => {
+    const legacy = sceneCollectionsSchema.parse(validCollections())
+    const visual = legacy.sceneActions.find(action => action.kind === 'visual')
+    expect(visual && visual.fadeInMs).toBe(0)
+    expect(visual && visual.fadeOutMs).toBe(0)
+
+    const bounded = validCollections()
+    const boundedAction = bounded.sceneActions[0]
+    if (boundedAction.kind !== 'visual') throw new Error('visual fixture missing')
+    boundedAction.fadeInMs = 10_000
+    boundedAction.fadeOutMs = 10_000
+    expect(sceneCollectionsSchema.safeParse(bounded).success).toBe(true)
+
+    boundedAction.fadeOutMs = 10_001
+    expect(sceneCollectionsSchema.safeParse(bounded).success).toBe(false)
+  })
+
   it.each([
     {
       label: 'missing action link',

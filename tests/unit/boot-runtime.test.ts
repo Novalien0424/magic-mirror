@@ -130,17 +130,17 @@ describe('BootRuntime configured model availability probe', () => {
       await startRuntime(runtime)
       runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
       const sessionId = runtime.snapshot().realtimeSessionId!
-      await vi.advanceTimersByTimeAsync(29_000)
+      await vi.advanceTimersByTimeAsync(299_000)
       runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
       runtime.noteRealtimeActivity('user_turn', sessionId)
-      await vi.advanceTimersByTimeAsync(90_000)
+      await vi.advanceTimersByTimeAsync(390_000)
       expect(runtime.snapshot().lifecycle).toBe('active')
       expect(operations).toEqual(['start'])
       runtime.noteRealtimeActivity('assistant_playback', 'stale-session')
-      await vi.advanceTimersByTimeAsync(31_000)
+      await vi.advanceTimersByTimeAsync(301_000)
       expect(operations).toEqual(['start'])
       runtime.noteRealtimeActivity('assistant_playback', sessionId)
-      await vi.advanceTimersByTimeAsync(29_999)
+      await vi.advanceTimersByTimeAsync(299_999)
       expect(operations).toEqual(['start'])
       await vi.advanceTimersByTimeAsync(1)
       expect(operations).toEqual(['start', 'stop'])
@@ -148,7 +148,7 @@ describe('BootRuntime configured model availability probe', () => {
       await startRuntime(runtime)
       runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
       runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
-      await vi.advanceTimersByTimeAsync(30_000)
+      await vi.advanceTimersByTimeAsync(300_000)
       expect(operations).toEqual(['start', 'stop', 'start', 'stop'])
     } finally {
       await runtime.shutdown()
@@ -156,7 +156,39 @@ describe('BootRuntime configured model availability probe', () => {
     }
   })
 
-  it('owns one resettable 30-second Developer Mode idle timer and dispatches idle stop', async () => {
+  it('holds idle for scenes and overlapping speech, ignores stale finishes, and resumes the full interval', async () => {
+    vi.useFakeTimers()
+    const runtime = createTestRuntime({ scheduleRealtimeTimer: (fn, ms) => setTimeout(fn, ms),
+      cancelRealtimeTimer: handle => clearTimeout(handle as ReturnType<typeof setTimeout>) })
+    try {
+      await startRuntime(runtime)
+      runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+      const session = runtime.snapshot().realtimeSessionId!
+      await vi.advanceTimersByTimeAsync(299_000)
+      runtime.noteSceneActivity('started', 'scene-a')
+      runtime.noteRealtimeActivity('user_turn', session)
+      runtime.noteRealtimeActivity('assistant_playback_started', session)
+      runtime.noteRealtimeActivity('assistant_playback', session)
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteSceneActivity('started', 'scene-b')
+      runtime.noteSceneActivity('finished', 'scene-a')
+      runtime.noteSceneActivity('finished', 'stale-run')
+      await vi.advanceTimersByTimeAsync(301_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteRealtimeActivity('assistant_playback_started', session)
+      runtime.noteSceneActivity('finished', 'scene-b')
+      await vi.advanceTimersByTimeAsync(301_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteRealtimeActivity('assistant_playback', session)
+      await vi.advanceTimersByTimeAsync(299_999)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(runtime.snapshot().lifecycle).toBe('suspending')
+    } finally { await runtime.shutdown(); vi.useRealTimers() }
+  })
+
+  it('owns one resettable configured 300-second Developer Mode idle timer and dispatches idle stop', async () => {
     const timers = new Map<number, { callback: () => void; delayMs: number }>()
     let nextHandle = 0
     const cancelled: number[] = []
@@ -180,11 +212,11 @@ describe('BootRuntime configured model availability probe', () => {
     await runtime.ready
     await runtime.manualStart()
     runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
-    const firstIdle = [...timers.entries()].find(([, timer]) => timer.delayMs === 30_000)
+    const firstIdle = [...timers.entries()].find(([, timer]) => timer.delayMs === 300_000)
     expect(firstIdle).toBeDefined()
 
     runtime.noteRealtimeActivity('user_turn')
-    const activeIdleTimers = [...timers.entries()].filter(([, timer]) => timer.delayMs === 30_000)
+    const activeIdleTimers = [...timers.entries()].filter(([, timer]) => timer.delayMs === 300_000)
     expect(activeIdleTimers).toHaveLength(1)
     expect(cancelled).toContain(firstIdle?.[0])
 

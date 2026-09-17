@@ -292,6 +292,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
+        waitForOutputTail: async () => { await outputs.get(audioElement)?.waitForTail?.() },
         onAudioActivity: activity => {
           const output = outputs.get(audioElement)
           const notify = input.onAudioActivity ?? (() => undefined)

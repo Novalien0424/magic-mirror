@@ -42,6 +42,7 @@ export type ConsoleErrorCode =
   | 'console_lifecycle_action_failed'
 
 export type ConsoleReason =
+  | 'cause=scene_test_aborted'
   | 'cause=avatar_switch_requires_dormant'
   | 'cause=avatar_draft_unsaved'
   | 'cause=developer_mode_disabled'
@@ -335,7 +336,15 @@ export interface ConsoleRuntimeSnapshotResult {
   readonly reason: 'cause=next_snapshot_created' | 'cause=developer_mode_disabled' | 'cause=refresh_failed'
 }
 
+export interface ConsoleWakeTuningDefaults {
+  readonly packageId: string
+  readonly threshold: number
+  readonly score: number
+  readonly numTrailingBlanks: number
+}
+
 export interface ConsoleConfigPayload {
+  readonly wakeTuningDefaults?: ConsoleWakeTuningDefaults | null
   readonly active: ConsoleConfigSafeView
   readonly draft: ConsoleConfigSafeView
   readonly previous: ConsoleConfigSafeView

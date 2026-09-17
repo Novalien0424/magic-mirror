@@ -1,3 +1,4 @@
+import { runPromptInspectorQa } from './prompt-inspector-qa'
 import { dialog } from 'electron'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -43,6 +44,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
   if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
   if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)
+  const videoFades = process.env['MIRROR_VIDEO_FADE_QA'] === '1'
   let checkCount = 0
   let screenshotCount = 0
   let step = 'console_ready'
@@ -74,18 +76,18 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   }
   const save = async (): Promise<void> => {
     await edit("click(button('Save all changes'))")
-    await wait("return status() === 'Draft saved.' || status() === 'Operation completed.'")
-    await wait("return !button('Save all changes').disabled && !button('Check saved changes').disabled")
+    await wait("return status() === 'Saved and checked. Ready to publish.'")
+    await wait("return !button('Save all changes').disabled")
   }
   const testAndPublish = async (): Promise<void> => {
     // Failure text can render before the async refresh clears busy. Observe
     // readiness instead of assuming the previous edit's 50 ms is sufficient.
-    await wait("return !!button('Check saved changes') && !button('Check saved changes').disabled", 'console_test_ready')
-    await edit("click(button('Check saved changes'))")
+    await wait("return !!button('Save all changes') && !button('Save all changes').disabled", 'console_test_ready')
+    await edit("click(button('Save all changes'))")
     await wait("return !button('Publish all changes').disabled")
     await edit("click(button('Publish all changes'))")
     await edit("click(button('Confirm publish'))")
-    await wait("return !button('Save all changes').disabled && !button('Check saved changes').disabled && button('Publish all changes').disabled")
+    await wait("return !button('Save all changes').disabled && button('Publish all changes').disabled")
   }
   const picker = dialog.showOpenDialog
   let selection: string | string[] | null = null
@@ -123,8 +125,18 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === 1`)
     }
     if (process.env['MIRROR_AUDIO_VOLUME_QA'] === '1') {
-      return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0,
-        screenshotCount, musicAnalyser: 'not_executed', consoleCheckCount: checkCount }
+    step = 'console_manual_avatar_abort'
+    await edit("const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Avatar motions, expressions and test tools');d.open=true")
+    const avatarTests=await evaluate<string[]>("const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Avatar motions, expressions and test tools');return [...d.querySelectorAll('button')].filter(b=>!b.disabled&&!/^Stop|^Clear/.test(b.textContent)).map(b=>b.textContent.trim())")
+    for (const name of avatarTests) {
+      await edit(`click(button(${JSON.stringify(name)},document))`)
+      await edit("click(button('Stop avatar tests',document))")
+      await wait("const r=await window.magicMirror.getAvatarRuntime();return r.ok&&r.value.reason==='avatar_tests_stopped'")
+    }
+    if (!avatarTests.includes('Play recorded AI') || !avatarTests.includes('Play music'))throw Error('manual_avatar_tests_missing')
+    passed()
+    await screenshot('console-avatar-tests-stopped.png')
+    return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0, screenshotCount, musicAnalyser: 'not_executed', consoleCheckCount: checkCount }
     }
     await wait("return !!button('Avatars', document)")
     await edit("click(button('Avatars', document))")
@@ -148,7 +160,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     passed()
 
     step = 'console_import_finite'
-    selection = join(process.cwd(), 'resources', 'phase4-trial-assets', 'phase4-finite-silent.webm')
+    selection = join(process.cwd(), 'resources', 'phase4-trial-assets', videoFades ? 'phase4-finite-embedded-audio.webm' : 'phase4-finite-silent.webm')
     await edit("click(button('Browse & upload media…'))")
     await wait("return fieldset('Managed visuals').querySelectorAll('li').length === 1")
     await wait("return fieldset('Managed visuals').textContent.includes('360×640')")
@@ -197,6 +209,11 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Browse & upload image / video…'))")
     await wait("return status().includes('Selected in this action.') && control('Asset', action()).value !== ''")
     await edit("set(control('Name', action()), 'Magic Vision visual')")
+    if (videoFades) {
+      await edit("set(control('Audio', action()),'embedded')")
+      await edit("set(document.querySelector('[aria-label=\"Visual fade in milliseconds\"]'),800)")
+      await edit("set(document.querySelector('[aria-label=\"Visual fade out milliseconds\"]'),800)")
+    }
     await edit("set(control('Ends when', stage()), 'video_complete')")
     await wait("return control('Step name', stage()).value === 'Vision' && control('Completion video', stage()).value !== ''")
     await save()
@@ -234,15 +251,49 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await save()
       passed()
     }
+    if (!input.editorOnly && !videoFades) {
+      for (const name of ['Test action', 'Test step', 'Test scene']) {
+        step = 'console_abort_' + name.replaceAll(' ', '_')
+        await evaluate(`click(button(${JSON.stringify(name)})); await new Promise(r=>setTimeout(r,0));
+          const abort=button('Abort scene test'); if(abort.matches(':disabled')) throw Error('scene_abort_disabled'); click(abort);`)
+        await wait("return !button('Save all changes').disabled")
+        await new Promise(r=>setTimeout(r,350))
+        if (await input.mirror.webContents.executeJavaScript("!!document.querySelector('.scene-visual video')")) throw Error('scene_started_after_abort')
+        await edit(`click(button(${JSON.stringify(name)}))`)
+        const playingDeadline = Date.now() + 10000
+        let playing = false
+        while (Date.now() < playingDeadline) {
+          playing = await input.mirror.webContents.executeJavaScript("(()=>{const v=document.querySelector('.scene-visual video');return !!v && !v.paused && v.currentTime>0})()")
+          if (playing) break
+          await new Promise(r=>setTimeout(r,50))
+        }
+        if (!playing) throw Error('scene_restart_did_not_play')
+        await edit("click(button('Abort scene test'))")
+        await wait("return !button('Save all changes').disabled")
+        passed()
+      }
+      await screenshot('console-scene-abort.png')
+    }
     step = 'console_publish_finite'
     await testAndPublish()
     await wait(`const r = await window.magicMirror.getConfig();
       return r.ok && r.value.active.scenes[0]?.name === 'Magic Vision';`)
+    if (videoFades) {
+      await wait(`const r=await window.magicMirror.getConfig();return r.ok && r.value.active.sceneActions[0].fadeInMs===800 && r.value.active.sceneActions[0].fadeOutMs===800`)
+    }
     await screenshot('console-magic-vision.png')
     passed()
 
     step = 'console_run_finite'
     if (!input.editorOnly) {
+      if (videoFades) await input.mirror.webContents.executeJavaScript(`(()=>{
+        const q=window.__fadeQa={samples:[]};const connect=AudioNode.prototype.connect;
+        AudioNode.prototype.connect=function(...args){if(this instanceof MediaElementAudioSourceNode && this.mediaElement instanceof HTMLVideoElement && args[0] instanceof GainNode)q.gain=args[0].gain;return connect.apply(this,args)};
+        q.timer=setInterval(()=>{
+          const v=document.querySelector('.scene-visual video');
+          if(v)q.samples.push({time:v.currentTime,opacity:Number(getComputedStyle(v).opacity),gain:q.gain?.value});
+        },20);
+      })()`)
       await edit("click(button('Run Published Scene', scene()))")
       const mirrorWait = async (source: string): Promise<void> => {
         const deadline = Date.now() + 10_000
@@ -257,8 +308,19 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait("return status().includes(': completed.')")
       await mirrorWait("!document.querySelector('.scene-visual video')")
       await screenshot('console-finite-return.png', true)
+      if (videoFades) {
+        const measured = await input.mirror.webContents.executeJavaScript(`(()=>{const q=window.__fadeQa;clearInterval(q.timer);
+          return {fadeIn:q.samples.some(s=>s.time<0.8&&s.opacity>0.05&&s.opacity<0.95),
+          fadeOut:q.samples.some(s=>s.time>1.5&&s.opacity>0.05&&s.opacity<0.95),
+          audioIn:q.samples.some(s=>s.time<0.8&&s.gain>0.02&&s.gain<0.48),
+          audioOut:q.samples.some(s=>s.time>1.5&&s.gain>0.02&&s.gain<0.48),samples:q.samples.length};})()`)
+        input.onEvidence({step:'video_fade_render_samples',status:'measured',item:JSON.stringify(measured)})
+        if (!measured.fadeIn || !measured.fadeOut || !measured.audioIn || !measured.audioOut) throw new Error('phase4_qa_video_fade_not_rendered')
+      }
       passed()
     } else input.onEvidence({ step, status: 'not_executed' })
+
+    if (videoFades) return {motionCount:0,expressionCount:0,sceneCount:1,visualCount:1,screenshotCount,musicAnalyser:'not_executed',consoleCheckCount:checkCount}
 
     step = 'console_invalid_draft_preserved'
     await edit("set(control('Scene name', scene()), 'Unsaved correction')")
@@ -277,10 +339,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     step = 'console_unsaved_publish_blocked'
     await edit("set(control('Scene name', scene()), 'Ready to check')")
     await save()
-    await edit("click(button('Check saved changes'))")
+    await edit("click(button('Save all changes'))")
     await wait("return !button('Publish all changes').disabled")
     await edit("set(control('Scene name', scene()), 'Unpublished title')")
-    await wait("return button('Publish all changes').disabled && button('Check saved changes').disabled")
+    await wait("return button('Publish all changes').disabled")
     await edit("click(button('Stop All'))")
     await wait("return control('Scene name', scene()).value === 'Unpublished title'")
     await edit("set(control('Scene name', scene()), 'Magic Vision')")
@@ -355,7 +417,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     step = 'console_asset_changed_before_publish'
     await edit("set(control('Scene name', scene()), 'Magic Vision media check')")
     await save()
-    await edit("click(button('Check saved changes'))")
+    await edit("click(button('Save all changes'))")
     await wait("return !button('Publish all changes').disabled")
     const config = await input.runtime.console.getConfig()
     if (!config.ok || !config.value.draft.visualAssets[0]) throw new Error('phase4_qa_console_asset_missing')
@@ -369,8 +431,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Confirm publish'))")
       await wait("return status().includes('console_config_test_failed')")
       await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.configVersion === ${activeVersion};`)
-      await edit("click(button('Check saved changes'))")
-      await wait("return (status().includes('Draft media test failed') || status().includes('Draft test failed')) && button('Publish all changes').disabled")
+      await edit("click(button('Save all changes'))")
+      await wait("return (status().includes('failed') || status().includes('Cannot save')) && button('Publish all changes').disabled")
     } finally {
       await writeFile(assetPath, original)
     }
@@ -391,6 +453,13 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return panel.querySelector('.presentation').dataset.phase === 'asleep'")
     if (input.runtime.snapshot().lifecycle !== beforePreview) throw new Error('phase4_qa_preview_changed_lifecycle')
     await screenshot('console-presentation-asleep.png')
+    for (const name of ['Preview entrance', 'Preview exit', 'Preview full cycle']) {
+      await edit(`click(button(${JSON.stringify(name)}))`)
+      await evaluate("click(button('Save all changes')); const stop=button('Stop preview'); if(stop.matches(':disabled')) throw Error('presentation_stop_disabled'); click(stop)")
+      await wait("return !panel.querySelector('.presentation') && !button('Save all changes').disabled")
+      passed()
+    }
+    await screenshot('console-presentation-stopped.png')
     await save()
     await testAndPublish()
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok
@@ -478,6 +547,9 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("const img = fieldset('Managed visuals').querySelector('img'); return img?.complete && img.naturalWidth > 0")
     await wait("return fieldset('Managed visuals').querySelectorAll('li').length === 2 && fieldset('Managed music').querySelectorAll('li').length === 2")
     await screenshot('console-media-batch.png')
+    await evaluate("const play=fieldset('Managed music').querySelector('button');click(play);await new Promise(r=>setTimeout(r,0));const stop=fieldset('Managed music').querySelector('button');if(stop.matches(':disabled')||!stop.textContent.includes('Stop'))throw Error('media_abort_disabled');click(stop)")
+    await wait("return !panel.querySelector('[data-library-audio]')")
+    passed()
     await edit("click([...fieldset('Managed music').querySelectorAll('button')].at(-1))")
     await wait("const audio = panel.querySelector('[data-library-audio]'); return audio && !audio.paused && audio.currentTime > 0")
     await edit("click(fieldset('Managed music').querySelector('button'))")
@@ -525,9 +597,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.avatars.length === 2 && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
     await edit("click(button('Use on Mirror'))")
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(guideAvatar)} && r.value.active.voice === 'cedar'`)
-    await edit("click(panel.querySelector('.avatar-prompt summary'))")
-    await wait("return panel.querySelector('[aria-label=\"Effective realtime prompt\"]').textContent.includes('A patient museum guide.')")
-    await screenshot('console-avatar-prompt.png')
+    await runPromptInspectorQa(input, 'A patient museum guide.', 'console')
     passed()
 
     step = 'console_cubism_bundle_import_preview'
@@ -617,7 +687,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         for (const page of ['Mirror', 'Avatars', 'System']) {
           await edit(`click(button(${JSON.stringify(page)}, document))`)
           const metrics = await evaluate<{ overflow: boolean; font: number; smallControls: number; smallText: number; lowContrast: number }>(`
-            const visible = el => el.getBoundingClientRect().height > 0 && !el.closest('details:not([open]),.console__sr-only');
+            const visible = el => el.getBoundingClientRect().height > 0 && !el.closest('details:not([open]),.console__sr-only,[aria-hidden="true"]');
             const rgb = value => (value.match(/[0-9.]+/g) || []).map(Number);
             const luminance = c => c.slice(0,3).map(v => v/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4)
               .reduce((sum,v,i) => sum + v*[.2126,.7152,.0722][i], 0);

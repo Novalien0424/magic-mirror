@@ -85,6 +85,9 @@ export type VisualAssetProbe =
       audioTrack: 'present' | 'absent' | 'unknown';
     }>;
 
+/** Maximum authorable visual fade duration. Zero keeps legacy immediate behavior. */
+export const VISUAL_FADE_MAX_MS = 10_000;
+
 export type PhysicalSceneActionDefinition<K extends 'lighting' | 'fog'> =
   | (SceneActionBase & {
       kind: K;
@@ -106,6 +109,8 @@ export type SceneActionDefinition =
       playback: 'still' | 'once' | 'loop';
       audio: 'muted' | 'embedded';
       gain: number;
+      fadeInMs?: number;
+      fadeOutMs?: number;
     })
   | (SceneActionBase & { kind: 'avatar_dialogue'; text: string })
   | (SceneActionBase & { kind: 'avatar_motion'; motionGroup: string })

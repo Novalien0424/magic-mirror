@@ -9,6 +9,7 @@ Runtime model/voice IDs come from versioned config and frozen session/job snapsh
 
 | Boundary | Read |
 |---|---|
+| Structured tool registry, prompt inspector or spoken controls | [Prompts and structured controls](references/prompt-controls.md) |
 | Session construction, ephemeral credentials, transcript events or privacy flags | [SDK/session](references/sdk-session.md) |
 | Barge-in, output completion, mic handoff, noisy-room tuning, rollover or profile change | [playback/lifecycle](references/playback-lifecycle.md) |
 | Responses memory extractor | [memory extraction](references/memory-extraction.md) |

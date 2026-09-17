@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import type { MirrorConfig } from '../../shared/types'
+import { compileWakePhrase } from './custom-keywords'
 
 const safeId = z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/)
 const artifactFile = z.string().trim().min(1).max(160).refine((value) => {
@@ -59,6 +60,9 @@ export type WakeModelPackageReason =
   | 'wake_package_platform_mismatch'
   | 'wake_package_artifact_missing'
   | 'wake_package_hash_mismatch'
+  | 'wake_phrase_unsupported'
+  | 'wake_phrase_token_unavailable'
+  | 'wake_keywords_write_failed'
 
 export type WakeModelPackageValidation =
   | { readonly ok: true; readonly manifest: Readonly<WakeModelPackageManifest> }
@@ -110,10 +114,30 @@ function remainsInside(root: string, target: string): boolean {
   return pathFromRoot !== '..' && !pathFromRoot.startsWith('../') && !isAbsolute(pathFromRoot)
 }
 
+const numericDirective = /^[+\-]?(?:\d+(?:\.\d*)?|\.\d+)$/u
+
+/**
+ * Retain verified keyword phonemes and labels while removing inline boost and
+ * threshold directives that would override worker-level tuning.
+ */
+export function stripInlineKeywordTuning(contents: string): string {
+  const lines = contents.split(/\r?\n/u).map(line => {
+    const tokens = line.trim().split(/\s+/u).filter(token => {
+      if (token.length < 2 || (token[0] !== ':' && token[0] !== '#')) return true
+      return !numericDirective.test(token.slice(1))
+    })
+    return tokens.join(' ')
+  }).filter(Boolean)
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`
+}
+
 export async function loadWakeModelPackage(input: {
   readonly rootDirectory: string
   readonly wake: MirrorConfig['wake']
   readonly platform: string
+  readonly customKeywordsDirectory?: string
+  /** Derive a clean keyword line when runtime overrides must beat inline defaults. */
+  readonly forceCustomKeywords?: boolean
 }): Promise<LoadedWakeModelPackage> {
   if (!safeId.safeParse(input.wake.packageId).success) return failure('wake_package_reference_mismatch')
   const rootDirectory = resolve(input.rootDirectory)
@@ -142,8 +166,32 @@ export async function loadWakeModelPackage(input: {
     }
   }
 
-  const validation = validateWakeModelPackage({ ...input, manifest: manifestValue, artifacts })
+  // Verify the original package completely before deriving a phrase-specific
+  // keyword file. Customization never changes model files or package tuning.
+  const validation = validateWakeModelPackage({ ...input,
+    wake: input.customKeywordsDirectory ? { ...input.wake, phrase: parsed.data.phrase } : input.wake,
+    manifest: manifestValue, artifacts })
   if (!validation.ok) return validation
+  if (input.customKeywordsDirectory && (
+    input.forceCustomKeywords === true || input.wake.phrase !== validation.manifest.phrase
+  )) {
+    try {
+      const tokenFile = artifactPaths.get('tokens')
+      if (!tokenFile) return failure('wake_package_artifact_missing')
+      const encoded = input.wake.phrase === validation.manifest.phrase
+        ? stripInlineKeywordTuning(await readFile(artifactPaths.get('keywords')!, 'utf8'))
+        : compileWakePhrase(input.wake.phrase, await readFile(tokenFile, 'utf8'))
+      const hash = createHash('sha256').update(input.wake.packageId).update(encoded).digest('hex')
+      const file = resolve(input.customKeywordsDirectory, `${hash}.txt`)
+      await mkdir(input.customKeywordsDirectory, { recursive: true })
+      await writeFile(file, encoded, 'utf8')
+      artifactPaths.set('keywords', file)
+    } catch (error) {
+      const code = error instanceof Error ? error.message : ''
+      return failure(code === 'wake_phrase_unsupported' || code === 'wake_phrase_token_unavailable'
+        ? code : 'wake_keywords_write_failed')
+    }
+  }
   return Object.freeze({
     ok: true,
     manifest: validation.manifest,

@@ -301,6 +301,7 @@ function makeMemoryHarness(options: MemoryHarnessOptions = {}): MemoryHarness {
   })
 
   const service: ConfigService = {
+    deleteAvatar: id => rawService.deleteAvatar(id),
     initialize: () => rawService.initialize(),
     read: () => rawService.read(),
     saveDraft: async (candidate) => {
@@ -780,6 +781,23 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expect(validationCalls).toBe(2)
     expect(harness.metrics.publishCalls).toBe(0)
     expect(await activeRevision(harness)).toBe(7)
+  })
+
+  it('validates an inactive avatar custom wake phrase and preserves independent sleep commands on publish', async () => {
+    const phrases: string[] = []
+    const harness = makeController({ validateWakeConfig: wake => { phrases.push(wake.phrase); return true } })
+    const catalog = avatarCatalogFor(harness.initialSlots.draft)
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars[0].sleepPhrase = '晚安小蓮'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'second', name: 'Second',
+      wakePhrase: '你好小蓮', sleepPhrase: '休息吧' })
+    expect((await harness.controller.saveDraft({ ...safeDraftInput(harness.initialSlots.draft), avatarCatalog: catalog })).ok).toBe(true)
+    expect(await harness.controller.testDraft()).toMatchObject({ ok: true, value: { result: 'mock_passed' } })
+    expect(phrases).toContain('你好小蓮')
+    expect((await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish')))).ok).toBe(true)
+    const avatars = (await harness.service.read()).active.avatarCatalog!.avatars
+    expect(avatars.map(a => a.sleepPhrase)).toEqual(['晚安小蓮', '休息吧'])
+    expect(avatars[1].wakePhrase).toBe('你好小蓮')
   })
 
   it('does not let an unchanged unavailable wake package gate unrelated Draft changes', async () => {

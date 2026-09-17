@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
-import { canUseAvatarAction, canUseAvatarResource } from '../shared/avatar-profiles'
+import { canUseAvatarAction, canUseAvatarResource, type WakeRuntimeConfig } from '../shared/avatar-profiles'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -242,12 +242,14 @@ export interface BootOptions {
     command: RealtimeRuntimeCommand,
   ) => RealtimeRuntimeCommandDispatchResult
   readonly wakeMicrophoneHandoff?: WakeMicrophoneHandoff
+  readonly onWakeConfigChanged?: (wake: Readonly<MirrorConfig['wake']>) => Promise<void>
   readonly scheduleRealtimeTimer?: (callback: () => void, delayMs: number) => unknown
   readonly cancelRealtimeTimer?: (handle: unknown) => void
   /** Main-only deterministic seams consumed by the Phase 0 demo runner. */
   readonly activationFailureAfterWake?: boolean
   readonly completeSleepForDemo?: boolean
   readonly validateWakeConfig?: ConsoleConfigControllerOptions['validateWakeConfig']
+  readonly getWakeTuningDefaults?: ConsoleConfigControllerOptions['getWakeTuningDefaults']
   readonly validateSceneAssets?: ConsoleConfigControllerOptions['validateSceneAssets']
   readonly mockDraftProbe?: ConsoleConfigControllerOptions['mockDraftProbe']
   readonly now?: () => string
@@ -277,7 +279,7 @@ export interface BootRuntime {
   /** Main-only live-smoke provenance seam; never exposed through renderer IPC. */
   getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>>
   /** Main-only active wake pin; never exposed through renderer IPC. */
-  getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>>
+  getPublishedWakeConfigForRuntime(): Promise<Readonly<WakeRuntimeConfig>>
   /** Main-owned published Phase 4 catalog; transcript text never enters this boundary. */
   getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
     MirrorConfig,
@@ -300,6 +302,7 @@ export interface BootRuntime {
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
   requestSleep(): Promise<Record<string, unknown>>
+  noteSceneActivity(kind: 'started' | 'finished', runId: string): void
   noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback' | 'assistant_playback_started', sessionId?: string): void
   rolloverAtSafeBoundary(): Promise<Record<string, unknown>>
   handleSimulator(command: unknown): Promise<SimulatorResult>
@@ -867,6 +870,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let realtimeIdleTimerOwned = false
   let realtimeIdleTimerToken = 0
   let realtimePlaybackSessionId: string | null = null
+  const realtimeSceneRuns = new Set<string>()
   let activeIdleSeconds = 300
   let recoveryProbeCycle: RecoveryProbeCycle | null = null
   let recoveryProbeCycleToken = 0
@@ -1016,12 +1020,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function configuredIdleSeconds(): number {
-    return developerMode.enabled ? Math.min(activeIdleSeconds, 30) : activeIdleSeconds
+    return activeIdleSeconds
   }
 
   function armRealtimeIdleTimer(reason: string): void {
     cancelRealtimeIdleTimer()
-    if (lifecycleState() !== 'active' || realtimePlaybackSessionId !== null) return
+    if (lifecycleState() !== 'active' || realtimePlaybackSessionId !== null || realtimeSceneRuns.size > 0) return
     const token = realtimeIdleTimerToken + 1
     realtimeIdleTimerToken = token
     realtimeIdleTimerOwned = true
@@ -1044,6 +1048,17 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         module: 'app', event: 'idle_timer', status: 'failed',
         reason: 'cause=timer_schedule_failed', source: 'runtime',
       })
+    }
+  }
+
+  function noteSceneActivity(kind: 'started' | 'finished', runId: string): void {
+    if (kind === 'started') {
+      if (lifecycleState() !== 'active' && lifecycleState() !== 'activating') return
+      realtimeSceneRuns.add(runId)
+      cancelRealtimeIdleTimer()
+      emitMetadata(telemetry, { module: 'app', event: 'idle_timer', status: 'info', reason: 'paused=scene_playback', source: 'runtime' })
+    } else if (realtimeSceneRuns.delete(runId)) {
+      armRealtimeIdleTimer('scene_finished')
     }
   }
 
@@ -1148,6 +1163,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       || event.type === 'IDLE_TIMEOUT'
     if (clearsPendingIdentity) pendingRealtimeSessionIdentity = null
     if (clearsRollover) {
+      realtimeSceneRuns.clear()
       realtimePlaybackSessionId = null
       pendingRealtimeRolloverSessionIdentity = null
       cancelRealtimeRolloverTimer()
@@ -1735,6 +1751,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     lastRealtimeRuntimeOutcomeReason = null
     pendingRealtimeRolloverSessionIdentity = null
     realtimePlaybackSessionId = null
+    realtimeSceneRuns.clear()
     cancelRecoveryProbeCycle()
     cancelRealtimeRolloverTimer()
     cancelRealtimeIdleTimer()
@@ -1976,7 +1993,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return createSessionModelSnapshot(activeModelSettings, nowValue(now))
   }
 
-  async function getPublishedWakeConfigForRuntime(): Promise<Readonly<MirrorConfig['wake']>> {
+  async function getPublishedWakeConfigForRuntime(): Promise<Readonly<WakeRuntimeConfig>> {
     await ready
     const slots = await configService?.read()
     const wake = readProperty(readProperty(slots, 'active'), 'wake')
@@ -1988,7 +2005,19 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       || typeof modelVersion !== 'string'
       || typeof packageId !== 'string'
     ) throw new Error('wake_config_unavailable')
-    return Object.freeze({ phrase, modelVersion, packageId })
+    const activeAvatar = readProperty(readProperty(slots, 'active'), 'avatarCatalog')
+    const activeAvatarId = readProperty(activeAvatar, 'activeAvatarId')
+    const avatars = readProperty(activeAvatar, 'avatars')
+    const active = Array.isArray(avatars)
+      ? avatars.find((avatar) => readProperty(avatar, 'id') === activeAvatarId)
+      : undefined
+    const tuning = readProperty(active, 'wakeTuning')
+    return Object.freeze({
+      phrase,
+      modelVersion,
+      packageId,
+      ...(tuning && typeof tuning === 'object' ? { tuning: structuredClone(tuning) as WakeRuntimeConfig['tuning'] } : {}),
+    })
   }
 
   async function getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
@@ -2535,6 +2564,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       configVersion = activeVersion
       resolvedModelSettings = resolution
       publishedAvatarSettings = slots.active?.persona ? avatarSessionSettings(slots.active) : undefined
+      // Publishing/loading an avatar changes the local keyword listener too.
+      // A wake-only failure is reported by Main and must not invalidate voice.
+      if (options.onWakeConfigChanged && slots.active?.wake) {
+        try { await options.onWakeConfigChanged(slots.active.wake) }
+        catch { await setWakeRuntimeStatus('degraded', 'wake_config_refresh_failed') }
+      }
       const configuredIdle = readProperty(readProperty(slots, 'active'), 'idleSeconds')
       if (typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle > 0) {
         activeIdleSeconds = configuredIdle
@@ -2561,6 +2596,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     emit: (event) => emitMetadata(telemetry, event),
     now: () => nowValue(now),
     validateWakeConfig: options.validateWakeConfig,
+    getWakeTuningDefaults: options.getWakeTuningDefaults,
     validateSceneAssets: options.validateSceneAssets,
     mockDraftProbe: options.mockDraftProbe,
   })
@@ -2603,6 +2639,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     manualStop,
     requestSleep,
     noteRealtimeActivity,
+    noteSceneActivity,
     rolloverAtSafeBoundary,
     subscribe(listener) {
       listeners.add(listener)

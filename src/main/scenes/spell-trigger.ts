@@ -98,7 +98,10 @@ export function normalizeTranscript(
     options,
   );
 
-  return equivalenceNormalized.replace(UNICODE_PUNCTUATION, "").trim();
+  return equivalenceNormalized.replace(UNICODE_PUNCTUATION, "")
+    .replace(/(\p{Script=Han})\s+(?=\p{Script=Han})/gu, '$1').trim()
+    // One explicit script equivalence for the fixed command prefix, not fuzzy intent matching.
+    .replace(/^施放咒语/u, '施放咒語');
 }
 
 function normalizedSpellPhrase(

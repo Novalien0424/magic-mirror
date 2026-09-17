@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { z } from 'zod'
 
 import { evaluateWakeCorpus, type WakeCorpusSample } from './corpus-evaluator'
 import { createConfiguredSherpaDetector } from './sherpa-detector'
 import { loadWakeModelPackage } from './model-package'
-import type { WakeWorkerPackage } from './protocol'
+import { createWakeWorkerPackage, wakeTuningIsActive } from './runtime-config'
+import { validSpokenPhrase } from '../../shared/avatar-commands'
+import type { WakeRuntimeConfig } from '../../shared/avatar-profiles'
 import { resolveWakeRuntimePlatform } from './runtime-platform'
 
 function argumentsFor(name: string): string[] {
@@ -55,6 +58,16 @@ async function main(): Promise<void> {
   const corpusPath = argumentsFor('corpus')[0]
   const packageIds = argumentsFor('package')
   const outputPath = argumentsFor('output')[0]
+  const phraseOverride = argumentsFor('phrase')[0]
+  if (phraseOverride !== undefined && !validSpokenPhrase(phraseOverride)) throw new Error('wake_phrase_unsupported')
+  const tuningInput = {
+    threshold: argumentsFor('threshold')[0], score: argumentsFor('score')[0], numTrailingBlanks: argumentsFor('trailing-blanks')[0],
+  }
+  const parsedTuning = z.object({ threshold: z.coerce.number().finite().min(0).max(1).optional(),
+    score: z.coerce.number().finite().positive().max(100).optional(),
+    numTrailingBlanks: z.coerce.number().int().min(1).max(100).optional() }).safeParse(tuningInput)
+  if (!parsedTuning.success) throw new Error('wake_evaluation_tuning_invalid')
+  const hasOverrides = Object.values(tuningInput).some(value => value !== undefined)
   if (corpusPath === undefined || packageIds.length < 1) throw new Error('wake_evaluation_arguments_invalid')
 
   const corpusFile = resolve(corpusPath)
@@ -75,34 +88,29 @@ async function main(): Promise<void> {
       || (category !== 'positive' && category !== 'hard_negative' && category !== 'background')
       || typeof file !== 'string' || file.includes('..')
     ) throw new Error('wake_corpus_manifest_invalid')
-    samples.push({ id, category, pcm: pcm16Mono16k(await readFile(resolve(dirname(corpusFile), file))) })
+    const keywordEndMs = record['keywordEndMs']
+    if (keywordEndMs !== undefined && typeof keywordEndMs !== 'number') throw new Error('wake_corpus_annotation_invalid')
+    samples.push({ id, category, pcm: pcm16Mono16k(await readFile(resolve(dirname(corpusFile), file))),
+      ...(keywordEndMs === undefined ? {} : { keywordEndMs }) })
   }
 
   const modelRoot = resolve('resources', 'wake-models')
   const candidates = []
+  const evaluatedSettings: Array<{ packageId: string; phrase: string; tuning: unknown }> = []
   for (const packageId of packageIds) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(packageId)) throw new Error('wake_evaluation_arguments_invalid')
     const manifest = JSON.parse(await readFile(resolve(modelRoot, packageId, 'manifest.json'), 'utf8')) as Record<string, unknown>
     const phrase = manifest['phrase']
     const modelVersion = manifest['modelVersion']
     if (typeof phrase !== 'string' || typeof modelVersion !== 'string') throw new Error('wake_package_manifest_invalid')
-    const wake = { phrase, modelVersion, packageId }
-    const loaded = await loadWakeModelPackage({ rootDirectory: modelRoot, wake, platform: runtimePlatform })
+    const selectedPhrase = phraseOverride ?? phrase
+    const wake: WakeRuntimeConfig = { phrase: selectedPhrase, modelVersion, packageId,
+      ...(hasOverrides ? { tuning: { phrase: selectedPhrase, enabled: true, ...parsedTuning.data } } : {}) }
+    const loaded = await loadWakeModelPackage({ rootDirectory: modelRoot, wake, platform: runtimePlatform,
+      customKeywordsDirectory: resolve(dirname(corpusFile), '.wake-keywords'), forceCustomKeywords: wakeTuningIsActive(wake) })
     if (!loaded.ok) throw new Error(loaded.reason)
-    const tuning = loaded.manifest.tuning
-    const workerPackage: WakeWorkerPackage = {
-      packageId,
-      engine: loaded.manifest.engine,
-      engineVersion: loaded.manifest.engineVersion,
-      modelVersion: loaded.manifest.modelVersion,
-      phrase: loaded.manifest.phrase,
-      sampleRateHz: 16_000,
-      artifactPaths: Object.fromEntries(loaded.artifactPaths),
-      tuning: {
-        ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
-        ...(tuning.score === undefined ? {} : { score: tuning.score }),
-        ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
-      },
-    }
+    const workerPackage = createWakeWorkerPackage(loaded, wake)
+    evaluatedSettings.push({ packageId, phrase: selectedPhrase, tuning: workerPackage.tuning })
     candidates.push({
       packageId,
       createDetector: () => createConfiguredSherpaDetector(workerPackage),
@@ -114,6 +122,7 @@ async function main(): Promise<void> {
     ...aggregate,
     corpusResultId: createHash('sha256').update(JSON.stringify(aggregate)).digest('hex').slice(0, 24),
     platform: runtimePlatform,
+    evaluatedSettings,
   }
   const serialized = `${JSON.stringify(result, null, 2)}\n`
   if (outputPath !== undefined) await writeFile(resolve(outputPath), serialized, { encoding: 'utf8', flag: 'wx' })

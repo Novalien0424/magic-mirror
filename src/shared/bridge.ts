@@ -105,6 +105,7 @@ export const AVATAR_RUNTIME_STATES = [
 export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
+  | Readonly<{ type: 'stop_avatar_test' }>
   | Readonly<{ type: 'audio_devices'; preferences: import('./audio-devices').AudioPreferences }>
   | Readonly<{ type: 'refresh_audio_devices' }>
   | Readonly<{ type: 'state'; state: AvatarRuntimeState }>
@@ -138,6 +139,8 @@ export type AvatarControlCommand =
       playback: 'still' | 'once' | 'loop'
       audio: 'muted' | 'embedded'
       gain: number
+      fadeInMs?: number
+      fadeOutMs?: number
       context: SceneActionCommandContext
     }>
   | Readonly<{ type: 'scene_visual'; action: 'stop'; runId: string; sceneId: string }>
@@ -198,6 +201,7 @@ export interface ConsoleChannelMap {
   readonly saveModelDraft: 'console:save-model-draft'
   readonly saveDraft: 'console:save-draft'
   readonly loadAvatar: 'console:load-avatar'
+  readonly deleteAvatar: 'console:delete-avatar'
   readonly testDraft: 'console:test-draft'
   readonly publish: 'console:publish'
   readonly rollback: 'console:rollback'
@@ -253,8 +257,10 @@ export interface MirrorBridge extends SharedRendererBridge {
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
+  wakeCalibration?(command: import('./wake-calibration').WakeCalibrationCommand): Promise<ConsoleResponse<import('./wake-calibration').WakeCalibrationSnapshot>>
   acquireVoicePreview?(request: import('./voice-preview').VoicePreviewRequest): Promise<import('./voice-preview').VoicePreviewResult>
   releaseVoicePreview?(token: string): Promise<boolean>
+  cancelPendingVoicePreview?(): Promise<boolean>
   onVoicePreviewCancelled?(listener: (reason: string) => void): () => void
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
   startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
@@ -267,6 +273,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   saveModelDraft(input: ConsoleModelDraftInput): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  deleteAvatar?(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   importAvatarModel(): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel | null>>
   listAvatarModels(): Promise<ConsoleResponse<import('./avatar-library').AvatarLibrary>>
   saveAvatarModelLabel(request: import('./avatar-library').AvatarLibraryLabelRequest): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel>>

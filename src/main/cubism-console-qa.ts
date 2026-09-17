@@ -64,12 +64,16 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         await wait(`return !b('Refresh library').disabled && p.querySelector('select').selectedOptions[0].textContent.includes(${JSON.stringify(labelName + ' · v10')})`)
         step = `cubism_model_${modelIndex}_label_persisted`; pass()
       }
+      await evaluate("click('Load preview'); await new Promise(r=>setTimeout(r,0)); if(b('Stop / reset').matches(':disabled'))throw Error('cubism_abort_disabled');click('Stop / reset')")
+      await delay(500)
+      await wait("return !p.querySelector('canvas') && status()==='Stopped · neutral pose'")
+      step = `cubism_model_${modelIndex}_abort_load`; pass()
       await click('Load preview')
       await wait("return !b('Stop / reset').disabled && status().includes('Ready')")
       const inventory = await evaluate<{ motionButtons: string[]; expressionButtons: string[]; parameters: { id: string; min: number; max: number; value: number }[] }>(`return {
         motionButtons: [...p.querySelectorAll('button[aria-label^="Play motion"]')].map(e=>e.getAttribute('aria-label')),
         expressionButtons: [...p.querySelectorAll('button[aria-label^="Test expression"]')].map(e=>e.getAttribute('aria-label')),
-        parameters: [...p.querySelectorAll('input[type="range"]')].map(e=>({id:e.getAttribute('aria-label'),min:Number(e.min),max:Number(e.max),value:Number(e.value)})) };`)
+        parameters: [...p.querySelectorAll('input[type="range"]')].map(e=>({id:e.getAttribute('aria-label'),min:Number(e.min),max:Number(e.max),value:Number(e.dataset.defaultValue)})) };`)
       if (!inventory.motionButtons.length || !inventory.expressionButtons.length || !inventory.parameters.length) throw new Error('cubism_inventory_empty')
       if (modelIndex === 1 && !inventory.motionButtons.includes('Play motion Scene 2')) throw new Error('cubism_second_clip_missing')
       step = `cubism_model_${modelIndex}_loaded`; pass(); await snap(`cubism-${modelIndex}-neutral.png`)
@@ -83,12 +87,21 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         await click(name); await wait("return status().startsWith('Expression:')")
         await delay(120); pass(name); expressions++
       }
-      // Raven Waking is authored finite (3 seconds): prove preview survives two cycles.
+      // Finite performance profiles hold their endpoint; legacy clips repeat.
       if (modelIndex === 2 && inventory.motionButtons.includes('Play motion Waking 1')) {
-        step = 'cubism_preview_motion_loop'
+        const externalManifest = JSON.parse(await readFile(source!, 'utf8'))
+        const finitePerformance = externalManifest.MagicMirror?.Version === 1
+          && externalManifest.MagicMirror?.Performance === 'raven-calm-v1'
+        step = finitePerformance ? 'cubism_preview_motion_hold' : 'cubism_preview_motion_loop'
         await click('Play motion Waking 1'); await delay(6500)
-        await wait("return b('Play motion Waking 1').getAttribute('aria-pressed') === 'true' && status().includes('looping')")
-        pass(); await snap('cubism-raven-looping.png')
+        await wait("return b('Play motion Waking 1').getAttribute('aria-pressed') === 'true' && status().includes('playing / holding')")
+        if (finitePerformance) {
+          const pose = await evaluate<string>("return JSON.stringify([...p.querySelectorAll('output')].map(e=>e.textContent))")
+          await delay(3500)
+          const held = await evaluate<string>("return JSON.stringify([...p.querySelectorAll('output')].map(e=>e.textContent))")
+          if (pose !== held) throw new Error('cubism_finite_motion_pose_not_held')
+        }
+        pass(); await snap(finitePerformance ? 'cubism-raven-motion-held.png' : 'cubism-raven-looping.png')
         step = 'cubism_preview_expression_hold'
         const name = inventory.expressionButtons.at(-1)!
         await click(name); await delay(1500)
@@ -108,7 +121,13 @@ export async function runCubismConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
         step = `cubism_model_${modelIndex}_parameter`
         for (const [label, expected] of [['Min', parameter.min], ['Max', parameter.max], ['Default', parameter.value]] as const) {
           await click(`${parameter.id} ${label}`)
-          await wait(`return Math.abs(Number([...p.querySelectorAll('output')].find(e=>e.getAttribute('aria-label')===${JSON.stringify(parameter.id + ' observed')}).textContent)-(${expected}))<0.002`)
+          try {
+            await wait(`return Math.abs(Number([...p.querySelectorAll('output')].find(e=>e.getAttribute('aria-label')===${JSON.stringify(parameter.id + ' observed')}).textContent)-(${expected}))<0.002`)
+          } catch (error) {
+            const observed = await evaluate<string>(`return [...p.querySelectorAll('output')].find(e=>e.getAttribute('aria-label')===${JSON.stringify(parameter.id + ' observed')})?.textContent`)
+            input.onEvidence({step:'cubism_parameter_mismatch',status:'failed',item:`${parameter.id}_${label}_expected_${expected}_observed_${observed}`})
+            throw error
+          }
         }
         pass(parameter.id)
       }

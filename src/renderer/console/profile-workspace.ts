@@ -1,7 +1,9 @@
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
 import type { ConsoleConfigDraftInput, ConsoleConfigPayload } from '../../shared/console-types'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
+import { DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
 import { draftFingerprint } from './scene-editor-model'
 
 export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Spells & scenes'] as const
@@ -15,10 +17,11 @@ export function draftRefreshDecision(previous: ConsoleConfigDraftInput | null, i
 }
 
 export function newAvatar(id: string): AvatarProfile {
-  return { id, name: 'New avatar', personality: 'You are a friendly conversational companion.',
+  return { id, name: REALTIME_PROMPTS.authoring.newAvatarName, personality: REALTIME_PROMPTS.authoring.newAvatarPersonality,
     speakingStyle: '', voice: 'alloy', idleSeconds: 120, modelId: 'builtin-ren',
     presentation: { ...DEFAULT_PRESENTATION }, scenes: [], spells: [],
-    voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS } }
+    voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
+    wakePhrase: DEFAULT_WAKE_PHRASE, sleepPhrase: DEFAULT_SLEEP_PHRASE }
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -41,10 +44,10 @@ export function workspaceChanges(before: ConsoleConfigDraftInput, after: Console
 
 export function avatarActivationReason(payload: ConsoleConfigPayload | null, avatarId: string, dirty: boolean, lifecycle?: string): string {
   if (!payload) return 'Waiting for configuration.'
+  if (payload.active.avatarCatalog?.activeAvatarId === avatarId) return 'Already on the Mirror.'
   if (dirty) return 'Save all changes first.'
-  if (payload.publishDiff.changed.length) return 'Publish saved changes first. See the full scope below.'
+  if (payload.publishDiff.changed.length) return 'Open Avatars to review and publish saved changes first.'
   if (!payload.active.avatarCatalog?.avatars.some(a => a.id === avatarId)) return 'Publish this new avatar first.'
-  if (payload.active.avatarCatalog.activeAvatarId === avatarId) return 'Already on the Mirror.'
   if (lifecycle !== 'dormant') return 'End the conversation and wait for Dormant before switching avatars.'
   return ''
 }

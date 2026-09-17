@@ -1,45 +1,157 @@
-# Magic Mirror — Current handoff
+# Magic Mirror — structured Realtime tools, 2026-09-17
 
-## Clock-in and field-help delivery — 2026-09-14, Asia/Taipei
+## Resume here
 
-Resumed and completed the paused Console tooltip task in canonical `C:/Project/magic-mirror`, branch `main`, starting from `3b20c81`. All 82 input/select/textarea source locations now have field-specific accessible help, including conditional scene controls, dynamic Cubism parameters and Voice Studio's local-file chooser. Hover, Tab focus, Enter/Space, click pinning, Escape and outside dismissal are covered. Existing audio and harness/document edits are preserved. No phase promotion. [Implementation, fresh checks, screenshots and retained failures](docs/testing/field-help-2026-09-14.md).
+The current Realtime sleep skill is migrated to a versioned structured tool
+catalog: schemas, use/avoid/speech rules, availability and JSON results share
+one source for runtime and Console. Explicit handlers validate arguments before
+effects; spells retain application exact-match routes. AGENTS and compact
+Realtime, roleplay and QA guidance are updated.
+[Architecture and evidence](docs/testing/realtime-tool-architecture-2026-09-17.md):
+159 focused tests, web typecheck/build and real SDK serialization tests pass.
+Normal Raven Tools & input was visually verified; app is running with v20 and
+the saved draft preserved. Isolated lifecycle QA failed at Electron capture
+before provider work, including its one retry; it is not a live pass.
 
-Commit/push follow-up: the operator requested committing and pushing the completed work. The earlier harness compaction and the audio/field-help delivery are packaged as separate commits on `main`. Fresh pre-commit validation passed 77 tests / 15 files and web typecheck; staged whitespace checks passed. Product source is unchanged from the running development session below, which is preserved to avoid losing new operator edits. Earlier reports' no-commit/no-push statements describe their original delivery time.
+The earlier [prompt audit](docs/testing/realtime-prompt-audit-2026-09-17.md)
+introduced five native inspector windows and response-scoped greeting/scene
+cues. **Sleep silence remains unresolved:** prior Raven pre-tool speech and
+residual-output failures are retained. Next: operator testing of the structured
+tools, then investigate pre-tool output and the QA capture failure separately.
 
-Fresh Windows evidence: 62 tests / 11 files passed; field-help Electron QA passed 20 checks with 6 screenshots; local Voice Studio QA passed 6 checks with 3 screenshots. Stamped build, web typecheck and scoped Node check (182 files) passed. Full Node typecheck still has the existing missing `qa-artifacts.mjs` declaration. Screenshots were visually inspected, including 1024/768 window widths and Ren's rig parameters. Physical touch/screen-reader acceptance and live-provider listening were not performed.
+Raven V11 from remote PR #1 is installed in the normal shared rig library as
+**Raven · v11**, with its matching renderer and motion ownership changes.
+The repository Live2D and installed avatar-studio skills are updated. V10 and
+the prior published state were preserved at installation; V11 was not
+automatically assigned/published. The operator has since published v20. [Installation evidence](docs/testing/raven-v11-install-2026-09-17.md):
+69 focused tests, web typecheck/build, bundle validation and 227 isolated
+Windows Console checks passed. Normal native import and visible Console
+display were observed; all 17 managed files match V11. Artistic and live
+output-audio acceptance remain separate.
 
-The detached `.worktrees/field-help` checkout remains a preserved historical partial copy; the completed implementation is in canonical. Its older audio baseline was not transferred. [Original paused handoff](docs/testing/field-help-handoff-2026-09-14.md).
+Raven's extra invitation on sleep is addressed with a compact silent-tool prompt,
+SDK background completion, and an application-owned exact farewell response.
+Sleep intent clears local processed audio; only the farewell response reopens
+output, and sleep waits for its playback/tail. No linguistic regex filters.
+[Raven farewell evidence](docs/testing/raven-farewell-2026-09-16.md): 112 focused
+tests, web typecheck/build and final real-provider host/Raven lifecycle and
+speaker-output checks passed. Failed attempts remain linked. Physical operator
+retest and broader spoken reliability remain open.
 
-Runtime: after isolated QA exited and a process/port check found no running Electron or port-5173 listener, canonical `npm run dev` was restarted as requested. Session `79343` reported `MAIN_READY`, both windows loaded and both renderers ready; Vite serves `http://localhost:5173/`. The app is left running for operator testing. Preserve any new unsaved Console edits before future reload/restart. `out/` now contains a development build; rebuild a stamped bundle before another Electron QA run.
+Wake greetings and application scene speech now explicitly forbid tool calls
+for that response, preventing a greeting from invoking the sleep/farewell tool.
+Visitor sleep commands retain their tool. Replacement-worker timer/send failures
+now enter failed recovery instead of remaining on Restarting.
+[Diagnosis and current checks](docs/testing/wake-greeting-sleep-2026-09-16.md):
+189 focused tests, web typecheck/build and four real-provider Windows lifecycle
+checks passed. The operator's physical stop-calibration/wake retest remains open;
+the original model/tool decision cannot be reconstructed from metadata alone.
 
-The preceding independent BGM / Avatar audio / Sound effects controls remain delivered locally; Sound effects currently covers embedded scene-video audio. [Audio implementation and earlier Windows evidence](docs/testing/audio-volumes-2026-09-14.md). The broader editor QA's earlier config/navigation failure remains outside these focused passes.
+Repeated Start failure is fixed: an exhausted wake worker previously stayed
+absent while Start kept sending it configuration. Start now safely creates a
+fresh worker; automatic recovery remains bounded. Console preserves failure
+and recovery state across cleanup, shows restart attempts, and explicitly
+prompts saving edits and restarting Magic Mirror when recovery fails.
+[Recovery RCA, research and checks](docs/testing/wake-recovery-retry-2026-09-16.md):
+125 focused tests, web typecheck/build, real worker-exit recovery, explicit
+terminal failure and production Start/Stop retry passed. The original native
+device/driver failure at 17:21 is identified by code, not its physical cause.
 
-## Previous harness work — 2026-09-13
+The live calibration meter now displays the real native acoustic score and
+matched/total sound tokens. Direct Console observation of the operator's three
+spoken attempts at threshold 0.18 recorded **2 detections**, with full 9/9-token
+scores **0.517361** and **0.473206**. Partial matches also appeared; threshold
+alone does not resolve incomplete matches. Published settings were preserved.
+[Native score delivery and evidence](docs/testing/wake-native-score-2026-09-16.md):
+141 focused tests, 21 final follow-up tests, five native cases, web typecheck,
+build and 33 Windows UI checks passed. The adapter also consumes results at
+every decoder step, fixing lost detections in coalesced input. Human wake
+reliability remains open; the original zero-detection interval is not fully
+explained. Release packaging did not complete and remains unverified.
+Next: use score plus token progress to investigate the remaining spoken miss.
 
-Task: apply OpenAI's GPT-6 Astra skill/prompt guidance to all six personal Codex skills and compact the related user/project harness. Local instruction changes only; no product implementation, publication or phase promotion.
+Live wake calibration is available at Avatars → Persona → Wake sensitivity
+tuning → Start live test. It shows separate microphone and native score
+meters, repeated detection counts and applied threshold/score/trailing blanks.
+Use in draft → Save → Publish keeps tested values across restart; temporary
+tests restore published settings when stopped or interrupted. No operator
+sensitivity setting changed. [Delivery and RCA](docs/testing/wake-calibration-2026-09-16.md):
+139 focused tests, web typecheck/build and 33 Windows UI checks passed.
+The reported rain misses were one non-exact transcript and one cancelled
+announcement; cancellation diagnostics now distinguish visitor speech from
+output interruption. Physical wake/spell accuracy is not yet established.
+The repeated `魔鏡阿魔鏡` trial is recorded above; rain verification remains open.
 
-Clock-in checkout: canonical `C:/Project/magic-mirror`, branch `main`, HEAD `3b20c81` (`Mark QA artifacts and add reviewed scoped cleanup`); working tree was clean. No Electron process was found in the task's direct process check. Runtime was not launched or restarted. Older PIDs in archived handoffs are historical.
+Wake input now verifies first-block delivery and recovers a stalled worker;
+release/shutdown cancel recovery and old callbacks cannot affect a new capture.
+Console reports recovery/failure and actual quiet levels. No device, phrase or
+sensitivity setting changed. [Delivery evidence](docs/testing/wake-capture-recovery-2026-09-16.md):
+169 focused tests, 19 overlapping follow-up checks, web typecheck/build passed;
+six real Electron microphone/ownership checks passed on each of two fresh launches.
+[RCA](docs/testing/wake-rca-2026-09-16.md) retains the original stalled-stream evidence.
+Physical wake accuracy and overnight/device-change behavior remain hardware
+verification; the current calibration panel supports the next operator test.
 
-Harness change scope, validation and local backup: [audit](docs/testing/harness-compaction-2026-09-13.md). Current task edits remain local; this record does not claim a commit or push.
+Scene playback now pauses idle until playback finishes, then starts the full
+configured interval. The hidden Developer Mode 30-second cap is removed.
+Wake tuning controls show actual numeric package/override values. No operator
+sensitivity setting changed. [Current evidence](docs/testing/scene-idle-wake-values-2026-09-15.md):
+149 focused tests and 32 Windows UI checks passed.
 
-## Current Windows delivery and evidence
+Avatar CRUD fixes remain delivered; [prior evidence](docs/testing/avatar-crud-audit-2026-09-15.md)
+records immediate deletion, keyboard renaming and consistent Mirror selection.
 
-- Audio volumes: persistent 0–100% controls, operator-mode access, independent music/speech/embedded-video gains, retained ducking and preview level matching. [Fresh 2026-09-14 evidence](docs/testing/audio-volumes-2026-09-14.md).
-- Profile Console: Mirror / Avatars / System; avatar-owned Persona, Appearance, Voice and Spells/scenes; explicit shared-resource scope and separate publish/activation. [Delivery/runbook](docs/testing/profile-console-2026-09-09.md), [actual-image review](docs/testing/profile-console-reviews-2026-09-09.md). Prior evidence: 942 tests / 103 files; editor 26, profile journey 16 and Cubism including Raven 224 checks, exit 0. These were not rerun during harness work.
-- Voice Studio: shared processed Realtime output, per-avatar provider and DSP controls, frozen sessions, default/Raven presets. [Implementation and acoustic gates](docs/testing/voice-studio-implementation-2026-09-09.md), [delivery](docs/testing/voice-studio-delivery-2026-09-09.md). Prior measured added p95 149.333 ms, interruption stale/muted RMS 0; human sound and hardware acceptance remain open.
-- Cubism: reusable managed rig library, names/versions, persistent discovery and looping Console motions. [Loop preview](docs/testing/cubism-loop-preview-2026-09-09.md), [labels](docs/testing/avatar-library-labels-2026-09-09.md), [framing](docs/testing/avatar-framing-2026-09-08.md). Current Raven master: [v10 storage](resources/avatar/Raven/README.md), [v10 handoff](RAVEN-V10-EXPRESSION-FIX-HANDOFF.md). Large ignored editable/QA assets require separate backup.
-- QA artifact ownership and reviewed cleanup are delivered at HEAD: [workflow and 21-test proof](docs/testing/qa-artifact-cleanup.md). New marked runs use the scoped tool; older unmarked artifacts cannot be adopted by fabricating markers.
+Console Stop/Abort and automatic Save/check are also complete;
+[prior delivery evidence](docs/testing/console-stop-save-check-2026-09-15.md) records those checks.
 
-## Blockers and next product work
+## Runtime and workspace
 
-- Phases 0–3 remain accepted Windows checkpoints; Phase 4 remains active, unaccepted and untagged. Pulled-forward avatar/Console work does not start Identity or Memory. Phases 5→6→7 and the later Mac port remain sequential.
-- First-boot wake remains unresolved. Capture actual speech on a failing boot with the RAM-only wake meter; synthetic probes did not reproduce it. [Wake evidence](docs/testing/wake-first-boot-2026-09-06.md).
-- Human default/Raven sound tuning, physical speaker/echo and interruption, operator scenes/media, physical adapters and long-run performance remain. [Phase 4 checklist](docs/testing/phase4-scene-media-windows-checklist.md), [scene evidence](docs/testing/scene-editor-usability-2026-09-06.md). Phase 7 retains offline wake, multi-speaker/19-of-20 live-wake and 30-minute ambient/TV negative evidence.
-- Cleanup of the profile task's 12 QA runs plus one temporary review directory was repeatedly denied by tool policy, last recorded 2026-09-10; exact paths are in the profile delivery report. User authority already exists, but historical denial is not proof that today's tool policy permits deletion. This harness task did not retry it.
-- The Claude-in-Codex launcher repair has prior fresh-MCP proof; adopting it required a new connection/session. [Repair evidence](docs/testing/claude-in-codex-windows-repair-2026-09-09.md). No fresh connection or review claim here.
+- Canonical `C:/Project/magic-mirror`, branch `main`; accumulated delivery is
+  recorded in Git history. Preserve local operator data and installed skills.
+- Normal dev session **14915**, `http://localhost:5173/`, restarted from canonical
+  checkout on **2026-09-17 Asia/Taipei**. Main, Mirror and Console are ready;
+  Raven remains active on published **v20**. Its pending edit was saved and
+  checked before restart, but not published. The Tools & input inspector is
+  open with the saved Raven draft. V11 remains installed in the rig library.
+  Isolated QA ended before launch; operator authorized restarts. Persistent
+  Private TCP/UDP firewall rules matched the canonical executable. Physical
+  sleep and stop-calibration/wake retests remain open.
+- Operator config preserved, with Ren's short phrase `施放咒語，下雨`. Per-avatar
+  wake/sleep and sensitivity controls are available; video fades default to 0.
+- `out/` contains a development build. Rebuild stamped output before Electron
+  QA; never overlap QA/full tests with normal Electron. Preserve any new
+  unsaved Console edits before restart. See [UI QA](.agents/skills/mm-ui-qa/SKILL.md).
 
-For requested fresh UI QA, follow [mm-ui-qa](.agents/skills/mm-ui-qa/SKILL.md), preserve operator drafts, use a matching stamped build, and explicitly supply the current Raven manifest when testing Raven. Inspect new screenshots and record fresh results. No startup or publication is implied by this handoff.
+## Evidence and limits
 
-## History
+- [Avatar management](docs/testing/avatar-management-2026-09-15.md): Mirror activation,
+  historical first delivery. Its draft-only deletion workflow is superseded by
+  the [CRUD audit](docs/testing/avatar-crud-audit-2026-09-15.md).
 
-[Pre-compaction handoff](docs/archive/progress-before-harness-2026-09-13.md) retains all earlier delivery states, failures, exact artifact links and runtime observations. Its linked older archives remain available. [AGENTS](AGENTS.md) owns execution policy; [DECISIONS](DECISIONS.md) owns durable rulings.
+- [Console Stop/Abort and Save/check](docs/testing/console-stop-save-check-2026-09-15.md):
+  Windows Console 38 checks, profiles/voice 25, developer audio 3, Cubism 181;
+  final focused suite 166 tests, web typecheck/build passed. Live queued dialogue
+  and physical sound remain operator verification; no phase promotion.
+
+- [Latest persona/spell/fade RCA and checks](docs/testing/persona-spell-video-fades-2026-09-15.md):
+  real-provider spell QA 3 checks; Console/portrait fade QA 10 checks, 6
+  screenshots, 151 opacity/gain samples. Focused tests, web/scoped Node checks
+  and build passed. These are historical results for the recorded build.
+- [Wake tuning and short-command evidence](docs/testing/short-spells-wake-tuning-2026-09-15.md);
+  [audio ownership/state table](docs/testing/audio-playback-audit-2026-09-15.md).
+- Full Node typecheck has pre-existing TS7016 in the QA-artifacts test. Human
+  speech accuracy, first-boot wake reproduction, physical speakers/echo and
+  hardware/long-run acceptance remain open in TODO.
+- Phases 0–3 accepted on Windows; Phase 4 active, unaccepted and untagged.
+  Identity → Memory → Field Hardening and the later Mac port remain sequential.
+- Current Raven assets: [storage](resources/avatar/Raven/README.md),
+  [handoff](RAVEN-V10-EXPRESSION-FIX-HANDOFF.md). Large ignored source assets need
+  separate backup; built-in Ren QA does not establish Raven acceptance.
+
+## Instruction ownership
+
+[AGENTS](AGENTS.md) owns execution/invariants; [DECISIONS](DECISIONS.md) owns
+rulings; [TODO](TODO.md) contains open work only. The personal
+`roleplay-control-prompts` skill and `C:/Users/b8901/.codex/AGENTS.md` retain the
+no-coaching and code-controlled playback lesson. Completed task narratives have
+been removed from this handoff; linked test reports retain necessary evidence.

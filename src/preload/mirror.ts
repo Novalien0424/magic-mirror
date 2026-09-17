@@ -2,7 +2,9 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
+import { parseVoiceEffects } from '../shared/voice-effects'
 import { parsePresentation } from '../shared/presentation'
+import { VISUAL_FADE_MAX_MS } from '../shared/types'
 import type {
   AppSnapshot,
   SceneActionCommandContext,
@@ -131,7 +133,7 @@ function sanitizeSceneActionContext(value: unknown): SceneActionCommandContext |
 function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   if (!isRecord(value)) return null
   const type = readProperty(value, 'type')
-  if (type === 'refresh_audio_devices' && exactKeys(value, ['type'])) return { type }
+  if ((type === 'refresh_audio_devices' || type === 'stop_avatar_test') && exactKeys(value, ['type'])) return Object.freeze({ type })
   if (type === 'audio_devices' && exactKeys(value, ['type', 'preferences'])) {
     const preferences = parseAudioPreferences(readProperty(value, 'preferences'))
     return preferences ? Object.freeze({ type, preferences }) : null
@@ -222,19 +224,30 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
     if (action === 'start' && exactKeys(value, [
       'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context',
       ...(preview === true ? ['preview'] : []),
+    ]) || action === 'start' && exactKeys(value, [
+      'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context', 'fadeInMs', 'fadeOutMs',
+      ...(preview === true ? ['preview'] : []),
     ])) {
       const assetId = readProperty(value, 'assetId')
       const fit = readProperty(value, 'fit')
       const playback = readProperty(value, 'playback')
       const audio = readProperty(value, 'audio')
       const gain = readProperty(value, 'gain')
+      const fadeInMs = readProperty(value, 'fadeInMs')
+      const fadeOutMs = readProperty(value, 'fadeOutMs')
       const context = sanitizeSceneActionContext(readProperty(value, 'context'))
+      const normalizedFade = (candidate: unknown): number | null => candidate === undefined
+        ? 0
+        : typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= 0 && candidate <= VISUAL_FADE_MAX_MS
+          ? candidate : null
+      const normalizedFadeInMs = normalizedFade(fadeInMs)
+      const normalizedFadeOutMs = normalizedFade(fadeOutMs)
       return typeof assetId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(assetId)
         && (fit === 'contain' || fit === 'cover')
         && (playback === 'still' || playback === 'once' || playback === 'loop')
         && (audio === 'muted' || audio === 'embedded')
-        && unitNumber(gain) && context !== null
-        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, context, ...(preview === true ? { preview: true as const } : {}) })
+        && unitNumber(gain) && normalizedFadeInMs !== null && normalizedFadeOutMs !== null && context !== null
+        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, fadeInMs: normalizedFadeInMs, fadeOutMs: normalizedFadeOutMs, context, ...(preview === true ? { preview: true as const } : {}) })
         : null
     }
     if (action === 'stop' && exactKeys(value, ['type', 'action', 'runId', 'sceneId'])) {
@@ -280,7 +293,16 @@ function isValidSessionStartBundleValue(value: unknown): value is RealtimeSessio
   if ('avatar' in value && !parseAvatarSessionSettings(value.avatar)) return false
 
   const snapshot = readProperty(value, 'snapshot')
-  if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
+  if (!isRecord(snapshot)) return false
+  const optionalKeys = ['voiceSpeed', 'voiceEffects'].filter(key => Object.prototype.hasOwnProperty.call(snapshot, key))
+  if (!exactKeys(snapshot, [...SESSION_SNAPSHOT_KEYS, ...optionalKeys])) return false
+  if (optionalKeys.includes('voiceSpeed') && (
+    typeof snapshot.voiceSpeed !== 'number' || !Number.isFinite(snapshot.voiceSpeed)
+    || snapshot.voiceSpeed < 0.5 || snapshot.voiceSpeed > 1.5
+  )) return false
+  if (optionalKeys.includes('voiceEffects') && (
+    snapshot.voiceEffects === undefined || !parseVoiceEffects(snapshot.voiceEffects)
+  )) return false
   if (
     typeof readProperty(snapshot, 'configVersion') !== 'number'
     || !Number.isSafeInteger(readProperty(snapshot, 'configVersion'))
@@ -335,6 +357,12 @@ function sanitizeSessionStartBundleValue(value: unknown): RealtimeSessionStartBu
     reasoningEffort: readProperty(snapshot, 'reasoningEffort') as string,
     turnDetectionProfile: readProperty(snapshot, 'turnDetectionProfile') as string,
     takenAt: readProperty(snapshot, 'takenAt') as string,
+    ...(readProperty(snapshot, 'voiceSpeed') === undefined ? {} : {
+      voiceSpeed: readProperty(snapshot, 'voiceSpeed') as number,
+    }),
+    ...(readProperty(snapshot, 'voiceEffects') === undefined ? {} : {
+      voiceEffects: Object.freeze(parseVoiceEffects(readProperty(snapshot, 'voiceEffects'))!),
+    }),
   })
   const sanitizedIdentity = Object.freeze({
     realtimeSessionId: readProperty(identity, 'realtimeSessionId') as string,

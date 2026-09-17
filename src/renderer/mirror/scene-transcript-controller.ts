@@ -1,5 +1,6 @@
 import { createSpellTriggerGuard, normalizeTranscript, type SpellTriggerGuard } from '../../main/scenes/spell-trigger'
 import type { ScenePublicCatalog, SceneStartResult, SceneStatusEvent } from '../../shared/types'
+import type { SpellAnnouncementResult } from './spell-announcement'
 
 interface SceneTranscriptBridge {
   getSceneCatalog(): Promise<ScenePublicCatalog>
@@ -27,6 +28,7 @@ const TURN_LIMIT = 2048
 export function createSceneTranscriptController(input: Readonly<{
   bridge: SceneTranscriptBridge
   interrupt: () => Promise<unknown>
+  announceSpell?: () => Promise<SpellAnnouncementResult>
   metadataSink?: (reason: string, realtimeSessionId: string) => void
 }>): SceneTranscriptController {
   const boundaries = new Map<string, { runId: string | null; turnId: string }>()
@@ -108,14 +110,25 @@ export function createSceneTranscriptController(input: Readonly<{
           transcript: completed.transcript,
         })
         if (decision === undefined || decision.decision === 'ignore') {
-          const reason = decision?.reason ?? 'invalid_config'
+          const reason = decision?.reason === 'not_exact_match' && normalized.startsWith('施放咒語')
+            ? 'spell_command_not_recognized' : decision?.reason ?? 'invalid_config'
           report(reason, completed.realtimeSessionId)
           return { decision: 'ignored', reason }
         }
         await input.interrupt()
+        if (input.announceSpell) {
+          const announcement = await input.announceSpell()
+          if (announcement.status !== 'completed') {
+            report(announcement.reason, completed.realtimeSessionId)
+            return { decision: 'failed', reason: announcement.reason }
+          }
+          report('spell_announcement_completed', completed.realtimeSessionId)
+        }
+        const result = await input.bridge.triggerScene({ spellId: decision.spellId, turnId: decision.turnId })
+        report(result.status === 'accepted' ? 'spell_command_accepted' : 'spell_command_rejected', completed.realtimeSessionId)
         return {
           decision: 'triggered',
-          result: await input.bridge.triggerScene({ spellId: decision.spellId, turnId: decision.turnId }),
+          result,
         }
       } catch {
         report('scene_trigger_failed', completed.realtimeSessionId)

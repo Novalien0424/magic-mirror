@@ -58,7 +58,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
     setActionId(next.id)
   }
   return <fieldset className="scene-composer" disabled={disabled}>
-    <legend>Spell scenes</legend>
+    <legend>Spell scenes <button type="button" onClick={onStop}>Abort scene test</button></legend>
     <p className="scene-composer__intro">Steps play from top to bottom. Actions inside a step start together.</p>
     <div className="scene-composer__layout">
       <aside className="scene-composer__list" aria-label="Scene selection">
@@ -81,7 +81,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
         </div>
         <section aria-label="Trigger Phrases" className="scene-composer__triggers">
           {draft.spells.filter(s => s.sceneId === scene.id).map(spell => <div key={spell.id} className="scene-spell">
-            <HelpField help={FIELD_HELP.triggerPhrase} className="scene-spell__phrase">Trigger Phrase<input placeholder="Say this to play the scene" value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></HelpField>
+            <HelpField help={FIELD_HELP.triggerPhrase} className="scene-spell__phrase">Trigger Phrase<input placeholder="施放咒語，下雨" maxLength={240} value={spell.phrase} onChange={e => editSpell({ ...spell, phrase: e.currentTarget.value })} /></HelpField>
             <HelpField help={FIELD_HELP.triggerEnabled} className="console__check" ><input type="checkbox" checked={spell.enabled} onChange={e => editSpell({ ...spell, enabled: e.currentTarget.checked })} />Enabled</HelpField>
             <HelpField help={FIELD_HELP.cooldown} className="scene-spell__cooldown" >Cooldown (s)<input type="number" min="0" step="0.1" value={spell.cooldownMs / 1000} onChange={e => editSpell({ ...spell, cooldownMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
             <HelpButton className="scene-spell__remove" aria-label="Remove Trigger Phrase" help="Remove only this trigger phrase. The scene and its actions stay. Undo is available until the next edit."
@@ -91,7 +91,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
           </div>)}
           <div className="scene-trigger-footer"><HelpButton help="Add another spoken phrase that starts this same scene. Any enabled phrase can trigger it."
             onClick={() => change({ ...draft, spells: [...draft.spells, { id: id(), name: 'Trigger Phrase', phrase: '', sceneId: scene.id, enabled: true, cooldownMs: 5000 }] })}>Add Trigger Phrase</HelpButton>
-            <p className="console__muted">Say any enabled phrase in full to start this scene.</p></div>
+            <p className="console__muted">Use a short command: 施放咒語，＋ spell name (for example, 施放咒語，下雨). Say the complete command in one utterance. Save and publish before speaking it.</p></div>
         </section>
         <div className="scene-step-workspace">
         <aside className="scene-step-navigation" aria-label="Step order">
@@ -149,6 +149,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
             <div className="console__action-row">
             <HelpButton help={testReason || 'Save this step, then play only this action on the Mirror. Other actions in the step do not run. Tests stop after 10 seconds; finite videos finish naturally.'} disabled={disabled || !!testReason || !action.enabled}
               onClick={() => onTest(scene.id, { stageId: step.id, actionId: action.id })}>Test action</HelpButton>
+            <HelpButton help="Abort pending startup and stop scene effects." onClick={onStop}>Stop action test</HelpButton>
             <HelpButton help="Unlink this action from this step. The action and its media remain in the library." onClick={() => { editStep({ ...step, actionIds: step.actionIds.filter(a => a !== action.id) }); setUndo(draft) }}>Remove from step</HelpButton>
             {!action.enabled ? <p>Enable this action to test it.</p> : null}
             </div>
@@ -173,6 +174,7 @@ export function SceneComposer({ draft, active, onChange, onRun, onImport, disabl
         <div className="console__action-row">
           <HelpButton help={saveUnavailableReason || 'Save this scene, its spell phrases, step order and linked actions/media. Other scenes and avatar settings stay unsaved.'} disabled={disabled || !!saveUnavailableReason} onClick={() => onSave(scene.id)}>Save scene</HelpButton>
           <HelpButton help={testReason || 'Save and play the whole draft scene, from the first step to the last. Nothing is published.'} disabled={disabled || !!testReason} onClick={() => onTest(scene.id)}>Test scene</HelpButton>
+          <HelpButton help="Abort pending startup and stop scene effects." onClick={onStop}>Stop scene test</HelpButton>
           <span>{isSaved(scene.id) ? 'Scene saved' : 'Unsaved scene changes'}</span>
         </div>
         <details><summary>Published playback</summary><div className="console__action-row">

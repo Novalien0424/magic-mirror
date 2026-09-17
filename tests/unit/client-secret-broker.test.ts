@@ -31,6 +31,19 @@ function expectBrokerError(promise: Promise<unknown>, code: string) {
 }
 
 describe('ClientSecretBroker model availability probe', () => {
+  it('cancels preview credential transport using the caller signal', async () => {
+    const { broker } = createFixture()
+    const abort = new AbortController()
+    const fetchImpl = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      expect(init?.signal).toBe(abort.signal)
+      init?.signal?.addEventListener('abort', () => reject(new Error('synthetic_abort')), { once: true })
+    }))
+    const pending = broker.issue({ modelId: 'configured-model-v1', signal: abort.signal, fetchImpl })
+    const rejected = expectBrokerError(pending, 'realtime_client_secret_fetch_failed')
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce())
+    abort.abort()
+    await rejected
+  })
   it('returns a frozen available status for one exact configured ID', async () => {
     const { broker } = createFixture()
     const configuredModelId = 'configured-model-v1'

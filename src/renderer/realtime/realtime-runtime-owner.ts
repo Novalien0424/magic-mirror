@@ -184,7 +184,7 @@ export interface RealtimeRuntimeOwner {
   ) => Promise<RealtimeRuntimeOutcome>
   readonly dispose: () => Promise<RealtimeRuntimeOutcome>
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
-  readonly speakVerbatim: (text: string) => RealtimeSceneDialogueResult
+  readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: () => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
 
@@ -774,12 +774,12 @@ export function createRealtimeRuntimeOwner(
     ...(current === undefined ? {} : { currentIdentity: freezeIdentity(current.identity) }),
   })
 
-  const speakVerbatim = (text: string): RealtimeSceneDialogueResult => {
+  const speakVerbatim = (text: string, signal?: AbortSignal, onFinished?: () => void): RealtimeSceneDialogueResult => {
     if (state !== 'active' || current === undefined) {
       return Object.freeze({ status: 'ignored', reason: 'no_active_realtime_session' })
     }
     try {
-      current.session.speakVerbatim(text)
+      if (signal) current.session.speakVerbatim(text, signal, onFinished); else current.session.speakVerbatim(text)
       return Object.freeze({ status: 'dispatched', reason: 'scene_dialogue_dispatched' })
     } catch {
       return Object.freeze({ status: 'failed', reason: 'scene_dialogue_dispatch_failed' })

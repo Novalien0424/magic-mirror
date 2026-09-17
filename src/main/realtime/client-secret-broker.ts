@@ -16,6 +16,7 @@ export interface ClientSecretBrokerOptions {
 }
 
 export interface ClientSecretIssueRequest {
+  readonly signal?: AbortSignal
   readonly modelId: string
   readonly fetchImpl?: typeof fetch
 }
@@ -190,6 +191,7 @@ export function createClientSecretBroker(
       try {
         const fetchImpl = request.fetchImpl ?? fetch
         response = await fetchImpl('https://api.openai.com/v1/realtime/client_secrets', {
+          ...(request.signal ? { signal: request.signal } : {}),
           method: 'POST',
           headers: {
             Authorization: `Bearer ${credential}`,

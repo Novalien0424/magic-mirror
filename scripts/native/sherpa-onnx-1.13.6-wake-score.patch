@@ -1,0 +1,108 @@
+--- a/sherpa-onnx/csrc/transducer-keyword-decoder.h
++++ b/sherpa-onnx/csrc/transducer-keyword-decoder.h
+@@ -15,6 +15,10 @@
+ namespace sherpa_onnx {
+ 
+ struct TransducerKeywordResult {
++  // Magic Mirror: furthest candidate in the last decode; never affects gating.
++  float acoustic_score = 0;
++  int32_t matched_tokens = 0;
++  int32_t candidate_trailing_blanks = 0;
+   /// Number of frames after subsampling we have decoded so far
+   int32_t frame_offset = 0;
+ 
+--- a/sherpa-onnx/csrc/transducer-keyword-decoder.cc
++++ b/sherpa-onnx/csrc/transducer-keyword-decoder.cc
+@@ -52,6 +52,9 @@
+ 
+   std::vector<Hypotheses> cur;
+   for (auto &r : *result) {
++    r.acoustic_score = 0;
++    r.matched_tokens = 0;
++    r.candidate_trailing_blanks = 0;
+     cur.push_back(std::move(r.hyps));
+   }
+   std::vector<Hypothesis> prev;
+@@ -150,6 +153,26 @@
+       bool matched = std::get<0>(status);
+       const ContextState *matched_state = std::get<1>(status);
+ 
++      // Complete candidates report the exact acoustic mean used by the gate.
++      // Partial candidates report the mean for their matching token suffix.
++      const int32_t level = matched ? matched_state->level
++                                   : best_hyp.context_state->level;
++      if (level > 0 && static_cast<size_t>(level) <= best_hyp.ys_probs.size()) {
++        float candidate_score = 0;
++        const size_t start = matched ? 0 : best_hyp.ys_probs.size() - level;
++        for (int32_t i = 0; i < level; ++i) {
++          candidate_score += best_hyp.ys_probs[start + i];
++        }
++        candidate_score /= level;
++        auto &diagnostic = (*result)[b];
++        if (level > diagnostic.matched_tokens ||
++            (level == diagnostic.matched_tokens && candidate_score >= diagnostic.acoustic_score)) {
++          diagnostic.acoustic_score = candidate_score;
++          diagnostic.matched_tokens = level;
++          diagnostic.candidate_trailing_blanks = best_hyp.num_trailing_blanks;
++        }
++      }
++
+       if (matched) {
+         float ys_prob = 0.0;
+         for (int32_t i = 0; i < matched_state->level; ++i) {
+--- a/sherpa-onnx/csrc/keyword-spotter.h
++++ b/sherpa-onnx/csrc/keyword-spotter.h
+@@ -18,6 +18,10 @@
+ namespace sherpa_onnx {
+ 
+ struct KeywordResult {
++  float acoustic_score = 0;
++  int32_t matched_tokens = 0;
++  int32_t keyword_tokens = 0;
++  int32_t candidate_trailing_blanks = 0;
+   /// The triggered keyword.
+   /// For English, it consists of space separated words.
+   /// For Chinese, it consists of Chinese words without spaces.
+--- a/sherpa-onnx/csrc/keyword-spotter-transducer-impl.h
++++ b/sherpa-onnx/csrc/keyword-spotter-transducer-impl.h
+@@ -28,6 +28,9 @@
+                       const SymbolTable &sym_table, float frame_shift_ms,
+                       int32_t subsampling_factor, int32_t frames_since_start) {
+   KeywordResult r;
++  r.acoustic_score = src.acoustic_score;
++  r.matched_tokens = src.matched_tokens;
++  r.candidate_trailing_blanks = src.candidate_trailing_blanks;
+   r.tokens.reserve(src.tokens.size());
+   r.timestamps.reserve(src.tokens.size());
+   r.keyword = src.keyword;
+@@ -275,8 +278,13 @@
+     // TODO(fangjun): Remember to change these constants if needed
+     int32_t frame_shift_ms = 10;
+     int32_t subsampling_factor = 4;
+-    return Convert(decoder_result, sym_, frame_shift_ms, subsampling_factor,
+-                   s->GetNumFramesSinceStart());
++    auto result = Convert(decoder_result, sym_, frame_shift_ms, subsampling_factor,
++                          s->GetNumFramesSinceStart());
++    for (const auto &keyword : keywords_id_) {
++      result.keyword_tokens = std::max(result.keyword_tokens,
++                                      static_cast<int32_t>(keyword.size()));
++    }
++    return result;
+   }
+ 
+  private:
+--- a/sherpa-onnx/csrc/keyword-spotter.cc
++++ b/sherpa-onnx/csrc/keyword-spotter.cc
+@@ -31,6 +31,12 @@
+ std::string KeywordResult::AsJsonString() const {
+   std::ostringstream os;
+   os << "{";
++  os << "\"wake_score_version\":1, ";
++  os << "\"acoustic_score\":" << std::fixed << std::setprecision(6)
++     << acoustic_score << ", ";
++  os << "\"matched_tokens\":" << matched_tokens << ", ";
++  os << "\"keyword_tokens\":" << keyword_tokens << ", ";
++  os << "\"candidate_trailing_blanks\":" << candidate_trailing_blanks << ", ";
+   os << "\"start_time\":" << std::fixed << std::setprecision(2) << start_time
+      << ", ";
+ 

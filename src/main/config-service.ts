@@ -2,7 +2,7 @@ import { mkdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { avatarCatalogSchema, validateAvatarReferences } from './avatar/avatar-config'
-import { projectActiveAvatar } from '../shared/avatar-profiles'
+import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
 import { parsePresentation, type PresentationConfig } from '../shared/presentation'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
@@ -55,6 +55,7 @@ export interface ConfigService {
   initialize(): Promise<ConfigSlots>
   read(): Promise<ConfigSlots>
   saveDraft(candidate: unknown): Promise<MirrorConfig>
+  deleteAvatar(id: string): Promise<void>
   publish(): Promise<MirrorConfig>
   rollback(): Promise<MirrorConfig>
   diff(from: ConfigSlot, to: ConfigSlot): Promise<ConfigDiff>
@@ -765,7 +766,7 @@ async function writeSlotTransaction(
   options: ResolvedConfigServiceOptions,
   next: RawSlots,
   before: RawSlots,
-  operation: 'seed' | 'publish' | 'rollback',
+  operation: 'seed' | 'publish' | 'rollback' | 'delete_avatar',
 ): Promise<void> {
   try {
     await options.files.ensureDirectory(options.configDir)
@@ -952,7 +953,7 @@ async function resolveSlots(
 
 function nextRevision(
   options: ResolvedConfigServiceOptions,
-  operation: 'publish' | 'rollback',
+  operation: 'publish' | 'rollback' | 'delete_avatar',
   version: number,
 ): number {
   if (version === Number.MAX_SAFE_INTEGER) {
@@ -970,7 +971,7 @@ function nextRevision(
 
 function emitReadCaptureFailure(
   options: ResolvedConfigServiceOptions,
-  operation: 'publish' | 'rollback',
+  operation: 'publish' | 'rollback' | 'delete_avatar',
 ): never {
   emitConfigEvent(
     options.events,
@@ -1121,6 +1122,37 @@ export function createConfigService(options: ConfigServiceOptions): ConfigServic
         'operation=save_draft;slot=draft;config_version=' + String(saved.configVersion),
       )
       return saved
+    },
+
+    async deleteAvatar(id: string): Promise<void> {
+      const slots = await resolveSlots(resolved)
+      const activeCatalog = avatarCatalogFor(slots.active)
+      const draftCatalog = avatarCatalogFor(slots.draft)
+      const published = activeCatalog.avatars.some(avatar => avatar.id === id)
+      if (!published && !draftCatalog.avatars.some(avatar => avatar.id === id)) return
+      for (const catalog of [activeCatalog, draftCatalog]) {
+        if (!catalog.avatars.some(avatar => avatar.id === id)) continue
+        if (catalog.activeAvatarId === id || catalog.avatars.length <= 1) {
+          throw new ConfigServiceError('config_schema_invalid', [{ path: 'avatarId', message: 'Switch to another avatar before deleting the active avatar.' }])
+        }
+      }
+      let before: RawSlots
+      try { before = await readRawSlots(resolved) } catch { return emitReadCaptureFailure(resolved, 'delete_avatar') }
+      const revision = published ? nextRevision(resolved, 'delete_avatar', slots.active.configVersion) : slots.active.configVersion
+      const remove = (config: MirrorConfig): MirrorConfig => {
+        const catalog = avatarCatalogFor(config)
+        return projectActiveAvatar({ ...config, configVersion: revision, avatarCatalog: { ...catalog,
+          avatars: catalog.avatars.filter(avatar => avatar.id !== id), locks: catalog.locks.filter(lock => lock.avatarId !== id),
+        } })
+      }
+      const next: RawSlots = {
+        active: published ? serializeConfig(remove(slots.active)) : before.active,
+        draft: serializeConfig(remove(slots.draft)),
+        previous: published ? serializeConfig(slots.active) : before.previous,
+      }
+      await writeSlotTransaction(resolved, next, before, 'delete_avatar')
+      emitConfigEvent(resolved.events, published ? 'config_published' : 'config_draft_saved', 'success',
+        'operation=delete_avatar;active_version=' + String(revision))
     },
 
     async publish(): Promise<MirrorConfig> {

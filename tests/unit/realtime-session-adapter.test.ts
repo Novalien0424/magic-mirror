@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION } from '../../src/shared/avatar-prompt';
+import { isBackgroundResult } from '@openai/agents/realtime';
+import { buildSpeechResponse } from '../../src/shared/realtime-prompts';
 
 import {
   createRealtimeSession,
@@ -10,7 +12,7 @@ import { createDeterministicRealtimeTransport } from "../../src/renderer/realtim
 import type { RealtimeMetadataEvent } from "../../src/shared/realtime-events";
 import type { SessionModelSnapshot } from "../../src/shared/types";
 
-type SessionEventListener = (event: unknown) => void;
+type SessionEventListener = (...events: unknown[]) => void;
 
 type AdapterProbe = {
   agentConstructorCalls: unknown[][];
@@ -19,7 +21,8 @@ type AdapterProbe = {
   interrupt: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   sendMessage: ReturnType<typeof vi.fn>;
-  emit: (eventName: string, event: unknown) => void;
+  sendEvent: ReturnType<typeof vi.fn>;
+  emit: (eventName: string, ...events: unknown[]) => void;
   dependencies: RealtimeSessionDependencies;
 };
 
@@ -31,6 +34,10 @@ function makeAdapterProbe(): AdapterProbe {
   const interrupt = vi.fn(async (..._args: unknown[]) => undefined);
   const close = vi.fn(async (..._args: unknown[]) => undefined);
   const sendMessage = vi.fn((..._args: unknown[]) => undefined);
+  const transport = createDeterministicRealtimeTransport();
+  vi.spyOn(transport, 'sendMessage').mockImplementation(sendMessage);
+  const sendEvent = vi.spyOn(transport, 'sendEvent').mockImplementation(() => {});
+  vi.spyOn(transport, 'requestResponse').mockImplementation(response => transport.sendEvent({ type: 'response.create', response }));
   const fakeSession = {
     connect,
     interrupt,
@@ -58,13 +65,14 @@ function makeAdapterProbe(): AdapterProbe {
     interrupt,
     close,
     sendMessage,
-    emit: (eventName, event) => {
-      for (const listener of listeners.get(eventName) ?? []) listener(event);
+    emit: (eventName, ...events) => {
+      for (const listener of listeners.get(eventName) ?? []) listener(...events);
     },
+    sendEvent,
     dependencies: {
       RealtimeAgent: RealtimeAgent as unknown as RealtimeSessionDependencies["RealtimeAgent"],
       RealtimeSession: RealtimeSession as unknown as RealtimeSessionDependencies["RealtimeSession"],
-      createTransport: () => createDeterministicRealtimeTransport(),
+      createTransport: () => transport,
     },
   };
 }
@@ -101,6 +109,103 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('rejects invalid sleep arguments without a farewell or leaving conversation suppressed', async () => {
+    const probe=makeAdapterProbe(), sink=vi.fn(), onAudioActivity=vi.fn();
+    const handle=createRealtimeSession({...makeSessionInput(makeSnapshot(),sink,probe),onAudioActivity});
+    const agent=probe.agentConstructorCalls[0][0] as {tools:{name:string;invoke(context:unknown,input:string):Promise<unknown>}[]};
+    probe.emit('transport_event',{type:'response.output_item.added',item:{type:'function_call',name:'return_to_dormant'}});
+    const result=await agent.tools[0].invoke({},'{"unexpected":true}');
+    expect(result).toMatchObject({content:{status:'rejected',code:'tool_arguments_rejected'}});
+    probe.emit('agent_tool_end',{},agent,agent.tools[0],result);
+    expect(probe.sendEvent).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({reason:'tool_arguments_rejected'}));
+    probe.emit('transport_event',{type:'output_audio_buffer.started',response_id:'next-conversation'});
+    expect(onAudioActivity).toHaveBeenCalledWith('output_started');
+    await handle.close('manual_stop');
+  });
+  it('makes sleep intent silent and requests only the configured farewell after tool completion', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onReturnToDormant = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe),
+      sleepFarewell: '如你所願，再會', onReturnToDormant });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
+    const result = await agent.tools[0].invoke({}, '{}');
+    expect(isBackgroundResult(result)).toBe(true);
+    expect(result).toMatchObject({ content: { status: 'accepted', code: 'sleep_requested', speech: 'application' } });
+    expect(probe.sendEvent).not.toHaveBeenCalled();
+    // The SDK event arguments include context, agent, tool, result and details.
+    const emitEnd = () => probe.emit('agent_tool_end', {}, agent, agent.tools[0], 'sleep_requested', {});
+    emitEnd();
+    expect(probe.sendEvent).toHaveBeenCalledTimes(1);
+    const request = probe.sendEvent.mock.calls[0][0];
+    expect(request).toMatchObject({ type: 'response.create', response: {
+      tool_choice: 'none', input: [], instructions: expect.stringContaining('\n如你所願，再會'),
+      metadata: { mirror_sleep_cue: expect.any(String) },
+    } });
+    emitEnd();
+    expect(probe.sendEvent).toHaveBeenCalledTimes(1);
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
+    for (const response_id of ['old-response', 'farewell']) {
+      probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id });
+      if (response_id === 'farewell') {
+        probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'old-response' });
+        expect(onReturnToDormant).not.toHaveBeenCalled();
+      }
+      probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id });
+    }
+    await Promise.resolve();
+    expect(onReturnToDormant).toHaveBeenCalledOnce();
+    await handle.close('manual_stop');
+  });
+  it.each(['finish', 'interrupt', 'close'] as const)('waits for farewell output tail and handles %s during that wait', async action => {
+    const probe = makeAdapterProbe(), onReturnToDormant = vi.fn();
+    let finishTail!: () => void;
+    const waitForOutputTail = vi.fn(() => new Promise<void>(resolve => { finishTail = resolve }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onReturnToDormant, waitForOutputTail });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] };
+    await agent.tools[0].invoke({}, '{}');
+    probe.emit('agent_tool_end', {}, agent, agent.tools[0]);
+    const request = probe.sendEvent.mock.calls[0][0];
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'farewell' });
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'farewell' });
+    expect(waitForOutputTail).toHaveBeenCalledOnce();
+    expect(onReturnToDormant).not.toHaveBeenCalled();
+    if (action === 'interrupt') probe.emit('audio_interrupted', {});
+    if (action === 'close') await handle.close('manual_stop');
+    finishTail(); await Promise.resolve();
+    expect(onReturnToDormant).toHaveBeenCalledTimes(action === 'finish' ? 1 : 0);
+    await handle.close('manual_stop');
+  });
+  it('clears local processed speech on sleep intent and only opens output for its farewell', async () => {
+    const probe = makeAdapterProbe(), onAudioActivity = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] };
+    probe.emit('transport_event', { type: 'response.output_item.added', item: { type: 'function_call', name: 'return_to_dormant' } });
+    expect(onAudioActivity).toHaveBeenCalledWith('interrupted');
+    onAudioActivity.mockClear();
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'unsolicited-reply' });
+    expect(onAudioActivity).not.toHaveBeenCalledWith('output_started');
+    await agent.tools[0].invoke({}, '{}');
+    probe.emit('agent_tool_end', {}, agent, agent.tools[0]);
+    const request = probe.sendEvent.mock.calls[0][0];
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'farewell' });
+    expect(onAudioActivity).toHaveBeenCalledWith('output_started');
+    await handle.close('manual_stop');
+  });
+  it('uses selected avatar commands in tool instructions and transcription hints', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    const avatar = { name: 'Ren', personality: 'Friendly guide.', speakingStyle: '', wakeGreeting: '',
+      sleepFarewell: '晚安。', wakePhrase: '你好小蓮', sleepPhrase: '小蓮休息吧', spellPhrases: ['天氣熱，能不能下雨呢?'] };
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), avatar });
+    const agent = probe.agentConstructorCalls[0]?.[0] as { instructions: string; tools: { description: string }[] };
+    expect(agent.tools[0].description).toContain(avatar.sleepPhrase);
+    expect(agent.tools[0].description).not.toContain('恭送渡鴨大人');
+    expect(probe.constructorCalls[0]?.[1]).toMatchObject({ config: { audio: { input: { transcription: {
+      keywords: [avatar.wakePhrase, avatar.sleepPhrase, ...avatar.spellPhrases],
+    } } } } });
+    await handle.close('user_requested');
+  });
   it('closes a transport that completes connecting after cancellation', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let complete!: () => void;
@@ -129,7 +234,7 @@ describe("RealtimeSession adapter", () => {
     const agent = probe.agentConstructorCalls[0]?.[0] as { instructions: string; tools: { description: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
     expect(agent.instructions).toBe(buildAvatarPrompt(avatar));
     expect(agent.tools[0].description).toBe(SLEEP_TOOL_DESCRIPTION);
-    expect(await agent.tools[0].invoke({}, '{}')).toBe('Say exactly Goodbye. now and no other words.');
+    expect(isBackgroundResult(await agent.tools[0].invoke({}, '{}'))).toBe(true);
     await handle.connect();
     expect(probe.constructorCalls[0]?.[1]).toMatchObject({ config: { audio: { output: { voice: 'cedar' } } } });
     expect(JSON.stringify(sink.mock.calls)).not.toContain(avatar.personality);
@@ -146,7 +251,7 @@ describe("RealtimeSession adapter", () => {
     expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'realtime_request_rejected', status: 'degraded' }));
     expect(JSON.stringify(sink.mock.calls)).not.toContain('private provider text');
     handle.speakVerbatim('Synthetic follow-up.');
-    expect(probe.sendMessage).toHaveBeenCalled();
+    expect(probe.sendEvent).toHaveBeenCalled();
   });
 
   it('reports actual playback boundaries and interruption for idle tracking, never generation completion', async () => {
@@ -175,11 +280,75 @@ describe("RealtimeSession adapter", () => {
 
     handle.speakVerbatim("The mirror awakens.");
 
-    expect(probe.sendMessage).toHaveBeenCalledTimes(1);
-    expect(probe.sendMessage).toHaveBeenCalledWith(
-      "The entire audible response must be exactly the following operator-authored text. "
-        + "Do not add, omit, translate, paraphrase, or acknowledge it:\nThe mirror awakens.",
-    );
+    expect(probe.sendMessage).not.toHaveBeenCalled();
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.create', response: {
+      tool_choice: 'none', input: [], instructions: expect.stringContaining('\nThe mirror awakens.'),
+    } });
+  });
+
+  it.each([false, true])('cancels its own scene cue across unrelated output and generation completion (done=%s)', (done) => {
+    const probe = makeAdapterProbe();
+    const transport = createDeterministicRealtimeTransport();
+    const sendEvent = vi.spyOn(transport, 'sendEvent').mockImplementation(() => {});
+    vi.spyOn(transport, 'sendMessage').mockImplementation(() => {});
+    const audio = { muted: false } as HTMLAudioElement;
+    const onAudioActivity = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), audioElement: audio,
+      onAudioActivity,
+      dependencies: { ...probe.dependencies, createTransport: () => transport } });
+    const abort = new AbortController();
+    const finished = vi.fn();
+    handle.speakVerbatim('Synthetic scene cue.', abort.signal, finished);
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({ response: expect.objectContaining({ tool_choice: 'none' }) }));
+    const request = sendEvent.mock.calls[0][0] as unknown as { response: { metadata: { mirror_scene_cue: string } } };
+    const response = { id: 'cue-response', metadata: request.response.metadata };
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'previous' });
+    if (done) {
+      probe.emit('transport_event', { type: 'response.created', response });
+      probe.emit('transport_event', { type: 'response.done', response });
+    }
+    abort.abort();
+    expect(audio.muted).toBe(true);
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'cue-response' });
+    expect(onAudioActivity).toHaveBeenCalledWith('interrupted');
+    expect(onAudioActivity).not.toHaveBeenCalledWith('output_started');
+    if (!done) {
+      probe.emit('transport_event', { type: 'response.created', response });
+      expect(sendEvent).toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'cue-response' });
+      probe.emit('transport_event', { type: 'response.done', response });
+    }
+    expect(sendEvent).toHaveBeenCalledWith({ type: 'output_audio_buffer.clear' });
+    expect(audio.muted).toBe(true);
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'unrelated' });
+    expect(audio.muted).toBe(true);
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'cue-response' });
+    expect(audio.muted).toBe(false);
+    expect(finished).toHaveBeenCalledTimes(1);
+    handle.speakVerbatim('Next synthetic cue.', new AbortController().signal);
+    expect(sendEvent.mock.calls.filter(([event]) => event.type === 'response.create')).toHaveLength(2);
+  });
+
+  it.each([false, true])('recovers visibly from missing cancellation acknowledgements or transport failure (throws=%s)', async (throws) => {
+    vi.useFakeTimers();
+    try {
+      const probe = makeAdapterProbe();
+      const transport = createDeterministicRealtimeTransport();
+      const sendEvent = vi.spyOn(transport, 'sendEvent').mockImplementation(event => { if (throws && event.type === 'response.cancel') throw Error('transport_closed'); });
+      vi.spyOn(transport, 'sendMessage').mockImplementation(() => {});
+      const onFailure = vi.fn();
+      const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFailure,
+        dependencies: { ...probe.dependencies, createTransport: () => transport } });
+      const abort = new AbortController();
+      handle.speakVerbatim('Synthetic cue.', abort.signal);
+      if (throws) {
+        const request = sendEvent.mock.calls[0][0] as unknown as { response: { metadata: { mirror_scene_cue: string } } };
+        probe.emit('transport_event', { type: 'response.created', response: { id: 'cue-response', metadata: request.response.metadata } });
+      }
+      abort.abort();
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'scene_dialogue_cancel_failed' }));
+      expect(probe.close).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it("projects raw actual-output and VAD activity for the avatar without transcript timing", () => {
@@ -248,6 +417,9 @@ describe("RealtimeSession adapter", () => {
     });
 
     await sleepTool?.invoke({}, "{}");
+    probe.emit('agent_tool_end', {}, agentOptions, sleepTool, 'sleep_requested', {});
+    const request = probe.sendEvent.mock.calls[0][0];
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
     expect(onReturnToDormant).not.toHaveBeenCalled();
 
     probe.emit("transport_event", {
@@ -259,10 +431,12 @@ describe("RealtimeSession adapter", () => {
 
     probe.emit("transport_event", {
       type: "output_audio_buffer.started",
+      response_id: 'farewell',
       realtimeSessionId: "session-a",
     });
     probe.emit("transport_event", {
       type: "output_audio_buffer.stopped",
+      response_id: 'farewell',
       realtimeSessionId: "session-a",
     });
     await Promise.resolve();
@@ -298,6 +472,9 @@ describe("RealtimeSession adapter", () => {
       realtimeSessionId: "session-a",
     });
     await sleepTool?.invoke({}, "{}");
+    probe.emit('agent_tool_end', {}, agentOptions, sleepTool, 'sleep_requested', {});
+    const request = probe.sendEvent.mock.calls[0][0];
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
     probe.emit("transport_event", {
       type: "output_audio_buffer.stopped",
       realtimeSessionId: "session-a",
@@ -305,8 +482,8 @@ describe("RealtimeSession adapter", () => {
     await Promise.resolve();
 
     expect(onReturnToDormant).not.toHaveBeenCalled();
-    probe.emit("transport_event", { type: "output_audio_buffer.started", realtimeSessionId: "session-a" });
-    probe.emit("transport_event", { type: "output_audio_buffer.stopped", realtimeSessionId: "session-a" });
+    probe.emit("transport_event", { type: "output_audio_buffer.started", response_id: 'farewell', realtimeSessionId: "session-a" });
+    probe.emit("transport_event", { type: "output_audio_buffer.stopped", response_id: 'farewell', realtimeSessionId: "session-a" });
     await Promise.resolve();
     expect(onReturnToDormant).toHaveBeenCalledTimes(1);
   });
@@ -317,8 +494,10 @@ describe("RealtimeSession adapter", () => {
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), eventSink, probe), wakeGreeting: "Welcome." });
     expect(probe.sendMessage).not.toHaveBeenCalled();
     await handle.connect(); await handle.connect();
-    expect(probe.sendMessage).toHaveBeenCalledTimes(1);
-    expect(probe.sendMessage.mock.calls[0]?.[0]).toContain("\nWelcome.");
+    expect(probe.sendMessage).not.toHaveBeenCalled();
+    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith({ type: 'response.create', response: buildSpeechResponse('Welcome.', '') });
+    // Only the greeting response forbids tools; visitor sleep commands remain available.
+    expect(probe.agentConstructorCalls[0]?.[0]).toMatchObject({ tools: [expect.objectContaining({ name: 'return_to_dormant' })] });
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain("Welcome.");
   });
 
@@ -326,7 +505,9 @@ describe("RealtimeSession adapter", () => {
     const probe = makeAdapterProbe();
     createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), sleepFarewell: "Rest now." });
     const options = probe.agentConstructorCalls[0]?.[0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] };
-    expect(await options.tools[0]!.invoke({}, "{}")).toBe("Say exactly Rest now. now and no other words.");
+    expect(isBackgroundResult(await options.tools[0]!.invoke({}, "{}"))).toBe(true);
+    probe.emit('agent_tool_end', {}, options, options.tools[0], 'sleep_requested', {});
+    expect(probe.sendEvent.mock.calls[0][0].response.instructions).toContain('\nRest now.');
     expect(probe.interrupt).not.toHaveBeenCalled();
   });
 
@@ -343,14 +524,12 @@ describe("RealtimeSession adapter", () => {
       }[];
     };
     expect(agentOptions.instructions).toContain(
-      "The entire audible response for this command must be exactly 如你所願，再會.",
+      'Do not acknowledge, say goodbye or invite more conversation; the application supplies farewell audio.',
     );
     expect(agentOptions.instructions).toContain(
-      "Never say 我來處理你的指令 or any other acknowledgement before the tool call.",
+      'call return_to_dormant silently',
     );
-    await expect(agentOptions.tools[0]?.invoke({}, "{}")).resolves.toBe(
-      "Say exactly 如你所願，再會 now and no other words.",
-    );
+    expect(isBackgroundResult(await agentOptions.tools[0]?.invoke({}, "{}"))).toBe(true);
   });
 
   it("configures the wake-gated noisy-room profile for far-field Mandarin conversation", () => {
@@ -372,7 +551,7 @@ describe("RealtimeSession adapter", () => {
             transcription: {
               model: "configured-transcription-model",
               languages: ["zh-tw", "en"],
-              keywords: ["恭送渡鴨大人"],
+              keywords: ["魔鏡阿魔鏡", "恭送渡鴨大人"],
               delay: "medium",
             },
             turnDetection: {

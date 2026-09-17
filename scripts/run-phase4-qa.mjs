@@ -7,13 +7,14 @@ import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
 }
 const musicOnly = process.argv.includes('--music-only')
-const lifecycleLive = process.argv.includes('--lifecycle-live')
+const spellsLive = process.argv.includes('--spells-live')
+const lifecycleLive = process.argv.includes('--lifecycle-live') || spellsLive
 const live = process.argv.includes('--live') || lifecycleLive
 const manual = process.argv.includes('--manual')
 const cubismOnly = process.argv.includes('--cubism')
@@ -21,7 +22,8 @@ const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
-const consoleOnly = process.argv.includes('--console') || editorOnly
+const videoFades = process.argv.includes('--video-fades')
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()) {
@@ -198,8 +200,13 @@ if (lifecycleLive) {
   config.spells = config.spells.filter(s => s.id !== 'spell-visual-missing')
   config.avatarCatalog = { activeAvatarId: 'qa-host', locks: [], models: [], avatars: [
     { id: 'qa-host', name: 'QA Host', personality: 'QA warm host. Be welcoming and brief.', speakingStyle: 'Warm Traditional Chinese.', voice: 'coral', idleSeconds: 300, modelId: 'builtin-ren', presentation: { ...config.presentation }, scenes: config.scenes, spells: config.spells },
-    { id: 'qa-guide', name: 'QA Guide', personality: 'QA calm guide. Be curious and precise.', speakingStyle: 'Calm and unhurried.', voice: 'cedar', idleSeconds: 300, modelId: 'builtin-ren', presentation: { ...config.presentation, wakeGreeting: 'The guide is ready.', sleepFarewell: 'Goodbye.' }, scenes: [], spells: [] },
+    { id: 'qa-guide', name: 'QA Raven', personality: '省話 帶點神祕感 睿智', speakingStyle: 'Speak slowly and solemnly, with clear consonants.', sleepPhrase: '恭送渡鴉大人', voice: 'cedar', idleSeconds: 300, modelId: 'builtin-ren', presentation: { ...config.presentation, wakeGreeting: '來者何人？所問何事？', sleepFarewell: '如你所願，再會' }, scenes: [], spells: [] },
   ] }
+}
+if (spellsLive) {
+  config.avatarCatalog.avatars[0].personality = 'QA proud rain spirit. Speak playfully and stay in character.'
+  config.avatarCatalog.avatars[0].spells.push({ id: 'spell-short-rain', name: 'Rain', phrase: '施放咒語，下雨',
+    sceneId: 'scene-visual-finite', enabled: true, cooldownMs: 0 })
 }
 if (consoleOnly) {
   config.visualAssets = []
@@ -216,6 +223,8 @@ const electron = join(repoRoot, 'node_modules', 'electron', 'dist', process.plat
 const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
+  MIRROR_SPELL_QA: spellsLive ? '1' : '0',
+  MIRROR_VIDEO_FADE_QA: videoFades ? '1' : '0',
   MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
   MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
@@ -230,7 +239,7 @@ const environment = {
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
   MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly ? '300000' : '120000',
-  MIRROR_DEVELOPER_MODE: 'disabled',
+  MIRROR_DEVELOPER_MODE: audioOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
 delete environment.MIRROR_PHASE0_DEMO

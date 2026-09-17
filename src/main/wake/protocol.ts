@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { wakeScoreSchema } from '../../shared/wake-score'
 
 const safeToken = z.string().regex(/^[a-z][a-z0-9._-]{0,95}$/)
 const requestId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
@@ -11,6 +12,7 @@ const packageSchema = z.object({
   modelVersion: z.string().trim().min(1).max(96),
   phrase: z.string().trim().min(1).max(96),
   sampleRateHz: z.literal(16_000),
+  calibration: z.boolean().optional(),
   artifactPaths,
   tuning: z.object({
     threshold: z.number().min(0).max(1).optional(),
@@ -43,6 +45,7 @@ const wakeWorkerOutcomeSchema = z.discriminatedUnion('type', [
     blocks: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     peak: z.number().min(0).max(1),
     rms: z.number().min(0).max(1),
+    detector: wakeScoreSchema.nullable().optional(),
   }).strict(),
   z.object({ type: z.literal('ready'), requestId, packageId: safeToken }).strict(),
   z.object({ type: z.literal('microphone_acquired'), requestId }).strict(),

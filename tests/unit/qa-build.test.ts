@@ -8,11 +8,14 @@ const roots: string[] = []
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'mm-qa-build-'))
   roots.push(root)
-  for (const dir of ['src', 'resources/generated', 'resources/avatar', 'resources/config', 'resources/offline-loop', 'scripts', 'out/main', 'out/preload', 'out/renderer']) {
+  for (const dir of ['src', 'resources/generated', 'resources/avatar', 'resources/config', 'resources/offline-loop', 'resources/wake-native', 'scripts/native', 'out/main', 'out/preload', 'out/renderer']) {
     await mkdir(join(root, dir), { recursive: true })
   }
   for (const file of ['package.json', 'package-lock.json', 'electron.vite.config.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json', 'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs', 'scripts/generate-avatar-audio.mjs', 'src/app.ts', 'out/main/index.js', 'out/preload/mirror.js', 'out/preload/console.js', 'out/renderer/mirror/index.html', 'out/renderer/console/index.html']) {
     await mkdir(join(root, file, '..'), { recursive: true })
+    await writeFile(join(root, file), 'synthetic')
+  }
+  for (const file of ['scripts/build-wake-score-native.ps1', 'scripts/prepare-wake-score-native.mjs']) {
     await writeFile(join(root, file), 'synthetic')
   }
   return root
@@ -44,6 +47,12 @@ describe('QA build provenance', () => {
     await beginBuild(root); await finishBuild(root)
     await writeFile(join(root, 'out/main/index.js'), 'changed')
     await expect(verifyBuild(root)).rejects.toThrow('qa_build_output_changed')
+  })
+  it('rejects replacement of a native wake library after a build', async () => {
+    const root = await fixture()
+    await beginBuild(root); await finishBuild(root)
+    await writeFile(join(root, 'resources/wake-native/test.dll'), 'changed native library')
+    await expect(verifyBuild(root)).rejects.toThrow('qa_build_stale')
   })
   it('rejects a source edit during the build and missing renderer output', async () => {
     const root = await fixture()

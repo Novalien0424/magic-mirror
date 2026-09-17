@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
+import { avatarCatalogFor, projectActiveAvatar, type AvatarWakeTuning } from '../shared/avatar-profiles'
 import { avatarCatalogSchema } from './avatar/avatar-config'
 
 import type {
@@ -129,6 +129,7 @@ export type ConsoleConfigRefreshResult =
     }
 
 export interface ConsoleConfigControllerOptions {
+  readonly getWakeTuningDefaults?: (wake: MirrorConfig['wake']) => Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>
   readonly getLifecycle?: () => string
   readonly acquireAvatarSwitch?: () => (() => void) | null
   readonly validateSceneAssets?: (config: MirrorConfig) => boolean | PromiseLike<boolean>
@@ -138,13 +139,14 @@ export interface ConsoleConfigControllerOptions {
   readonly getDeveloperMode: () => boolean
   readonly emit: (event: Omit<MirrorEvent, 'time'>) => void
   readonly now: () => string
-  readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
+  readonly validateWakeConfig?: (wake: MirrorConfig['wake'], tuning?: AvatarWakeTuning) => boolean | PromiseLike<boolean>
   readonly mockDraftProbe?: (...args: readonly unknown[]) =>
     | ConsoleDraftProbeResult
     | PromiseLike<ConsoleDraftProbeResult>
 }
 
 export interface ConsoleConfigController {
+  deleteAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
@@ -721,10 +723,10 @@ export function createConsoleConfigController(
   let runtimeOld: ConsoleRuntimeSnapshot | null = null
   let runtimeNew: ConsoleRuntimeSnapshot | null = null
 
-  async function wakeConfigIsValid(wake: MirrorConfig['wake']): Promise<boolean> {
+  async function wakeConfigIsValid(wake: MirrorConfig['wake'], tuning?: AvatarWakeTuning): Promise<boolean> {
     if (options.validateWakeConfig === undefined) return true
     try {
-      return await Promise.resolve(options.validateWakeConfig(wake))
+      return await Promise.resolve(options.validateWakeConfig(wake, tuning))
     } catch {
       return false
     }
@@ -734,6 +736,30 @@ export function createConsoleConfigController(
     return slots.active.wake.phrase !== slots.draft.wake.phrase
       || slots.active.wake.modelVersion !== slots.draft.wake.modelVersion
       || slots.active.wake.packageId !== slots.draft.wake.packageId
+  }
+
+  async function changedWakeConfigsAreValid(slots: ConfigSlots): Promise<boolean> {
+    const current = avatarCatalogFor(slots.active)
+    const draft = avatarCatalogFor(slots.draft)
+    const packageChanged = slots.active.wake.packageId !== slots.draft.wake.packageId
+      || slots.active.wake.modelVersion !== slots.draft.wake.modelVersion
+    const configs = draft.avatars.filter(avatar => packageChanged
+      || !current.avatars.some(old => old.id === avatar.id
+        && old.wakePhrase === avatar.wakePhrase
+        && JSON.stringify(old.wakeTuning) === JSON.stringify(avatar.wakeTuning)))
+      .map(avatar => ({
+        wake: { ...slots.draft.wake, phrase: avatar.wakePhrase ?? slots.draft.wake.phrase },
+        tuning: avatar.wakeTuning,
+      }))
+    if (wakeConfigChanged(slots)) configs.push({ wake: { ...slots.draft.wake }, tuning: undefined })
+    const seen = new Set<string>()
+    for (const config of configs) {
+      const key = JSON.stringify(config)
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (!(await wakeConfigIsValid(config.wake, config.tuning))) return false
+    }
+    return true
   }
 
   async function readState(): Promise<ControllerState | null> {
@@ -796,6 +822,7 @@ export function createConsoleConfigController(
       return {
         ok: true,
         value: {
+          wakeTuningDefaults: await options.getWakeTuningDefaults?.(state.slots.draft.wake).catch(() => null) ?? null,
           active: safeConfigView(state.slots.active),
           draft: safeConfigView(state.slots.draft),
           previous: safeConfigView(state.slots.previous),
@@ -911,7 +938,7 @@ export function createConsoleConfigController(
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
       let probeResult: ConsoleDraftProbeResult
       if (!(await sceneAssetsAreValid(state.slots.draft))
-        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        || !(await changedWakeConfigsAreValid(state.slots))) {
         probeResult = { result: 'failed', reason: 'cause=draft_invalid' }
       } else try {
         probeResult = options.mockDraftProbe === undefined
@@ -999,7 +1026,7 @@ export function createConsoleConfigController(
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
       if (!(await sceneAssetsAreValid(state.slots.draft))
-        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        || !(await changedWakeConfigsAreValid(state.slots))) {
         draftTest = null
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
@@ -1105,6 +1132,17 @@ export function createConsoleConfigController(
     }
   }
 
+  async function deleteAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
+    try {
+      const state = await readState()
+      if (!state) return responseError('console_not_ready', 'cause=config_service_unavailable')
+      await state.service.deleteAvatar(id)
+      draftTest = null
+      return await refreshAfterMutation()
+    } catch (error) { return mapConfigError(error, 'save') }
+  }
+
   async function loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
     if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
     if (options.getLifecycle?.() !== 'dormant') return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant')
@@ -1149,6 +1187,7 @@ export function createConsoleConfigController(
     }
   }
   return {
+    deleteAvatar: serial(deleteAvatar),
     loadAvatar: serial(loadAvatar),
     getConfig: serial(getConfig),
     getModels: serial(getModels),

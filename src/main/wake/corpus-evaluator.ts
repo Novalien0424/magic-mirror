@@ -6,6 +6,8 @@ export interface WakeCorpusSample {
   readonly id: string
   readonly category: WakeCorpusCategory
   readonly pcm: Int16Array
+  /** Optional positive-utterance annotation; never infer keyword end from clip start. */
+  readonly keywordEndMs?: number
 }
 
 export interface WakeCorpusCandidate {
@@ -14,7 +16,7 @@ export interface WakeCorpusCandidate {
 }
 
 export interface WakeCorpusAggregate {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 2
   readonly sampleCount: number
   readonly positiveCount: number
   readonly negativeHours: number
@@ -22,9 +24,9 @@ export interface WakeCorpusAggregate {
     readonly packageId: string
     readonly detections: number
     readonly falseRejects: number
-    readonly falseRejectRate: number
+    readonly falseRejectRate: number | null
     readonly falseAccepts: number
-    readonly falseAcceptsPerHour: number
+    readonly falseAcceptsPerHour: number | null
     readonly meanLatencyMs: number | null
     readonly p95LatencyMs: number | null
     readonly processingMs: number
@@ -49,6 +51,11 @@ export function evaluateWakeCorpus(input: {
   const chunkSamples = input.chunkSamples ?? 1_600
   if (!Number.isSafeInteger(chunkSamples) || chunkSamples < 1) {
     throw new Error('wake_corpus_configuration_invalid')
+  }
+  for (const sample of input.samples) {
+    if (sample.keywordEndMs !== undefined && (sample.category !== 'positive'
+      || !Number.isFinite(sample.keywordEndMs) || sample.keywordEndMs < 0
+      || sample.keywordEndMs > sample.pcm.length / 16)) throw new Error('wake_corpus_annotation_invalid')
   }
   const positiveCount = input.samples.filter((sample) => sample.category === 'positive').length
   const negativeSamples = input.samples
@@ -80,15 +87,19 @@ export function evaluateWakeCorpus(input: {
             if (detector.process(chunk).status === 'detected') {
               detected = true
               detections += 1
-              latencies.push(Math.min(offset + chunk.length, sample.pcm.length) / 16_000 * 1_000)
-              break
+              if (sample.category === 'positive') {
+                if (sample.keywordEndMs !== undefined) latencies.push((offset + chunk.length) / 16 - sample.keywordEndMs)
+                break
+              }
+              // The configured detector resets after a match. Keep feeding the
+              // complete negative clip to count every false activation.
+              falseAccepts += 1
             }
           }
         } catch {
           failures += 1
         }
         if (sample.category === 'positive' && !detected) falseRejects += 1
-        if (sample.category !== 'positive' && detected) falseAccepts += 1
       }
     } finally {
       try { detector.close() } catch { failures += 1 }
@@ -99,9 +110,9 @@ export function evaluateWakeCorpus(input: {
       packageId: candidate.packageId,
       detections,
       falseRejects,
-      falseRejectRate: positiveCount === 0 ? 0 : falseRejects / positiveCount,
+      falseRejectRate: positiveCount === 0 ? null : falseRejects / positiveCount,
       falseAccepts,
-      falseAcceptsPerHour: negativeHours === 0 ? 0 : falseAccepts / negativeHours,
+      falseAcceptsPerHour: negativeHours === 0 ? null : falseAccepts / negativeHours,
       meanLatencyMs: latencies.length === 0 ? null : latencyTotal / latencies.length,
       p95LatencyMs: percentile95(latencies),
       processingMs,
@@ -111,7 +122,7 @@ export function evaluateWakeCorpus(input: {
   })
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sampleCount: input.samples.length,
     positiveCount,
     negativeHours,

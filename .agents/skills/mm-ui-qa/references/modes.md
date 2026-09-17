@@ -4,6 +4,18 @@ Repository implementation reference; installed code, current DECISIONS and focus
 
 ## Choose the evidence needed
 
+- `npm run test:phase4:qa:lifecycle-live`: synthetic host/Raven greeting, follow-up
+  and sleep with the real provider. Checks native prompt windows, wire tool
+  definitions/structured results and processed output silence before farewell.
+  Retain failures; a tool-call pass does not prove pre-tool silence or mic ASR.
+
+- `node scripts/run-phase4-qa.mjs --spells-live`: synthetic text with real
+  provider speech; compares no-coaching behavior and exact prefix playback
+  before one scene. Stores comparison flags only. Does not prove microphone ASR.
+- `node scripts/run-phase4-qa.mjs --video-fades`: focused Console import,
+  fade editing, Save/Publish and portrait playback with computed opacity and
+  embedded-video gain samples. Does not prove physical speaker output.
+
 - `npm run test:phase4:qa:profiles`: new Avatar journey plus local Voice QA,
   independent persona/rig/voice/scenes, draft retention, invalid Save, guarded
   navigation/reload, saved scope after reload, Publish and Dormant activation.

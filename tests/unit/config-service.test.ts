@@ -13,6 +13,7 @@ import {
   type ConfigSlot,
 } from '../../src/main/config-service'
 import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/types'
+import { avatarCatalogFor, projectActiveAvatar } from '../../src/shared/avatar-profiles'
 
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
@@ -399,6 +400,34 @@ afterEach(async () => {
 })
 
 describe('ConfigService contract', () => {
+  it.each([false, true])('deletes one inactive avatar in both slots, preserves other drafts and compensates a write failure (%s)', async (fail) => {
+    const harness = makeMemoryHarness()
+    const catalog = avatarCatalogFor(baseConfig())
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'copy', name: 'Copy' })
+    const active = projectActiveAvatar({ ...baseConfig(), avatarCatalog: catalog })
+    const draft = structuredClone(active)
+    draft.avatarCatalog.avatars[0].name = 'Unpublished name'
+    const projectedDraft = projectActiveAvatar(draft)
+    seedSlots(harness, 'mock-config', active, projectedDraft)
+    const service = harness.service()
+    const before = await service.read()
+    if (fail) harness.writer.failWrites.add(harness.writer.writeCount + 2)
+    if (fail) {
+      await expect(service.deleteAvatar('copy')).rejects.toMatchObject({ code: 'config_write_failed' })
+      expect(await service.read()).toEqual(before)
+    } else {
+      await service.deleteAvatar('copy')
+      const after = await service.read()
+      expect(after.active.avatarCatalog?.avatars.map(a => a.id)).toEqual(['default-avatar'])
+      expect(after.draft.avatarCatalog?.avatars.map(a => a.id)).toEqual(['default-avatar'])
+      expect(after.draft.persona.name).toBe('Unpublished name')
+      expect(after.active.persona.name).toBe(active.persona.name)
+      expect(after.active.visualAssets).toEqual(before.active.visualAssets)
+      expect(after.previous).toEqual(before.active)
+      await expect(service.deleteAvatar('default-avatar')).rejects.toMatchObject({ code: 'config_schema_invalid' })
+    }
+  })
   it('validates the strict core without deciding auxiliary Phase 4 shape', () => {
     expect(mirrorConfigSchema.safeParse(baseConfig()).success).toBe(true)
     expect(
