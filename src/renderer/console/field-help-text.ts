@@ -11,11 +11,13 @@ export const FIELD_HELP = {
   sleepFarewell: 'The exact farewell the avatar is asked to say before returning to sleep. Up to 500 characters. The mirror waits for the farewell’s audio to finish before showing its sleeping presentation.',
   visibility: 'Always visible keeps the avatar on screen while sleeping. Emerge from mist hides it behind the sleeping background and reveals it on wake. Entrance and exit times control the transition.',
   background: 'Choose an imported image or looping video for the sleeping background. Built-in atmosphere uses the default background. A background video is silent; choose Sleep ambience separately for its sound.',
-  ambience: 'Choose music that loops while the mirror is asleep, or No ambience for silence. It fades out when the mirror wakes. Import audio through Media library if the track you want is missing.',
+  ambience: 'Choose looping music for this avatar, or No ambience for silence. Ambience volume controls sleep; Active BGM volume controls conversation. Import audio through Media library if the track you want is missing.',
   ambienceVolume: 'This avatar’s sleeping ambience level: 0% is silent and 100% uses the track’s full level. The System BGM volume multiplies this setting, so a lower global BGM level also makes this ambience quieter.',
+  activeBgmVolume: 'The same selected music continues while this avatar is awake at this level. 0% turns active BGM off. Music mutes during avatar speech and fades back afterward. System BGM volume also applies. Save and publish to apply.',
   entrance: 'How many seconds the avatar’s waking transition takes. Range: 0.2–10 seconds. Shorter feels quicker; longer makes the reveal more gradual. Preview entrance to see the draft locally.',
   exit: 'How many seconds the transition back to the sleeping presentation takes. Range: 0.2–10 seconds. It follows the farewell. Preview exit to see the draft locally.',
   baseVoice: 'The provider voice used to generate speech. Available choices come from the app’s approved voice list. Use Generate test voice to hear the choice; a local audio file cannot demonstrate a different provider voice. Published changes apply to the next conversation.',
+  voiceProfile: 'Apply a reusable sound profile: base voice, speech speed, delivery style and local effects together. Priestess and God approximate the two Talos reference voices; they are not clones. Generate test voice to listen, then Save all changes and Publish. Fine tuning shows Custom settings and is saved with this avatar.',
   speechSpeed: 'Provider speech speed, from 0.5× to 1.5×. 1× is the normal pace; lower is slower and higher is faster. Generate a new test voice to hear the change. It does not change local-file playback speed.',
   deliveryStyle: 'Describe how to speak: pacing, warmth, energy, language or tone. For example: “Calm, curious, brief answers in Traditional Chinese.” Up to 2,000 characters. Generate a new audition to hear changes; style instructions are not an exact acoustic guarantee.',
   effectsEnabled: 'Turn the local voice-processing effects on or off. Off plays the original generated or recorded voice; the System Avatar audio volume still applies. Use Original / Processed to compare the same sample.',
@@ -24,10 +26,13 @@ export const FIELD_HELP = {
   warmth: 'Boosts or reduces low-frequency tone, from −6 to +6 dB. Positive values add warmth and weight; negative values make the voice leaner. 0 leaves this tone control neutral.',
   brightness: 'Boosts or reduces high-frequency tone, from −6 to +6 dB. Positive values add clarity and edge; negative values soften the voice. Too much can make sibilant sounds harsh.',
   grit: 'Adds a rough, saturated texture to the voice. 0 is clean; higher values add more grit, up to 0.30. Start with a small amount and listen to a complete sentence.',
-  roomMix: 'How much short room reverberation is mixed into the voice, from 0 to 0.25. 0 is dry; 0.25 is the maximum 25% room mix. More room can make words less distinct.',
+  roomMix: 'How much room reverberation is mixed into the voice, from 0 to 0.25. 0 is dry; 0.25 is the maximum 25% room mix. Hall and Cathedral add longer tails. Keep the mix low to preserve clear words.',
   outputTrim: 'Attenuates the processed voice after effects, from −18 to 0 dB. 0 adds no attenuation; negative values make it quieter. Use this to balance an avatar’s effect preset; System Avatar audio controls overall playback volume.',
   formantCompensation: 'Preserves vocal resonance when pitch changes, helping avoid a strongly tiny or oversized voice. Body / formant remains a separate creative control. Compare on and off using the same sample.',
-  roomSize: 'Short uses a 120 ms room response; Medium uses 250 ms for a longer sense of space. Room mix controls how much is audible. A larger room also leaves a longer audio tail.',
+  roomSize: 'Short uses 120 ms; Medium 250 ms; Hall 1.2 seconds; Cathedral 2.4 seconds. The longer rooms leave a brief gap before the reverberation to preserve consonants. Room mix controls the amount. BGM waits for the speech tail; interruption clears it.',
+  echoMix: 'Amount of distinct fading voice repeats, from 0 to 0.30. 0 turns echo off. The direct voice stays clear and immediate. Use a small amount for God-like resonance; larger amounts can obscure words.',
+  echoDelay: 'Time between voice repeats, from 60 to 500 milliseconds. Short delays thicken the sound; longer delays sound like separate echoes. This delays only the echo, not the direct voice.',
+  echoRepeats: 'Number of fading echoes, from 1 to 4. Each repeat is quieter and the last ends completely, with no endless feedback. BGM resumes after the tail; Stop and visitor interruption clear all repeats.',
   localSpeech: 'Choose an authorized local speech sample for an offline effects audition. Maximum: 20 MB and 30 seconds of decoded audio. It stays local and does not use the microphone or generate provider speech.',
   loopFixture: 'Repeat the selected local sample until you press Stop or leave the preview. Useful for comparing effects. This does not loop a generated provider audition.',
   libraryModel: 'Choose a rig from the shared Live2D library for silent local inspection. Loading it does not publish or switch the visitor’s avatar. Assign it in Appearance when you want a character to use it.',
@@ -103,6 +108,7 @@ export const FIELD_HELP = {
 export const VOICE_FIELD_HELP = {
   pitchSemitones: FIELD_HELP.pitch, formantSemitones: FIELD_HELP.formant, warmthDb: FIELD_HELP.warmth,
   brightnessDb: FIELD_HELP.brightness, grit: FIELD_HELP.grit, roomMix: FIELD_HELP.roomMix, outputTrimDb: FIELD_HELP.outputTrim,
+  echoMix: FIELD_HELP.echoMix, echoDelayMs: FIELD_HELP.echoDelay, echoRepeats: FIELD_HELP.echoRepeats,
 } as const
 
 export function cubismParameterHelp(id: string, name: string, min: number, max: number, defaultValue: number): string {

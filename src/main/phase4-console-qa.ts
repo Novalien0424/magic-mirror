@@ -6,6 +6,7 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { runVoiceConsoleQa } from './voice-console-qa'
 import { runProfileConsoleQa } from './profile-console-qa'
 import { runFieldHelpConsoleQa } from './field-help-console-qa'
+import { runActiveBgmQa } from './active-bgm-qa'
 
 // This driver runs only in the isolated Phase 4 QA process. It substitutes the
 // native file-picker selection; import, Chromium decode, edits, and publication
@@ -41,6 +42,7 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_ACTIVE_BGM_QA'] === '1') return runActiveBgmQa(input)
   if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
   if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
   if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)

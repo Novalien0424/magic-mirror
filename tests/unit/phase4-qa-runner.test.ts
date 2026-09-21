@@ -31,7 +31,7 @@ describe('Phase 4 live QA runner', () => {
   )
   it('keeps the isolated Realtime session alive through renderer capture', () => {
     expect(RUNNER_SOURCE).toContain('config.idleSeconds = 300')
-    expect(RUNNER_SOURCE).toContain("MIRROR_DEVELOPER_MODE: 'disabled'")
+    expect(RUNNER_SOURCE).toContain("MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled'")
   })
 
   it('isolates live scene input and finishes standalone motions before voice ownership', () => {

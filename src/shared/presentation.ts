@@ -6,6 +6,7 @@ export interface PresentationConfig {
   backgroundId: string
   ambienceId: string
   ambienceGain: number
+  activeAmbienceGain?: number
   entranceMs: number
   exitMs: number
   wakeGreeting?: string
@@ -17,7 +18,7 @@ export interface PresentationPayload {
   background: Pick<ManagedVisualAsset, 'id' | 'kind'> | null
 }
 export const DEFAULT_PRESENTATION: Readonly<PresentationConfig> = Object.freeze({
-  mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
+  mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25, activeAmbienceGain: 0,
   entranceMs: 1800, exitMs: 1800,
   wakeGreeting: REALTIME_PROMPTS.defaults.wakeGreeting, sleepFarewell: REALTIME_PROMPTS.defaults.sleepFarewell,
 })
@@ -37,11 +38,14 @@ export function parsePresentation(value: unknown): PresentationConfig | null {
   }
   if (typeof v.ambienceGain !== 'number' || !Number.isFinite(v.ambienceGain)
     || v.ambienceGain < 0 || v.ambienceGain > 1) return null
+  const activeAmbienceGain = v.activeAmbienceGain === undefined ? 0 : v.activeAmbienceGain
+  if (typeof activeAmbienceGain !== 'number' || !Number.isFinite(activeAmbienceGain)
+    || activeAmbienceGain < 0 || activeAmbienceGain > 1) return null
   for (const key of ['entranceMs', 'exitMs']) {
     if (typeof v[key] !== 'number' || !Number.isSafeInteger(v[key]) || (v[key] as number) < 200 || (v[key] as number) > 10000) return null
   }
   return { mode: v.mode, backgroundId: v.backgroundId as string, ambienceId: v.ambienceId as string,
-    ambienceGain: v.ambienceGain, entranceMs: v.entranceMs as number, exitMs: v.exitMs as number,
+    ambienceGain: v.ambienceGain, activeAmbienceGain, entranceMs: v.entranceMs as number, exitMs: v.exitMs as number,
     wakeGreeting: v.wakeGreeting as string | undefined ?? DEFAULT_PRESENTATION.wakeGreeting,
     sleepFarewell: v.sleepFarewell as string | undefined ?? DEFAULT_PRESENTATION.sleepFarewell }
 }

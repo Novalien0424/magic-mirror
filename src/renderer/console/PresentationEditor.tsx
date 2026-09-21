@@ -42,9 +42,10 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
           <option value="">No ambience</option>{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
         </select></HelpField>
         <HelpField help={FIELD_HELP.ambienceVolume}>Ambience volume · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
         <HelpField help={FIELD_HELP.entrance}>Entrance seconds<input type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
         <HelpField help={FIELD_HELP.exit}>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <p className="console__muted">Cubism motions: Waking → Listening → Suspending → Dormant. Mist is a built-in effect. Background video is muted; ambience fades out on wake and uses your selected speakers.</p>
+        <p className="console__muted">Background video is muted. The selected music uses Ambience volume while asleep and Active BGM volume while awake. Music mutes during avatar speech, then fades back in. Uses your selected speakers.</p>
         <p className="console__muted">Import media in the Media library. Save, Test and Publish below to apply this presentation to the mirror.</p>
       </fieldset>
       <div className="presentation-editor__preview-panel">

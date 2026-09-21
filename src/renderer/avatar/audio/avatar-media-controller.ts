@@ -53,7 +53,7 @@ export function createAvatarMediaController(
   }
   const music = new Audio()
   music.crossOrigin = 'anonymous'
-  music.src = '/audio/test-music.wav'
+  music.src = '../audio/test-music.wav'
   music.preload = 'auto'
   music.loop = true
 
@@ -253,7 +253,7 @@ export function createAvatarMediaController(
   const playRecorded = async (): Promise<void> => {
     stopRecorded()
     const generation = recordedGeneration
-    const response = await fetch('/audio/recorded-ai-test.wav')
+    const response = await fetch('../audio/recorded-ai-test.wav')
     if (!response.ok) throw new Error('avatar_recorded_audio_fetch_failed')
     const buffer = await context.decodeAudioData(await response.arrayBuffer())
     if (disposed || generation !== recordedGeneration) return

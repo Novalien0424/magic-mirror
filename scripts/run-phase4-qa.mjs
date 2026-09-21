@@ -7,7 +7,7 @@ import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -20,10 +20,11 @@ const manual = process.argv.includes('--manual')
 const cubismOnly = process.argv.includes('--cubism')
 const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
+const activeBgmOnly = process.argv.includes('--active-bgm')
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()) {
@@ -227,6 +228,7 @@ const environment = {
   MIRROR_VIDEO_FADE_QA: videoFades ? '1' : '0',
   MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
   MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
+  MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
@@ -239,7 +241,7 @@ const environment = {
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
   MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly ? '300000' : '120000',
-  MIRROR_DEVELOPER_MODE: audioOnly ? 'enabled' : 'disabled',
+  MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
 delete environment.MIRROR_PHASE0_DEMO

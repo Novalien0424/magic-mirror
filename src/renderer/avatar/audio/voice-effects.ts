@@ -1,4 +1,5 @@
 import { DEFAULT_VOICE_EFFECTS, type VoiceEffects } from '../../../shared/voice-effects'
+import { echoImpulse, roomImpulse, spatialTailSeconds } from './voice-spatial-effects'
 
 interface StretchNode extends AudioWorkletNode {
   configure(config: { blockMs: number; intervalMs: number; splitComputation: boolean }): Promise<void>
@@ -35,20 +36,6 @@ function curve(grit: number): Float32Array<ArrayBuffer> {
   }
   return values
 }
-export function roomImpulse(context: BaseAudioContext, size: VoiceEffects['roomSize']): AudioBuffer {
-  const length = Math.ceil(context.sampleRate * (size === 'short' ? 0.12 : 0.25))
-  const buffer = context.createBuffer(2, length, context.sampleRate)
-  let seed = 137
-  for (let c = 0; c < 2; c++) {
-    const channel = buffer.getChannelData(c)
-    for (let i = 0; i < length; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) | 0
-      channel[i] = (seed / 2147483648) * Math.pow(1 - i / length, 3) * 0.15
-    }
-  }
-  return buffer
-}
-
 /** One graph for live output and auditions. No microphone, files or provider state. */
 export async function createVoiceEffectGraph(context: AudioContext, initial: VoiceEffects = DEFAULT_VOICE_EFFECTS,
   onDegraded: (reason: string) => void = () => undefined): Promise<VoiceEffectGraph> {
@@ -63,9 +50,10 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
   let compressor = context.createDynamicsCompressor()
   compressor.threshold.value = -6; compressor.knee.value = 6; compressor.ratio.value = 12
   compressor.attack.value = 0.003; compressor.release.value = 0.08
-  const dry = context.createGain(), wet = context.createGain(), mix = context.createGain(), mouth = context.createGain()
-  let room = context.createConvolver()
-  let settings = { ...initial }, node: StretchNode | null = null, disposed = false, interrupted = false
+  const dry = context.createGain(), wet = context.createGain(), echoWet = context.createGain(), mix = context.createGain(), mouth = context.createGain()
+  let room = context.createConvolver(), echo = context.createConvolver()
+  echo.normalize = false
+  let settings = { ...DEFAULT_VOICE_EFFECTS, ...initial }, node: StretchNode | null = null, disposed = false, interrupted = false
   let volume = 1, muted = false, latency = 0, generation = 0, reset: Promise<void> = Promise.resolve()
   let failed = false
   let initializing: Promise<void> | undefined
@@ -81,7 +69,7 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
     if (node) node.disconnect()
     if (settings.enabled && node && !failed) {
       if (!interrupted) input.connect(node)
-      node.connect(warmth); direct.connect(dry).connect(mix); direct.connect(room)
+      node.connect(warmth); direct.connect(dry).connect(mix); direct.connect(room); direct.connect(echo)
       mix.connect(compressor).connect(ceiling).connect(output)
     } else {
       if (!interrupted) input.connect(direct)
@@ -90,7 +78,7 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
     direct.connect(mouth).connect(speechAnalyser)
   }
   warmth.connect(brightness).connect(grit).connect(direct)
-  room.connect(wet).connect(mix); output.connect(completionAnalyser)
+  room.connect(wet).connect(mix); echo.connect(echoWet).connect(mix); output.connect(completionAnalyser)
   const degrade = (): void => {
     if (disposed) return
     failed = true; latency = 0
@@ -129,11 +117,16 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
   const update = async (next: VoiceEffects): Promise<void> => {
     if (disposed) return
     const token = ++generation, old = settings
+    next = { ...DEFAULT_VOICE_EFFECTS, ...next }
     settings = { ...next }
     if (old.roomSize !== next.roomSize || !room.buffer) room.buffer = roomImpulse(context, next.roomSize)
+    if (old.echoDelayMs !== next.echoDelayMs || old.echoRepeats !== next.echoRepeats || !echo.buffer) {
+      echo.buffer = echoImpulse(context, next.echoDelayMs, next.echoRepeats)
+    }
     smooth(warmth.gain, next.warmthDb); smooth(brightness.gain, next.brightnessDb)
     grit.curve = next.grit === 0 ? null : curve(next.grit)
     smooth(dry.gain, 1 - next.roomMix); smooth(wet.gain, next.roomMix)
+    smooth(echoWet.gain, next.echoMix)
     try {
       if (next.enabled) await ensureNode()
       if (disposed || token !== generation) return
@@ -147,16 +140,18 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
   return {
     input, output, speechAnalyser, completionAnalyser,
     get latencySeconds() { return settings.enabled && !failed ? latency + 0.006 : 0 },
-    get tailSeconds() { return settings.enabled && !failed ? latency + 0.006 + (settings.roomMix ? settings.roomSize === 'short' ? 0.12 : 0.25 : 0) + 0.08 : 0 },
+    get tailSeconds() { return settings.enabled && !failed ? latency + 0.006 + spatialTailSeconds(settings, context.sampleRate) + 0.08 : 0 },
     update,
     setVolume(value) { volume = Math.max(0, Math.min(1, value)); applyGain() },
     setMuted(value) { muted = value; applyGain() },
     interrupt() {
       interrupted = true; ++generation; applyGain(); input.disconnect(); input.connect(drain)
       // Reconfigure invokes the upstream WASM reset; disconnect the input so no
-      // cancelled remote samples can refill it. Recreate convolution tail only.
+      // cancelled remote samples can refill it. Recreate both spatial buffers.
       direct.disconnect(); room.disconnect(); room = context.createConvolver()
       room.buffer = roomImpulse(context, settings.roomSize); room.connect(wet)
+      echo.disconnect(); echo = context.createConvolver(); echo.normalize = false
+      echo.buffer = echoImpulse(context, settings.echoDelayMs, settings.echoRepeats); echo.connect(echoWet)
       // Native filters, oversampling and compressor lookahead also hold samples.
       // Recreate these short stateful stages while muted, not only the worklet.
       mix.disconnect()
@@ -175,7 +170,7 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
       if (disposed) return
       disposed = true; ++generation; applyGain()
       if (node) disposeNode(node)
-      for (const value of [input, output, direct, drain, warmth, brightness, grit, ceiling, compressor, dry, wet, mix, mouth, room, speechAnalyser, completionAnalyser]) value.disconnect()
+      for (const value of [input, output, direct, drain, warmth, brightness, grit, ceiling, compressor, dry, wet, echoWet, mix, mouth, room, echo, speechAnalyser, completionAnalyser]) value.disconnect()
     },
   }
 }

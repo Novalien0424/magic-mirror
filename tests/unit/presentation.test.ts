@@ -5,6 +5,14 @@ import { mirrorConfigSchema } from '../../src/main/config-service'
 import { readFileSync } from 'node:fs'
 
 describe('lifecycle presentation', () => {
+  it('defaults legacy active BGM to silence and validates the independently saved active level', () => {
+    const legacy = { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: .25, entranceMs: 1800, exitMs: 1800 }
+    expect(parsePresentation(legacy)?.activeAmbienceGain).toBe(0)
+    expect(parsePresentation({ ...legacy, activeAmbienceGain: .15 })?.activeAmbienceGain).toBe(.15)
+    for (const invalid of [-.1, 1.1, NaN, Infinity, '0.2', null]) {
+      expect(parsePresentation({ ...legacy, activeAmbienceGain: invalid })).toBeNull()
+    }
+  })
   it('accepts bounded configurable greetings and farewells while upgrading old presentation values', () => {
     const legacy = { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: .25, entranceMs: 1800, exitMs: 1800 }
     expect(parsePresentation(legacy)?.sleepFarewell).toBe('如你所願，再會')

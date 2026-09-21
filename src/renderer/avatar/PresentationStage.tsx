@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react'
 import type { LifecycleState } from '../../shared/types'
 import type { PresentationPayload } from '../../shared/presentation'
 import { getAudioDeviceRouter } from '../audio-devices'
 import { createPresentationController, type PresentationPhase } from './presentation-controller'
+import { applyPresentationAmbience } from './presentation-ambience'
 import './presentation.css'
 
-export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false }: {
+export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false, speechActive = false }: {
   payload: PresentationPayload; lifecycle: LifecycleState; children: ReactNode
   onPhase?: (phase: PresentationPhase) => void; onFailure?: (reason: string) => void; silent?: boolean; draft?: boolean
+  speechActive?: boolean
 }) {
   const { config, background } = payload
   const [phase, setPhase] = useState<PresentationPhase>(lifecycle === 'starting' ? 'inactive' : 'asleep')
@@ -48,7 +50,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     return () => { cancelled = true; video.pause() }
   }, [phase, background?.id, draft])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!config.ambienceId || silent) return
     const audio = audioRef.current
     if (!audio) return
@@ -66,25 +68,13 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     }
   }, [config.ambienceId, silent, draft])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    let cancelled = false
-    let frame = 0
-    const target = phase === 'asleep' || phase === 'exiting' ? config.ambienceGain * bgmVolume : 0
-    const start = audio.volume
-    const started = performance.now()
-    if (target > 0) void routeReady.current.then(() => { if (!cancelled) return audio.play() }).catch(() => { if (!cancelled) failure.current?.('presentation_ambience_play_failed') })
-    const tick = () => {
-      if (cancelled) return
-      const fraction = Math.min(1, (performance.now() - started) / 500)
-      audio.volume = start + (target - start) * fraction
-      if (fraction < 1) frame = requestAnimationFrame(tick)
-      else if (target === 0) audio.pause()
-    }
-    if (phase === 'inactive') { audio.volume = 0; audio.pause() } else tick()
-    return () => { cancelled = true; cancelAnimationFrame(frame) }
-  }, [phase, config.ambienceId, config.ambienceGain, silent, bgmVolume])
+    return applyPresentationAmbience({ audio, phase, ambienceGain: config.ambienceGain,
+      activeAmbienceGain: config.activeAmbienceGain ?? 0, bgmVolume, speechActive,
+      routeReady: routeReady.current, onFailure: reason => failure.current?.(reason) })
+  }, [phase, config.ambienceId, config.ambienceGain, config.activeAmbienceGain, silent, draft, bgmVolume, speechActive])
 
   const backgroundReady = !background || readyId === background.id
   const hidden = config.mode === 'emerge' && phase === 'asleep' && backgroundReady

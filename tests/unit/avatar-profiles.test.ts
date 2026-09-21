@@ -28,6 +28,17 @@ describe('avatar catalog configuration', () => {
     expect(mirrorConfigSchema.safeParse(twoAvatars()).success).toBe(true)
     expect(mirrorConfigSchema.safeParse(baseline()).success).toBe(true)
   })
+  it('keeps active BGM levels with their avatar across persistence and activation', () => {
+    const config = twoAvatars()
+    Object.assign(config.avatarCatalog.avatars[0]!.presentation, { activeAmbienceGain: .15 })
+    Object.assign(config.avatarCatalog.avatars[1]!.presentation, { activeAmbienceGain: .35 })
+    const saved = mirrorConfigSchema.parse(JSON.parse(JSON.stringify(config))) as MirrorConfig
+    expect(saved.presentation?.activeAmbienceGain).toBe(.15)
+    saved.avatarCatalog!.activeAvatarId = 'host'
+    const switched = projectActiveAvatar(saved)
+    expect(switched.presentation?.activeAmbienceGain).toBe(.35)
+    expect(switched.avatarCatalog!.avatars[0]!.presentation.activeAmbienceGain).toBe(.15)
+  })
   it('rejects duplicate avatars, unknown active avatar and unsupported voices', () => {
     for (const mutate of [
       (c: ReturnType<typeof twoAvatars>) => { c.avatarCatalog.avatars[1]!.id = 'guide' },

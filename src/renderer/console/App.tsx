@@ -1543,7 +1543,9 @@ export function ScenesPanel({
         return
       }
       setMediaTestFailed(false)
-      setResult('Saved and checked. Ready to publish.')
+      setResult(response.value.publishDiff.changed.length
+        ? 'Saved and checked. Ready to publish.'
+        : 'Saved and checked. Already up to date. No changes to publish.')
     } catch {
       setResult(abort.signal.aborted ? 'Check aborted. Saved changes are retained; Save again to check.'
         : 'Save / check failed. Your edits are retained. Check media decoding and the Console connection, then Save again.')
@@ -1725,9 +1727,9 @@ export function ScenesPanel({
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton aria-label="Save all changes" help="Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish; saving does not publish or switch avatars." disabled={disabled} onClick={() => void saveAndCheck()}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : 'Save all changes'}</HelpButton>
+        <HelpButton aria-label="Save all changes" help="Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars." disabled={disabled} onClick={() => void saveAndCheck()}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : 'Save all changes'}</HelpButton>
         {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check aborted. Waiting for the pending save / check to finish safely…') }}>Abort check</button>}
-        <HelpButton help={dirty ? 'Save and check changes before publishing.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>
+        <HelpButton help={dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         </div>
         {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>

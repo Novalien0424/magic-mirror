@@ -771,6 +771,13 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [publishedVersion])
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
+  const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
+  // Playback completion includes the processed speech tail. Visitor speech
+  // interrupts and clears that output before this callback is delivered.
+  const updateBgmSpeechPriority = (activity: AvatarAudioActivity): void => {
+    if (activity === 'output_started') setAvatarSpeechActive(true)
+    else if (activity === 'output_stopped' || activity === 'interrupted' || activity === 'speech_started') setAvatarSpeechActive(false)
+  }
   const [avatarFallbackInjected, setAvatarFallbackInjected] = useState(false)
   const avatarRendererRef = useRef<CubismAvatarRenderer | null>(null)
   const realtimeRuntimeOwnerRef = useRef<RealtimeRuntimeOwner | null>(null)
@@ -896,7 +903,10 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           if (output !== null) avatarRendererRef.current?.setState('Speaking')
           else if (avatarStateRef.current !== null) avatarRendererRef.current?.setState(avatarStateRef.current)
         },
-        onActivity: (activity) => coordinator?.handleActivity(activity),
+        onActivity: (activity) => {
+          updateBgmSpeechPriority(activity)
+          coordinator?.handleActivity(activity)
+        },
         onChanged: (metrics: AvatarMediaSnapshot) => reportAvatarRuntime(metrics),
         eventSink: (reason) => {
           const failed = /failed|unavailable|inactive|underrun/.test(reason)
@@ -953,11 +963,13 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         onOutputDisposed: (output) => {
           if (avatarAudioOutputRef.current !== output) return
           avatarAudioOutputRef.current = null
+          setAvatarSpeechActive(false)
           pendingSceneDialogueRef.current.clear()
           avatarMediaControllerRef.current?.setRealtimeOutput(null)
           coordinator?.setAudioOutput(null)
         },
         onActivity: (activity) => {
+          updateBgmSpeechPriority(activity)
           if (activity === 'interrupted') {
             coordinator.handleActivity(activity)
             avatarMediaControllerRef.current?.handleActivity(activity)
@@ -974,6 +986,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         owner,
         () => {
           sceneRuntime.cancelAnnouncement()
+          setAvatarSpeechActive(false)
           coordinator.handleActivity('interrupted')
           avatarMediaControllerRef.current?.handleActivity('interrupted')
         },
@@ -1216,6 +1229,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     return (
       <>
         <PresentationStage payload={presentation} lifecycle={view.state} onPhase={setPresentationPhase}
+          speechActive={avatarSpeechActive}
           onFailure={reason => {
             reportAvatarRuntime({ status: 'degraded', reason })
             const bridge = window.magicMirror

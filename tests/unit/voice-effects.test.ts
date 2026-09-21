@@ -9,6 +9,7 @@ import { createRealtimeSessionStartBundleIssuer } from '../../src/main/realtime/
 import { createSessionModelSnapshot, type ActiveModelSettings } from '../../src/main/model-settings'
 import { createRealtimeIpcContract } from '../../src/main/ipc'
 import type { SessionModelSnapshot } from '../../src/shared/types'
+import { voiceEffectsSchema } from '../../src/shared/voice-effects-schema'
 
 const profile = {
   id: 'guide', name: 'Guide', personality: 'A patient guide.', speakingStyle: 'Calm',
@@ -27,6 +28,19 @@ function snapshot(): SessionModelSnapshot {
 }
 
 describe('voice effects settings contract', () => {
+  it('upgrades legacy settings with silent echo and validates finite echo tails at both boundaries', () => {
+    const { echoMix: _mix, echoDelayMs: _delay, echoRepeats: _repeats, ...legacy } = DEFAULT_VOICE_EFFECTS
+    expect(parseVoiceEffects(legacy)).toEqual(DEFAULT_VOICE_EFFECTS)
+    expect(voiceEffectsSchema.parse(legacy)).toEqual(DEFAULT_VOICE_EFFECTS)
+    const expanded = { ...DEFAULT_VOICE_EFFECTS, roomSize: 'hall', echoMix: .2, echoDelayMs: 220, echoRepeats: 3 }
+    expect(parseVoiceEffects(expanded)).toEqual(expanded)
+    expect(voiceEffectsSchema.parse(expanded)).toEqual(expanded)
+    for (const patch of [{ echoMix: .31 }, { echoMix: NaN }, { echoDelayMs: 501 },
+      { echoDelayMs: 0 }, { echoRepeats: 2.5 }, { echoRepeats: 5 }, { echoRepeats: null }, { roomSize: 'unknown' }]) {
+      expect(parseVoiceEffects({ ...expanded, ...patch })).toBeNull()
+      expect(voiceEffectsSchema.safeParse({ ...expanded, ...patch }).success).toBe(false)
+    }
+  })
   it('defaults absent profile fields through the Main avatar schema', () => {
     const parsed = avatarCatalogSchema.parse({ activeAvatarId: 'guide', avatars: [profile], locks: [], models: [] })
     expect(parsed.avatars[0]).toMatchObject({ voiceSpeed: 1, voiceEffects: DEFAULT_VOICE_EFFECTS })

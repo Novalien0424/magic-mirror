@@ -24,12 +24,37 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     const activeBefore = JSON.stringify(before.value.active)
     await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return !!button('Default · Ethereal') && !button('Default · Ethereal').disabled", 'editor_ready')
+    for (const [id, voice, pitch] of [['talos-priestess', 'marin', '-0.8'], ['talos-god', 'cedar', '-3']]) {
+      await edit(`set(document.querySelector('[aria-label="Sound profile"]'),${JSON.stringify(id)})`)
+      await wait(`return document.querySelector('[aria-label="Pitch · semitones"]').value===${JSON.stringify(pitch)} && document.querySelector('.voice-studio select:not([aria-label="Sound profile"])').value===${JSON.stringify(voice)}`, 'sound_profile_applied')
+      await edit("click('Save all changes')")
+      await wait("return !button('Save all changes').disabled", 'sound_profile_saved')
+      const current = await input.runtime.console.getConfig()
+      const profile = current.ok ? current.value.draft.avatarCatalog?.avatars[0] : undefined
+      if (profile?.voice !== voice || profile.voiceEffects?.pitchSemitones !== Number(pitch)) throw Error('voice_qa_sound_profile_persistence')
+      if (id === 'talos-god' && (profile.voiceEffects.echoMix !== .22 || profile.voiceEffects.echoDelayMs !== 230
+        || profile.voiceEffects.echoRepeats !== 3 || profile.voiceEffects.roomSize !== 'hall')) throw Error('voice_qa_echo_profile_persistence')
+      pass(`voice_profile_${id}`)
+      if (process.env['MIRROR_VOICE_PROFILE_QA_LIVE'] === '1') {
+        await edit("click('Generate test voice')")
+        await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Generating one audition')", 'profile_provider_started', 18000)
+        await wait("return !button('Generate test voice').disabled", 'profile_provider_finished', 22000)
+        const status = await evaluate<string>("return document.querySelector('.voice-studio [role=status]').textContent")
+        if (/failed|timeout|limit|rejected/i.test(status)) throw Error('voice_qa_profile_provider_failed')
+        pass(`voice_profile_audition_${id}`)
+      }
+    }
+    await edit("document.querySelector('.voice-studio fieldset').scrollIntoView({block:'start'})")
+    await shot('voice-sound-profiles.png')
+    await edit("document.querySelector('.voice-studio details').open=true;document.querySelector('[aria-label=\"Echo amount\"]').scrollIntoView({block:'center'})")
+    await shot('voice-echo-controls.png')
     await edit("click('Default · Ethereal')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='1'", 'default_preset')
+    await wait("return document.querySelector('[aria-label=\"Sound profile\"]').value===''", 'sound_profile_custom')
     pass('voice_default_preset')
     await edit("document.querySelector('.voice-studio details').open=true")
-    for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB']) {
-      await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');set(el,Number(el.min)+(Number(el.max)-Number(el.min))/2);`)
+    for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB','Echo amount','Echo delay · ms','Echo repeats']) {
+      await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');const value=Number(el.min)+(Number(el.max)-Number(el.min))/2;set(el,el.step==='1'?Math.round(value):value);`)
     }
     await edit("click('Default · Ethereal')"); await edit("click('Save all changes')")
     await wait("return !button('Save all changes').disabled", 'save')
