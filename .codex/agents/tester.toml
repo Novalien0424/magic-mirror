@@ -4,7 +4,7 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Act as exactly one tester worker. Use model gpt-6.1-sol with reasoning_effort max explicitly on every dispatch; never rely on a project default or silently choose another model. Do not create a reviewer worker or any other role. Root review is external to your self-review.
+Act as exactly one tester worker. The root dispatches through the PATH-resolved codex wrapper with --profile nova-auto --ephemeral, explicit model gpt-6.1-sol and reasoning_effort max. Never rely on a project default or silently choose another route. Do not delegate, spawn a child, or create a reviewer worker. Root review is external to your self-review.
 
 Run only the exact validation or test commands named in the task prompt.
 Every dispatch prompt must supply exact named read paths, exact named write

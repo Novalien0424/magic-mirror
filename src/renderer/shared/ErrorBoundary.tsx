@@ -1,39 +1,44 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, createElement, type ErrorInfo, type ReactNode } from 'react'
+
+export interface RendererBoundaryFailure {
+  readonly code: 'renderer_boundary_failed'
+  readonly reason: 'render_exception'
+}
 
 interface Props {
-  /** Shown in the fallback so an operator can tell which window failed. */
   readonly label: string
   readonly children: ReactNode
+  readonly onFailure?: (failure: RendererBoundaryFailure) => void
 }
 
 interface State {
-  readonly message: string | null
+  readonly failure: RendererBoundaryFailure | null
 }
 
-/**
- * A render crash must never leave the glass blank (invariants #9/#10). The boundary
- * replaces the subtree with a readable failure panel and logs the cause.
- */
-export class ErrorBoundary extends Component<Props, State> {
-  override state: State = { message: null }
+const STABLE_FAILURE: RendererBoundaryFailure = Object.freeze({
+  code: 'renderer_boundary_failed',
+  reason: 'render_exception',
+})
 
-  static getDerivedStateFromError(error: unknown): State {
-    return { message: error instanceof Error ? error.message : String(error) }
+export class ErrorBoundary extends Component<Props, State> {
+  override state: State = { failure: null }
+
+  static getDerivedStateFromError(_error: unknown): State {
+    return { failure: STABLE_FAILURE }
   }
 
-  override componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error(`RENDER_ERROR window=${this.props.label} reason=${error.message}`, info.componentStack)
+  override componentDidCatch(_error: Error, _info: ErrorInfo): void {
+    this.props.onFailure?.(STABLE_FAILURE)
   }
 
   override render(): ReactNode {
-    if (this.state.message === null) return this.props.children
-    return (
-      <div className="screen screen--fault">
-        <p className="screen__title">Display fault</p>
-        <p className="screen__detail">
-          {this.props.label}: {this.state.message}
-        </p>
-      </div>
+    if (this.state.failure === null) return this.props.children
+
+    return createElement(
+      'div',
+      { className: 'screen screen--fault' },
+      createElement('p', { className: 'screen__title' }, this.state.failure.code),
+      createElement('p', { className: 'screen__detail' }, this.state.failure.reason),
     )
   }
 }

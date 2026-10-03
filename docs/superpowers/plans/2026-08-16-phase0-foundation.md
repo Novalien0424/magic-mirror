@@ -1,12 +1,26 @@
 # Phase 0 — Foundation / Visible Skeleton Implementation Plan
 
+> **SUPERSEDED BASELINE NOTICE — 2026-08-19:** This is the historical Phase 0
+> foundation plan. Its old `AppSnapshot.activeProfileId`, all-domain SQLite
+> schema, `phase-tests.json` persistence, “lifecycle left starting” smoke
+> wording, and inline implementation bodies are retained for traceability only
+> and are superseded by the accepted Task 2–9 plans, the accepted SQLite
+> baseline, and the corrected Task 10 handoff. Tasks 1–9 are accepted; the
+> original Task 10 plan is `255008e`, correction plan `9adcca4`, Task 10 is
+> unimplemented, and Phase 1 remains blocked. Do not use this historical body
+> as a current implementation contract.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Every implementation dispatch MUST paste the invariants table from `.claude/skills/mm-invariants/SKILL.md` and follow TDD (test first, watch it fail, minimal code, watch it pass).
 
 **Goal:** A always-visible Electron mirror skeleton: 7-state lifecycle, Console (6 pages), metadata-only telemetry, config/SQLite/credential services, OfflineLoop playback, and mocks for every future module — demoable as P0-D1…P0-D5.
 
 **Architecture:** One Electron modular monolith. Main owns lifecycle/config/DB/telemetry/devices; two renderer windows (Mirror kiosk + Console) talk over typed, sender-validated IPC. All external services and hardware are mocks in Phase 0.
 
-**Tech Stack:** Electron 43.x (pinned), electron-vite 5, TypeScript, React, XState v5, `node:sqlite` (WAL pragma), zod v4, write-file-atomic 8, vitest.
+**Tech Stack:** Electron `43.4.1` for the corrected Task 10 pin, electron-vite 5,
+TypeScript, React, XState v5, `node:sqlite` (WAL pragma), zod v4,
+write-file-atomic 8, vitest. The verified backup API is module-level
+`import { backup } from 'node:sqlite'; await backup(sourceDb, backupPath, options)`
+and returns a Promise; there is no `db.backup` instance method.
 
 **Spec:** `docs/Magic_Mirror_Implementation_Plan_v0.3.md` §5 (Phase 0), `docs/Magic_Mirror_Tech_Spec_v0.3.md` §3–§6, §13–§14, `docs/Magic_Mirror_PRD_v0.3.md` US-FOUND-001 / US-DEV-001. Consult skills: `mm-electron-foundation` (mandatory for every task), `mm-invariants` (paste into every dispatch).
 
@@ -18,7 +32,7 @@
 - Every fallback/drop/ignore emits a `MirrorEvent` with `reason`. Simulator-originated events carry `source: 'simulator'`.
 - No black screen, ever: renderer crash → recreate window; core failure → Maintenance screen with diagnostic code.
 - Dev machine is Windows; macOS-only behavior (simpleFullscreen, LaunchAgent, Keychain backend, TCC) sits behind `process.platform` guards and ships as authored resources verified on the Mac later. Everything in this plan must run and test on Windows.
-- Boot smoke contract: env `MIRROR_SMOKE_MS=<n>` makes the app auto-quit after n ms with exit code 0 if both windows loaded and lifecycle left `starting`, exit 2 otherwise. Demo scripts rely on this.
+- Boot smoke contract: env `MIRROR_SMOKE_MS=<n>` makes the app auto-quit after n ms with exit code 0 only if both windows loaded and lifecycle is exactly `dormant` or `maintenance`; exit 2 otherwise. Demo scripts rely on this. `starting` and all other nonterminal lifecycle states have stable failure reasons.
 - Commits: conventional prefix per task (`feat:`/`test:`/`chore:`), one commit per green TDD cycle minimum, plus the trailer lines mandated in the session harness.
 
 ## Shared Interfaces (single source: `src/shared/types.ts` — Task 1 creates it verbatim)
@@ -248,6 +262,12 @@ Demo step affected:   P0-D3
 
 ### Task 5: SQLite + migrations
 
+> **SUPERSEDED:** The historical all-domain schema shown below is not the
+> accepted Task 5 contract. Task 5 accepts only the Main-owned migration
+> baseline and `app_migrations` boundary recorded in `DECISIONS.md`; do not
+> reopen or broaden that schema here. The module-level `node:sqlite` backup
+> contract is `backup(sourceDb, backupPath, options): Promise`.
+
 ```text
 Story / Phase:        US-FOUND-001, FR-MEM-01 (skeleton) / Phase 0
 User-visible outcome: node:sqlite database with WAL + baseline schema + integrity check
@@ -346,6 +366,10 @@ Demo step affected:   P0-D1, P0-D2, P0-D4
 
 ### Task 9: Console UI — 6 pages
 
+> **SUPERSEDED:** The historical `phase-tests.json` store below is not the
+> authoritative Phase 0 record contract. Task 10A owns SQLite phase-test rows
+> and the Console reader; retain this body only as historical UI context.
+
 ```text
 Story / Phase:        US-DEV-001 / Phase 0
 User-visible outcome: Console window with Overview, Simulator, Events, Phase Tests, Config,
@@ -372,6 +396,12 @@ Demo step affected:   P0-D3, P0-D5
 - [ ] Implement pages (function components, minimal styling, keyboard shortcut focus). Watch pass. Commit.
 
 ### Task 10: P0 demo runner, exit criteria, tag
+
+> **SUPERSEDED:** This original Task 10 body is retained as historical
+> planning context only. The corrected source is
+> `docs/superpowers/plans/2026-08-19-phase0-task10-demos-exit.md` after the
+> accepted correction units. Task 10 remains unimplemented; no demo, Phase 0
+> exit, or Phase 1 entry is claimed by this plan.
 
 ```text
 Story / Phase:        US-FOUND-001 + US-DEV-001 acceptance / Phase 0

@@ -3,7 +3,7 @@
 This folder holds the operator tooling that turns the venue Mac mini plus the
 HAOCROWN smart mirror into the Magic Mirror glass. None of it is part of the
 Electron app. **Current deployment status** (what is installed, verified, and
-pending) is the table under "Field deployment" in `PROGRESS.md`. Audio device policy is in `DECISIONS.md`
+pending) is under "Resume here" in `PROGRESS.md`. Audio device policy is in `DECISIONS.md`
 (2026-10-03).
 
 ## Hardware chain
@@ -64,12 +64,13 @@ collides with an operator's adb on port 5037.
   while someone works on the other monitor: macOS moves their windows under the
   full-screen Mirror window.
 
-### App LaunchAgent configuration: prepared, uninstalled
+### App LaunchAgent configuration: installed on the final Mac
 
 [`com.magicmirror.launchagent.field.plist`](com.magicmirror.launchagent.field.plist)
-is prepared for this venue account and checkout only. It has not been installed
-or bootstrapped, and login, crash restart, and clean-quit behavior remain
-unverified. This interim deployment runs the `npm run build` output through
+was installed and bootstrapped for this venue account on 2026-10-03.
+Main and both renderers started; the Mirror selected `T749-fHD720` and entered
+simple fullscreen. Crash restart returned the HDMI Mirror ready. Login and clean-quit evidence must be checked
+in `PROGRESS.md`. This checkout deployment runs the `npm run build` output through
 local Electron; it is not proof of a signed or packaged production deployment.
 The packaged template remains at
 [`resources/macos/com.magicmirror.launchagent.plist`](../../resources/macos/com.magicmirror.launchagent.plist).
@@ -86,7 +87,7 @@ The field definition uses these exact paths and settings:
 | Configured environment | `MIRROR_DISPLAY=T749` only |
 | Required writable log directory | `/Users/novalien0424/Library/Logs/MagicMirror` |
 
-Before later installation, the preflight must run from the checkout and pass:
+Before replacing a build, stop the app, then run from the checkout:
 
 ```sh
 cd /Users/novalien0424/magic-mirror
@@ -94,16 +95,16 @@ npm run typecheck
 npm run build
 ```
 
-These commands are documented requirements, not results from this preparation.
+Fresh build and typecheck evidence is linked from `PROGRESS.md`.
 The executable must exist and be executable, and the build must produce the
 Main entry plus the complete preload and renderer outputs at the paths above.
 The log directory must already exist and be writable by `novalien0424` before
 bootstrap; launchd does not create its parent directories. This configuration
-does not load `.env` or contain credentials. Credentials remain Main-owned
-through Electron `safeStorage` (Keychain on this Mac).
+does not load `.env` or contain credentials. Electron Main alone loads
+`/Users/novalien0424/magic-mirror/.env` as the sole `OPENAI_API_KEY` source.
+Never print or copy the key into logs, LaunchAgent settings or operator reports.
 
-After external root review, installation is a separate later step: place the
-reviewed definition at
+The reviewed definition is installed at
 `~/Library/LaunchAgents/com.magicmirror.launchagent.plist`, then bootstrap it
 in this account's GUI session. Before that bootstrap, individually identify
 any existing manual Magic Mirror instance by its PID and command path and
@@ -121,11 +122,16 @@ stopped until the next login or an explicit operator kickstart.
 `ProcessType=Interactive` is configured. The app must never call `app.relaunch()`;
 its existing recovery contract allows one renderer recreation before exit 1.
 
-The cold-start display guard fix is being prepared independently; its validation
-is pending, and this configuration does not establish that it passed. The
-supplied Raven assets and SDK integration remain pending. This launch
-configuration is independent of those assets and does not establish avatar
-readiness or macOS TCC, signing, entitlements, or packaged-worker readiness.
+The configured HDMI target stays hidden while absent and is selected again
+after reconnect. Raven v11 is imported into the managed library and selected in
+published config v8. The Mac wake package is `sherpa-magic-mirror-mac-v1`;
+its four upstream model/token hashes match the repository v2 model hashes.
+Its keyword file is compiled with the bundled pronunciation lexicon, and its
+spoken accuracy is not yet certified. Camera gaze uses Apple Vision face boxes
+in RAM, selects the largest face with a switching hold, and sends only a
+smoothed direction to the Mirror. This does not enroll or identify visitors.
+Actual UI, camera streaming, speech, hotplug and reboot evidence belongs in
+`PROGRESS.md`; installation alone does not establish these results.
 
 ## Logs (metadata only)
 
@@ -133,8 +139,8 @@ readiness or macOS TCC, signing, entitlements, or packaged-worker readiness.
 |---|---|
 | Board watchdog | `/Library/Logs/MagicMirror/board-hdmi.log` (`BOARD_*`, `HDMI_VIEW_*`) |
 | Audio preference | `~/Library/Logs/MagicMirror/audio-prefer.log` (`PREFERRED_AUDIO_*`, `DEFAULT_SET*`) |
-| App stdout (prepared path; uninstalled) | `/Users/novalien0424/Library/Logs/MagicMirror/app.out.log` |
-| App stderr (prepared path; uninstalled) | `/Users/novalien0424/Library/Logs/MagicMirror/app.err.log` |
+| App stdout | `/Users/novalien0424/Library/Logs/MagicMirror/app.out.log` |
+| App stderr | `/Users/novalien0424/Library/Logs/MagicMirror/app.err.log` |
 
 App stdout/stderr must remain metadata-only: no transcripts, conversation
 audio, extracted memory values, injected private context, images, embeddings,

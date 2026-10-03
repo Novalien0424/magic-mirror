@@ -1,0 +1,119 @@
+import { dialog } from 'electron'
+import { resolve } from 'node:path'
+import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
+export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  let checks = 0, screenshots = 0
+  const evaluate = <T>(source: string): Promise<T> => input.console.webContents.executeJavaScript(`(async()=>{
+    const button = text => [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label')||b.textContent.trim())===text && b.getClientRects().length);
+    const click = text => {const b=button(text);if(!b||b.disabled)throw Error('voice_qa_control_'+text);b.click()};
+    const set = (el,value) => { const proto = el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true})); };
+    ${source}})()`, true) as Promise<T>
+  const wait = async (source: string, reason: string, ms = 15000): Promise<void> => {
+    const end = Date.now() + ms
+    while (Date.now() < end) { if (await evaluate<boolean>(source)) return; await new Promise(r => setTimeout(r, 80)) }
+    throw Error(`voice_qa_${reason}`)
+  }
+  const edit = async (source: string): Promise<void> => { await evaluate(source); await new Promise(r => setTimeout(r, 100)) }
+  const pass = (step: string): void => { checks++; input.onEvidence({ step, status: 'passed' }) }
+  const shot = async (file: string): Promise<void> => { const image = await capture(input.console, input.outputDir, file); screenshots++; input.onEvidence({ step: 'voice_screenshot', status: 'captured', file, sha256: image.sha256 }) }
+  const picker = dialog.showOpenDialog
+  try {
+    await wait("return !!button('Avatars')", 'page_ready')
+    const before = await input.runtime.console.getConfig(); if (!before.ok) throw Error('voice_qa_config')
+    const activeBefore = JSON.stringify(before.value.active)
+    await edit("click('Avatars')"); await edit("click('Voice')")
+    await wait("return !!button('Default · Ethereal') && !button('Default · Ethereal').disabled", 'editor_ready')
+    for (const [id, voice, pitch] of [['talos-priestess', 'marin', '-0.8'], ['talos-god', 'cedar', '-3']]) {
+      await edit(`set(document.querySelector('[aria-label="Sound profile"]'),${JSON.stringify(id)})`)
+      await wait(`return document.querySelector('[aria-label="Pitch · semitones"]').value===${JSON.stringify(pitch)} && document.querySelector('.voice-studio select:not([aria-label="Sound profile"])').value===${JSON.stringify(voice)}`, 'sound_profile_applied')
+      await edit("click('Save all changes')")
+      await wait("return !button('Save all changes').disabled", 'sound_profile_saved')
+      const current = await input.runtime.console.getConfig()
+      const profile = current.ok ? current.value.draft.avatarCatalog?.avatars[0] : undefined
+      if (profile?.voice !== voice || profile.voiceEffects?.pitchSemitones !== Number(pitch)) throw Error('voice_qa_sound_profile_persistence')
+      if (id === 'talos-god' && (profile.voiceEffects.echoMix !== .22 || profile.voiceEffects.echoDelayMs !== 230
+        || profile.voiceEffects.echoRepeats !== 3 || profile.voiceEffects.roomSize !== 'hall')) throw Error('voice_qa_echo_profile_persistence')
+      pass(`voice_profile_${id}`)
+      if (process.env['MIRROR_VOICE_PROFILE_QA_LIVE'] === '1') {
+        await edit("click('Generate test voice')")
+        await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Generating one audition')", 'profile_provider_started', 18000)
+        await wait("return !button('Generate test voice').disabled", 'profile_provider_finished', 22000)
+        const status = await evaluate<string>("return document.querySelector('.voice-studio [role=status]').textContent")
+        if (/failed|timeout|limit|rejected/i.test(status)) throw Error('voice_qa_profile_provider_failed')
+        pass(`voice_profile_audition_${id}`)
+      }
+    }
+    await edit("document.querySelector('.voice-studio fieldset').scrollIntoView({block:'start'})")
+    await shot('voice-sound-profiles.png')
+    await edit("document.querySelector('.voice-studio details').open=true;document.querySelector('[aria-label=\"Echo amount\"]').scrollIntoView({block:'center'})")
+    await shot('voice-echo-controls.png')
+    await edit("click('Default · Ethereal')")
+    await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='1'", 'default_preset')
+    await wait("return document.querySelector('[aria-label=\"Sound profile\"]').value===''", 'sound_profile_custom')
+    pass('voice_default_preset')
+    await edit("document.querySelector('.voice-studio details').open=true")
+    for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB','Echo amount','Echo delay · ms','Echo repeats']) {
+      await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');const value=Number(el.min)+(Number(el.max)-Number(el.min))/2;set(el,el.step==='1'?Math.round(value):value);`)
+    }
+    await edit("click('Default · Ethereal')"); await edit("click('Save all changes')")
+    await wait("return !button('Save all changes').disabled", 'save')
+    pass('voice_controls_saved')
+    await shot('voice-default.png')
+    await edit("document.querySelector('.voice-studio fieldset:nth-of-type(2)').scrollIntoView({block:'start'})")
+    await shot('voice-default-controls.png')
+    // Synthetic file selection; actual DOM change/decoder/graph remain production.
+    await edit(`const rate=48000,n=rate*2,bytes=new ArrayBuffer(44+n*2),v=new DataView(bytes);
+      const str=(at,s)=>[...s].forEach((c,i)=>v.setUint8(at+i,c.charCodeAt(0)));
+      str(0,'RIFF');v.setUint32(4,36+n*2,true);str(8,'WAVE');str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);str(36,'data');v.setUint32(40,n*2,true);
+      for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.sin(2*Math.PI*440*i/rate)*2000,true);
+      const dt=new DataTransfer();dt.items.add(new File([bytes],'synthetic-voice.wav',{type:'audio/wav'}));const el=document.querySelector('.voice-studio input[type=file]');el.files=dt.files;el.dispatchEvent(new Event('change',{bubbles:true}));`)
+    await edit("document.querySelector('.voice-studio__preview input[type=checkbox]').click();click('Play local fixture')")
+    await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Local fixture playing')", 'local_playback')
+    await edit("click('Original')"); await edit("click('Processed')"); await edit("click('Stop')")
+    pass('voice_local_loop_ab_stop')
+    for (const name of ['Play local fixture','Generate test voice']) {
+      await evaluate(`click(${JSON.stringify(name)}); await new Promise(r=>setTimeout(r,0)); if(button('Stop').matches(':disabled'))throw Error('voice_abort_disabled');click('Stop')`)
+      await wait("return !button('Generate test voice').disabled && document.querySelector('.voice-studio [role=status]').textContent==='Preview stopped.'",'startup_abort')
+      await new Promise(r=>setTimeout(r,300))
+      pass('voice_startup_abort_'+name.replaceAll(' ','_'))
+    }
+    await edit("click('Play local fixture')")
+    await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Local fixture playing')",'restart_after_abort')
+    await edit("click('Stop')"); pass('voice_restart_after_abort')
+    await edit("click('New avatar')"); await edit("click('Voice')"); await edit("click('Raven · Dark oracle')")
+    await edit("click('Avatars')"); await edit("click('Appearance')")
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [resolve('resources/avatar/Raven/v10/runtime/raven-lord.model3.json')] })) as typeof dialog.showOpenDialog
+    await edit("click('Browse & import Cubism…')")
+    await wait("return !button('Save all changes').disabled", 'raven_import')
+    await edit("click('Avatars')"); await edit("click('Voice')")
+    await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='-3'", 'rig_keeps_effect')
+    await edit("click('Save all changes')"); await wait("return !button('Save all changes').disabled", 'raven_save')
+    await edit("document.querySelector('.voice-studio').scrollIntoView({block:'start'})")
+    await new Promise(r => setTimeout(r, 1200)); await shot('voice-raven.png')
+    pass('voice_raven_rig_preserves_settings')
+    const saved = await input.runtime.console.getConfig(); if (!saved.ok) throw Error('voice_qa_saved_config')
+    if (JSON.stringify(saved.value.active) !== activeBefore) throw Error('voice_qa_active_changed')
+    const avatars = saved.value.draft.avatarCatalog!.avatars
+    if (avatars.length !== 2 || avatars[0]!.voiceEffects?.pitchSemitones !== 1 || avatars[1]!.voiceEffects?.pitchSemitones !== -3) throw Error('voice_qa_avatar_isolation')
+    pass('voice_draft_active_isolation')
+    if (process.env['MIRROR_VOICE_QA_LIVE'] === '1') {
+      for (const speed of [0.75, 1, 1.25]) {
+        await edit(`set(document.querySelector('.voice-studio input[min="0.5"]'),${speed})`); await edit("click('Generate test voice')")
+        await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Generating one audition')", 'provider_started', 18000)
+        await wait("return !button('Generate test voice').disabled", 'provider_finished', 22000)
+        const status = await evaluate<string>("return document.querySelector('.voice-studio [role=status]').textContent")
+        if (/failed|timeout|limit|rejected/i.test(status)) throw Error('voice_qa_provider_failed')
+        pass(`voice_provider_speed_${speed}`)
+      }
+    }
+    await edit("click('Mirror')"); pass('voice_page_leave')
+    return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0, musicAnalyser: 'not_executed', screenshotCount: screenshots, consoleCheckCount: checks }
+  } catch (error) {
+    input.onEvidence({ step: 'voice_failure', status: 'failed', item: error instanceof Error ? error.message.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 120) : 'unknown' })
+    const diagnostic=await evaluate<string>("return document.querySelector('.voice-studio [role=status]')?.textContent ?? 'voice_status_unavailable'")
+    input.onEvidence({step:'voice_failure_status',status:'measured',item:diagnostic})
+    await evaluate("document.querySelector('.voice-studio [role=status]')?.scrollIntoView({block:'center'})")
+    await shot('voice-failure.png'); throw error
+  } finally { dialog.showOpenDialog = picker }
+}

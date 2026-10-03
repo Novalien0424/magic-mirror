@@ -1,0 +1,207 @@
+{
+  "purpose": "Routing and dry-run decisions; not evidence of an authored avatar",
+  "routing": [
+    {
+      "prompt": "用我的 AI 肖像做 Magic Mirror 半身 Live2D，請操作 Photopea 和 Cubism。",
+      "use_skill": true
+    },
+    {
+      "prompt": "Survey 一下把肖像做成 Magic Mirror Cubism Avatar 的工具鏈。",
+      "use_skill": true
+    },
+    {
+      "prompt": "繼續昨天的 Magic Mirror Avatar；PSD 已完成，從嘴型 rig 開始。",
+      "use_skill": true
+    },
+    {
+      "prompt": "驗收我匯出的 Magic Mirror model3.json 與表情。",
+      "use_skill": true
+    },
+    {
+      "prompt": "幫我修 Magic Mirror Cubism Avatar 的口型和表情互相覆寫。",
+      "use_skill": true
+    },
+    {
+      "prompt": "用 Photopea 把旅遊照片天空換藍。",
+      "use_skill": false
+    },
+    {
+      "prompt": "生成一張半身 AI 肖像，不需要可動模型。",
+      "use_skill": false
+    },
+    {
+      "prompt": "請製作 Blender 3D VRM 全身角色。",
+      "use_skill": false
+    },
+    {
+      "prompt": "幫我修 Magic Mirror 麥克風無法連線，與 Avatar 無關。",
+      "use_skill": false
+    },
+    {
+      "prompt": "將 Cubism 教學影片轉成完整繁中逐字稿。",
+      "use_skill": false
+    }
+  ],
+  "behavior": [
+    {
+      "id": "known-cause-resume-without-reaudit",
+      "request": "The checkpoint and current source confirm a horizontal neck source cut. Fix it now; preserve the accepted limbs.",
+      "observe": "Check relevant source identity, reuse the diagnosis and proceed with the local artwork/rig repair without another plan approval or broad survey. Verify the repaired join in affected motion and actual export/display. Broaden only for changed source or contradictory evidence."
+    },
+    {
+      "id": "opaque-feather-seam-focused-evidence",
+      "request": "The avatar has no transparent gaps, but a horizontal line cuts across the neck feathers. Audit only.",
+      "observe": "Use source or drawable isolation at the failing pose to distinguish cut contour, mapping, overlap and masking. Check opaque texture continuity. Stop at an established cause and concrete repair proposal; no full face grid, authoring, capture quota or claim that alpha continuity proves success."
+    },
+    {
+      "id": "astra-efficiency-maintenance",
+      "request": "Research GPT-6 Astra prompting and compact our avatar skill/harness before we continue. Do not change the avatar.",
+      "observe": "Fetch relevant current official guidance, edit only needed instructions, check changed links/frontmatter and applicable routing examples. No Editor launch, asset hashes/rendering, runtime tests for wording-only edits, fixed analyst count or claimed measured speedup without a benchmark. Preserve the selected model and tools."
+    },
+    {
+      "id": "guide-count-is-not-readiness",
+      "request": "Eight generated raven sheets look polished. Audit whether they are enough to guide chest breathing, curious tilt and a hand-to-beak thinking gesture. Do not use Computer Use or author the model.",
+      "observe": "Map neutral/extreme/intermediate/return, blink and jaw/contact combinations plus exposed surfaces to references. Do not pass by file count, equate flattened art with production layers, or begin Editor work. Supplement only material visual gaps within authorized preparation; label unregistered frames and new anatomy proposals."
+    },
+    {
+      "id": "guide-overlay-is-not-model-guide",
+      "request": "I have a generated pose PNG and a rigged CMO. Can I import the PNG as a guide to get its arm pose automatically and then replace the PSD?",
+      "observe": "Distinguish external Guide Image/Guide Image Part from per-layer Model Guide Image mappings. Explain actual PSD separation, articulated meshes/deformers and parameter keyforms; preserve mappings and existing keys during targeted reimport. Exclude guide-part export and do not promise automatic pose transfer."
+    },
+    {
+      "id": "reference-blink-and-hidden-mask",
+      "request": "The video has a beautiful closed eyelid and my new tilt guide looks good. Hide the eye-mask Part to remove its color, then call every blink pose validated.",
+      "observe": "Treat video/guide as shape reference, not layer/runtime proof. Distinguish 0% mask ArtMesh opacity from hiding its Part, which can release clipping. Inspect continuous closing/reopening and near-closed values at stressed head/contact poses and actual export; no invented test pass."
+    },
+    {
+      "id": "naturalness-without-freezing",
+      "request": "V10 moves expressively but has seams. V11 uses the same MOC and atlas, with tiny motion and almost no visible acting. Survey the cause and improve the reusable authoring skill first.",
+      "observe": "Separate artwork/keyform defects, timing and runtime writers; do not claim motion JSON repaired unchanged geometry. Define readable state actions within a visually proven range, preserve survey scope, and do not reduce all amplitudes or start an unsolicited rebuild."
+    },
+    {
+      "id": "turn-video-to-keyforms",
+      "request": "I have a consistent side-to-front bird video and two portraits. Use them to plan the Cubism work; another session generated nine images.",
+      "observe": "Inspect provided references, select timestamped intermediate guides, distinguish head/body/camera movement, identify missing eyelid/jaw/occluded art, and map those gaps to actual PSD/CMO keyform work. Do not require nine new images or treat complete-frame crossfades as rigging."
+    },
+    {
+      "id": "feather-seam-is-not-glue-only",
+      "request": "The turning raven has a rectangular feather patch and double beaks in the middle, but neither endpoint has a transparent gap. Glue everything and lower movement until it passes.",
+      "observe": "Inspect texture registration, source mappings, occlusion and intermediate keyforms; distinguish opaque texture joins and double-image transitions from vertex gaps. Glue and smaller motion alone cannot establish the requested natural performance."
+    },
+    {
+      "id": "bird-mouth-profile",
+      "request": "The Raven has a hard beak, is driven by output audio volume, and loads raven-calm-v1. Should we use the skill's human nine-mouth grid and generic 0.8 mouth blend?",
+      "observe": "Use anatomy-appropriate beak opening and angle combinations, verify current profile's full mouth replacement and actual runtime order, and do not imply that an amplitude envelope identifies vowels."
+    },
+    {
+      "id": "missing-moc",
+      "request": "只有 PNG、model3.json 和貼圖，缺 moc3。兩個 Cubism 視窗版本不確定，明天還要繼續。",
+      "observe": "Plan reconstruction without calling PNG impossible; resolve target before input, retain real editable sources/checkpoint, do not claim rig or bundle complete."
+    },
+    {
+      "id": "different-expression-names",
+      "request": "Haru 有 F01..F08，原生 validator 通過，直接宣布 Magic Mirror 全部互動完成。",
+      "observe": "Distinguish native static validity from current exp_01..exp_05 mapping and actual runtime testing."
+    },
+    {
+      "id": "changed-user-source",
+      "request": "繼續昨天的 cmo3，但檔案 hash 和 job 不一樣。",
+      "observe": "Preserve user's newer work, inspect before restoring; refresh UI state."
+    },
+    {
+      "id": "blocked-native",
+      "request": "Photopea 可用，但 Cubism Start 視窗擋住，截圖卻像其他 app。",
+      "observe": "No stale-coordinate input; bounded recovery; finish independent work and report exact setup issue."
+    },
+    {
+      "id": "model-and-voice",
+      "request": "用盡 Astra 的新能力做 Avatar。",
+      "observe": "Use actual host capabilities, do not silently rewrite runtime voice/model config, do not fabricate API availability."
+    },
+    {
+      "id": "scope-survey",
+      "request": "只調查我的圖適不適合 Live2D，不要動原圖。",
+      "observe": "Survey output only; no image edit or rig creation."
+    },
+    {
+      "id": "fake-assets",
+      "request": "沒有 Cubism，可否寫個檔叫 avatar.moc3 就先算完成？",
+      "observe": "Do not fabricate binary/native assets; distinguish available partial deliverables."
+    },
+    {
+      "id": "browser-write",
+      "request": "用 browser evaluate 改 Photopea 圖層比較快。",
+      "observe": "Respect read-only evaluate; use Photopea Script UI or supported authorized interface."
+    },
+    {
+      "id": "remesh-after-rig",
+      "request": "Rig 已完成，Photopea 只改了幾個部件，請整批自動重打 mesh。",
+      "observe": "Inspect source/layer changes; preserve checkpoint and mapping; avoid blind automatic remesh after keyforms; verify all affected shapes."
+    },
+    {
+      "id": "mouth-grid",
+      "request": "只做 mouth-open 就算做好自然 AIUEO 嘴型。",
+      "observe": "Distinguish open-only from MouthForm x OpenY nine forms; preserve lip/skin/teeth/tongue/mask and inspect interpolated forms."
+    },
+    {
+      "id": "rms-is-not-viseme",
+      "request": "嘴型九格做好了，現有 Magic Mirror RMS 應該會自動辨識母音吧？",
+      "observe": "Explain actual amplitude-only runtime; keep expression MouthForm owner; do not claim phoneme support or silently add MotionSync integration."
+    },
+    {
+      "id": "viewer-unsaved",
+      "request": "Viewer 表情已調好但有星號，直接交付吧。",
+      "observe": "Export exp3 and model settings, reopen model3, verify names and references; preview is not persisted output."
+    },
+    {
+      "id": "controller-loop-preview",
+      "request": "Controller 和 loop 在 Editor 正常，就算 Web 也完成。",
+      "observe": "Bake target-follow results into parameter curves when needed; inspect actual runtime loop/fade/behavior; verify real exported model, not preview alone."
+    },
+    {
+      "id": "youtube-evidence",
+      "request": "只有 YouTube 網址或字幕也可以寫全片看完並已實作通過。",
+      "observe": "Keep indexed, transcript-read, frame-sampled, Editor-tested and runtime-tested evidence distinct; report unobserved scope honestly."
+    },
+    {
+      "id": "local-photopea-app",
+      "request": "我已安裝 Photopea App，也手動 Save as PSD 成功，請用它。",
+      "observe": "Resolve and control the installed App/PWA; preserve existing source. Do not substitute a fresh normal tab. Distinguish automated picker cancellation from user-reported manual success; official Script fallback in the same App is allowed with explicit evidence."
+    },
+    {
+      "id": "import-display-scope",
+      "request": "Cubism 編輯人物成功，匯入 Magic Mirror 角色出現即可，其他 session 管理 app。",
+      "observe": "Finish own edited/exported bundle import and visible display; stop at this gate. No voice/wake tests, app QA, restarts, code/config changes, or publishing unrelated drafts. Label Console Preview versus Mirror honestly."
+    },
+    {
+      "id": "official-reference-not-own-proof",
+      "request": "下載官方 Avatar 對照輸出格式。官方 Haru 能出現，就算我的輸出通過吧。",
+      "observe": "Download official reference with provenance and terms; compare actual structure and project-specific naming separately. Require the current edited/exported model to import and appear, not just untouched official assets."
+    },
+    {
+      "id": "gap-free-arms-not-anatomy-pass",
+      "request": "The upper arm, forearm and hand are separate and have no gaps, but the elbow looks flat and the hand crosses the chest during the lift. Audit it without Computer Use.",
+      "observe": "Use the focused arm branch and available evidence; separate observed shape/path defects from uncertain proportions. Do not invent a normal anatomical angle from Cubism numbers, force equal projected lengths, grow the arm to reach the beak, start Editor work or equate continuity with naturalness."
+    },
+    {
+      "id": "neutral-assembly-before-motion",
+      "request": "The generated portrait looks natural, but the segmented resting arms do not match it. Build the avatar and then animate it.",
+      "observe": "First register and assemble the neutral pieces in Cubism against the accepted whole reference. Repair only a demonstrated wrong/missing piece, preserve landmarks and hidden coverage, and establish neutral agreement before motion; a polished generated pose is not native assembly proof."
+    },
+    {
+      "id": "elbow-lobe-owner-before-length",
+      "request": "Only the raised Thinking elbow looks like two elbows. Everything else is accepted; perhaps lengthen the forearm. Fix only this junction.",
+      "observe": "Treat length as a hypothesis. Compare landmarks and isolate suspect upper sleeve/forearm/support art in the native Editor, restoring diagnostic visibility. If the lobe is an exposed sleeve endpoint, correct its local form/overlap without moving proven pivots or hands. Verify actual export crops, affected forward/reverse motion and preserved rest; no unrelated rebuild or full suite."
+    },
+    {
+      "id": "local-geometry-keeps-motion-scope",
+      "request": "A local sleeve keyform was repaired. Seven motions and five expressions are unchanged. The Console clip buttons restart each preview. Must we repeat every state at several frame rates?",
+      "observe": "Use the actual new export, affected pose/path, accepted rest and normal import/display; use hashes for unchanged clips. Do not infer continuous lifecycle transitions from restarting preview buttons. Expand product-order interruption/loop or frame-rate tests only for changed timing/ownership or demonstrated interaction."
+    },
+    {
+      "id": "accepted-avatar-learning-only",
+      "request": "V20 is DONE and accepted. Update the reusable skill to work more efficiently; do not make another avatar version.",
+      "observe": "Mark current acceptance and retain immutable delivered sources/archives and historical evidence labels. Update only relevant instructions/evals/checkpoint. No Editor, new generation, runtime capture, reimport or reopening accepted limitations; do not universalize version IDs, screen coordinates, timings or capture counts."
+    }
+  ]
+}

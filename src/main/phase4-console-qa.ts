@@ -1,0 +1,728 @@
+import { runPromptInspectorQa } from './prompt-inspector-qa'
+import { dialog } from 'electron'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
+import { runVoiceConsoleQa } from './voice-console-qa'
+import { runProfileConsoleQa } from './profile-console-qa'
+import { runFieldHelpConsoleQa } from './field-help-console-qa'
+import { runActiveBgmQa } from './active-bgm-qa'
+
+// This driver runs only in the isolated Phase 4 QA process. It substitutes the
+// native file-picker selection; import, Chromium decode, edits, and publication
+// still use the real Console controls and production bridge.
+const DOM = `
+  const panel = document.querySelector('.console__scenes');
+  const fieldset = name => [...panel.querySelectorAll('fieldset')]
+    .find(el => el.querySelector('legend')?.textContent === name);
+  const button = (name, root = panel) => [...root.querySelectorAll('button')]
+    .find(el => (el.getAttribute('aria-label') || el.textContent.trim()) === name);
+  const control = (name, root = panel) => [...root.querySelectorAll('label')]
+    .find(el => [...el.childNodes].filter(n => n.nodeType === 3 || n.nodeName === 'SPAN')
+      .map(n => n.textContent).join('').trim() === name)?.querySelector('input,select,textarea');
+  const action = () => panel.querySelector('.scene-action-editor');
+  const scene = () => panel.querySelector('.scene-composer__body');
+  const stage = () => scene().querySelector('.console__stage-card');
+  const status = () => panel.querySelector('[aria-live]').textContent;
+  const click = el => {
+    if (!el || el.disabled) throw new Error('phase4_qa_console_control_unavailable');
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS' && !parent.open) parent.querySelector('summary').click();
+    }
+    el.scrollIntoView({block: 'center'}); el.click();
+  };
+  const set = (el, value) => {
+    if (!el) throw new Error('phase4_qa_console_field_missing');
+    el.scrollIntoView({block: 'center'});
+    const prototype = el.tagName === 'SELECT' ? HTMLSelectElement.prototype
+      : el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(el, value);
+    el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {bubbles: true}));
+  };
+`
+
+export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_ACTIVE_BGM_QA'] === '1') return runActiveBgmQa(input)
+  if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
+  if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
+  if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)
+  const videoFades = process.env['MIRROR_VIDEO_FADE_QA'] === '1'
+  let checkCount = 0
+  let screenshotCount = 0
+  let step = 'console_ready'
+  const evaluate = <T>(source: string): Promise<T> => input.console.webContents.executeJavaScript(
+    `(async () => { ${DOM} ${source} })()`, true,
+  ) as Promise<T>
+  const wait = async (source: string, reason = step, timeoutMs = 15_000): Promise<void> => {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (await evaluate<boolean>(source)) return
+      await new Promise(resolveWait => setTimeout(resolveWait, 50))
+    }
+    throw new Error(`phase4_qa_${reason}`)
+  }
+  const edit = async (source: string): Promise<void> => {
+    await evaluate(source)
+    // Let React commit before the next distinct user interaction.
+    await new Promise(resolveWait => setTimeout(resolveWait, 50))
+  }
+  const passed = (): void => {
+    checkCount += 1
+    input.onEvidence({ step, status: 'passed' })
+  }
+  const screenshot = async (name: string, mirror = false): Promise<void> => {
+    const evidence = await capture(mirror ? input.mirror : input.console, input.outputDir, name)
+    screenshotCount += 1
+    input.onEvidence({ step, status: 'captured', file: name, sha256: evidence.sha256,
+      nonblack_pixels: evidence.nonblackPixels })
+  }
+  const save = async (): Promise<void> => {
+    await edit("click(button('Save all changes'))")
+    await wait("return status() === 'Saved and checked. Ready to publish.'")
+    await wait("return !button('Save all changes').disabled")
+  }
+  const testAndPublish = async (): Promise<void> => {
+    // Failure text can render before the async refresh clears busy. Observe
+    // readiness instead of assuming the previous edit's 50 ms is sufficient.
+    await wait("return !!button('Save all changes') && !button('Save all changes').disabled", 'console_test_ready')
+    await edit("click(button('Save all changes'))")
+    await wait("return !button('Publish all changes').disabled")
+    await edit("click(button('Publish all changes'))")
+    await edit("click(button('Confirm publish'))")
+    await wait("return !button('Save all changes').disabled && button('Publish all changes').disabled")
+  }
+  const picker = dialog.showOpenDialog
+  let selection: string | string[] | null = null
+  dialog.showOpenDialog = (async () => ({ canceled: selection === null,
+    filePaths: selection === null ? [] : Array.isArray(selection) ? selection : [selection] })) as typeof dialog.showOpenDialog
+  try {
+    step = 'console_volume_controls'
+    await wait("return !!button('System', document)")
+    await edit("click(button('System', document))")
+    await wait("return !!document.querySelector('[aria-label=\"BGM volume\"]') && !document.querySelector('[aria-label=\"BGM volume\"]').disabled")
+    for (const [label, channel, value] of [['BGM', 'bgm', 30], ['Avatar audio', 'avatar', 70], ['Sound effects', 'effects', 0]] as const) {
+      await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '${value}')`)
+      await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === ${value / 100}`)
+    }
+    await wait('const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.voiceGain === 0.7', 'avatar_volume_applied')
+    const savedVolumes = JSON.parse(await readFile(join(resolve(input.outputDir, '..'), 'user-data', 'audio-devices.json'), 'utf8')).volumes
+    if (JSON.stringify(savedVolumes) !== JSON.stringify({ bgm: 0.3, avatar: 0.7, effects: 0 })) throw new Error('phase4_qa_volume_persistence')
+    await screenshot('console-volume-controls.png')
+    passed()
+    step = 'console_volume_reload'
+    input.console.webContents.reload()
+    await wait("return !!button('System', document)")
+    await edit("click(button('System', document))")
+    await wait(`return ['BGM', 'Avatar audio', 'Sound effects'].every((label, i) =>
+      document.querySelector('[aria-label="' + label + ' volume"]')?.value === ['30', '70', '0'][i])`)
+    const volumeSize = input.console.getSize()
+    input.console.setSize(1024, 768)
+    await new Promise(resolveWait => setTimeout(resolveWait, 150))
+    await edit("document.querySelector('.console__volume-controls').scrollIntoView({block:'center'})")
+    await screenshot('console-volume-controls-1024.png')
+    input.console.setSize(volumeSize[0]!, volumeSize[1]!)
+    passed()
+    for (const [label, channel] of [['BGM', 'bgm'], ['Avatar audio', 'avatar'], ['Sound effects', 'effects']] as const) {
+      await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '100')`)
+      await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === 1`)
+    }
+    if (process.env['MIRROR_AUDIO_VOLUME_QA'] === '1') {
+    step = 'console_manual_avatar_abort'
+    await edit("const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Avatar motions, expressions and test tools');d.open=true")
+    const avatarTests=await evaluate<string[]>("const d=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Avatar motions, expressions and test tools');return [...d.querySelectorAll('button')].filter(b=>!b.disabled&&!/^Stop|^Clear/.test(b.textContent)).map(b=>b.textContent.trim())")
+    for (const name of avatarTests) {
+      await edit(`click(button(${JSON.stringify(name)},document))`)
+      await edit("click(button('Stop avatar tests',document))")
+      await wait("const r=await window.magicMirror.getAvatarRuntime();return r.ok&&r.value.reason==='avatar_tests_stopped'")
+    }
+    if (!avatarTests.includes('Play recorded AI') || !avatarTests.includes('Play music'))throw Error('manual_avatar_tests_missing')
+    passed()
+    await screenshot('console-avatar-tests-stopped.png')
+    return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0, screenshotCount, musicAnalyser: 'not_executed', consoleCheckCount: checkCount }
+    }
+    await wait("return !!button('Avatars', document)")
+    await edit("click(button('Avatars', document))")
+    await edit("click(button('Spells & scenes'))")
+    await wait("return !!panel && !button('Add scene').disabled")
+    await edit("click(button('Media library'))")
+
+    step = 'console_import_cancel'
+    await edit("click(button('Browse & upload media…'))")
+    await wait("return status() === 'Media import cancelled.'")
+    passed()
+
+    step = 'console_invalid_import'
+    selection = join(resolve(input.outputDir, '..'), 'invalid.webm')
+    await writeFile(selection, 'synthetic invalid media')
+    await edit("click(button('Browse & upload media…'))")
+    await wait("return status().includes('1 failed')")
+    const pending = await readdir(join(resolve(input.outputDir, '..'), 'user-data', 'assets', 'visual', '.pending'))
+    if (pending.length !== 0) throw new Error('phase4_qa_console_pending_leak')
+    await wait("return fieldset('Managed visuals').querySelectorAll('li').length === 0")
+    passed()
+
+    step = 'console_import_finite'
+    selection = join(process.cwd(), 'resources', 'phase4-trial-assets', videoFades ? 'phase4-finite-embedded-audio.webm' : 'phase4-finite-silent.webm')
+    await edit("click(button('Browse & upload media…'))")
+    await wait("return fieldset('Managed visuals').querySelectorAll('li').length === 1")
+    await wait("return fieldset('Managed visuals').textContent.includes('360×640')")
+    await wait("return fieldset('Managed visuals').querySelector('video').readyState >= 2")
+    await wait(`const url = fieldset('Managed visuals').querySelector('video').src;
+      const r = await fetch(url, { headers: { Range: 'bytes=0-15' } });
+      return r.status === 206 && (await r.arrayBuffer()).byteLength === 16;`, 'media_byte_range', 1000)
+    passed()
+
+    step = 'console_unpublished_presentation_preview'
+    await edit("click(button('Appearance'))")
+    await edit("const el = control('Background image / looping video'); set(el, el.options[1].value)")
+    await edit("const el = control('Sleep ambience (loops)'); set(el, el.options[1].value)")
+    const previewStarted = Date.now()
+    await edit("click(button('Preview exit'))")
+    await wait(`const p = panel.querySelector('.presentation'); const v = p.querySelector('video'); const a = p.querySelector('audio');
+      return p.dataset.backgroundReady === 'true' && v && !v.paused && v.currentTime > 0 && a && !a.paused && a.currentTime > 0;`, 'unpublished_preview_media_playback', 6000)
+    input.onEvidence({ step: 'draft_media_startup_ms', item: String(Date.now() - previewStarted), status: 'measured' })
+    const canvasSize = await evaluate<string>(`const c=panel.querySelector('.presentation canvas'); return c.width+'x'+c.height+'_expected_'+Math.round(parseFloat(c.style.width)*devicePixelRatio)+'x'+Math.round(parseFloat(c.style.height)*devicePixelRatio);`)
+    input.onEvidence({ step: 'draft_avatar_canvas_size', item: canvasSize, status: 'measured' })
+    const [actualSize, expectedSize] = canvasSize.split('_expected_')
+    if (actualSize !== expectedSize) throw new Error('phase4_qa_preview_canvas_size_stale')
+    const playback = await evaluate<{ advanced: boolean; frames: number; dropped: number; diagnostic: string }>(`
+      const v=panel.querySelector('.presentation video'); const before=v.getVideoPlaybackQuality();
+      const startTime=v.currentTime; const started=performance.now(); const rect=v.getBoundingClientRect();
+      await new Promise(r=>setTimeout(r,1200)); const after=v.getVideoPlaybackQuality();
+      return {advanced: !v.paused && !panel.querySelector('.presentation audio').paused,
+        diagnostic: [Math.round(performance.now()-started), Math.round(startTime*1000), Math.round(v.currentTime*1000),
+          before.totalVideoFrames, after.totalVideoFrames, document.visibilityState,
+          Math.round(rect.top), Math.round(rect.bottom), innerHeight].join('_'),
+        frames:after.totalVideoFrames-before.totalVideoFrames, dropped:after.droppedVideoFrames-before.droppedVideoFrames};`)
+    input.onEvidence({ step: 'draft_video_sample', item: playback.diagnostic, status: 'measured' })
+    input.onEvidence({ step: 'draft_video_frames', item: `${playback.frames}_decoded_${playback.dropped}_dropped`, status: 'measured' })
+    if (!playback.advanced || playback.frames < 10 || playback.dropped > playback.frames * 0.1) throw new Error('phase4_qa_preview_playback_stalled')
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.visualAssets.length === 0;`)
+    await edit("click(button('Spells & scenes'))")
+    passed()
+
+    step = 'console_author_finite'
+    await edit("click(button('Spells & scenes'))")
+    await edit("click(button('Add scene'))")
+    await edit("set(control('Scene name', scene()), 'Magic Vision')")
+    await edit("set(control('Trigger Phrase', scene()), 'Mirror show the vision')")
+    await edit("set(control('Step name', stage()), 'Vision')")
+    await edit("click(button('+ Image / video'))")
+    await edit("click(button('Browse & upload image / video…'))")
+    await wait("return status().includes('Selected in this action.') && control('Asset', action()).value !== ''")
+    await edit("set(control('Name', action()), 'Magic Vision visual')")
+    if (videoFades) {
+      await edit("set(control('Audio', action()),'embedded')")
+      await edit("set(document.querySelector('[aria-label=\"Visual fade in milliseconds\"]'),800)")
+      await edit("set(document.querySelector('[aria-label=\"Visual fade out milliseconds\"]'),800)")
+    }
+    await edit("set(control('Ends when', stage()), 'video_complete')")
+    await wait("return control('Step name', stage()).value === 'Vision' && control('Completion video', stage()).value !== ''")
+    await save()
+    await wait(`const r = await window.magicMirror.getConfig();
+      return r.ok && r.value.active.scenes.length === 0 && r.value.draft.scenes[0]?.name === 'Magic Vision'
+        && r.value.draft.scenes[0].stages[0].name === 'Vision'
+        && r.value.draft.scenes[0].stages[0].endCondition.kind === 'video_complete'
+        && r.value.draft.sceneActions[0].fit === 'cover';`)
+    passed()
+
+    if (!input.editorOnly) {
+      step = 'console_unpublished_step_test'
+      await edit("set(control('Scene name', scene()), 'Keep this scene title unsaved')")
+      await edit("set(control('Step name', stage()), 'Saved preview step')")
+      await edit("click(button('Save step'))")
+      await wait("return status().includes('Step saved to draft') && !button('Test step').disabled")
+      await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
+        && r.value.draft.scenes[0].name === 'Magic Vision' && r.value.draft.scenes[0].stages[0].name === 'Saved preview step'
+        && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
+      await edit("click(button('Test step')); click(button('Stop All'))")
+      await wait("return status() === 'All Scenes stopped.' && !button('Test step').disabled")
+      await new Promise(resolveWait => setTimeout(resolveWait, 1000))
+      if (!await evaluate<boolean>("return status() === 'All Scenes stopped.'")) throw new Error('phase4_qa_pending_test_not_cancelled')
+      await edit("button('Test step').scrollIntoView({block:'center'}); button('Test step').focus()")
+      await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display !== 'none'")
+      await screenshot('console-step-test-help.png')
+      await edit("button('Test step').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))")
+      await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display === 'none'", 'console_tooltip_escape')
+      await edit("click(button('Test step'))")
+      await wait("return status().includes(': completed.')", step, 15000)
+      await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
+        && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
+      await edit("set(control('Scene name', scene()), 'Magic Vision')")
+      await edit("set(control('Step name', stage()), 'Vision')")
+      await save()
+      passed()
+    }
+    if (!input.editorOnly && !videoFades) {
+      for (const name of ['Test action', 'Test step', 'Test scene']) {
+        step = 'console_abort_' + name.replaceAll(' ', '_')
+        await evaluate(`click(button(${JSON.stringify(name)})); await new Promise(r=>setTimeout(r,0));
+          const abort=button('Abort scene test'); if(abort.matches(':disabled')) throw Error('scene_abort_disabled'); click(abort);`)
+        await wait("return !button('Save all changes').disabled")
+        await new Promise(r=>setTimeout(r,350))
+        if (await input.mirror.webContents.executeJavaScript("!!document.querySelector('.scene-visual video')")) throw Error('scene_started_after_abort')
+        await edit(`click(button(${JSON.stringify(name)}))`)
+        const playingDeadline = Date.now() + 10000
+        let playing = false
+        while (Date.now() < playingDeadline) {
+          playing = await input.mirror.webContents.executeJavaScript("(()=>{const v=document.querySelector('.scene-visual video');return !!v && !v.paused && v.currentTime>0})()")
+          if (playing) break
+          await new Promise(r=>setTimeout(r,50))
+        }
+        if (!playing) throw Error('scene_restart_did_not_play')
+        await edit("click(button('Abort scene test'))")
+        await wait("return !button('Save all changes').disabled")
+        passed()
+      }
+      await screenshot('console-scene-abort.png')
+    }
+    step = 'console_publish_finite'
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig();
+      return r.ok && r.value.active.scenes[0]?.name === 'Magic Vision';`)
+    if (videoFades) {
+      await wait(`const r=await window.magicMirror.getConfig();return r.ok && r.value.active.sceneActions[0].fadeInMs===800 && r.value.active.sceneActions[0].fadeOutMs===800`)
+    }
+    await screenshot('console-magic-vision.png')
+    passed()
+
+    step = 'console_run_finite'
+    if (!input.editorOnly) {
+      if (videoFades) await input.mirror.webContents.executeJavaScript(`(()=>{
+        const q=window.__fadeQa={samples:[]};const connect=AudioNode.prototype.connect;
+        AudioNode.prototype.connect=function(...args){if(this instanceof MediaElementAudioSourceNode && this.mediaElement instanceof HTMLVideoElement && args[0] instanceof GainNode)q.gain=args[0].gain;return connect.apply(this,args)};
+        q.timer=setInterval(()=>{
+          const v=document.querySelector('.scene-visual video');
+          if(v)q.samples.push({time:v.currentTime,opacity:Number(getComputedStyle(v).opacity),gain:q.gain?.value});
+        },20);
+      })()`)
+      await edit("click(button('Run Published Scene', scene()))")
+      const mirrorWait = async (source: string): Promise<void> => {
+        const deadline = Date.now() + 10_000
+        while (Date.now() < deadline) {
+          if (await input.mirror.webContents.executeJavaScript(source)) return
+          await new Promise(resolveWait => setTimeout(resolveWait, 50))
+        }
+        throw new Error(`phase4_qa_${step}`)
+      }
+      await mirrorWait("!!document.querySelector('.scene-visual video') && !document.querySelector('.scene-visual').hidden")
+      await screenshot('console-finite-active.png', true)
+      await wait("return status().includes(': completed.')")
+      await mirrorWait("!document.querySelector('.scene-visual video')")
+      await screenshot('console-finite-return.png', true)
+      if (videoFades) {
+        const measured = await input.mirror.webContents.executeJavaScript(`(()=>{const q=window.__fadeQa;clearInterval(q.timer);
+          return {fadeIn:q.samples.some(s=>s.time<0.8&&s.opacity>0.05&&s.opacity<0.95),
+          fadeOut:q.samples.some(s=>s.time>1.5&&s.opacity>0.05&&s.opacity<0.95),
+          audioIn:q.samples.some(s=>s.time<0.8&&s.gain>0.02&&s.gain<0.48),
+          audioOut:q.samples.some(s=>s.time>1.5&&s.gain>0.02&&s.gain<0.48),samples:q.samples.length};})()`)
+        input.onEvidence({step:'video_fade_render_samples',status:'measured',item:JSON.stringify(measured)})
+        if (!measured.fadeIn || !measured.fadeOut || !measured.audioIn || !measured.audioOut) throw new Error('phase4_qa_video_fade_not_rendered')
+      }
+      passed()
+    } else input.onEvidence({ step, status: 'not_executed' })
+
+    if (videoFades) return {motionCount:0,expressionCount:0,sceneCount:1,visualCount:1,screenshotCount,musicAnalyser:'not_executed',consoleCheckCount:checkCount}
+
+    step = 'console_invalid_draft_preserved'
+    await edit("set(control('Scene name', scene()), 'Unsaved correction')")
+    await edit("click(control('Magic Vision visual', stage()))")
+    await edit("click(button('Save all changes'))")
+    await wait("return status().includes('console_config_invalid')")
+    await wait("return control('Scene name', scene()).value === 'Unsaved correction' && !control('Magic Vision visual', stage()).checked")
+    await wait(`const r = await window.magicMirror.getConfig();
+      return r.ok && r.value.active.scenes[0]?.name === 'Magic Vision' && r.value.draft.scenes[0]?.name === 'Magic Vision';`)
+    await screenshot('console-invalid-draft.png')
+    passed()
+    await edit("click(control('Magic Vision visual', stage()))")
+    await edit("set(control('Completion video', stage()), control('Completion video', stage()).options[1].value)")
+    await edit("set(control('Scene name', scene()), 'Magic Vision')")
+
+    step = 'console_unsaved_publish_blocked'
+    await edit("set(control('Scene name', scene()), 'Ready to check')")
+    await save()
+    await edit("click(button('Save all changes'))")
+    await wait("return !button('Publish all changes').disabled")
+    await edit("set(control('Scene name', scene()), 'Unpublished title')")
+    await wait("return button('Publish all changes').disabled")
+    await edit("click(button('Stop All'))")
+    await wait("return control('Scene name', scene()).value === 'Unpublished title'")
+    await edit("set(control('Scene name', scene()), 'Magic Vision')")
+    passed()
+
+    step = 'console_incompatible_end_condition'
+    await edit("set(control('Playback', action()), 'loop')")
+    await edit("click(button('Save all changes'))")
+    await wait("return status().includes('console_config_invalid') && control('Playback', action()).value === 'loop'")
+    await edit("set(control('Ends when', stage()), 'until_stopped')")
+    await edit("set(control('Maximum seconds', stage()), '5')")
+    await save()
+    passed()
+
+    step = 'console_duplicate_isolation'
+    await edit("click(button('Copy step'))")
+    await edit("set(control('Name', action()), 'Independent copy')")
+    await edit("set(control('Ends when', stage()), 'duration')")
+    await edit("click(button('Move up'))")
+    await save()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && r.value.draft.scenes[0].stages.length === 2
+      && r.value.draft.scenes[0].stages[0].actionIds[0] !== r.value.draft.scenes[0].stages[1].actionIds[0]
+      && r.value.draft.sceneActions[0].name === 'Magic Vision visual';`)
+    passed()
+
+    step = 'console_stage_reorder_and_delete'
+    await edit("click(button('Move down'))")
+    await edit("click(button('Save all changes'))")
+    await wait("return status().includes('console_config_invalid')")
+    await edit("click(button('Delete step'))")
+    await edit("click(button('Undo removal'))")
+    await wait("return scene().querySelectorAll('.scene-steps > button').length === 3")
+    await edit("click(button('Delete step'))")
+    await save()
+    passed()
+
+    step = 'console_spell_edit_and_collision'
+    const spellRoot = "panel.querySelector('.scene-spell')"
+    await wait(`const row = ${spellRoot}; return row && !row.querySelector('details')
+      && control('Enabled', row).getBoundingClientRect().height > 0
+      && button('Remove Trigger Phrase', row).querySelector('svg[aria-hidden="true"]');`)
+    await edit(`set(control('Trigger Phrase', ${spellRoot}), 'Mirror show the vision')`)
+    await edit(`set(control('Cooldown (s)', ${spellRoot}), '1.2')`)
+    await save()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && r.value.draft.spells[0].phrase === 'Mirror show the vision' && r.value.draft.spells[0].cooldownMs === 1200;`)
+    await edit("click(button('Add Trigger Phrase'))")
+    await edit("set(control('Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]), 'Mirror show the vision!')")
+    await edit("click(button('Save all changes'))")
+    await wait("return status().includes('console_config_invalid') && panel.querySelectorAll('.scene-spell').length === 2")
+    await edit("click(button('Remove Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]))")
+    await screenshot('console-trigger-phrase-inline.png')
+    passed()
+
+    step = 'console_enabled_controls'
+    await edit(`click(control('Enabled', ${spellRoot}))`)
+    await edit("click(control('Enabled', scene()))")
+    await edit("click(control('Enabled', action()))")
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && !r.value.active.scenes[0].enabled && !r.value.active.sceneActions[0].enabled && !r.value.active.spells[0].enabled
+      && button('Run Published Scene', scene()).disabled;`)
+    await edit("click(control('Enabled', action()))")
+    await edit("click(control('Enabled', scene()))")
+    await edit(`click(control('Enabled', ${spellRoot}))`)
+    await save()
+    await testAndPublish()
+    passed()
+
+    step = 'console_asset_changed_before_publish'
+    await edit("set(control('Scene name', scene()), 'Magic Vision media check')")
+    await save()
+    await edit("click(button('Save all changes'))")
+    await wait("return !button('Publish all changes').disabled")
+    const config = await input.runtime.console.getConfig()
+    if (!config.ok || !config.value.draft.visualAssets[0]) throw new Error('phase4_qa_console_asset_missing')
+    const asset = config.value.draft.visualAssets[0]
+    const assetPath = join(resolve(input.outputDir, '..'), 'user-data', 'assets', 'visual', asset.fileName)
+    const original = await readFile(assetPath)
+    const activeVersion = config.value.active.configVersion
+    try {
+      await writeFile(assetPath, 'synthetic corrupt managed media')
+      await edit("click(button('Publish all changes'))")
+    await edit("click(button('Confirm publish'))")
+      await wait("return status().includes('console_config_test_failed')")
+      await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.configVersion === ${activeVersion};`)
+      await edit("click(button('Save all changes'))")
+      await wait("return (status().includes('failed') || status().includes('Cannot save')) && button('Publish all changes').disabled")
+    } finally {
+      await writeFile(assetPath, original)
+    }
+    await testAndPublish()
+    passed()
+
+    step = 'console_presentation_preview'
+    const beforePreview = input.runtime.snapshot().lifecycle
+    await edit("click(button('Appearance'))")
+    await edit("set(control('Visibility mode'), 'emerge')")
+    await edit("const el = control('Background image / looping video'); set(el, el.options[1].value)")
+    await edit("const el = control('Sleep ambience (loops)'); set(el, el.options[1].value)")
+    await edit("set(control('Entrance seconds'), '0.8')")
+    await edit("set(control('Exit seconds'), '0.9')")
+    await edit("click(button('Preview full cycle'))")
+    await wait("return panel.querySelector('.presentation').dataset.phase === 'awake'")
+    await screenshot('console-presentation-awake.png')
+    await wait("return panel.querySelector('.presentation').dataset.phase === 'asleep'")
+    if (input.runtime.snapshot().lifecycle !== beforePreview) throw new Error('phase4_qa_preview_changed_lifecycle')
+    await screenshot('console-presentation-asleep.png')
+    for (const name of ['Preview entrance', 'Preview exit', 'Preview full cycle']) {
+      await edit(`click(button(${JSON.stringify(name)}))`)
+      await evaluate("click(button('Save all changes')); const stop=button('Stop preview'); if(stop.matches(':disabled')) throw Error('presentation_stop_disabled'); click(stop)")
+      await wait("return !panel.querySelector('.presentation') && !button('Save all changes').disabled")
+      passed()
+    }
+    await screenshot('console-presentation-stopped.png')
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && r.value.active.presentation.mode === 'emerge' && r.value.active.presentation.exitMs === 900;`)
+    passed()
+
+    if (!input.editorOnly) {
+      step = 'presentation_simulated_lifecycle_cycle'
+      const mirrorWait = async (phase: string) => {
+        const deadline = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (await input.mirror.webContents.executeJavaScript(
+            `document.querySelector('.presentation')?.dataset.phase === ${JSON.stringify(phase)}`)) return
+          await new Promise(resolveWait => setTimeout(resolveWait, 50))
+        }
+        throw new Error('phase4_qa_presentation_phase_' + phase)
+      }
+      await mirrorWait('asleep')
+      await screenshot('presentation-dormant.png', true)
+      const loop = await input.mirror.webContents.executeJavaScript(
+        "(()=>{const v=document.querySelector('.presentation video'); return !!v && v.loop && !v.paused && v.muted})()")
+      if (!loop) throw new Error('phase4_qa_presentation_loop_missing')
+      const sound = await input.mirror.webContents.executeJavaScript(
+        "(()=>{const a=document.querySelector('[data-presentation-ambience]'); return !!a && a.loop && !a.paused && a.volume > 0})()")
+      if (!sound) throw new Error('phase4_qa_presentation_ambience_missing')
+      await input.runtime.handleSimulator({ type: 'wake' })
+      await mirrorWait('entering')
+      await screenshot('presentation-entering.png', true)
+      await mirrorWait('awake')
+      await wait("return document.querySelector('.console__status').textContent === 'active' && !button('Disconnect', document).disabled", 'overview_live_active')
+      await new Promise(resolveWait => setTimeout(resolveWait, 550))
+      const quiet = await input.mirror.webContents.executeJavaScript(
+        "(()=>{const a=document.querySelector('[data-presentation-ambience]'); return !!a && a.paused && a.volume === 0})()")
+      if (!quiet) throw new Error('phase4_qa_presentation_ambience_not_paused')
+      const visible = await input.mirror.webContents.executeJavaScript(
+        "(()=>{const p=document.querySelector('.presentation'); return p.querySelector('video').paused && getComputedStyle(p.querySelector('.presentation__avatar')).opacity === '1'})()")
+      if (!visible) throw new Error('phase4_qa_presentation_avatar_not_visible')
+      await screenshot('presentation-awake.png', true)
+      await input.runtime.handleSimulator({ type: 'sleep' })
+      await mirrorWait('exiting')
+      await screenshot('presentation-exiting.png', true)
+      await mirrorWait('asleep')
+      await wait("return document.querySelector('.console__status').textContent === 'dormant' && !button('Start Conversation', document).disabled", 'overview_live_dormant')
+      await screenshot('presentation-return.png', true)
+      passed()
+    }
+
+    step = 'console_delete_referenced_action'
+    await edit("click(button('Action library'))")
+    await wait("return button('Delete unused action').disabled")
+    passed()
+    await edit("click(button('Spells & scenes'))")
+
+    step = 'console_delete_scene_and_spell'
+    await edit("click(button('Remove scene and its spells'))")
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && r.value.active.scenes.length === 0 && r.value.active.spells.length === 0
+      && r.value.active.visualAssets.length === 1;`)
+    await screenshot('console-editor-complete.png')
+    passed()
+
+    step = 'console_config_rejected_edit'
+    await edit("click(button('System', document))")
+    await edit("click(button('Advanced config', document))")
+    const configRoot = "document.querySelector('[aria-labelledby=console-config]')"
+    await wait(`return !!control('idleSeconds', ${configRoot}) && !control('idleSeconds', ${configRoot}).disabled`)
+    await edit(`set(control('idleSeconds', ${configRoot}), '0')`)
+    await edit(`click(button('Save Draft', ${configRoot}))`)
+    await wait(`return ${configRoot}.textContent.includes('console_config_invalid') && control('idleSeconds', ${configRoot}).value === '0'`)
+    await screenshot('console-config-invalid.png')
+    await edit(`set(control('idleSeconds', ${configRoot}), '300')`)
+    passed()
+
+    step = 'console_mixed_batch_and_previews'
+    await edit("click(button('Avatars', document))")
+    await edit("click(button('Spells & scenes'))")
+    await edit("click(button('Media library'))")
+    selection = [join(process.cwd(), 'resources', 'phase4-trial-assets', 'phase4-still.png'),
+      join(resolve(input.outputDir, '..'), 'user-data', 'assets', 'music', 'phase4-qa-tone.wav'),
+      join(resolve(input.outputDir, '..'), 'invalid.webm')]
+    await edit("click(button('Browse & upload media…'))")
+    await wait("return status().includes('Imported 2 file(s)') && status().includes('1 failed')")
+    await wait("const img = fieldset('Managed visuals').querySelector('img'); return img?.complete && img.naturalWidth > 0")
+    await wait("return fieldset('Managed visuals').querySelectorAll('li').length === 2 && fieldset('Managed music').querySelectorAll('li').length === 2")
+    await screenshot('console-media-batch.png')
+    await evaluate("const play=fieldset('Managed music').querySelector('button');click(play);await new Promise(r=>setTimeout(r,0));const stop=fieldset('Managed music').querySelector('button');if(stop.matches(':disabled')||!stop.textContent.includes('Stop'))throw Error('media_abort_disabled');click(stop)")
+    await wait("return !panel.querySelector('[data-library-audio]')")
+    passed()
+    await edit("click([...fieldset('Managed music').querySelectorAll('button')].at(-1))")
+    await wait("const audio = panel.querySelector('[data-library-audio]'); return audio && !audio.paused && audio.currentTime > 0")
+    await edit("click(fieldset('Managed music').querySelector('button'))")
+    await wait("const audio = panel.querySelector('[data-library-audio]'); return panel.querySelectorAll('[data-library-audio]').length === 1 && audio && !audio.paused && audio.currentTime > 0")
+    await edit("click(button('Mirror', document))")
+    await wait("return !document.querySelector('[data-library-audio]')")
+    await edit("click(button('Avatars', document))")
+    await edit("click(button('Spells & scenes'))")
+    await save()
+    await testAndPublish()
+    passed()
+
+    step = 'console_avatar_dialogue'
+    await edit("click(button('Avatars', document))")
+    await edit("click(button('Persona'))")
+    await wait("return !!control('Wake greeting') && !control('Wake greeting').disabled")
+    await edit("set(control('Wake greeting'), 'Welcome to the mirror.')")
+    await edit("set(control('Sleep farewell (verbatim)'), 'Rest now.')")
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok
+      && r.value.active.presentation.wakeGreeting === 'Welcome to the mirror.'
+      && r.value.active.presentation.sleepFarewell === 'Rest now.'
+      && r.value.active.visualAssets.length === 2 && r.value.active.musicAssets.length === 2;`)
+    await screenshot('console-avatar-dialogue.png')
+    passed()
+
+    step = 'console_multi_avatar_authoring'
+    const originalAvatar = await evaluate<string>("return control('Editing avatar').value")
+    await edit("click(button('New avatar'))")
+    await edit("set(control('Avatar name'), 'QA Guide')")
+    await edit("set(control('Personality'), 'A patient museum guide. Prefer brief answers.')")
+    await edit("set(control('Wake greeting'), 'The guide is ready.')")
+    await edit("click(button('Voice'))")
+    await edit("set(control('Delivery style'), 'Calm and curious. Traditional Chinese.')")
+    await edit("set(control('Base voice'), 'cedar')")
+    await edit("click(button('Persona'))")
+    const guideAvatar = await evaluate<string>("return control('Editing avatar').value")
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(originalAvatar)})`)
+    await wait("return control('Wake greeting').value === 'Welcome to the mirror.'")
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(guideAvatar)})`)
+    await wait("return control('Avatar name').value === 'QA Guide' && control('Wake greeting').value === 'The guide is ready.'")
+    await save()
+    await testAndPublish()
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.avatars.length === 2 && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
+    await edit("click(button('Use on Mirror'))")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(guideAvatar)} && r.value.active.voice === 'cedar'`)
+    await runPromptInspectorQa(input, 'A patient museum guide.', 'console')
+    passed()
+
+    step = 'console_cubism_bundle_import_preview'
+    await edit("click(button('Appearance'))")
+    selection = join(process.cwd(), 'resources', 'avatar', 'Ren', 'Ren.model3.json')
+    await edit("click(button('Browse & import Cubism…'))")
+    await wait("return status().startsWith('Cubism bundle imported.')")
+    await save()
+    await testAndPublish()
+    await edit("click(button('Avatars', document))")
+    await edit("click(button('Spells & scenes'))")
+    await edit("click(button('Appearance'))")
+    await edit("click(button('Preview full cycle'))")
+    await wait("return panel.querySelector('.presentation-preview .avatar-stage')?.dataset.rendererState === 'ready' && !panel.querySelector('.presentation-editor .console__fault')", 'managed_cubism_preview', 20000)
+    await wait("const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.status === 'ready'", 'managed_mirror_ready', 20000)
+    const mirrorReady = await input.mirror.webContents.executeJavaScript("document.querySelector('.avatar-stage')?.dataset.rendererState === 'ready'")
+    if (!mirrorReady) throw new Error('phase4_qa_managed_mirror_fallback')
+    const managed = await input.mirror.webContents.executeJavaScript("window.magicMirror.getPresentation().then(p => !!p.model && p.model.id.startsWith('model-'))")
+    if (!managed) throw new Error('phase4_qa_managed_model_not_loaded')
+    // The synthetic Ren rig has a broad light coat. A stale Cubism mask pool
+    // rendered only its collar/hand while still reporting ready; nonblack
+    // background pixels cannot detect that regression. Inspect the actual frame.
+    const rigFrame = await input.mirror.webContents.capturePage()
+    const rigPixels = rigFrame.toBitmap()
+    let lightPixels = 0
+    for (let i = 0; i < rigPixels.length; i += 4) {
+      if (rigPixels[i] > 145 && rigPixels[i + 1] > 145 && rigPixels[i + 2] > 145) lightPixels++
+    }
+    const lightRatio = lightPixels / (rigPixels.length / 4)
+    input.onEvidence({ step: 'managed_rig_light_coverage', item: lightRatio.toFixed(3), status: 'measured' })
+    if (lightRatio < 0.035) throw new Error('phase4_qa_managed_rig_incomplete')
+    await screenshot('console-managed-cubism-preview.png')
+    await screenshot('mirror-managed-cubism.png', true)
+    await edit("click(button('Stop preview'))")
+    passed()
+
+    step = 'console_avatar_shared_action_focused_tests'
+    await edit("click(button('Spells & scenes'))")
+    await edit("click(button('Add scene'))")
+    await edit("set(control('Scene name'), 'Guide reveal')")
+    await edit("set(control('Trigger Phrase'), 'Guide reveal')")
+    await edit("set(control('Duration seconds'), '0.5')")
+    await edit("const details = [...panel.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'Link a reusable action'); click(details.querySelector('input'))")
+    await save()
+    await testAndPublish()
+    await edit("click(button('Test step'))")
+    await wait("return status().includes('completed')")
+    await edit("click(button('Test action'))")
+    await wait("return status().includes('started') || status().includes('completed')")
+    await edit("click(button('Stop All'))")
+    await wait("return status() === 'All Scenes stopped.'")
+    await screenshot('console-focused-test.png')
+    passed()
+
+    step = 'console_avatar_lock_and_active_switch_guard'
+    await edit("click(button('Media library'))")
+    await edit("click([...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1))")
+    await save()
+    await testAndPublish()
+    await edit(`set(control('Editing avatar'), ${JSON.stringify(originalAvatar)})`)
+    await input.runtime.handleSimulator({ type: 'wake' })
+    await wait("return button('Use on Mirror').disabled && document.querySelector('#avatar-activation-reason').textContent.includes('End the conversation')")
+    await input.runtime.handleSimulator({ type: 'sleep' })
+    await wait("return document.querySelector('.console__status').textContent === 'dormant'")
+    await edit("click(button('Use on Mirror'))")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
+    await wait("return [...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1).disabled")
+    await screenshot('console-avatar-resource-lock.png')
+    passed()
+
+    step = 'console_navigation'
+    for (const tab of ['Mirror', 'Avatars', 'System']) {
+      await edit(`click(button(${JSON.stringify(tab)}, document))`)
+      await wait(`return document.querySelector('[aria-current=page]')?.textContent === ${JSON.stringify(tab)}`)
+    }
+    for (const tab of ['Simulator', 'Events', 'Phase Tests', 'Models']) {
+      await edit(`click(button(${JSON.stringify(tab)}, document))`)
+      await wait(`return [...document.querySelectorAll('h2')].some(el => el.getClientRects().length && el.textContent.includes(${JSON.stringify(tab)}))`)
+    }
+    passed()
+    step = 'console_readability_responsive'
+    const originalSize = input.console.getSize()
+    try {
+      for (const width of [1024, 1440]) {
+        input.console.setSize(width, 900)
+        await new Promise(resolveWait => setTimeout(resolveWait, 150))
+        for (const page of ['Mirror', 'Avatars', 'System']) {
+          await edit(`click(button(${JSON.stringify(page)}, document))`)
+          const metrics = await evaluate<{ overflow: boolean; font: number; smallControls: number; smallText: number; lowContrast: number }>(`
+            const visible = el => el.getBoundingClientRect().height > 0 && !el.closest('details:not([open]),.console__sr-only,[aria-hidden="true"]');
+            const rgb = value => (value.match(/[0-9.]+/g) || []).map(Number);
+            const luminance = c => c.slice(0,3).map(v => v/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4)
+              .reduce((sum,v,i) => sum + v*[.2126,.7152,.0722][i], 0);
+            const text = [...document.querySelectorAll('.console *')].filter(visible)
+              .filter(el => !el.matches(':disabled') && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()));
+            const contrast = el => {
+              const fg = rgb(getComputedStyle(el).color); let bg = [16,20,24];
+              for (let p = el; p; p = p.parentElement) {
+                const c = rgb(getComputedStyle(p).backgroundColor);
+                if (c.length === 3 || c[3] === 1) { bg = c; break; }
+              }
+              const a = luminance(fg), b = luminance(bg); return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+            };
+            return {overflow: document.documentElement.scrollWidth > innerWidth,
+              font: parseFloat(getComputedStyle(document.documentElement).fontSize),
+              smallText: text.filter(el => parseFloat(getComputedStyle(el).fontSize) < 15).length,
+              lowContrast: text.filter(el => contrast(el) < 4.5).length,
+              smallControls: [...document.querySelectorAll('button,select,input:not([type=checkbox])')]
+                .filter(visible).filter(el => el.getBoundingClientRect().height < 43).length};`)
+          input.onEvidence({step:'console_readability_metrics',status:'measured',item:JSON.stringify({width,page,...metrics})})
+          if (metrics.overflow || metrics.font < 18 || metrics.smallControls > 0 || metrics.smallText > 0 || metrics.lowContrast > 0) throw new Error('phase4_qa_readability_' + width + '_' + page)
+          await screenshot('console-' + page.replaceAll(/[^a-z]/gi, '-').toLowerCase() + '-' + width + '.png')
+        }
+      }
+    } finally { input.console.setSize(originalSize[0], originalSize[1]) }
+    passed()
+    return { motionCount: 0, expressionCount: 0, sceneCount: input.editorOnly ? 0 : 1, visualCount: input.editorOnly ? 0 : 1,
+      screenshotCount, musicAnalyser: 'not_executed', consoleCheckCount: checkCount }
+  } catch (error) {
+    input.onEvidence({ step, status: 'failed' })
+    await screenshot('console-failure.png').catch(() => input.onEvidence({ step: 'console_failure_capture', status: 'failed' }))
+    throw error
+  } finally {
+    dialog.showOpenDialog = picker
+  }
+}

@@ -1,74 +1,260 @@
-# Magic Mirror — Progress
+# Magic Mirror — Raven deployment on the final Mac, 2026-10-03
 
-**Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–7 accepted; Task 8 is next.**
+## Resume here
 
-**Field deployment (Mac mini M6 at venue): glass, board recovery, audio, and
-camera working; app auto-start pending — see "Field deployment" below
-(2026-10-03).**
+This Mac is the user-confirmed FINAL Raven deployment target. Incoming runtime
+and local HDMI policy are integrated; the 15 conflict resolutions have been
+reviewed and validated. Check the field branch's local deployment checkpoint
+commit for the resolved merge. Dependencies and Electron 44
+are installed. The operator supplied `.env.rtf`; it was converted locally to
+plain root `.env`, with both files owner-only and ignored. Never inspect either
+value. Main-only `.env` loading now avoids inherited environment fallback or
+process-environment mutation. A real broker issued an ephemeral key and confirmed
+the configured models available; active voice has not yet passed.
+
+Raven v11 is imported (17 files, model ID
+`model-290002c3-7e18-466c-b547-d98a67e054eb`) and selected as `raven-field` in
+published config v8. Prior default profile/config is preserved. The Mac wake
+package `sherpa-magic-mirror-mac-v1` is installed with verified upstream neural
+and token hashes, bundled-lexicon keywords and unchanged tuning/model version.
+Spoken accuracy is not yet verified.
+
+The user LaunchAgent is installed at
+`~/Library/LaunchAgents/com.magicmirror.launchagent.plist`, with the sole app
+restart policy `KeepAlive={SuccessfulExit=false}`. Actual Mac startup reports both
+renderers ready and the Mirror on `T749-fHD720` with simple fullscreen and
+screen-saver level. Crash recovery passed: verified Main PID 33024 was killed,
+launchd started PID 33087, and the HDMI Mirror returned ready. All 17 installed
+Raven files match the source bundle. After the microphone repair/build the field
+app is **running**, PID 34513, with `cubism_avatar_ready`; native microphone
+permission is pending. No other app restart owner exists.
+
+Nearest-person gaze uses largest face area with a 600 ms switching hold and
+smoothed, bounded gaze. Apple Vision capture is RAM-only and identifies no
+visitors. Camera worker and active Realtime microphone hotplug recovery are
+implemented. Wake retries a missing microphone and cancels retries on release.
+
+Current blockers: Arducam enumerates and camera permission is authorized, but
+the real 12-second probe produced zero frames. macOS reported
+`kIOReturnNotResponding` (`0xe00002ed`) while starting the stream. Explicit supported
+640×480 NV12 capture also produced zero frames after rebuild. The operator says
+nobody can reach it physically; USB replug remains required. Do not repeat this
+probe until hardware state changes.
+Computer Use window access is blocked by macOS permissions; the operator is
+remote and reports its Allow control disabled. Helper signature verifies as
+OpenAI and this Mac is not MDM-enrolled. Remote-input restrictions are a possible
+cause, not a verified diagnosis. No TCC security controls were bypassed.
+
+Mac microphone status was `not-determined`. Main now requests permission before
+native wake capture, exposes denial/unavailable/pending reasons and prevents
+late startup after shutdown. The real app currently reports
+`wake_microphone_permission_required`; operator approval was requested.
+Isolated cloud smoke plus its one diagnostic retry returned `active_timeout`
+after 60 seconds, with valid provenance, model availability, and zero orphans.
+No connect-start metadata followed key issuance. Do not claim live conversation
+or Jabra audio from these results; investigate further after permission changes.
+
+Codex's `local_thread_store_compression` under-development flag was disabled in
+the user config. TOML parses and fresh workers no longer show that warning.
+No evidence establishes it as the previous crash cause. Other warnings await
+the operator's exact text, if any.
+
+Next: approve the pending microphone request, verify native Jabra input and live
+voice, then perform visual/spoken QA and physical camera/HDMI/Jabra unplug/replug
+and reboot checks when accessible. Nearest-person gaze is implemented and
+unit-tested. Named-person recognition/enrollment is not enabled: the incoming
+configuration still uses mock face-model IDs and there is no live identity
+backend. Camera gaze does not provide that feature. Live gaze, spoken wake
+accuracy, clean quit and real reboot remain unverified. This is a checkout
+deployment through local Electron, not signed packaged deployment evidence.
 
 ## Current worker routing — 2026-10-03
 
-The user changed active harness routing to exact `gpt-6.1-sol`, reasoning
-effort `max`, profile `nova-auto`, and fresh `--ephemeral` workers. The
-authorized native macOS `--cd` path is `/Users/novalien0424/magic-mirror`;
-the Windows example remains valid for Windows. This Sol route supersedes
-historical worker-route references in older plans and records, which remain
-provenance, never active dispatch. Runtime model IDs remain unchanged.
-Migration validation by the separate Sol tester is pending; no task
-acceptance or phase demo is claimed.
+Exact model `gpt-6.1-sol`, effort `max`, profile `nova-auto`, fresh `--ephemeral`
+workers; native `--cd /Users/novalien0424/magic-mirror` is authorized. This
+supersedes historical Luna routes. Runtime model IDs remain unchanged;
+fresh Sol tester evidence is linked below. See [AGENTS](AGENTS.md) and
+[DECISIONS](DECISIONS.md) for the exact dispatch contract.
 
-- Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
-- Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
-- Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`
-- Accepted Task 5 plan: `docs/superpowers/plans/2026-08-19-phase0-task5-sqlite.md`
-- Accepted Task 6 plan: `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`
-- Accepted Task 7 plan: `docs/superpowers/plans/2026-08-19-phase0-task7-model-settings-resolver.md`
-- Task 3 accepted integration: implementation commit `0270686` and correction/
-  integration tip `835c92d` are on pushed `main`.
-- Fresh merged-main verification supplied for Task 3: 7 test files / 92 tests
-  passed; full Node plus web typecheck exit 0; Electron Vite
-  main/preload/renderer build exit 0.
-- Task 4 accepted integration: pushed `main` tip `dca1327`; focused telemetry
-  `21/21`; full `8 files / 113 tests`; Node plus web typecheck exit 0; Electron
-  Vite build exit 0.
-- Task 5 accepted integration: pushed `main` tip `a8f0355`; focused SQLite
-  verification `32/32`; full suite `145/145`; Node plus web typecheck exit 0;
-  Electron Vite build exit 0.
-- Task 6 accepted integration: pushed `main` tip `5b95a94`; focused
-  verification `16/16`; full suite `161/161`; Node plus web typecheck exit 0;
-  Electron Vite build exit 0.
-- Task 7 accepted implementation: accepted plan commit `6214b6c`; pushed
-  `phase0-model-settings` tip `5e24bdc`; focused verification `7/7`; full
-  suite `168/168`; Node plus web typecheck exit 0; Electron Vite build exit 0;
-  both negative runtime-model/fallback scans successful; no OpenAI or `.env`
-  requirement.
-- Current branch: `phase0-model-settings`; Task 7 is accepted and Task 8
-  (boot wiring, IPC, Mirror UI, and OfflineLoop) is next.
-- The five-command Task 6 plan static gate passed: status scope, git diff check,
-  458 lines/final marker/trailing whitespace, 10 required markers, and no
-  forbidden markers.
-- Task 6 selected design: runtime-exhaustive Main registry, injected
-  closed-outcome adapters, separate deterministic mocks, stable metadata-only
-  results/events, informational missing adapter, explicit
-  `eventDelivery` `emitted|failed`, no retry/sibling gate, and no boot/IPC/UI/
-  model resolver. The application/test scope was
-  `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`; Task 6 application implementation is accepted at
-  `5b95a94` on `main`. Tasks 8/9 own integration/UI, and Task 10 owns
-  demos/records/exit.
-- No user setup is required for Task 6. Deterministic
-  injected adapters and mock controls provide the complete test path; no
-  credential, device, network, or `.env` value is needed by this task.
-  Development Node `v24.19.0` satisfies the repository prerequisite
-  `>=22.22.2` or `>=24.15.0`.
-- Verified integration metadata: GitHub origin is
-  `https://github.com/Novalien0424/magic-mirror`.
-- Workspace note: the untracked `scripts/install-node-lts.ps1` remains
-  untouched and is outside this task's scope.
+## Current workspace and verification boundary
 
-## Field deployment — Mac mini M6 at venue (status 2026-10-03 19:40)
+- Canonical Mac workspace: `/Users/novalien0424/magic-mirror`; recovered
+  origin/main integration on the field branch. Preserve operator data and local edits.
+- [Tracking build/checks](.artifacts/mac-deployment/tracking-green.md): typecheck,
+  build and 104 focused tests passed. [Recovery checks](.artifacts/mac-deployment/recovery-green.md):
+  80 tests/build passed; test fixture type error subsequently fixed.
+- [Fresh types/camera tests](.artifacts/mac-deployment/recovery-types.md):
+  typecheck exit 0; 12 tests passed. [Wake/audio recovery](.artifacts/mac-deployment/wake-hotplug-green.md):
+  typecheck exit 0; 71 tests passed. Red evidence retained beside each report.
+- [Final build and credential checks](.artifacts/mac-deployment/final-checks.md):
+  typecheck/build exit 0; 20 tests passed. Swift inputPriority and smoke temp-path
+  provenance problems are fixed; historical failed evidence is retained.
+- [Actual crash recovery and cloud check](.artifacts/mac-deployment/deployment-runtime.md):
+  crash/HDMI recovery and 17 managed-file hashes passed; cloud active timeout.
+  [Voice diagnostic retry](.artifacts/mac-deployment/voice-diagnostics.md): key
+  issued, model available, active timeout, microphone not-determined.
+- [Microphone permission checks](.artifacts/mac-deployment/microphone-permission-green.md):
+  typecheck/build and 20 focused tests passed; real OS approval is pending.
+- The old display test now correctly expects a configured-but-absent target to
+  remain hidden. QA temp fixtures use canonical macOS paths. Windows historical
+  evidence below is not Mac runtime acceptance. No phase promotion is claimed.
 
-Target machine: Mac mini M6, macOS 27 (Darwin 27.0.0). Branch
+## Incoming runtime delivery — historical Windows evidence, 2026-09-17
+
+The current Realtime sleep skill is migrated to a versioned structured tool
+catalog: schemas, use/avoid/speech rules, availability and JSON results share
+one source for runtime and Console. Explicit handlers validate arguments before
+effects; spells retain application exact-match routes. AGENTS and compact
+Realtime, roleplay and QA guidance are updated.
+[Architecture and evidence](docs/testing/realtime-tool-architecture-2026-09-17.md):
+159 focused tests, web typecheck/build and real SDK serialization tests pass.
+Normal Raven Tools & input was visually verified on Windows; that run used v20 and
+the saved draft preserved. Isolated lifecycle QA failed at Electron capture
+before provider work, including its one retry; it is not a live pass.
+
+The earlier [prompt audit](docs/testing/realtime-prompt-audit-2026-09-17.md)
+introduced five native inspector windows and response-scoped greeting/scene
+cues. **Sleep silence remains unresolved:** prior Raven pre-tool speech and
+residual-output failures are retained. Next: operator testing of the structured
+tools, then investigate pre-tool output and the QA capture failure separately.
+
+On Windows, Raven V11 from remote PR #1 was installed in the normal shared rig library as
+**Raven · v11**, with its matching renderer and motion ownership changes.
+The repository Live2D and installed avatar-studio skills are updated. V10 and
+the prior published state were preserved at installation; V11 was not
+automatically assigned/published. The operator has since published v20. [Installation evidence](docs/testing/raven-v11-install-2026-09-17.md):
+69 focused tests, web typecheck/build, bundle validation and 227 isolated
+Windows Console checks passed. Normal native import and visible Console
+display were observed; all 17 managed files match V11. Artistic and live
+output-audio acceptance remain separate.
+
+Raven's extra invitation on sleep is addressed with a compact silent-tool prompt,
+SDK background completion, and an application-owned exact farewell response.
+Sleep intent clears local processed audio; only the farewell response reopens
+output, and sleep waits for its playback/tail. No linguistic regex filters.
+[Raven farewell evidence](docs/testing/raven-farewell-2026-09-16.md): 112 focused
+tests, web typecheck/build and final real-provider host/Raven lifecycle and
+speaker-output checks passed. Failed attempts remain linked. Physical operator
+retest and broader spoken reliability remain open.
+
+Wake greetings and application scene speech now explicitly forbid tool calls
+for that response, preventing a greeting from invoking the sleep/farewell tool.
+Visitor sleep commands retain their tool. Replacement-worker timer/send failures
+now enter failed recovery instead of remaining on Restarting.
+[Diagnosis and current checks](docs/testing/wake-greeting-sleep-2026-09-16.md):
+189 focused tests, web typecheck/build and four real-provider Windows lifecycle
+checks passed. The operator's physical stop-calibration/wake retest remains open;
+the original model/tool decision cannot be reconstructed from metadata alone.
+
+Repeated Start failure is fixed: an exhausted wake worker previously stayed
+absent while Start kept sending it configuration. Start now safely creates a
+fresh worker; automatic recovery remains bounded. Console preserves failure
+and recovery state across cleanup, shows restart attempts, and explicitly
+prompts saving edits and restarting Magic Mirror when recovery fails.
+[Recovery RCA, research and checks](docs/testing/wake-recovery-retry-2026-09-16.md):
+125 focused tests, web typecheck/build, real worker-exit recovery, explicit
+terminal failure and production Start/Stop retry passed. The original native
+device/driver failure at 17:21 is identified by code, not its physical cause.
+
+The live calibration meter now displays the real native acoustic score and
+matched/total sound tokens. Direct Console observation of the operator's three
+spoken attempts at threshold 0.18 recorded **2 detections**, with full 9/9-token
+scores **0.517361** and **0.473206**. Partial matches also appeared; threshold
+alone does not resolve incomplete matches. Published settings were preserved.
+[Native score delivery and evidence](docs/testing/wake-native-score-2026-09-16.md):
+141 focused tests, 21 final follow-up tests, five native cases, web typecheck,
+build and 33 Windows UI checks passed. The adapter also consumes results at
+every decoder step, fixing lost detections in coalesced input. Human wake
+reliability remains open; the original zero-detection interval is not fully
+explained. Release packaging did not complete and remains unverified.
+Next: use score plus token progress to investigate the remaining spoken miss.
+
+Live wake calibration is available at Avatars → Persona → Wake sensitivity
+tuning → Start live test. It shows separate microphone and native score
+meters, repeated detection counts and applied threshold/score/trailing blanks.
+Use in draft → Save → Publish keeps tested values across restart; temporary
+tests restore published settings when stopped or interrupted. No operator
+sensitivity setting changed. [Delivery and RCA](docs/testing/wake-calibration-2026-09-16.md):
+139 focused tests, web typecheck/build and 33 Windows UI checks passed.
+The reported rain misses were one non-exact transcript and one cancelled
+announcement; cancellation diagnostics now distinguish visitor speech from
+output interruption. Physical wake/spell accuracy is not yet established.
+The repeated `魔鏡阿魔鏡` trial is recorded above; rain verification remains open.
+
+Wake input now verifies first-block delivery and recovers a stalled worker;
+release/shutdown cancel recovery and old callbacks cannot affect a new capture.
+Console reports recovery/failure and actual quiet levels. No device, phrase or
+sensitivity setting changed. [Delivery evidence](docs/testing/wake-capture-recovery-2026-09-16.md):
+169 focused tests, 19 overlapping follow-up checks, web typecheck/build passed;
+six real Electron microphone/ownership checks passed on each of two fresh launches.
+[RCA](docs/testing/wake-rca-2026-09-16.md) retains the original stalled-stream evidence.
+Physical wake accuracy and overnight/device-change behavior remain hardware
+verification; the current calibration panel supports the next operator test.
+
+Scene playback now pauses idle until playback finishes, then starts the full
+configured interval. The hidden Developer Mode 30-second cap is removed.
+Wake tuning controls show actual numeric package/override values. No operator
+sensitivity setting changed. [Current evidence](docs/testing/scene-idle-wake-values-2026-09-15.md):
+149 focused tests and 32 Windows UI checks passed.
+
+Avatar CRUD fixes remain delivered; [prior evidence](docs/testing/avatar-crud-audit-2026-09-15.md)
+records immediate deletion, keyboard renaming and consistent Mirror selection.
+
+Console Stop/Abort and automatic Save/check are also complete;
+[prior delivery evidence](docs/testing/console-stop-save-check-2026-09-15.md) records those checks.
+
+## Historical Windows runtime and workspace — 2026-09-17
+
+- Canonical `C:/Project/magic-mirror`, branch `main`; accumulated delivery is
+  recorded in Git history. Preserve local operator data and installed skills.
+- Normal dev session **14915**, `http://localhost:5173/`, restarted from canonical
+  checkout on **2026-09-17 Asia/Taipei**. Main, Mirror and Console are ready;
+  Raven remains active on published **v20**. Its pending edit was saved and
+  checked before restart, but not published. The Tools & input inspector is
+  open with the saved Raven draft. V11 remains installed in the rig library.
+  Isolated QA ended before launch; operator authorized restarts. Persistent
+  Private TCP/UDP firewall rules matched the canonical executable. Physical
+  sleep and stop-calibration/wake retests remain open.
+- Operator config preserved, with Ren's short phrase `施放咒語，下雨`. Per-avatar
+  wake/sleep and sensitivity controls are available; video fades default to 0.
+- `out/` contains a development build. Rebuild stamped output before Electron
+  QA; never overlap QA/full tests with normal Electron. Preserve any new
+  unsaved Console edits before restart. See [UI QA](.agents/skills/mm-ui-qa/SKILL.md).
+
+## Evidence and limits
+
+- [Avatar management](docs/testing/avatar-management-2026-09-15.md): Mirror activation,
+  historical first delivery. Its draft-only deletion workflow is superseded by
+  the [CRUD audit](docs/testing/avatar-crud-audit-2026-09-15.md).
+
+- [Console Stop/Abort and Save/check](docs/testing/console-stop-save-check-2026-09-15.md):
+  Windows Console 38 checks, profiles/voice 25, developer audio 3, Cubism 181;
+  final focused suite 166 tests, web typecheck/build passed. Live queued dialogue
+  and physical sound remain operator verification; no phase promotion.
+
+- [Latest persona/spell/fade RCA and checks](docs/testing/persona-spell-video-fades-2026-09-15.md):
+  real-provider spell QA 3 checks; Console/portrait fade QA 10 checks, 6
+  screenshots, 151 opacity/gain samples. Focused tests, web/scoped Node checks
+  and build passed. These are historical results for the recorded build.
+- [Wake tuning and short-command evidence](docs/testing/short-spells-wake-tuning-2026-09-15.md);
+  [audio ownership/state table](docs/testing/audio-playback-audit-2026-09-15.md).
+- Full Node typecheck has pre-existing TS7016 in the QA-artifacts test. Human
+  speech accuracy, first-boot wake reproduction, physical speakers/echo and
+  hardware/long-run acceptance remain open in TODO.
+- Phases 0–3 accepted on Windows; Phase 4 active, unaccepted and untagged.
+  Identity → Memory → Field Hardening remain sequential. The 2026-10-03 final
+  Mac deployment authority does not change that phase acceptance.
+- Current Raven assets: [storage](resources/avatar/Raven/README.md),
+  [handoff](RAVEN-V10-EXPRESSION-FIX-HANDOFF.md). Large ignored source assets need
+  separate backup; built-in Ren QA does not establish Raven acceptance.
+
+## Historical Mac field observations — 2026-10-03 19:40–19:43
+
+Recorded before this origin/main merge, from the Phase 0 field build. These
+are historical observations, not a current runtime or Raven installation
+claim. The user has since confirmed this Mac as the FINAL deployment target.
+
+Recorded machine: Mac mini M6, macOS 27 (Darwin 27.0.0). Branch
 `field/macmini-deploy` (pushed): `c43cf66` tooling/records, `6598e07` Mirror
 window display targeting. How-to: `deploy/macos/README.md`.
 
@@ -137,7 +323,7 @@ window display targeting. How-to: `deploy/macos/README.md`.
   extended at `-1080,0`. Never make the glass main while someone works on the
   ASUS (macOS moves their windows under the fullscreen Mirror). Production has
   HDMI only.
-- **Running now.** App on the glass with `MIRROR_DISPLAY=T749`, started from
+- **At the field observation.** App on the glass with `MIRROR_DISPLAY=T749`, started from
   the session shell (not a login item).
 
 ### Face test fixtures (operator, 2026-10-03 19:43)
@@ -157,7 +343,11 @@ stopped after 7 frames while the camera kept working afterwards (clean UVC stop,
 0 dropped packets), so the stall is attributed to the ad-hoc capture tool, not
 the camera.
 
-### Field to-do
+### Historical field follow-up list
+
+As recorded before this merge; recheck runtime and installation state before
+using these items. The old Phase 0 implementation sequence is superseded by
+the incoming complete runtime.
 
 - [ ] **Board dropped off the network at 19:39** (no ping, adb closed; HDMI
   display still present on the Mac). Cause unknown: operator power-off,
@@ -180,257 +370,10 @@ the camera.
 - [ ] Optional: replace the ad-hoc burst capture with a proper Console
   "capture test" (Tech Spec §6 Camera preview/capture test, Phase 5).
 
-## Current setup and Phase 2 prerequisite (2026-08-19)
+## Instruction ownership
 
-- **Credential setup (metadata only).** The user reports that the local OpenAI
-  credential is provisioned through `.env`. Supplied metadata records
-  `.env` exists: true, `.gitignore` line 9 rule `.env` ignores it, tracked by
-  Git: false (untracked), content/value accessed: false, and validity checked:
-  false. No value is recorded, and process records must not claim that its
-  value was inspected. `.env` is provisioning input only, not runtime
-  renderer-visible storage; Main/`safeStorage` and short-lived renderer
-  credentials remain authoritative.
-- Credential existence does not itself prove account/billing/network/API
-  validity, audio devices, or target macOS field readiness.
-- **Phase 2 prerequisite.** The customizable wake word remains a Phase 2
-  requirement; keyword artifact generation plus tuning evidence remains
-  required before real wake tuning.
-  Configurability is accepted, but implementation has not started: the
-  editable phrase/config/raw keyword source must generate the artifact, with
-  version/metadata and safe fallback visible.
-- These notes preserve the application order: Tasks 3–5 are accepted,
-  integrated, and pushed; Tasks 6–7 are accepted at their recorded boundaries;
-  Task 8 is next; Phase 0 remains in progress, and
-  Phase 1 remains blocked.
-
-## Current Task 6 and Task 7 completion boundary (2026-08-19)
-
-- **Task 4 completion:** metadata-only, non-blocking telemetry is completed,
-  root-reviewed, integrated, and pushed on `main` at `dca1327`. Focused
-  telemetry verification is `21/21`; the full suite is `8 files / 113 tests`;
-  Node plus web typecheck exit `0`; and the Electron Vite build exit `0`.
-- **Authoritative caps:** Main-owned RAM ring max 2,000 events; non-blocking
-  rotating JSONL max 5 MB per file and 5 files; writer queue max 1,000,
-  dropping oldest and incrementing `telemetryDroppedCount`; Console
-  pagination is a later consumer. No external telemetry stack is allowed.
-- **Persisted boundary:** only time, module, event, status, optional
-  duration_ms, error_code, session_id, scene_id, reason, and source. Transcripts,
-  audio, prompts/private context/memory values, images/frames, embeddings, keys,
-  Realtime secrets, raw errors, and arbitrary extra fields remain excluded.
-- **Failure boundary:** writer, rotation, scheduler, and queue failures must
-  remain visible through bounded RAM metadata/counters without blocking wake,
-  Voice, Avatar, scenes, config, credentials, or lifecycle. Internal failure
-  diagnostics use a non-recursive path.
-- **Known risks:** the existing unrelated Node DEP0190 warning remains. Windows
-  results do not field-verify target macOS Keychain/TCC/signing/entitlements/
-  packaged-worker/LaunchAgent paths. Task 4 has no boot/IPC/Console wiring
-  until its later owner.
-- **Credential boundary:** `.env` remains ignored/present metadata only:
-  exists true, ignored by `.gitignore` line 9, untracked, content/value never
-  accessed, and validity not checked. Process records must not claim that the
-  value was inspected. Long-lived credentials remain Main plus safeStorage;
-  no `.env` value is recorded.
-- **Wake boundary:** the wake phrase remains configurable and must be generated
-  into a versioned detector keyword artifact with metadata and safe fallback.
-  Task 4 records configurable keyword, configured_threshold, boost, and
-  num_trailing_blanks metadata only; it never records per-event confidence and
-  does not implement wake detection.
-- **Task 5 completion:** SQLite initialization and the migration baseline are
-  accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
-  32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
-  build green.
-- **Task 6 completion:** the accepted plan is
-  `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md`; its
-  five-command static gate passed (status scope, git diff check, 458
-  lines/final marker/trailing whitespace, 10 required markers, and no
-  forbidden markers). The plan was committed at `83be86b` on
-  `phase0-modules`; the accepted implementation was root-reviewed and pushed
-  on `main` at `5b95a94`, with 16 focused tests, 161 total tests, and Node/web
-  typecheck plus Electron Vite build green.
-  The selected design is a runtime-exhaustive Main registry with injected
-  closed-outcome adapters and separate deterministic mocks, stable
-  metadata-only results/events, informational missing-adapter handling,
-  explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
-  and no boot/IPC/UI/model resolver. The application/test scope was
-  only `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`. Task 7's accepted plan is recorded at `6214b6c`;
-  its accepted implementation was pushed on `phase0-model-settings` at
-  `5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
-  Electron Vite build green, both negative runtime-model/fallback scans
-  successful, and no OpenAI or `.env` requirement. Task 8 is next; Tasks 9/10
-  retain Console UI and demos/records/exit. Windows results do not field-verify target macOS
-  Keychain/TCC/signing/entitlements/packaged-worker/LaunchAgent paths. The
-  untracked `scripts/install-node-lts.ps1` remains untouched.
-
-## Next action (for the next session)
-
-0. Field deployment to-do: see "Field to-do" under "Field deployment" above
-   (app auto-start first). The operator is away; development resumes later.
-1. Task 8 — boot wiring, IPC, Mirror UI, and OfflineLoop — is the next
-   separate application task.
-2. Preserve the existing Task 8 scope, strict TDD, tester-owned validation,
-   metadata-only evidence, privacy/invariant checks, and external root review.
-3. Tasks 9/10 remain the later Console UI and Phase 0 demo/record owners. No
-   Phase 0 demo is complete yet; P0-D1–P0-D5 remain later consumers.
-
-## Task 2 completion and Task 3 preparation (2026-08-18)
-
-- Task 2 is completed, reviewed, and locally integrated at
-  `a7d74b14771de4f527762c30171ad2e68fc3d985` on `phase0-config`; the old
-  `phase0-lifecycle` branch was deleted. The merged tree contains the
-  Main-owned seven-state lifecycle implementation and focused test contract.
-- Task 2 evidence: 31 focused lifecycle tests passed; merged-tree evidence is
-  5 files / 51 tests with `npm run typecheck:node` clean. This is application
-  test evidence from the completed Task 2 route, not evidence from this
-  documentation worker.
-- GitHub integration metadata was verified as
-  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
-  `origin/main` at the integrated commit. `phase0-config` has no push claim.
-- Task 3 is prepared, not started, with the accepted plan at
-  `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`.
-- Node `v24.19.0` now satisfies the development prerequisite. The untracked
-  `scripts/install-node-lts.ps1` remains untouched.
-- Phase 0 remains in progress. Phase 1 remains blocked until the complete
-  Phase 0 demos and exit review; no demo is claimed here.
-
-## Historical Task 1 local integration and pre-Task-2 verification (2026-08-17)
-
-- `main` was locally fast-forwarded from `7c07244` to
-  `426728f012556b4095eb8b25d94aa7476617f103`; no remote/upstream exists.
-- `phase0-foundation` was deleted after green verification. At that time the
-  `phase0-lifecycle` branch started at
-  `426728f012556b4095eb8b25d94aa7476617f103`; it was later completed and
-  deleted as recorded above.
-- A fresh `nova-auto` `gpt-5.6-luna` max tester verified merged `main` at that
-  exact HEAD: Node `v22.21.0`, `npm run typecheck` exit `0`, `npm test` exit
-  `0`, 4 files / 20 tests, Vitest `34.96s`, clean.
-- This was pre-Task-2 application state. Phase 0 remains in progress; the
-  current sequential boundary is Tasks 3–5; Phase 1 remains blocked and must
-  not start.
-
-## Codex harness migration — Task 10 records-only update (2026-08-17)
-
-- Control plane complete: `cb4f439` captured the RED/hash baseline; `cdf982b`
-  added `AGENTS.md`, `.codex/config.toml`, and the three explicit worker roles.
-- Seven migrated skills are complete and root-reviewed: `mm-phase-workflow`
-  (`fba68fe`), `mm-invariants` (`899dd9d`), `mm-electron-foundation`
-  (`4480897`), `mm-realtime-voice` (`b161421`), `mm-wake-word` (`7ddcdc4`),
-  `mm-live2d-avatar` (`09cc954`), and `mm-face-identity` (`5ca5a6c`).
-- Validation status: per-task static skill/metadata, trigger, retrieval,
-  application-forward, and immutable-source `8/8` evidence is recorded; no
-  application, source, dependency, or runtime changes were made. Final
-  migration validation remains pending.
-- This is migration state only. The application task table below preserves
-  Task 1 as done + reviewed and records the later Task 2 completion and Task 3
-  preparation separately.
-
-## Codex harness migration - final validation (2026-08-17)
-
-- Overall result: PASS from the ignored `.superpowers/sdd/2026-08-16-phase0-foundation/final-validation.md` at validation HEAD `14fb5ab`.
-- Exact active set: seven skills — `mm-phase-workflow`, `mm-invariants`, `mm-electron-foundation`, `mm-realtime-voice`, `mm-wake-word`, `mm-live2d-avatar`, and `mm-face-identity` — plus three roles (`implementer`, `surveyor`, `tester`); no reviewer.
-- Frontmatter/skill-validator, YAML, ASCII, TOML, control-plane, and stale-template scans: PASS.
-- Immutable source receipt: `8/8`.
-- Execution gate: Node `v22.21.0`; `npm run typecheck` exit `0`; `npm test` exit `0` — 4 files / 20 tests, duration `35.42s`.
-- Migration scope: clean `23/23` allowed paths; no product/app/dependency/test changes.
-- Discovery LIMITATION: recursive live-selector discovery was unavailable because of the root-only launcher. Earlier profile-backed Luna/max local-direct trigger/retrieval evidence exists for all seven skills, but it is not recursive telemetry.
-- Commit evidence: design `15eae49`, plan `49479f6`, Task 1 `cb4f439`, Task 2 `cdf982b`, Task 3 `fba68fe`, Task 4 `899dd9d`, Task 5 `4480897`, Task 6 `b161421`, Task 7 `7ddcdc4`, Task 8 `09cc954`, Task 9 `5ca5a6c`, Task 10 `bd5f0a7`, Task 11 hygiene fix `14fb5ab`.
-- Residual: macOS field verification remains outstanding. The development Node
-  prerequisite for application Task 3 is now satisfied by `v24.19.0`.
-
-## Task status
-
-| #  | Task                                            | State       | Evidence |
-|----|-------------------------------------------------|-------------|----------|
-| 1  | Scaffold, two windows, never-black-screen boot  | done + reviewed | `npm run typecheck` clean; `npm test` 4 files / 20 tests passing, incl. 4 spawned smoke runs; orchestrator review clean (3 minors deferred, see SDD ledger) |
-| 2  | Lifecycle state machine (XState v5)             | done + reviewed + locally integrated | `a7d74b14771de4f527762c30171ad2e68fc3d985`; 31 focused lifecycle tests; merged tree 5 files / 51 tests; `npm run typecheck:node` clean |
-| 3  | ConfigService + credentials                     | done + reviewed + integrated | `0270686` with correction/integration tip `835c92d` on pushed `main`; fresh merged-main 7 test files / 92 tests, full Node+web typecheck 0, Electron Vite main/preload/renderer build 0 |
-| 4  | Telemetry (metadata-only, non-blocking)         | done + reviewed + integrated | pushed `main` tip `dca1327`; focused `21/21`; full `8 files / 113 tests`; Node plus web typecheck `0`; Electron Vite build `0` |
-| 5  | SQLite + migrations (`node:sqlite`)             | done + reviewed + integrated | pushed `main` tip `a8f0355`; focused `32/32`; full `145/145`; Node/web typecheck `0`; Electron Vite build `0` |
-| 6  | Module registry + mocks                         | done + reviewed + accepted + integrated | `5b95a94` on pushed `main`; focused `16/16`; full `161/161`; Node/web typecheck and Electron Vite build green |
-| 7  | AI model settings resolver + snapshots          | done + reviewed + accepted | plan `6214b6c`; implementation `5e24bdc` on pushed `phase0-model-settings`; focused `7/7`; full `168/168`; typecheck/build and both negative scans green |
-| 8  | Boot wiring, IPC, Mirror UI + OfflineLoop       | next, not started | next bounded application task |
-| 9  | Console UI — 6 pages                            | not started | |
-| 10 | P0 demo runner, exit criteria, tag              | not started | |
-
-Phase demo records (P0-D1…P0-D5): none yet — Task 10 runs and records them.
-
-## How to run
-
-| Command             | What it does |
-|---------------------|--------------|
-| `npm run dev`       | electron-vite dev: Mirror window (frameless, maximized on Windows) plus a hidden Console window. `Ctrl+Shift+D` toggles the Console. |
-| `npm run build`     | Production bundles into `out/`. |
-| `npm run typecheck` | `tsc --noEmit` over the node project (main/preload/shared/tests) and the web project (renderers). |
-| `npm test`          | vitest. The smoke tests spawn real `npm run dev` runs, so a full pass takes ~35 s. |
-
-## Boot smoke contract (produced by Task 1, consumed by Task 10)
-
-| Environment variable            | Effect |
-|---------------------------------|--------|
-| `MIRROR_SMOKE_MS=<n>`           | Quit `n` ms after `app.ready`. Exit **0** only if both windows loaded **and** the lifecycle left `starting`; exit **2** otherwise. Windows are created and loaded but stay hidden in smoke mode so repeated runs do not hijack the desktop. A set-but-unusable value (non-numeric, `0`, negative) exits 2 rather than silently booting non-smoke. |
-| `MIRROR_FORCE_RENDERER_FAIL=1`  | Mirror preload throws: the window still loads and paints a Starting screen saying the bridge is unavailable, no readiness signal arrives, run exits 2. |
-| `MIRROR_FORCE_RENDERER_CRASH=<n>` | Crashes the next `n` mirror renderers (test hook for crash recovery). |
-
-Exit codes: `0` pass · `1` renderer recreate budget exhausted (the supervisor restarts the app) · `2` smoke conditions unmet.
-
-Boot markers are written to stdout as `NAME key=value …` and are **metadata only** —
-never transcripts, audio, prompts, memory values or credentials (invariant #1). They are
-the Phase 0 stand-in for telemetry, which Task 4 owns:
-`MAIN_READY`, `WINDOW_LOADED`, `WINDOW_LOAD_FAILED`, `WINDOW_SHOWN`, `WINDOW_KEPT_HIDDEN`,
-`RENDERER_READY`, `LIFECYCLE`, `PRELOAD_ERROR`, `RENDERER_GONE`, `RENDERER_GONE_UNTRACKED`,
-`WINDOW_RECREATED`, `FORCED_RENDERER_CRASH`, `IPC_SENDER_REJECTED`, `SHORTCUT_REGISTERED`,
-`SHORTCUT_REGISTER_FAILED`, `CONSOLE_TOGGLED`, `CONSOLE_TOGGLE_IGNORED`, `APP_EXIT`,
-`SMOKE_RESULT`, `SMOKE_CONFIG_INVALID`.
-
-## Decisions taken in Task 1
-
-- **Electron `^43.0.0`** (43.4.0 today) with a committed `package-lock.json`: pins the
-  major per the plan while keeping patch fixes; the lockfile makes installs reproducible.
-- **TypeScript 5.9, not 7.0.** TS 7 shipped recently; xstate 5 and the vite/electron-vite
-  toolchain are only verified against 5.x. Revisit when Phase 0 closes.
-- **electron-vite 5 peers vite ^7**, so the renderer uses `@vitejs/plugin-react@5` (vite 8
-  would force plugin-react 6 and break electron-vite).
-- **CommonJS output** (no `"type": "module"` in package.json): sandboxed preloads cannot
-  be ES modules.
-- **Preloads bundle self-contained.** A sandboxed preload cannot `require` a relative
-  rollup chunk, so `src/preload/*.ts` may only take *type-only* imports from `src/shared/`.
-  The IPC channel literal in each preload is pinned by the `BootChannel` type in
-  `src/shared/bridge.ts` — renaming the channel breaks typecheck.
-- **One restart owner.** In-app recovery recreates a crashed window once; when that budget
-  is spent the app exits 1 and the macOS LaunchAgent (`KeepAlive={SuccessfulExit=false}`)
-  restarts it. `app.relaunch()` is never called.
-- **`node:sqlite` is in the main config's rollup externals** already, so Task 5 does not
-  have to touch the build.
-
-## Phase 0 placeholders (replaced by later tasks)
-
-- The Mirror renderer's Starting → Dormant transition remains a local 1.2 s timer;
-  Main now has the completed seven-state XState contract from Task 2, and Task 8
-  will wire it through IPC.
-- `src/main/index.ts` exports `createWindows()`; Task 8 wires `bootSequence()` into the
-  same file.
-- Console window is a shell listing its six pages as "Not implemented" (Task 9 fills them).
-
-## Known gaps / pending verification
-
-- **Mac-pending (Phase 7).** `resources/macos/*` were authored on Windows and are marked
-  NOT field-verified in their own comments: Info.plist TCC usage descriptions,
-  hardened-runtime entitlements, and the LaunchAgent. The `simpleFullscreen` +
-  `alwaysOnTop` kiosk path and Keychain-backed `safeStorage` are likewise unexercised
-  here; everything macOS sits behind `process.platform === 'darwin'` guards.
-- **Renderer CSP not set yet.** Deferred to Task 8, which owns the visitor UI and must
-  choose a policy that survives both the vite dev server and the packaged `file://` load
-  (and later Cubism Core, which loads as a global script).
-- **Development Node was previously 22.21.0, below `write-file-atomic@8`'s
-  engine range** (`^22.22.2 || ^24.15.0 || >=26`). It is now resolved at
-  `v24.19.0`, which satisfies the Task 3 prerequisite; Electron's own Node
-  24.17 remains a separate runtime fact.
-- **Navigation hardening not set yet** (`setWindowOpenHandler` deny, `will-navigate`
-  guard). Nothing in Phase 0 can navigate, but Task 8 should add it with the visitor UI.
-- Kiosk polish (cursor hiding, `powerSaveBlocker`) is deliberately out of Task 1 scope.
-
-## Codex harness migration — Task 1 Step 2 status (2026-08-17)
-
-- Preflight/hash recording captured for the RED-baseline sequence; the ignored receipt records exactly 8 SHA-256 values for `CLAUDE.md` and the seven legacy skills.
-- Known launcher ruling: the PowerShell wrapper was invoked directly, and an equivalent command-object marker returned `PROFILE_READY` with exit code `0`; no profile contents, credentials, environment secrets, or private data were recorded.
-- Invariant IDs 1–12 remain unchanged product constraints; this metadata-only note does not change application task status.
+[AGENTS](AGENTS.md) owns execution/invariants; [DECISIONS](DECISIONS.md) owns
+rulings; [TODO](TODO.md) contains open work only. The personal
+`roleplay-control-prompts` skill and `C:/Users/b8901/.codex/AGENTS.md` retain the
+no-coaching and code-controlled playback lesson. Completed task narratives have
+been removed from this handoff; linked test reports retain necessary evidence.

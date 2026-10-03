@@ -1,0 +1,1173 @@
+import { REALTIME_PROMPTS, buildAuditionPrompt, buildSpeechResponse } from '../../shared/realtime-prompts'
+import {
+  RealtimeAgent,
+  RealtimeSession,
+  type RealtimeSessionOptions,
+} from '@openai/agents/realtime'
+import { buildAvatarPrompt, type AvatarSessionSettings } from '../../shared/avatar-prompt'
+import { resolveRealtimeTools } from '../../shared/realtime-tools'
+import { bindRealtimeTools } from './realtime-tool-bindings'
+import { DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
+import { DEFAULT_PRESENTATION } from '../../shared/presentation'
+import type { SessionModelSnapshot } from '../../shared/types'
+import {
+  REALTIME_METADATA_REASONS,
+  type RealtimeMetadataEvent,
+  type RealtimeMetadataEventSink,
+  type RealtimeMetadataReason,
+  type RealtimeFailureCallback,
+} from '../../shared/realtime-events'
+import type { RealtimeFailureInput } from '../../shared/realtime-recovery'
+import { watchMicrophone } from './microphone-recovery'
+import {
+  createWebRtcRealtimeTransport,
+  type RealtimeTransportFactory,
+} from './realtime-transport'
+
+type SessionEventListener = (...args: unknown[]) => void
+type OutputAudioBufferStoppedListener = () => void
+type InputItemCreatedListener = (itemId: string) => void
+type InputTranscriptCompletedListener = (input: Readonly<{ itemId: string; transcript: string }>) => void
+
+interface OutputAudioBufferStoppedSubscription {
+  readonly listener: OutputAudioBufferStoppedListener
+}
+interface SessionLike {
+  connect(options: { readonly apiKey: string }): void | PromiseLike<void>
+  interrupt(): void | PromiseLike<void>
+  close(): void | PromiseLike<void>
+  sendMessage(message: string): void
+  on(eventName: string, listener: SessionEventListener): unknown
+}
+
+type RealtimeConnectFailureToken =
+  | 'start_connect_credential_missing'
+  | 'start_connect_ephemeral_key_required'
+  | 'start_connect_setup_closed'
+  | 'start_connect_sdp_offer_failed'
+  | 'start_connect_sdp_answer_failed'
+  | 'start_connect_bad_request'
+  | 'start_connect_auth_failed'
+  | 'start_connect_permission_failed'
+  | 'start_connect_not_found'
+  | 'start_connect_rate_limited'
+  | 'start_connect_service_unavailable'
+  | 'start_connect_network_failed'
+  | 'start_connect_transport_failed'
+
+const NETWORK_CODES = new Set([
+  'eai_again',
+  'econnrefused',
+  'econnreset',
+  'enetunreach',
+  'enotfound',
+  'etimedout',
+  'err_connection_closed',
+  'err_connection_reset',
+  'err_internet_disconnected',
+  'err_network',
+  'und_err_connect_timeout',
+  'und_err_socket',
+])
+
+export interface RealtimeSessionDependencies {
+  readonly RealtimeAgent?: typeof RealtimeAgent
+  readonly RealtimeSession?: typeof RealtimeSession
+  readonly createTransport?: RealtimeTransportFactory
+}
+
+export interface CreateRealtimeSessionInput {
+  readonly microphoneRecovery?: {
+    readonly mediaDevices: MediaDevices
+    readonly getConstraints: () => Promise<true | MediaTrackConstraints>
+  }
+  readonly preview?: boolean
+  readonly avatar?: Readonly<AvatarSessionSettings>
+  readonly wakeGreeting?: string
+  readonly sleepFarewell?: string
+  readonly snapshot: SessionModelSnapshot
+  readonly clientSecret: string
+  readonly mediaStream: MediaStream
+  readonly audioElement: HTMLAudioElement
+  readonly sessionId: string
+  readonly sessionGeneration?: number
+  readonly eventSink: RealtimeMetadataEventSink
+  readonly onFailure?: RealtimeFailureCallback
+  readonly onReturnToDormant?: () => void | PromiseLike<void>
+  readonly waitForOutputTail?: () => Promise<void>
+  readonly onAudioActivity?: (
+    activity:
+      | 'speech_started'
+      | 'speech_stopped'
+      | 'output_started'
+      | 'output_stopped'
+      | 'interrupted'
+  ) => void
+  readonly dependencies?: RealtimeSessionDependencies
+}
+
+export interface RealtimeSessionHandle {
+  readonly realtimeSessionId: string
+  readonly sessionGeneration: number
+  readonly getLastConnectFailureToken?: () => string | undefined
+  connect(): Promise<void>
+  interrupt(): Promise<void>
+  close(reason: string): Promise<void>
+  speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void
+  onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
+  onInputItemCreated?(listener: InputItemCreatedListener): () => void
+  onInputTranscriptCompleted?(listener: InputTranscriptCompletedListener): () => void
+}
+
+export class RealtimeSessionAdapterError extends Error {
+  readonly reason: string
+
+  constructor(reason: string) {
+    super('Realtime session operation failed')
+    this.name = 'RealtimeSessionAdapterError'
+    this.reason = reason
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+let sessionGenerationCounter = 0
+
+function nextSessionGeneration(): number {
+  sessionGenerationCounter = sessionGenerationCounter >= Number.MAX_SAFE_INTEGER
+    ? 1
+    : sessionGenerationCounter + 1
+  return sessionGenerationCounter
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function readProperty(value: unknown, key: string): unknown {
+  if (!isRecord(value)) return undefined
+  try {
+    return Reflect.get(value, key)
+  } catch {
+    return undefined
+  }
+}
+
+function configuredTurnDetection(profile: string): {
+  readonly type: 'semantic_vad' | 'server_vad'
+  readonly eagerness?: 'low'
+  readonly threshold?: 0.7
+  readonly prefixPaddingMs?: 300
+  readonly silenceDurationMs?: 900
+  readonly createResponse?: true
+  readonly interruptResponse: true
+} {
+  if (profile === 'semantic-vad-interruptible') {
+    return Object.freeze({ type: 'semantic_vad', interruptResponse: true })
+  }
+  if (profile === 'semantic-vad-strict') {
+    return Object.freeze({
+      type: 'semantic_vad',
+      eagerness: 'low',
+      createResponse: true,
+      interruptResponse: true,
+    })
+  }
+  if (profile === 'server-vad-noisy') {
+    return Object.freeze({
+      type: 'server_vad',
+      threshold: 0.7,
+      prefixPaddingMs: 300,
+      silenceDurationMs: 900,
+      createResponse: true,
+      interruptResponse: true,
+    })
+  }
+  throw new RealtimeSessionAdapterError('unknown_turn_detection_profile')
+}
+
+function metadataEvent(
+  input: CreateRealtimeSessionInput,
+  event: RealtimeMetadataEvent['event'],
+  status: RealtimeMetadataEvent['status'],
+  reason: RealtimeMetadataReason,
+  sessionGeneration: number,
+  createdAt: number,
+): RealtimeMetadataEvent {
+  const elapsed = Date.now() - createdAt
+  return {
+    event,
+    realtimeSessionId: input.sessionId,
+    sessionGeneration,
+    configVersion: input.snapshot.configVersion,
+    fingerprint: input.snapshot.fingerprint,
+    sdkVersion: input.snapshot.sdkVersion,
+    realtimeDialogue: input.snapshot.realtimeDialogue,
+    inputTranscription: input.snapshot.inputTranscription,
+    memoryExtractor: input.snapshot.memoryExtractor,
+    voice: input.snapshot.voice,
+    reasoningEffort: input.snapshot.reasoningEffort,
+    turnDetectionProfile: input.snapshot.turnDetectionProfile,
+    status,
+    reason,
+    duration_ms: Number.isSafeInteger(elapsed) && elapsed >= 0 ? elapsed : 0,
+  }
+}
+
+function emitMetadata(
+  input: CreateRealtimeSessionInput,
+  event: RealtimeMetadataEvent['event'],
+  status: RealtimeMetadataEvent['status'],
+  reason: RealtimeMetadataReason,
+  sessionGeneration: number,
+  createdAt: number,
+): void {
+  try {
+    input.eventSink(metadataEvent(input, event, status, reason, sessionGeneration, createdAt))
+  } catch {
+    // Metadata delivery cannot gate the realtime session or unrelated adapters.
+  }
+}
+
+function closeWithoutMetadata(session: SessionLike): void {
+  try {
+    const result = session.close()
+    if (typeof (result as PromiseLike<void> | undefined)?.then === 'function') {
+      void Promise.resolve(result).catch(() => {})
+    }
+  } catch {
+    // A close failure is represented by the adapter's stable metadata outcome.
+  }
+}
+
+function readEventSessionId(event: unknown): string | null {
+  const value = readProperty(event, 'realtimeSessionId')
+  return typeof value === 'string' ? value : null
+}
+
+function readEventType(event: unknown): string | null {
+  const value = readProperty(event, 'type')
+  return typeof value === 'string' ? value : null
+}
+
+function rawEventIsStale(event: unknown, realtimeSessionId: string): boolean {
+  const eventSessionId = readEventSessionId(event)
+  return eventSessionId !== null && eventSessionId !== realtimeSessionId
+}
+
+function rawEventStatus(event: unknown): string | null {
+  const value = readProperty(event, 'status')
+  return typeof value === 'string' ? value : null
+}
+
+function errorNodes(value: unknown): readonly unknown[] {
+  const nodes: unknown[] = []
+  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
+  const visited = new Set<object>()
+
+  while (pending.length > 0 && nodes.length < 8) {
+    const current = pending.shift()
+    if (current === undefined) break
+    nodes.push(current.value)
+    if (!isRecord(current.value) || current.depth >= 2 || visited.has(current.value)) continue
+    visited.add(current.value)
+    for (const key of ['cause', 'error', 'response']) {
+      const nested = readProperty(current.value, key)
+      if (nested !== undefined) pending.push({ value: nested, depth: current.depth + 1 })
+    }
+  }
+  return nodes
+}
+
+function connectFailureMessage(value: unknown): string | undefined {
+  if (value instanceof Error) return value.message
+  const message = readProperty(value, 'message')
+  return typeof message === 'string' ? message : undefined
+}
+
+function tokenForStatus(status: number): RealtimeConnectFailureToken | undefined {
+  if (status === 0 || status === 408) return 'start_connect_network_failed'
+  if (status === 400) return 'start_connect_bad_request'
+  if (status === 401) return 'start_connect_auth_failed'
+  if (status === 403) return 'start_connect_permission_failed'
+  if (status === 404) return 'start_connect_not_found'
+  if (status === 429) return 'start_connect_rate_limited'
+  if (status >= 500 && status <= 599) return 'start_connect_service_unavailable'
+  return undefined
+}
+
+function invalidRequestToken(nodes: readonly unknown[]): string | undefined {
+  const isInvalidRequest = nodes.some((node) => {
+    const type = readProperty(node, 'type')
+    const code = readProperty(node, 'code')
+    return type === 'invalid_request_error'
+      || (typeof code === 'string' && ['invalid_value', 'unknown_parameter'].includes(code))
+  })
+  if (!isInvalidRequest) return undefined
+
+  const parameter = nodes
+    .map((node) => readProperty(node, 'param'))
+    .find((value): value is string => typeof value === 'string' && value.length > 0)
+  if (parameter === undefined) return 'start_connect_bad_request'
+  const safeParameter = parameter
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48)
+  return safeParameter.length === 0
+    ? 'start_connect_bad_request'
+    : `start_connect_bad_request_${safeParameter}`
+}
+
+function classifyConnectFailure(value: unknown): string {
+  const nodes = errorNodes(value)
+  const message = nodes.map(connectFailureMessage).find((item) => item !== undefined)
+
+  if (message?.startsWith('Using the WebRTC connection in a browser environment requires an ephemeral client key.')) {
+    return 'start_connect_ephemeral_key_required'
+  }
+  if (
+    message?.startsWith('Connection closed before setup completed')
+    || message?.startsWith('Connection closed before session config was acknowledged')
+  ) {
+    return 'start_connect_setup_closed'
+  }
+  if (message?.startsWith('Failed to create offer')) return 'start_connect_sdp_offer_failed'
+  if (message?.startsWith('Failed to parse SessionDescription')) {
+    return 'start_connect_sdp_answer_failed'
+  }
+
+  const invalidRequest = invalidRequestToken(nodes)
+  if (invalidRequest !== undefined) return invalidRequest
+
+  const signalingStatus = message?.match(/^Realtime call request failed with status (\d{3})/)
+  if (signalingStatus !== undefined && signalingStatus !== null) {
+    const token = tokenForStatus(Number(signalingStatus[1]))
+    if (token !== undefined) return token
+  }
+
+  for (const node of nodes) {
+    for (const key of ['status', 'statusCode']) {
+      const status = readProperty(node, key)
+      if (typeof status === 'number' && Number.isSafeInteger(status)) {
+        const token = tokenForStatus(status)
+        if (token !== undefined) return token
+      }
+    }
+  }
+
+  for (const node of nodes) {
+    for (const key of ['code', 'type', 'name']) {
+      const raw = readProperty(node, key)
+      if (typeof raw !== 'string') continue
+      const value = raw.toLowerCase()
+      if (NETWORK_CODES.has(value) || value === 'networkerror' || value === 'network_error') {
+        return 'start_connect_network_failed'
+      }
+      if (value === 'typeerror' && node instanceof Error) return 'start_connect_network_failed'
+      if (value.includes('auth') || value === 'invalid_api_key' || value === 'unauthorized') {
+        return 'start_connect_auth_failed'
+      }
+      if (value.includes('permission') || value === 'forbidden') {
+        return 'start_connect_permission_failed'
+      }
+      if (value.includes('rate_limit') || value === 'too_many_requests') {
+        return 'start_connect_rate_limited'
+      }
+      if (value.includes('service_unavailable') || value.includes('server_error')) {
+        return 'start_connect_service_unavailable'
+      }
+    }
+  }
+
+  return 'start_connect_transport_failed'
+}
+
+function stableCloseReason(reason: string): RealtimeMetadataReason {
+  return (REALTIME_METADATA_REASONS as readonly string[]).includes(reason)
+    ? reason as RealtimeMetadataReason
+    : 'cause=close'
+}
+
+function runtimeFailureReason(reason: RealtimeMetadataReason): string {
+  return reason.startsWith('cause=') ? reason.slice('cause='.length) : reason
+}
+
+export function createRealtimeSession(
+  input: CreateRealtimeSessionInput,
+): RealtimeSessionHandle {
+  const createdAt = Date.now()
+  const sessionGeneration =
+    input.sessionGeneration === undefined
+      ? nextSessionGeneration()
+      : input.sessionGeneration
+  if (!Number.isSafeInteger(sessionGeneration) || sessionGeneration <= 0) {
+    throw new RealtimeSessionAdapterError('invalid_session_generation')
+  }
+  let turnDetection: {
+    readonly type: 'semantic_vad' | 'server_vad'
+    readonly eagerness?: 'low'
+    readonly threshold?: 0.7
+    readonly prefixPaddingMs?: 300
+    readonly silenceDurationMs?: 900
+    readonly createResponse?: true
+    readonly interruptResponse: true
+  }
+  try {
+    turnDetection = configuredTurnDetection(input.snapshot.turnDetectionProfile)
+  } catch {
+    emitMetadata(
+      input,
+      'realtime_connect_failed',
+      'failed',
+      'unknown_turn_detection_profile',
+      sessionGeneration,
+      createdAt,
+    )
+    throw new RealtimeSessionAdapterError('unknown_turn_detection_profile')
+  }
+
+  const dependencies = input.dependencies
+  let session: SessionLike
+  let transport: ReturnType<RealtimeTransportFactory>
+  let microphoneRecovery: ReturnType<typeof watchMicrophone> | undefined
+  let returnToDormantPending = false
+  let returnToDormantAudioStarted = false
+  let farewellRequested = false
+  let farewellResponseId: string | undefined
+  let farewellAudioStarted = false
+  let sleepAudioSuppressed = false
+  let farewellSequence = 0
+  let farewellCueId = ''
+  const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
+  const toolSpecs = resolveRealtimeTools(input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, input.preview)
+  const sleepToolNames = new Set(toolSpecs.filter(spec => spec.handler === 'return_to_dormant').map(spec => spec.name))
+  try {
+    const transportFactory = dependencies?.createTransport ?? createWebRtcRealtimeTransport
+    transport = transportFactory({
+      mediaStream: input.mediaStream,
+      audioElement: input.audioElement,
+    })
+    const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
+    const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
+    const tools = bindRealtimeTools(toolSpecs, {
+      return_to_dormant: async () => {
+        if (closed || returnToDormantPending || farewellRequested) return 'ignored'
+        // Cut off a premature acknowledgement and require the farewell's own
+        // output start/end pair, never the previous response's completion.
+        const wasPlaying = returnToDormantAudioStarted
+        returnToDormantPending = false
+        returnToDormantAudioStarted = false
+        if (wasPlaying) await session.interrupt()
+        if (closed) return 'ignored'
+        sleepAudioSuppressed = true
+        notifyAudioActivity('interrupted')
+        returnToDormantPending = true
+        farewellCueId = `sleep-${sessionGeneration}-${++farewellSequence}`
+        farewellResponseId = undefined
+        farewellAudioStarted = false
+        // The SDK commits this result without generating a conversational reply.
+        return 'accepted'
+      },
+    }, reason => {
+      if (!returnToDormantPending && !farewellRequested) sleepAudioSuppressed = false
+      emitMetadata(input, 'realtime_observer_event', 'degraded', reason, sessionGeneration, createdAt)
+    })
+    const agent = new agentConstructor({
+      name: 'magic-mirror-realtime',
+      instructions: input.preview ? buildAuditionPrompt(input.avatar?.speakingStyle ?? '')
+        : buildAvatarPrompt(input.avatar ?? { ...REALTIME_PROMPTS.defaults, speakingStyle: '', wakeGreeting: input.wakeGreeting ?? '', sleepFarewell: farewell }),
+      tools,
+    })
+    const sessionOptions = {
+      transport,
+      model: input.snapshot.realtimeDialogue,
+      historyStoreAudio: false,
+      tracingDisabled: true,
+      config: {
+        tracing: null,
+        audio: {
+          input: input.preview ? { turnDetection: null, transcription: null } : {
+            noiseReduction: { type: 'far_field' },
+            transcription: {
+              model: input.snapshot.inputTranscription,
+              languages: [...REALTIME_PROMPTS.transcription.languages],
+              keywords: [...new Set([input.avatar?.wakePhrase ?? DEFAULT_WAKE_PHRASE,
+                input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, ...(input.avatar?.spellPhrases ?? [])])],
+              delay: REALTIME_PROMPTS.transcription.delay,
+            },
+            turnDetection,
+          },
+          output: { voice: input.snapshot.voice, speed: input.snapshot.voiceSpeed ?? 1 },
+        },
+        reasoning: {
+          effort: input.snapshot.reasoningEffort,
+        },
+      },
+    } as unknown as Partial<RealtimeSessionOptions>
+    session = new sessionConstructor(agent, sessionOptions) as unknown as SessionLike
+  } catch {
+    emitMetadata(
+      input,
+      'realtime_connect_failed',
+      'failed',
+      'cause=connect_failed',
+      sessionGeneration,
+      createdAt,
+    )
+    throw new RealtimeSessionAdapterError('connect_failed')
+  }
+
+  let closed = false
+  let closePromise: Promise<void> | null = null
+  let cueSequence = 0
+  const cues = new Map<string, { signal: AbortSignal; abort: () => void; finish?: () => void; responseId?: string; done: boolean; cleared: boolean; played: boolean }>()
+  let cueMuted: boolean | undefined
+  let cueCancelTimer: ReturnType<typeof setTimeout> | undefined
+  const resetCues = () => {
+    clearTimeout(cueCancelTimer); cueCancelTimer = undefined
+    for (const cue of cues.values()) { cue.signal.removeEventListener('abort', cue.abort); cue.finish?.() }
+    cues.clear()
+    if (cueMuted !== undefined) { input.audioElement.muted = cueMuted; cueMuted = undefined }
+  }
+  const releaseFinishedCues = () => {
+    for (const [id, cue] of cues) {
+      if (cue.signal.aborted ? !cue.done || !cue.cleared : !cue.played) continue
+      cue.signal.removeEventListener('abort', cue.abort)
+      cues.delete(id)
+      cue.finish?.()
+    }
+    if (![...cues.values()].some(cue => cue.signal.aborted) && cueMuted !== undefined) {
+      clearTimeout(cueCancelTimer); cueCancelTimer = undefined
+      input.audioElement.muted = cueMuted
+      cueMuted = undefined
+    }
+  }
+  let readyEmitted = false
+  let failureReported = false
+  let latestConnectFailureToken: string | undefined
+  let connectPromise: Promise<void> | null = null
+  let transientClientSecret: string | null = input.clientSecret
+  const outputAudioBufferStoppedSubscriptions = new Set<OutputAudioBufferStoppedSubscription>()
+  const inputTranscriptCompletedListeners = new Set<InputTranscriptCompletedListener>()
+  const inputItemCreatedListeners = new Set<InputItemCreatedListener>()
+  const createdInputItemIds = new Set<string>()
+
+  const emitReady = (reason: RealtimeMetadataReason): void => {
+    if (closed || readyEmitted || failureReported) return
+    readyEmitted = true
+    emitMetadata(
+      input,
+      'realtime_ready',
+      'success',
+      reason,
+      sessionGeneration,
+      createdAt,
+    )
+  }
+
+  const emitStale = (): void => {
+    emitMetadata(
+      input,
+      'realtime_stale_event',
+      'info',
+      'stale_realtime_session',
+      sessionGeneration,
+      createdAt,
+    )
+  }
+
+  const emitConnectFailed = (reason: RealtimeMetadataReason): void => {
+    emitMetadata(
+      input,
+      'realtime_connect_failed',
+      'failed',
+      reason,
+      sessionGeneration,
+      createdAt,
+    )
+  }
+
+  const emitDisconnected = (reason: RealtimeMetadataReason): void => {
+    emitMetadata(
+      input,
+      'realtime_disconnect',
+      'info',
+      reason,
+      sessionGeneration,
+      createdAt,
+    )
+  }
+
+  const notifyOutputAudioBufferStopped = (): void => {
+    if (closed) return
+    for (const { listener } of [...outputAudioBufferStoppedSubscriptions]) {
+      try {
+        listener()
+      } catch {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'output_playback_listener_failed',
+          sessionGeneration,
+          createdAt,
+        )
+      }
+    }
+  }
+
+  const closeLegacySession = (): void => {
+    if (closed) return
+    closed = true
+    closePromise = (async () => {
+      if (microphoneRecovery) await microphoneRecovery.stop()
+      closeWithoutMetadata(session)
+    })()
+    resetCues()
+  }
+
+  const reportFailure = (
+    kind: RealtimeFailureInput['kind'],
+    event: RealtimeMetadataEvent['event'],
+    status: RealtimeMetadataEvent['status'],
+    reason: RealtimeMetadataReason,
+  ): void => {
+    if (closed || failureReported) return
+    failureReported = true
+
+    const failure: RealtimeFailureInput = {
+      kind,
+      realtimeSessionId: input.sessionId,
+      reason: reason === 'cause=transport_error' && latestConnectFailureToken !== undefined
+        ? latestConnectFailureToken
+        : runtimeFailureReason(reason),
+    }
+    const onFailure = input.onFailure
+
+    if (onFailure === undefined) {
+      closeLegacySession()
+      emitMetadata(input, event, status, reason, sessionGeneration, createdAt)
+      return
+    }
+
+    emitMetadata(input, event, status, reason, sessionGeneration, createdAt)
+    let delivery: void | PromiseLike<void>
+    try {
+      delivery = onFailure(failure)
+    } catch {
+      closeLegacySession()
+      return
+    }
+    void Promise.resolve(delivery).catch(() => {
+      closeLegacySession()
+    })
+  }
+
+  const notifyAudioActivity = (
+    activity: Parameters<NonNullable<CreateRealtimeSessionInput['onAudioActivity']>>[0],
+  ): void => {
+    if (closed) return
+    if (activity === 'output_started' && [...cues.values()].some(cue => cue.signal.aborted)) {
+      emitMetadata(input, 'realtime_observer_event', 'info', 'scene_dialogue_cancel_pending', sessionGeneration, createdAt)
+      return
+    }
+    if (activity === 'output_started' || activity === 'output_stopped' || activity === 'interrupted') {
+      emitMetadata(
+        input,
+        'realtime_observer_event',
+        'success',
+        activity === 'interrupted' ? 'cause=output_interrupted' : `cause=${activity}`,
+        sessionGeneration,
+        createdAt,
+      )
+    }
+    try {
+      input.onAudioActivity?.(activity)
+    } catch {
+      emitMetadata(
+        input,
+        'realtime_observer_event',
+        'degraded',
+        'avatar_audio_activity_listener_failed',
+        sessionGeneration,
+        createdAt,
+      )
+    }
+  }
+
+  const handleTransportEvent = (event: unknown): void => {
+    if (closed) return
+    if (rawEventIsStale(event, input.sessionId)) {
+      emitStale()
+      return
+    }
+    const type = readEventType(event)
+    if (type === 'response.output_item.added') {
+      const item = readProperty(event, 'item')
+      if (readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string)) {
+        sleepAudioSuppressed = true
+        notifyAudioActivity('interrupted')
+      }
+    }
+    if (type === 'response.created' || type === 'response.done') {
+      const response = readProperty(event, 'response')
+      if (readProperty(readProperty(response, 'metadata'), 'mirror_sleep_cue') === farewellCueId && farewellRequested) {
+        const responseId = readProperty(response, 'id')
+        if (typeof responseId === 'string') farewellResponseId = responseId
+        if (type === 'response.done' && readProperty(response, 'status') !== 'completed') {
+          returnToDormantPending = false
+          farewellRequested = false
+          farewellResponseId = undefined
+          farewellAudioStarted = false
+          sleepAudioSuppressed = false
+          emitMetadata(input, 'realtime_observer_event', 'degraded', 'sleep_request_failed', sessionGeneration, createdAt)
+        }
+      }
+      const cueId = readProperty(readProperty(response, 'metadata'), 'mirror_scene_cue')
+      const cue = (typeof cueId === 'string' ? cues.get(cueId) : undefined)
+        ?? [...cues.values()].find(value => value.responseId !== undefined && value.responseId === readProperty(response, 'id'))
+      if (cue) {
+        const responseId = readProperty(response, 'id')
+        if (typeof responseId === 'string') cue.responseId = responseId
+        if (type === 'response.done') { cue.done = true; releaseFinishedCues() }
+        else if (cue.signal.aborted) cue.abort()
+      }
+    }
+    if (type === 'output_audio_buffer.stopped') {
+      const responseId = readProperty(event, 'response_id')
+      for (const cue of cues.values()) if (cue.responseId === responseId && responseId) cue.played = true
+      releaseFinishedCues()
+    }
+    if (type === 'output_audio_buffer.cleared') {
+      const responseId = readProperty(event, 'response_id')
+      for (const cue of cues.values()) if (cue.signal.aborted && cue.responseId && cue.responseId === responseId) cue.cleared = true
+      releaseFinishedCues()
+    }
+    if (type === 'ready' || (type === 'connection_change' && rawEventStatus(event) === 'connected')) {
+      emitReady('cause=connect_succeeded')
+      return
+    }
+    if (type === 'error') {
+      const rejectedId = readProperty(readProperty(event, 'error'), 'event_id')
+      const cue = typeof rejectedId === 'string' ? cues.get(rejectedId) : undefined
+      if (cue) { cue.done = true; cue.cleared = true; cue.played = true; releaseFinishedCues() }
+      if (reportRequestRejection(event)) return
+      if (!readyEmitted) latestConnectFailureToken = classifyConnectFailure(event)
+      reportFailure(
+        readyEmitted ? 'ice' : 'connect',
+        'realtime_connect_failed',
+        'failed',
+        'cause=transport_error',
+      )
+      return
+    }
+    if (type === 'output_audio_buffer.started') {
+      if (sleepAudioSuppressed && (!farewellResponseId || readProperty(event, 'response_id') !== farewellResponseId)) {
+        emitMetadata(input, 'realtime_observer_event', 'info', 'sleep_nonfarewell_output_suppressed', sessionGeneration, createdAt)
+        return
+      }
+      returnToDormantAudioStarted = true
+      if (farewellResponseId && readProperty(event, 'response_id') === farewellResponseId) farewellAudioStarted = true
+      notifyAudioActivity('output_started')
+      return
+    }
+    if (type === 'output_audio_buffer.stopped') {
+      returnToDormantAudioStarted = false
+      notifyOutputAudioBufferStopped()
+      notifyAudioActivity('output_stopped')
+      if (returnToDormantPending && farewellAudioStarted && farewellResponseId && readProperty(event, 'response_id') === farewellResponseId) {
+        returnToDormantPending = false
+        const request = input.onReturnToDormant
+        if (request === undefined) {
+          emitMetadata(
+            input,
+            'realtime_observer_event',
+            'degraded',
+            'sleep_request_unavailable',
+            sessionGeneration,
+            createdAt,
+          )
+          return
+        }
+        try {
+          const ownerResponseId = farewellResponseId
+          void Promise.resolve(input.waitForOutputTail?.()).then(() => {
+            if (!closed && farewellRequested && farewellResponseId === ownerResponseId) return request()
+          }).catch(() => {
+            emitMetadata(
+              input,
+              'realtime_observer_event',
+              'failed',
+              'sleep_request_failed',
+              sessionGeneration,
+              createdAt,
+            )
+          })
+        } catch {
+          emitMetadata(
+            input,
+            'realtime_observer_event',
+            'failed',
+            'sleep_request_failed',
+            sessionGeneration,
+            createdAt,
+          )
+        }
+      }
+      return
+    }
+    if (type === 'input_audio_buffer.speech_started') {
+      notifyAudioActivity('speech_started')
+      return
+    }
+    if (type === 'input_audio_buffer.speech_stopped') {
+      notifyAudioActivity('speech_stopped')
+      return
+    }
+    if (type === 'input_audio_buffer.committed') {
+      notifyInputItemCreated(readProperty(event, 'item_id'))
+      return
+    }
+    if (type === 'conversation.item.created') {
+      const item = readProperty(event, 'item')
+      if (readProperty(item, 'role') === 'user') notifyInputItemCreated(readProperty(item, 'id'))
+      return
+    }
+    if (type === 'conversation.item.input_audio_transcription.completed') {
+      const transcript = readProperty(event, 'transcript')
+      const itemId = readProperty(event, 'item_id')
+      if (
+        typeof itemId !== 'string'
+        || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)
+        || typeof transcript !== 'string'
+        || transcript.trim().length === 0
+      ) {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'transcript_unavailable',
+          sessionGeneration,
+          createdAt,
+        )
+        return
+      }
+      for (const listener of [...inputTranscriptCompletedListeners]) {
+        try {
+          listener(Object.freeze({ itemId, transcript }))
+        } catch {
+          emitMetadata(
+            input,
+            'realtime_observer_event',
+            'degraded',
+            'transcript_listener_failed',
+            sessionGeneration,
+            createdAt,
+          )
+        }
+      }
+      return
+    }
+    if (type === 'connection_change' && rawEventStatus(event) === 'disconnected') {
+      reportFailure(
+        readyEmitted ? 'active_disconnect' : 'connect',
+        'realtime_disconnect',
+        'info',
+        'cause=transport_disconnected',
+      )
+    }
+  }
+
+  const handleSessionError = (event: unknown): void => {
+    if (rawEventIsStale(event, input.sessionId)) {
+      emitStale()
+      return
+    }
+    if (reportRequestRejection(event)) return
+    if (!readyEmitted) latestConnectFailureToken = classifyConnectFailure(event)
+    reportFailure(
+      readyEmitted ? 'ice' : 'connect',
+      'realtime_connect_failed',
+      'failed',
+      'cause=transport_error',
+    )
+  }
+
+  function reportRequestRejection(event: unknown): boolean {
+    if (!readyEmitted || closed) return false
+    const error = readProperty(event, 'error')
+    const nested = readProperty(error, 'error')
+    if (readProperty(error, 'type') !== 'invalid_request_error' && readProperty(nested, 'type') !== 'invalid_request_error') return false
+    emitMetadata(input, 'realtime_observer_event', 'degraded', 'realtime_request_rejected', sessionGeneration, createdAt)
+    return true
+  }
+
+  session.on('transport_event', handleTransportEvent)
+  session.on('error', handleSessionError)
+  session.on('agent_tool_end', (_context, _agent, completedTool) => {
+    if (closed || !returnToDormantPending || farewellRequested || !sleepToolNames.has(readProperty(completedTool, 'name') as string)) return
+    farewellRequested = true
+    try {
+      // One response with no conversation input: no invitation or tool follow-up.
+      const response = { ...buildSpeechResponse(farewell, input.avatar?.speakingStyle ?? ''),
+        metadata: { mirror_sleep_cue: farewellCueId } }
+      if (transport.requestResponse) transport.requestResponse(response)
+      else transport.sendEvent({ type: 'response.create', response })
+    } catch {
+      returnToDormantPending = false
+      farewellRequested = false
+      sleepAudioSuppressed = false
+      emitMetadata(input, 'realtime_observer_event', 'failed', 'sleep_request_failed', sessionGeneration, createdAt)
+    }
+  })
+  // Interruption and completion stay on official RealtimeSession event surfaces.
+  session.on('audio_interrupted', () => {
+    returnToDormantPending = false
+    returnToDormantAudioStarted = false
+    farewellRequested = false
+    farewellResponseId = undefined
+    farewellAudioStarted = false
+    sleepAudioSuppressed = false
+    notifyAudioActivity('interrupted')
+  })
+  session.on('audio_stopped', () => {})
+
+  emitMetadata(
+    input,
+    'realtime_session_created',
+    'success',
+    'cause=session_created',
+    sessionGeneration,
+    createdAt,
+  )
+
+  async function connectOnce(): Promise<void> {
+    if (closed) throw new RealtimeSessionAdapterError('session_closed')
+    latestConnectFailureToken = undefined
+    const clientSecret = transientClientSecret
+    transientClientSecret = null
+    if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
+      latestConnectFailureToken = 'start_connect_credential_missing'
+      reportFailure(
+        'connect',
+        'realtime_connect_failed',
+        'failed',
+        'cause=connect_failed',
+      )
+      throw new RealtimeSessionAdapterError('connect_failed')
+    }
+
+    emitMetadata(
+      input,
+      'realtime_connect_started',
+      'info',
+      'cause=connect_started',
+      sessionGeneration,
+      createdAt,
+    )
+    try {
+      await session.connect({ apiKey: clientSecret })
+      if (closed) {
+        // Stop may run while the SDK is still establishing its transport.
+        // Close again after that late completion so no connection survives it.
+        await session.close()
+        throw new RealtimeSessionAdapterError('session_closed')
+      }
+      if (failureReported) {
+        throw new RealtimeSessionAdapterError('connect_failed')
+      }
+      latestConnectFailureToken = undefined
+      if (input.microphoneRecovery && !closed) {
+        const options = input.microphoneRecovery
+        microphoneRecovery = watchMicrophone({
+          stream: input.mediaStream,
+          mediaDevices: options.mediaDevices,
+          getConstraints: options.getConstraints,
+          replaceTrack: async track => {
+            if (closed) throw new Error('session_closed')
+            const state = (transport as { connectionState?: { peerConnection?: RTCPeerConnection } }).connectionState
+            const sender = state?.peerConnection?.getSenders().find(s => s.track?.kind === 'audio')
+            if (!sender) throw new Error('audio_sender_unavailable')
+            await sender.replaceTrack(track)
+          },
+          onStatus: reason => emitMetadata(input, 'realtime_observer_event',
+            reason === 'microphone_recovery_ready' ? 'success' : 'degraded', reason, sessionGeneration, createdAt),
+        })
+      }
+      if (!closed) emitReady('cause=connect_succeeded')
+      if (!closed && input.wakeGreeting?.trim()) {
+        try { speakVerbatim(input.wakeGreeting) }
+        catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_failed', sessionGeneration, createdAt) }
+      }
+    } catch (error: unknown) {
+      latestConnectFailureToken ??= classifyConnectFailure(error)
+      if (!closed && !failureReported) {
+        reportFailure(
+          readyEmitted ? 'ice' : 'connect',
+          'realtime_connect_failed',
+          'failed',
+          'cause=connect_failed',
+        )
+      }
+      throw new RealtimeSessionAdapterError('connect_failed')
+    }
+  }
+
+  async function connect(): Promise<void> {
+    if (connectPromise !== null) return connectPromise
+    connectPromise = connectOnce()
+    return connectPromise
+  }
+
+  async function interrupt(): Promise<void> {
+    if (closed) return
+    try {
+      await session.interrupt()
+    } catch {
+      emitConnectFailed('cause=transport_error')
+    }
+  }
+
+  function close(reason: string): Promise<void> {
+    if (closePromise !== null) return closePromise
+    closed = true
+    closePromise = (async () => {
+    await microphoneRecovery?.stop()
+    clearTimeout(cueCancelTimer)
+    outputAudioBufferStoppedSubscriptions.clear()
+    inputTranscriptCompletedListeners.clear()
+    inputItemCreatedListeners.clear()
+    createdInputItemIds.clear()
+    let closeFailed = false
+    try {
+      await session.close()
+    } catch {
+      closeFailed = true
+    }
+    resetCues()
+    const disconnectReason = stableCloseReason(reason)
+    emitDisconnected(closeFailed ? 'cause=close_failed' : disconnectReason)
+    })()
+    return closePromise
+  }
+
+  const notifyInputItemCreated = (itemId: unknown): void => {
+    if (typeof itemId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) return
+    if (createdInputItemIds.has(itemId)) return
+    createdInputItemIds.add(itemId)
+    for (const listener of [...inputItemCreatedListeners]) {
+      try {
+        listener(itemId)
+      } catch {
+        emitMetadata(
+          input,
+          'realtime_observer_event',
+          'degraded',
+          'input_item_listener_failed',
+          sessionGeneration,
+          createdAt,
+        )
+      }
+    }
+  }
+
+  function speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void {
+    if (closed) throw new RealtimeSessionAdapterError('session_closed')
+    if (text.trim().length === 0 || text.length > 1000) {
+      throw new RealtimeSessionAdapterError('scene_dialogue_invalid')
+    }
+    const response = buildSpeechResponse(text, input.avatar?.speakingStyle ?? '')
+    if (!signal) {
+      // Application speech is not a visitor command. In particular, the wake
+      // greeting must never invoke return_to_dormant instead of greeting.
+      transport.sendEvent({ type: 'response.create', response })
+      return
+    }
+    if (signal.aborted) return
+    const id = `scene-${sessionGeneration}-${++cueSequence}`
+    const cue: { signal: AbortSignal; abort: () => void; finish?: () => void; responseId?: string; done: boolean; cleared: boolean; played: boolean } = {
+      signal, finish: onFinished, done: false, cleared: false, played: false,
+      abort: () => {
+        if (closed) return
+        // Keep queued SDK requests inaudible until their own cancellation and
+        // buffer-clear acknowledgements arrive. Unrelated output cannot release them.
+        cueMuted ??= input.audioElement.muted
+        input.audioElement.muted = true
+        // Interrupt also silences and drains the processed Web Audio graph.
+        // Its begin/output_started hook stays blocked until cancellation resolves.
+        notifyAudioActivity('interrupted')
+        const failCancellation = () => {
+          reportFailure('ice', 'realtime_observer_event', 'failed', 'scene_dialogue_cancel_failed')
+          void close('scene_dialogue_cancel_failed')
+        }
+        cueCancelTimer ??= setTimeout(failCancellation, 8000)
+        if (!cue.responseId) return
+        try {
+          if (!cue.done) transport.sendEvent({ type: 'response.cancel', response_id: cue.responseId })
+          transport.sendEvent({ type: 'output_audio_buffer.clear' })
+        } catch { failCancellation() }
+      },
+    }
+    cues.set(id, cue)
+    signal.addEventListener('abort', cue.abort, { once: true })
+    try {
+      transport.sendEvent({ type: 'response.create', event_id: id, response: { ...response, metadata: { mirror_scene_cue: id } } })
+    } catch (error) {
+      signal.removeEventListener('abort', cue.abort)
+      cues.delete(id)
+      cue.finish?.()
+      throw error
+    }
+  }
+
+  function onOutputAudioBufferStopped(
+    listener: OutputAudioBufferStoppedListener,
+  ): () => void {
+    if (closed) {
+      emitMetadata(
+        input,
+        'realtime_observer_event',
+        'info',
+        'output_playback_subscription_closed',
+        sessionGeneration,
+        createdAt,
+      )
+      return () => {}
+    }
+    const subscription: OutputAudioBufferStoppedSubscription = { listener }
+    outputAudioBufferStoppedSubscriptions.add(subscription)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      outputAudioBufferStoppedSubscriptions.delete(subscription)
+    }
+  }
+
+  function onInputTranscriptCompleted(
+    listener: InputTranscriptCompletedListener,
+  ): () => void {
+    if (closed) return () => {}
+    inputTranscriptCompletedListeners.add(listener)
+    return () => inputTranscriptCompletedListeners.delete(listener)
+  }
+
+  function onInputItemCreated(listener: InputItemCreatedListener): () => void {
+    if (closed) return () => {}
+    inputItemCreatedListeners.add(listener)
+    return () => inputItemCreatedListeners.delete(listener)
+  }
+
+  return Object.freeze({
+    realtimeSessionId: input.sessionId,
+    sessionGeneration,
+    connect,
+    getLastConnectFailureToken: () => latestConnectFailureToken,
+    interrupt,
+    close,
+    speakVerbatim,
+    onOutputAudioBufferStopped,
+    onInputItemCreated,
+    onInputTranscriptCompleted,
+  })
+}

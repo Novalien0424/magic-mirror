@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "packageId": "sherpa-magic-mirror-mac-v1",
+  "engine": "sherpa",
+  "engineVersion": "1.13.6",
+  "modelVersion": "zh-en-3m-2025-12-20-epoch13-avg2",
+  "phrase": "魔鏡阿魔鏡",
+  "locale": "zh-CN",
+  "platform": "darwin-arm64",
+  "artifacts": [
+    {
+      "role": "encoder",
+      "file": "encoder-epoch-13-avg-2-chunk-16-left-64.onnx",
+      "sha256": "540ff509ed89bd22afe04bf7049a54bb1c95c6d8a18742ea9691910cdb5f859e"
+    },
+    {
+      "role": "decoder",
+      "file": "decoder-epoch-13-avg-2-chunk-16-left-64.onnx",
+      "sha256": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21"
+    },
+    {
+      "role": "joiner",
+      "file": "joiner-epoch-13-avg-2-chunk-16-left-64.onnx",
+      "sha256": "76f7a24ed0c08633af14b2ee377f747af880d3b65eeba2cd3f31f3380fb73e8d"
+    },
+    {
+      "role": "tokens",
+      "file": "tokens.txt",
+      "sha256": "2d3f32311f9b692b964da3c90e830258d3e78e013cb0c992dbfb15cd5a1a71b0"
+    },
+    {
+      "role": "keywords",
+      "file": "keywords_mac.txt",
+      "sha256": "e2bed22ba8854e7f64cf7f5d8574cf668f7a4d75988dcbdfebcf65020cd47345"
+    }
+  ],
+  "tuning": {
+    "sampleRateHz": 16000,
+    "threshold": 0.45,
+    "score": 1,
+    "numTrailingBlanks": 1
+  },
+  "provenance": {
+    "method": "sherpa-text2token",
+    "sourceId": "k2-fsa-zh-en-3m-20251220",
+    "createdAt": "2026-10-03T14:28:46.123Z"
+  },
+  "corpusResultId": "not-evaluated"
+}

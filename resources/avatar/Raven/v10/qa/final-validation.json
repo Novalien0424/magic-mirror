@@ -1,0 +1,18 @@
+{
+  "checkedAt": "2026-09-08T16:09:39.240822+00:00",
+  "static": "pass; 17 referenced runtime files; standard eye/lip-sync groups and five expressions",
+  "actualRuntime": "35 expression timeline samples; 27 gaze + 15 blink combination samples",
+  "visualAgent": "reviewed settled comparison, three gaze grids, final blink strip, native Editor and Console",
+  "visualHuman": "not_run",
+  "changedRuntimeFiles": [
+    "motions/exp_05.exp3.json"
+  ],
+  "source": "canonical v09 CMO reopened in Cubism; no rig edit or MOC export in v10; unsaved session separately preserved",
+  "sourceCmoSha256": "4b3eb677c31e8ac2765fa63b6122760d5c5f2a33c14b7d54ed04d9cc9b56e6a6",
+  "expressionSha256": "09936b00885df0d7842613f231f6f3dea8208c6d5a564b8518f3af92a1f0c13c",
+  "limitations": [
+    "Extreme diagonal gaze still partly occludes iris; no complete pupil-visibility acceptance claimed",
+    "Full pose expression plus state motion can still clamp; product fix remains assigned to coding session",
+    "No camera tracking, speech integration, main Mirror or product regression verification in this revision"
+  ]
+}

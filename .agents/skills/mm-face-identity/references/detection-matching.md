@@ -1,0 +1,53 @@
+# Detection and candidate matching
+
+Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+
+## Versions and models - pin the pair
+
+- Historical 2026-08-16 package notes (verify before selecting a future pair): `pip install opencv-python` then installed **5.0** (5.0.0.93); the 4.x line
+  continues (4.14.0.94). **Pin one combo and do not mix:**
+  `opencv-python==4.14.0.94 + face_detection_yunet_2023mar.onnx` (fixed
+  shape), OR `opencv-python==5.0.0.93 + face_detection_yunet_2026may.onnx`
+  (dynamic shape, may need `OPENCV_FORCE_DNN_ENGINE=4`). Recognizer:
+  `face_recognition_sface_2021dec.onnx` (~37 MB, the ONLY zoo recognition
+  model; int8 variants are NOT embedding-compatible with fp32).
+- **Download trap:** `raw.githubusercontent.com` returns a ~131-byte Git-LFS
+  pointer that fails at `create()` with an opaque ONNX error. Use
+  `media.githubusercontent.com/media/opencv/opencv_zoo/main/models/...` or
+  `git lfs pull`.
+- A detector change shifts landmarks -> shifts `alignCrop` -> perturbs
+  embeddings: version the **(detector, recognizer) pair** + sha256 in every
+  embedding record; never compare across pairs (Spec Section 10.3).
+
+## Detection and embedding
+
+```python
+det = cv.FaceDetectorYN.create(yunet_path, "", (320, 320), 0.6, 0.3, 5000)
+det.setInputSize((w, h))            # (width, height) - reverse of frame.shape! every frame
+n, faces = det.detect(frame)        # faces is None (not []) when nothing found
+# row[15]: 0-3 bbox, 4-13 five landmarks (eyes, nose, mouth corners), 14 score
+rec = cv.FaceRecognizerSF.create(sface_path, "")
+aligned = rec.alignCrop(frame, face_row)   # needs the FULL 15-col row (landmark warp)
+feat = rec.feature(aligned)                 # assert shape at runtime (128-d expected)
+sim = rec.match(f1, f2, cv.FaceRecognizerSF_FR_COSINE)  # cosine: HIGHER = same
+```
+
+Cosine is similarity (>= threshold = same); NORM_L2 is distance (<=) - the
+operator flips, a classic sign bug.
+
+## Candidate matching (1:N against 5-8 templates)
+
+- Reference 1:1 LFW threshold is cosine **0.363** - but max-over-N-templates
+  1:N inflates scores. **Start at 0.40-0.45**, calibrate on real guests via
+  the Console recorded-gallery runner.
+- Score = max cosine over the guest's enrolled embeddings (store all N plus
+  a normalized centroid). Accept top-1 only with a **margin**:
+  `best - second_best >= 0.05-0.10`, else return `no_candidate` - the product
+  never guesses (Spec Section 10.1). Excluded/below-threshold candidates log
+  `reason` + score to Console, no error.
+- Face recognition only proposes a candidate. Do not authorize a candidate or
+  load private memory before explicit verbal confirmation. With off-angle
+  doorway captures, scores degrade (cross-pose LFW threshold drops to 0.275):
+  enroll deliberately across angles and lighting instead of lowering the
+  accept threshold. YuNet is trained on ~10-300 px faces - a guest very close
+  to the mirror can drop out of detection.

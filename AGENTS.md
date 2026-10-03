@@ -1,42 +1,22 @@
-# Codex Control Plane
+# Magic Mirror — Working contract
 
-## Authority and ownership
+Complete the requested outcome with the smallest correct change and relevant evidence. Prioritize correctness/privacy, surgical scope, then time and token cost. Continue through in-scope fixes and checks until done or concretely blocked; stop when the requested boundary is proven.
 
-The root Codex thread is the sole orchestrator and reviewer. It breaks work
-into bounded units, dispatches workers, reads returned artifacts and evidence,
-and makes the external root review decision. The root thread does not
-implement changes, perform exploratory repository survey or research, or
-execute tests or validation commands. It may read authoritative source and
-worker evidence for routing and review.
+## Authority and context
 
-Treat the current interactive Codex thread as the sole root. Treat a fresh
-profile-backed CLI process launched with an explicit `implementer`,
-`surveyor`, or `tester` envelope as that worker, not another root. Execute
-only the bounded task directly; do not delegate, spawn, or dispatch a child,
-create a review gate, or claim root review. Only the current interactive root
-launches workers and performs external review.
+Latest user request/routing → this file → newer DECISIONS rulings → product/spec/implementation/stack documents → PROGRESS → applicable domain facts → history. This ordering resolves project documents, not system/developer instructions.
 
-No separate review role or review worker exists. Worker self-review and root
-review are different gates: root review is external to worker self-review.
-Every current and future plan self-review and every worker self-review is
-capped at three passes. A requested follow-up keeps the same bounded role and
-does not create a review worker or increase that worker's self-review limit.
+`PROGRESS.md` owns current delivery, runtime, blockers and evidence links; `DECISIONS.md` owns durable rulings. Read each only as the task needs. For another-session QA, start with current PROGRESS evidence/runbook links and `mm-ui-qa`; prior passes are historical evidence.
 
-## Authority order and preserved process state
+## Execution
 
-Use this order when instructions conflict:
+- Explain/review/diagnose/plan means inspect and report. Fix/change/build means make the authorized local change and finish its relevant checks. Obvious bounded work needs no plan artifact or repeated approval.
+- Start at the named path, symbol or error; use targeted `rg` and follow relevant callers/imports. Preserve user edits. No adjacent cleanup, refactor, rename, dependency update or formatting sweep.
+- In-scope reads, reversible edits, isolated tests and task-caused repairs are authorized. Ask only for unresolved destructive actions, external writes, purchases, credential rotation, irreversible migration or material expansion; existing explicit authority persists.
+- External/flaky actions get one retry at most, then the exact failure. Stop/cancel/abort terminates active commands and agents; do not substitute or restart the abandoned task.
+- Report meaningful findings, blockers and completion. Status/show/paste uses current evidence or the smallest direct capture.
 
-1. The user's current request and explicit Codex routing policy.
-2. This root `AGENTS.md` contract.
-3. Product sources: `docs/Magic_Mirror_PRD_v0.3.md`,
-   `docs/Magic_Mirror_Tech_Spec_v0.3.md`,
-   `docs/Magic_Mirror_Implementation_Plan_v0.3.md`, and
-   `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`.
-4. The migrated project skills under `.agents/skills/`, in the routing order
-   below.
-5. `PROGRESS.md`, `DECISIONS.md`, and the ignored SDD ledger as process state.
-6. The immutable historical harness document and its seven source skill
-   documents as reference input only.
+## Skills, models and proof
 
 Current worker routing (user decision, 2026-10-03) is profile `nova-auto`,
 exact model `gpt-6.1-sol`, and reasoning effort `max`. This supersedes
@@ -45,96 +25,17 @@ records. Those records remain provenance, never active dispatch. Pin the
 exact worker ID; no auto-latest or silent model substitution. Runtime model
 IDs remain unchanged.
 
-The seven skill routes are initialized and validated one at a time, in this
-order:
+Write skill and harness instructions in English; preserve exact product phrases and necessary non-English examples. Load skills for their actual workflow, not a keyword match. Keep descriptions short; put conditional detail in references. Skills add domain facts, not blanket preloads, approval loops, fixed itineraries or repeated test/review gates.
 
-1. `.agents/skills/mm-phase-workflow/SKILL.md`
-2. `.agents/skills/mm-invariants/SKILL.md`
-3. `.agents/skills/mm-electron-foundation/SKILL.md`
-4. `.agents/skills/mm-realtime-voice/SKILL.md`
-5. `.agents/skills/mm-wake-word/SKILL.md`
-6. `.agents/skills/mm-live2d-avatar/SKILL.md`
-7. `.agents/skills/mm-face-identity/SKILL.md`
+Realtime function definitions, rules and results come from the versioned tool catalog shared by runtime and inspector. Bind and validate handlers explicitly; keep exact spell authorization in the application. See `mm-realtime-voice` for the contract.
 
-Use `mm-phase-workflow` for phase planning, dispatch, demos, and exit review.
-Use `mm-invariants` for every implementation, survey that touches product
-behavior, review, test, or debugging request; include the relevant canonical
-IDs in the worker prompt. Add the matching domain skill for domain work. Do
-not initialize the next skill until the prior skill's source-preservation,
-frontmatter, metadata, trigger/retrieval, and required behavior evidence has
-been accepted by root review.
+The interactive root uses the session's selected model/effort; workers use the exact dated route above and the dispatch contract below. Roles in `.codex/agents/` are bounded tools, not additional required stages. Workers do not delegate or create reviewers; root review follows their return.
 
-The following process rulings remain active: R1 is completed historical
-in-place work through local integration on `phase0-foundation`; application
-Task 2 (the lifecycle state machine) is completed, reviewed, and locally
-integrated at `a7d74b14771de4f527762c30171ad2e68fc3d985`; `phase0-lifecycle`
-was deleted. R2 keeps the authoritative `handleSimulator` return shape; and
-R5 keeps Tasks 3–5 sequential. R3 and R4 are superseded by the user's current
-Codex policy. Application Task 3 (ConfigService + credentials) is completed,
-corrected, integrated at implementation commit `0270686` with
-correction/integration tip `835c92d`, and pushed on `main`; application Task 4
-(metadata-only telemetry) is completed, root-reviewed, integrated, and pushed
-at `dca1327`; application Task 5 (SQLite initialization and migration baseline)
-is accepted, root-reviewed, integrated, and pushed on `main` at `a8f0355`, with
-32 focused tests, 145 total tests, and Node/web typecheck plus Electron Vite
-build green. Application Task 6 (Main-owned module registry plus deterministic
-mocks) is accepted, root-reviewed, implemented, and pushed on `main` at
-`5b95a94`, with 16 focused tests, 161 total tests, and Node/web typecheck plus
-Electron Vite build green. Its selected design is a runtime-exhaustive Main
-registry, injected closed-outcome adapters, separate deterministic mocks,
-stable metadata-only results/events, informational missing-adapter handling,
-explicit `eventDelivery` values `emitted|failed`, no retry or sibling gate,
-and no boot/IPC/UI/model resolver. The Task 6 plan's static gate commit was
-`83be86b` on `phase0-modules`; its application/test scope was
-`tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-`src/main/module-mocks.ts`. Application Task 7's accepted plan is recorded at
-`6214b6c`; its accepted implementation is pushed on `phase0-model-settings` at
-`5e24bdc`, with 7 focused tests, 168 total tests, Node/web typecheck plus
-Electron Vite build green, both negative runtime-model/fallback scans
-successful, and no OpenAI or `.env` requirement. Task 8 (boot wiring, IPC,
-Mirror UI, and OfflineLoop) is next; Tasks 9/10 retain Console UI and
-demos/records/exit ownership. This refers only to application task order and
-does not indicate that a harness-migration Task 2 is pending. The completed
-application Task 1 status is not changed by this harness work. No user setup is
-required for Task 6. Development Node `v24.19.0` satisfies the prerequisite
-of `>=22.22.2` or `>=24.15.0`. Do not change application task order or status.
+Match verification to the changed boundary: reads need no tests; docs/config need named static checks. Durable behavior/application work uses one focused failing test, the smallest implementation, then a green result before any refactor. The tester owns named validation; obey explicit task exclusions and report pending verification instead of claiming runtime acceptance. Temporary diagnostics stay narrowly enabled, content-free and are removed in the same task unless retention is requested.
 
-Active efficiency ruling: for this nonindustrial project, the root uses the
-fewest bounded fresh-worker gates consistent with strict TDD, tester-owned
-validation, privacy/invariants, and external root review. Avoid duplicate
-surveys, separate review workers, ceremonial tests, duplicate validation, and
-PR bureaucracy. Naturally coupled behavior within one bounded unit may share
-a test-write/implementation/validation sequence. This does not relax any
-mandatory authority, role, profile, model, effort, scope, evidence, tester-
-ownership, privacy/invariant, or external-root-review requirement.
+Broaden for cross-cutting changes, dependencies/packaging, migrations, credentials, runtime models, mic/restart ownership, identity/privacy, release or phase exit. Full suite/build/demo/independent review are conditional, not routine. Check the final diff once; repeat only for a concrete finding. Report command, exit code and key result; full output on failure or request.
 
-The user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
-credential presence is recorded only as ignored metadata; its content and
-value are never read, and process records must not claim that its value was
-inspected. The customizable wake word remains a Phase 2 requirement and later
-requires keyword artifact generation plus tuning evidence.
-
-## Immutable and product boundaries
-
-Treat the historical harness document and all seven source skill documents as
-immutable byte-level inputs. Do not edit, rename, reformat, or delete them.
-Do not change product documents, application source, tests, package files,
-dependencies, runtime model configuration, or application behavior in a
-harness migration. The worker model is a harness route and must never be
-copied into runtime configuration, source code, `active.json`, telemetry, or
-product artifacts. Preserve all pinned product model IDs, package versions,
-domain facts, safety rules, and the 12 invariants in the migrated skill
-content.
-
-Keep the Windows-development/macOS-target distinction explicit. Windows
-development uses the same Electron `safeStorage` API backed by DPAPI; the
-target Mac uses Keychain and its TCC, signing, and entitlement paths. Windows
-results do not field-verify target macOS Keychain/TCC/signing/entitlements/
-packaged-worker/LaunchAgent paths. The target's only restart owner is the user
-LaunchAgent with `KeepAlive = { SuccessfulExit = false }`.
-In-app recovery may recreate a failed renderer once, then exits with code 1 so
-the LaunchAgent restarts the app. Never call `app.relaunch()` and never add a
-second restart owner.
+Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron smoke). Preserve unsaved operator edits before reload/restart.
 
 ## Dispatch contract
 
@@ -201,45 +102,65 @@ Every worker returns exact files changed, a concise diff summary, complete
 stdout/stderr for every command with exit codes, and unresolved risks. A
 tester returns complete output even for a failed or unavailable command.
 
-## TDD and verification
+## Canonical product invariants
 
-For behavior or application-code work, route through TDD: write one focused
-failing test, observe the expected failure, implement the smallest change,
-observe the green result, then refactor only while green. Configuration or
-documentation-only work uses the task's strict static checks and does not add
-application tests merely for ceremony. The tester owns all named test and
-validation execution; the root does not execute them. Before any completion
-claim, run fresh verification, read the full output and exit code, and report
-evidence rather than confidence.
+Preserve all 12 IDs; worker prompts name applicable IDs and reports identify those checked.
 
-## Canonical invariants
-
-Workers preserve all 12 canonical invariants and report the IDs they checked:
-
-1. Final transcripts, conversation audio, extracted memory values, and
-   injected private context remain RAM-only; diagnostics contain metadata.
-2. Face recognition proposes a candidate; private memory follows explicit
-   verbal confirmation.
-3. Guest and candidate profile IDs remain in Electron Main and never cross
-   renderer/model tool boundaries.
-4. A profile change closes the old session and confirms in a clean
-   Persona+Master-only session before updating the agent.
-5. Extraction writes to the owner snapshot taken at turn start.
-6. Identity, naming, switching, group, sleep, and spell control turns skip
-   personal-memory extraction.
-7. A scene requires normalized exact full-transcript spell matching and one
-   trigger per turn; approved presets alone control hardware.
-8. Exactly one microphone owner exists at a time, with explicit
-   release-then-acquire handoff.
-9. Every ignore, drop, fallback, or degrade is visitor-visible or a
-   metadata-only Console event with a reason.
+1. Transcripts, conversation audio, extracted memory values, and injected
+   private context are RAM-only; diagnostics are metadata-only.
+2. Face recognition proposes; private memory loads only after verbal confirm.
+3. Guest/candidate profile IDs stay in Electron Main and never cross
+   renderer/model boundaries.
+4. Profile change closes old history, confirms in a clean Persona+Master-only
+   session, then updates the agent.
+5. Extraction writes to the owner snapshot captured at turn start.
+6. Identity/naming/switch/group/sleep/spell control turns skip extraction.
+7. Scene trigger is normalized exact full-transcript match, once per turn;
+   approved presets alone control hardware.
+8. Exactly one microphone owner, with explicit release then acquire.
+9. Every ignore/drop/fallback/degrade is visitor-visible or a metadata-only
+   Console event with a reason.
 10. Failures degrade without gating conversation or unrelated adapters.
-11. Model IDs come only from versioned configuration; a failed configured ID
-   never silently substitutes another ID.
-12. Credentials are read by Main through `safeStorage`; keys never enter
-   renderer data, logs, telemetry, or exports.
+11. Runtime model IDs come only from versioned config; no silent substitution.
+12. Under the dated personal-build ruling, ignored root `.env`
+    `OPENAI_API_KEY` is the sole master-key source and Electron Main alone loads
+    it. No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env, or
+    alternate fallback. Agents/workers never inspect or output its value;
+    missing/empty/read failures remain metadata-only reasons.
 
-No worker may weaken, rename, or omit an applicable invariant. Product safety
-and runtime model IDs outrank convenience wording in a skill. Root review
-checks the returned diff, evidence, privacy posture, scope, and the maximum
-three-pass limit before accepting a worker result.
+## Platform and protected boundaries
+
+- **2026-10-03 user authority:** this Mac is the FINAL deployment target for
+  Raven. The canonical Mac workspace is `/Users/novalien0424/magic-mirror`;
+  explicitly scoped deployment work here is authorized. This supersedes older
+  deferred-Mac/M4-port wording without changing phase acceptance or runtime
+  model IDs. Target TCC, signing, entitlements, packaged workers, LaunchAgent,
+  power/performance and wake quality require their own actual Mac evidence.
+- Windows development and functional results remain Windows evidence; never
+  claim Mac readiness from them. On Windows, launch development Electron only
+  from canonical `C:\Project\magic-mirror`. On Mac, use the canonical Mac
+  workspace. Worktrees may run Node-only tests, typechecks/build/package, never
+  Electron runtime demos or live smoke. A task's explicit no-launch boundary
+  remains binding.
+- On Windows, before the first Electron run verify persistent Private rules
+  `MagicMirror.Development.Electron.TCP` and
+  `MagicMirror.Development.Electron.UDP` target canonical
+  `node_modules\electron\dist\electron.exe`. If absent/mismatched, stop and
+  ask for elevated `scripts\configure-windows-electron-firewall.ps1` once
+  from canonical checkout. Never create worktree rules or rely on a Defender
+  prompt. After an exact match, recheck only if path/install changes or an
+  actual lookup fails; do not ask again otherwise.
+- User LaunchAgent `KeepAlive={SuccessfulExit=false}` is the sole Electron
+  restart owner. Recreate a failed renderer once; a failed or repeated recovery
+  exits with code 1 for LaunchAgent supervision. Never `app.relaunch()` or a
+  second Electron restart owner. Board-HDMI recovery and audio-preference
+  services do not own or restart Electron.
+- Do not modify `scripts/install-node-lts.ps1`, immutable historical inputs,
+  protected review/product docs, dependencies, runtime model config or phase
+  status unless the task explicitly requires and names it.
+- Official phases, runtime integration, demos, exits, regression, tags and
+  promotion remain sequential. Dated prep-only exceptions are not phase starts.
+
+## Handoff
+
+Lead with outcome, changed files, focused checks and material unresolved risk. At clock-out keep PROGRESS to current delivery/runtime, evidence, blockers and next action; archive superseded detail with resolvable links. Preserve failed evidence and runtime state unless shutdown is requested. Compaction does not change phase acceptance.

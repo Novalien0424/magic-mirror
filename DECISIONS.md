@@ -1,7 +1,6 @@
-# DECISIONS.md — ADRs beyond Tech Spec §18
+# Magic Mirror — Durable rulings
 
-Newest first. Only durable decisions not derivable from the docs; the 11
-architecture decisions in Tech Spec §18 are not repeated here.
+[AGENTS](AGENTS.md) owns execution policy and canonical invariants; [PROGRESS](PROGRESS.md) owns current delivery/evidence. This file records implementation decisions, not task status. The [pre-compaction ledger](docs/archive/decisions-before-harness-2026-09-13.md) preserves complete dated wording and earlier source links.
 
 ## 2026-10-03 — Current Sol worker routing (user decision)
 
@@ -13,20 +12,22 @@ architecture decisions in Tech Spec §18 are not repeated here.
 - **Provenance.** This Sol route supersedes historical worker-route references
   in older plans and records. Those records retain their Luna completion
   evidence as provenance, never active dispatch.
-- **Boundary/status.** Runtime model IDs remain unchanged. Migration
-  validation by the separate Sol tester is pending; no task acceptance or
-  phase demo is claimed.
+- **Boundary.** Runtime model IDs remain unchanged. Worker routing and
+  target deployment authority do not accept tasks or promote phases.
 
-## Active process-efficiency ruling (2026-08-19)
+## Scope and platform
 
-- For this nonindustrial project, the root uses the fewest bounded fresh-worker
-  gates consistent with strict TDD, tester-owned validation, privacy/invariants,
-  and external root review. Avoid duplicate surveys, separate review workers,
-  ceremonial tests, duplicate validation, and PR bureaucracy. Naturally
-  coupled behavior within one bounded unit may share a
-  test-write/implementation/validation sequence. This does not relax any
-  mandatory authority, role, profile, model, effort, scope, evidence,
-  tester-ownership, privacy/invariant, or external-root-review requirement.
+- **2026-10-03 user confirmation:** this Mac is the FINAL Raven deployment
+  target, with canonical workspace `/Users/novalien0424/magic-mirror`.
+  Explicitly scoped local deployment work is authorized. This supersedes the
+  older deferred-Mac/M4-port ruling; target TCC, signing, workers, LaunchAgent,
+  power and wake evidence still require actual Mac verification. Windows
+  results remain historical Windows evidence; phase acceptance is unchanged.
+- **2026-08-27 historical platform ruling:** Windows was the engineering/functional host and the Mac port was deferred. The 2026-10-03 final-target authority supersedes that deferral; Windows tags still cannot establish Mac readiness.
+- Phase order is Foundation → Realtime → Wake → Avatar/Audio → Scenes → Identity → Memory → Field Hardening (0–7). Remaining Phase 8 covers custom Cubism authoring/calibration and character/voice quality. Rigging is not ML training.
+- Phase 2 deferred P2-D2 offline wake, 19/20 live-wake sampling, multi-speaker accuracy and 30-minute ambient/TV negatives to Phase 7; these are not passes. Dated prep-only/engineering overlap exceptions are not standing parallel-phase authority.
+- **2026-09-05:** multi-avatar Console was pulled forward: one public character loaded at a time; per-avatar personality/voice/presentation/scenes/triggers and shared/locked media/actions. Public avatar IDs are not guest identities. This changes scope, not phase acceptance or Identity/Memory sequence.
+- **2026-09-13:** user authorized personal skill and related harness compaction following [OpenAI guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra). Preserve general principles and domain safeguards; no runtime-model, dependency or phase changes are implied.
 
 ## 2026-10-03 — Field audio device policy (operator decision)
 
@@ -44,298 +45,63 @@ architecture decisions in Tech Spec §18 are not repeated here.
   device-list change. It does not fight a manual pick between plug events.
   Its log is metadata only:
   `~/Library/Logs/MagicMirror/audio-prefer.log`.
-- **App consequence.** Until Phase 1, the renderer follows the OS default
-  (Chromium `default` device), which is the Jabra. The Phase 1 audio work
-  stores the device in the Tech Spec §13.3 config "audio stable device IDs".
+- **App policy and historical observation.** The pre-merge field build used
+  the OS default (Chromium `default` device), observed as the Jabra. Retain the
+  operator's Jabra preference for the incoming audio runtime; its target-Mac
+  selection is not yet verified. The Tech Spec §13.3 config uses "audio stable
+  device IDs".
   Chromium `deviceId` values are per-origin hashes, so selection matches on the
   label (`Jabra Speak2 75`). If the label is missing, the app falls back to the
   OS default with a Console event giving the reason (invariant 9) and never
   blocks voice (invariant 10).
 
-## 2026-08-19 — Task 7 model settings resolver completion
+## Credentials, ownership and persistence
 
-- **Plan and implementation state.** The accepted plan
-  `docs/superpowers/plans/2026-08-19-phase0-task7-model-settings-resolver.md`
-  is recorded at `6214b6c`. The accepted implementation was root-reviewed and
-  pushed on `phase0-model-settings` at `5e24bdc`.
-- **Validation evidence.** Task 7 has 7 focused tests and 168 total tests;
-  Node/web typecheck and the Electron Vite build are green; both negative
-  runtime-model and fallback scans were successful. No OpenAI or `.env`
-  requirement was needed.
-- **Boundary and order.** The resolver preserves configured runtime model IDs,
-  frozen Active-only session/job snapshots, and metadata-only simulator
-  evidence without provider calls, persistence, UI, IPC, or credential access.
-  Task 8 (boot wiring, IPC, Mirror UI, and OfflineLoop) is next; Tasks 9/10
-  retain Console UI and demos/records/exit ownership.
-- **Environment/platform.** Development Node `v24.19.0` satisfies
-  `>=22.22.2` or `>=24.15.0`. The user-owned
-  `scripts/install-node-lts.ps1` remains untouched. `.env` remains
-  ignored-presence-only metadata: its content and value are never read or
-  inspected, and process records must not claim otherwise. Windows results do
-  not field-verify target macOS Keychain/TCC/signing/entitlements/
-  packaged-worker/LaunchAgent paths. The customizable wake word remains a
-  Phase 2 requirement needing keyword artifact generation plus tuning
-  evidence.
+- **2026-08-23 personal build:** Main alone loads `OPENAI_API_KEY` from ignored root `.env`; no Console provisioning, keystore, inherited environment or alternate source. Missing/empty/read failures are metadata-only. Agents never inspect the value. Only the short-lived Realtime secret crosses to the renderer. This supersedes older credential plans.
+- One Main lifecycle owner: cloud failure → OfflineLoop; local core failure → Maintenance. Unrelated adapters never gate conversation. One failed renderer recreation precedes exit 1; LaunchAgent `KeepAlive={SuccessfulExit=false}` alone owns process restart.
+- Config has separate schema/config versions, atomic migrations preserving operator values, and visible Maintenance for unsupported schemas. Active→Previous→packaged Default recovery is for corrupt/missing/unreadable data, never silent model substitution.
+- Main-only `node:sqlite`: `app_migrations`, foreign keys, WAL, integrity check, transactional migrations, defensive health, idempotent close. Online backup is exported `backup(sourceDb, path, options)`, not `db.backup`. DB failure does not block unrelated conversation/adapters.
+- Telemetry: RAM ring 2,000; JSONL 5 MB × 5; queue 1,000 with oldest-overflow `telemetryDroppedCount`. Only time/module/event/status and optional timing, bounded error/session/scene ID/reason/source; never raw content/errors, credentials, frames or embeddings. Overflow/delivery failures remain visible and nonblocking.
+- Transcript/audio, extracted memory values and injected private context stay RAM-only under canonical invariant 1. A future memory schema is not present persistence authority. Historical worker routes/H6 remain provenance; the 2026-10-03 dispatch contract in AGENTS owns current workers.
 
-## 2026-08-19 — Task 6 module registry design and process boundary
+## Voice, identity and microphone
 
-- **Plan/process state.** The accepted plan
-  `docs/superpowers/plans/2026-08-19-phase0-task6-module-registry.md` passed
-  the five-command static gate: status scope, git diff check, 458 lines/final
-  marker/trailing whitespace, 10 required markers, and no forbidden markers.
-  It was committed at `83be86b` on `phase0-modules`. The accepted,
-  root-reviewed application implementation was pushed on `main` at `5b95a94`,
-  with 16 focused tests, 161 total tests, and Node/web typecheck plus Electron
-  Vite build green.
-- **Task 5 boundary remains accepted.** SQLite initialization and the
-  migration baseline are accepted, root-reviewed, integrated, and pushed on
-  `main` at `a8f0355`, with 32 focused tests, 145 total tests, Node/web
-  typecheck green, and the Electron Vite build green.
-- **Selected design.** Task 6 uses a runtime-exhaustive Main registry with
-  injected closed-outcome adapters and separate deterministic mocks. Results
-  and events are stable and metadata-only; a missing adapter is informational;
-  result metadata has explicit `eventDelivery` values `emitted|failed`; and
-  there is no retry or sibling-module gate. Boot, IPC, UI, and the model
-  resolver remain outside this task.
-- **Implementation boundary.** The exact application/test scope was
-  `tests/unit/module-registry.test.ts`, `src/main/module-registry.ts`, and
-  `src/main/module-mocks.ts`. Task 7 is accepted at the recorded plan and
-  implementation commits above; Task 8 is next, while Tasks 9/10 retain
-  integration/UI and demos/records/exit ownership.
-- **Environment/platform.** No user setup is required for Task 6.
-  Development Node `v24.19.0` satisfies `>=22.22.2` or `>=24.15.0`. The
-  user-owned `scripts/install-node-lts.ps1` remains untouched. `.env`
-  credential presence is ignored metadata only; its content and value are
-  never read or inspected, and process records must not claim otherwise. The
-  customizable wake word remains a Phase 2 requirement and later needs
-  keyword artifact generation plus tuning evidence. Windows results do not
-  field-verify target macOS Keychain/TCC/signing/entitlements/packaged-worker/
-  LaunchAgent paths.
+- Runtime IDs/voices are versioned config. Session snapshots freeze at creation, job snapshots at enqueue; Publish affects future sessions/jobs. Worker model routing is separate.
+- Main atomically snapshots model + Realtime identity before minting; renderer receives validated/frozen identity + secret, expiry 600 seconds. Missing identity never calls the broker.
+- One browser runtime owns start/rollover/stop/interrupt/dispose. `realtimeSessionId` rejects stale events; generation is diagnostic except the positive Main start-bundle generation that commits activation. Main owns pending activation/rollover and reasoned stale/wrong-state drops.
+- Mic ownership is explicit release→acquire; stop caller-owned renderer tracks before returning to wake. Handoff failure is local Maintenance.
+- Profile changes close old-owner history, confirm in a clean Persona+Master session, then update the agent. Guest/candidate IDs stay in Main. Final transcripts are bounded session RAM and clear on stop/offline/rollover/restart. Extraction uses turn-start ownership and skips control turns.
+- Audible playback completion, including processed output tail, governs idle, rollover and farewell. Interruption stops output and coalesces duplicates.
+- Rollover timer: 60 minutes. After cloud failure, one Main schedule probes the ephemeral broker at 5/15/30/60 seconds, discards secrets in RAM, and returns Dormant on success/exhaustion. Manual Start owns the next full session; no automatic session reconnect. Shutdown cancels probes.
+- Console Start/Disconnect and payload-free interrupt use validated Console-only IPC through the tracked Mirror; preserve `handleSimulator` response shape. No guest IDs in model tools.
+- **2026-08-27 RCA:** mock model IDs once leaked from non-isolated userData into live runs. Live flags select isolated data; provider prose is not entitlement proof. Use bounded status/transport reasons and retain failed evidence.
 
-## 2026-08-19 — Task 4 integration and Task 5 SQLite boundary
+## Voice Studio — 2026-09-09
 
-- **Task 4 integration.** Metadata-only telemetry is completed, root-reviewed,
-  integrated, and pushed on `main` at `dca1327`. The supplied evidence is
-  focused telemetry `21/21`, full `8 files / 113 tests`, Node plus web
-  typecheck exit `0`, and Electron Vite build exit `0`.
-- **Current route.** `phase0-sqlite` is the current branch from the pushed
-  `main` state at `dca1327`. Application Task 5 is current, planned, and not
-  started; Tasks 3–5 remain sequential; Phase 0 remains in progress; and
-  Phase 1 remains blocked.
-- **SQLite ownership.** Task 5 is limited to a Main-only
-  `openSqlite({ dbPath, telemetry, driverFactory? })` boundary. The caller
-  supplies the absolute persistent path. The service uses real
-  `node:sqlite` `DatabaseSync` by default and exposes only the narrow injected
-  driver factory required for deterministic foreign-key, WAL, migration,
-  integrity, and close failure tests. No dependency or alternate database is
-  introduced.
-- **Baseline schema.** The only table Task 5 may create is the exact
-  `app_migrations(version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)`
-  table. Internal migration `1` is named `foundation_baseline`. Guests,
-  enrollment, embeddings, visits, recent/durable/Master memory, telemetry,
-  logs, backup/restore, and all later schema are deferred; malformed/future
-  states are rejected rather than downgraded or recreated.
-- **SQLite guarantees.** `PRAGMA foreign_keys = ON`, `PRAGMA journal_mode =
-  WAL`, and `PRAGMA integrity_check` are required and verified. Empty, NUL,
-  non-absolute, and `:memory:` paths fail with stable `sqlite_` codes. No
-  hidden relocation, parent-directory creation, in-memory fallback, or
-  alternate file is permitted. Migration uses `BEGIN IMMEDIATE`/`COMMIT` and
-  best-effort `ROLLBACK`.
-- **Health and close.** `SqliteHealth` is defensive metadata only. `close()`
-  is idempotent; after a successful close health is `failed` with
-  `sqlite_closed`, while a driver close failure is visible as
-  `sqlite_close_failed` through both health and a metadata-only telemetry
-  event.
-- **Telemetry boundary.** The required sink is `Pick<Telemetry, 'emit'>`.
-  SQLite events use module `sqlite`, source `runtime`, and stable names,
-  statuses, error codes, and reasons. Sink exceptions never gate SQLite.
-  Task 4 remains RAM/JSONL-only; no telemetry or log table is created, and no
-  path, SQL, raw exception, user content, transcript, audio, private context,
-  secret, or credential enters telemetry.
-- **Downstream/demo boundary.** P0-D2 later maps DB failure to Maintenance,
-  P0-D3 later consumes SQLite metadata events, P0-D4 later consumes
-  reopen/idempotence evidence, and Task 10 owns demos and records. Task 5
-  itself claims no demo and does not wire boot, lifecycle, IPC, or UI.
-- **Environment/platform.** No user setup is required for this planning
-  boundary. `.env` remains presence/ignore metadata only: present, ignored by
-  `.gitignore` line 9, untracked, content/value not accessed, and validity not
-  checked. The untracked `scripts/install-node-lts.ps1` remains untouched.
-  Windows validation does not field-verify target macOS packaged
-  `node:sqlite`, TCC, Keychain, signing, or entitlements.
+One embedded implementation: Signalsmith Stretch + native Web Audio, per-avatar controls and supernatural default/Raven presets. Provider speed/delivery instructions are separate from pitch/formant DSP. No neural engine, Python voice worker, virtual cable or separate changer app.
 
-## 2026-08-19 — Task 3 integration and Task 4 telemetry decision
+The operator relaxed added direct-speech p95 to <=180 ms and overhead above engine latency to <=40 ms. Preserve <=50 ms interruption mute and zero stale cancelled audio. The SDK receiver is muted; one MediaStreamAudioSource/shared AudioContext graph is audible. The rejected MediaElementAudioSource candidate is historical. Human sound, speakerphone echo and Mac acceptance remain distinct. [Design](docs/superpowers/specs/2026-09-09-avatar-voice-effects-design.md); current proof belongs in PROGRESS.
 
-- **Task 3 integration.** ConfigService + credentials is completed, reviewed,
-  and integrated on pushed `main`: implementation commit `0270686` and
-  correction/integration tip `835c92d`. Fresh merged-main verification
-  supplied for this record is 7 test files / 92 tests passed, full Node plus
-  web typecheck exit 0, and Electron Vite main/preload/renderer build exit 0.
-- **Current route.** `phase0-telemetry` is the current branch, pushed from
-  `main`. Application Task 4 is current and not started; Tasks 3–5 remain
-  sequential; Phase 0 remains in progress and Phase 1 remains blocked.
-- **Telemetry caps.** Task 4 uses a Main-owned RAM ring capped at 2,000
-  events, a non-blocking rotating JSONL writer capped at 5 * 1024 * 1024
-  bytes per file and 5 retained files, and a FIFO writer queue capped at
-  1,000 items. Queue overflow drops the oldest item and increments
-  `telemetryDroppedCount`. Console pagination is a later consumer; no
-  external telemetry stack is introduced.
-- **Persisted field boundary.** JSONL contains only
-  `time,module,event,status,duration_ms?,error_code?,session_id?,scene_id?,reason?,source?`.
-  Unknown fields are stripped before serialization; raw errors and arbitrary
-  extra values are rejected or omitted. Transcripts, audio, prompts/private
-  context/memory values, images/frames, embeddings, keys, Realtime secrets,
-  and other user content never enter telemetry.
-- **Failure visibility.** Queue, scheduler, writer, and rotation failures
-  remain visible through bounded RAM metadata and counters. Internal
-  drop/degraded records use a direct non-recursive RAM path and are never
-  enqueued indefinitely. Writer or rotation failure cannot block wake, Voice,
-  Avatar, scenes, config, credentials, or lifecycle.
-- **Source and wake boundary.** Runtime, simulator, and contract_test sources
-  remain distinct. Wake metadata uses the configurable keyword,
-  configured_threshold, boost, and num_trailing_blanks representation; it
-  never records per-event confidence and does not implement wake detection.
-- **Task 5 boundary.** Task 5 remains next and sequential. It may consume the
-  telemetry sink for metadata-only SQLite health events, but Task 4 telemetry
-  remains RAM/JSONL and is not stored in SQLite.
-- **Environment and platform risk.** The local `.env` boundary remains
-  metadata-only: presence was recorded, content/value was not accessed or
-  validated, and long-lived credentials remain Main plus safeStorage. The
-  existing unrelated Node DEP0190 warning remains; Windows development does
-  not field-verify macOS Keychain/TCC/signing/entitlements. The untracked
-  `scripts/install-node-lts.ps1` remains untouched.
+## Wake and scenes
 
-## 2026-08-18 — Task 2 integration and Task 3 preparation
+- One hashed sherpa package binds phrase/platform/version/tuning/corpus. Custom phrases use its token encoding, not training; no engine fallback. Changed wake packages take effect at next app start.
+- Chinese KWS uses model-owned tokens, ppinyin, 16 kHz / featureDim 80 and reset after detection. Package/corpus tuning, not invented event confidence, governs acceptance; revalidate final Mac hardware.
+- Customizable wake baseline: `魔鏡阿魔鏡`. Sleep is Active-only directed intent, never a wake keyword. Preserve the current avatar's exact farewell and finish playback before Realtime close, mic release and Dormant. Quoted/negated/hypothetical/incidental mentions do not sleep.
+- Scene spells require normalized exact full-transcript match once per turn. Approved typed presets alone control hardware. Public scene/trigger/action IDs are not guest IDs. Draft tests never silently publish or activate another avatar.
 
-- **Task 2 completion.** The Main-owned lifecycle state machine is completed,
-  reviewed, and locally integrated at
-  `a7d74b14771de4f527762c30171ad2e68fc3d985`; the merged-tree evidence is 31
-  focused lifecycle tests, 5 files / 51 tests, and clean
-  `npm run typecheck:node`. The old `phase0-lifecycle` branch was deleted.
-- **Current application route.** `phase0-config` is the current local branch;
-  Task 3 (ConfigService + credentials) is next and is prepared but not
-  started. Tasks 3–5 remain sequential. Phase 0 remains in progress and
-  Phase 1 remains blocked.
-- **Integration metadata.** The verified GitHub origin is
-  `https://github.com/Novalien0424/magic-mirror`; `main` is pushed/tracking
-  `origin/main` at the integrated Task 2 commit. `phase0-config` has not been
-  claimed as pushed.
-- **Development prerequisite.** Node `v24.19.0` satisfies the required
-  `>=22.22.2` or `>=24.15.0` range for `write-file-atomic@8` and Task 3. The
-  untracked `scripts/install-node-lts.ps1` remains untouched.
-- **Task 3 scope.** The implementation plan is limited to new
-  `src/main/config-service.ts`, `src/main/credential-store.ts`,
-  `resources/config/default.json`,
-  `tests/unit/config-service.test.ts`, and
-  `tests/unit/credential-store.test.ts`. Existing shared types, Main wiring,
-  bridge/preloads/renderers, package files, and all other paths remain
-  read-only.
-- **Config boundary.** ConfigService receives its config directory and
-  versioned default path from its caller, validates the existing shared
-  `MirrorConfig` core, seeds first boot, persists Draft/Active/Previous with
-  atomic writes and compensating restoration, and degrades malformed scene or
-  spell items to disabled/empty surfaces with reasoned metadata. It does not
-  own Task 7 model-role resolution or session/job snapshots.
-- **Credential boundary.** CredentialStore is Main-only, receives its
-  credential path, Electron 43 `safeStorage` adapter, file operations, and
-  metadata sink from its caller, writes only an encrypted blob outside config
-  and backups, supports set/get/clear and safeStorage re-encryption, and
-  never uses keytar. Task 8 owns `app.ready` and renderer IPC wiring; Phase 1
-  owns short-lived credential exchange.
-- **Metadata boundary.** Task 3 defines an injected
-  `Omit<MirrorEvent, 'time'>` sink with fixed config/credential event names,
-  statuses, error codes, and reason grammar. Events contain only slot,
-  operation, count, field-path, revision, and cause metadata; no config values,
-  secrets, transcripts, audio, private context, images, embeddings, or
-  prompts are emitted.
-- **Execution boundary.** The plan routes TDD through a test-only
-  implementer, dedicated RED tester, the same logical implementer for
-  production/resource files, focused GREEN and node-typecheck tester, root
-  review, full-suite/build tester, and root commit. No worker stages, commits,
-  pushes, or merges; no demo is claimed by this preparation record.
-- **Credential provisioning setup (metadata only).** The user reports that the
-  local OpenAI credential is provisioned through `.env`. Supplied metadata
-  records `.env` exists: true, `.gitignore` line 9 rule `.env` ignores it,
-  tracked by Git: false (untracked), content/value accessed: false, and
-  validity checked: false. Current branch remains `phase0-config` and the
-  origin remains
-  `https://github.com/Novalien0424/magic-mirror`. `.env` is provisioning input
-  only and must never be committed, pushed, or treated as runtime
-  renderer-visible storage; Main/`safeStorage` and short-lived renderer
-  credentials remain authoritative.
-- **Phase 2 wake phrase requirement.** The wake phrase is customizable and
-  must never be hard-coded: the editable phrase/config/raw keyword source must
-  generate the detector keyword artifact, with version/metadata and safe
-  fallback visible. This requirement is accepted without starting its
-  implementation. Application order and status are unchanged.
+## Cubism, previews and asset ownership
 
-## 2026-08-17 — Phase 0 Task 1 integration and Task 2 dispatch preparation
+- Official vendored Framework/Core, WebGL2 and closest 9:16 display; actual output RMS/envelope drives lip sync. MotionSync is separate scope, not a retroactive Phase 3 gate.
+- **2026-09-08:** dedicated Cubism library/test page. A rig is reusable art, not a public profile or guest. Managed imports validate and rediscover; rejection is visible. Appearance assignment is an explicit draft edit.
+- Selection/load owns a silent local preview, without publication, Mirror switch, mic or provider call. Expose all motion groups/indices, expressions and actual MOC IDs/bounds/defaults/readback; lifecycle uses index zero. Writable parameters need not have artwork; Speaking clips do not replace audio mouth input.
+- Reset stops actions and restores defaults. Replacement/unload/page leave release timed work and overrides. Preview overrides follow automatic effects; preserve actual bounds/defaults without range-step quantization.
+- **2026-09-09:** Console motion previews loop natively without repeated fade-in; expressions retain SDK indefinite pose hold. Active highlight persists until reset/replacement. This is `preview: true` only; normal Mirror playback stays one-shot.
+- **2026-09-08 framing:** preserve initial model canvas-height fit and explicit Layout. Draw/resize compose fresh projection/MVP without model-matrix mutation. PPU/horizontal padding must not shrink art. Console/Mirror share renderer, 9:16 viewport, aspect and DPR. No per-ID multiplier, dynamic alpha-fit or CSS zoom workaround. Artistic extreme-pose crop calibration is separate.
+- **2026-09-09 labels:** operator name/version lives in managed `avatar-label.json`; no filename/UUID guesses. Unknown stays unknown; invalid labels fail visibly without hiding valid rigs. Sidecars may travel with future exports. [Label contract](docs/testing/avatar-library-labels-2026-09-09.md).
+- **2026-09-09 Raven master:** `resources/avatar/Raven/v10/` separates runtime from editable CMO/PSD. Preserve masters; new authoring gets a new version. Managed userData copies stay distinct; no direct edits or automatic publication/synchronization. Build remains Ren-only. Runtime/checksum inventory is Git-eligible with byte-preserving `-text`; large editable/QA files remain ignored and need separate backup. [Storage policy](resources/avatar/Raven/README.md).
 
-- **Local integration.** `main` was fast-forwarded locally from `7c07244` to
-  `426728f012556b4095eb8b25d94aa7476617f103`; no remote/upstream exists.
-  `phase0-foundation` was deleted after green verification, and
-  `phase0-lifecycle` is the current Task 2 branch from that exact HEAD.
-- **Post-merge check.** A fresh `nova-auto` `gpt-5.6-luna` max tester verified
-  merged `main` at that HEAD: Node `v22.21.0`, `npm run typecheck` exit `0`,
-  `npm test` exit `0`, 4 files / 20 tests, Vitest `34.96s`, clean.
-- **Authoritative Task 2 shape.** The accepted plan
-  (`docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`) and ignored
-  brief (`.superpowers/sdd/2026-08-16-phase0-foundation/task-2-dispatch-brief.md`)
-  replace the stale SDD idle/listening/processing/speaking and
-  `src/main/console.ts` suggestions with the exact seven-state lifecycle and
-  injected metadata-only telemetry boundary. Detailed `LOCAL_CORE_FAILED
-  anywhere` supplements the Tech Spec primary-edge diagram and routes to
-  `maintenance`.
-- **Process state.** Task 2 is prepared but not started; Tasks 2–5 remain
-  sequential; Phase 0 remains in progress and Phase 1 remains blocked and
-  must not advance. The Node
-  prerequisite upgrade to `>=22.22.2` or `>=24.15.0` applies before Task
-  3, not Task 2.
+## Evidence
 
-## 2026-08-17 — Codex harness migration routing
+Mocks, unavailable cases and real results stay distinct. Required unavailable evidence is pending, never passed. Automation does not prove physical sound/effects, operator acceptance or Mac readiness. Cubism QA must explicitly identify external rigs; built-in success cannot stand in for Raven, and hidden-Mirror Console coverage cannot establish portrait/speech acceptance.
 
-- **Root ownership.** The root Codex thread is the sole orchestrator and
-  reviewer. Root does not implement changes, perform survey/research, or run
-  tests/validation.
-- **Worker route.** Every worker explicitly launches fresh through profile
-  `nova-auto` with model `gpt-5.6-luna`, `reasoning_effort: "max"`, exactly one
-  bounded role, and `fresh_worker: true`.
-- **Review boundary.** No separate review role exists. Root review is external
-  to worker self-review, and all current and future plans and workers allow at
-  most three self-review passes.
-- **Supersession.** The user's current Codex policy supersedes SDD ledger
-  R3/R4; R1 is completed historical in-place integration, while R2/R5 remain
-  active.
-
-## 2026-08-16 — Task 1 (Phase 0 scaffold)
-
-- **TypeScript 5.9, not 7.0.** xstate 5 and the vite/electron-vite toolchain
-  are only verified against 5.x today. Revisit when Phase 0 closes.
-- **vite 7 + @vitejs/plugin-react 5, not vite 8.** electron-vite 5 peers
-  `vite ^5||^6||^7`; vite 8 would force plugin-react 6 and break electron-vite.
-- **CommonJS output** (no `"type": "module"`): sandboxed preloads cannot be
-  ES modules.
-- **Preloads bundle self-contained.** A sandboxed preload cannot `require` a
-  relative rollup chunk, so `src/preload/*.ts` takes only type-only imports
-  from `src/shared/`; the IPC channel literal is pinned by the `BootChannel`
-  type so a rename breaks typecheck.
-- **One restart owner.** In-app recovery recreates a crashed renderer once;
-  when the budget is spent the app exits 1 and the macOS LaunchAgent
-  (`KeepAlive={SuccessfulExit=false}`) restarts it. `app.relaunch()` is never
-  called.
-- **Smoke mode keeps windows hidden** so automated boot loops (Task 10) don't
-  hijack the desktop; the visible path is exercised by plain `npm run dev`.
-- **Env-gated test hooks** (`MIRROR_FORCE_RENDERER_FAIL`,
-  `MIRROR_FORCE_RENDERER_CRASH`) ship in production code paths as the only
-  way to E2E-test the failure branches; Phase 7 gates them behind a build
-  flag before field deployment.
-
-## 2026-08-16 — Session/process decisions (orchestrator)
-
-- Docs are authoritative at v0.3.1 (in-place amendment, filenames keep v0.3);
-  `docs/Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md` records why.
-- Implementation Plan owns phase exit criteria; Tech Spec §16 is a summary
-  that defers to it on any mismatch.
-- Extractor Draft baseline is `gpt-5.6-luna` (config data, not code);
-  `gpt-5.6-terra` is the A/B candidate.
-- SDD process rulings (review seat, sequential tasks, worktree choice) live
-  in the SDD ledger: `.superpowers/sdd/2026-08-16-phase0-foundation/progress.md`.
+Protected product/review documents, historical `.claude/skills` inputs and installer remain under AGENTS boundaries. [Archived ledger](docs/archive/decisions-before-harness-2026-09-13.md) retains complete rulings and links to older archives; read it only for details/history absent here.

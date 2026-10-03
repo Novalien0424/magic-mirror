@@ -1,0 +1,62 @@
+[
+  {
+    "file": "bgm-mystery-selpan-45s.wav",
+    "title": "Selpan",
+    "author": "Eugenio Mininni",
+    "description": "詭異、偵查；Drone、電吉他、音效",
+    "download": "https://assets.mixkit.co/music/612/612.mp3",
+    "metadata": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "45.000000"
+      }
+    }
+  },
+  {
+    "file": "bgm-mystery-delirium-45s.wav",
+    "title": "Delirium",
+    "author": "Eugenio Mininni",
+    "description": "低沉、不安；Drone、貝斯、犯罪調查",
+    "download": "https://assets.mixkit.co/music/605/605.mp3",
+    "metadata": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "45.000000"
+      }
+    }
+  },
+  {
+    "file": "bgm-mystery-fright-night-45s.wav",
+    "title": "Fright Night",
+    "author": "Michael Ramir C.",
+    "description": "戲劇、驚悚；鋼琴、打擊樂",
+    "download": "https://assets.mixkit.co/music/871/871.mp3",
+    "metadata": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "sample_rate": "48000",
+          "channels": 2
+        }
+      ],
+      "format": {
+        "duration": "45.000000"
+      }
+    }
+  }
+]

@@ -1,0 +1,5 @@
+# Optional user-level profile example.
+# Save as: $CODEX_HOME/nova-auto.config.toml (normally ~/.codex/nova-auto.config.toml)
+# Command-line -m / -c overrides still take precedence.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"

@@ -1,0 +1,31 @@
+appId: com.magicmirror.app
+productName: Magic Mirror
+files:
+  - out/**/*
+  - package.json
+  - src/main/wake/lexicon/*-LICENSE.txt
+  - src/main/wake/lexicon/provenance.json
+  - src/main/wake/lexicon/README.md
+asar: true
+asarUnpack:
+  - out/native/*
+  - out/renderer/mock/*.mp4
+  - out/renderer/avatar/**/*
+  - out/renderer/audio/**/*
+extraResources:
+  - from: resources/wake-native/win32-x64
+    to: wake-score-native
+  - from: resources/config/default.json
+    to: config/default.json
+  - from: resources/wake-models
+    to: wake-models
+mac:
+  hardenedRuntime: true
+  entitlements: resources/macos/entitlements.plist
+  entitlementsInherit: resources/macos/entitlements.plist
+  extendInfo: resources/macos/Info.plist.additions.xml
+win:
+  target:
+    - target: dir
+      arch:
+        - x64

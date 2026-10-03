@@ -1,0 +1,257 @@
+# Magic Mirror — Current handoff
+
+## QA artifact ownership — 2026-09-10
+
+New Phase 4 runs receive exclusive ownership markers, completion status and
+an explicit review record before scoped deletion. Cleanup defaults to dry run;
+unfinished/unmarked runs, changed evidence and filesystem links are rejected.
+Harness, CLI, tests and QA skill updated under explicit user authority.
+[Workflow and proof](../../docs/testing/qa-artifact-cleanup.md): **21 tests / 2 files,
+exit 0**, both script syntax checks and whitespace check passed. No Electron
+restart or product change. Existing unmarked profile QA artifacts remain
+retained; this workflow does not bypass their earlier tool-policy rejection.
+
+## Profile Console Windows delivery — 2026-09-09 23:36 Asia/Taipei
+
+Console now uses Mirror / Avatars / System. Avatar profiles own Persona,
+Appearance, Voice and Spells & scenes; shared rigs/media/actions remain clearly
+scoped. Unsaved drafts survive navigation, publication names all affected
+profiles/shared resources, and activation stays separate. No operator draft
+publication. Current design, journey, failure ledger and validation:
+[delivery report](../../docs/testing/profile-console-2026-09-09.md).
+
+Two Fable planning reviews and two actual-image visual reviews completed;
+Codex inspected and corrected the final captures. Findings and model-reporting
+caveat: [review record](../../docs/testing/profile-console-reviews-2026-09-09.md).
+Full tests: 942 / 103 files, exit 0; additional focused render/state checks:
+11 / 2 files, exit 0. Node/web typechecks, build and fingerprint check exit 0.
+Windows editor QA 26 checks, profile journey 16 checks and 21 captures,
+Cubism including Raven 224 checks: all exit 0. No Mac/physical sound/hardware
+acceptance or phase promotion is claimed.
+
+Normal canonical Main **46096**, started **23:35:48**, is running the verified
+23:27 build. Mirror/Console loaded and ready, Mirror shown, smoke off; stderr
+empty. Runtime metadata: `.artifacts/profile-console-deployment-20260909`.
+Prior operator edits were saved (92 draft changes) before stopping old Main;
+active configuration was never published for testing.
+
+Delivery target is origin/main; verify HEAD against the remote tip after push.
+**Outstanding:** user-requested cleanup of this task's 12 isolated QA runs and
+temporary review directory was rejected by automatic approval review, including
+the literal-path retry, with only "blocked by policy". They remain local and
+ignored; exact run IDs are in the delivery report. Next action: remove those
+exact directories when policy permits. Earlier sections below are historical;
+existing human acoustic/performance gates remain open.
+
+Cleanup retry, 2026-09-10: user explicitly reauthorized deletion. All 13 exact
+paths were rechecked; the tool again rejected deletion before execution with
+"blocked by policy". Nothing deleted; normal Main 46096 left running. No further
+user permission is needed; tool policy must permit the operation.
+
+## Committed Windows deployment — 2026-09-09 16:39 Asia/Taipei
+
+Product commit **bbd0256** contains Voice Studio, shared processed Realtime
+output, Cubism preview loops, retained operator instructions/config and research,
+and sample provenance. Delivery target: **origin/main**; the accompanying
+delivery record is committed with it. Verify remote tip against HEAD.
+
+Fresh `npm test`: **938 tests / 102 files, exit 0** (including Electron smoke).
+Node/web typechecks, build and build/source fingerprint check: **exit 0**.
+Normal canonical Windows Electron Main **38996**, started **16:36:44**, runs
+that build; Mirror/Console loaded and ready, Mirror shown, smoke off. Runtime
+is left running. [Delivery evidence](../../docs/testing/voice-studio-delivery-2026-09-09.md).
+
+All Git-eligible changes are included. Downloaded Mixkit WAV/WebM fixtures stay
+local under explicit Git ignores because this repository is public; their
+source/processing notes and the project-owned crop image are committed.
+Existing ignored secrets, generated output and large editable assets remain
+local. No operator draft publication, installer/Mac deployment or phase promotion.
+Next: human default/Raven sound tuning and the remaining acoustic/performance
+checks in the implementation report. Earlier runtime/commit states below are historical.
+
+## Voice Studio delivery — 2026-09-09 15:49 Asia/Taipei
+
+Implemented the operator-authorized single-library voice plan locally:
+Voice Studio, per-avatar voice/speed/style and DSP controls, Ethereal/Dark oracle
+presets, local A/B/loop and isolated provider audition, frozen session settings,
+and one processed Realtime audio output. Exact Signalsmith Stretch 1.3.2; local
+WASM/worklet asset and MIT notice. Active operator configuration not published.
+
+User requested relaxing the delay standard: p95 target **<=180 ms**. Actual
+20-pulse loopback-WebRTC p95 **149.333 ms**, engine estimate 146 ms. Strengthened
+immediate reset initially exposed native-node stale audio; native+WASM reset
+fixed it, identical proof now **exit 0**, stale/muted RMS **0**. Failed evidence
+retained. [Implementation, proof, UI evidence and remaining gates](../../docs/testing/voice-studio-implementation-2026-09-09.md).
+
+Checks: **779 tests / 79 files**, Node/web typechecks, build and local Console QA
+all **exit 0**. Actual provider auditions at **0.75/1/1.25** completed, exit 0.
+Final preview cleanup/Console-audio restoration check: six tests, exit 0.
+Default/Raven screenshots inspected. Human bilingual sound tuning, physical
+speaker/echo and interruption checks, long-run performance and Mac evidence
+remain open; no phase acceptance/promotion.
+
+Claude-in-Codex actual user-level launcher is corrected. Fresh MCP from actual
+TOML passes ready/status/result/terminal cancel, exit 0; one Fable/high review
+recovered (concerns, USD 0.757796). Existing attached connection requires a
+Codex restart to adopt that launcher. [Repair](../../docs/testing/claude-in-codex-windows-repair-2026-09-09.md),
+[review](../../docs/testing/avatar-voice-effects-design-review-2026-09-09.md).
+No new review is needed merely to repeat those findings.
+
+Runtime: isolated QA exited; latest process check found **no Electron**. No
+normal app was running at voice clock-in. Changes remain local/uncommitted;
+prior operator/config/motion-loop edits preserved. No push or config publication.
+Next: listen and tune default/Raven in Voice Studio with intended speakerphone,
+then capture the outstanding acoustic/performance evidence before acceptance.
+[Superseded voice/repair handoffs](../../docs/archive/voice-handoffs-through-2026-09-09-clockin.md).
+
+## Console preview loops — 2026-09-09
+
+Preview motions now repeat; expressions retain their SDK pose hold. Active
+buttons and status explain each mode. Normal Mirror one-shot playback remains
+unchanged. Focused 17 tests / 3 files, typechecks and build exit 0. Initial
+Console QA caught SDK V2 loop-boundary completion; callback guard corrected,
+rerun **224 checks**, exit 0. Updated normal Main **47112** running; native
+Raven v10 Waking remained active after 18 seconds and expression replacement
+worked. Saved Draft 64 / Active v12 hashes unchanged. No publication or rig
+edits. Changes for this follow-up are local/uncommitted; prior delivery below
+does not include preview looping.
+[Implementation and QA handoff](../../docs/testing/cubism-loop-preview-2026-09-09.md).
+
+## Committed Windows delivery — 2026-09-09
+
+Product commit **979a0ca** contains the versioned Cubism Console, framing fix,
+Raven v10 runtime/master inventory and QA handoffs. Delivery target is
+`origin/main`; verify the remote tip against local HEAD for synchronization.
+Fresh pre-push focused verification: **82 tests / 9 files**, exit 0. Build
+fingerprint verification exit 0; normal Windows Main **61564** is running the
+matching built source/output from canonical checkout. This is local development
+deployment, not an installer/Mac release or phase promotion. No Appearance
+publication. [Delivery verification](../../docs/testing/avatar-delivery-2026-09-09.md).
+
+Raven export bytes are protected from Git newline conversion by `.gitattributes`;
+all 19 tracked master files match original bytes in the Git index. Large ignored
+editable/QA assets remain local, not in Git. Unrelated `.codex/config.toml`,
+concurrent `CLAUDE.md`, survey and `sample/` changes are deliberately excluded.
+
+## Versioned Console library — 2026-09-09
+
+Live2D Cubism now edits/saves persistent Name + Version labels, with explicit
+Selected versus Loaded identity. Existing Raven v7/v8/v10 were verified against
+all 17 referenced source files each and labeled through native Console UI.
+Generic sidecars survive rediscovery/reimport; no hard-coded IDs or version
+guesses. [Contract, checks and native handoff](../../docs/testing/avatar-library-labels-2026-09-09.md).
+54 focused tests, final Node/web typechecks and build exit 0. Isolated Console
+QA: 221 checks exit 0; this predates only the final reserved-filename guard,
+covered by a new regression and the final build. Full normal-app restart
+confirmed all three labels persist; v8 and v10 each loaded successfully through
+native controls. Main **61564** remains running, Console at the selector with
+v10 loaded neutral, Mirror Dormant/v12. Older PIDs below are historical.
+Active/draft hashes unchanged; no draft save/publication or rig-byte changes.
+
+## Project-owned Raven master — 2026-09-09
+
+Current retained Raven is v10. Complete delivery now resides in
+`resources/avatar/Raven/v10/`: 251 files verified byte-for-byte, including
+17 runtime files and editable CMO/PSD sources. [Storage policy and import entry](../../resources/avatar/Raven/README.md),
+[copy evidence](../../docs/testing/avatar-storage-2026-09-09.md). Existing managed
+v10 `49076b95` and original delivery remain untouched. No config publication,
+restart, commit or push. Runtime/manifest are Git-eligible; large editable/QA
+archive is ignored and needs separate backup.
+
+The Sept 8 framing/runtime observations below are historical, not current v10
+acceptance. The [v10 handoff](../../RAVEN-V10-EXPRESSION-FIX-HANDOFF.md) supersedes the
+v08 beak-crop finding for current assets and records remaining state-expression
+integration/visual limits. This storage task did not implement that renderer
+work or recheck the running UI. For v10 QA use the project-owned manifest above.
+
+## Framing validation resumed — 2026-09-08, Windows
+
+Height/Layout framing fix restores Raven v08 to v07 body scale without asset
+edits or per-frame matrix mutation. Fresh build/typechecks exit 0; 32 focused
+tests and 219 production Console QA checks pass. Native computer use confirmed
+Ren/v08 loading, scale, resize, motion completion and neutral reset. Temporary
+capture code removed before final build. [Framing report](../../docs/testing/avatar-framing-2026-09-08.md)
+preserves before/after, interrupted 22:03 evidence and fresh resumed results.
+Extreme +30 side-turn still clips Raven's beak; fixed per-model Layout/artistic
+calibration and full visual acceptance remain open. External avatar-studio
+harness owner still needs to synchronize; local guidance/DECISIONS updated.
+
+Updated **2026-09-08, Asia/Taipei** for independent Cubism QA. This file owns
+current status; [AGENTS.md](../../AGENTS.md) owns execution policy and
+[DECISIONS.md](../../DECISIONS.md) owns durable rulings.
+
+## Current delivery and runtime
+
+- Canonical checkout `C:\Project\magic-mirror`, branch `main`; product delivery
+  commit **979a0ca**, followed by delivery/byte-preservation documentation.
+  Another Codex can use the committed product source, but local-only rig sources,
+  QA captures and operator data require the existing machine or separate backup.
+- Separate **Live2D Cubism** Console page selects built-in Ren or managed Raven,
+  browses/imports bundles, explicitly loads a local preview, and tests all
+  exported motion indices, expressions and actual MOC parameters. Stop/reset,
+  unload and page-leave cleanup are implemented. Preview does not publish or
+  change the Mirror's loaded public character.
+- Normal built Electron (`electron .`, **not dev**) remains running; Main PID
+  `56424` rechecked during this handoff. Console shortcut `Ctrl+Shift+D`.
+  Last native observation: Cubism page, Raven v08 `c4d3cf1b` selected/loaded,
+  neutral; Mirror Dormant. UI state is point-in-time, not a watchdog.
+- Operator's previously unsaved Raven Appearance changes were saved as a draft
+  before restart, **not validated/published**. Active v12 remained unchanged.
+  Before/after native-QA config hashes are in the report below. Resolve any new
+  unsaved edits before stopping/reloading; do not publish the draft for QA.
+- Existing `.codex/config.toml` edits, Raven handoff/survey and `sample/` remain
+  user-owned. `CLAUDE.md` had concurrent edits; this turn only adds targeted
+  Cubism/handoff corrections. Do not stage the entire dirty tree blindly.
+- Canonical Private TCP/UDP firewall rules matched the Electron path during
+  this delivery; path unchanged. Recheck only under AGENTS conditions.
+
+## Next Codex: independent QA
+
+Read [current framing report and v08 fixture](../../docs/testing/avatar-framing-2026-09-08.md),
+then [Cubism report and rerun instructions](../../docs/testing/cubism-console-2026-09-08.md#independent-qa-handoff),
+then the matching [UI QA skill](../../.agents/skills/mm-ui-qa/SKILL.md).
+The report contains the exact Raven v07 path, source map, focused commands,
+expected cases, native computer-use checklist and retained failures.
+
+Stop the normal app only after preserving current operator edits. Never overlap
+normal Electron, isolated Electron QA, or full `npm test` (includes smoke).
+Build before QA, set `MIRROR_CUBISM_QA_MODEL` to Raven's manifest, and run
+`npm run test:phase4:qa:cubism`. Without that variable Raven is **not tested**.
+Record a fresh independent result; do not relabel prior evidence as a new pass.
+Restore one normal instance after QA if stopped, without publishing config.
+
+Latest framing evidence: 32 focused tests / 6 files, Node+web typecheck and
+stamped build exit 0. Isolated Cubism QA with v08 exit 0: **219 checks, 22 motion starts,
+15 expressions, 73+73+27 parameter min/max/default checks, 6 captures**.
+Artifact: `.artifacts/phase4-qa/2026-09-08T14-06-20-531Z/`.
+Native computer use confirmed Ren/v08 selection, rendering, head extremes,
+resize, Waking completion and reset. Earlier Cubism report retains 69 tests,
+v07 QA, actual picker cancellation and preceding failures. No new full-suite,
+physical speech or Mac claim.
+
+## Phase status and unresolved work
+
+- Phases 0–3 accepted/tagged Windows checkpoints; Phase 4 active, unaccepted,
+  untagged. Pulled-forward multi-avatar/Cubism tooling does not start identity,
+  memory or complete Phase 8. Remaining custom-rig calibration/artistic and
+  character/voice quality need operator judgment; writable IDs need not have
+  visible rigged art. Raven Speaking does not itself drive the beak.
+- First-boot wake remains **unresolved**: user reports first wake fails until
+  Start Conversation. Continue with actual speech on a failing boot and the
+  RAM-only wake meter; synthetic probes did not reproduce the difference.
+  [Wake evidence](../../docs/testing/wake-first-boot-2026-09-06.md).
+- Operator scenes/media quality and physical-adapter evidence remain before
+  Phase 4 acceptance. [Scene/editor evidence](../../docs/testing/scene-editor-usability-2026-09-06.md),
+  [operator checklist](../../docs/testing/phase4-scene-media-windows-checklist.md),
+  [media RCA](../../docs/testing/avatar-media-rca-2026-09-05.md),
+  [earlier multi-avatar evidence](../../docs/testing/multi-avatar-qa-2026-09-06.md).
+- Phases 5 Identity, 6 Memory then 7 Field Hardening remain sequential. Phase 7
+  retains P2-D2 offline wake, multi-speaker corpus, 19/20 live-wake sample and
+  30-minute ambient/TV negatives. Mac mini port/evidence follow PC development.
+
+## History
+
+[Superseded handoff](../../docs/archive/progress-before-cubism-2026-09-08.md) preserves
+prior delivery/evidence and unresolved findings; [older archive](../../docs/archive/progress-through-2026-09-06.md)
+retains accepted-unit identifiers and earlier failures. [Prior harness audit](../../docs/testing/harness-audit-2026-09-06.md)
+is historical. Compaction does not change phase acceptance or delete evidence.

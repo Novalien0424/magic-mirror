@@ -1,0 +1,131 @@
+{
+  "checkedAt": "2026-09-08T16:09:38.723651+00:00",
+  "platform": "Windows",
+  "managedId": "model-d5fef684-d4c0-4140-afdf-72f149076b95",
+  "managedPath": "C:\\Users\\b8901\\AppData\\Roaming\\magic-mirror\\assets\\avatars\\model-d5fef684-d4c0-4140-afdf-72f149076b95",
+  "fileCount": 17,
+  "files": [
+    {
+      "file": "motions/exp_01.exp3.json",
+      "sha256": "d79b746351f56b5384ba423f908354b6e1ce78c02f21aa7d7b09557620099bb1",
+      "bytes": 936,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/exp_02.exp3.json",
+      "sha256": "c6c3af449cf0d9c82ebf9435c6396e1d270bbfaa0e1b03dee1e71ad997440826",
+      "bytes": 1029,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/exp_03.exp3.json",
+      "sha256": "2ec90465655ebc3641d4c6327c3a0e38d5cb08cff3d2dbc1daec91787398d8d8",
+      "bytes": 1024,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/exp_04.exp3.json",
+      "sha256": "67c24b34cab64b08c96c5ce1714f7e3e666a7ac2cfc89f3259c3d0bdb4e4772d",
+      "bytes": 843,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/exp_05.exp3.json",
+      "sha256": "09936b00885df0d7842613f231f6f3dea8208c6d5a564b8518f3af92a1f0c13c",
+      "bytes": 1030,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_dormant.motion3.json",
+      "sha256": "e9fedf6d74ebea5fd03de279a3d1e042da24ff93761ad451523df0535251f97c",
+      "bytes": 2228,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_listening.motion3.json",
+      "sha256": "67c398adb38f5b21ed78f8af3f86388e231e9c58a5b490e0ead3a4b0a88157c1",
+      "bytes": 2232,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_scene.motion3.json",
+      "sha256": "efc9d329ea2a7f628fe176422a73f07d7313d921d8789b651bb2d8f0317328d8",
+      "bytes": 2492,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_speaking.motion3.json",
+      "sha256": "7d28a33a387159d8ca44538627bb31c6f8dc991e2b3a7c5bb1ad937fbabe9e7b",
+      "bytes": 2588,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_suspending.motion3.json",
+      "sha256": "20d6ba2753cd817f43636aa19e3b90096039f8552d95cf2debc60ec8cb11ae60",
+      "bytes": 2231,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_thinking.motion3.json",
+      "sha256": "e852e284026fc363f1167faedd67e9448b8e3895942ab138a339f7a7b0fa2251",
+      "bytes": 2268,
+      "managedMatch": true
+    },
+    {
+      "file": "motions/raven_waking.motion3.json",
+      "sha256": "97fd182c375d15ebab5b231aeeeed0b1681061386dc4845434819b88a0b3066e",
+      "bytes": 2133,
+      "managedMatch": true
+    },
+    {
+      "file": "raven-lord.2048/texture_00.png",
+      "sha256": "0775a752b3d6b1697d011c1d0f9b39d1841b941f7785a8e3965caa38c4ea29cb",
+      "bytes": 3549928,
+      "managedMatch": true
+    },
+    {
+      "file": "raven-lord.cdi3.json",
+      "sha256": "c6b20e9fa961438cd86685d432268750c58d1f7cc529ef893ebb8613b03930b1",
+      "bytes": 2396,
+      "managedMatch": true
+    },
+    {
+      "file": "raven-lord.moc3",
+      "sha256": "3065d7339eb57762e282016eb81a1f1894c05f224d1180cc47ee86f71b060de0",
+      "bytes": 89216,
+      "managedMatch": true
+    },
+    {
+      "file": "raven-lord.model3.json",
+      "sha256": "c25929fa83a1a0a8b6221bf4d526c9ed51ce3997dfccf5d811d549c74fa2e91a",
+      "bytes": 2295,
+      "managedMatch": true
+    },
+    {
+      "file": "raven-lord.physics3.json",
+      "sha256": "2c7ce1f03c20db561d51af267edf3e4971a95297cbe9e527c579f42d5b811a55",
+      "bytes": 1490,
+      "managedMatch": true
+    }
+  ],
+  "nativeUi": {
+    "loaded": true,
+    "motions": 7,
+    "expressions": 5,
+    "parameters": 27,
+    "expressionPreviews": [
+      "exp_01",
+      "exp_05"
+    ],
+    "resetBetweenPreviews": true,
+    "finalState": "Stopped / neutral pose",
+    "publishedAppearance": false
+  },
+  "evidence": [
+    "console-v10-loaded.jpg",
+    "console-v10-neutral.jpg",
+    "console-v10-exp01.jpg",
+    "console-v10-exp05.jpg",
+    "console-v10-reset.jpg"
+  ]
+}

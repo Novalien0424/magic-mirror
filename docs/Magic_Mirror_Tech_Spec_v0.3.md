@@ -1,12 +1,14 @@
 # 魔鏡 AI Avatar：Technical Specification
 
-**版本：** 0.3.1  
-**日期：** 2026-08-16  
+**版本：** 0.3.2
+**日期：** 2026-08-28
 **狀態：** Human-readable build baseline  
 **產品範圍：** 單一私人招待所、單一 Mac mini、完整 Prototype  
-**對應文件：** `Magic_Mirror_PRD_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
+**對應文件：** `Magic_Mirror_PRD_v0.3.md`、`Magic_Mirror_Implementation_Plan_v0.3.md`、`Magic_Mirror_Phase4_UIUX_Design_v0.3.md`、`Magic_Mirror_Stack_Adversarial_Review_2026-08-16.md`
 
 > **v0.3.1（2026-08-16）修訂：** 依 stack adversarial review——sherpa-onnx pin ≥ 1.13.5（M4 靜默失效）；TCC 授權狀態進 Console 卡片；mic handoff 明確 `track.stop()`；playback completion 以 `output_audio_buffer.stopped` 為準；單一播放路徑實作註記；embedding 改 detector＋recognizer 成對版本；extractor baseline 改 `gpt-5.6-luna`；SQLite baseline 定為 `node:sqlite`；restart ownership 單一化；credential 改以 `safeStorage` 描述。
+
+> **v0.3.2（2026-08-28）修訂：** Phase 4 改為 Console 管理的 spell、可重用 typed action 與固定 Duration 的 ordered stages；加入 Realtime 逐字 dialogue、Cubism motion／expression、managed music upload、adapter feedback 能力及 mock-first hardware acceptance。
 ## 1. 這份文件要解決什麼
 
 這份規格說明魔鏡軟體要如何組成、各部分如何合作，以及每一階段要怎麼獨立證明可用。
@@ -195,7 +197,7 @@ time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, 
 - wake 偵測 metadata（keyword、設定 threshold／boost）、activation camera face count、candidate score。
 - Avatar FPS、audio underrun、插話停止延遲。
 - memory extraction success／skip／failure 數量。
-- scene、adapter 和 cue 執行結果。
+- scene、adapter 和 action 執行結果。
 - worker crash、restart 和本機 recovery。
 - Simulator 事件必須帶 `source=simulator`，不得與真實設備事件混在同一驗收結果。
 
@@ -215,7 +217,7 @@ Developer Console 可以在當次 session 暫時顯示 final transcript，供開
 | Avatar | motion、expression、FPS、audio analyser、music gain |
 | Identity | candidate、Profile、enrollment gallery、embedding version、rebuild |
 | Memory | recent／durable facts、extract result、Master edit、manual correction |
-| Scenes | spell test、timeline preview、adapter health、stop all |
+| Scenes | spell／action／stage／scene CRUD、validation、timeline preview、focused test、adapter health、Draft／Test／Publish、stop all |
 | Hardening | backup／restore、diagnostic export、soak summary |
 ## 7. OpenAI Realtime 對話
 ### 7.1 Phase 1 選擇
@@ -474,45 +476,57 @@ Extractor baseline使用支援Structured Outputs的 `gpt-5.6-luna`（低價層�
 
 不採用 substring、embedding similarity 或 LLM 自由判斷，所以「不要說某咒語」和相似日常句不會誤觸發。
 
-同一 transcript item只執行一次。這是一個簡單的 in-memory `processedTurnIds` set，不需要 distributed idempotency infrastructure。
+同一 transcript item只執行一次。Matcher 在 Mirror renderer 的 RAM 內工作，完整 transcript 不跨 IPC；命中後只把 `turnId`、`spellId` 與非內容 metadata 送往 Main。這是一個簡單的 in-memory `processedTurnIds` set，不需要 distributed idempotency infrastructure。
 ### 12.2 Scene 定義
 
-每個 Scene 包含：
-- scene ID、名稱、完整咒語。
-- cooldown。
-- 一組依時間排列的 cues。
-- 每個 cue 使用哪個 adapter、action 和 preset。
-- scene timeout。
-- 失敗時繼續其他 cues 或停止剩餘 cues。
+Phase 4 設定分為四個可由 Console 編輯並連結的 definition：
+
+- `Spell`：ID、顯示名稱、唯一的完整 phrase、enabled、scene reference 與 cooldown。
+- `SceneAction`：ID、名稱與 closed typed payload；可被不同 Stage 重用。
+- `SceneStage`：ID、名稱、必填 `durationMs`、排序位置與零到多個 action references。
+- `Scene`：ID、名稱、enabled 與 ordered stages。
+
+Stage 進入時同時 dispatch 該 Stage 的所有 actions；`durationMs` 到期後進入下一 Stage。到期不會自動反轉、停止或重設先前 action；若需要關燈、停煙、停止音樂或回復 expression，必須在後續 Stage 明確連結對應 action。等待只用 Stage Duration 表達，不另設 delay action。
+
+Phase 4 的 action kinds 是：
+
+- `avatar_dialogue`：保存 operator authored text，要求目前 Realtime model 逐字說出。
+- `avatar_motion`：連結已載入 model manifest 中的 Cubism Motion group。
+- `avatar_expression`：連結已載入的 Cubism Expression 名稱。
+- `lighting`／`fog`：只接受 adapter 宣告的 `on`、`off` 或 bounded `value` command 與具名 preset。
+- `music`：`play`、`stop` 或 bounded `fade`，`play` 連結 managed asset ID。
 
 LLM 看不到 DMX channel、煙霧秒數或任意檔案路徑。這些全部在核准 preset 中設定。
 ### 12.3 執行
 ```text
-Final transcript
-  → exact spell match
-  → once-per-turn / cooldown check
-  → local timeline
-  → Lighting / Fog / Music adapters
-  → result shown in Console
-  → Avatar receives a short scene-result context
+Completed transcript stays in renderer RAM
+  → normalized exact spell match
+  → Main once-per-turn / cooldown check
+  → enter Stage and dispatch all linked actions
+  → wait exactly Stage duration
+  → enter next Stage
+  → publish action feedback and scene result to Console
 ```
 
-若 Realtime 已開始對該咒語產生一般回覆，使用官方 SDK 支援的 interrupt 能力停止該回覆。場景完成後，只要求一次符合實際結果的角色回覆。精確 SDK 呼叫方式由 Voice contract test固定，不建立自製 ITEM ACK／response serialization protocol。
+`avatar_dialogue` 使用目前 active `RealtimeSession` 的 client message，明確要求只朗讀 operator text。Realtime `instructions` 是 guidance、不是可驗證的 deterministic transport；依產品決策信任模型遵循，不保存 audible transcript、不做內容比對或重試 loop。實際 audible output end 可回報 completion metadata。若沒有 active session，該 action visible-fail，但 timeline 與其他 actions 繼續。
+
+`avatar_motion` 呼叫 Cubism motion group 的 one-shot playback；motion start 與 finished callback 回報 started／completed，結束後回到當前 lifecycle motion。`avatar_expression` 是立即套用的 static expression，只有 dispatch／acknowledgement，不假裝有自然 completion。
 ### 12.4 Adapter
 ```ts
 interface SceneAdapter {
+  readonly capability: 'dispatch_only' | 'acknowledgement' | 'completion';
   health(): Promise<{ status: 'ready' | 'degraded' | 'failed'; message?: string }>;
-  execute(presetId: string, signal: AbortSignal): Promise<{
-    status: 'success' | 'failed' | 'timeout';
+  execute(command: TypedAdapterCommand, signal: AbortSignal): Promise<{
+    status: 'dispatched' | 'acknowledged' | 'completed' | 'failed' | 'timeout';
     errorCode?: string;
   }>;
   stopAll(): Promise<void>;
 }
 ```
 
-Phase 1 只有三個 adapter 類別：Lighting、Fog、Music。每類有 mock 和一個實體 implementation。
+Phase 4 只有 Lighting、Fog、Music 三個 adapter 類別。Lighting／Fog 先提供 deterministic mock success／failure／timeout；physical transport 未接上時 health 必須是 `degraded:not_connected`，不得假裝通過。Music 使用本機實際 audio graph，並以 `ended`／fade completion 回報；上傳時只接受 allowlist 格式、複製到 app managed storage，再以 asset ID 連結。
 
-某個 adapter 離線不阻止對話或其他 adapter工作。Scene result 和 Console 必須清楚顯示成功、部分失敗或 timeout，不可靜默略過。
+Feedback 只用於診斷和結果摘要，不控制 Stage advancement。某個 action 離線、失敗或 timeout 不阻止對話、Stage clock 或同 Stage／後續 Stage 的其他 actions。Scene result 和 Console 必須清楚顯示 completed、partial failure、failed 或 stopped，不可靜默略過。
 ## 13. SQLite、檔案與設定
 ### 13.1 概念資料表
 
@@ -553,8 +567,8 @@ Application Support/MagicMirror/
 - wake phrase和本機 model version。
 - active face model pair（detector＋recognizer）。
 - memory數量／context budget。
-- spells、scene cues和adapter presets。
-- Avatar、music、offline asset paths。
+- spells、typed scene actions、ordered duration stages、scenes 和 adapter presets。
+- Avatar、managed music asset IDs、offline asset paths。
 
 Config 編輯流程：draft → schema validation → 寫入暫存檔 → atomic replace。失敗顯示可理解的欄位錯誤並保留 `previous.json`，但不讓一個無關 scene 錯誤阻止 Anonymous Voice 功能啟動。
 ### 13.4 Credential
@@ -583,7 +597,7 @@ Backup 是單機資料可靠性功能，不是法規級資料清除系統。
 | Memory extractor fail | 對話正常，本回合可能不記得 | 顯示 failed count，可重測但不保存逐字稿 |
 | SQLite／config無法讀取 | 顯示Maintenance，不開Voice或假裝可保存資料 | 顯示integrity／schema／open error |
 | Live2D或OfflineLoop核心asset fail | 顯示內建Maintenance still／shader | Asset card指出缺少或decode error |
-| Lighting／Fog fail | 其他cue和對話繼續 | scene標示partial failure |
+| Lighting／Fog fail | 其他action、Stage clock和對話繼續 | scene標示partial failure |
 | Music fail | 不播放音樂，對話繼續 | Music adapter顯示error |
 | Renderer crash | Main 於 `render-process-gone` 重建 visitor window | 依health回Dormant、OfflineLoop或Maintenance |
 | Main crash | LaunchAgent重啟整個app | 未完成RAM記憶可遺失 |
@@ -630,7 +644,7 @@ Console只記原因和metadata，不因此保存私人內容。
 | 1 Realtime Voice | Console手動啟動官方`RealtimeSession`／WebRTC、built-in Voice、中文Persona、completed transcript、barge-in、cloud-loss與OpenAI contract test | 20回合中文／中英對話和10次插話；wake尚未實作也可demo；connect／active failure都進OfflineLoop |
 | 2 Wake Lifecycle | sherpa custom wake、mic handoff、五分鐘idle、口頭sleep、離線時仍可wake | 20次wake→talk→sleep；離線wake進OfflineLoop；Wake與Realtime不會同時持有mic |
 | 3 Avatar／Audio | 正式Live2D、remote audio嘴型、idle motion、expression transition、music graph／ducking | 10分鐘Voice＋Avatar＋music無雙重播放或underrun；插話停止嘴型（「5人中至少4人認為不突兀」改列 Phase 7 現場檢查） |
-| 4 Scenes | Exact spell、cooldown、timeline、三類mock／physical adapters、scene result、Console Scene panel | 每個spell 20正例／30負例且誤觸0；拔除設備只造成可見partial failure |
+| 4 Scenes | Exact spell、cooldown、Console-managed actions、duration stages、Realtime／Cubism／Music actions、mock physical adapters、scene result | 每個spell 20正例／30負例且誤觸0；三個mock scenes通過；未接硬體明確degraded且只造成可見partial failure |
 | 5 Identity／Profiles | Profile／image／embedding schema、face candidate、Main-bound口頭確認、匿名／認錯／多人／換人、clean session、gallery和rebuild | 兩位以上真人完成註冊與回訪流程；B session無A history；更換embedding model不需重拍 |
 | 6 Memory | Recent summary、durable fact、Master、structured extractor、TurnContext、context composer、Admin editor | 30～50組中文案例；A／B交叉洩漏0；extractor失敗不影響Voice |
 | 7 Field Hardening | 最終硬體／資產、完整Setup／Admin、backup／restore、diagnostic export、process recovery | 全部PRD Must stories、100 lifecycle、72小時soak；無人工重啟或無限queue／memory成長 |
@@ -645,7 +659,7 @@ Console只記原因和metadata，不因此保存私人內容。
 - Enrollment image寫入、缺檔、re-embedding和version rollback。
 - Backup manifest hash、missing image與staging restore failure都保留原data directory。
 - Memory extractor structured schema、natural correction、guest ownership，以及identity／confirmation／switch turns不進extractor。
-- Exact spell、negative sentence、duplicate turn、cooldown和adapter timeout。
+- Exact spell、negative sentence、duplicate turn、cooldown、固定 Stage duration、same-stage parallel dispatch、action feedback、adapter timeout和invalid links。
 - Console每種failure都有visible event。
 - Telemetry queue滿載／disk write failure不阻塞visitor hot path，且`telemetryDroppedCount`增加。
 ### 17.2 端到端場景
@@ -657,7 +671,7 @@ Console只記原因和metadata，不因此保存私人內容。
 5. Wrong candidate → no → anonymous／self-identify，沒有private memory。
 6. Confirm A → explicit switch → clean confirmation session → same-session `updateAgent(B)`；B看不到A history。
 7. Multiple faces → choose owner／anonymous group；owner確認後其他人進出不切換、不停寫，只有anonymous group不寫。
-8. Talk → barge-in → exact spell → physical scene result。
+8. Talk → barge-in → exact spell → Avatar／music＋mock physical scene result；physical hardware 延至 Phase 7 現場驗收。
 9. Music → conversation ducking → stop → idle sleep。
 10. Realtime loss → OfflineLoop → Console diagnosis → recovery。
 11. Rebuild all embeddings from saved images → activate new version → rollback old version。

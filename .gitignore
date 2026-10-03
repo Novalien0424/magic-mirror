@@ -1,11 +1,15 @@
 # Dependencies / build output (Phase 0+)
 node_modules/
 dist/
+!src/vendor/live2d/Framework/dist/
+!src/vendor/live2d/Framework/dist/**
 out/
 build/
 *.tsbuildinfo
+resources/generated/
+resources/wake-native/win32-x64/
 
-# Local environment & secrets — credentials live in the OS keystore, never in the repo
+# Local environment & secrets — Electron Main alone loads the ignored root .env
 .env
 .env.*
 *.local.json
@@ -25,8 +29,22 @@ assets/avatar/
 assets/music/
 assets/offline/
 
+# Downloaded Mixkit test media stays local; source/provenance notes are tracked.
+# The public repository does not redistribute standalone stock media files.
+/sample/_media/**/*.wav
+/sample/_media/**/*.webm
+
+# Raven's complete editable archive is tracked for cross-machine development.
+# Preserve its bytes with .gitattributes; see resources/avatar/Raven/README.md.
+
 # SDD orchestration scratch (ledger/briefs/reports live on disk, not in git)
 .superpowers/
+.worktrees/
+.artifacts/
+.agents/skills/**/.vite/
+resources/wake-models/*/*
+!resources/wake-models/*/manifest.json
+wake-corpus/
 
 # OS noise
 .DS_Store

@@ -167,12 +167,14 @@ describe('planInitialPlacement', () => {
     expect(plan.marker.name).toBe('MIRROR_DISPLAY_SELECTED')
   })
 
-  it('a recreated window that was on the startup no_match fallback stays on the visible fallback', () => {
+  it('hides a recreated legacy fallback window until the configured target returns', () => {
     const onFallback: MirrorPlacement = { kind: 'placed', displayId: 1, bounds: asus.bounds, onTarget: false }
     const plan = planInitialPlacement(chooseMirrorDisplay([asus], 'T749'), 'T749', onFallback)
 
-    expect(plan.action).toBe('show')
-    expect(plan.marker.fields['reason']).toBe('no_match')
+    expect(plan.action).toBe('hide')
+    expect(plan.display).toBeNull()
+    expect(plan.placement).toEqual({ kind: 'hidden_awaiting_target' })
+    expect(plan.marker.fields['reason']).toBe('awaiting_target')
   })
 })
 

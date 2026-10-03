@@ -6,11 +6,14 @@ import type {
   MirrorEvent,
   SessionModelSnapshot,
 } from '../shared/types'
+import { parseVoiceEffects, normalizeVoiceSpeed, type VoiceEffects } from '../shared/voice-effects'
 
 export type ModelSettingsRole =
   | 'realtimeDialogue'
   | 'inputTranscription'
   | 'memoryExtractor'
+
+export const REALTIME_SDK_VERSION = '0.16.1' as const
 
 export const MODEL_SETTINGS_ROLES: readonly ModelSettingsRole[] = Object.freeze([
   'realtimeDialogue',
@@ -26,6 +29,10 @@ export type ActiveModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly voiceSpeed?: number
+  readonly voiceEffects?: VoiceEffects
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export type DraftModelSettings = Readonly<{
@@ -36,6 +43,10 @@ export type DraftModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly voiceSpeed?: number
+  readonly voiceEffects?: VoiceEffects
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export type PreviousModelSettings = Readonly<{
@@ -46,6 +57,10 @@ export type PreviousModelSettings = Readonly<{
   readonly inputTranscription: string
   readonly memoryExtractor: string
   readonly voice: string
+  readonly voiceSpeed?: number
+  readonly voiceEffects?: VoiceEffects
+  readonly reasoningEffort: string
+  readonly turnDetectionProfile: string
 }>
 
 export interface ModelSettingsResolution {
@@ -109,6 +124,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  return Object.freeze(value)
 }
 
 function isValidConfigVersion(value: unknown): value is number {
@@ -188,7 +209,14 @@ function resolveSlot(slot: ConfigSlot, config: MirrorConfig): ModelSettingsView 
 
     const configVersion = config.configVersion
     const voice = config.voice
-    if (!isValidConfigVersion(configVersion) || !isNonEmptyString(voice)) {
+    const reasoningEffort = config.reasoningEffort
+    const turnDetectionProfile = config.turnDetectionProfile
+    if (
+      !isValidConfigVersion(configVersion)
+      || !isNonEmptyString(voice)
+      || !isNonEmptyString(reasoningEffort)
+      || !isNonEmptyString(turnDetectionProfile)
+    ) {
       throw invalidConfig(slot)
     }
 
@@ -207,6 +235,17 @@ function resolveSlot(slot: ConfigSlot, config: MirrorConfig): ModelSettingsView 
     }
 
     const fingerprint = fingerprintConfig(config as MirrorConfig, slot)
+    const avatarCatalog = config.avatarCatalog
+    const activeAvatar = avatarCatalog?.avatars.find(avatar => avatar.id === avatarCatalog.activeAvatarId)
+    const hasAvatarSettings = activeAvatar !== undefined
+    const voiceSpeed = hasAvatarSettings
+      ? normalizeVoiceSpeed(activeAvatar.voiceSpeed)
+      : undefined
+    if (hasAvatarSettings && activeAvatar.voiceSpeed !== undefined
+      && (typeof activeAvatar.voiceSpeed !== 'number' || !Number.isFinite(activeAvatar.voiceSpeed)
+        || activeAvatar.voiceSpeed < 0.5 || activeAvatar.voiceSpeed > 1.5)) throw invalidConfig(slot)
+    const voiceEffects = hasAvatarSettings ? parseVoiceEffects(activeAvatar.voiceEffects) : undefined
+    if (hasAvatarSettings && voiceEffects === null) throw invalidConfig(slot)
     return Object.freeze({
       slot,
       configVersion,
@@ -215,6 +254,9 @@ function resolveSlot(slot: ConfigSlot, config: MirrorConfig): ModelSettingsView 
       inputTranscription: modelIds.inputTranscription,
       memoryExtractor: modelIds.memoryExtractor,
       voice,
+      ...(hasAvatarSettings ? { voiceSpeed, voiceEffects: voiceEffects! } : {}),
+      reasoningEffort,
+      turnDetectionProfile,
     }) as ModelSettingsView
   } catch (error) {
     if (error instanceof ModelSettingsError) throw error
@@ -268,12 +310,18 @@ export function createSessionModelSnapshot(
 ): Readonly<SessionModelSnapshot> {
   assertActive(active)
   assertTakenAt(takenAt)
-  return Object.freeze({
+  return deepFreeze({
     configVersion: active.configVersion,
     fingerprint: active.fingerprint,
+    sdkVersion: REALTIME_SDK_VERSION,
     realtimeDialogue: active.realtimeDialogue,
     inputTranscription: active.inputTranscription,
+    memoryExtractor: active.memoryExtractor,
     voice: active.voice,
+    ...(active.voiceSpeed === undefined ? {} : { voiceSpeed: active.voiceSpeed }),
+    ...(active.voiceEffects === undefined ? {} : { voiceEffects: structuredClone(active.voiceEffects) }),
+    reasoningEffort: active.reasoningEffort,
+    turnDetectionProfile: active.turnDetectionProfile,
     takenAt,
   })
 }

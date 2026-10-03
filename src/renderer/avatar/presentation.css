@@ -1,0 +1,25 @@
+.presentation { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: #101923; }
+.presentation__background, .presentation__avatar, .presentation__mist { position: absolute; inset: 0; }
+.presentation__background { background: radial-gradient(ellipse at 50% 70%, #596778, #101923 70%); }
+.presentation__background { transition: opacity var(--entrance-ms) ease; }
+.presentation[data-phase="awake"] .presentation__background, .presentation[data-phase="entering"] .presentation__background { opacity: 0; }
+.presentation__background img, .presentation__background video { width: 100%; height: 100%; object-fit: cover; }
+.presentation__avatar { z-index: 1; transition: opacity 200ms ease; }
+.presentation .avatar-stage { position: absolute; inset: 0; overflow: hidden; background: transparent; }
+.presentation .avatar-stage__canvas { position: absolute; display: block; }
+.presentation .avatar-stage__fallback { position: absolute; inset: 0; display: grid; place-content: center; background: #172331; color: #f1f5fa; text-align: center; }
+.presentation__mist { z-index: 2; pointer-events: none; opacity: 0; overflow: hidden; }
+.presentation__mist i { position: absolute; inset: -25%; background: radial-gradient(ellipse at 35% 60%, #d7e2edeb 0%, #8597aa99 25%, transparent 58%); filter: blur(24px); animation: mist-drift 12s ease-in-out infinite alternate; }
+.presentation__mist i:nth-child(2) { transform: scaleX(-1); animation-delay: -5s; }
+.presentation__mist i:nth-child(3) { top: 20%; animation-delay: -8s; }
+.presentation[data-phase="asleep"] .presentation__mist { opacity: .45; }
+.presentation[data-phase="entering"] .presentation__mist { animation: mist-enter var(--entrance-ms) ease-out both; }
+.presentation[data-phase="exiting"] .presentation__mist { animation: mist-exit var(--exit-ms) ease-in both; }
+.presentation[data-mode="emerge"][data-phase="entering"] .presentation__avatar { animation: avatar-emerge var(--entrance-ms) ease-out both; }
+.presentation[data-mode="emerge"][data-phase="exiting"] .presentation__avatar { animation: avatar-retreat var(--exit-ms) ease-in both; }
+@keyframes mist-drift { from { translate: -5% 4%; } to { translate: 8% -3%; } }
+@keyframes mist-enter { 0% { opacity: .65; } 25% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mist-exit { 0% { opacity: 0; } 65% { opacity: 1; } 100% { opacity: .45; } }
+@keyframes avatar-emerge { 0%, 20% { opacity: 0; transform: translateY(3%); } 100% { opacity: 1; transform: none; } }
+@keyframes avatar-retreat { 0% { opacity: 1; } 70%, 100% { opacity: 0; transform: translateY(3%); } }
+@media (prefers-reduced-motion: reduce) { .presentation__mist i { animation: none; } .presentation__avatar { transform: none !important; } }

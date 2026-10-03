@@ -1,4 +1,7 @@
 # Codex CLI discovery and dry-runs use --profile nova-auto; the profile is user-level and is never copied here.
 [agents]
+enabled = true
+max_concurrent_threads_per_session = 2
 default_subagent_model = "gpt-6.1-sol"
 default_subagent_reasoning_effort = "max"
+interrupt_message = true

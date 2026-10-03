@@ -1,102 +1,20 @@
 ---
 name: mm-invariants
-description: Use when implementing, reviewing, testing, or debugging ANY Magic Mirror code - and paste the checklist into every implementation/test dispatch prompt. Covers transcript persistence, profile isolation, guest ID binding, silent failure, mic ownership, spell matching, model fallback.
+description: "Resolve Magic Mirror privacy, guest identity, memory ownership, mic exclusivity, exact spell matching or visible degradation boundaries."
 ---
 
-# Magic Mirror Hard Invariants
+# Invariant interpretation
 
-## Overview
+[AGENTS](../../../AGENTS.md#canonical-product-invariants) is the single owner of the 12 canonical IDs; [DECISIONS](../../../DECISIONS.md) supplies dated implementation rulings. Apply only the IDs implicated by the task.
 
-These rules are distilled from the PRD/Tech Spec so a worker agent does not
-need to re-read three documents mid-task. Violating any one of them fails
-review, no matter how reasonable the shortcut looks under deadline. Doc
-anchors are given so you can verify the source.
+## Non-obvious distinctions
 
-## Codex Worker Dispatch and Evidence Contract
+- **1 / 12:** diagnostics contain metadata, never utterances, conversation audio, extracted values, private prompts, credentials, camera frames or embeddings. The RAM Console transcript clears on Dormant/restart. Future memory schemas do not authorize persistence under today's ruling.
+- **2 / 3 / 4:** public avatar/scene IDs and spoken names are not private guest IDs. Model confirmation returns only yes/no/unclear; Main resolves its pending candidate. Clear that candidate on denial, second ambiguous response, owner switch, session close or sleep. Multiple people require explicit conversation-owner selection, not model disambiguation.
+- **5 / 6:** freeze extraction ownership at turn start, not completion; any control intent skips extraction. Keep debug decisions content-free and Main-local where they include private IDs.
+- **7:** normalize and compare the entire final transcript. Partial adapter failure still consumes the turn's one scene trigger. Only approved typed presets control hardware.
+- **8 / 10:** a failed mic handoff is local Maintenance, not cloud OfflineLoop. SDK session close does not release caller-owned tracks. An unrelated camera, extractor or adapter cannot block speech.
+- **9:** repeated identical failures may collapse into a reasoned counter, never disappear. Sanitize raw errors before telemetry. Mock adapters require operator configuration, not automatic substitution.
+- **11:** a bounded retry uses the same configured ID. Publish of a tested draft or whole-config rollback changes configuration; runtime failure never selects another model.
 
-For every implementation or test dispatch, paste the applicable checklist
-below into the worker prompt. Every worker dispatch must state:
-
-```text
-model: "gpt-6.1-sol"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-```
-
-Name the bounded task, exact write or read-only scope, applicable invariant
-IDs, and evidence format. A worker touching Magic Mirror behavior reports the
-IDs checked and uses metadata-only evidence. The worker may self-review its
-own diff and output for no more than 3 passes.
-
-The root Codex thread alone performs the external review after the worker
-returns. Do not create a separate review worker or review role. Root review is
-external to worker self-review and is not part of the 3-pass limit.
-
-Diagnostics and worker evidence remain metadata-only: use IDs, enums, counts,
-timings, statuses, reasons, hashes, paths, and exit codes. Never put raw transcript text, audio, extracted memory values, private context, credentials, images, embeddings, or prompts containing user content in evidence, logs, telemetry, or reports.
-
-## The Invariants
-
-| # | Rule | Doc anchor |
-|---|---|---|
-| 1 | Final transcripts and conversation audio exist in RAM only. Never written to disk, DB, backups, telemetry, or debug logs - not even "temporarily for debugging". Same bar for extracted memory VALUE strings and injected private context: diagnostics carry keys, enums, IDs, and counts - never content (the fact itself lives only in `guest_memories`) | PRD Section 11.2, Spec Section 6.3 |
-| 2 | Face recognition only proposes a candidate. Private memory loads only after explicit verbal confirmation | PRD US-ID-003, Spec Section 10 |
-| 3 | `guestId`/`candidateProfileId` lives only in Electron Main. No tool schema, model output, or IPC payload from the renderer may carry or substitute a guest ID; guest-id-shaped fields in tool payloads are rejected and logged. Public call names ("Nova") MAY cross to the model - that's how it asks the question; identifiers may not. Pending candidate is cleared on denial, second ambiguous answer, owner switch, session close, or sleep. With multiple people the model never disambiguates candidates - the mirror asks who owns the conversation | Spec Section 10.1 |
-| 4 | Profile scope change = close the session holding old-owner history -> clean Persona+Master-only confirmation session -> confirm -> `updateAgent` in that same clean session | Spec Section 7.4, Section 10.2 |
-| 5 | Memory extraction jobs write only to `ownerProfileIdAtTurnStart`, snapshotted when the turn began - never re-read current owner at completion | PRD FR-MEM-03, Spec Section 11.1 |
-| 6 | Control turns (identity confirm, name-giving, switch, group selection, sleep, spell) never enter personal memory extraction (`controlIntent !== 'none'` -> skip) | Spec Section 11.1 |
-| 7 | Scenes trigger only on normalized exact full-transcript == spell. No substring, similarity, or LLM intent. One trigger per `turnId` - a scene that ran with partial adapter failure still consumed that turn's trigger. LLM never emits DMX/fog/hardware parameters - approved presets only | PRD US-SCENE-001, Spec Section 12 |
-| 8 | Exactly one mic owner at a time: wake worker XOR renderer, with explicit release->acquire handshake. Handoff failure = local Maintenance, not cloud OfflineLoop | Spec Section 8.1 |
-| 9 | No silent failure: every ignore/drop/fallback/degrade produces a visitor-visible state or a Console event with a `reason`. Event schema (metadata only): `{time, module, event, status, duration_ms?, error_code?, session_id?, scene_id?, reason?}`. Repeated identical errors may collapse into a counter on the same card - collapse, never discard. Catching an error is fine; swallowing it is not | Spec Section 6.3, Section 14.1 |
-| 10 | Failures degrade, never gate: camera, extractor, or a single adapter failing must not block conversation or other adapters. Cloud failure -> OfflineLoop; local core failure -> Maintenance. A black screen is never acceptable | PRD Section 5.1, Spec Section 14 |
-| 11 | Model IDs come only from versioned config (`active.json`). No source-code model literals, no silent fallback to a different model when the configured one fails - fail visibly instead. A single bounded retry of the SAME configured ID is a retry, not a fallback (allowed: max one per user action). All configured options exhausted -> OfflineLoop, not substitution | Impl Plan Section 5 Phase 0 Scope+Exit, Section 1 principle 3, Phase 1 Exit |
-| 12 | API credentials live in the OS keystore via Electron `safeStorage` (Keychain on the target Mac; DPAPI on Windows dev machines - same API), read by Main only. Renderer gets short-lived Realtime credentials. Keys never appear in config, logs, telemetry, or exports | Spec Section 13.4 |
-
-## Correct Moves for the Classic Shortcuts
-
-Each of these was posed to an agent under demo-deadline pressure; these are the
-resolutions that pass review:
-
-- **"Log transcripts to debug extraction"** -> log content-free decision
-  records instead: `{extractionId, guestIdAtTurnStart, guestIdAtWrite, model,
-  decision, subject_key, confidence, latencyMs, errorCode}` + the RAM-only
-  Console transcript panel (cleared on dormant/restart). Join bad DB rows back
-  to decision records.
-- **"Hardcode a fallback model so the demo survives"** -> validate the model ID
-  at startup + Console "Test Connection"/Test Draft preflight. The ONLY
-  sanctioned model changes are Publish of a tested Draft or Rollback Entire
-  Config to Previous - one configured ID per role, no candidate lists, no
-  auto-latest (Impl Plan Section 3.2). Runtime failure of the configured model ->
-  OfflineLoop / visible degraded, never substitution (Phase 1 Exit).
-- **"Let the model's tool return the guest ID"** -> tool returns only
-  `{answer: 'yes'|'no'|'unclear'}`; Main resolves it against the
-  `pendingCandidateProfileId` it already holds; reject payloads carrying IDs.
-- **"try/catch and ignore the noisy fog adapter"** -> catch, map to
-  `{status:'timeout', errorCode}`, continue other cues, mark scene result
-  partial, collapse repeated identical errors into a counter, flip the
-  Console adapter card to degraded. If hardware is dead, switching that
-  adapter to `mock` in config is an OPERATOR decision made through
-  Console/config - a worker agent proposes it, never flips it unilaterally.
-
-## Red Flags - stop and re-check the table
-
-- Writing anything containing user/assistant utterance text to any file.
-- A tool/IPC schema with a `guestId`, `profileId`, or similar field crossing
-  into or out of the model.
-- `catch {}` or a dropped promise rejection with no Console event.
-- A model ID string in a `.ts` file.
-- Reusing a Realtime session across a profile change "because reconnecting is
-  slow".
-- A feature that waits on camera, memory, or an adapter before letting the
-  visitor talk.
-- Two components holding the microphone, or "temporarily" skipping the
-  release/acquire handshake.
-
-## Scope Notes (accepted limits - do not "fix" these)
-
-- No speaker diarization; conversation owner is a product convention.
-- No continuous face tracking after confirmation.
-- No guest-facing list/forget/forget-me memory tools in Phase 1.
-- Backup rotation may retain deleted-profile data until it ages out; Phase 1
-  claims no privacy-grade erasure.
+No speaker diarization or continuous post-confirmation face tracking is implied. Guest-facing memory-management tools and privacy-grade backup erasure require their own scoped product work; historical/future plans are not authorization.
