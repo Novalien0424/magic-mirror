@@ -129,12 +129,39 @@ window display targeting. How-to: `deploy/macos/README.md`.
 - **Running now.** App on the glass with `MIRROR_DISPLAY=T749`, started from
   the session shell (not a login item).
 
-### Next field actions
+### Face test fixtures (operator, 2026-10-03 19:43)
 
-1. App auto-start at login with crash restart (LaunchAgent + KeepAlive, with
-   `MIRROR_DISPLAY=T749` while the operator monitor is attached).
-2. Exercise Jabra unplug/replug re-enforcement.
-3. Final camera mount at eye level before Phase 5 threshold tuning.
+At the operator's explicit request, 6 full-frame 1920x1080 photos of the
+operator were captured from the Arducam for later Phase 5 recognition testing
+(YuNet/SFace, threshold tuning). Stored **locally only, outside the repo**:
+`~/Library/Application Support/MagicMirror/test-fixtures/face/operator-2026-10-03/`
+(folder 0700, files 0600) with `MANIFEST.md` (consent statement, capture time,
+camera unique ID, SHA-256 per file). Quality: near-frontal, eyes looking down
+at a phone, face ≈280 px tall, camera below face height looking up. One frame
+of the operator walking away was discarded. Never commit or upload these
+images; delete the folder when no longer needed. These are development
+fixtures, not production enrollment records (production enrollment follows
+Tech Spec §10 with verbal consent and UUID storage). Observation: the burst
+stopped after 7 frames while the camera kept working afterwards (clean UVC stop,
+0 dropped packets), so the stall is attributed to the ad-hoc capture tool, not
+the camera.
+
+### Field to-do
+
+- [ ] **App auto-start at login + crash restart** (LaunchAgent + KeepAlive;
+  `MIRROR_DISPLAY=T749` while the operator monitor is attached). Until then
+  the app runs only when started by hand.
+- [ ] **Jabra unplug/replug test**: confirm `audio-prefer.log` shows
+  `PREFERRED_AUDIO_ABSENT` then `DEFAULT_SET` for input/output/system output.
+- [ ] **Camera final mount** near eye level, tilted slightly down, so the frame
+  is frontal and mostly the guest area (now: ceiling in the top half).
+- [ ] **Recapture face fixtures after the final mount**: looking at the mirror,
+  a few head angles, two lighting states. Current set = eyes down, low angle.
+- [ ] **Phase 5 recognition check** against the fixtures: YuNet detects the
+  face in all 6; SFace self-similarity across frames vs. a non-match baseline.
+- [ ] **Review/merge** `field/macmini-deploy` into `main` (no PR opened yet).
+- [ ] Optional: replace the ad-hoc burst capture with a proper Console
+  "capture test" (Tech Spec §6 Camera preview/capture test, Phase 5).
 
 ## Current setup and Phase 2 prerequisite (2026-08-19)
 
@@ -220,6 +247,8 @@ window display targeting. How-to: `deploy/macos/README.md`.
 
 ## Next action (for the next session)
 
+0. Field deployment to-do: see "Field to-do" under "Field deployment" above
+   (app auto-start first). The operator is away; development resumes later.
 1. Task 8 — boot wiring, IPC, Mirror UI, and OfflineLoop — is the next
    separate application task.
 2. Preserve the existing Task 8 scope, strict TDD, tester-owned validation,
