@@ -113,11 +113,24 @@ target machine (macOS 27, Darwin 27.0.0):
   Jabra is default input + output + system output whenever connected,
   enforced by LaunchAgent `com.magicmirror.audio-prefer` (verified: all three
   defaults = Jabra at 19:18). Unplug/replug re-enforcement not yet exercised.
-- **Display state at session end:** ASUS is the main display; HDMI mirror is
-  extended at `-1080,0` showing the Mac desktop; app not running. Making HDMI
-  main while the operator works on the ASUS moves the operator's windows under
-  the full-screen Mirror window — do not do it during on-site work. Follow-up
-  work unit: configurable target display for the Mirror window.
+- **Mirror window display targeting (field unit, 2026-10-03):** `MIRROR_DISPLAY=<label
+  substring>` (e.g. `T749`) pins the Mirror window to the glass while the
+  operator monitor stays main; unset = previous behavior (primary). New pure
+  planner `src/main/display-target.ts` (27 unit tests) + thin wiring in
+  `src/main/index.ts`. When the glass's HDMI drops out (board reboot) the window
+  is **hidden, not moved** onto the operator monitor, and is moved back, made
+  fullscreen and re-shown when the display returns; recreated renderers keep
+  that state. On macOS the Mirror window sits at the `screen-saver` level so no
+  app's menu bar draws over the glass. Gate: 195/195 tests, typecheck, build.
+  Live on the Mac mini: `MIRROR_DISPLAY_SELECTED display_id=2
+  label=T749-fHD720 reason=match`, window at `x=-1080 1080x1920 layer=1000`
+  (CGWindowList), board screenshot shows a clean glass with no menu bar; board
+  reboot 19:33:23 → `FALLBACK reason=target_removed action=hidden_until_return`
+  → `REHOMED reason=target_returned` (still layer 1000) → watchdog
+  `HDMI_VIEW_LAUNCHED` 19:34:18. ASUS never covered.
+- **Display state at session end:** ASUS is the main display; the app is
+  running on the glass with `MIRROR_DISPLAY=T749` (started from the session
+  shell, so it is not a login item yet).
 
 ## Current setup and Phase 2 prerequisite (2026-08-19)
 

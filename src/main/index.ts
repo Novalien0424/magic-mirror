@@ -1,8 +1,19 @@
 import { basename, join } from 'node:path'
-import { app, BrowserWindow, globalShortcut, ipcMain, type WebContents } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, screen, type WebContents } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
 import type { LifecycleState } from '../shared/types'
 import { createCrashRecovery } from './crash-recovery'
+import {
+  chooseMirrorDisplay,
+  parseMirrorDisplayMatch,
+  planInitialPlacement,
+  planRehome,
+  type DisplayInfo,
+  type DisplayMarker,
+  type DisplayTrigger,
+  type MirrorPlacement,
+  type Rect
+} from './display-target'
 import { formatMarker, marker, type MarkerFields } from './log'
 import { evaluateSmoke, parseSmokeMode } from './smoke'
 
@@ -14,6 +25,19 @@ const EXIT_FLUSH_TIMEOUT_MS = 500
 const smokeMode = parseSmokeMode(process.env['MIRROR_SMOKE_MS'])
 /** In smoke mode the windows load but stay off-screen so repeated runs do not hijack the desktop. */
 const hideWindowsForSmoke = smokeMode.kind === 'on'
+
+/**
+ * `MIRROR_DISPLAY=<label substring>` pins the Mirror to that display (e.g. `T749`, the
+ * portrait HDMI panel) and follows it across unplug/replug. Unset = primary display,
+ * default placement, no display listeners (pre-existing behavior).
+ */
+const mirrorDisplayMatch = parseMirrorDisplayMatch(process.env['MIRROR_DISPLAY'])
+/** Displays settle in bursts after a replug (added, then rotation via metrics-changed). */
+const DISPLAY_SETTLE_MS = 750
+let mirrorPlacement: MirrorPlacement | null = null
+/** Mirror windows that went through their first placement; anything else is still loading. */
+const placedMirrors = new WeakSet<BrowserWindow>()
+let displaySettleTimer: NodeJS.Timeout | null = null
 
 /**
  * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
@@ -102,10 +126,16 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
         marker('WINDOW_KEPT_HIDDEN', { window: kind, reason: 'smoke_mode' })
         return
       }
+      if (!placeMirrorInitially(win)) return
       if (isDarwin) win.setSimpleFullScreen(true)
       else win.maximize()
       win.show()
-      marker('WINDOW_SHOWN', { window: kind, mode: isDarwin ? 'simple_fullscreen' : 'maximized' })
+      raiseMirrorAboveMenuBar(win)
+      marker('WINDOW_SHOWN', {
+        window: kind,
+        mode: isDarwin ? 'simple_fullscreen' : 'maximized',
+        ...(isDarwin ? { level: MIRROR_WINDOW_LEVEL } : {})
+      })
     })
   }
 
@@ -114,6 +144,114 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   else void win.loadFile(entry.file)
 
   return win
+}
+
+function emitDisplayMarker(m: DisplayMarker): void {
+  marker(m.name, m.fields)
+}
+
+function displaySnapshot(): DisplayInfo[] {
+  try {
+    const primaryId = screen.getPrimaryDisplay().id
+    return screen
+      .getAllDisplays()
+      .map((d) => ({ id: d.id, label: d.label, bounds: d.bounds, primary: d.id === primaryId }))
+  } catch (error) {
+    // Treated as "no displays": the window stays where it is, and the reason is visible.
+    marker('MIRROR_DISPLAY_QUERY_FAILED', { reason: error instanceof Error ? error.message : String(error) })
+    return []
+  }
+}
+
+/**
+ * Before the first show: move onto the chosen display; fullscreen + show are the caller's.
+ * Returns false when the window must stay hidden (recreated while its target is missing).
+ */
+function placeMirrorInitially(win: BrowserWindow): boolean {
+  const plan = planInitialPlacement(
+    chooseMirrorDisplay(displaySnapshot(), mirrorDisplayMatch),
+    mirrorDisplayMatch,
+    mirrorPlacement
+  )
+  emitDisplayMarker(plan.marker)
+  mirrorPlacement = plan.placement
+  placedMirrors.add(win)
+  if (plan.action === 'hide') return false
+  // Unset MIRROR_DISPLAY keeps the default placement (already the primary display).
+  if (plan.display !== null && mirrorDisplayMatch !== undefined) win.setBounds(plan.display.bounds)
+  return true
+}
+
+/**
+ * simpleFullscreen hides the menu bar only while this app is frontmost; the operator's
+ * apps (or any focus-stealing dialog) would draw their menu bar over the top of the glass.
+ * The screen-saver level (1000) sits above the menu bar (24). Toggling simple fullscreen
+ * can reset the level, so this is re-asserted after every show/move. Mirror only — the
+ * console window is left alone.
+ */
+const MIRROR_WINDOW_LEVEL = 'screen-saver'
+function raiseMirrorAboveMenuBar(win: BrowserWindow): void {
+  if (isDarwin) win.setAlwaysOnTop(true, MIRROR_WINDOW_LEVEL)
+}
+
+/** A fullscreen window cannot change displays: leave fullscreen, move, re-enter. */
+function moveMirrorWindow(win: BrowserWindow, bounds: Rect): void {
+  if (isDarwin) {
+    if (win.isSimpleFullScreen()) win.setSimpleFullScreen(false)
+    win.setBounds(bounds)
+    win.setSimpleFullScreen(true)
+    raiseMirrorAboveMenuBar(win)
+    return
+  }
+  if (win.isMaximized()) win.unmaximize()
+  win.setBounds(bounds)
+  win.maximize()
+}
+
+function rehomeMirror(trigger: DisplayTrigger): void {
+  const win = windows.get('mirror')
+  if (win === undefined || win.isDestroyed() || !placedMirrors.has(win)) {
+    // Not placed yet (first load or being recreated): its own ready-to-show placement runs.
+    // A window we deliberately hid for a missing target IS placed and proceeds.
+    marker('MIRROR_DISPLAY_REHOME_SKIPPED', { reason: 'mirror_not_shown', trigger })
+    return
+  }
+
+  const decision = planRehome(mirrorPlacement, chooseMirrorDisplay(displaySnapshot(), mirrorDisplayMatch), mirrorDisplayMatch, trigger)
+  emitDisplayMarker(decision.marker)
+  switch (decision.action) {
+    case 'none':
+      return
+    case 'hide':
+      // Not destroyed: the renderer keeps running (backgroundThrottling is off) for the return.
+      win.hide()
+      break
+    case 'move':
+      moveMirrorWindow(win, decision.display.bounds)
+      break
+    case 'move_and_show':
+      moveMirrorWindow(win, decision.display.bounds)
+      win.show()
+      raiseMirrorAboveMenuBar(win)
+      break
+  }
+  mirrorPlacement = decision.placement
+}
+
+function scheduleRehome(trigger: DisplayTrigger): void {
+  if (displaySettleTimer !== null) clearTimeout(displaySettleTimer)
+  displaySettleTimer = setTimeout(() => {
+    displaySettleTimer = null
+    rehomeMirror(trigger)
+  }, DISPLAY_SETTLE_MS)
+}
+
+/** Only when a target is configured and windows are really on screen (never in smoke mode). */
+function watchMirrorDisplay(): void {
+  if (mirrorDisplayMatch === undefined || hideWindowsForSmoke) return
+  screen.on('display-added', () => scheduleRehome('display-added'))
+  screen.on('display-removed', () => scheduleRehome('display-removed'))
+  screen.on('display-metrics-changed', () => scheduleRehome('display-metrics-changed'))
 }
 
 /** Task 1 interface: both Phase 0 windows, created in one call. */
@@ -235,6 +373,7 @@ void app.whenReady().then(() => {
   ipcMain.on(BOOT_RENDERER_READY_CHANNEL, (event) => onRendererReady(event.sender))
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
   createWindows()
+  watchMirrorDisplay()
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
