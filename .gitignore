@@ -34,17 +34,14 @@ assets/offline/
 /sample/_media/**/*.wav
 /sample/_media/**/*.webm
 
-# Raven master: track the runtime + inventory; editable sources/QA are local
-# out-of-band assets (see resources/avatar/Raven/README.md). No automatic LFS.
-/resources/avatar/Raven/v10/*
-!/resources/avatar/Raven/v10/runtime/
-!/resources/avatar/Raven/v10/README.md
-!/resources/avatar/Raven/v10/MANIFEST-SHA256.json
+# Raven's complete editable archive is tracked for cross-machine development.
+# Preserve its bytes with .gitattributes; see resources/avatar/Raven/README.md.
 
 # SDD orchestration scratch (ledger/briefs/reports live on disk, not in git)
 .superpowers/
 .worktrees/
 .artifacts/
+.agents/skills/**/.vite/
 resources/wake-models/*/*
 !resources/wake-models/*/manifest.json
 wake-corpus/

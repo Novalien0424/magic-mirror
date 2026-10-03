@@ -1,0 +1,10 @@
+{
+  "method": "all RGBA bytes",
+  "checks": {
+    "controls/neutral.png": true,
+    "expressions/exp_01-t1.500.png": true,
+    "expressions/exp_02-t1.500.png": true,
+    "expressions/exp_03-t1.500.png": true,
+    "expressions/exp_04-t1.500.png": true
+  }
+}

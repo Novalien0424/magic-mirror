@@ -1,0 +1,113 @@
+{
+  "schema_version": 3,
+  "job_id": null,
+  "scope": "portrait-to-half-body-cubism",
+  "project_root": "C:\\Project\\magic-mirror",
+  "work_root": null,
+  "updated_at": null,
+  "stage": "survey",
+  "character_invariants": [],
+  "source_assets": [],
+  "capabilities": {
+    "authoring_model_requested": null,
+    "authoring_model_observed": null,
+    "browser": "not_checked",
+    "native_computer_use": "not_checked",
+    "image_generation": "not_checked",
+    "editor_version": null,
+    "editor_mode": null,
+    "framework_version": null,
+    "core_version": null,
+    "export_target": null,
+    "photopea_app": {
+      "installed_app_id": null,
+      "url": null,
+      "control_surface": null,
+      "save_as_psd": "not_checked",
+      "script_export": "not_checked"
+    }
+  },
+  "artifacts": [],
+  "parameters": [],
+  "motion_groups": [],
+  "expressions": [],
+  "compatibility": {
+    "editor_target_label": null,
+    "core_runtime_version": null,
+    "core_latest_moc_version": null,
+    "exported_moc_version": null,
+    "source_type_declarations": null,
+    "load_check_status": "not_run",
+    "evidence": null
+  },
+  "checks": [],
+  "pending_operations": [],
+  "blockers": [],
+  "next_action": null,
+  "research": {
+    "sources": [],
+    "reading_levels": [
+      "body_read",
+      "transcript_read",
+      "frames_sampled",
+      "indexed_only"
+    ],
+    "unresolved_topics": []
+  },
+  "rig_evidence": {
+    "mesh_checkpoint": null,
+    "mesh_changed_after_keyforms": false,
+    "parent_tree": null,
+    "head_xy_grid": [],
+    "eye_blink_gaze_grid": [],
+    "mouth_form_open_grid": [],
+    "clipping_checks": [],
+    "optional_features": []
+  },
+  "physics_evidence": {
+    "fps": null,
+    "fps_exported": null,
+    "groups": [],
+    "cursor_preview": "not_run",
+    "motion_playlist_preview": "not_run",
+    "runtime": "not_run"
+  },
+  "animation_evidence": {
+    "owner_map": [],
+    "motion_runtime_loop_fade_behavior": [],
+    "expression_blends": [],
+    "controller_baked": null,
+    "viewer_reopen": "not_run"
+  },
+  "render_evidence": {
+    "atlas": [],
+    "offscreen_count": null,
+    "advanced_blend_count": null,
+    "display_resolution": null,
+    "runtime_check": "not_run"
+  },
+  "acceptance_mode": "avatar-import-display",
+  "runtime_scope": "bundle-import-display",
+  "out_of_scope": [
+    "magic-mirror-app-debugging",
+    "voice-wake-realtime-validation",
+    "product-configuration-publish",
+    "product-conversation-qa"
+  ],
+  "official_reference": {
+    "source_url": null,
+    "version_or_commit": null,
+    "license_notes": null,
+    "artifacts": [],
+    "comparison": "not_run"
+  },
+  "import_display_evidence": {
+    "manifest": null,
+    "manifest_sha256": null,
+    "ui_import": "not_run",
+    "display_surface": null,
+    "own_edited_model_visible": "not_run",
+    "app_changes": [],
+    "evidence": null
+  }
+}

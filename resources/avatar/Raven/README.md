@@ -16,7 +16,7 @@ It has 17 files, seven motion groups and five expressions.
 - [v10/cubism/raven-lord-v09.cmo3](v10/cubism/raven-lord-v09.cmo3): canonical
   editable rig. The v09 filename is intentional: v10 changed expression JSON,
   not the rig. Do not substitute `qa/editor-session-preserved.cmo3`.
-- `v10/source/`: PSDs and source artwork; `v10/qa/`, `docs/`, `qa-scripts/`
+- `v10/source/`: PSDs and source artwork; `v10/qa/`, `v10/docs/`, `v10/qa-scripts/`
   and `skill-update-snapshot/`: preserved delivery evidence and tooling.
 - [v10/MANIFEST-SHA256.json](v10/MANIFEST-SHA256.json): original inventory for
   250 files (excluding itself). All 251 copied files were verified against the
@@ -43,17 +43,18 @@ explicit delivery step, not a new automatic importer side effect.
 
 ## Git and backup policy
 
-The 17-file runtime (~3.5 MiB), original README and checksum inventory are
-eligible for normal Git tracking, together with this index. The larger CMO,
-PSD/source, QA and supporting archive directories are explicitly ignored by
-the root `.gitignore` and delivered out-of-band. No LFS/dependency or remote
-upload was introduced. That original storage task did not commit or push its changes.
+As of the 2026-10-03 Mac mini migration, the complete 251-file V10 archive
+(445,921,244 bytes), V11 runtime and supporting files are tracked in normal
+Git. A clone includes the canonical editable CMO, layered PSDs, source artwork,
+QA evidence and tooling. Git LFS is not required. The V10 `.gitattributes`
+rule preserves the original bytes, including historical documents.
 
-A clone alone will not contain the ignored editable archive. Back up the whole
-`Raven/v10` directory separately when transporting/restoring editable sources,
-then verify the inventory. The second local copy is not an off-machine backup.
-For the original location and verification evidence, see the
-[storage handoff](../../../docs/testing/avatar-storage-2026-09-09.md).
+Verify the archive against `v10/MANIFEST-SHA256.json` after checkout. The
+[migration handoff](../../../docs/development/mac-mini-migration.md) includes
+a portable checksum command and the repository skill locations. Earlier
+out-of-band instructions in the immutable V10 archive and the
+[original storage handoff](../../../docs/testing/avatar-storage-2026-09-09.md)
+describe the 2026-09-09 delivery, not the current Git policy.
 
 Latest model limits and next renderer work remain in the
 [v10 handoff](../../../RAVEN-V10-EXPRESSION-FIX-HANDOFF.md).
