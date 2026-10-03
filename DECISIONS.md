@@ -3,6 +3,20 @@
 Newest first. Only durable decisions not derivable from the docs; the 11
 architecture decisions in Tech Spec §18 are not repeated here.
 
+## 2026-10-03 — Current Sol worker routing (user decision)
+
+- **Route.** The user changed active harness routing to exact `gpt-6.1-sol`,
+  reasoning effort `max`, profile `nova-auto`, and fresh `--ephemeral`
+  workers. The native macOS `--cd` path
+  `/Users/novalien0424/magic-mirror` is authorized; the Windows example
+  remains valid for Windows.
+- **Provenance.** This Sol route supersedes historical worker-route references
+  in older plans and records. Those records retain their Luna completion
+  evidence as provenance, never active dispatch.
+- **Boundary/status.** Runtime model IDs remain unchanged. Migration
+  validation by the separate Sol tester is pending; no task acceptance or
+  phase demo is claimed.
+
 ## Active process-efficiency ruling (2026-08-19)
 
 - For this nonindustrial project, the root uses the fewest bounded fresh-worker

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Prepared only; uninstalled and not field-verified.
+  Venue-specific interim checkout deployment using npm run build output.
+  This is not signed/packaged production proof.
+
+  Eventual installation: ~/Library/LaunchAgents/com.magicmirror.launchagent.plist
+  The label is the same as the packaged template: replace the definition when
+  moving to packaged deployment, never add a second app restart owner.
+  Review and complete the README preflight before any installation/bootstrap.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.magicmirror.launchagent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/novalien0424/magic-mirror/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron</string>
+      <string>/Users/novalien0424/magic-mirror</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/novalien0424/magic-mirror</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>MIRROR_DISPLAY</key>
+      <string>T749</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+      <key>SuccessfulExit</key>
+      <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/novalien0424/Library/Logs/MagicMirror/app.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/novalien0424/Library/Logs/MagicMirror/app.err.log</string>
+  </dict>
+</plist>

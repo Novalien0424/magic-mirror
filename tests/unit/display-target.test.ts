@@ -92,33 +92,49 @@ describe('planInitialPlacement', () => {
 
     expect(plan.action).toBe('show')
     expect(plan.display).toEqual(asus)
+    expect(plan.placement).toEqual({ kind: 'placed', displayId: 1, bounds: asus.bounds, onTarget: false })
     expect(plan.marker).toEqual({
       name: 'MIRROR_DISPLAY_SELECTED',
       fields: { display_id: 1, label: 'MB16NCG', reason: 'primary_default' }
     })
   })
 
-  it('at first boot, shows a configured-but-missing target on primary as a FALLBACK with reason no_match', () => {
+  it('at first boot, hides a missing configured target until it arrives, then shows it on the portrait display', () => {
     const plan = planInitialPlacement(chooseMirrorDisplay([asus], 'T749'), 'T749', null)
 
-    expect(plan.action).toBe('show')
-    expect(plan.display).toEqual(asus)
-    expect(plan.placement).toEqual({ kind: 'placed', displayId: 1, bounds: asus.bounds, onTarget: false })
-    expect(plan.marker).toEqual({
-      name: 'MIRROR_DISPLAY_FALLBACK',
-      fields: { reason: 'no_match', match: 'T749', fallback_display_id: 1 }
+    expect(plan.action).toBe('hide')
+    expect(plan.display).toBeNull()
+    expect(plan.placement).toEqual({ kind: 'hidden_awaiting_target' })
+    expect(plan.marker.fields['reason']).toEqual(expect.stringMatching(/\S/))
+
+    const arrival = planRehome(plan.placement, chooseMirrorDisplay([asus, mirror], 'T749'), 'T749', 'display-added')
+
+    expect(arrival.action).toBe('move_and_show')
+    expect(arrival).toMatchObject({
+      display: mirror,
+      placement: { kind: 'placed', displayId: 7, bounds: mirror.bounds, onTarget: true }
     })
+    expect(arrival.marker.fields['reason']).toEqual(expect.stringMatching(/\S/))
   })
 
-  it('keeps the default placement (no display, no placement) and says why when there are no displays', () => {
+  it('at first boot, hides while awaiting a configured target when there are no displays', () => {
     const plan = planInitialPlacement(chooseMirrorDisplay([], 'T749'), 'T749', null)
+
+    expect(plan.action).toBe('hide')
+    expect(plan.display).toBeNull()
+    expect(plan.placement).toEqual({ kind: 'hidden_awaiting_target' })
+    expect(plan.marker.fields['reason']).toEqual(expect.stringMatching(/\S/))
+  })
+
+  it('keeps the unconfigured default placement and says why when there are no displays', () => {
+    const plan = planInitialPlacement(chooseMirrorDisplay([], undefined), undefined, null)
 
     expect(plan.action).toBe('show')
     expect(plan.display).toBeNull()
     expect(plan.placement).toBeNull()
     expect(plan.marker).toEqual({
       name: 'MIRROR_DISPLAY_FALLBACK',
-      fields: { reason: 'no_displays', match: 'T749', fallback_display_id: 'none' }
+      fields: { reason: 'no_displays', match: 'none', fallback_display_id: 'none' }
     })
   })
 

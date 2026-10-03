@@ -10,8 +10,8 @@
  * no other display at all. The guest-facing glass has no signal either way, so this is not
  * a black-screen regression (invariant #10); the renderer keeps running and the window is
  * moved back and shown once the panel returns. At first boot a configured-but-missing
- * target still falls back visibly to primary — an operator just launched the app. Every
- * fallback and no-op carries a reason (invariant #9).
+ * target waits hidden, so login never covers the operator's display. Every fallback and
+ * no-op carries a reason (invariant #9).
  *
  * Electron-free on purpose: the policy is unit-testable without a running app. Markers
  * carry display ids, labels and reasons only.
@@ -52,7 +52,7 @@ export interface DisplayMarker {
 }
 
 export interface InitialPlacementPlan {
-  /** 'hide' = a recreated window whose target is still missing: do not show it. */
+  /** 'hide' = the configured target is missing: wait without showing the window. */
   readonly action: 'show' | 'hide'
   /** Null = leave the window at its default placement. */
   readonly display: DisplayInfo | null
@@ -104,11 +104,6 @@ function placementFor(display: DisplayInfo, onTarget: boolean): MirrorPlacement 
   return { kind: 'placed', displayId: display.id, bounds: display.bounds, onTarget }
 }
 
-/** The target was seen before (we sat on it, or hid while waiting for it). */
-function targetWasSeen(previous: MirrorPlacement | null): boolean {
-  return previous !== null && (previous.kind === 'hidden_awaiting_target' || previous.onTarget)
-}
-
 function awaitingMarker(trigger: string, match: string | undefined): DisplayMarker {
   return { name: 'MIRROR_DISPLAY_UNCHANGED', fields: { reason: 'awaiting_target', trigger, match: match ?? 'none' } }
 }
@@ -133,9 +128,14 @@ export function planInitialPlacement(
   match: string | undefined,
   previous: MirrorPlacement | null
 ): InitialPlacementPlan {
-  // Recreated while its target is gone: stay hidden, exactly like the window it replaces.
-  if (match !== undefined && choice.reason !== 'match' && targetWasSeen(previous)) {
-    return { action: 'hide', display: null, placement: HIDDEN, marker: awaitingMarker('window_recreated', match) }
+  // A missing configured target stays hidden at startup and on window recreation.
+  if (match !== undefined && choice.reason !== 'match') {
+    return {
+      action: 'hide',
+      display: null,
+      placement: HIDDEN,
+      marker: awaitingMarker(previous === null ? 'startup' : 'window_recreated', match)
+    }
   }
 
   if (choice.display === null) {
@@ -213,7 +213,7 @@ export function planRehome(
     return { action: 'move', display, placement: next, marker: rehomedMarker(display, reason) }
   }
 
-  // Never on the target (startup no_match / no displays at boot): follow the primary display.
+  // Fallback placements follow the primary display.
   return { action: 'move', display, placement: next, marker: fallbackMarker(choice.reason, match, display.id) }
 }
 

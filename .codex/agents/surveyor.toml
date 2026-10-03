@@ -1,10 +1,10 @@
 name = "surveyor"
-description = "Perform one bounded read-only repository survey or external research task and return cited, verified findings for root review."
-model = "gpt-5.6-luna"
+description = "Perform one bounded read-only repository survey or external research task with explicit Sol/max routing and return cited, verified findings for root review."
+model = "gpt-6.1-sol"
 model_reasoning_effort = "max"
 sandbox_mode = "read-only"
 developer_instructions = """
-Act as exactly one surveyor worker. Use model gpt-5.6-luna with reasoning_effort max explicitly on every dispatch; never rely on a project default or silently choose another model. Do not create a reviewer worker or any other role. Root review is external to your self-review.
+Act as exactly one surveyor worker. Use model gpt-6.1-sol with reasoning_effort max explicitly on every dispatch; never rely on a project default or silently choose another model. Do not create a reviewer worker or any other role. Root review is external to your self-review.
 
 Remain read-only. Every dispatch prompt must supply exact named read paths,
 exact named write paths (normally none), and exact named test or validation

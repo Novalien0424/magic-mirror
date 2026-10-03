@@ -16,7 +16,7 @@ MotionSync plugin R2. Build the RMS/AnalyserNode -> ParamMouthOpenY path first
 Use this bounded contract for any implementation worker using this skill:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: "implementer"
 fresh_worker: true
@@ -64,9 +64,12 @@ an npm package and must never be imported as ESM. MotionSync Core ships only
 in the manual download and expects the SDK as a sibling directory. Commit or
 vendor both, add an explicit build step, and allow the global script in CSP.
 
-The publication license applies only at release. Small-scale users with
-sales below 10M JPY are exempt; the single-venue prototype owes nothing.
-Accept the SDK agreements at download.
+SDK licensing and any Publication License requirement depend on use, entity,
+and distribution. Before distribution, verify the applicable
+[official SDK terms](https://www.live2d.com/en/sdk/license/) and
+[non-profit plan terms](https://www.live2d.com/en/sdk/license/non-profit_plan02/);
+do not assume the single-venue prototype is exempt. The user must review and
+accept any required SDK agreements; never accept them on the user's behalf.
 
 ## Actual-output-audio lip sync
 
@@ -175,19 +178,27 @@ Hand these required deliverables to the artist:
 - One `.motion3.json` per motion, with fades authored in the Editor
 - One `.exp3.json` per expression
 - `.physics3.json`
-- `.motionsync3.json` when MotionSync is used; author it in Editor 5+ against
-  a 16-bit, 44.1 kHz WAV
+- `.motionsync3.json` when MotionSync is used; author it in Editor 5+. A
+  16-bit, 44.1 kHz WAV is an authoring/viewer compatibility recommendation
+  ([MotionSync authoring](https://docs.live2d.com/en/cubism-editor-manual/motion-sync-setting-ow/)),
+  not a blanket live-stream format requirement. Live streams still follow the
+  source stream sample-rate rule above.
 
 The stable Editor version is 5.3.
 
 ## Performance and verification notes
 
-The target is 60 FPS on M4. Texture or canvas size does not matter. The cost
-order is parameters per object (keep multiplicative blends at 2 or fewer and
-use blend shapes), polygon count, ArtMesh count, deformer depth, blend modes,
-then masks.
+The target is 60 FPS on M4, unbenchmarked on the target Mac. Include render/
+canvas resolution, texture sizes, masks, and blending in the measured GPU
+budget ([Editor notes](https://docs.live2d.com/en/cubism-editor-manual/cubism5-3-notes/)).
+The cost order is parameters per object (keep multiplicative blends at 2 or
+fewer and use blend shapes), polygon count, ArtMesh count, deformer depth,
+blend modes, then masks.
 
-Physics evaluates at the real frame rate, so Editor preview is not runtime.
+Physics uses the exported physics FPS when present, with runtime delta-time
+handling. Verify the pinned SDK's behavior using its physics implementation
+(see the [framework reference](https://raw.githubusercontent.com/Live2D/CubismWebFramework/develop/src/physics/cubismphysics.ts));
+Editor preview is not runtime.
 Bake critical sway into motions when determinism matters. One detailed model
 at 60 FPS on Apple Silicon is expected but unbenchmarked; measure FPS in the
 Console from day one because telemetry already requires it.

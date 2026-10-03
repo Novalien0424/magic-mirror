@@ -35,7 +35,7 @@ exit criteria: `docs/Magic_Mirror_Implementation_Plan_v0.3.md`.
    the explicit bounded route:
 
    ```text
-   model: "gpt-5.6-luna"
+   model: "gpt-6.1-sol"
    reasoning_effort: "max"
    role: "implementer"
    fresh_worker: true

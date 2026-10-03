@@ -17,7 +17,7 @@ this file and the contract test disagree, fix this file.
 Use this explicit envelope for any worker handling this domain:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: exactly one of "implementer", "surveyor", or "tester"
 fresh_worker: true
@@ -46,7 +46,7 @@ write permission from a Realtime concern, and never widen the scope.
 ## Runtime model IDs versus worker routing
 
 The worker route is a harness setting, not a Magic Mirror runtime setting.
-`gpt-5.6-luna` in the worker envelope with `reasoning_effort: "max"` must never
+`gpt-6.1-sol` in the worker envelope with `reasoning_effort: "max"` must never
 replace a configured Realtime, transcription, or extractor model ID.
 
 Runtime model IDs come only from versioned configuration and frozen session/job

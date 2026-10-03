@@ -18,7 +18,7 @@ For every future task that uses this skill, the dispatch must include this
 bounded worker contract:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: "implementer"
 fresh_worker: true

@@ -64,7 +64,10 @@ code path, no shim needed.
 - Visitor window: `simpleFullscreen: true` (macOS pre-Lion fullscreen -- no
   Space transition; don't mix `kiosk:true` with `setFullScreen()`),
   `alwaysOnTop`, CSS `cursor: none` (takes effect on next mouse move; no API).
-- Fullscreen transitions are async -- gate on `'enter-full-screen'` events.
+- Native fullscreen (`setFullScreen()`) transitions on macOS are async -- gate
+  on `'enter-full-screen'` events. `simpleFullscreen` uses the separate macOS
+  pre-Lion mode; this native-fullscreen event requirement does not apply to it
+  ([BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window)).
 - `powerSaveBlocker.start('prevent-display-sleep')` while app runs.
 - Console window: separate `BrowserWindow`, positioned via
   `screen.getAllDisplays()`, opened by shortcut/hot-corner from any state.
@@ -72,13 +75,15 @@ code path, no shim needed.
 ## Auto-start & Crash Recovery (pick ONE restart owner)
 
 - Supervisor: user **LaunchAgent plist with `KeepAlive = {SuccessfulExit =
-  false}`** -- launchd relaunches on crash, respects clean quit. Login items
-  give no supervision.
+  false}`** is the sole Electron restart owner -- launchd relaunches on crash,
+  respects clean quit. Login items give no supervision
+  ([launchd](https://github.com/apple-oss-distributions/launchd/blob/main/man/launchd.plist.5)).
 - Because launchd owns restarts: in-app recovery is `app.on('render-process-gone')`
-  (reasons: `crashed|oom|...` -> recreate the window, never leave a black
-  screen) and `child-process-gone`; after N failures in a window just
-  `app.exit(1)` and let launchd restart. **Do not also call `app.relaunch()`
-  -- the two restart mechanisms fight.**
+  (reasons: `crashed|oom|...`); recreate a failed renderer exactly once. If that
+  recovery fails or a renderer fails again, call `app.exit(1)` so the user
+  LaunchAgent restarts the app. Also handle `child-process-gone`; never leave
+  a black screen. **Never call `app.relaunch()` or add a second Electron
+  restart owner.**
 
 ## Workers
 
@@ -87,11 +92,17 @@ code path, no shim needed.
   child replies via `process.parentPort`).
 - Python face worker: `child_process.spawn` (utilityProcess is Node-only).
   **Drain stdout/stderr or the child deadlocks on a full pipe.**
-- TCC: mic/camera permission attributes to the parent .app bundle -- put
+- TCC: put
   `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in Info.plist
   and `com.apple.security.device.audio-input`/`.camera` entitlements with
-  hardenedRuntime; grants then cover spawned children. A missing key =
-  **silent denial, no dialog** -- the #1 "camera looks broken" cause. The
+  hardenedRuntime. Permission attribution depends on the actual signed launch
+  chain; a parent .app grant does not guarantee access for every spawned child
+  ([Apple TCC attribution](https://developer.apple.com/forums/thread/678819)).
+  Verify the packaged Python camera worker and wake microphone path on the
+  target Mac; Windows development does not verify these macOS permissions.
+  Prior denial can require enabling access in macOS System Settings rather
+  than a fresh prompt
+  ([Electron permissions](https://www.electronjs.org/docs/latest/api/system-preferences)). The
   Console Audio/Camera cards display TCC authorization status explicitly
   (Spec Section 6.2) so permission denial and dead hardware are distinguishable;
   surface as `Degraded`, don't retry-loop.
@@ -119,7 +130,7 @@ When this skill is used for Magic Mirror work, dispatch one bounded fresh
 worker with this explicit envelope:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: exactly one of "implementer", "surveyor", or "tester"
 fresh_worker: true

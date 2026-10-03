@@ -6,6 +6,17 @@
 camera working; app auto-start pending — see "Field deployment" below
 (2026-10-03).**
 
+## Current worker routing — 2026-10-03
+
+The user changed active harness routing to exact `gpt-6.1-sol`, reasoning
+effort `max`, profile `nova-auto`, and fresh `--ephemeral` workers. The
+authorized native macOS `--cd` path is `/Users/novalien0424/magic-mirror`;
+the Windows example remains valid for Windows. This Sol route supersedes
+historical worker-route references in older plans and records, which remain
+provenance, never active dispatch. Runtime model IDs remain unchanged.
+Migration validation by the separate Sol tester is pending; no task
+acceptance or phase demo is claimed.
+
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
 - Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`

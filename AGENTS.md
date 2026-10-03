@@ -38,6 +38,13 @@ Use this order when instructions conflict:
 6. The immutable historical harness document and its seven source skill
    documents as reference input only.
 
+Current worker routing (user decision, 2026-10-03) is profile `nova-auto`,
+exact model `gpt-6.1-sol`, and reasoning effort `max`. This supersedes
+historical worker-route references, including Luna routes in older plans and
+records. Those records remain provenance, never active dispatch. Pin the
+exact worker ID; no auto-latest or silent model substitution. Runtime model
+IDs remain unchanged.
+
 The seven skill routes are initialized and validated one at a time, in this
 order:
 
@@ -133,18 +140,28 @@ second restart owner.
 
 For every post-plan implementation, repository survey or research, and
 test/validation worker, root launches a fresh profile-backed worker through
-this direct PATH-resolved `codex` wrapper command. The canonical launcher uses
-every routing flag explicitly; no `.Source` assignment is used. Substitute
-only the task prompt:
+the direct PATH-resolved `codex` wrapper. The canonical launchers use every
+routing flag explicitly; no `.Source` assignment is used. Selecting the actual
+platform workspace for `--cd` is user-authorized and does not permit silently
+changing the other routing flags. Substitute only the task prompt in the
+matching platform example.
+
+Canonical Windows PowerShell:
 
 ```powershell
-codex exec --profile nova-auto --ephemeral --cd 'C:\Project\magic-mirror' -m gpt-5.6-luna -c 'model_reasoning_effort="max"' $taskPrompt
+codex exec --profile nova-auto --ephemeral --cd 'C:\Project\magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' $taskPrompt
+```
+
+Canonical macOS zsh for this workspace:
+
+```zsh
+codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
 ```
 
 Every task prompt must repeat these fields and values:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: exactly one of "implementer", "surveyor", or "tester"
 fresh_worker: true
@@ -161,7 +178,7 @@ The dispatch must name the exact files, relevant skills, invariant IDs, read or
 write scope, and evidence format. Do not infer a role from a request or rely
 on the project backstop for model or effort. Every Codex CLI discovery or
 dry-run uses `--profile nova-auto`, `--ephemeral`, explicit
-`gpt-5.6-luna`, and explicit `max`. Profile-less collaboration calls may
+`gpt-6.1-sol`, and explicit `max`. Profile-less collaboration calls may
 coordinate context only; they have no profile field and are not execution
 substitutes. A missing profile, model, effort, role, scope, skill, invariant,
 or evidence field is a dispatch failure.

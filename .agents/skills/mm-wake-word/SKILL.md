@@ -14,7 +14,7 @@ Verified **2026-08-16**. Baseline stack: `sherpa-onnx-node@1.13.5` or newer + `s
 Use this envelope for a bounded wake-word worker or microphone-handoff task:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: "implementer"
 fresh_worker: true

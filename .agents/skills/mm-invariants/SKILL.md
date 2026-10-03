@@ -18,7 +18,7 @@ For every implementation or test dispatch, paste the applicable checklist
 below into the worker prompt. Every worker dispatch must state:
 
 ```text
-model: "gpt-5.6-luna"
+model: "gpt-6.1-sol"
 reasoning_effort: "max"
 role: exactly one of "implementer", "surveyor", or "tester"
 fresh_worker: true
