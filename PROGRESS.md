@@ -51,6 +51,74 @@
 - Workspace note: the untracked `scripts/install-node-lts.ps1` remains
   untouched and is outside this task's scope.
 
+## Field deployment hardware — Mac mini M6 at venue (2026-10-03)
+
+Ops/setup session only; no application code changed. Facts verified on the
+target machine (macOS 27, Darwin 27.0.0):
+
+- **Mirror display is not a plain monitor.** It is a HAOCROWN smart mirror:
+  ZC-3568D board (Rockchip RK3568, Android 11, build
+  `ZC-3568D-LVDS-HDMI-20240903`), portrait 1080x1920 LVDS panel, LAN
+  `10.0.0.4` / Wi-Fi MAC `74:24:ca:f1:db:d9`. HDMI-in goes through an RK628D
+  bridge; its EDID is Rockchip's stock default ("RKS" / "T749-fHD720"), so the
+  name says nothing about the panel. The Mac picture is shown only while the
+  Android app `com.android.rockchip.camera2/.RockchipCamera2` is in front; the
+  board boots to its own launcher and has no boot-to-HDMI setting.
+- **Working display path:** Mac HDMI 1920x1080@60 (EDID-preferred; 2160p30
+  was the macOS default and is not used) rotated 90° in macOS (logical
+  1080x1920) → board Android landscape (`user_rotation=1`) → RockchipCamera2
+  fills the panel undistorted. Board "Systemui Setting" = StatusBar Hidden
+  removes the Android bars. Phase 0 Mirror window verified full-screen and
+  upright on the glass (board screenshot) with markers `WINDOW_SHOWN
+  mode=simple_fullscreen` → `LIFECYCLE starting→dormant`. Avatar layout
+  (Phase 3) must therefore target a **portrait 1080x1920** canvas. Touch on the
+  glass does not reach the Mac (vendor manual).
+- **Board control:** board setting "Connect to the computer" opens network ADB
+  (`adb connect 10.0.0.4:5555`, authorized without prompt). Homebrew adb
+  37.0.1 aborts on macOS 27 (`libunwind … invalid compact unwind encoding`)
+  unless started with `ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0`.
+- **Boot recovery:** `board-hdmi-keepalive.sh` relaunches the HDMI viewer
+  when the board sits on its launcher (never over Settings); recovery path
+  verified manually. Operator authorized persistence. As a per-user
+  LaunchAgent it fails with `No route to host` (macOS Local Network privacy;
+  no grant offered for the CLI), so it is packaged as a root LaunchDaemon
+  (`com.magicmirror.board-hdmi`, adb port 5038, root-owned script copy).
+  Installed 2026-10-03 19:17 by the operator (`sudo zsh
+  ~/Library/Application Support/MagicMirror/ops/install-board-hdmi-daemon.sh`):
+  state running, `BOARD_CONNECTED target=10.0.0.4:5555`, `HDMI_VIEW_ACTIVE`.
+  Log `/Library/Logs/MagicMirror/board-hdmi.log`. Remove: `sudo launchctl
+  bootout system/com.magicmirror.board-hdmi && sudo rm
+  /Library/LaunchDaemons/com.magicmirror.board-hdmi.plist`. **Reboot test
+  passed 19:20:59→19:22:04 (82 s):** `adb reboot` → `BOARD_UNREACHABLE` →
+  `HDMI_VIEW_LAUNCHED previous=launcher3`; network adb, `user_rotation=1`, and
+  StatusBar Hidden all survived the reboot (board screenshot verified).
+- **Versioned tooling:** `deploy/macos/` (README, `displayctl.swift`, board
+  watchdog + root-daemon installer, `audio-prefer.swift` + user-agent
+  installer). The ad-hoc helpers in `~/Library/Application Support/MagicMirror/ops`
+  are superseded by it.
+- **Development layout:** ASUS MB16NCG is the main display; HDMI mirror is an
+  extended display at `-1080,0`. Production has HDMI only, so it becomes the
+  main display and the Mirror window lands there without code changes. Helper
+  binaries (display list/rotate/main, audio output switch) are in the same ops
+  folder.
+- **Camera:** Arducam 1080P Low Light (UVC, unique ID `0x31000000c450520`,
+  up to 1920x1080@30), camera permission authorized. It hung once (UVC probe
+  `Unable to send device request`, all GET_CUR failing) after killed ffmpeg
+  runs; a physical replug fixed it — AVFoundation capture now delivers
+  1920x1080 frames (first frame ~1 s). **Aim is wrong for identity:** the frame
+  is mostly ceiling with a standing person cut off at the right edge; it must be
+  re-aimed level at face height toward the guest position (Phase 5 input).
+- **Audio:** Jabra Speak2 75 now enumerates with USB Audio Class after being
+  powered on (HID-only = off/charging). Operator rule (DECISIONS 2026-10-03):
+  Jabra is default input + output + system output whenever connected,
+  enforced by LaunchAgent `com.magicmirror.audio-prefer` (verified: all three
+  defaults = Jabra at 19:18). Unplug/replug re-enforcement not yet exercised.
+- **Display state at session end:** ASUS is the main display; HDMI mirror is
+  extended at `-1080,0` showing the Mac desktop; app not running. Making HDMI
+  main while the operator works on the ASUS moves the operator's windows under
+  the full-screen Mirror window — do not do it during on-site work. Follow-up
+  work unit: configurable target display for the Mirror window.
+
 ## Current setup and Phase 2 prerequisite (2026-08-19)
 
 - **Credential setup (metadata only).** The user reports that the local OpenAI

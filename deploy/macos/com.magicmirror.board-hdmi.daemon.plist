@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.magicmirror.board-hdmi</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Library/Application Support/MagicMirror/board-hdmi-keepalive.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Own adb server port so it never collides with an operator's adb on 5037. -->
+    <key>ANDROID_ADB_SERVER_PORT</key>
+    <string>5038</string>
+    <key>HOME</key>
+    <string>/var/root</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>15</integer>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/MagicMirror/board-hdmi.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/MagicMirror/board-hdmi.log</string>
+</dict>
+</plist>

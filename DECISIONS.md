@@ -14,6 +14,30 @@ architecture decisions in Tech Spec §18 are not repeated here.
   mandatory authority, role, profile, model, effort, scope, evidence,
   tester-ownership, privacy/invariant, or external-root-review requirement.
 
+## 2026-10-03 — Field audio device policy (operator decision)
+
+- **Device.** The venue PoC audio device is the **Jabra Speak2 75** (USB,
+  CoreAudio UID `AppleUSBAudioEngine:Unknown Manufacturer:Jabra Speak2
+  75:9842AB51A9700254000:1`), standing in for the PRD's Speak2 40 in the same
+  role: one USB device for microphone, playback, and AEC. The PRD's final
+  hidden-audio plan (reSpeaker XVF3800) is unchanged.
+- **Operator rule.** The Jabra is both the default input and the default output
+  whenever it is connected; otherwise macOS falls back to its own choice. The
+  Magic Mirror app uses the same device.
+- **System enforcement.** The user LaunchAgent `com.magicmirror.audio-prefer`
+  (`~/Library/Application Support/MagicMirror/ops/audio-prefer`) sets default
+  input, output, and system output to the Jabra at login and on every CoreAudio
+  device-list change. It does not fight a manual pick between plug events.
+  Its log is metadata only:
+  `~/Library/Logs/MagicMirror/audio-prefer.log`.
+- **App consequence.** Until Phase 1, the renderer follows the OS default
+  (Chromium `default` device), which is the Jabra. The Phase 1 audio work
+  stores the device in the Tech Spec §13.3 config "audio stable device IDs".
+  Chromium `deviceId` values are per-origin hashes, so selection matches on the
+  label (`Jabra Speak2 75`). If the label is missing, the app falls back to the
+  OS default with a Console event giving the reason (invariant 9) and never
+  blocks voice (invariant 10).
+
 ## 2026-08-19 — Task 7 model settings resolver completion
 
 - **Plan and implementation state.** The accepted plan
