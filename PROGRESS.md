@@ -148,6 +148,12 @@ the camera.
 
 ### Field to-do
 
+- [ ] **Board dropped off the network at 19:39** (no ping, adb closed; HDMI
+  display still present on the Mac). Cause unknown: operator power-off,
+  Wi-Fi power saving, or board sleep (`persist.sys.zcsleep` /
+  `persist.sys.zcscreenoff` exist in the vendor firmware). If it recurs while
+  the glass is on, disable board sleep/Wi-Fi sleep or move the board to
+  Ethernet (manual lists a LAN port). The watchdog reconnects by itself.
 - [ ] **App auto-start at login + crash restart** (LaunchAgent + KeepAlive;
   `MIRROR_DISPLAY=T749` while the operator monitor is attached). Until then
   the app runs only when started by hand.
