@@ -2,8 +2,8 @@
 
 This folder holds the operator tooling that turns the venue Mac mini plus the
 HAOCROWN smart mirror into the Magic Mirror glass. None of it is part of the
-Electron app. Hardware facts and verification evidence are in `PROGRESS.md`
-under "Field deployment hardware". Audio device policy is in `DECISIONS.md`
+Electron app. **Current deployment status** (what is installed, verified, and
+pending) is the table under "Field deployment" in `PROGRESS.md`. Audio device policy is in `DECISIONS.md`
 (2026-10-03).
 
 ## Hardware chain
@@ -78,6 +78,7 @@ collides with an operator's adb on port 5037.
 | Glass shows the Android launcher | The watchdog relaunches the viewer within ~20 s. A full board reboot is back in ~80 s (measured 2026-10-03). If not, check `board-hdmi.log`. |
 | Picture stretched | Android rotation was reset. Run `adb shell settings put system user_rotation 1`. |
 | Jabra missing from Sound settings | It shows only its HID interface when off or charging. Press its power button. |
+| Camera frame mostly ceiling / face from below | Mount nearer eye level, tilted slightly down; frontal faces matter for recognition (Phase 5) |
 | Camera opens but gives no frames (`Unable to send device request` in `/usr/bin/log`) | UVC firmware hung. Unplug and replug the camera. Note that zsh's `log` builtin shadows `/usr/bin/log`. |
 | `adb` keeps saying "daemon not running" | The mDNS crash. Export `ADB_MDNS=0`. |
 

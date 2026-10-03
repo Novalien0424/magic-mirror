@@ -2,6 +2,10 @@
 
 **Phase 0 — Foundation / Visible Skeleton: IN PROGRESS — Tasks 1–7 accepted; Task 8 is next.**
 
+**Field deployment (Mac mini M6 at venue): glass, board recovery, audio, and
+camera working; app auto-start pending — see "Field deployment" below
+(2026-10-03).**
+
 - Accepted Task 2 plan: `docs/superpowers/plans/2026-08-17-phase0-task2-lifecycle.md`
 - Accepted Task 3 plan: `docs/superpowers/plans/2026-08-18-phase0-task3-config-service.md`
 - Accepted Task 4 plan: `docs/superpowers/plans/2026-08-19-phase0-task4-telemetry.md`
@@ -51,86 +55,86 @@
 - Workspace note: the untracked `scripts/install-node-lts.ps1` remains
   untouched and is outside this task's scope.
 
-## Field deployment hardware — Mac mini M6 at venue (2026-10-03)
+## Field deployment — Mac mini M6 at venue (status 2026-10-03 19:40)
 
-Ops/setup session only; no application code changed. Facts verified on the
-target machine (macOS 27, Darwin 27.0.0):
+Target machine: Mac mini M6, macOS 27 (Darwin 27.0.0). Branch
+`field/macmini-deploy` (pushed): `c43cf66` tooling/records, `6598e07` Mirror
+window display targeting. How-to: `deploy/macos/README.md`.
 
-- **Mirror display is not a plain monitor.** It is a HAOCROWN smart mirror:
-  ZC-3568D board (Rockchip RK3568, Android 11, build
-  `ZC-3568D-LVDS-HDMI-20240903`), portrait 1080x1920 LVDS panel, LAN
-  `10.0.0.4` / Wi-Fi MAC `74:24:ca:f1:db:d9`. HDMI-in goes through an RK628D
-  bridge; its EDID is Rockchip's stock default ("RKS" / "T749-fHD720"), so the
-  name says nothing about the panel. The Mac picture is shown only while the
-  Android app `com.android.rockchip.camera2/.RockchipCamera2` is in front; the
-  board boots to its own launcher and has no boot-to-HDMI setting.
-- **Working display path:** Mac HDMI 1920x1080@60 (EDID-preferred; 2160p30
-  was the macOS default and is not used) rotated 90° in macOS (logical
-  1080x1920) → board Android landscape (`user_rotation=1`) → RockchipCamera2
-  fills the panel undistorted. Board "Systemui Setting" = StatusBar Hidden
-  removes the Android bars. Phase 0 Mirror window verified full-screen and
-  upright on the glass (board screenshot) with markers `WINDOW_SHOWN
-  mode=simple_fullscreen` → `LIFECYCLE starting→dormant`. Avatar layout
-  (Phase 3) must therefore target a **portrait 1080x1920** canvas. Touch on the
-  glass does not reach the Mac (vendor manual).
-- **Board control:** board setting "Connect to the computer" opens network ADB
-  (`adb connect 10.0.0.4:5555`, authorized without prompt). Homebrew adb
-  37.0.1 aborts on macOS 27 (`libunwind … invalid compact unwind encoding`)
-  unless started with `ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0`.
-- **Boot recovery:** `board-hdmi-keepalive.sh` relaunches the HDMI viewer
-  when the board sits on its launcher (never over Settings); recovery path
-  verified manually. Operator authorized persistence. As a per-user
-  LaunchAgent it fails with `No route to host` (macOS Local Network privacy;
-  no grant offered for the CLI), so it is packaged as a root LaunchDaemon
-  (`com.magicmirror.board-hdmi`, adb port 5038, root-owned script copy).
-  Installed 2026-10-03 19:17 by the operator (`sudo zsh
-  ~/Library/Application Support/MagicMirror/ops/install-board-hdmi-daemon.sh`):
-  state running, `BOARD_CONNECTED target=10.0.0.4:5555`, `HDMI_VIEW_ACTIVE`.
-  Log `/Library/Logs/MagicMirror/board-hdmi.log`. Remove: `sudo launchctl
-  bootout system/com.magicmirror.board-hdmi && sudo rm
-  /Library/LaunchDaemons/com.magicmirror.board-hdmi.plist`. **Reboot test
-  passed 19:20:59→19:22:04 (82 s):** `adb reboot` → `BOARD_UNREACHABLE` →
-  `HDMI_VIEW_LAUNCHED previous=launcher3`; network adb, `user_rotation=1`, and
-  StatusBar Hidden all survived the reboot (board screenshot verified).
-- **Versioned tooling:** `deploy/macos/` (README, `displayctl.swift`, board
-  watchdog + root-daemon installer, `audio-prefer.swift` + user-agent
-  installer). The ad-hoc helpers in `~/Library/Application Support/MagicMirror/ops`
-  are superseded by it.
-- **Development layout:** ASUS MB16NCG is the main display; HDMI mirror is an
-  extended display at `-1080,0`. Production has HDMI only, so it becomes the
-  main display and the Mirror window lands there without code changes. Helper
-  binaries (display list/rotate/main, audio output switch) are in the same ops
-  folder.
-- **Camera:** Arducam 1080P Low Light (UVC, unique ID `0x31000000c450520`,
-  up to 1920x1080@30), camera permission authorized. It hung once (UVC probe
-  `Unable to send device request`, all GET_CUR failing) after killed ffmpeg
-  runs; a physical replug fixed it — AVFoundation capture now delivers
-  1920x1080 frames (first frame ~1 s). **Aim is wrong for identity:** the frame
-  is mostly ceiling with a standing person cut off at the right edge; it must be
-  re-aimed level at face height toward the guest position (Phase 5 input).
-- **Audio:** Jabra Speak2 75 now enumerates with USB Audio Class after being
-  powered on (HID-only = off/charging). Operator rule (DECISIONS 2026-10-03):
-  Jabra is default input + output + system output whenever connected,
-  enforced by LaunchAgent `com.magicmirror.audio-prefer` (verified: all three
-  defaults = Jabra at 19:18). Unplug/replug re-enforcement not yet exercised.
-- **Mirror window display targeting (field unit, 2026-10-03):** `MIRROR_DISPLAY=<label
-  substring>` (e.g. `T749`) pins the Mirror window to the glass while the
-  operator monitor stays main; unset = previous behavior (primary). New pure
-  planner `src/main/display-target.ts` (27 unit tests) + thin wiring in
-  `src/main/index.ts`. When the glass's HDMI drops out (board reboot) the window
-  is **hidden, not moved** onto the operator monitor, and is moved back, made
-  fullscreen and re-shown when the display returns; recreated renderers keep
-  that state. On macOS the Mirror window sits at the `screen-saver` level so no
-  app's menu bar draws over the glass. Gate: 195/195 tests, typecheck, build.
-  Live on the Mac mini: `MIRROR_DISPLAY_SELECTED display_id=2
-  label=T749-fHD720 reason=match`, window at `x=-1080 1080x1920 layer=1000`
-  (CGWindowList), board screenshot shows a clean glass with no menu bar; board
-  reboot 19:33:23 → `FALLBACK reason=target_removed action=hidden_until_return`
-  → `REHOMED reason=target_returned` (still layer 1000) → watchdog
-  `HDMI_VIEW_LAUNCHED` 19:34:18. ASUS never covered.
-- **Display state at session end:** ASUS is the main display; the app is
-  running on the glass with `MIRROR_DISPLAY=T749` (started from the session
-  shell, so it is not a login item yet).
+| Component | Status | Evidence / remaining |
+|---|---|---|
+| Glass (HAOCROWN smart mirror via HDMI) | ✅ working | Portrait, undistorted, upright, no Android bars, no macOS menu bar |
+| Board boot recovery (root LaunchDaemon `com.magicmirror.board-hdmi`) | ✅ installed, reboot-tested ×3 | HDMI picture back 82 s / 55 s after `adb reboot` |
+| Mirror window on the glass (`MIRROR_DISPLAY=T749`) | ✅ live-verified | Survives board reboot (hide → return); operator monitor never covered |
+| Audio: Jabra Speak2 75 = default mic + speaker | ✅ enforced (LaunchAgent `com.magicmirror.audio-prefer`) | Unplug/replug re-enforcement not yet exercised |
+| Camera: Arducam 1080P Low Light | ✅ streaming 1920x1080 | Re-aimed: guest in frame, face ≈450 px; still looks up from below (ceiling = top half) — tilt down / mount nearer eye level before Phase 5 tuning |
+| App auto-start at login + crash restart | ❌ not set up | App currently started from a session shell; Phase 0 LaunchAgent/KeepAlive work |
+| Avatar, voice, wake, identity | ⏳ not built | Phase 3 / 1 / 2 / 5 — glass shows the Phase 0 "DORMANT" placeholder |
+
+### Facts
+
+- **Glass hardware.** HAOCROWN smart mirror: ZC-3568D board (Rockchip
+  RK3568, Android 11, build `ZC-3568D-LVDS-HDMI-20240903`), portrait 1080x1920
+  LVDS panel, LAN `10.0.0.4` / Wi-Fi MAC `74:24:ca:f1:db:d9`. HDMI-in is an
+  RK628D bridge whose EDID is Rockchip's stock default ("RKS" / "T749-fHD720"),
+  not a panel name. The Mac picture shows only while
+  `com.android.rockchip.camera2/.RockchipCamera2` is in front; the board boots
+  to its own launcher and has no boot-to-HDMI setting. Touch on the glass does
+  not reach the Mac (vendor manual).
+- **Display path.** Mac HDMI 1920x1080@60 (EDID-preferred; macOS defaulted to
+  2160p30) rotated 90° in macOS (logical 1080x1920) → board Android landscape
+  (`user_rotation=1`) → RockchipCamera2 fills the panel undistorted. Board
+  "Systemui Setting" = StatusBar Hidden. Avatar layout (Phase 3) must target a
+  **portrait 1080x1920** canvas.
+- **Board control.** Board setting "Connect to the computer" opens network adb
+  (`10.0.0.4:5555`, no auth prompt). Homebrew adb 37.0.1 aborts on macOS 27
+  (`libunwind … invalid compact unwind encoding`) unless run with
+  `ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0`.
+- **Board boot recovery.** `board-hdmi-keepalive.sh` relaunches the HDMI viewer
+  when the board sits on its launcher (never over Settings). As a per-user
+  LaunchAgent adb got `No route to host` (macOS Local Network privacy, no grant
+  offered for the CLI), so it runs as root LaunchDaemon
+  `com.magicmirror.board-hdmi` (adb port 5038, root-owned script copy),
+  installed by the operator 19:17. Reboot tests: 19:20:59→19:22:04 (82 s),
+  19:33:23→19:34:18 (55 s); network adb, rotation and bar hiding survive
+  reboots. Log `/Library/Logs/MagicMirror/board-hdmi.log`.
+- **Mirror window display targeting** (`6598e07`). `MIRROR_DISPLAY=<label
+  substring>` pins the Mirror window to the glass while the operator monitor
+  stays main; unset = primary (previous behavior). Pure planner
+  `src/main/display-target.ts` (27 tests) + wiring in `src/main/index.ts`.
+  HDMI drop-out → window **hidden** (not moved onto the operator monitor) →
+  moved back, fullscreen, shown when the display returns; recreated renderers
+  keep that state. macOS window level `screen-saver` keeps every app's menu
+  bar off the glass. Gate 195/195 tests, typecheck, build. Live:
+  `MIRROR_DISPLAY_SELECTED display_id=2 label=T749-fHD720 reason=match`,
+  CGWindowList `x=-1080 1080x1920 layer=1000`, clean board screenshot; reboot
+  → `FALLBACK reason=target_removed action=hidden_until_return` →
+  `REHOMED reason=target_returned` (still layer 1000).
+- **Camera.** Arducam 1080P Low Light (UVC, unique ID `0x31000000c450520`,
+  up to 1920x1080@30), camera permission authorized. Hung once (UVC probe
+  `Unable to send device request`) after killed ffmpeg runs; physical replug
+  fixed it. After the operator re-aimed it (19:40) an AVFoundation frame
+  shows the guest centered with a clear face (~450 px tall at 1080p) but a
+  strong upward angle; frontal, eye-level framing will matter for SFace
+  recognition. Test frames were kept only in the session scratchpad and
+  deleted.
+- **Audio.** Jabra Speak2 75 (CoreAudio UID
+  `AppleUSBAudioEngine:Unknown Manufacturer:Jabra Speak2 75:9842AB51A9700254000:1`)
+  is default input + output + system output (verified 19:40). Policy:
+  DECISIONS 2026-10-03. HID-only enumeration = Jabra off/charging.
+- **Operator layout.** ASUS MB16NCG is the macOS main display; the glass is
+  extended at `-1080,0`. Never make the glass main while someone works on the
+  ASUS (macOS moves their windows under the fullscreen Mirror). Production has
+  HDMI only.
+- **Running now.** App on the glass with `MIRROR_DISPLAY=T749`, started from
+  the session shell (not a login item).
+
+### Next field actions
+
+1. App auto-start at login with crash restart (LaunchAgent + KeepAlive, with
+   `MIRROR_DISPLAY=T749` while the operator monitor is attached).
+2. Exercise Jabra unplug/replug re-enforcement.
+3. Final camera mount at eye level before Phase 5 threshold tuning.
 
 ## Current setup and Phase 2 prerequisite (2026-08-19)
 
