@@ -552,6 +552,33 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('restricts folder configuration to Console and rejects renderer-supplied paths', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const mediaFolders = vi.fn(async () => ({ own: null, shared: null, entries: [] }))
+    const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], { ...createStartingSnapshot() }), fixtures.windows, events, undefined, { mediaFolders })
+    const handler = registered.handlers.get('console:media-folders')!
+    const event = { sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }
+    expect(await handler({ sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }, { action: 'choose', scope: 'shared' })).toMatchObject({ ok: false })
+    expect(await handler(event, { action: 'choose', scope: 'shared', path: '/private' })).toMatchObject({ ok: false })
+    expect(await handler(event, { action: 'choose', scope: 'own' })).toMatchObject({ ok: false })
+    expect(mediaFolders).not.toHaveBeenCalled()
+    expect(await handler(event, { action: 'choose', scope: 'own', avatarId: 'raven' })).toMatchObject({ ok: true })
+    expect(mediaFolders).toHaveBeenCalledWith({ action: 'choose', scope: 'own', avatarId: 'raven' })
+  })
+  it('authorizes folder media from the active avatar catalog and rejects unavailable IDs', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    const config = { musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
+    const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia })
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toBe('rejected')
+    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })).toBe('accepted')
+    expect(getFolderMedia).toHaveBeenCalledWith('raven')
+    await handler(event, { request: { action: 'stop' }, identity })
+  })
   it('authorizes media against current session, published resources and avatar locks', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const send = vi.spyOn(fixtures.mirrorSender, 'send')

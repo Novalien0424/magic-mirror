@@ -179,6 +179,9 @@ const bridge: ConsoleBridge = {
   importMedia(request) {
     return ipcRenderer.invoke('console:import-media', request)
   },
+  mediaFolders(request) {
+    return ipcRenderer.invoke('console:media-folders', request)
+  },
 
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>> {
     return ipcRenderer.invoke(UPLOAD_VISUAL_CHANNEL) as Promise<ConsoleResponse<PendingVisualAsset | null>>

@@ -67,6 +67,7 @@ import { validateCubismModelBundle } from './avatar/model-bundle'
 import { importAvatarModel, verifyAvatarModel, safeAvatarFile, listAvatarModels, saveAvatarModelLabel } from './avatar/model-import'
 import type { AvatarModel } from '../shared/avatar-profiles'
 import { importManagedMusicAsset } from './scenes/music-assets'
+import { MediaFolders } from './avatar/media-folders'
 import { createVisualAssetManager, createVisualPlaybackVerifier, verifyManagedVisualAsset } from './scenes/visual-assets'
 import { serveMediaFile } from './scenes/media-file-response'
 import { runPhase4Qa } from './phase4-qa'
@@ -880,6 +881,8 @@ void app.whenReady().then(async () => {
   }
 
   const deferredCredentialEvents = createDeferredCredentialEventSink()
+  const mediaFolders = new MediaFolders(join(app.getPath('userData'), 'media-folders.json'))
+  const mediaFoldersReady = mediaFolders.load()
   initializeAudioPreferences(join(app.getPath('userData'), 'audio-devices.json'))
   const credentialSource = createEnvironmentCredentialSource()
   let voicePreview: VoicePreviewLease | undefined
@@ -889,6 +892,7 @@ void app.whenReady().then(async () => {
   })
 
   const runtime: BootRuntime = bootSequence({
+    getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     // Synthetic QA has no provider session to deliver MEDIA_CLOSED.
     completeSleepForDemo: phase4QaEnabled && process.env['MIRROR_PHASE4_QA_LIVE'] !== '1',
     appVersion: app.getVersion(),
@@ -951,6 +955,24 @@ void app.whenReady().then(async () => {
     },
   })
   deferredCredentialEvents.install(runtime.telemetry)
+  let lastFolderHealth = ''
+  const reportFolderHealth = () => {
+    const status = mediaFolders.health()
+    if (status === lastFolderHealth) return
+    lastFolderHealth = status
+    runtime.telemetry.emit({ module: 'avatar', event: 'media_folders', source: 'runtime',
+      status: status === 'ready' ? 'success' : 'degraded', reason: `media_folder_index_${status}` })
+  }
+  void mediaFoldersReady.then(reportFolderHealth)
+  let refreshingFolders = false
+  const folderTimer = setInterval(() => {
+    if (refreshingFolders) return
+    refreshingFolders = true
+    void mediaFoldersReady.then(() => mediaFolders.refresh()).then(reportFolderHealth).catch(() => runtime.telemetry.emit({ module: 'avatar', event: 'media_folders',
+      source: 'runtime', status: 'degraded', reason: 'media_folder_refresh_failed' })).finally(() => { refreshingFolders = false })
+  }, 30000)
+  folderTimer.unref()
+  app.once('before-quit', () => clearInterval(folderTimer))
   bootRuntime = runtime
   wakeCalibration = createWakeCalibration({
     supervisor: () => wakeSupervisor,
@@ -1045,6 +1067,13 @@ void app.whenReady().then(async () => {
       if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(opaqueId)) {
         return new Response(null, { status: 404 })
       }
+      if (opaqueId.startsWith('folder-') && ['music', 'music-draft', 'visual', 'visual-draft'].includes(url.hostname)) {
+        await mediaFoldersReady
+        const active = await runtime.getPublishedSceneConfigForRuntime()
+        const file = await mediaFolders.resolve(opaqueId, active.avatarCatalog?.activeAvatarId, url.hostname.endsWith('-draft'))
+        if (!file || url.hostname.startsWith('music') !== file.mimeType.startsWith('audio/')) return new Response(null, { status: 404 })
+        return serveMediaFile(request, file.path, file.mimeType)
+      }
       let filePath: string
       let mimeType: string
       if (url.hostname === 'music' || url.hostname === 'music-draft') {
@@ -1101,6 +1130,25 @@ void app.whenReady().then(async () => {
     },
   })
   sceneRuntimeControl = registerIpcHandlers({
+    getFolderMedia: avatarId => mediaFolders.resources(avatarId),
+    mediaFolders: async request => {
+      await mediaFoldersReady
+      const config = await runtime.console.getConfig()
+      if (!config.ok) throw Error('media_folder_config_unavailable')
+      const knownAvatar = !request.avatarId || config.value.draft.avatarCatalog?.avatars.some(avatar => avatar.id === request.avatarId)
+      if (!knownAvatar && ['choose', 'unlink'].includes(request.action) && request.scope === 'own') throw Error('media_folder_save_avatar_first')
+      const owner = request.scope === 'shared' ? 'shared' : `avatar:${request.avatarId}`
+      if (request.action === 'choose') {
+        const options: Electron.OpenDialogOptions = { title: request.scope === 'shared' ? 'Choose shared media folder for all avatars' : 'Choose this avatar’s media folder', properties: ['openDirectory'],
+          defaultPath: (request.scope === 'shared' ? mediaFolders.view().shared : mediaFolders.view(request.avatarId).own)?.path ?? app.getPath('home') }
+        const window = windows.get('console')
+        const selected = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
+        if (!selected.canceled && selected.filePaths[0]) await mediaFolders.link(owner, selected.filePaths[0])
+      } else if (request.action === 'unlink') await mediaFolders.unlink(owner)
+      else if (request.action === 'refresh') await mediaFolders.refresh()
+      reportFolderHealth()
+      return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
+    },
     wakeCalibration: async command => {
       if (command.type === 'start' || command.type === 'update') await wakeConfigurationTask
       return wakeCalibration!.command(command)

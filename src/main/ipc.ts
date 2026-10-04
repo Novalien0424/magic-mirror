@@ -1,6 +1,7 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
+import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
@@ -156,6 +157,8 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
+  readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
@@ -1724,12 +1727,17 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       if (request.action === 'stop') return mediaSkill.stop()
       const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
       if (!current()) return 'ignored'
+      if (!config) {
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_config_unavailable' })
+        return 'rejected'
+      }
       const catalog = config?.avatarCatalog
-      const skill = catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL
+      const folderEntries = options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? []
+      const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL, folderEntries)
       const resource = skill.resources.find(r => r.kind === request.kind && r.assetId === request.assetId)
-      const available = request.kind === 'video'
+      const available = folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind === 'video'
         ? config?.visualAssets.some(a => a.id === request.assetId && a.kind === 'video')
-        : config?.musicAssets.some(a => a.id === request.assetId)
+        : config?.musicAssets.some(a => a.id === request.assetId))
       if (!skill.enabled || !resource || !available || catalog && !canUseAvatarResource(catalog, catalog.activeAvatarId,
         request.kind === 'video' ? 'visual' : 'music', request.assetId)) {
         emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })
@@ -1898,6 +1906,26 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     return invokeConsole(consoleFacade(options), (facade) => facade.getOverview(), telemetry)
+  })
+
+  ipcMain.handle('console:media-folders', async (event, ...args) => {
+    if (!authorizeSender(event, 'console', windows).ok) return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    const value = args[0]
+    if (args.length !== 1 || !value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).some(key => !['action', 'avatarId', 'scope'].includes(key))
+      || !['get', 'refresh', 'choose', 'unlink'].includes(readProperty(value, 'action') as string)
+      || ('avatarId' in value && (typeof value.avatarId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(value.avatarId)))
+      || ('scope' in value && !['own', 'shared'].includes(value.scope as string))
+      || ['choose', 'unlink'].includes(readProperty(value, 'action') as string) && (!readProperty(value, 'scope') || readProperty(value, 'scope') === 'own' && !readProperty(value, 'avatarId'))) {
+      payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (!options.mediaFolders) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.mediaFolders(value as MediaFolderCommand) } }
+    catch (error) {
+      const reason = error instanceof Error && /^media_folder_[a-z_]+$/.test(error.message) ? error.message : 'media_folder_unavailable'
+      emit(telemetry, { module: 'avatar', event: 'media_folders', source: 'runtime', status: 'degraded', reason })
+      return { ok: false, error: 'console_request_rejected', reason: 'cause=runtime_action_failed', fields: [{ path: 'mediaFolder', message: reason }] }
+    }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarRuntime, (event, ...args) => {

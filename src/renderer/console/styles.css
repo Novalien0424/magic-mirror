@@ -957,3 +957,7 @@ th {
 .media-skill-preview video { width: calc(100% - 1.6rem); max-height: 260px; background: #000; }
 .media-skill-preview audio { width: calc(100% - 1.6rem); }
 .media-skill-preview summary { cursor: pointer; padding: 8px 0; }
+.media-folder-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.media-folder-card { padding: 1rem; border: 1px solid #527887; border-radius: .6rem; background: #152832; min-width: 0; }
+.media-folder-card h4 { margin: 0; }
+.media-folder-path { font-size: .8rem; overflow-wrap: anywhere; color: #b6c7d0; }
