@@ -23,9 +23,10 @@ cleanup before local `wake_worker_listening`; no second mic owner was started.
 Eight focused files: **98 tests passed**; subsequent catalog/wake checks:
 **26 passed** (overlapping coverage). Typecheck/build and diff checks passed.
 Normal LaunchAgent PID **56497** runs the corrected build; debug window closed.
-Physical spoken wake detection remains pending operator confirmation; a
-speaker-generated synthetic phrase did not establish detection. Operator config
-is unchanged. No phase promotion.
+Operator confirmed the live spoken wake test succeeded: “yes now wake works!”
+This confirms wake interruption of the current media loop on the final Mac.
+The earlier speaker-generated synthetic phrase did not establish detection.
+Operator config is unchanged. No phase promotion.
 
 ## Current follow-up: wake diagnostics and debug errors — 2026-10-04
 
