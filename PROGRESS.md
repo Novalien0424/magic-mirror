@@ -1,6 +1,27 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
-## Current: simpler media/BGM setup and on-demand camera vision — 2026-10-04
+## Current: actual folder BGM and preview recovered — 2026-10-04
+
+Operator-selected Common MP3 is published in v15. Its original live/preview
+failure cleared after a clean LaunchAgent stop/start; the underlying cause is
+not established and no application behavior change is claimed. Actual file
+decode (ffmpeg) and isolated Electron managed-protocol playback exited 0.
+Restored Mirror playback: readyState 4, advancing time, unpaused, unmuted,
+volume 0.06 (0.3 dormant × 0.2 master). Operator confirmed audible output.
+Actual Console full-cycle preview also passed: readyState 4, time 37.73s,
+loop enabled, volume 0.06, media error 0. Preview and inspectors were closed;
+normal dormant BGM remains running under LaunchAgent, PID 43314.
+Active/draft remain identical SHA-256
+`56b65290bc964e3bbdbcabde468fa0f064f39252dadac9eb0e1ac70dc2b09bf4`.
+Temporary diagnostics were removed; no source media was modified or copied.
+If this recurs, capture the protocol response/media error before restarting.
+
+Camera update: targeted macOS IOUSBHost device capture/release reset restored
+tracking at 07:38:10 UTC; worker restart alone had not. Still-capture checks
+remained unavailable. No reusable USB reset command or Console button is
+installed. Earlier no-frame and configuration notes below are historical.
+
+## Previous: simpler media/BGM setup and on-demand camera vision — 2026-10-04
 
 Removed the redundant media-enable and per-file selection checkboxes. Linked
 folders authorize all indexed music/video automatically, including subfolders.
