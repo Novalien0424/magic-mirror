@@ -124,15 +124,21 @@ describe("RealtimeSession adapter", () => {
     probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'background' });
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'background', transcript: 'Synthetic background speech' });
     expect(turns).not.toHaveBeenCalled(); expect(transcripts).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_wake_not_matched', status: 'info' }));
+    expect(probe.sendEvent).not.toHaveBeenCalledWith({ type: 'conversation.item.delete', item_id: 'background' });
+    // The SDK retrieves completed input before updating its RAM-only history.
+    probe.emit('transport_event', { type: 'conversation.item.retrieved', item: { id: 'background', role: 'user' } });
     expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'conversation.item.delete', item_id: 'background' });
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'wake', transcript: 'Mirror wake' });
     await Promise.resolve(); expect(onMediaRequest).toHaveBeenCalledOnce();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_wake_matched', status: 'info' }));
     probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'late-background' });
     handle.setMediaPlayback!(false);
     expect(probe.sendEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'session.update', session: expect.objectContaining({ audio: expect.objectContaining({ input: expect.objectContaining({ turn_detection: expect.objectContaining({ create_response: true }) }) }) }) }));
     probe.emit('transport_event', { type: 'conversation.item.created', item: { role: 'user', id: 'late-background' } });
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'late-background', transcript: 'Synthetic delayed background speech' });
     expect(turns).not.toHaveBeenCalled(); expect(transcripts).not.toHaveBeenCalled();
+    probe.emit('transport_event', { type: 'conversation.item.retrieved', item: { id: 'late-background', role: 'user' } });
     expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'conversation.item.delete', item_id: 'late-background' });
   });
   it('adds a requested camera frame before returning a response result and drops late captures', async () => {
