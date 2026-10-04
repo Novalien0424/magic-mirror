@@ -157,6 +157,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
   readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
@@ -1705,6 +1706,39 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return projectAppSnapshot(runtime.snapshot())
   })
 
+  ipcMain.handle('console:check-camera', async (event, ...args) => {
+    if (!authorizeSender(event, 'console', windows).ok || !eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry); return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    const frame = await options.captureCamera?.().catch(() => null) ?? null
+    emit(telemetry, { module: 'camera', event: 'camera_capture_check', source: 'runtime', status: frame ? 'success' : 'degraded', reason: frame ? 'camera_frame_captured' : 'camera_capture_unavailable' })
+    return { ok: true, value: frame ? { status: 'ready', width: frame.width, height: frame.height } : { status: 'unavailable' } }
+  })
+
+  ipcMain.handle('mirror:capture-camera', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return null }
+    const identity = args[0]
+    if (args.length !== 1 || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])
+      || typeof readProperty(identity, 'realtimeSessionId') !== 'string'
+      || !Number.isSafeInteger(readProperty(identity, 'sessionGeneration'))) { payloadRejected(telemetry); return null }
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
+        && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    let frame: import('../shared/camera-tracking').CameraSnapshot | null = null
+    let reason = 'camera_capture_session_stale'
+    if (current()) {
+      frame = await options.captureCamera?.().catch(() => null) ?? null
+      reason = frame ? 'camera_frame_captured' : 'camera_capture_unavailable'
+      if (!current()) { frame = null; reason = 'camera_capture_session_stale' }
+    }
+    emit(telemetry, { module: 'camera', event: 'camera_capture', source: 'runtime', status: frame ? 'success' : 'degraded', reason })
+    return frame
+  })
+
   ipcMain.handle(MIRROR_IPC_CHANNELS.mediaSkill, async (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return 'rejected' }
@@ -1913,7 +1947,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     const value = args[0]
     if (args.length !== 1 || !value || typeof value !== 'object' || Array.isArray(value)
       || Object.keys(value).some(key => !['action', 'avatarId', 'scope'].includes(key))
-      || !['get', 'refresh', 'choose', 'unlink'].includes(readProperty(value, 'action') as string)
+      || !['get', 'refresh', 'save', 'choose', 'unlink'].includes(readProperty(value, 'action') as string)
       || ('avatarId' in value && (typeof value.avatarId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(value.avatarId)))
       || ('scope' in value && !['own', 'shared'].includes(value.scope as string))
       || ['choose', 'unlink'].includes(readProperty(value, 'action') as string) && (!readProperty(value, 'scope') || readProperty(value, 'scope') === 'own' && !readProperty(value, 'avatarId'))) {

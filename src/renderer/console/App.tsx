@@ -49,7 +49,7 @@ import { PresentationEditor } from './PresentationEditor'
 import { MediaSkillEditor } from './MediaSkillEditor'
 import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { addAvatarMedia } from './media-selection'
-import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES } from '../../shared/audio-devices'
+import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES, type AudioPreferences } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
 import { AvatarCharacterEditor } from './AvatarCharacterEditor'
 import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
@@ -686,15 +686,44 @@ function AvatarAudioPanel({
   disabled,
   developerMode,
   onCommand,
+  onSave,
+  bridge,
 }: {
   readonly state: AvatarRuntimeState
   readonly disabled: boolean
   readonly developerMode: boolean
   readonly onCommand: (command: AvatarControlCommand) => void
+  readonly onSave: (preferences: AudioPreferences) => Promise<boolean>
+  readonly bridge: ConsoleBridge | null
 }): React.JSX.Element {
   const value = state.status === 'success' ? state.value : null
   const audioDevices = value?.audioDevices
-  const preferences = audioDevices?.preferences ?? DEFAULT_AUDIO_PREFERENCES
+  const [draftPreferences, setDraftPreferences] = useState<AudioPreferences | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState('')
+  const [cameraCheck, setCameraCheck] = useState('')
+  const [checkingCamera, setCheckingCamera] = useState(false)
+  const checkCamera = async () => {
+    if (!bridge?.checkCamera || checkingCamera) return
+    setCheckingCamera(true)
+    try {
+      const result = await bridge.checkCamera()
+      setCameraCheck(result.ok && result.value.status === 'ready'
+        ? `Camera ready · ${result.value.width} × ${result.value.height}. Capture verified; no image saved or sent to the avatar.`
+        : 'Camera unavailable. Check its connection and Camera permission in macOS System Settings.')
+    } catch { setCameraCheck('Camera check failed. Try again.') }
+    finally { setCheckingCamera(false) }
+  }
+  const preferences = draftPreferences ?? audioDevices?.preferences ?? DEFAULT_AUDIO_PREFERENCES
+  const editPreferences = (next: AudioPreferences) => { setDraftPreferences(next); setSaveResult('') }
+  const save = async () => {
+    if (saving || disabled || !audioDevices) return
+    setSaving(true)
+    try {
+      if (await onSave(preferences)) { setDraftPreferences(null); setSaveResult('Device settings saved.') }
+      else setSaveResult('Could not save device settings. Your changes are retained; try again.')
+    } finally { setSaving(false) }
+  }
   return (
     <section className="console__panel" aria-labelledby="console-avatar-audio">
       <div className="console__panel-heading">
@@ -706,6 +735,11 @@ function AvatarAudioPanel({
       </div>
 
       {state.status === 'failure' ? <p className="console__fault">{state.error}; {state.reason}</p> : null}
+      <div className="console__device-save console__action-row">
+        <button type="button" className="console__primary" disabled={disabled || saving || !audioDevices} onClick={() => void save()}>{saving ? 'Saving…' : 'Save device settings'}</button>
+        {draftPreferences && <button type="button" disabled={saving} onClick={() => { setDraftPreferences(null); setSaveResult('Changes discarded.') }}>Discard changes</button>}
+        <span role="status">{saveResult || (draftPreferences ? 'Unsaved device changes' : 'Device settings are saved')}</span>
+      </div>
       <details><summary>Renderer measurements</summary>
       <div className="console__overview-grid">
         <OverviewField label="state" value={displayValue(value?.state)} />
@@ -732,14 +766,14 @@ function AvatarAudioPanel({
             const volume = (preferences.volumes ?? DEFAULT_AUDIO_VOLUMES)[channel]
             return <HelpField help={FIELD_HELP[channel === 'bgm' ? 'bgmVolume' : channel === 'avatar' ? 'avatarVolume' : 'effectsVolume']} key={channel}>{label} · {Math.round(volume * 100)}%{volume === 0 ? ' · Muted' : ''}
               <input aria-label={`${label} volume`} type="range" min="0" max="100" step="1"
-                value={Math.round(volume * 100)} disabled={disabled || !audioDevices}
-                onChange={event => onCommand({ type: 'audio_devices', preferences: { ...preferences,
-                  volumes: { ...(preferences.volumes ?? DEFAULT_AUDIO_VOLUMES), [channel]: Number(event.currentTarget.value) / 100 } } })} />
+                value={Math.round(volume * 100)} disabled={disabled || saving || !audioDevices}
+                onChange={event => editPreferences({ ...preferences,
+                  volumes: { ...(preferences.volumes ?? DEFAULT_AUDIO_VOLUMES), [channel]: Number(event.currentTarget.value) / 100 } })} />
               <small>{description}</small>
             </HelpField>
           })}
         </div>
-        <p className="console__detail">Applies immediately and saves automatically for all avatars. 0% mutes a channel. Scene levels and speech ducking still apply.</p>
+        <p className="console__detail">Choose levels, then Save device settings to apply them to all avatars. 0% mutes a channel.</p>
       </fieldset>
       <p className="console__label">Sound devices</p>
       <div className="console__gain-controls">
@@ -749,15 +783,15 @@ function AvatarAudioPanel({
           const selected = input ? preferences.inputId : preferences.outputId
           const systemDefault = devices.find((device) => device.deviceId === 'default')?.label.replace(/^(Default|預設)\s*-\s*/i, '')
           return <HelpField help={FIELD_HELP[input ? 'microphone' : 'speakers']} key={kind}>{input ? 'Microphone' : 'Speakers'}
-            <select aria-label={input ? 'Microphone device' : 'Speaker device'} value={selected} disabled={disabled || !audioDevices}
+            <select aria-label={input ? 'Microphone device' : 'Speaker device'} value={selected} disabled={disabled || saving || !audioDevices}
               onChange={(event) => {
                 const id = event.currentTarget.value
                 const device = devices.find((entry) => entry.deviceId === id)
-                onCommand({ type: 'audio_devices', preferences: input
+                editPreferences(input
                   ? { ...preferences, inputId: id, inputLabel: id ? device?.label ?? '' : '' }
-                  : { ...preferences, outputId: id } })
+                  : { ...preferences, outputId: id })
               }}>
-              <option value="">Windows default{systemDefault ? ` — ${systemDefault}` : ''}</option>
+              <option value="">System default{systemDefault ? ` — ${systemDefault}` : ''}</option>
               {selected && !devices.some((device) => device.deviceId === selected) ? <option value={selected}>Selected device unavailable</option> : null}
               {devices.filter((device) => device.deviceId && device.deviceId !== 'default' && device.deviceId !== 'communications').map((device) => (
                 <option key={device.deviceId} value={device.deviceId} disabled={input && !device.label}>{device.label || 'Unnamed device'}</option>
@@ -766,8 +800,14 @@ function AvatarAudioPanel({
           </HelpField>
         })}
       </div>
-      <p className="console__detail">Speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start; use Start Conversation, then Disconnect to update both. Windows default follows the system selection on acquisition.</p>
+      <p className="console__detail">After saving, speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start. System default follows the Mac’s selection.</p>
       <p className="console__detail" role="status">{audioDevices?.reason === 'audio_devices_ready' ? 'Audio devices ready.' : audioDevices?.reason?.replaceAll('_', ' ') ?? 'Loading sound devices…'}</p>
+      <section aria-label="Camera vision">
+        <h3>Camera</h3>
+        <p>The configured camera supports gaze tracking and on-demand vision for every avatar. Ask “What am I holding?” or “Look at this.” A requested still is sent to the active conversation; images are never saved locally.</p>
+        <button type="button" disabled={disabled || checkingCamera || !bridge?.checkCamera} onClick={() => void checkCamera()}>{checkingCamera ? 'Checking camera…' : 'Check camera capture'}</button>
+        <p role="status">{cameraCheck}</p>
+      </section>
       <section aria-label="Wake microphone diagnostics">
         <h3>Wake microphone — live input</h3>
         <p role="status">{value?.wakeInput ? ({
@@ -1402,6 +1442,7 @@ export function ScenesPanel({
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
   const [section, setSection] = useState<ProfileSection>('Persona')
+  const applyOnSave = section === 'Music & video' || section === 'Appearance'
   const voiceOnly = section === 'Voice'
   const dialogueOnly = PROFILE_SECTIONS.includes(section as typeof PROFILE_SECTIONS[number]) && section !== 'Spells & scenes'
   const personaOnly = section === 'Persona'
@@ -1693,7 +1734,7 @@ export function ScenesPanel({
       {rawDraft?.avatarCatalog && editingAvatar && <header className="profile-editing-header" aria-label="Current avatar being edited">
         <p className="console__eyebrow">Editing avatar settings</p>
         <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
-        <p>{section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? 'This avatar is active on Mirror. Edits apply after you publish.' : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
+        <p>{section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? (applyOnSave ? 'This avatar is active on Mirror. Use Save & apply all changes below.' : 'This avatar is active on Mirror. Edits apply after you publish.') : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
         <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
           {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
         </select></HelpField>
@@ -1708,10 +1749,7 @@ export function ScenesPanel({
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
-      {section === 'Music & video' && editingAvatar?.mediaSkill?.enabled === false && <p role="alert">Media playback is disabled for this avatar. Enable it in Playback settings below, then Save & apply all changes.</p>}
-      {visible && section === 'Music & video' && editingAvatar && draft ? <details><summary>Playback settings and previously imported files</summary><MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar}
-        published={payload?.active.avatarCatalog?.avatars.find(a => a.id === editingId)?.mediaSkill}
-        onImport={() => void importMedia({ kind: 'all', multiple: true }, undefined, editingId)} /></details> : null}
+      {visible && section === 'Music & video' && editingAvatar && draft ? <details><summary>Playback settings</summary><MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /></details> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
@@ -1756,7 +1794,7 @@ export function ScenesPanel({
         saveUnavailableReason={saveUnavailableReason} testUnavailableReason={testUnavailableReason} result={result}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
         onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
-      {visible && resourceDraft && section === 'Appearance' ? <PresentationEditor key={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
+      {visible && resourceDraft && section === 'Appearance' ? <PresentationEditor key={editingId} bridge={bridge} avatarId={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
       {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
         <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
         {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
@@ -1774,16 +1812,16 @@ export function ScenesPanel({
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton aria-label={section === 'Music & video' ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : section === 'Music & video' ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled || invalidPresentation} onClick={() => void saveAndCheck(section === 'Music & video')}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : section === 'Music & video' ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
+        <HelpButton aria-label={applyOnSave ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : applyOnSave ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled || invalidPresentation} onClick={() => void saveAndCheck(applyOnSave)}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : applyOnSave ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
         {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check aborted. Waiting for the pending save / check to finish safely…') }}>Abort check</button>}
-        {section !== 'Music & video' && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
+        {!applyOnSave && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         </div>
         {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>
           <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
-        <p className="console__scene-result" role="status">{section === 'Music & video' && result === 'Edits stay in draft until you publish.' ? 'Folder links save immediately. Save & apply is for playback settings and imported files.' : result}</p>
+        <p className="console__scene-result" role="status">{section === 'Music & video' && result === 'Edits stay in draft until you publish.' ? 'Folder links save immediately. Save & apply is for playback settings and imported files.' : section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result}</p>
       </div>
       </div></div>
       {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}
@@ -2322,20 +2360,22 @@ export function App(): React.JSX.Element {
     runLifecycleAction('disconnect', (bridge) => bridge.disconnect())
   }
 
-  const controlAvatar = (command: AvatarControlCommand): void => {
+  const controlAvatar = async (command: AvatarControlCommand): Promise<boolean> => {
     const bridge = bridgeRef.current
-    if (bridge === null || !bridgeAvailable) return
-    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices' && command.type !== 'stop_avatar_test') return
-    void bridge.controlAvatar(command).then(
+    if (bridge === null || !bridgeAvailable) return false
+    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices' && command.type !== 'stop_avatar_test') return false
+    return bridge.controlAvatar(command).then(
       (response) => {
         if (mountedRef.current && response.ok) {
           setAvatarRuntimeState({ status: 'success', value: response.value })
           if (command.type === 'audio_devices') void getAudioDeviceRouter().select(command.preferences)
         }
         else if (mountedRef.current && !response.ok) setAvatarRuntimeState({ status: 'failure', error: response.error, reason: response.reason })
+        return response.ok
       },
       () => {
         if (mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
+        return false
       },
     )
   }
@@ -2409,6 +2449,8 @@ export function App(): React.JSX.Element {
             developerMode={developerMode}
             disabled={!bridgeAvailable}
             onCommand={controlAvatar}
+            onSave={preferences => controlAvatar({ type: 'audio_devices', preferences })}
+            bridge={bridgeRef.current}
           />
         </div>
         <div hidden={activePage !== 'System' || systemPage !== 'Simulator'}>

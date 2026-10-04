@@ -6,6 +6,13 @@ import { readFileSync } from 'node:fs'
 import { AVATAR_VOICES } from '../../src/shared/avatar-profiles'
 
 describe('lifecycle presentation', () => {
+  it('accepts stable linked-folder BGM references, but rejects arbitrary external paths', () => {
+    const baseline = JSON.parse(readFileSync('resources/config/default.json', 'utf8'))
+    delete baseline.schemaVersion
+    const folderId = 'folder-' + 'a'.repeat(40)
+    expect(mirrorConfigSchema.safeParse({ ...baseline, presentation: { ...DEFAULT_PRESENTATION, ambienceId: folderId } }).success).toBe(true)
+    expect(mirrorConfigSchema.safeParse({ ...baseline, presentation: { ...DEFAULT_PRESENTATION, ambienceId: 'folder-untrusted' } }).success).toBe(false)
+  })
   it('defaults legacy active BGM to silence and validates the independently saved active level', () => {
     const legacy = { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: .25, entranceMs: 1800, exitMs: 1800 }
     expect(parsePresentation(legacy)?.activeAmbienceGain).toBe(0)

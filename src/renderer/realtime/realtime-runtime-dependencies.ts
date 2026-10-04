@@ -160,6 +160,7 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
   readonly onMediaRequest?: CreateRealtimeSessionInput['onMediaRequest']
+  readonly onCameraCapture?: CreateRealtimeSessionInput['onCameraCapture']
   readonly getAvatarDialogue?: () => Promise<{ wakeGreeting?: string; sleepFarewell?: string }>
   readonly waitForWakePresentation?: CreateRealtimeSessionInput['waitForWakePresentation']
   readonly onAudioActivity?: CreateRealtimeSessionInput['onAudioActivity']
@@ -304,6 +305,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
         onMediaRequest: input.onMediaRequest,
+        onCameraCapture: input.onCameraCapture,
         waitForOutputTail: async () => { await outputs.get(audioElement)?.waitForTail?.() },
         onAudioActivity: activity => {
           const output = outputs.get(audioElement)

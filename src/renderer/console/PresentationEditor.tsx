@@ -7,11 +7,14 @@ import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentati
 import { PresentationStage } from '../avatar/PresentationStage'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { PresentationPhase } from '../avatar/presentation-controller'
+import type { ConsoleBridge } from '../../shared/bridge'
+import type { FolderMediaEntry } from '../../shared/media-folders'
 
 const ignore = () => undefined
-export function PresentationEditor({ draft, onChange, disabled, model }: {
+export function PresentationEditor({ draft, onChange, disabled, model, bridge, avatarId }: {
   draft: ConsoleConfigDraftInput; onChange(draft: ConsoleConfigDraftInput): void; disabled: boolean
   model?: import('../../shared/avatar-profiles').AvatarModelReference
+  bridge?: ConsoleBridge | null; avatarId?: string
 }) {
   const config = draft.presentation ?? DEFAULT_PRESENTATION
   const [lifecycle, setLifecycle] = useState<LifecycleState>('dormant')
@@ -19,6 +22,22 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
   const [previewKind, setPreviewKind] = useState<'entrance' | 'exit' | 'cycle' | null>(null)
   const [previewRun, setPreviewRun] = useState(0)
   const [reason, setReason] = useState('')
+  const [folderMusic, setFolderMusic] = useState<FolderMediaEntry[]>([])
+  const [folderError, setFolderError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    const refresh = async () => {
+      if (!bridge?.mediaFolders) return
+      try {
+        const result = await bridge.mediaFolders({ action: 'get', ...(avatarId ? { avatarId } : {}) })
+        if (cancelled) return
+        if (result.ok) { setFolderMusic(result.value.entries.filter(entry => entry.kind === 'music')); setFolderError(result.value.reason ? 'Folder library unavailable. Check Music & video folder settings.' : '') }
+        else setFolderError('Could not read media folders. Check Music & video folder settings.')
+      } catch { if (!cancelled) setFolderError('Could not read media folders. Check Music & video folder settings.') }
+    }
+    void refresh(); const timer = setInterval(() => void refresh(), 30000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [bridge, avatarId])
   const reflective = config.mode === 'reflective'
   const videos = draft.visualAssets.filter(asset => asset.kind === 'video')
   const entranceVideo = videos.find(asset => asset.id === config.entranceVideoId)
@@ -60,9 +79,13 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
         {!reflective ? <HelpField help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
           <option value="">Built-in atmosphere</option>{draft.visualAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
         </select></HelpField> : null}
-        <HelpField help={FIELD_HELP.ambience}>{reflective ? 'Dormant music (loops)' : 'Sleep ambience (loops)'}<select value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
-          <option value="">No ambience</option>{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
+        <HelpField help={FIELD_HELP.ambience}>{reflective ? 'Dormant music (loops)' : 'Sleep ambience (loops)'}<select aria-label="Dormant music" value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
+          <option value="">No ambience</option>
+          {(['own', 'shared'] as const).map(origin => <optgroup key={origin} label={origin === 'own' ? 'Avatar folder' : 'Common / shared folder'}>{folderMusic.filter(a => a.origin === origin).map(a => <option value={a.assetId} key={a.assetId}>{a.name}</option>)}</optgroup>)}
+          <optgroup label="Imported music">{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}</optgroup>
+          {config.ambienceId && !draft.musicAssets.some(a => a.id === config.ambienceId) && !folderMusic.some(a => a.assetId === config.ambienceId) && <option value={config.ambienceId}>Selected music unavailable — check linked folders</option>}
         </select></HelpField>
+        {folderError && <p role="alert">{folderError}</p>}
         <HelpField help={FIELD_HELP.ambienceVolume}>{reflective ? 'Dormant music volume' : 'Ambience volume'} · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
         <HelpField help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
         {reflective ? <>
@@ -89,7 +112,7 @@ export function PresentationEditor({ draft, onChange, disabled, model }: {
         {error ? <p className="console__fault" role="alert">{error} Fix this before previewing, saving or publishing.</p> : null}
         <p className="console__muted">Videos are muted. Music mutes during avatar speech, then fades back in. Uses your selected speakers.{reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''}</p>
         {reflective && (!entranceVideo || !exitVideo) ? <p className="console__muted">Missing video uses a soft fade. No mist is generated.</p> : null}
-        <p className="console__muted">Import media in the Media library. Save, Test and Publish below to apply this presentation to the mirror.</p>
+        <p className="console__muted">Music is listed automatically from this avatar’s folder and the common folder. Link folders in Music & video. Save & apply all changes to use this presentation on the mirror.</p>
       </fieldset>
       <div className="presentation-editor__preview-panel">
         <div className="console__action-row">

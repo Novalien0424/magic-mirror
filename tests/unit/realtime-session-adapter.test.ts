@@ -21,6 +21,7 @@ type AdapterProbe = {
   interrupt: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   sendMessage: ReturnType<typeof vi.fn>;
+  addImage: ReturnType<typeof vi.fn>;
   sendEvent: ReturnType<typeof vi.fn>;
   emit: (eventName: string, ...events: unknown[]) => void;
   dependencies: RealtimeSessionDependencies;
@@ -34,11 +35,13 @@ function makeAdapterProbe(): AdapterProbe {
   const interrupt = vi.fn(async (..._args: unknown[]) => undefined);
   const close = vi.fn(async (..._args: unknown[]) => undefined);
   const sendMessage = vi.fn((..._args: unknown[]) => undefined);
+  const addImage = vi.fn();
   const transport = createDeterministicRealtimeTransport();
   vi.spyOn(transport, 'sendMessage').mockImplementation(sendMessage);
   const sendEvent = vi.spyOn(transport, 'sendEvent').mockImplementation(() => {});
   vi.spyOn(transport, 'requestResponse').mockImplementation(response => transport.sendEvent({ type: 'response.create', response }));
   const fakeSession = {
+    addImage,
     connect,
     interrupt,
     close,
@@ -59,6 +62,7 @@ function makeAdapterProbe(): AdapterProbe {
   });
 
   return {
+    addImage,
     agentConstructorCalls,
     constructorCalls,
     connect,
@@ -109,6 +113,24 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('adds a requested camera frame before returning a response result and drops late captures', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    let deliver!: (frame: { dataUrl: string; width: number; height: number } | null) => void;
+    const capture = vi.fn(() => new Promise<{ dataUrl: string; width: number; height: number } | null>(resolve => { deliver = resolve }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onCameraCapture: capture });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
+    const tool = agent.tools.find(t => t.name === 'capture_camera')!;
+    const result = tool.invoke({}, '{}');
+    deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
+    expect(await result).toMatchObject({ status: 'accepted', code: 'camera_image_added' });
+    expect(probe.addImage).toHaveBeenCalledExactlyOnceWith('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false });
+    const late = tool.invoke({}, '{}');
+    await handle.close('manual_stop');
+    deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
+    expect(await late).toMatchObject({ status: 'ignored' });
+    expect(probe.addImage).toHaveBeenCalledOnce();
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
+  });
   it('makes concurrent close callers wait for the same release', async () => {
     const probe = makeAdapterProbe();
     let release!: () => void;

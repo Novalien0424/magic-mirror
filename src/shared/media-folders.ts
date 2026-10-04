@@ -1,6 +1,7 @@
 import { DEFAULT_MEDIA_SKILL, type AvatarMediaResource, type AvatarMediaSkill } from './media-skill'
 
 export interface FolderMediaEntry extends AvatarMediaResource { origin: 'own' | 'shared' }
+export const isFolderMediaId = (id: string): boolean => /^folder-[a-f0-9]{40}$/.test(id)
 export interface MediaFolderStatus {
   label: string
   path: string // Console only; never part of avatar settings or model prompts.
@@ -16,7 +17,7 @@ export interface MediaFoldersView {
   entries: FolderMediaEntry[]
   reason?: string
 }
-export type MediaFolderCommand = { action: 'get' | 'refresh' | 'choose' | 'unlink'; avatarId?: string; scope?: 'own' | 'shared' }
+export type MediaFolderCommand = { action: 'get' | 'refresh' | 'save' | 'choose' | 'unlink'; avatarId?: string; scope?: 'own' | 'shared' }
 
 /** Shared by Main authorization/session creation and the Console prompt inspector. */
 export function folderMediaSkill(skill: AvatarMediaSkill = DEFAULT_MEDIA_SKILL, entries: readonly FolderMediaEntry[]): AvatarMediaSkill {
@@ -24,7 +25,7 @@ export function folderMediaSkill(skill: AvatarMediaSkill = DEFAULT_MEDIA_SKILL, 
   const names = new Set<string>(), ids = new Set<string>()
   const normalize = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase()
   const resources: AvatarMediaResource[] = []
-  for (const entry of [...entries, ...skill.resources]) {
+  for (const entry of [...entries, ...(skill.enabled ? skill.resources : [])]) {
     const key = `${entry.kind}:${entry.assetId}`
     if (ids.has(key) || resources.length >= 512) continue
     ids.add(key)
@@ -39,5 +40,5 @@ export function folderMediaSkill(skill: AvatarMediaSkill = DEFAULT_MEDIA_SKILL, 
     })
     resources.push({ kind: entry.kind, assetId: entry.assetId, name, aliases })
   }
-  return { ...skill, resources }
+  return { ...skill, enabled: true, resources }
 }

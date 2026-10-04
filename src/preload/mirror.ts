@@ -3,7 +3,7 @@ import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseMediaSkillRequest } from '../shared/media-skill'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
-import { isCameraTarget } from '../shared/camera-tracking'
+import { isCameraSnapshot, isCameraTarget } from '../shared/camera-tracking'
 import { parseVoiceEffects } from '../shared/voice-effects'
 import { parsePresentation } from '../shared/presentation'
 import { VISUAL_FADE_MAX_MS } from '../shared/types'
@@ -511,6 +511,15 @@ const bridge: MirrorBridge = {
 
   requestSleep(): void {
     ipcRenderer.send(SLEEP_REQUEST_CHANNEL)
+  },
+
+  async captureCamera(identity) {
+    if (!identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return null
+    const frame: unknown = await ipcRenderer.invoke('mirror:capture-camera', {
+      realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration,
+    })
+    return isCameraSnapshot(frame) ? frame : null
   },
 
   async requestMedia(request, identity) {

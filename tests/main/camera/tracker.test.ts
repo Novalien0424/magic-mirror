@@ -23,6 +23,28 @@ function fixture() {
 afterEach(() => vi.useRealTimers())
 
 describe('Main-owned camera recovery', () => {
+  it('captures only on request, rejects overlap, and cancels on stop without logging frames', async () => {
+    const f = fixture(), worker = f.children[0]!
+    const result = f.service.capture()
+    const command = JSON.parse(worker.stdin.read().toString())
+    expect(command.type).toBe('capture')
+    expect(await f.service.capture()).toBeNull()
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: command.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
+    expect(await result).toEqual({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 })
+    expect(JSON.stringify(f.onStatus.mock.calls)).not.toContain('/9j/')
+    const pending = f.service.capture()
+    await f.service.stop()
+    expect(await pending).toBeNull()
+    expect(await f.service.capture()).toBeNull()
+  })
+
+  it('times out capture while keeping gaze tracking alive', async () => {
+    const f = fixture(), result = f.service.capture()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(await result).toBeNull()
+    expect(f.spawn).toHaveBeenCalledOnce()
+    await f.service.stop()
+  })
   it('launches with a minimal environment instead of inheriting application credentials', async () => {
     const f = fixture()
     expect(f.spawn).toHaveBeenCalledWith('/synthetic/camera', ['Synthetic'], {

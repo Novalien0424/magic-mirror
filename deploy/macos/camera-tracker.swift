@@ -1,8 +1,9 @@
-// Transient face boxes for gaze only. No recognition, images, or embeddings are stored.
+// Transient gaze boxes and requested JPEG frames. No recognition or disk storage.
 // stdout is a private pipe to Electron Main, never a log file.
 import AVFoundation
 import Foundation
 import Vision
+import CoreImage
 import Darwin
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -17,6 +18,8 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var lastReason = ""
     var stopping = false
     var timer: DispatchSourceTimer?
+    var captureID: Int?
+    let imageContext = CIContext(options: [.cacheIntermediates: false])
     let needle = CommandLine.arguments.dropFirst().first ?? "Arducam"
 
     func emit(_ value: [String: Any]) {
@@ -32,6 +35,15 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     func start() {
+        // Commands and JPEG replies stay in private pipes, never files or logs.
+        DispatchQueue.global(qos: .utility).async {
+            while let line = readLine() {
+                guard line.utf8.count < 256, let bytes = line.data(using: .utf8),
+                      let command = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                      command["type"] as? String == "capture", let id = command["id"] as? Int else { continue }
+                self.queue.async { if !self.stopping { self.captureID = id } }
+            }
+        }
         NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasConnectedNotification,
             object: nil, queue: nil) { [weak self] _ in self?.queue.async { self?.reconcile() } }
         NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification,
@@ -122,6 +134,17 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                        from connection: AVCaptureConnection) {
         let now = ProcessInfo.processInfo.systemUptime
         lastFrame = now
+        if !stopping, let id = captureID, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            captureID = nil
+            autoreleasepool {
+                let image = CIImage(cvPixelBuffer: pixels)
+                if let jpeg = imageContext.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(),
+                    options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]), jpeg.count <= 500000 {
+                    emit(["type": "snapshot", "id": id, "jpeg": jpeg.base64EncodedString(),
+                          "width": CVPixelBufferGetWidth(pixels), "height": CVPixelBufferGetHeight(pixels)])
+                } else { emit(["type": "snapshot", "id": id]) }
+            }
+        }
         guard !stopping, now - lastDetection >= 0.2,
               let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastDetection = now

@@ -13,6 +13,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     if (!Object.hasOwn(handlers, spec.handler)) throw new Error('realtime_tool_handler_unavailable')
     const handler = handlers[spec.handler]!
     const validator = z.fromJSONSchema(spec.parameters)
+    const result = (outcome: ToolOutcome) => spec.completion === 'response' ? spec.results[outcome] : backgroundResult(spec.results[outcome])
     return {
       ...realtimeToolDefinition(spec),
       strict: true,
@@ -21,12 +22,12 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
       invoke: async (_context, rawInput) => {
         let arguments_: Record<string, unknown>
         try { arguments_ = validator.parse(JSON.parse(rawInput)) as Record<string, unknown> }
-        catch { onFailure('tool_arguments_rejected'); return backgroundResult(spec.results.rejected) }
+        catch { onFailure('tool_arguments_rejected'); return result('rejected') }
         try {
           const outcome = await handler(Object.freeze(arguments_))
           if (!Object.hasOwn(spec.results, outcome)) throw new Error('invalid_tool_outcome')
-          return backgroundResult(spec.results[outcome])
-        } catch { onFailure('tool_execution_failed'); return backgroundResult(spec.results.failed) }
+          return result(outcome)
+        } catch { onFailure('tool_execution_failed'); return result('failed') }
       },
     }
   })

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AVATAR_VOICES, canUseAvatarResource, type AvatarCatalog, type AvatarWakeTuning } from '../../shared/avatar-profiles'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
 import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
+import { isFolderMediaId } from '../../shared/media-folders'
 import { voiceEffectsSchema } from '../../shared/voice-effects-schema'
 import { validSpokenPhrase } from '../../shared/avatar-commands'
 import { parsePresentation, type PresentationConfig } from '../../shared/presentation'
@@ -105,7 +106,8 @@ export function validateAvatarReferences(config: Pick<MirrorConfig, 'wake' | 'vi
     }
     const p = avatar.presentation
     if (p.backgroundId && !allowed('visual', p.backgroundId)) fail(['avatars', index, 'presentation', 'backgroundId'])
-    if (p.ambienceId && !allowed('music', p.ambienceId)) fail(['avatars', index, 'presentation', 'ambienceId'])
+    // Linked paths are machine-local; Main's media protocol checks current owner and file access.
+    if (p.ambienceId && !isFolderMediaId(p.ambienceId) && !allowed('music', p.ambienceId)) fail(['avatars', index, 'presentation', 'ambienceId'])
     for (const key of ['entranceVideoId', 'exitVideoId'] as const) {
       const resourceId = p[key]
       if (resourceId && (!allowed('visual', resourceId) || !config.visualAssets.some(asset => asset.id === resourceId && asset.kind === 'video'))) {

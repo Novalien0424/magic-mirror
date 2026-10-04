@@ -248,6 +248,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
   requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./realtime-tools').ToolOutcome>
+  captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
   reportSceneAction(report: SceneActionRendererReport): void
   reportSceneVisual(report: SceneVisualPlaybackReport): void
@@ -287,6 +288,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  checkCamera?(): Promise<ConsoleResponse<{ status: 'ready' | 'unavailable'; width?: number; height?: number }>>
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   runScene(sceneId: string, scope?: import('./scene-test-scope').SceneTestScope, source?: 'draft'): Promise<ConsoleResponse<SceneStartResult>>
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>

@@ -11,6 +11,25 @@ const specs = () => resolveRealtimeTools('Rest.').filter(spec => spec.handler ==
 const call = (tool: ReturnType<typeof bindRealtimeTools>[number], input: string) => invokeFunctionTool({tool, input, runContext:new RunContext({})})
 
 describe('structured Realtime tool catalog', () => {
+  it('resumes the real SDK response after camera capture, with the image already in context', async () => {
+    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'capture_camera')
+    const transport = new ScriptedRealtimeTransport(), errors = vi.fn()
+    const addImage = vi.spyOn(transport, 'addImage'), output = vi.spyOn(transport, 'sendFunctionCallOutput')
+    const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', tools: bindRealtimeTools(spec, {
+      capture_camera: async () => { session.addImage('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false }); return 'accepted' },
+    }, vi.fn()) }), { transport, tracingDisabled: true, historyStoreAudio: false, config: { tracing: null } })
+    session.on('error', errors)
+    try {
+      await session.connect({ apiKey: 'synthetic-unused-credential' })
+      transport.emit('function_call', { type: 'function_call', id: 'capture-item', callId: 'capture-call', name: 'capture_camera', arguments: '{}', responseId: 'fixture-response' })
+      await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+      expect(addImage).toHaveBeenCalledWith('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false })
+      expect(addImage.mock.invocationCallOrder[0]).toBeLessThan(output.mock.invocationCallOrder[0])
+      expect(JSON.parse(output.mock.calls[0][1])).toEqual(spec[0].results.accepted)
+      expect(output.mock.calls[0][2]).toBe(true)
+      expect(errors).not.toHaveBeenCalled()
+    } finally { session.close() }
+  })
   it('loads and freezes the actual file and renders values once', () => {
     expect(REALTIME_TOOLS).toEqual(JSON.parse(readFileSync(REALTIME_TOOL_SOURCE, 'utf8')))
     expect(Object.isFrozen(REALTIME_TOOLS.tools[0].parameters.properties)).toBe(true)
@@ -89,9 +108,9 @@ describe('structured Realtime tool catalog', () => {
       expect(errors).not.toHaveBeenCalled()
     } finally {session.close()}
   })
-  it('validates media arguments and serializes all three native tools through the SDK', async () => {
+  it('validates media arguments and serializes all native tools through the SDK', async () => {
     const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
-    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted' }, vi.fn())
+    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted' }, vi.fn())
     const play = tools.find(t => t.name === 'play_media')!
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))

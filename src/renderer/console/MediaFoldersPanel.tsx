@@ -17,15 +17,17 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState('')
   const [query, setQuery] = React.useState('')
+  const [saved, setSaved] = React.useState(false)
   const pending = React.useRef(false), generation = React.useRef(0)
   const run = async (action: MediaFolderCommand['action'], scope?: 'own' | 'shared') => {
     if (!bridge?.mediaFolders || pending.current) return
     const current = ++generation.current
     pending.current = true; setBusy(true)
+    if (action !== 'get') setSaved(false)
     try {
       const result = await bridge.mediaFolders({ action, ...(avatarId ? { avatarId } : {}), ...(scope ? { scope } : {}) })
       if (current !== generation.current) return
-      if (result.ok) { setView(result.value); setError(result.value.reason ? explanations[result.value.reason] ?? result.value.reason : '') }
+      if (result.ok) { setView(result.value); setError(result.value.reason ? explanations[result.value.reason] ?? result.value.reason : ''); if (action === 'save' && !result.value.reason) setSaved(true) }
       else { const reason = result.fields?.[0]?.message ?? result.reason; setError(explanations[reason] ?? `Folder setup failed: ${reason}`) }
     } catch { if (current === generation.current) setError('Could not reach the folder library. Try Refresh files.') }
     finally { if (current === generation.current) { pending.current = false; setBusy(false) } }
@@ -50,6 +52,7 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
   const resources = folderMediaSkill(undefined, entries).resources
   return <section aria-label={avatarId ? 'Avatar folder library' : 'Global media folders'}>
     <h3>{avatarId ? 'Media folders' : 'Shared media for all avatars'}</h3>
+    {!avatarId && <div className="console__device-save console__action-row"><button type="button" className="console__primary" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('save')}>Save folder settings</button><span role="status">{saved ? 'Folder settings saved. File list refreshed.' : 'Folder choices also save automatically.'}</span></div>}
     <p>Choose any folder on this Mac, including Google Drive. All supported music and videos inside it are available automatically.</p>
     <div className="media-folder-grid">
       {avatarId && folder('own', view?.own, true)}

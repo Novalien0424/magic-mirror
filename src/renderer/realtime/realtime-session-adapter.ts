@@ -37,6 +37,7 @@ interface SessionLike {
   interrupt(): void | PromiseLike<void>
   close(): void | PromiseLike<void>
   sendMessage(message: string): void
+  addImage(image: string, options: { triggerResponse: boolean }): void
   on(eventName: string, listener: SessionEventListener): unknown
 }
 
@@ -94,6 +95,7 @@ export interface CreateRealtimeSessionInput {
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: () => void | PromiseLike<void>
+  readonly onCameraCapture?: (identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<import('../../shared/camera-tracking').CameraSnapshot | null>
   readonly onMediaRequest?: (request: import('../../shared/media-skill').MediaSkillRequest,
     identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<import('../../shared/realtime-tools').ToolOutcome>
   readonly waitForOutputTail?: () => Promise<void>
@@ -453,6 +455,14 @@ export function createRealtimeSession(
     const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
     const tools = bindRealtimeTools(toolSpecs, {
+      capture_camera: async () => {
+        if (closed || returnToDormantPending || !input.onCameraCapture) return 'ignored'
+        const frame = await input.onCameraCapture({ realtimeSessionId: input.sessionId, sessionGeneration })
+        if (closed || returnToDormantPending) return 'ignored'
+        if (!frame) return 'failed'
+        session.addImage(frame.dataUrl, { triggerResponse: false })
+        return 'accepted'
+      },
       play_media: async args => {
         if (closed || returnToDormantPending || !input.onMediaRequest) return 'ignored'
         return input.onMediaRequest({ action: 'play', kind: args.kind as 'video' | 'music', assetId: args.assetId as string,

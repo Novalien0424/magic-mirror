@@ -1,6 +1,55 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
-## Current: avatar and shared media folders deployed — 2026-10-04
+## Current: simpler media/BGM setup and on-demand camera vision — 2026-10-04
+
+Removed the redundant media-enable and per-file selection checkboxes. Linked
+folders authorize all indexed music/video automatically, including subfolders.
+Raven's Appearance → Dormant music lists both avatar-folder and Common/shared
+music; selections save with **Save & apply all changes** and use stable folder
+IDs. The actual Common music choices were verified in the deployed Console.
+Existing imported resources, folder links, voice and mist settings are preserved.
+
+System → Devices has an explicit Save/Discard workflow and a sticky save bar;
+System → Media folders has Save folder settings with success feedback. Scrolling
+to the bottom and save/reload persistence were exercised in real Mac Electron.
+Console is also accessible from **View → Magic Mirror Console**.
+
+The versioned `capture_camera` tool requests one frame from the existing
+Main-owned Arducam worker, adds it to the current Realtime conversation, then
+resumes the response. Frames stay in RAM/private pipes, never files or telemetry.
+Stale sessions, invalid senders, overlapping capture and timeouts are bounded.
+**System → Devices → Check camera capture** returns dimensions/status only;
+it does not upload the test image. Real hardware check currently fails: camera
+permission is granted and the device is detected, but no frames arrive. This
+predates this change (last ready 06:32:53 UTC, then stale at 06:32:57 and starting
+at 06:33:02). Operator USB reconnection is requested; live visual conversation
+acceptance remains pending. Conversation and wake continue normally.
+
+Validation: focused 10-file Vitest run **201 passed**; subsequent affected
+presentation/config/folder/IPC/help checks **142 passed** (overlapping coverage),
+camera checks **5 passed**, and final Console help/editor checks **19 passed**.
+Typecheck, build and build verification exit 0. Mac `--media-skill` QA:
+**14 checks, 7 captures**, exit 0, including own/Common BGM options, publication,
+reload, actual looping BGM and every dormant output pixel RGB=0. Save-bar and
+checkbox-free editor screenshots inspected.
+[Passing evidence](.artifacts/phase4-qa/2026-10-04T07-20-42-157Z/evidence.json).
+[Preserved preceding failure](.artifacts/phase4-qa/2026-10-04T07-18-28-171Z/evidence.json)
+exposed the old Appearance save/publish split; Appearance now uses the same
+single save/apply action as Music & video.
+
+Before restart, the operator's pending avatar edits were saved through the
+Console as **v14**. Active/draft SHA-256 remains
+`c02dec3337bda77837bcd6dc6a98a69d9a95e201096f151697112336632f65e2`;
+folder-link SHA-256 remains
+`d0fe1035b267cbe6c054bca6992362b936675946288c11adb24736e6135b9444`.
+Dormant BGM is still unselected; the operator can now choose either Common
+track directly. No phase promotion or live spoken-vision acceptance claimed.
+Final build is running under the existing LaunchAgent, **PID 41481**; avatar
+ready and wake listening confirmed at **07:30:18 UTC**. Working tree and saved
+configuration were checked after deployment. Console is left on Raven →
+Appearance for BGM selection.
+
+## Previous: avatar and shared media folders deployed — 2026-10-04
 
 Per the operator's preference, native Mac folder selection is the primary media
 workflow; Google Drive for desktop supplies syncing without another app login.

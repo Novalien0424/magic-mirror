@@ -7,6 +7,8 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  Menu,
+  MenuItem,
   powerSaveBlocker,
   protocol,
   screen,
@@ -661,6 +663,14 @@ function registerConsoleShortcut(): void {
   const registered = globalShortcut.register(CONSOLE_SHORTCUT, toggleConsoleWindow)
   if (registered) marker('SHORTCUT_REGISTERED', { accelerator: CONSOLE_SHORTCUT })
   else marker('SHORTCUT_REGISTER_FAILED', { accelerator: CONSOLE_SHORTCUT, reason: 'accelerator_unavailable' })
+  const menu = Menu.getApplicationMenu()
+  if (menu) {
+    const view = menu.items.find(item => item.role === 'viewMenu' || item.label === 'View')?.submenu
+    const item = new MenuItem({ label: 'Magic Mirror Console', click: toggleConsoleWindow })
+    if (view) view.append(item)
+    else { const submenu = new Menu(); submenu.append(item); menu.append(new MenuItem({ label: 'Console', submenu })) }
+    Menu.setApplicationMenu(menu)
+  }
 }
 
 /** Logs a final marker and exits once it has reached the pipe — the exit code is the contract. */
@@ -1130,6 +1140,7 @@ void app.whenReady().then(async () => {
     },
   })
   sceneRuntimeControl = registerIpcHandlers({
+    captureCamera: () => cameraTracking?.capture() ?? Promise.resolve(null),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     mediaFolders: async request => {
       await mediaFoldersReady
@@ -1146,6 +1157,7 @@ void app.whenReady().then(async () => {
         if (!selected.canceled && selected.filePaths[0]) await mediaFolders.link(owner, selected.filePaths[0])
       } else if (request.action === 'unlink') await mediaFolders.unlink(owner)
       else if (request.action === 'refresh') await mediaFolders.refresh()
+      else if (request.action === 'save') await mediaFolders.saveCurrent()
       reportFolderHealth()
       return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
     },
