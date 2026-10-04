@@ -1614,6 +1614,14 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expectNoRealtimeSessionSentinel({ delivered, events })
   })
 
+  it('does not report a closed optional Console as a snapshot delivery failure', async () => {
+    const emit = vi.fn()
+    await publishSnapshot('console', startingSnapshot(), new Map(), { emit })
+    expect(emit).not.toHaveBeenCalled()
+    await publishSnapshot('mirror', startingSnapshot(), new Map(), { emit })
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ reason: 'window=mirror;cause=window_unknown' }))
+  })
+
   it('does not put model or private identifiers in any public boot result or event serialization', async () => {
     const harness = makeBootHarness()
     const runtime = startBoot(harness.options)

@@ -909,6 +909,8 @@ export async function publishSnapshot(
   const tracked = getTrackedWindow(windows, kind)
   const channel = kind === 'mirror' ? MIRROR_IPC_CHANNELS.snapshot : CONSOLE_IPC_CHANNELS.snapshot
   if (tracked === null) {
+    // Console is optional and normally closed during Mirror playback.
+    if (kind === 'console') return
     emit(telemetry, {
       module: 'app',
       event: 'ipc_snapshot_delivery_failed',

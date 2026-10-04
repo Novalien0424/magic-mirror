@@ -1,5 +1,39 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
+## Current follow-up: wake diagnostics and debug errors — 2026-10-04
+
+Operator reported repeated spoken wake failures during the loop. Historical
+logs contained repeated `realtime_request_rejected`, but no wake-match result.
+A temporary content-free live probe confirmed `item_retrieve_invalid_item_id`:
+the application deleted completed media-time speech before the SDK retrieved
+the item. Cleanup now waits for retrieval. Speech remains excluded from normal
+conversation/extraction. New allowlisted `media_wake_matched` and
+`media_wake_not_matched` events expose recognition outcome without transcript
+or audio. The one live transcript observed during the probe did not match;
+the earlier operator attempts cannot be reconstructed from old metadata.
+Speaker-generated synthetic wake produced no detected speech and is not a
+recognition pass. Temporary listeners and references were removed.
+
+Closed optional Console windows no longer receive snapshot delivery attempts
+reported as failures. Both renderer pages remove the ineffective header-only
+`frame-ancestors` meta directive that caused three Chromium startup errors;
+the effective source restrictions remain unchanged. The remaining blocked-eval
+issue came from Zod's capability probe; both renderer entry points now select
+its supported `jitless` mode before schemas load. An isolated 12-second
+camera-worker check produced 51 valid frame messages and no validation errors;
+the earlier intermittent camera error was not reproduced or claimed repaired.
+
+TDD red→green covers retrieval-before-delete, wake outcome metadata, optional
+Console closure, CSP meta validity and validation without any Function probe.
+Seven focused files: **135 passed**, exit 0.
+`npm run typecheck`, `npm run build`, `git diff --check`: exit 0. Final normal
+LaunchAgent PID **54178**. Actual Realtime startup and 3 Worlds looping playback
+showed no Console errors/warnings or Chromium Issues entries; diagnostic window
+closed, fullscreen video captured. Recent telemetry showed media requested/
+playing and no degraded/failed events in that observation window. Saved v15
+active/draft hashes remain unchanged. Physical wake recognition remains
+unverified; next operator attempt should be checked for the new match events.
+
 ## Current: compact media Console and verified playback — 2026-10-04
 
 Music & video now shows a searchable filename list; folders, playback controls

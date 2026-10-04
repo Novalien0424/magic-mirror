@@ -47,6 +47,8 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'microphone_recovery_ready',
   'microphone_recovery_waiting',
   'realtime_request_rejected',
+  'media_wake_matched',
+  'media_wake_not_matched',
   'scene_dialogue_cancel_pending',
   'scene_dialogue_cancel_failed',
   'avatar_audio_activity_listener_failed',

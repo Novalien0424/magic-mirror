@@ -772,6 +772,7 @@ export function createRealtimeSession(
 
   const mediaWakeItems = new Set<string>()
   const mediaInputItems = new Set<string>()
+  const mediaCleanupPending = new Set<string>()
   const rememberMediaInput = (itemId: string): void => {
     mediaInputItems.add(itemId)
     if (mediaInputItems.size > 256) mediaInputItems.delete(mediaInputItems.values().next().value!)
@@ -783,6 +784,15 @@ export function createRealtimeSession(
       return
     }
     const type = readEventType(event)
+    if (type === 'conversation.item.retrieved') {
+      const itemId = readProperty(readProperty(event, 'item'), 'id')
+      if (typeof itemId === 'string' && mediaCleanupPending.delete(itemId)) {
+        // The SDK requests this item after transcription. Delete only after
+        // that retrieval, otherwise its request fails with item_not_found.
+        transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId })
+      }
+      return
+    }
     if (type === 'response.output_item.added') {
       const item = readProperty(event, 'item')
       if (readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string)) {
@@ -943,9 +953,15 @@ export function createRealtimeSession(
       }
       if (mediaPlaybackActive) rememberMediaInput(itemId)
       const mediaInput = mediaInputItems.has(itemId)
-      if (mediaInput) transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId })
+      if (mediaInput) {
+        mediaCleanupPending.add(itemId)
+        if (mediaCleanupPending.size > 256) mediaCleanupPending.delete(mediaCleanupPending.values().next().value!)
+      }
       if (mediaInput && !mediaPlaybackActive) return
-      if (input.onMediaRequest && normalizeTranscript(transcript) === normalizeTranscript(input.avatar?.wakePhrase ?? DEFAULT_WAKE_PHRASE)) {
+      const wakeMatched = normalizeTranscript(transcript) === normalizeTranscript(input.avatar?.wakePhrase ?? DEFAULT_WAKE_PHRASE)
+      if (mediaPlaybackActive) emitMetadata(input, 'realtime_observer_event', 'info',
+        wakeMatched ? 'media_wake_matched' : 'media_wake_not_matched', sessionGeneration, createdAt)
+      if (input.onMediaRequest && wakeMatched) {
         if (mediaWakeItems.has(itemId)) return
         mediaWakeItems.add(itemId)
         if (mediaWakeItems.size > 256) mediaWakeItems.delete(mediaWakeItems.values().next().value!)
