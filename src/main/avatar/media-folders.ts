@@ -65,6 +65,12 @@ export class MediaFolders {
       for (const [owner, root] of Object.entries(this.links)) this.sources.set(owner, await this.scan(root, owner))
     })
   }
+  saveCurrent(): Promise<void> {
+    return this.run(async () => {
+      await this.save({ ...this.links })
+      for (const [owner, root] of Object.entries(this.links)) this.sources.set(owner, await this.scan(root, owner))
+    })
+  }
   private async scan(root: string, owner: string): Promise<Source> {
     const files: Indexed[] = []
     let skipped = 0, visited = 0, partial = false
@@ -90,7 +96,7 @@ export class MediaFolders {
           try {
             const info = await lstat(path)
             if (!info.isFile() || info.size === 0) { partial = true; skipped++; continue }
-            const assetId = 'folder-' + createHash('sha256').update(`${owner}\0${root}\0${relative(root, path)}\0${info.size}\0${info.mtimeMs}`).digest('hex').slice(0, 40)
+            const assetId = 'folder-' + createHash('sha256').update(`${owner}\0${root}\0${relative(root, path)}`).digest('hex').slice(0, 40)
             const name = basename(item.name, extname(item.name)).replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 100) || 'Media'
             files.push({ path, ...format, size: info.size, mtime: info.mtimeMs, entry: { kind: format.kind, assetId, name, aliases: [] } })
           } catch { partial = true; skipped++ }

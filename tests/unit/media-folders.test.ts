@@ -26,6 +26,10 @@ describe('linked media folders', () => {
     await store.link('avatar:other', join(root, 'other'))
     expect(store.resources('raven').map(r => r.name)).toEqual(['Mist', 'Rain'])
     expect(store.resources('other').map(r => r.name)).toEqual(['Secret', 'Rain'])
+    const stableId = store.resources('raven')[0]!.assetId
+    await writeFile(join(root, 'raven', 'Mist.webm'), 'updated video')
+    await store.saveCurrent()
+    expect(store.resources('raven')[0]!.assetId).toBe(stableId)
     const secret = store.resources('other')[0]!
     expect(await store.resolve(secret.assetId, 'raven')).toBeNull()
     await unlink(join(root, 'raven', 'Mist.webm'))
@@ -64,7 +68,7 @@ describe('linked media folders', () => {
     const entries = ['own', 'shared'].map((origin, index) => ({ kind: 'music' as const, assetId: `folder-${index}`, name: 'Rain', aliases: [], origin: origin as 'own' | 'shared' }))
     const skill = folderMediaSkill({ ...DEFAULT_MEDIA_SKILL, enabled: false, gain: .4 }, entries)
     expect(skill.resources.map(r => r.name)).toEqual(['Rain', 'Rain (shared)'])
-    expect(skill.enabled).toBe(false); expect(skill.gain).toBe(.4)
+    expect(skill.enabled).toBe(true); expect(skill.gain).toBe(.4)
     expect(JSON.stringify(skill)).not.toContain('origin')
     const legacy = { ...DEFAULT_MEDIA_SKILL, resources: [{ kind: 'video' as const, assetId: 'old', name: 'a'.repeat(120), aliases: ['Alias'] }] }
     expect(folderMediaSkill(legacy, []).resources).toEqual(legacy.resources)

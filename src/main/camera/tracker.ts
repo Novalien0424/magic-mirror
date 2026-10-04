@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createNearestFaceTracker, parseCameraFrame } from './nearest-face'
-import type { CameraTarget } from '../../shared/camera-tracking'
+import { isCameraSnapshot, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
 
-export interface CameraTrackingService { stop(): Promise<void> }
+export interface CameraTrackingService { stop(): Promise<void>; capture(): Promise<CameraSnapshot | null> }
 
 /** Main alone owns the native capture child. Its private pipe is never copied to telemetry. */
 export function startCameraTracking(input: {
@@ -21,6 +21,8 @@ export function startCameraTracking(input: {
   let lastMessageAt = Date.now()
   let statusKey = ''
   let stale = true
+  let captureSequence = 0
+  let capturePending: { id: number; finish(value: CameraSnapshot | null): void } | null = null
   const status = (state: 'ready' | 'degraded', reason: string): void => {
     const key = `${state}:${reason}`
     if (key !== statusKey && !stopped) { statusKey = key; input.onStatus(state, reason) }
@@ -34,6 +36,7 @@ export function startCameraTracking(input: {
     })
     lastMessageAt = Date.now()
     child = current
+    current.stdin.on('error', () => capturePending?.finish(null))
     let pending = ''
     let diagnosticReported = false
     current.stderr.on('data', () => {
@@ -43,7 +46,7 @@ export function startCameraTracking(input: {
     current.stdout.on('data', (chunk: string) => {
       if (stopped || child !== current) return
       pending += chunk
-      if (pending.length > 16384) {
+      if (pending.length > 750000) {
         pending = ''; clear(); status('degraded', 'camera_worker_message_oversized'); return
       }
       let newline: number
@@ -52,6 +55,12 @@ export function startCameraTracking(input: {
         let value: unknown
         try { value = JSON.parse(line) } catch { status('degraded', 'camera_worker_message_invalid'); continue }
         lastMessageAt = Date.now()
+        if (value && typeof value === 'object' && (value as { type?: unknown }).type === 'snapshot') {
+          const frame = value as Record<string, unknown>
+          const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height }
+          if (capturePending && capturePending.id === frame.id) capturePending.finish(isCameraSnapshot(snapshot) ? snapshot : null)
+          continue
+        }
         if (value && typeof value === 'object' && Object.keys(value).join(',') === 'type'
           && (value as { type: unknown }).type === 'heartbeat') continue
         const faces = parseCameraFrame(value)
@@ -74,6 +83,7 @@ export function startCameraTracking(input: {
     current.once('close', () => {
       if (child !== current) return
       child = null
+      capturePending?.finish(null)
       clear()
       if (stopped) return
       status('degraded', 'camera_worker_restarting')
@@ -95,9 +105,21 @@ export function startCameraTracking(input: {
   watchdog.unref()
   launch()
   return {
+    capture() {
+      const current = child
+      if (stopped || !current || capturePending) return Promise.resolve(null)
+      return new Promise(resolve => {
+        const id = ++captureSequence
+        const timer = setTimeout(() => capturePending?.id === id && capturePending.finish(null), 3000)
+        capturePending = { id, finish(value) { clearTimeout(timer); capturePending = null; resolve(value) } }
+        try { current.stdin.write(JSON.stringify({ type: 'capture', id }) + '\n', error => { if (error && capturePending?.id === id) capturePending.finish(null) }) }
+        catch { capturePending?.finish(null) }
+      })
+    },
     async stop() {
       if (stopped) return
       stopped = true
+      capturePending?.finish(null)
       clearTimeout(restart); clearInterval(watchdog); clear()
       const current = child
       if (!current) return

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { avatarCatalogSchema, validateAvatarReferences } from './avatar/avatar-config'
 import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
 import { parsePresentation, type PresentationConfig } from '../shared/presentation'
+import { isFolderMediaId } from '../shared/media-folders'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
   managedMusicAssetSchema,
@@ -173,7 +174,7 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
     if (p.backgroundId && !value.visualAssets.some(asset => asset.id === p.backgroundId)) {
       context.addIssue({ code: 'custom', path: ['presentation', 'backgroundId'], message: 'Unknown visual asset' })
     }
-    if (p.ambienceId && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
+    if (p.ambienceId && !isFolderMediaId(p.ambienceId) && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
       context.addIssue({ code: 'custom', path: ['presentation', 'ambienceId'], message: 'Unknown music asset' })
     }
     for (const key of ['entranceVideoId', 'exitVideoId'] as const) {

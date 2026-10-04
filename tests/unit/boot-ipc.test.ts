@@ -552,6 +552,30 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('limits camera capture to the active Mirror session and drops frames after a session change', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'camera-session', sessionGeneration: 3 }
+    const frame = { dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 }
+    const captureCamera = vi.fn(async () => frame)
+    const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], snapshot), fixtures.windows, events, undefined, { captureCamera })
+    const handler = registered.handlers.get('mirror:capture-camera')!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'camera-session', sessionGeneration: 3 }
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, identity)).toBeNull()
+    expect(await handler(event, { ...identity, path: '/private' })).toBeNull()
+    expect(await handler(event, { ...identity, sessionGeneration: 2 })).toBeNull()
+    expect(captureCamera).not.toHaveBeenCalled()
+    expect(await handler(event, identity)).toEqual(frame)
+    captureCamera.mockImplementation(async () => { snapshot.sessionGeneration++; return frame })
+    expect(await handler(event, identity)).toBeNull()
+    expect(JSON.stringify(events)).not.toContain('data:image')
+    expect(events).toContainEqual(expect.objectContaining({ reason: 'camera_capture_session_stale' }))
+    const check = registered.handlers.get('console:check-camera')!
+    expect(await check(event)).toMatchObject({ ok: false })
+    const checked = await check({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })
+    expect(checked).toEqual({ ok: true, value: { status: 'ready', width: 640, height: 480 } })
+    expect(JSON.stringify(checked)).not.toContain('data:image')
+  })
   it('restricts folder configuration to Console and rejects renderer-supplied paths', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const mediaFolders = vi.fn(async () => ({ own: null, shared: null, entries: [] }))

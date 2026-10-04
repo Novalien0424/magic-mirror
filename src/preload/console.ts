@@ -199,4 +199,5 @@ const bridge: ConsoleBridge = {
   },
 }
 
+bridge.checkCamera = () => ipcRenderer.invoke('console:check-camera')
 contextBridge.exposeInMainWorld('magicMirror', bridge)
