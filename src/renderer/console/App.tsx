@@ -46,15 +46,17 @@ import { buildSceneDraftSave, draftFingerprint, isSceneDraftSaved } from './scen
 import { HelpButton } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
+import { MediaSkillEditor } from './MediaSkillEditor'
+import { addAvatarMedia } from './media-selection'
 import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES } from '../../shared/audio-devices'
-import { DEFAULT_PRESENTATION } from '../../shared/presentation'
+import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
 import { AvatarCharacterEditor } from './AvatarCharacterEditor'
 import { projectAvatarDraft, mergeAvatarDraft } from './avatar-editor'
 import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type AvatarProfile } from '../../shared/avatar-profiles'
 import { ResourceAccess } from './ResourceAccess'
 import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
-import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection } from './profile-workspace'
+import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection, type SavedDraftRefresh } from './profile-workspace'
 import { ActiveAvatarPanel } from './ActiveAvatarPanel'
 import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
@@ -1352,6 +1354,7 @@ export function ScenesPanel({
   const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
   const retainLocalDraft = useRef(false)
   const acceptRefresh = useRef(false)
+  const savedDraftRefresh = useRef<SavedDraftRefresh | null>(null)
   const baseline = useRef<ConsoleConfigDraftInput | null>(null)
   const [conflict, setConflict] = useState(false)
   const [publishReview, setPublishReview] = useState(false)
@@ -1398,6 +1401,7 @@ export function ScenesPanel({
   const [section, setSection] = useState<ProfileSection>('Persona')
   const voiceOnly = section === 'Voice'
   const dialogueOnly = PROFILE_SECTIONS.includes(section as typeof PROFILE_SECTIONS[number]) && section !== 'Spells & scenes'
+  const personaOnly = section === 'Persona'
   const avatarView = section === 'Appearance' ? 'appearance' : 'character'
   const editorView = section === 'Media library' ? 'media' : section === 'Action library' ? 'library' : section === 'Rig library' ? 'rigs' : 'scenes'
   const availableModels = [...new Map([...(rawDraft?.avatarCatalog?.models ?? []), ...libraryModels].map(model => [model.id, model])).values()]
@@ -1412,18 +1416,21 @@ export function ScenesPanel({
     return () => { current = false }
   }, [visible, section, bridge])
   const [importFailures, setImportFailures] = useState<{ name: string; reason: string }[]>([])
-  const importMedia = async (request: MediaImportRequest, actionId?: string): Promise<void> => {
+  const importMedia = async (request: MediaImportRequest, actionId?: string, mediaAvatarId?: string): Promise<void> => {
     if (!bridge || busy) return
     setBusy(true); setImportFailures([]); setResult('Importing media…')
     try {
       const response = await importMediaBatch(bridge, request)
       setImportFailures(response.failures)
-      setDraft(current => {
+      setRawDraft(current => {
         if (!current) return current
         const visuals = response.assets.filter((a): a is ManagedVisualAsset => 'kind' in a)
         const music = response.assets.filter((a): a is Exclude<ImportedMedia, ManagedVisualAsset> => !('kind' in a))
         const first = response.assets[0]
         return { ...current,
+          avatarCatalog: current.avatarCatalog && mediaAvatarId ? { ...current.avatarCatalog,
+            avatars: current.avatarCatalog.avatars.map(avatar => avatar.id === mediaAvatarId
+              ? addAvatarMedia(avatar, response.assets, current.avatarCatalog) : avatar) } : current.avatarCatalog,
           visualAssets: [...current.visualAssets, ...visuals.filter(a => !current.visualAssets.some(old => old.id === a.id))].filter((a, i, all) => all.findIndex(b => b.id === a.id) === i),
           musicAssets: [...current.musicAssets, ...music.filter(a => !current.musicAssets.some(old => old.id === a.id))].filter((a, i, all) => all.findIndex(b => b.id === a.id) === i),
           sceneActions: current.sceneActions.map(a => {
@@ -1434,7 +1441,7 @@ export function ScenesPanel({
           }),
         }
       })
-      setResult(response.cancelled ? 'Media import cancelled.' : `Imported ${response.assets.length} file(s)${response.failures.length ? `; ${response.failures.length} failed` : ''}. ${actionId && response.assets.length ? 'Selected in this action. ' : ''}Save Draft to keep the links.`)
+      setResult(response.cancelled ? 'Media import cancelled.' : `Imported ${response.assets.length} file(s)${response.failures.length ? `; ${response.failures.length} failed` : ''}. ${mediaAvatarId ? 'Music and videos selected. Save & apply below.' : `${actionId && response.assets.length ? 'Selected in this action. ' : ''}Save all changes to keep the links.`}`)
     } finally { setBusy(false) }
   }
 
@@ -1445,13 +1452,17 @@ export function ScenesPanel({
     baseline.current = next
     setPublishReview(false)
     if (retainLocalDraft.current) { retainLocalDraft.current = false; return }
-    const decision = draftRefreshDecision(previous, next, latestSceneDraft.current, acceptRefresh.current)
+    const pendingSave = savedDraftRefresh.current
+    const savedRefresh = pendingSave !== null && draftFingerprint(next) === pendingSave.savedFingerprint
+    const decision = draftRefreshDecision(previous, next, latestSceneDraft.current, acceptRefresh.current, pendingSave)
+    if (savedRefresh || decision === 'conflict') savedDraftRefresh.current = null
+    if (savedRefresh) setConflict(false)
     if (decision !== 'accept') {
       if (decision === 'conflict') setConflict(true)
       return
     }
     acceptRefresh.current = false
-    setRawDraft(next)
+    setRawDraft(current => savedRefresh && draftRefreshDecision(previous, next, current, false, pendingSave) !== 'accept' ? current : next)
     setConflict(false)
   }, [payload])
 
@@ -1471,6 +1482,8 @@ export function ScenesPanel({
 
   const editorDisabled = !bridgeAvailable || bridge === null || draft === null || payload === null || (busy && savePhase === 'idle')
   const disabled = editorDisabled || busy || conflict || state.status !== 'success'
+  const invalidPresentation = !!rawDraft && (!!rawDraft.presentation && !parsePresentation(rawDraft.presentation)
+    || !!rawDraft.avatarCatalog?.avatars.some(avatar => !parsePresentation(avatar.presentation)))
   const dirty = rawDraft !== null && payload !== null
     && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
   useEffect(() => onEditingChange?.(dirty || busy || conflict), [dirty, busy, conflict, onEditingChange])
@@ -1507,8 +1520,9 @@ export function ScenesPanel({
     }
   }
 
-  const saveAndCheck = async (): Promise<void> => {
+  const saveAndCheck = async (apply = false): Promise<void> => {
     if (!bridge || !rawDraft || busy) return
+    if (invalidPresentation) { setResult('Fix the presentation timing and fields in Appearance before saving or publishing.'); return }
     const snapshot = projectAvatarDraft(rawDraft)
     const fingerprint = draftFingerprint(safeDraftFromConfig(snapshot))
     const abort = new AbortController()
@@ -1517,14 +1531,14 @@ export function ScenesPanel({
       && fingerprint === draftFingerprint(safeDraftFromConfig(latestSceneDraft.current!))
     setBusy(true); setSavePhase('saving'); setMediaTestFailed(true)
     setResult('Saving changes…')
-    let saved = false
+    let savedFingerprint: string | null = null
     try {
       const response = await bridge.saveDraft(snapshot)
       if (!response.ok) {
         setResult(`Cannot save (${response.error}): ${response.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || response.reason}. Your edits are retained.`)
         return
       }
-      saved = true
+      savedFingerprint = draftFingerprint(safeDraftFromConfig(response.value.draft))
       if (!current()) { setResult('Draft saved. Newer edits or an aborted check remain unchecked; Save again.'); return }
       setSavePhase('checking'); setResult('Saved. Checking configuration and media…')
       for (const asset of snapshot.visualAssets) {
@@ -1543,6 +1557,21 @@ export function ScenesPanel({
         return
       }
       setMediaTestFailed(false)
+      if (apply) {
+        const fresh = await bridge.getConfig()
+        if (!current()) { setResult('Newer edits remain unapplied; Save & apply again.'); return }
+        if (!fresh.ok || draftFingerprint(safeDraftFromConfig(fresh.value.draft)) !== savedFingerprint) {
+          setResult('Saved, but the draft changed during checking. Review and apply again.'); return
+        }
+        if (fresh.value.publishDiff.changed.length) {
+          setResult('Applying checked changes…')
+          const applied = await bridge.publish(confirmationFromDiff(fresh.value.publishDiff))
+          if (!applied.ok) { setResult(`Saved, but could not apply: ${applied.reason}. Your edits are retained.`); return }
+          setPreviewRevision(value => value + 1)
+        }
+        setResult(current() ? 'Saved and applied. Ready for the next conversation.' : 'Saved changes applied. Newer edits remain unapplied.')
+        return
+      }
       setResult(response.value.publishDiff.changed.length
         ? 'Saved and checked. Ready to publish.'
         : 'Saved and checked. Already up to date. No changes to publish.')
@@ -1550,7 +1579,10 @@ export function ScenesPanel({
       setResult(abort.signal.aborted ? 'Check aborted. Saved changes are retained; Save again to check.'
         : 'Save / check failed. Your edits are retained. Check media decoding and the Console connection, then Save again.')
     } finally {
-      if (saved) { retainLocalDraft.current = true; onChanged() }
+      if (savedFingerprint !== null) {
+        savedDraftRefresh.current = { submittedFingerprint: fingerprint, savedFingerprint }
+        onChanged()
+      }
       if (saveCheckController.current === abort) {
         saveCheckController.current = null; setSavePhase('idle'); setBusy(false)
       }
@@ -1615,7 +1647,7 @@ export function ScenesPanel({
       {conflict ? <div className="console__fault" role="alert">The saved configuration changed while you were editing. Your edits are retained; saving is blocked to prevent overwriting newer changes.
         <button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false) }}>Discard my edits and reload saved changes</button>
       </div> : null}
-      <div className="profile-workspace">
+      <div className={`profile-workspace${section === 'Music & video' ? ' profile-workspace--media' : ''}`}>
       {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
         <p className="profile-rail__context"><small>EDITING NOW</small><strong>{editingAvatar.name || 'Unnamed avatar'}</strong><span>{editingId.slice(-8)}</span></p>
         <p className="profile-rail__context"><small>ACTIVE ON MIRROR</small><strong>{activeAvatar?.name ?? 'Connecting…'}</strong></p>
@@ -1634,6 +1666,12 @@ export function ScenesPanel({
           next.spells = next.spells.filter(s => next.scenes.some(scene => scene.id === s.sceneId))
           if (next.presentation.backgroundId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'visual', next.presentation.backgroundId)) next.presentation.backgroundId = ''
           if (next.presentation.ambienceId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'music', next.presentation.ambienceId)) next.presentation.ambienceId = ''
+          for (const key of ['entranceVideoId', 'exitVideoId'] as const) {
+            const resourceId = next.presentation[key]
+            if (resourceId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'visual', resourceId)) next.presentation[key] = ''
+          }
+          if (next.mediaSkill) next.mediaSkill.resources = next.mediaSkill.resources.filter(resource =>
+            canUseAvatarResource(rawDraft.avatarCatalog!, next.id, resource.kind === 'video' ? 'visual' : 'music', resource.assetId))
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
           setNameFocusId(next.id); setSection('Persona'); setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
         }}>Duplicate</button>
@@ -1660,14 +1698,18 @@ export function ScenesPanel({
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
         {PROFILE_SECTIONS.map(label => <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
       </nav>
-      {rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
+      {section !== 'Music & video' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
       <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
-        <p>{section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
+        <p>{section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
       </div>
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
+      {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar}
+        published={payload?.active.avatarCatalog?.avatars.find(a => a.id === editingId)?.mediaSkill}
+        onImport={() => void importMedia({ kind: 'all', multiple: true }, undefined, editingId)} /> : null}
+      {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
-      {dialogueOnly && !voiceOnly && avatarView === 'character' && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
+      {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
         <div className="console__action-row"><HelpField help={FIELD_HELP.modelBundle}>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
@@ -1695,12 +1737,12 @@ export function ScenesPanel({
       </fieldset> : null}
       {visible && section === 'Appearance' ? <details key={`rig-${editingId}`}><summary>Advanced rig preview · local only</summary><CubismStudio key={editingAvatar?.modelId} bridge={bridge} visible={visible} assignedModel={editingModel ?? null} /></details> : null}
 
-      {dialogueOnly && !voiceOnly && avatarView === 'character' && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
+      {personaOnly && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
         <HelpField help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
         <HelpField help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
       </div></fieldset> : null}
-      {!dialogueOnly && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
+      {(!dialogueOnly || section === 'Music & video') && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
       {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
         onSave={(id, stepId) => void saveScene(id, stepId)} isSaved={isSceneSaved}
@@ -1727,13 +1769,13 @@ export function ScenesPanel({
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton aria-label="Save all changes" help="Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars." disabled={disabled} onClick={() => void saveAndCheck()}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : 'Save all changes'}</HelpButton>
+        <HelpButton aria-label={section === 'Music & video' ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : section === 'Music & video' ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled || invalidPresentation} onClick={() => void saveAndCheck(section === 'Music & video')}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : section === 'Music & video' ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
         {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check aborted. Waiting for the pending save / check to finish safely…') }}>Abort check</button>}
-        <HelpButton help={dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>
+        {section !== 'Music & video' && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
         <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         </div>
         {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>
-          <button disabled={disabled || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
+          <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
         <p className="console__scene-result" role="status">{result}</p>

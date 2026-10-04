@@ -43,13 +43,13 @@ export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '',
       catch { await audio.setSinkId(''); fallback = true }
       if (cancelled) return
       await audio.play()
-      if (!cancelled) setReason(fallback ? 'Playing locally · 50% preview level × BGM volume · Selected speakers unavailable; using Windows default.' : 'Playing locally · 50% preview level × BGM volume')
+      if (!cancelled) setReason(fallback ? 'Playing locally · 50% preview level × BGM volume · Selected speakers unavailable; using the system default.' : 'Playing locally · 50% preview level × BGM volume')
     })().catch(() => { if (!cancelled) { setReason('Audio preview failed. Check the file and selected speakers.'); setPlaying('') } })
     return () => { cancelled = true; stopVolumes(); audio.pause(); audio.removeAttribute('src'); audio.load() }
   }, [playing, bridge])
   return <section className="media-library" aria-label="Media library">
     <div className="console__action-row"><button type="button" className="console__primary" disabled={disabled} onClick={onImport}>Browse & upload media…</button><span className="console__muted">Select images, videos and audio together · up to 32 files</span></div>
-    <p className="console__muted">Files are copied locally. Save Draft to keep their links; Publish is separate.</p>
+    <p className="console__muted">Files are copied locally. Save all changes to keep their links; Publish is separate. To let an avatar play music or video on request, select it in that avatar’s Music & video page.</p>
     {reason ? <p role="status">{reason}</p> : null}
     {playing ? <audio key={playing} ref={audioRef} src={`magic-mirror-media://music-draft/${encodeURIComponent(playing)}`} data-library-audio="true"
       onEnded={() => { setPlaying(''); setReason('Preview finished.') }} onError={() => { setPlaying(''); setReason('Audio preview failed: this file could not be decoded.') }} /> : null}

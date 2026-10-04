@@ -370,7 +370,7 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
     ...shared,
     ...(mirrorBounds ?? { width: 1280, height: 800 }),
     frame: false,
-    backgroundColor: '#05070a',
+    backgroundColor: '#000000',
     // macOS kiosk uses pre-Lion fullscreen (no Space transition); the Windows dev
     // machine gets a maximized frameless window instead.
     ...(isDarwin ? { simpleFullscreen: true, alwaysOnTop: true } : {}),

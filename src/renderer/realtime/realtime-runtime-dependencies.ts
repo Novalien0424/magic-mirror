@@ -159,7 +159,9 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly createCleanup: RealtimeRuntimeOwnerDependencies['createCleanup']
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
+  readonly onMediaRequest?: CreateRealtimeSessionInput['onMediaRequest']
   readonly getAvatarDialogue?: () => Promise<{ wakeGreeting?: string; sleepFarewell?: string }>
+  readonly waitForWakePresentation?: CreateRealtimeSessionInput['waitForWakePresentation']
   readonly onAudioActivity?: CreateRealtimeSessionInput['onAudioActivity']
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>
   readonly createSession?: (
@@ -290,6 +292,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         } } : {}),
         ...(bundle.avatar ? { avatar: bundle.avatar } : {}),
         ...(greet && dialogue?.wakeGreeting !== undefined ? { wakeGreeting: dialogue.wakeGreeting } : {}),
+        ...(greet && input.waitForWakePresentation ? { waitForWakePresentation: input.waitForWakePresentation } : {}),
         ...(dialogue?.sleepFarewell !== undefined ? { sleepFarewell: dialogue.sleepFarewell } : {}),
         snapshot: bundle.snapshot,
         clientSecret: bundle.clientSecret,
@@ -300,6 +303,7 @@ export function createRealtimeRuntimeOwnerDependencies(
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
+        onMediaRequest: input.onMediaRequest,
         waitForOutputTail: async () => { await outputs.get(audioElement)?.waitForTail?.() },
         onAudioActivity: activity => {
           const output = outputs.get(audioElement)

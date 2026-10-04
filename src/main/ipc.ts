@@ -1,8 +1,11 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
+import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
-import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
+import { canUseAvatarAction, canUseAvatarResource, parseAvatarModelReference } from '../shared/avatar-profiles'
+import { parsePresentation } from '../shared/presentation'
 import { parseAvatarLibraryLabelRequest } from '../shared/avatar-library'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import { voiceEffectsSchema } from '../shared/voice-effects-schema'
@@ -78,6 +81,7 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   reportAvatarRuntime: 'mirror:report-avatar-runtime',
   reportSceneAction: 'mirror:report-scene-action',
   reportSceneVisual: 'mirror:report-scene-visual',
+  mediaSkill: 'mirror:media-skill',
   getSceneCatalog: 'mirror:get-scene-catalog',
   triggerScene: 'mirror:trigger-scene',
   stopScene: 'mirror:stop-scene',
@@ -1271,6 +1275,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     musicGain: 1,
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
+  const mediaSkill = createMediaSkillRuntime({
+    activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
+    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    report: reason => emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
+      status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason }),
+  })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0
   let sceneOperations: Promise<unknown> = Promise.resolve()
@@ -1538,7 +1548,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneActionRendererReport
-    cachedSceneRuntime?.value.reportAction(report)
+    if (!mediaSkill.reportAction(report)) cachedSceneRuntime?.value.reportAction(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneVisual, (event, ...args) => {
@@ -1552,7 +1562,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneVisualPlaybackReport
-    cachedSceneRuntime?.value.reportVisual(report)
+    if (!mediaSkill.reportVisual(report)) cachedSceneRuntime?.value.reportVisual(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
@@ -1692,6 +1702,48 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return projectAppSnapshot(runtime.snapshot())
   })
 
+  ipcMain.handle(MIRROR_IPC_CHANNELS.mediaSkill, async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return 'rejected' }
+    const envelope = args[0]
+    const request = parseMediaSkillRequest(readProperty(envelope, 'request'))
+    const identity = readProperty(envelope, 'identity')
+    if (args.length !== 1 || !exactKeys(envelope, ['request', 'identity']) || !request
+      || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])) {
+      payloadRejected(telemetry); return 'rejected'
+    }
+    const generation = consoleSceneGeneration
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return generation === consoleSceneGeneration && snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
+        && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    return enqueueSceneOperation(async () => {
+      if (!current()) { emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' }); return 'ignored' }
+      if (request.action === 'stop') return mediaSkill.stop()
+      const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
+      if (!current()) return 'ignored'
+      const catalog = config?.avatarCatalog
+      const skill = catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL
+      const resource = skill.resources.find(r => r.kind === request.kind && r.assetId === request.assetId)
+      const available = request.kind === 'video'
+        ? config?.visualAssets.some(a => a.id === request.assetId && a.kind === 'video')
+        : config?.musicAssets.some(a => a.id === request.assetId)
+      if (!skill.enabled || !resource || !available || catalog && !canUseAvatarResource(catalog, catalog.activeAvatarId,
+        request.kind === 'video' ? 'visual' : 'music', request.assetId)) {
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })
+        return 'rejected'
+      }
+      await cachedSceneRuntime?.value.stopAll()
+      if (!current()) return 'ignored'
+      return mediaSkill.play(request, skill)
+    }).catch(() => {
+      mediaSkill.stop('media_playback_failed')
+      return 'failed'
+    })
+  })
+
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) {
@@ -1732,6 +1784,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return enqueueSceneOperation(async () => {
       const loaded = await loadSceneRuntime()
       if (loaded === null) return unavailableSceneResult()
+      mediaSkill.stop('media_replaced_by_scene')
       return loaded.value.triggerSpell({
         spellId: readProperty(request, 'spellId') as string,
         turnId: readProperty(request, 'turnId') as string,
@@ -1926,6 +1979,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const loaded = await loadSceneRuntime(isDraft ? 'draft' : 'published')
       if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+      mediaSkill.stop('media_replaced_by_scene')
       const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
       return { ok: true, value: result }
     })
@@ -1942,10 +1996,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     consoleSceneGeneration += 1
+    mediaSkill.stop()
     dispatchMirrorAvatarControl({ type: 'stop_avatar_test' }, windows)
     const stopping = cachedSceneRuntime?.value.stopAll()
     return enqueueSceneOperation(async () => {
       await stopping
+      mediaSkill.stop()
       await cachedSceneRuntime?.value.stopAll()
       return { ok: true, value: { status: 'stopped' as const } }
     })
@@ -2146,14 +2202,20 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (!eventArgsAreEmpty(args)) { payloadRejected(telemetry); return null }
     const response = await invokeConsole(consoleFacade(options), facade => facade.getConfig(), telemetry)
     if (!response.ok) return null
-    const config = response.value.active.presentation
+    const config = parsePresentation(response.value.active.presentation)
     if (!config) return null
     const asset = response.value.active.visualAssets.find(asset => asset.id === config.backgroundId)
     const catalog = response.value.active.avatarCatalog
     const avatar = catalog?.avatars.find(a => a.id === catalog.activeAvatarId)
+    const ritualVideo = (id: string | undefined) => {
+      if (!id || catalog && (!avatar || !canUseAvatarResource(catalog, avatar.id, 'visual', id))) return null
+      const video = response.value.active.visualAssets.find(asset => asset.id === id && asset.kind === 'video')
+      return video ? { id: video.id, kind: 'video' as const } : null
+    }
     const source = catalog?.models.find(m => m.id === avatar?.modelId)
     const model = source ? parseAvatarModelReference({ id: source.id, manifestFileName: source.manifestFileName }) : null
-    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null, ...(model ? { model } : {}) }
+    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null,
+      entranceVideo: ritualVideo(config.entranceVideoId), exitVideo: ritualVideo(config.exitVideoId), ...(model ? { model } : {}) }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.config, async (event, ...args) => {
@@ -2333,7 +2395,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
 
   return Object.freeze({
     async stopAll(): Promise<void> {
-      await enqueueSceneOperation(async () => { await cachedSceneRuntime?.value.stopAll() })
+      await enqueueSceneOperation(async () => { mediaSkill.stop(); await cachedSceneRuntime?.value.stopAll() })
     },
   })
 }

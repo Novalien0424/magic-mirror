@@ -4,6 +4,15 @@ import { readFileSync } from 'node:fs'
 import type { MirrorConfig } from '../../src/shared/types'
 
 describe('effective avatar prompt', () => {
+  it('shares configured media lookup labels with the session and hides disabled resources', () => {
+    const settings = { name: 'Guide', personality: 'Patient guide', speakingStyle: '', wakeGreeting: '', sleepFarewell: 'Goodbye',
+      mediaSkill: { enabled: true, fadeMs: 800, gain: 0.7, resources: [{ kind: 'video' as const, assetId: 'clip', name: 'Northern sky', aliases: ['aurora'] }] } }
+    expect(parseAvatarSessionSettings(settings)).toEqual(settings)
+    expect(buildAvatarPrompt(settings)).toContain('Northern sky')
+    expect(buildAvatarPrompt(settings)).toContain('aurora')
+    expect(buildAvatarPrompt({ ...settings, mediaSkill: { ...settings.mediaSkill, enabled: false } })).not.toContain('Northern sky')
+    expect(parseAvatarSessionSettings({ ...settings, mediaSkill: { ...settings.mediaSkill, path: '/private' } })).toBeNull()
+  })
   it('keeps the spell catalog out of roleplay and forbids coaching', () => {
     const prompt = buildAvatarPrompt({ name: 'Ren', personality: 'A proud rain spirit.', speakingStyle: 'Playful',
       wakeGreeting: 'Hello', sleepFarewell: 'Goodbye', spellPhrases: ['施放咒語，下雨'] })

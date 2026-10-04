@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
+import { parseMediaSkillRequest } from '../shared/media-skill'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
 import { isCameraTarget } from '../shared/camera-tracking'
@@ -134,6 +135,12 @@ function sanitizeSceneActionContext(value: unknown): SceneActionCommandContext |
 function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   if (!isRecord(value)) return null
   const type = readProperty(value, 'type')
+  if (type === 'media_skill_state' && exactKeys(value, ['type', 'active', 'hideAvatar', 'fadeMs'])) {
+    const { active, hideAvatar, fadeMs } = value
+    if (typeof active !== 'boolean' || typeof hideAvatar !== 'boolean' || typeof fadeMs !== 'number'
+      || !Number.isInteger(fadeMs) || fadeMs < 0 || fadeMs > 10000) return null
+    return Object.freeze({ type, active, hideAvatar, fadeMs })
+  }
   if ((type === 'refresh_audio_devices' || type === 'stop_avatar_test') && exactKeys(value, ['type'])) return Object.freeze({ type })
   if (type === 'audio_devices' && exactKeys(value, ['type', 'preferences'])) {
     const preferences = parseAudioPreferences(readProperty(value, 'preferences'))
@@ -430,16 +437,26 @@ const bridge: MirrorBridge = {
   },
   async getPresentation() {
     const value = await ipcRenderer.invoke('mirror:get-presentation')
-    if (!isRecord(value) || !exactKeys(value, ['config', 'background', ...('model' in value ? ['model'] : [])])) return null
+    if (!isRecord(value) || !exactKeys(value, ['config', 'background', ...('model' in value ? ['model'] : []),
+      ...('entranceVideo' in value ? ['entranceVideo'] : []), ...('exitVideo' in value ? ['exitVideo'] : [])])) return null
     const model = 'model' in value ? parseAvatarModelReference(value.model) : null
     if ('model' in value && !model) return null
     const config = parsePresentation(value.config)
     if (!config) return null
     const background = value.background
-    if (background === null) return { config, background: null, ...(model ? { model } : {}) }
-    if (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
-      || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video')) return null
-    return { config, background: { id: config.backgroundId, kind: background.kind }, ...(model ? { model } : {}) }
+    if (background !== null && (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
+      || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video'))) return null
+    const videos: { entranceVideo?: { id: string; kind: 'video' } | null; exitVideo?: { id: string; kind: 'video' } | null } = {}
+    for (const key of ['entranceVideo', 'exitVideo'] as const) {
+      if (!(key in value)) continue
+      const video = value[key]
+      if (video === null) { videos[key] = null; continue }
+      const id = config[key === 'entranceVideo' ? 'entranceVideoId' : 'exitVideoId']
+      if (!id || !isRecord(video) || !exactKeys(video, ['id', 'kind']) || video.id !== id || video.kind !== 'video') return null
+      videos[key] = { id, kind: 'video' }
+    }
+    return { config, background: background === null ? null : { id: config.backgroundId, kind: background.kind as 'image' | 'video' },
+      ...videos, ...(model ? { model } : {}) }
   },
   async getAudioPreferences() {
     const result = await ipcRenderer.invoke('mirror:get-audio-preferences')
@@ -494,6 +511,15 @@ const bridge: MirrorBridge = {
 
   requestSleep(): void {
     ipcRenderer.send(SLEEP_REQUEST_CHANNEL)
+  },
+
+  async requestMedia(request, identity) {
+    const parsed = parseMediaSkillRequest(request)
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return 'rejected'
+    const result: unknown = await ipcRenderer.invoke('mirror:media-skill', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })
+    return result === 'accepted' || result === 'ignored' || result === 'rejected' || result === 'failed' ? result : 'failed'
   },
 
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void {

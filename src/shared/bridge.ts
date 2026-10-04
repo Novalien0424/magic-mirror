@@ -105,6 +105,7 @@ export const AVATAR_RUNTIME_STATES = [
 export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
+  | Readonly<{ type: 'media_skill_state'; active: boolean; hideAvatar: boolean; fadeMs: number }>
   | Readonly<{ type: 'stop_avatar_test' }>
   | Readonly<{ type: 'audio_devices'; preferences: import('./audio-devices').AudioPreferences }>
   | Readonly<{ type: 'refresh_audio_devices' }>
@@ -176,6 +177,7 @@ export interface MirrorChannelMap {
   readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
   readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
   readonly sleepRequest: 'mirror:sleep-request'
+  readonly mediaSkill: 'mirror:media-skill'
   readonly avatarControl: 'mirror:avatar-control'
   readonly reportAvatarRuntime: 'mirror:report-avatar-runtime'
   readonly reportSceneAction: 'mirror:report-scene-action'
@@ -245,6 +247,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeFailure(report: RealtimeFailureReport): void
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
+  requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./realtime-tools').ToolOutcome>
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
   reportSceneAction(report: SceneActionRendererReport): void
   reportSceneVisual(report: SceneVisualPlaybackReport): void

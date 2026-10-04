@@ -34,11 +34,23 @@ describe('rendered field descriptions', () => {
   afterAll(() => vi.unstubAllGlobals())
   it('describes persona fields even when editing is disabled', () => {
     const avatar = { name: 'Host', personality: 'A friendly host', idleSeconds: 300,
-      speakingStyle: 'Clear', presentation: DEFAULT_PRESENTATION } as AvatarProfile
+      speakingStyle: 'Clear', presentation: DEFAULT_PRESENTATION, spells: [] } as unknown as AvatarProfile
     expectDescriptions(createElement(AvatarCharacterEditor, { avatar, disabled: true, onChange: noop }))
   })
   it('describes every presentation choice and range', () => {
     expectDescriptions(createElement(PresentationEditor, { draft, disabled: false, onChange: noop }))
+  })
+  it('describes every reflective ritual control and offers videos only', () => {
+    const reflective = { ...draft, presentation: { ...DEFAULT_PRESENTATION, mode: 'reflective' as const, entranceMs: 4000 },
+      visualAssets: [{ id: 'clip', name: 'Synthetic clip', kind: 'video' }, { id: 'still', name: 'Synthetic still', kind: 'image' }] } as unknown as ConsoleConfigDraftInput
+    const element = createElement(PresentationEditor, { draft: reflective, disabled: false, onChange: noop })
+    expectDescriptions(element)
+    const html = renderToStaticMarkup(element)
+    expect(html).toContain('Quiet, ceremonial dread')
+    expect(html).toContain('Dormant music (loops)')
+    expect(html).not.toContain('Background image / looping video')
+    expect(html).not.toContain('Synthetic still')
+    expect(html.match(/value="clip"/g)).toHaveLength(2)
   })
   const base = { id: 'action', name: 'Action', enabled: true }
   const actions: SceneActionDefinition[] = [

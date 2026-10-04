@@ -3,6 +3,7 @@ import { DEFAULT_PRESENTATION, parsePresentation } from '../../src/shared/presen
 import { createPresentationController } from '../../src/renderer/avatar/presentation-controller'
 import { mirrorConfigSchema } from '../../src/main/config-service'
 import { readFileSync } from 'node:fs'
+import { AVATAR_VOICES } from '../../src/shared/avatar-profiles'
 
 describe('lifecycle presentation', () => {
   it('defaults legacy active BGM to silence and validates the independently saved active level', () => {
@@ -38,6 +39,88 @@ describe('lifecycle presentation', () => {
     expect(parsePresentation({ ...DEFAULT_PRESENTATION, ambienceGain: 2 })).toBeNull()
     expect(parsePresentation({ ...DEFAULT_PRESENTATION, unknown: true })).toBeNull()
   })
+  describe('ritual managed resource validation', () => {
+    const video = { id: 'mist', name: 'Mist', kind: 'video', fileName: 'mist.webm', mimeType: 'video/webm',
+      byteLength: 32, sha256: 'a'.repeat(64), width: 100, height: 100, orientation: 'square',
+      windowsDecode: 'passed', durationMs: 5000, audioTrack: 'absent' }
+    const baseline = () => {
+      const config = JSON.parse(readFileSync('resources/config/default.json', 'utf8'))
+      delete config.schemaVersion; delete config.avatarCatalog
+      return { ...config, visualAssets: [video], presentation: { ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, exitMs: 2400 } }
+    }
+    it.each(['entranceVideoId', 'exitVideoId'])('accepts only existing video media for %s', key => {
+      const config = baseline()
+      const presentation = { ...config.presentation, [key]: 'mist' }
+      expect(mirrorConfigSchema.safeParse({ ...config, presentation }).success).toBe(true)
+      expect(mirrorConfigSchema.safeParse({ ...config, presentation: { ...presentation, [key]: 'missing' } }).success).toBe(false)
+      const { durationMs: _duration, ...image } = video
+      expect(mirrorConfigSchema.safeParse({ ...config, presentation,
+        visualAssets: [{ ...image, kind: 'image', mimeType: 'image/png', fileName: 'mist.png' }] }).success).toBe(false)
+    })
+    it.each(['entranceVideoId', 'exitVideoId'])('enforces per-avatar ownership of %s', key => {
+      const config = baseline()
+      const avatar = { id: 'host', name: 'Host', personality: 'Synthetic host.', speakingStyle: '',
+        voice: AVATAR_VOICES[0], idleSeconds: 300, modelId: 'builtin-ren', scenes: [], spells: [],
+        presentation: { ...config.presentation, [key]: 'mist' } }
+      const catalog = { activeAvatarId: 'host', models: [], avatars: [avatar,
+        { ...avatar, id: 'other', presentation: { ...config.presentation } }],
+        locks: [{ kind: 'visual', resourceId: 'mist', avatarId: 'host' }] }
+      expect(mirrorConfigSchema.safeParse({ ...config, avatarCatalog: catalog }).success).toBe(true)
+      expect(mirrorConfigSchema.safeParse({ ...config, avatarCatalog: { ...catalog,
+        locks: [{ kind: 'visual', resourceId: 'mist', avatarId: 'other' }] } }).success).toBe(false)
+      expect(mirrorConfigSchema.safeParse({ ...config, visualAssets: [], avatarCatalog: catalog }).success).toBe(false)
+    })
+  })
+  describe('reflective ritual parsing', () => {
+    const ritual = {
+      ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, exitMs: 2400,
+      entranceVideoId: 'mist-in', exitVideoId: 'mist-out', entranceBlend: 'screen', exitBlend: 'normal',
+      blackHoldMs: 400, revealStartMs: 1500
+    }
+    it('accepts and preserves a valid reflective ritual', () => {
+      expect(parsePresentation(ritual)).toEqual(ritual)
+    })
+    it('normalizes omitted ritual fields while preserving legacy durations and modes', () => {
+      for (const mode of ['always_visible', 'emerge', 'reflective']) {
+        const legacy = { mode, backgroundId: '', ambienceId: '', ambienceGain: .25, entranceMs: 1800, exitMs: 1800 }
+        expect(parsePresentation(legacy)).toEqual({
+          ...DEFAULT_PRESENTATION, mode, entranceMs: 1800, exitMs: 1800,
+          entranceVideoId: '', exitVideoId: '', entranceBlend: 'screen', exitBlend: 'screen',
+          blackHoldMs: 400, revealStartMs: 1500
+        })
+      }
+    })
+    it('accepts zero offsets and a hold ending exactly when the reveal starts', () => {
+      for (const offset of [0, 1500]) {
+        const config = { ...ritual, blackHoldMs: offset, revealStartMs: offset }
+        expect(parsePresentation(config)).toEqual(config)
+      }
+    })
+    it('enforces hold and reveal ordering only for reflective mode', () => {
+      for (const timing of [{ blackHoldMs: 1501 }, { revealStartMs: 4000 }, { revealStartMs: 4001 }]) {
+        expect(parsePresentation({ ...ritual, ...timing })).toBeNull()
+        for (const mode of ['always_visible', 'emerge']) {
+          const config = { ...ritual, ...timing, mode }
+          expect(parsePresentation(config)).toEqual(config)
+        }
+      }
+    })
+    it.each(['blackHoldMs', 'revealStartMs', 'entranceMs', 'exitMs'])('rejects invalid %s milliseconds', key => {
+      for (const invalid of [-1, 10001, 400.5, NaN, Infinity, '400', null]) {
+        expect(parsePresentation({ ...ritual, [key]: invalid })).toBeNull()
+      }
+    })
+    it.each(['entranceVideoId', 'exitVideoId'])('rejects unsafe managed video IDs in %s', key => {
+      for (const invalid of ['../mist', 'mist/clip', 'mist\\clip', 'Mist', 'x'.repeat(97), null]) {
+        expect(parsePresentation({ ...ritual, [key]: invalid })).toBeNull()
+      }
+    })
+    it.each(['entranceBlend', 'exitBlend'])('rejects unsupported %s values', key => {
+      for (const invalid of ['multiply', '', null]) {
+        expect(parsePresentation({ ...ritual, [key]: invalid })).toBeNull()
+      }
+    })
+  })
   it('finishes an exit after Main has already returned to dormant', () => {
     vi.useFakeTimers()
     const phases: string[] = []
@@ -48,6 +131,20 @@ describe('lifecycle presentation', () => {
     vi.advanceTimersByTime(900)
     expect(phases.at(-1)).toBe('asleep')
     c.dispose(); vi.useRealTimers()
+  })
+  it('starts the entrance clock once across activating and repeated active updates', () => {
+    vi.useFakeTimers()
+    try {
+      const phases: string[] = []
+      const controller = createPresentationController({ entranceMs: 4000, exitMs: 2400, changed: phase => phases.push(phase) })
+      controller.update('activating')
+      vi.advanceTimersByTime(1000); controller.update('active')
+      vi.advanceTimersByTime(1000); controller.update('active')
+      vi.advanceTimersByTime(2000)
+      expect(phases).toEqual(['entering', 'awake'])
+      controller.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
   })
   it('cancels stale exit completion on a rapid wake and stops on faults', () => {
     vi.useFakeTimers()

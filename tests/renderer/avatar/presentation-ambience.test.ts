@@ -57,6 +57,18 @@ describe('presentation BGM speech priority', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(audio.volume).toBe(0)
   })
+  it('keeps reflective exit silent after farewell and restores dormant music only after black', async () => {
+    const { audio, input } = setup()
+    audio.volume = 0
+    const cancel = applyPresentationAmbience({ ...input, phase: 'exiting', reflective: true })
+    await vi.advanceTimersByTimeAsync(2400)
+    expect(audio.volume).toBe(0); expect(audio.play).not.toHaveBeenCalled()
+    cancel()
+    applyPresentationAmbience({ ...input, phase: 'asleep', reflective: true })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.volume).toBeCloseTo(.2); expect(audio.play).toHaveBeenCalledOnce()
+    expect(audio.currentTime).toBe(12)
+  })
 
   it('pauses for inactive states, zero active volume and global mute', async () => {
     for (const patch of [{ phase: 'inactive' as const }, { activeAmbienceGain: 0 }, { bgmVolume: 0 }]) {

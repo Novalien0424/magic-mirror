@@ -511,8 +511,96 @@ describe("RealtimeSession adapter", () => {
     expect(probe.sendMessage).not.toHaveBeenCalled();
     expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith({ type: 'response.create', response: buildSpeechResponse('Welcome.', '') });
     // Only the greeting response forbids tools; visitor sleep commands remain available.
-    expect(probe.agentConstructorCalls[0]?.[0]).toMatchObject({ tools: [expect.objectContaining({ name: 'return_to_dormant' })] });
+    expect(probe.agentConstructorCalls[0]?.[0]).toMatchObject({ tools: expect.arrayContaining([
+      expect.objectContaining({ name: 'return_to_dormant' }), expect.objectContaining({ name: 'play_media' }), expect.objectContaining({ name: 'stop_media' })]) });
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain("Welcome.");
+  });
+  it('connects and processes visitor audio while only the greeting waits for presentation', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onAudioActivity = vi.fn();
+    let reveal!: () => void;
+    const waiting = new Promise<void>(resolve => { reveal = resolve; });
+    const waitForWakePresentation = vi.fn(() => waiting);
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe),
+      wakeGreeting: 'Synthetic greeting.', waitForWakePresentation, onAudioActivity });
+    await handle.connect(); await handle.connect();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ event: 'realtime_ready' }));
+    expect(waitForWakePresentation).toHaveBeenCalledOnce();
+    expect(probe.sendEvent).not.toHaveBeenCalled();
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_stopped' });
+    expect(onAudioActivity).toHaveBeenCalledWith('speech_stopped');
+    reveal(); for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith({ type: 'response.create', response: buildSpeechResponse('Synthetic greeting.', '') });
+    await handle.connect();
+    expect(probe.sendEvent).toHaveBeenCalledOnce();
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('Synthetic greeting.');
+    await handle.close('user_requested');
+  });
+
+  it.each(['visitor', 'close', 'interrupt', 'sdk_interrupt'] as const)('suppresses a late greeting after %s and aborts the visual wait', async action => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    let reveal!: () => void;
+    let signal!: AbortSignal;
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), wakeGreeting: 'Synthetic greeting.',
+      waitForWakePresentation: abort => { signal = abort; return new Promise<void>(resolve => { reveal = resolve; }); } });
+    await handle.connect();
+    if (action === 'visitor') probe.emit('transport_event', { type: 'input_audio_buffer.speech_started' });
+    if (action === 'close') await handle.close('user_requested');
+    if (action === 'interrupt') await handle.interrupt();
+    if (action === 'sdk_interrupt') probe.emit('audio_interrupted', {});
+    expect(signal.aborted).toBe(true);
+    reveal(); for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(probe.sendEvent).not.toHaveBeenCalled();
+    const reason = action === 'visitor' ? 'wake_greeting_cancelled_visitor_speech'
+      : action === 'close' ? 'wake_greeting_cancelled_close' : 'wake_greeting_cancelled_interrupt';
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason }));
+    await handle.close('user_requested');
+  });
+
+  it('suppresses the greeting when visitor speech begins before connection completes', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), waitForWakePresentation = vi.fn(async () => undefined);
+    let connected!: () => void;
+    probe.connect.mockImplementationOnce(() => new Promise<void>(resolve => { connected = resolve; }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe),
+      wakeGreeting: 'Synthetic greeting.', waitForWakePresentation });
+    const connecting = handle.connect();
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started' });
+    connected(); await connecting;
+    expect(waitForWakePresentation).not.toHaveBeenCalled(); expect(probe.sendEvent).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ event: 'realtime_ready' }));
+    await handle.close('user_requested');
+  });
+
+  it.each(['cancel', 'failure'] as const)('keeps the connection ready after presentation gate %s', async outcome => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    const error = new Error('synthetic gate failure');
+    if (outcome === 'cancel') error.name = 'AbortError';
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), wakeGreeting: 'Synthetic greeting.',
+      waitForWakePresentation: async () => { throw error; } });
+    await expect(handle.connect()).resolves.toBeUndefined();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ event: 'realtime_ready' }));
+    expect(sink.mock.calls.some(([event]) => event.event === 'realtime_connect_failed')).toBe(false);
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: outcome === 'cancel' ? 'wake_greeting_gate_cancelled' : 'wake_greeting_gate_failed' }));
+    expect(probe.sendEvent).toHaveBeenCalledTimes(outcome === 'cancel' ? 0 : 1);
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('synthetic gate failure');
+    await handle.close('user_requested');
+  });
+
+  it('bounds an unresponsive greeting dependency without blocking readiness', async () => {
+    vi.useFakeTimers();
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    let signal!: AbortSignal;
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), wakeGreeting: 'Synthetic greeting.',
+      waitForWakePresentation: abort => { signal = abort; return new Promise<void>(() => {}); } });
+    try {
+      await handle.connect();
+      expect(probe.sendEvent).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(10250);
+      expect(probe.sendEvent).toHaveBeenCalledOnce();
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'wake_greeting_gate_timeout' }));
+      expect(vi.getTimerCount()).toBe(0);
+      expect(signal.aborted).toBe(true);
+    } finally { await handle.close('user_requested'); vi.useRealTimers(); }
   });
 
   it("uses the configured farewell rather than a hardcoded response", async () => {

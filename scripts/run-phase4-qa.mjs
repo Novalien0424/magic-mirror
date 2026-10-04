@@ -7,7 +7,7 @@ import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -21,13 +21,16 @@ const cubismOnly = process.argv.includes('--cubism')
 const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
+const ritualOnly = process.argv.includes('--ritual')
+const mediaSkillOnly = process.argv.includes('--media-skill')
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || mediaSkillOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
-  || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()) {
+  || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()
+  || process.platform === 'darwin' && repoRoot !== '/Users/novalien0424/magic-mirror') {
   throw new Error('phase4_qa_requires_canonical_checkout_cwd')
 }
 const buildProvenance = await verifyBuild(repoRoot).catch(() => {
@@ -96,6 +99,11 @@ visualFixtures.push({
 })
 
 const config = JSON.parse(await readFile(join(repoRoot, 'resources', 'config', 'default.json'), 'utf8'))
+if (profileOnly && process.platform === 'darwin' && process.arch === 'arm64') {
+  const packageId = 'sherpa-magic-mirror-mac-v1'
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'resources/wake-models', packageId, 'manifest.json'), 'utf8'))
+  config.wake = { packageId, modelVersion: manifest.modelVersion, phrase: manifest.phrase }
+}
 config.configVersion = 41
 // Renderer capture takes longer than the developer-mode product idle timeout.
 // Keep this isolated QA session alive until the live dialogue assertions run.
@@ -215,12 +223,31 @@ if (consoleOnly) {
   config.scenes = []
   config.spells = []
 }
+if (ritualOnly) {
+  const legacyPresentation = { mode: 'always_visible', backgroundId: '', ambienceId: '',
+    ambienceGain: 0.25, activeAmbienceGain: 0, entranceMs: 1800, exitMs: 1800,
+    wakeGreeting: '', sleepFarewell: 'Rest now.' }
+  config.presentation = legacyPresentation
+  config.avatarCatalog = { activeAvatarId: 'qa-ritual', locks: [], models: [], avatars: [
+    ['qa-ritual', 'always_visible'], ['qa-legacy-visible', 'always_visible'], ['qa-legacy-emerge', 'emerge'],
+  ].map(([id, mode]) => ({ id, name: id, personality: 'Synthetic local QA fixture.',
+    speakingStyle: '', voice: config.voice, idleSeconds: 300, modelId: 'builtin-ren',
+    presentation: { ...legacyPresentation, mode }, scenes: [], spells: [] })) }
+}
+
+if (mediaSkillOnly) {
+  config.visualAssets = visualFixtures.filter(a => a.id !== 'visual-qa-missing')
+  config.presentation = { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
+    entranceMs: 0, exitMs: 0, wakeGreeting: '', sleepFarewell: 'Rest now.' }
+}
 
 for (const slot of ['active', 'draft', 'previous']) {
   await writeFile(join(configDir, `${slot}.json`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
 }
 
-const electron = join(repoRoot, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron')
+const electronExecutable = process.platform === 'win32' ? ['electron.exe']
+  : process.platform === 'darwin' ? ['Electron.app', 'Contents', 'MacOS', 'Electron'] : ['electron']
+const electron = join(repoRoot, 'node_modules', 'electron', 'dist', ...electronExecutable)
 const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
@@ -229,6 +256,8 @@ const environment = {
   MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
   MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
+  MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
+  MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',

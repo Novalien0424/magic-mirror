@@ -137,6 +137,7 @@ export function createAvatarMediaController(
     musicPlaying = false
     input.eventSink('avatar_music_completed')
   })
+  music.addEventListener('error', () => { if (!disposed && musicPlaying) input.eventSink(musicPlayFailureReason()) })
 
   const ramp = (gain: GainNode, target: number, durationMs: number): void => {
     const now = context.currentTime
@@ -324,7 +325,7 @@ export function createAvatarMediaController(
           return music.play()
         }).then(() => {
           if (!disposed && generation === sceneMusicLoadGeneration) musicPlaying = true
-        }).catch(() => input.eventSink(musicPlayFailureReason()))
+        }).catch(() => { if (!disposed && generation === sceneMusicLoadGeneration) input.eventSink(musicPlayFailureReason()) })
         return
       }
       if (command.type === 'scene_music') {
@@ -379,7 +380,7 @@ export function createAvatarMediaController(
           changed()
           input.eventSink('avatar_music_started')
           observeMusicSignal(generation)
-        }).catch(() => input.eventSink(musicPlayFailureReason()))
+        }).catch(() => { if (!disposed && generation === sceneMusicLoadGeneration) input.eventSink(musicPlayFailureReason()) })
         return
       }
       if (command.type === 'voice_gain') {

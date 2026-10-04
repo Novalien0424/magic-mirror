@@ -344,13 +344,18 @@ function makeAudioAnalyserFixture(): AudioAnalyserFixture {
 describe('Realtime runtime dependency composition core', () => {
   it('includes greeting only for fresh starts, while retaining the farewell on rollover', async () => {
     const fixture = makeFixture()
+    const waitForWakePresentation = vi.fn(async () => undefined)
     const deps = createRealtimeRuntimeOwnerDependencies({ ...fixture.input,
+      waitForWakePresentation,
       getAvatarDialogue: async () => ({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' }) })
     await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement, true)
     await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement)
     expect(fixture.createSession.mock.calls[0]?.[0]).toMatchObject({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' })
     expect(fixture.createSession.mock.calls[1]?.[0]).toMatchObject({ sleepFarewell: 'Rest.' })
     expect(fixture.createSession.mock.calls[1]?.[0]).not.toHaveProperty('wakeGreeting')
+    expect(fixture.createSession.mock.calls[0]?.[0].waitForWakePresentation).toBe(waitForWakePresentation)
+    expect(fixture.createSession.mock.calls[1]?.[0]).not.toHaveProperty('waitForWakePresentation')
+    expect(waitForWakePresentation).not.toHaveBeenCalled()
   })
   it('constructs dependencies and a browser owner purely, leaving the owner idle', () => {
     const fixture = makeFixture()

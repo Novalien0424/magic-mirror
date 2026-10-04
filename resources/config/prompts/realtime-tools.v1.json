@@ -21,6 +21,52 @@
         "rejected": { "status": "rejected", "code": "tool_arguments_rejected", "speech": "none" },
         "failed": { "status": "failed", "code": "tool_execution_failed", "speech": "none" }
       }
+    },
+    {
+      "name": "play_media",
+      "handler": "play_media",
+      "enabled": true,
+      "availability": "conversation",
+      "routing": "model_intent",
+      "description": "Play a configured local video or music resource from your Media library. Match the visitor's requested title or alias to a library entry. Video fades the avatar out; music keeps the avatar visible. Playback replaces existing media or scenes. Default to once unless the visitor explicitly requests repeat or loop.",
+      "parameters": { "type": "object", "properties": {
+        "kind": { "type": "string", "enum": ["video", "music"] },
+        "assetId": { "type": "string", "description": "Exact assetId from a configured Media library entry." },
+        "mode": { "type": "string", "enum": ["once", "loop"] }
+      }, "required": ["kind", "assetId", "mode"], "additionalProperties": false },
+      "rules": {
+        "useWhen": "Use play_media only for a directed request to play an entry from the Media library. Find resources by their name or aliases. Use mode once by default, loop only when explicitly requested. A loop continues until stopped, replaced, or the conversation ends.",
+        "avoidWhen": "Never invent resources, IDs, paths, URLs or access. If the Media library is empty, explain that media must be added in Console → Avatars → Music & video. If several entries match, ask which one; if none match, explain the resource is unavailable and offer configured names. Quotes, negation and hypothetical playback are not commands. Never use media tools to invoke spells or hardware.",
+        "speech": "Call play_media without speaking over the start of playback. Do not claim playback succeeded before the tool result; rejected or failed means it did not start. Continue conversation normally when addressed during music or video."
+      },
+      "completion": "background",
+      "results": {
+        "accepted": { "status": "accepted", "code": "media_requested", "speech": "none" },
+        "ignored": { "status": "ignored", "code": "media_request_ignored", "speech": "none" },
+        "rejected": { "status": "rejected", "code": "media_resource_unavailable", "speech": "none" },
+        "failed": { "status": "failed", "code": "media_playback_failed", "speech": "none" }
+      }
+    },
+    {
+      "name": "stop_media",
+      "handler": "stop_media",
+      "enabled": true,
+      "availability": "conversation",
+      "routing": "model_intent",
+      "description": "Stop the currently playing media skill video or music, including a loop, and restore the avatar. Does not stop spells or hardware scenes.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": {
+        "useWhen": "Call stop_media when the visitor directs you to stop the video, music or media loop.",
+        "avoidWhen": "Do not stop for quoted, negated, hypothetical or incidental mentions. This tool does not control spells or hardware scenes.",
+        "speech": "Stop media silently; an ignored result means no media skill was playing."
+      },
+      "completion": "background",
+      "results": {
+        "accepted": { "status": "accepted", "code": "media_stopped", "speech": "none" },
+        "ignored": { "status": "ignored", "code": "media_not_playing", "speech": "none" },
+        "rejected": { "status": "rejected", "code": "media_request_rejected", "speech": "none" },
+        "failed": { "status": "failed", "code": "media_stop_failed", "speech": "none" }
+      }
     }
   ]
 }
