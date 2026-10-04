@@ -1,0 +1,10 @@
+{
+  "file": "raven-bgm.mp3",
+  "name": "天使_intro",
+  "bytes": 1569588,
+  "sha256": "a7cd68d72bdcc2c2745aa26beff40b2243b01a98573f3431a49a4f2c8ddc4414",
+  "source": "Operator-imported BGM selected by the published Windows Raven avatar, config v29",
+  "exported": "2026-10-04",
+  "ambienceGain": 0.5,
+  "activeAmbienceGain": 0
+}
