@@ -1,5 +1,6 @@
-import { dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
+import { mkdir, copyFile, unlink } from 'node:fs/promises'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import type { MediaSkillRequest } from '../shared/media-skill'
 
@@ -42,7 +43,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   }
   const shot = async (name: string, mirror = false) => {
     if (!mirror) {
-      await evaluate("document.querySelector('fieldset[aria-label=\"Media skill\"]')?.scrollIntoView({block:'start',behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))")
+      await evaluate(`document.querySelector(${JSON.stringify(step.startsWith('media_folder') ? '[aria-label="Avatar folder library"], [aria-label="Global media folders"]' : 'fieldset[aria-label="Media skill"]')})?.scrollIntoView({block:'start',behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
       await delay(200)
     }
     const result = await capture(mirror ? input.mirror : input.console, input.outputDir, name)
@@ -51,6 +52,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   try {
     await wait(() => evaluate("return !!button('Avatars')"))
     await edit("click('Avatars')"); await edit("click('Music & video')")
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings and previously imported files').click()")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [
       join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'),
       join(input.outputDir, '../user-data/assets/music/phase4-qa-tone.wav'),
@@ -80,6 +82,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     pass()
     input.console.webContents.reload()
     await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Music & video')")
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings and previously imported files').click()")
     await wait(() => evaluate("return field('Media fade duration')?.value==='400' && document.querySelector('[aria-label^=\"Spoken name for video\"]')?.value==='Northern sky'"))
     step = 'media_console_persisted'; pass()
     step = 'media_console_preview'
@@ -136,6 +139,58 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await input.runtime.handleSimulator({ type: 'sleep' })
     await wait(async () => (await state()).video === null)
     pass()
+    step = 'media_folder_link_and_discovery'
+    const ownFolder = join(input.outputDir, '../folder-fixtures/own'), sharedFolder = join(input.outputDir, '../folder-fixtures/shared')
+    await mkdir(ownFolder, { recursive: true }); await mkdir(sharedFolder, { recursive: true })
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky.webm'))
+    await copyFile(join(input.outputDir, '../user-data/assets/music/phase4-qa-tone.wav'), join(sharedFolder, 'Rain.wav'))
+    await edit("click('System')"); await edit("click('Media folders')")
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [sharedFolder] })) as typeof dialog.showOpenDialog
+    await wait(() => evaluate("return !button('Choose shared folder')?.disabled"))
+    await edit("click('Choose shared folder')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===1 && !button('Choose shared folder').disabled"))
+    await shot('media-folder-global.png')
+    await edit("click('Avatars')")
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [ownFolder] })) as typeof dialog.showOpenDialog
+    await wait(() => evaluate("return !button('Choose avatar folder')?.disabled"))
+    await edit("click('Choose avatar folder')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===2 && !button('Choose avatar folder').disabled"))
+    dialog.showOpenDialog = picker
+    const folderVideo = await evaluate<string>("return document.querySelector('[data-folder-media-kind=video]').dataset.folderMediaId")
+    const folderMusic = await evaluate<string>("return document.querySelector('[data-folder-media-kind=music]').dataset.folderMediaId")
+    await shot('media-folder-avatar.png'); pass()
+    step = 'media_folder_persistence_and_prompt'
+    input.console.webContents.reload()
+    await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Music & video')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===2"))
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Advanced: prompts and tools').click()")
+    await edit("click('Session ↗')")
+    await wait(async () => {
+      const inspector = BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Magic Mirror Prompts · Session')
+      if (!inspector) return false
+      return inspector.webContents.executeJavaScript(`(()=>{ const text=document.body.textContent; return text.includes(${JSON.stringify(folderVideo)}) && text.includes(${JSON.stringify(folderMusic)}) && !text.includes(${JSON.stringify(ownFolder)}); })()`)
+    })
+    BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Magic Mirror Prompts · Session')?.close()
+    pass()
+    step = 'media_folder_runtime_playback'
+    await input.runtime.handleSimulator({ type: 'wake' })
+    await wait(async () => input.runtime.snapshot().lifecycle === 'active')
+    await play('video', folderVideo, 'once')
+    await wait(async () => { const s = await state(); return s.opacity === 0 && !!s.video && s.video.time > .2 })
+    await wait(async () => { const s = await state(); return s.opacity === 1 && s.video === null })
+    reports.length = 0
+    await play('music', folderMusic, 'loop')
+    await wait(async () => reports.some(r=>r.status==='acknowledged'))
+    if ((await state()).opacity !== 1) throw Error('media_folder_music_hid_avatar')
+    await request({ action: 'stop' }); pass()
+    step = 'media_folder_removal_revokes_playback'
+    await unlink(join(ownFolder, 'Sky.webm'))
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===1 && !button('Refresh files').disabled"))
+    if (await request({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' }) !== 'rejected') throw Error('media_folder_removed_still_authorized')
+    await edit("click('Unlink avatar folder')")
+    await wait(() => evaluate("return document.querySelector('[aria-label=\"Avatar media folder\"]').textContent.includes('No folder linked.')"))
+    await input.runtime.handleSimulator({ type: 'sleep' }); pass()
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: screenshots, musicAnalyser: 'active', visualCount: 2, consoleCheckCount: checks }
   } catch (error) {
     input.onEvidence({ step, status: 'failed', item: error instanceof Error ? error.message.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0,160) : 'unknown' })

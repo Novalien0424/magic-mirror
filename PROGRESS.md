@@ -1,6 +1,40 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
-## Current: simpler avatar media setup deployed — 2026-10-04
+## Current: avatar and shared media folders deployed — 2026-10-04
+
+Per the operator's preference, native Mac folder selection is the primary media
+workflow; Google Drive for desktop supplies syncing without another app login.
+**Avatars → avatar → Music & video → Choose folder** links that avatar's folder.
+**System → Media folders → Choose folder** links the shared folder inherited by
+all avatars. Links save immediately, subfolders are indexed automatically every
+30 seconds or with Refresh files, and the next conversation receives own +
+shared media. Existing imported resources remain available under a collapsed
+section. No operator folders have been chosen yet; selectors are ready.
+
+Main owns the atomic local link file, bounded index and playback path resolution.
+Only IDs/names/kinds enter session prompts; inspector and runtime use the same
+catalog projection. Owner scopes, overlap/symlink rejection, file removal,
+unavailable-folder status and playback-time rechecks preserve boundaries.
+The existing once/loop/video-fade/music-visible behavior is unchanged. Folder
+links are machine-local, independent of draft publication; 200 media files per
+folder, MP4/WebM and MP3/WAV/OGG/M4A. Offline cloud playback needs local files.
+
+`npm run typecheck`, final build and build verification: exit 0. Focused tests:
+**128 passed** across folder indexing, IPC, session snapshots, prompts and media
+runtime; a stale Console IPC expectation was updated for the existing media
+tool channel. Mac `--media-skill` QA: **12 checks, 6 captures**, exit 0, including
+production folder-picker flows, persistence, exact inspector IDs, actual folder
+video/music playback, removal rejection, and previous media behavior.
+[Final evidence](.artifacts/phase4-qa/2026-10-04T06-30-00-653Z/evidence.json).
+The preceding complete run's folder screenshots were inspected at
+[06-26-21](.artifacts/phase4-qa/2026-10-04T06-26-21-126Z/evidence.json).
+
+Deployed under the existing LaunchAgent, **PID 36505**. Avatar ready and native
+wake listening confirmed at 06:30:57 UTC. Operator active/draft **v13 hashes
+unchanged**; mist/dormant settings preserved. Real Google Drive hydration and
+live spoken intent/physical sound remain operator checks; no phase promotion.
+
+## Previous: simpler avatar media setup deployed — 2026-10-04
 
 Open Console with **⌘⇧D → Avatars → select avatar → Music & video**.
 Upload selects permitted music/videos immediately; existing files have selection

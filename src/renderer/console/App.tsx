@@ -47,6 +47,7 @@ import { HelpButton } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { MediaSkillEditor } from './MediaSkillEditor'
+import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { addAvatarMedia } from './media-selection'
 import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
@@ -62,7 +63,7 @@ import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
 const PAGES = ['Mirror', 'Avatars', 'System'] as const
-const SYSTEM_PAGES = ['Devices', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
+const SYSTEM_PAGES = ['Devices', 'Media folders', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 const MODULES = [
   'app',
   'openai',
@@ -1327,6 +1328,7 @@ interface ModelsPanelProps {
 
 
 interface ScenesPanelProps {
+  readonly onSharedMedia?: () => void
   readonly lifecycle?: string
   readonly onEditingChange?: (editing: boolean) => void
   readonly voiceOnly?: boolean
@@ -1346,6 +1348,7 @@ export function ScenesPanel({
   visible = true,
   lifecycle,
   onEditingChange,
+  onSharedMedia,
 }: ScenesPanelProps): React.JSX.Element {
   // Keep the editor mounted while Save/Test/Publish refresh their read model.
   const lastPayload = useRef<ConsoleConfigPayload | null>(null)
@@ -1690,7 +1693,7 @@ export function ScenesPanel({
       {rawDraft?.avatarCatalog && editingAvatar && <header className="profile-editing-header" aria-label="Current avatar being edited">
         <p className="console__eyebrow">Editing avatar settings</p>
         <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
-        <p>{editingId === activeAvatar?.id ? 'This avatar is active on Mirror. Edits apply after you publish.' : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
+        <p>{section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? 'This avatar is active on Mirror. Edits apply after you publish.' : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
         <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
           {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
         </select></HelpField>
@@ -1704,9 +1707,11 @@ export function ScenesPanel({
       </div>
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
-      {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar}
+      {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
+      {section === 'Music & video' && editingAvatar?.mediaSkill?.enabled === false && <p role="alert">Media playback is disabled for this avatar. Enable it in Playback settings below, then Save & apply all changes.</p>}
+      {visible && section === 'Music & video' && editingAvatar && draft ? <details><summary>Playback settings and previously imported files</summary><MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar}
         published={payload?.active.avatarCatalog?.avatars.find(a => a.id === editingId)?.mediaSkill}
-        onImport={() => void importMedia({ kind: 'all', multiple: true }, undefined, editingId)} /> : null}
+        onImport={() => void importMedia({ kind: 'all', multiple: true }, undefined, editingId)} /></details> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
@@ -1778,7 +1783,7 @@ export function ScenesPanel({
           <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
-        <p className="console__scene-result" role="status">{result}</p>
+        <p className="console__scene-result" role="status">{section === 'Music & video' && result === 'Edits stay in draft until you publish.' ? 'Folder links save immediately. Save & apply is for playback settings and imported files.' : result}</p>
       </div>
       </div></div>
       {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}
@@ -2394,8 +2399,10 @@ export function App(): React.JSX.Element {
             bridge={bridgeRef.current}
             bridgeAvailable={bridgeAvailable}
             onChanged={refreshConfigAndModels}
+            onSharedMedia={() => navigate('System', 'Media folders')}
           />
         </div>
+        {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             state={avatarRuntimeState}

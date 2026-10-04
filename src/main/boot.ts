@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
+import { folderMediaSkill, type FolderMediaEntry } from '../shared/media-folders'
 import { canUseAvatarAction, canUseAvatarResource, type WakeRuntimeConfig } from '../shared/avatar-profiles'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -213,6 +214,7 @@ export interface WakeMicrophoneHandoff {
 }
 
 export interface BootOptions {
+  readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   readonly appVersion?: string
   readonly buildCommit?: string
   readonly isPackaged?: boolean
@@ -888,6 +890,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let publishedAvatarSettings: Readonly<AvatarSessionSettings> | undefined
+  let publishedAvatarId = ''
   let avatarSwitchInProgress = false
   let configService: ConfigService | null = options.configService ?? null
   let sqliteService: SqlitePhaseTestService | null = null
@@ -1521,6 +1524,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     try {
       resolvedModelSettings = await Promise.resolve(resolveModelSettings(configSlots ?? ({} as ConfigSlots)))
       if (configSlots?.active?.persona) publishedAvatarSettings = avatarSessionSettings(configSlots.active)
+      publishedAvatarId = configSlots?.active?.avatarCatalog?.activeAvatarId ?? ''
       const activeVersion = resolvedModelSettings.active.configVersion
       if (Number.isSafeInteger(activeVersion) && activeVersion >= 1) configVersion = activeVersion
     } catch (caught) {
@@ -1978,10 +1982,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
 
     const snapshot = createSessionModelSnapshot(activeModelSettings, nowValue(now))
+    const media = options.getFolderMedia?.(publishedAvatarId) ?? []
+    const avatarSettings = publishedAvatarSettings && media.length ? { ...publishedAvatarSettings,
+      mediaSkill: folderMediaSkill(publishedAvatarSettings.mediaSkill, media) } : publishedAvatarSettings
     const issuer = createRealtimeSessionStartBundleIssuer({
       getPublishedSessionModelSnapshot: () => snapshot,
       getRealtimeSessionIdentity: () => identity,
-      ...(publishedAvatarSettings ? { getAvatarSettings: () => publishedAvatarSettings! } : {}),
+      ...(avatarSettings ? { getAvatarSettings: () => avatarSettings } : {}),
       broker,
     })
     return issuer.issue()
@@ -2557,6 +2564,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     const refreshFailure = (): ConsoleConfigRefreshResult => {
       resolvedModelSettings = null
       publishedAvatarSettings = undefined
+      publishedAvatarId = ''
       configVersion = null
       refreshSnapshot()
       notifyListeners()
@@ -2576,6 +2584,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       configVersion = activeVersion
       resolvedModelSettings = resolution
       publishedAvatarSettings = slots.active?.persona ? avatarSessionSettings(slots.active) : undefined
+      publishedAvatarId = slots.active?.avatarCatalog?.activeAvatarId ?? ''
       // Publishing/loading an avatar changes the local keyword listener too.
       // A wake-only failure is reported by Main and must not invalidate voice.
       if (options.onWakeConfigChanged && slots.active?.wake) {

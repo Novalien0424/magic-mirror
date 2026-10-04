@@ -293,6 +293,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   onSceneStatus(listener: SceneStatusListener): () => void
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>
   importMedia?(request: import('./media-import').MediaImportRequest): Promise<ConsoleResponse<import('./media-import').MediaImportEntry[]>>
+  mediaFolders?(request: import('./media-folders').MediaFolderCommand): Promise<ConsoleResponse<import('./media-folders').MediaFoldersView>>
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>>
   finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>>
   cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { bootSequence } from '../../src/main/boot'
 import { DEFAULT_VOICE_EFFECTS } from '../../src/shared/voice-effects'
+import { newAvatar } from '../../src/renderer/console/profile-workspace'
+import { readFileSync } from 'node:fs'
 import {
   createRealtimeIpcContract,
 } from '../../src/main/ipc'
@@ -237,6 +239,21 @@ function mirrorBridge(): Promise<MirrorBridgeLike> {
 }
 
 describe('P1-U7 C2 atomic session-start bridge', () => {
+  it('captures only the active avatar folder catalog for the next session without filesystem paths', async () => {
+    const avatar = newAvatar('raven')
+    const config = { ...JSON.parse(readFileSync('resources/config/default.json', 'utf8')),
+      avatarCatalog: { activeAvatarId: 'raven', avatars: [avatar], locks: [], models: [] } }
+    const folders = vi.fn(() => [{ kind: 'video' as const, assetId: 'folder-mist', name: 'Mist', aliases: [], origin: 'own' as const }])
+    const options = { ...makeBootOptions({ issue: async () => ({ value: CLIENT_SECRET, expiresAt: EXPIRY }) }) as object,
+      configService: { initialize: async () => ({ active: config, draft: config }), read: async () => ({ active: config, draft: config }) },
+      getFolderMedia: folders }
+    const runtime = bootSequence(options as never)
+    await runtime.ready; await runtime.handleSimulator({ type: 'wake' })
+    const bundle = await runtime.requestRealtimeClientSecret()
+    expect(folders).toHaveBeenCalledWith('raven')
+    expect(bundle.avatar?.mediaSkill?.resources).toEqual([{ kind: 'video', assetId: 'folder-mist', name: 'Mist', aliases: [] }])
+    expect(JSON.stringify(bundle.avatar)).not.toMatch(/origin|path|avatarId/)
+  })
   it('captures the published snapshot and lifecycle identity before broker await', async () => {
     let brokerCalls = 0
     let requestedModel: string | null = null
