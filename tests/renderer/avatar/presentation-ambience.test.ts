@@ -79,6 +79,20 @@ describe('presentation BGM speech priority', () => {
       expect(audio.pause).toHaveBeenCalled()
     }
   })
+  it('pauses BGM during requested media and resumes its position when media ends', async () => {
+    const { audio, input } = setup()
+    const cancel = applyPresentationAmbience({ ...input, mediaActive: true })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.pause).toHaveBeenCalledOnce()
+    expect(audio.play).not.toHaveBeenCalled()
+    expect(audio.volume).toBe(0)
+    cancel()
+    applyPresentationAmbience({ ...input, mediaActive: false })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.play).toHaveBeenCalledOnce()
+    expect(audio.volume).toBeCloseTo(.1)
+    expect(audio.currentTime).toBe(12)
+  })
 
   it('does not play after disposal while routing is pending, and reports playback failures', async () => {
     const { audio, input } = setup()

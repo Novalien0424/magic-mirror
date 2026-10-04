@@ -5,6 +5,7 @@ type VisualStartCommand = Extract<AvatarControlCommand, { type: 'scene_visual'; 
 type VisualStopCommand = Extract<AvatarControlCommand, { type: 'scene_visual'; action: 'stop' }>
 
 export interface SceneVisualMedia {
+  readonly error?: { readonly code: number } | null
   src: string
   crossOrigin: string | null
   className: string
@@ -65,6 +66,7 @@ export function createSceneVisualController(input: Readonly<{
   report: (report: SceneVisualPlaybackReport) => void
   setVideoAudio: (element: SceneVisualMedia | null, gain: number, durationMs?: number) => void
   prepareFade?: (media: SceneVisualMedia) => void
+  onLoadRetry?: () => void
   schedule?: (callback: () => void, delayMs: number) => unknown
   clear?: (handle: unknown) => void
 }>): SceneVisualController {
@@ -202,7 +204,9 @@ export function createSceneVisualController(input: Readonly<{
     // The managed-media scheme is a different origin from the renderer.
     // Request CORS before loading so Web Audio can consume the embedded track.
     if (command.playback !== 'still') media.crossOrigin = 'anonymous'
-    media.src = `magic-mirror-media://${command.preview ? 'visual-draft' : 'visual'}/${encodeURIComponent(command.assetId)}`
+    // Chromium also shares in-memory media buffers by URL. A new run must
+    // reopen mutable folder files instead of replaying a previous buffer.
+    media.src = `magic-mirror-media://${command.preview ? 'visual-draft' : 'visual'}/${encodeURIComponent(command.assetId)}?playback=${generation}`
 
     if (command.playback === 'still') {
       listen(visual, 'load', () => {
@@ -272,7 +276,19 @@ export function createSceneVisualController(input: Readonly<{
       }
       finishOnce(visual)
     })
-    listen(visual, 'error', () => fail(visual, 'visual_video_decode_failed'))
+    let retried = false
+    listen(visual, 'error', () => {
+      // A synced folder can be briefly unreadable while its provider materializes
+      // a file. Retry only startup/network/source failures, once, never mid-play.
+      if (current(visual) && !visual.presented && !retried && command.assetId.startsWith('folder-')
+        && (media.error?.code === 2 || media.error?.code === 4)) {
+        retried = true
+        input.onLoadRetry?.()
+        scheduleFor(visual, () => { try { media.load() } catch { fail(visual, 'visual_video_load_failed') } }, 500)
+        return
+      }
+      fail(visual, media.error?.code === 2 ? 'visual_video_network_failed' : 'visual_video_decode_failed')
+    })
     try { media.load() } catch { fail(visual, 'visual_video_load_failed') }
   }
 

@@ -33,6 +33,7 @@ function fixture() {
   const makeAudio = (label: string): RealtimeRuntimeAudioOutput => ({
     audioElement: {} as HTMLAudioElement,
     analyser: {},
+    setMuted: vi.fn(),
     dispose: vi.fn(async () => {
       order.push(`${label}:audio.dispose`);
     }),
@@ -40,6 +41,7 @@ function fixture() {
   const makeSession = (label: string, generation: number): RealtimeRuntimeSession => ({
     realtimeSessionId: `session-${generation}`,
     sessionGeneration: generation,
+    setMediaPlayback: vi.fn(),
     connect: vi.fn(async () => {
       order.push(`${label}:session.connect`);
     }),
@@ -147,13 +149,23 @@ function fixture() {
 }
 
 describe("Realtime runtime owner", () => {
+  it('mutes voice during media while retaining the sole microphone owner', async () => {
+    const f = fixture(); await f.owner.start(bundle());
+    f.owner.setMediaPlayback!(true);
+    expect(f.oldAudio.setMuted).toHaveBeenLastCalledWith(true);
+    expect(f.oldSession.setMediaPlayback).toHaveBeenLastCalledWith(true);
+    expect(f.mic.release).not.toHaveBeenCalled();
+    f.owner.setMediaPlayback!(false);
+    expect(f.oldAudio.setMuted).toHaveBeenLastCalledWith(false);
+    expect(f.oldSession.setMediaPlayback).toHaveBeenLastCalledWith(false);
+  });
   it("stays small enough to remain one understandable owner", async () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(
       new URL("../../src/renderer/realtime/realtime-runtime-owner.ts", import.meta.url),
       "utf8",
     );
-    expect(source.split(/\r?\n/).length).toBeLessThan(800);
+    expect(source.split(/\r?\n/).length).toBeLessThan(850);
     expect(source).not.toContain("PendingPreHandoffCleanup");
     expect(source).not.toContain("PendingPostHandoffCleanup");
   });

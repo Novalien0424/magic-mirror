@@ -113,6 +113,28 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('disables conversation during media, drops background turns, and still accepts the exact wake phrase', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onMediaRequest = vi.fn(async () => 'accepted' as const);
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMediaRequest,
+      avatar: { name: 'QA', personality: '', speakingStyle: '', wakeGreeting: '', sleepFarewell: '', wakePhrase: 'Mirror wake' } });
+    const turns = vi.fn(), transcripts = vi.fn();
+    handle.onInputItemCreated!(turns); handle.onInputTranscriptCompleted!(transcripts);
+    handle.setMediaPlayback!(true);
+    expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'session.update', session: expect.objectContaining({ audio: expect.objectContaining({ input: expect.objectContaining({ turn_detection: expect.objectContaining({ create_response: false }) }) }) }) }));
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'background' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'background', transcript: 'Synthetic background speech' });
+    expect(turns).not.toHaveBeenCalled(); expect(transcripts).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'conversation.item.delete', item_id: 'background' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'wake', transcript: 'Mirror wake' });
+    await Promise.resolve(); expect(onMediaRequest).toHaveBeenCalledOnce();
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'late-background' });
+    handle.setMediaPlayback!(false);
+    expect(probe.sendEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'session.update', session: expect.objectContaining({ audio: expect.objectContaining({ input: expect.objectContaining({ turn_detection: expect.objectContaining({ create_response: true }) }) }) }) }));
+    probe.emit('transport_event', { type: 'conversation.item.created', item: { role: 'user', id: 'late-background' } });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'late-background', transcript: 'Synthetic delayed background speech' });
+    expect(turns).not.toHaveBeenCalled(); expect(transcripts).not.toHaveBeenCalled();
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'conversation.item.delete', item_id: 'late-background' });
+  });
   it('adds a requested camera frame before returning a response result and drops late captures', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let deliver!: (frame: { dataUrl: string; width: number; height: number } | null) => void;
@@ -896,6 +918,20 @@ describe("RealtimeSession adapter", () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith({ itemId: 'item-private-turn', transcript: 'private completed turn' });
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain('private completed turn');
+  });
+
+  it('interrupts media on the exact configured wake phrase, once per input, without a second microphone', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onMediaRequest = vi.fn(async () => 'accepted' as const);
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMediaRequest,
+      avatar: { name: 'QA', personality: '', speakingStyle: '', wakeGreeting: '', sleepFarewell: '', wakePhrase: 'Mirror wake' } });
+    const event = { type: 'conversation.item.input_audio_transcription.completed', realtimeSessionId: handle.realtimeSessionId, item_id: 'wake-media', transcript: 'Mirror wake!' };
+    probe.emit('transport_event', { ...event, item_id: 'not-wake', transcript: 'Do not say Mirror wake' });
+    expect(onMediaRequest).not.toHaveBeenCalled();
+    probe.emit('transport_event', event); probe.emit('transport_event', event);
+    await Promise.resolve(); await Promise.resolve();
+    expect(onMediaRequest).toHaveBeenCalledExactlyOnceWith({ action: 'stop' }, expect.objectContaining({ realtimeSessionId: handle.realtimeSessionId }));
+    expect(probe.interrupt).toHaveBeenCalledOnce();
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('Mirror wake');
   });
 
   it('reports transcript_unavailable without exposing an incomplete input item', () => {

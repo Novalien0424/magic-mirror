@@ -7,9 +7,10 @@ import { applyPresentationAmbience } from './presentation-ambience'
 import { playRitualVideo } from './ritual-video-controller'
 import './presentation.css'
 
-export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false, speechActive = false, initialPhase = 'asleep' }: {
+export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false, speechActive = false, mediaActive = false, initialPhase = 'asleep' }: {
   payload: PresentationPayload; lifecycle: LifecycleState; children: ReactNode
   onPhase?: (phase: PresentationPhase) => void; onFailure?: (reason: string) => void; silent?: boolean; draft?: boolean
+  mediaActive?: boolean
   speechActive?: boolean
   initialPhase?: 'asleep' | 'awake'
 }) {
@@ -101,9 +102,9 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     const audio = audioRef.current
     if (!audio) return
     return applyPresentationAmbience({ audio, phase, reflective: config.mode === 'reflective', ambienceGain: config.ambienceGain,
-      activeAmbienceGain: config.activeAmbienceGain ?? 0, bgmVolume, speechActive,
+      activeAmbienceGain: config.activeAmbienceGain ?? 0, bgmVolume, speechActive, mediaActive,
       routeReady: routeReady.current, onFailure: reason => failure.current?.(reason) })
-  }, [phase, config.mode, config.ambienceId, config.ambienceGain, config.activeAmbienceGain, silent, draft, bgmVolume, speechActive])
+  }, [phase, config.mode, config.ambienceId, config.ambienceGain, config.activeAmbienceGain, silent, draft, bgmVolume, speechActive, mediaActive])
 
   const backgroundReady = !background || readyId === background.id
   const hidden = config.mode === 'reflective' && (phase === 'asleep' || phase === 'inactive')

@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
-import { mkdir, copyFile, unlink } from 'node:fs/promises'
+import { mkdir, copyFile, unlink, writeFile } from 'node:fs/promises'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import type { MediaSkillRequest } from '../shared/media-skill'
 
@@ -16,7 +16,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   ipcMain.on('mirror:report-scene-action', listener)
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
   const evaluate = <T>(source: string): Promise<T> => input.console.webContents.executeJavaScript(`(async()=>{
-    const button=name=>[...document.querySelectorAll('button')].find(e=>e.getClientRects().length&&(e.getAttribute('aria-label')||e.textContent.trim())===name);
+    const button=name=>[...document.querySelectorAll('button')].find(e=>e.checkVisibility()&&(e.getAttribute('aria-label')||e.textContent.trim())===name);
     const click=name=>{const e=button(name);if(!e||e.disabled)throw Error('media_control_unavailable');e.click()};
     const field=name=>document.querySelector('[aria-label="'+name+'"]');
     const set=(name,value)=>{const e=field(name);if(!e||e.disabled)throw Error('media_field_unavailable_'+name);const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -41,9 +41,10 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   const play = async (kind: 'video' | 'music', assetId: string, mode: 'once' | 'loop') => {
     if (await request({ action: 'play', kind, assetId, mode }) !== 'accepted') throw Error('media_qa_request_rejected')
   }
+  const bgm = () => input.mirror.webContents.executeJavaScript("(()=>{const a=document.querySelector('audio[data-presentation-ambience]');return a?{paused:a.paused,time:a.currentTime,volume:a.volume}:null})()") as Promise<{paused:boolean;time:number;volume:number}|null>
   const shot = async (name: string, mirror = false) => {
     if (!mirror) {
-      await evaluate(`document.querySelector(${JSON.stringify(step.startsWith('media_folder') ? '[aria-label="Avatar folder library"], [aria-label="Global media folders"]' : 'fieldset[aria-label="Media skill"]')})?.scrollIntoView({block:'start',behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+      await evaluate(`document.querySelector(${JSON.stringify(step.startsWith('media_folder') || step === 'media_compact_file_list' ? '[aria-label="Avatar folder library"], [aria-label="Global media folders"]' : 'fieldset[aria-label="Media skill"]')})?.scrollIntoView({block:'start',behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
       await delay(200)
     }
     const result = await capture(mirror ? input.mirror : input.console, input.outputDir, name)
@@ -53,6 +54,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(() => evaluate("return !!button('Avatars')"))
     step = 'system_device_save_and_scroll'
     await edit("click('System')")
+    if (!await evaluate("return !document.querySelector('.console__advanced-nav').open && !button('Models') && ![...document.querySelectorAll('details')].find(e=>e.querySelector('summary')?.textContent==='Diagnostics')?.open")) throw Error('system_not_compact')
     await wait(() => evaluate("return !field('BGM volume')?.disabled"))
     const audioBefore = await evaluate<string>("return JSON.stringify((await window.magicMirror.getAvatarRuntime()).value.audioDevices.preferences)")
     await edit("set('BGM volume','37')")
@@ -83,6 +85,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(() => evaluate("return document.querySelector('[aria-label=\"Global media folders\"] [role=status]')?.textContent.includes('Folder settings saved')"))
     await shot('media-folder-global.png')
     await edit("click('Avatars')")
+    await edit("document.querySelector('.media-folder-settings summary').click()")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [ownFolder] })) as typeof dialog.showOpenDialog
     await wait(() => evaluate("return !button('Choose avatar folder')?.disabled"))
     await edit("click('Choose avatar folder')")
@@ -90,7 +93,21 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     dialog.showOpenDialog = picker
     const folderVideo = await evaluate<string>("return document.querySelector('[data-folder-media-kind=video]').dataset.folderMediaId")
     const folderMusic = await evaluate<string>("return document.querySelector('[data-folder-media-kind=music]').dataset.folderMediaId")
+    await edit("document.querySelector('.media-folder-settings summary').click()")
     await shot('media-folder-avatar.png'); pass()
+
+    step = 'media_large_file_transfer'
+    await writeFile(join(sharedFolder, 'Transfer.wav'), Buffer.alloc(8 * 1024 * 1024, 37))
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===4"))
+    const transferId = await evaluate<string>("return [...document.querySelectorAll('[data-folder-media-id]')].find(e=>e.textContent==='Transfer').dataset.folderMediaId")
+    const transferred = await input.mirror.webContents.executeJavaScript(`(async()=>{try{const r=await fetch('magic-mirror-media://music/${transferId}');return (await r.arrayBuffer()).byteLength}catch{return -1}})()`)
+    if (transferred !== 8 * 1024 * 1024) throw Error('media_large_file_transfer_incomplete')
+    const rangeResult = await input.mirror.webContents.executeJavaScript(`(async()=>{for(const range of ['bytes=4194300-4194310','bytes=-7']){const r=await fetch('magic-mirror-media://music/${transferId}',{headers:{Range:range}});const b=new Uint8Array(await r.arrayBuffer());if(r.status!==206||b.length!==(range==='bytes=-7'?7:11)||!b.every(v=>v===37))return {status:r.status,bytes:b.length}}return null})()`)
+    if (rangeResult) throw Error('media_large_file_range_failed_' + JSON.stringify(rangeResult))
+    await unlink(join(sharedFolder, 'Transfer.wav'))
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===3")); pass()
 
     step = 'media_console_authoring'
     await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings').click()")
@@ -108,28 +125,37 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings').click()")
     await wait(() => evaluate("return field('Media fade duration')?.value==='400'"))
     step = 'media_console_persisted'; pass()
-    step = 'media_console_preview'
-    await edit("document.querySelector('video[data-media-preview]').closest('details').open=true; await document.querySelector('video[data-media-preview]').play()")
-    await wait(() => evaluate("return document.querySelector('video[data-media-preview]').currentTime>.1"))
-    await shot('media-preview-console.png')
-    await edit("document.querySelector('audio[data-media-preview]').closest('details').open=true; await document.querySelector('audio[data-media-preview]').play()")
-    if (!await evaluate("return document.querySelector('video[data-media-preview]').paused && !document.querySelector('audio[data-media-preview]').paused")) throw Error('media_preview_overlap')
-    await edit("document.querySelector('audio[data-media-preview]').closest('details').open=false")
-    if (!await evaluate("return document.querySelector('audio[data-media-preview]').paused")) throw Error('media_preview_close_failed')
+    step = 'media_compact_file_list'
+    await edit("document.querySelector('.media-playback-settings summary').click()")
+    if (!await evaluate("return [...document.querySelectorAll('[data-folder-media-id]')].every(e=>e.tagName==='LI'&&e.children.length===0)&&!document.querySelector('.media-folder-settings').open&&!document.querySelector('.media-playback-settings').open")) throw Error('media_list_not_filenames_only')
+    await edit("set('Find folder media','Rain')")
+    if (!await evaluate("return document.querySelectorAll('[data-folder-media-id]').length===1&&document.querySelector('[data-folder-media-id]').textContent==='Rain'")) throw Error('media_filename_search_failed')
+    await edit("set('Find folder media','')")
+    await shot('media-file-list.png')
     pass()
+    await edit("click('Appearance')")
+    await wait(() => evaluate(`return !!field('Dormant music').querySelector('option[value="${folderMusic}"]')`))
+    await edit(`set('Dormant music',${JSON.stringify(folderMusic)});set('Active BGM volume','0.2')`)
+    await edit("click('Save & apply all changes')")
+    await wait(async () => (await bgm())?.paused === false)
+    await edit("click('Music & video')")
     await input.runtime.handleSimulator({ type: 'wake' })
     await wait(async () => input.runtime.snapshot().lifecycle === 'active')
     step = 'media_video_fade_and_once'
-    await play('video', videoId, 'once')
+    const starting = play('video', videoId, 'once')
     await delay(170)
     const fading = await state()
     if (!(fading.opacity > 0 && fading.opacity < 1) || fading.video) throw Error('media_qa_avatar_fade_missing')
+    if ((await bgm())?.paused !== true || (await bgm())?.volume !== 0) throw Error('media_qa_bgm_not_paused')
+    await starting
     await wait(async () => { const s = await state(); return s.opacity === 0 && !!s.video && s.video.time > .2 && s.video.frames > 0 })
+    if (!await input.mirror.webContents.executeJavaScript("(()=>{const v=document.querySelector('.scene-visual video'),r=v.getBoundingClientRect();return getComputedStyle(v).objectFit==='cover'&&r.width===innerWidth&&r.height===innerHeight})()")) throw Error('media_video_not_fullscreen')
     const before = (await state()).video!.frames
     await delay(250)
     if ((await state()).video!.frames <= before) throw Error('media_qa_video_not_advancing')
     await shot('media-video-playing.png', true)
     await wait(async () => { const s = await state(); return s.opacity === 1 && s.video === null })
+    await wait(async () => { const b=await bgm();return !!b&&!b.paused&&b.volume>0 })
     pass()
     step = 'media_video_loop_and_stop'
     await play('video', videoId, 'loop')
@@ -186,6 +212,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => reports.some(r=>r.status==='acknowledged'))
     if ((await state()).opacity !== 1) throw Error('media_folder_music_hid_avatar')
     await request({ action: 'stop' }); pass()
+    step = 'media_failed_file_returns_failure'
+    await writeFile(join(ownFolder, 'Sky.webm'), 'synthetic invalid video')
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return !button('Refresh files').disabled"))
+    if (await request({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' }) !== 'failed') throw Error('media_failed_file_reported_success')
+    await wait(async () => { const s=await state(),b=await bgm();return s.opacity===1&&s.video===null&&!!b&&!b.paused&&b.volume>0 })
+    pass()
     step = 'media_folder_removal_revokes_playback'
     await unlink(join(ownFolder, 'Sky.webm'))
     await edit("click('Refresh files')")
@@ -210,6 +243,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Appearance')")
     await wait(() => evaluate(`return field('Dormant music')?.value===${JSON.stringify(bgmId)}`)); pass()
     await edit("click('Music & video')")
+    await edit("document.querySelector('.media-folder-settings summary').click()")
     await wait(() => evaluate("return !button('Unlink avatar folder')?.disabled"))
     await edit("click('Unlink avatar folder')")
     await wait(() => evaluate("return document.querySelector('[aria-label=\"Avatar media folder\"]').textContent.includes('No folder linked.')"))

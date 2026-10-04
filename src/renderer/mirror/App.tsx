@@ -1106,6 +1106,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         durationMs,
       ),
       prepareFade: (media) => { void getComputedStyle(media as unknown as Element).opacity },
+      onLoadRetry: () => reportAvatarRuntime({ status: 'degraded', reason: 'media_load_retry' }),
     })
     sceneVisualControllerRef.current = visual
     return () => {
@@ -1220,6 +1221,11 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         return
       }
       if (command.type === 'media_skill_state') {
+        realtimeRuntimeOwnerRef.current?.setMediaPlayback?.(command.active)
+        if (command.active) {
+          setAvatarSpeechActive(false)
+          avatarMediaControllerRef.current?.handleActivity('interrupted')
+        }
         setMediaSkillState({ active: command.active, hideAvatar: command.hideAvatar, fadeMs: command.fadeMs })
         return
       }
@@ -1271,7 +1277,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           setPresentationPhase(phase)
           greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)
         }}
-          speechActive={avatarSpeechActive || mediaSkillState.active}
+          speechActive={avatarSpeechActive} mediaActive={mediaSkillState.active}
           onFailure={reason => {
             reportAvatarRuntime({ status: 'degraded', reason })
             const bridge = window.magicMirror

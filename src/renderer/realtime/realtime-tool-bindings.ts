@@ -13,7 +13,9 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     if (!Object.hasOwn(handlers, spec.handler)) throw new Error('realtime_tool_handler_unavailable')
     const handler = handlers[spec.handler]!
     const validator = z.fromJSONSchema(spec.parameters)
-    const result = (outcome: ToolOutcome) => spec.completion === 'response' ? spec.results[outcome] : backgroundResult(spec.results[outcome])
+    const result = (outcome: ToolOutcome) => spec.completion === 'response'
+      || spec.completion === 'background_on_success' && (outcome === 'failed' || outcome === 'rejected')
+      ? spec.results[outcome] : backgroundResult(spec.results[outcome])
     return {
       ...realtimeToolDefinition(spec),
       strict: true,

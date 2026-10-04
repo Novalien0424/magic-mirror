@@ -10,7 +10,7 @@ export function createMediaSkillRuntime(input: {
   activity?(kind: 'started' | 'finished', runId: string): void
 }) {
   let sequence = 0
-  let active: { context: SceneActionCommandContext; kind: 'music' | 'video'; mode: 'once' | 'loop'; fadeMs: number; position?: number } | null = null
+  let active: { context: SceneActionCommandContext; kind: 'music' | 'video'; mode: 'once' | 'loop'; fadeMs: number; position?: number; started: boolean; completeStart?: (outcome: ToolOutcome) => void } | null = null
   let launch: ReturnType<typeof setTimeout> | undefined
   let watchdog: ReturnType<typeof setTimeout> | undefined
   const clear = () => { clearTimeout(launch); clearTimeout(watchdog); launch = watchdog = undefined }
@@ -19,6 +19,7 @@ export function createMediaSkillRuntime(input: {
     const old = active
     active = null
     clear()
+    old.completeStart?.(/failed|timeout|unavailable/.test(reason) ? 'failed' : 'ignored')
     // Immediate release avoids old audio/fade timers leaking into the next item.
     input.dispatch(old.kind === 'video'
       ? { type: 'scene_visual', action: 'stop', runId: old.context.runId, sceneId: old.context.sceneId }
@@ -36,12 +37,17 @@ export function createMediaSkillRuntime(input: {
   return {
     isActive: () => active !== null,
     stop,
+    playConfirmed(request: Extract<MediaSkillRequest, { action: 'play' }>, skill: AvatarMediaSkill): Promise<ToolOutcome> {
+      const outcome = this.play(request, skill)
+      if (outcome !== 'accepted' || !active || active.started) return Promise.resolve(outcome)
+      return new Promise(resolve => { active!.completeStart = resolve })
+    },
     play(request: Extract<MediaSkillRequest, { action: 'play' }>, skill: AvatarMediaSkill): ToolOutcome {
       if (!skill.enabled || !skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)) return 'rejected'
       stop('media_replaced')
       const id = `media-${++sequence}`
       const context = { runId: id, sceneId: 'media-skill', stageId: id, actionId: id }
-      active = { context, kind: request.kind, mode: request.mode, fadeMs: skill.fadeMs }
+      active = { context, kind: request.kind, mode: request.mode, fadeMs: skill.fadeMs, started: false }
       input.activity?.('started', id)
       if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind === 'video', fadeMs: skill.fadeMs })) {
         stop('media_renderer_unavailable'); return 'failed'
@@ -50,7 +56,7 @@ export function createMediaSkillRuntime(input: {
         launch = undefined
         if (active?.context !== context) return
         const sent = input.dispatch(request.kind === 'video'
-          ? { type: 'scene_visual', action: 'start', assetId: request.assetId, fit: 'contain', playback: request.mode,
+          ? { type: 'scene_visual', action: 'start', assetId: request.assetId, fit: 'cover', playback: request.mode,
               audio: 'embedded', gain: skill.gain, fadeInMs: skill.fadeMs, fadeOutMs: 0, context }
           : { type: 'scene_music', action: 'play', assetId: request.assetId, gain: skill.gain, loop: request.mode === 'loop', context })
         if (!sent) stop('media_renderer_unavailable')
@@ -64,7 +70,7 @@ export function createMediaSkillRuntime(input: {
     reportAction(report: SceneActionRendererReport): boolean {
       if (!matches(report)) return false
       if (report.status === 'failed') stop('media_playback_failed')
-      else if (report.status === 'acknowledged') { clearTimeout(watchdog); input.report('media_playing') }
+      else if (report.status === 'acknowledged' && active) { active.started = true; active.completeStart?.('accepted'); active.completeStart = undefined; clearTimeout(watchdog); input.report('media_playing') }
       else if (report.status === 'completed' && active?.mode === 'once') stop('media_completed')
       return true
     },
@@ -72,7 +78,7 @@ export function createMediaSkillRuntime(input: {
       if (!matches(report)) return false
       if (report.type === 'failed') stop('media_playback_failed')
       else if (report.type === 'ended' && active?.mode === 'once') stop('media_completed')
-      else if (report.type === 'playing') { watch(); input.report('media_playing') }
+      else if (report.type === 'playing' && active) { active.started = true; active.completeStart?.('accepted'); active.completeStart = undefined; watch(); input.report('media_playing') }
       else if (report.type === 'progress' && active && active.position !== report.currentTimeMs) {
         active.position = report.currentTimeMs; watch()
       }

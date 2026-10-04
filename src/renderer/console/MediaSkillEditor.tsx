@@ -16,9 +16,8 @@ export function MediaSkillEditor({ avatar, draft, disabled, onChange }: {
   const edit = (patch: Partial<AvatarMediaSkill>): void => {
     if (!disabled) onChange({ ...avatar, mediaSkill: { ...skill, ...patch } })
   }
-  return <fieldset disabled={disabled} aria-label="Media skill">
+  return <details className="media-playback-settings"><summary>Playback settings</summary><fieldset disabled={disabled} aria-label="Media skill">
     <legend>Playback settings</legend>
-    <p>Choosing a folder grants access to every supported music and video file in it, including subfolders. No individual file selection is needed.</p>
     <div className="console__form-grid">
       <HelpField help={FIELD_HELP.mediaSkillFade}>Fade duration (ms)<input type="number" aria-label="Media fade duration" min="0" max="10000" step="1"
         value={skill.fadeMs} onChange={e => edit({ fadeMs: Number(e.currentTarget.value) })} /></HelpField>
@@ -26,7 +25,6 @@ export function MediaSkillEditor({ avatar, draft, disabled, onChange }: {
         value={skill.gain} onChange={e => edit({ gain: Number(e.currentTarget.value) })} /></HelpField>
     </div>
     {skill.resources.length > 0 && <details><summary>Previously imported files · {skill.resources.length}</summary>
-      <p>These older entries are retained. New media comes from the folders above.</p>
       {!skill.enabled && <p>These older entries are disabled. Linked folders remain available.</p>}
       {skill.resources.map((resource, index) => {
         const asset = (resource.kind === 'video' ? draft.visualAssets.filter(a => a.kind === 'video') : draft.musicAssets).find(a => a.id === resource.assetId)
@@ -38,5 +36,5 @@ export function MediaSkillEditor({ avatar, draft, disabled, onChange }: {
         </article>
       })}
     </details>}
-  </fieldset>
+  </fieldset></details>
 }

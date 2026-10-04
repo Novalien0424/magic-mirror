@@ -505,7 +505,7 @@ function makeTrackedRendererWindows() {
     id: 801,
     mainFrame: mirrorFrame,
     isDestroyed: () => false,
-    send: () => {},
+    send: (..._args: unknown[]) => {},
   }
   const consoleSender = {
     id: 802,
@@ -591,6 +591,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
   })
   it('authorizes folder media from the active avatar catalog and rejects unavailable IDs', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const send = vi.spyOn(fixtures.mirrorSender, 'send')
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
     const config = { musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
     const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
@@ -599,7 +600,11 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
     expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toBe('rejected')
-    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })).toBe('accepted')
+    const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music')![1] as any
+    registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
+    expect(await started).toBe('accepted')
     expect(getFolderMedia).toHaveBeenCalledWith('raven')
     await handler(event, { request: { action: 'stop' }, identity })
   })
@@ -624,7 +629,11 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     config.avatarCatalog.locks.push({ kind: 'music', resourceId: 'music-test', avatarId: 'other' })
     expect(await handler(event, envelope)).toBe('rejected')
     config.avatarCatalog.locks = []
-    expect(await handler(event, envelope)).toBe('accepted')
+    const started = handler(event, envelope)
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music')![1] as any
+    registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
+    expect(await started).toBe('accepted')
     expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play', loop: true }))
     expect(await handler(event, { ...envelope, request: { action: 'stop' } })).toBe('accepted')
     expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))

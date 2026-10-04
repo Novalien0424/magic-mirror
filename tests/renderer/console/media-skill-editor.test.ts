@@ -58,7 +58,7 @@ describe('MediaSkillEditor', () => {
   it('uses folder authorization without redundant selection or enable checkboxes', () => {
     const ui = editor({ emptyLibrary: true })
     const html = ui.render()
-    expect(html).toContain('No individual file selection is needed')
+    expect(html).toContain('<details class="media-playback-settings"><summary>Playback settings</summary>')
     expect(html).not.toMatch(/type="checkbox"|No media selected|Upload music|Enable media/)
     expect(ui.control('Media fade duration').props.value).toBe(DEFAULT_MEDIA_SKILL.fadeMs)
     expect(ui.control('Media gain').props.value).toBe(DEFAULT_MEDIA_SKILL.gain)

@@ -1756,7 +1756,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
         && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
     }
-    return enqueueSceneOperation(async () => {
+    const outcome = await enqueueSceneOperation(async () => {
       if (!current()) { emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' }); return 'ignored' }
       if (request.action === 'stop') return mediaSkill.stop()
       const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
@@ -1779,11 +1779,13 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       }
       await cachedSceneRuntime?.value.stopAll()
       if (!current()) return 'ignored'
-      return mediaSkill.play(request, skill)
+      // Release the command queue while awaiting the player, so Stop/replacement can cancel startup.
+      return { pending: mediaSkill.playConfirmed(request, skill) }
     }).catch(() => {
       mediaSkill.stop('media_playback_failed')
       return 'failed'
     })
+    return typeof outcome === 'string' ? outcome : outcome.pending
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {

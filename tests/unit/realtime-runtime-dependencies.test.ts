@@ -326,6 +326,7 @@ function makeAudioAnalyserFixture(): AudioAnalyserFixture {
     audioElement,
     analyser,
     attachAnalyserTap,
+    setMuted: vi.fn(),
     dispose,
   } as unknown as RealtimeRuntimeAudioOutput
 
@@ -709,6 +710,9 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
     })
 
     const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
+
+    returnedAudioOutput.setMuted!(true)
+    expect(audioFixture.output.setMuted).toHaveBeenCalledWith(true)
 
     expect(onAudioOutputAvailable).toHaveBeenCalledOnce()
     expect(onAudioOutputAvailable).toHaveBeenCalledWith(audioFixture.output)
