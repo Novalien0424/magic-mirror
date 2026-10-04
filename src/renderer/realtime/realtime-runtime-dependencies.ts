@@ -146,6 +146,7 @@ function adaptRealtimeAudioOutput(
   return Object.freeze({
     audioElement: output.audioElement,
     analyser,
+    setMuted: (muted: boolean) => output.setMuted(muted),
     dispose,
   })
 }

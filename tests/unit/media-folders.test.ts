@@ -1,10 +1,16 @@
 import { mkdtemp, mkdir, writeFile, unlink, symlink, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createReadStream } from 'node:fs'
+import { Readable } from 'node:stream'
 import { MediaFolders } from '../../src/main/avatar/media-folders'
 import { folderMediaSkill } from '../../src/shared/media-folders'
 import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, createReadStream: vi.fn(fs.createReadStream) }
+})
 
 const roots: string[] = []
 async function fixture() {
@@ -16,6 +22,23 @@ async function fixture() {
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 describe('linked media folders', () => {
+  it('finishes preparing a synced file before playback, retries failed reads, and rechecks changed files', async () => {
+    const { root, store } = await fixture()
+    const path = join(root, 'shared', 'Cloud.mp4')
+    await writeFile(path, 'synthetic media'); await store.link('shared', join(root, 'shared'))
+    const id = store.resources()[0]!.assetId
+    vi.mocked(createReadStream).mockImplementationOnce(() => Readable.from((async function* () {
+      yield Buffer.from('partial'); throw Object.assign(new Error('unavailable'), { code: 'EIO' })
+    })()) as ReturnType<typeof createReadStream>)
+    expect(await store.resolve(id)).toBeNull()
+    expect(await store.resolve(id)).not.toBeNull()
+    const reads = vi.mocked(createReadStream).mock.calls.length
+    await store.refresh(); expect(await store.resolve(id)).not.toBeNull()
+    expect(createReadStream).toHaveBeenCalledTimes(reads)
+    await writeFile(path, 'changed synthetic media'); await store.refresh()
+    expect(await store.resolve(id)).not.toBeNull()
+    expect(createReadStream).toHaveBeenCalledTimes(reads + 1)
+  })
   it('combines own and shared files, isolates avatars, and refreshes additions/removals', async () => {
     const { root, store } = await fixture()
     await writeFile(join(root, 'shared', 'Rain.mp3'), 'audio')

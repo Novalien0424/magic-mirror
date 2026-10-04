@@ -5,7 +5,7 @@ type ParameterSchema = Exclude<Parameters<typeof fromJSONSchema>[0], boolean>
 
 export const REALTIME_TOOL_SOURCE = 'resources/config/prompts/realtime-tools.v1.json'
 export type ToolOutcome = 'accepted' | 'ignored' | 'rejected' | 'failed'
-export interface ToolResult { readonly status: ToolOutcome; readonly code: string; readonly speech: 'application' | 'none' }
+export interface ToolResult { readonly status: ToolOutcome; readonly code: string; readonly speech: 'application' | 'model' | 'none' }
 export interface RealtimeToolSpec {
   readonly name: string
   readonly handler: string
@@ -15,7 +15,7 @@ export interface RealtimeToolSpec {
   readonly description: string
   readonly parameters: ParameterSchema & { type: 'object'; properties: Record<string, ParameterSchema>; required: string[]; additionalProperties: false }
   readonly rules: { useWhen: string; avoidWhen: string; speech: string }
-  readonly completion: 'background' | 'response'
+  readonly completion: 'background' | 'response' | 'background_on_success'
   readonly results: Readonly<Record<ToolOutcome, ToolResult>>
 }
 export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[] }
@@ -57,7 +57,7 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
     if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
       || !text(spec.name) || !/^[a-z][a-z0-9_]{0,63}$/.test(spec.name) || names.has(spec.name)
       || !text(spec.handler) || typeof spec.enabled !== 'boolean' || spec.availability !== 'conversation'
-      || spec.routing !== 'model_intent' || !['background', 'response'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
+      || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
     names.add(spec.name)
     const parameters = spec.parameters, rules = spec.rules, results = spec.results
     if (!record(parameters) || parameters.type !== 'object' || !validSchema(parameters)
@@ -66,7 +66,7 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
     for (const [status, result] of Object.entries(results)) {
       if (!record(result) || !keys(result, ['status', 'code', 'speech']) || result.status !== status
         || !text(result.code) || !/^[a-z][a-z0-9_]{0,79}$/.test(result.code)
-        || !['application', 'none'].includes(result.speech as string)) return invalid()
+        || !['application', 'model', 'none'].includes(result.speech as string)) return invalid()
     }
   }
   return freeze(structuredClone(value)) as unknown as RealtimeToolCatalog

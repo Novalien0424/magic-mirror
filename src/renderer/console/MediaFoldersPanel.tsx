@@ -1,7 +1,6 @@
 import * as React from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { folderMediaSkill, type MediaFolderCommand, type MediaFolderStatus, type MediaFoldersView } from '../../shared/media-folders'
-import { MediaPreview } from './MediaPreview'
 
 const explanations: Record<string, string> = {
   media_folder_overlap: 'Choose separate folders. A shared folder cannot contain an avatar’s folder, and avatars cannot link overlapping folders.',
@@ -38,11 +37,9 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
     return () => { clearInterval(timer); generation.current++; pending.current = false }
   }, [bridge, avatarId])
   const folder = (scope: 'own' | 'shared', status: MediaFolderStatus | null | undefined, editable: boolean) => <section className="media-folder-card" aria-label={scope === 'own' ? 'Avatar media folder' : 'Shared media folder'}>
-    <h4>{scope === 'own' ? `${avatarName || 'Avatar'}’s folder` : 'Shared media folder'}</h4>
-    <p>{scope === 'own' ? 'Only this avatar can play these files.' : 'Every avatar can play these files.'}</p>
-    {status ? <><strong>{status.label}</strong><p className="media-folder-path">{status.path}</p>
-      <p role="status">{status.status === 'unavailable' ? 'Folder unavailable — reconnect the drive or choose another folder.' : `${status.count} music / video files · ${status.status === 'partial' ? 'Some files could not be listed, or the folder limit was reached.' : 'Ready'}`}</p>
-      {status.skipped > 0 && <p className="console__muted">{status.skipped} unsupported, hidden or unreadable entries skipped.</p>}</> : <p>No folder linked.</p>}
+    <h4>{scope === 'own' ? `${avatarName || 'Avatar'}’s folder` : 'Common folder'}</h4>
+    {status ? <><span title={status.path}>{status.label}</span>
+      {status.status !== 'ready' && <p role="status">{status.status === 'unavailable' ? 'Folder unavailable — reconnect the drive or choose another folder.' : 'Some files could not be listed, or the folder limit was reached.'}</p>}</> : <p>No folder linked.</p>}
     <div className="console__action-row">{editable ? <>
       <button disabled={busy || !bridge?.mediaFolders} type="button" aria-label={scope === 'own' ? 'Choose avatar folder' : 'Choose shared folder'} onClick={() => void run('choose', scope)}>{status ? 'Change folder…' : 'Choose folder…'}</button>
       {status && <button disabled={busy} type="button" aria-label={scope === 'own' ? 'Unlink avatar folder' : 'Unlink shared folder'} onClick={() => void run('unlink', scope)}>Unlink folder</button>}
@@ -51,27 +48,26 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
   const entries = view?.entries ?? []
   const resources = folderMediaSkill(undefined, entries).resources
   return <section aria-label={avatarId ? 'Avatar folder library' : 'Global media folders'}>
-    <h3>{avatarId ? 'Media folders' : 'Shared media for all avatars'}</h3>
-    {!avatarId && <div className="console__device-save console__action-row"><button type="button" className="console__primary" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('save')}>Save folder settings</button><span role="status">{saved ? 'Folder settings saved. File list refreshed.' : 'Folder choices also save automatically.'}</span></div>}
-    <p>Choose any folder on this Mac, including Google Drive. All supported music and videos inside it are available automatically.</p>
-    <div className="media-folder-grid">
+    {!avatarId && <h3>Common media</h3>}
+    {!avatarId && <div className="console__device-save console__action-row"><button type="button" className="console__primary" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('save')}>Save folder settings</button>{saved && <span role="status">Folder settings saved.</span>}</div>}
+    <details className="media-folder-settings" open={!avatarId || undefined}><summary>Folders</summary><div className="media-folder-grid">
       {avatarId && folder('own', view?.own, true)}
       {folder('shared', view?.shared, !avatarId)}
-    </div>
-    <p className="console__muted">Folder links save immediately. New files appear within 30 seconds, or use Refresh files. The avatar receives the updated list at its next conversation. Unlinking never deletes your files.</p>
-    <details><summary>Supported files and Google Drive</summary><p>Video: MP4, WebM. Music: MP3, WAV, OGG, M4A. Subfolders are included, up to 200 media files per linked folder. Shortcuts and hidden files are skipped. Keep Google Drive folders available offline for reliable playback.</p></details>
-    <div className="console__action-row"><button type="button" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('refresh')}>Refresh files</button>
-      <label>Find media<input aria-label="Find folder media" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Search filenames…" /></label></div>
+    </div><p className="console__muted">Folder choices save automatically. All music and videos inside are available, including subfolders.</p></details>
+    <div className="media-file-toolbar"><input type="search" aria-label="Find folder media" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Find a file…" />
+      <button type="button" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('refresh')}>Refresh files</button></div>
     {!bridge?.mediaFolders && <p role="alert">Folder linking is unavailable. Restart the updated application.</p>}
     {error && <p role="alert" className="console__fault">{error}</p>}
+    {avatarId && [view?.own, view?.shared].some(status => status && status.status !== 'ready') && <p role="alert">Some media is unavailable. Open Folders to check the connection.</p>}
     {entries.length + legacyCount > 512 && <p role="alert">This avatar has more than 512 media entries. Folder files take priority; some previously imported files are omitted. Remove unused imported entries below.</p>}
     {busy && <p role="status">Reading folders…</p>}
     {!resources.length && !busy && <p>No music or videos found. Choose a folder above, then put media files in it.</p>}
-    <div className="media-skill-choices">{resources.filter(entry => entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(entry => <article key={entry.assetId} className="media-skill-choice" data-folder-media-id={entry.assetId} data-folder-media-kind={entry.kind}>
-      <strong>{entry.name}</strong><p>{entries.find(item => item.assetId === entry.assetId)?.origin === 'own' ? 'Avatar folder' : 'Shared folder'} · {entry.kind === 'video' ? 'Video' : 'Music'}</p>
-      <p>“Play {entry.name}” · “Loop {entry.name}”</p>
-      <MediaPreview kind={entry.kind} id={entry.assetId} name={entry.name} gain={0.7} />
-    </article>)}</div>
-    <p>Video fades the avatar out; music leaves it visible. Say “Stop media” to stop. Rename a file in its folder to change its spoken name.</p>
+    <ul className="media-file-list" aria-label="Media files">{resources.filter(entry => entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(entry => <li key={entry.assetId} data-folder-media-id={entry.assetId} data-folder-media-kind={entry.kind}>{entry.name}</li>)}</ul>
+    {resources.length > 0 && !resources.some(entry => entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) && <p role="status">No matching files.</p>}
+    <details className="console__technical"><summary>Help</summary>
+      <p>Say “Play [filename]”, “Loop [filename]” or “Stop media”. Video fades the avatar out; music leaves it visible.</p>
+      <p>New files appear within 30 seconds. Start a new conversation to give the avatar the updated list. Unlinking never deletes files.</p>
+      <p>MP4, WebM, MP3, WAV, OGG and M4A; up to 200 files per folder. Keep Google Drive files available offline.</p>
+    </details>
   </section>
 }

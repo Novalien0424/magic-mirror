@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 const writeFileAtomic = require('write-file-atomic') as (path: string, value: string, options: { mode: number }) => Promise<void>
@@ -20,6 +21,7 @@ export class MediaFolders {
   private sources = new Map<string, Source>()
   private queue: Promise<unknown> = Promise.resolve()
   private failure = ''
+  private prepared = new Map<string, Promise<void>>()
   constructor(private readonly configPath: string) {}
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.queue.then(operation); this.queue = next.catch(() => undefined); return next
@@ -130,6 +132,24 @@ export class MediaFolders {
         if (await realpath(root) !== root || await realpath(file.path) !== file.path || !inside(root, file.path)) return null
         const info = await lstat(file.path)
         if (!info.isFile() || info.size !== file.size || info.mtimeMs !== file.mtime) return null
+        // Drive placeholders can expose metadata and initial blocks before the
+        // whole file is local. Read to EOF once before giving it to Chromium.
+        // Only a small stream buffer is retained; no media copies are created.
+        const key = `${id}:${file.size}:${file.mtime}`
+        let ready = this.prepared.get(key)
+        if (!ready) {
+          ready = (async () => {
+            let bytes = 0
+            for await (const chunk of createReadStream(file.path)) bytes += chunk.length
+            if (bytes !== file.size) throw Error('media_file_incomplete')
+          })()
+          this.prepared.set(key, ready)
+          if (this.prepared.size > 64) this.prepared.delete(this.prepared.keys().next().value!)
+        }
+        try { await ready } catch { if (this.prepared.get(key) === ready) this.prepared.delete(key); return null }
+        const after = await lstat(file.path)
+        if (this.links[owner] !== root || await realpath(file.path) !== file.path
+          || !after.isFile() || after.size !== file.size || after.mtimeMs !== file.mtime) return null
         return { path: file.path, mimeType: file.mimeType }
       } catch { return null }
     }

@@ -709,7 +709,7 @@ function AvatarAudioPanel({
     try {
       const result = await bridge.checkCamera()
       setCameraCheck(result.ok && result.value.status === 'ready'
-        ? `Camera ready · ${result.value.width} × ${result.value.height}. Capture verified; no image saved or sent to the avatar.`
+        ? 'Camera ready.'
         : 'Camera unavailable. Check its connection and Camera permission in macOS System Settings.')
     } catch { setCameraCheck('Camera check failed. Try again.') }
     finally { setCheckingCamera(false) }
@@ -728,8 +728,7 @@ function AvatarAudioPanel({
     <section className="console__panel" aria-labelledby="console-avatar-audio">
       <div className="console__panel-heading">
         <div>
-          <p className="console__eyebrow">Actual renderer and output graph</p>
-          <h2 id="console-avatar-audio">Devices & runtime</h2>
+          <h2 id="console-avatar-audio">Devices</h2>
         </div>
         <span className={statusClass(value?.status ?? state.status)}>{value?.status ?? state.status}</span>
       </div>
@@ -740,40 +739,22 @@ function AvatarAudioPanel({
         {draftPreferences && <button type="button" disabled={saving} onClick={() => { setDraftPreferences(null); setSaveResult('Changes discarded.') }}>Discard changes</button>}
         <span role="status">{saveResult || (draftPreferences ? 'Unsaved device changes' : 'Device settings are saved')}</span>
       </div>
-      <details><summary>Renderer measurements</summary>
-      <div className="console__overview-grid">
-        <OverviewField label="state" value={displayValue(value?.state)} />
-        <OverviewField label="FPS" value={value ? value.fps.toFixed(1) : '—'} />
-        <OverviewField label="mouth" value={value ? value.mouthOpen.toFixed(3) : '—'} />
-        <OverviewField label="underruns" value={displayValue(value?.audioUnderruns)} />
-        <OverviewField label="voice gain" value={value ? value.voiceGain.toFixed(2) : '—'} />
-        <OverviewField label="music gain" value={value ? value.musicGain.toFixed(2) : '—'} />
-        <OverviewField label="reason" value={displayValue(value?.reason)} />
-        <label className="console__overview-field">
-          <small>waveform</small>
-          <meter min="0" max="1" value={value?.waveform ?? 0} />
-        </label>
-      </div>
-
-      </details>
       <fieldset className="console__volume-controls"><legend>Volume</legend>
         <div className="console__gain-controls">
           {([
-            ['bgm', 'BGM', 'Music and sleep ambience'],
-            ['avatar', 'Avatar audio', 'Conversation and recorded speech'],
-            ['effects', 'Sound effects', 'Embedded scene-video audio'],
-          ] as const).map(([channel, label, description]) => {
+            ['bgm', 'BGM'],
+            ['avatar', 'Avatar audio'],
+            ['effects', 'Sound effects'],
+          ] as const).map(([channel, label]) => {
             const volume = (preferences.volumes ?? DEFAULT_AUDIO_VOLUMES)[channel]
             return <HelpField help={FIELD_HELP[channel === 'bgm' ? 'bgmVolume' : channel === 'avatar' ? 'avatarVolume' : 'effectsVolume']} key={channel}>{label} · {Math.round(volume * 100)}%{volume === 0 ? ' · Muted' : ''}
               <input aria-label={`${label} volume`} type="range" min="0" max="100" step="1"
                 value={Math.round(volume * 100)} disabled={disabled || saving || !audioDevices}
                 onChange={event => editPreferences({ ...preferences,
                   volumes: { ...(preferences.volumes ?? DEFAULT_AUDIO_VOLUMES), [channel]: Number(event.currentTarget.value) / 100 } })} />
-              <small>{description}</small>
             </HelpField>
           })}
         </div>
-        <p className="console__detail">Choose levels, then Save device settings to apply them to all avatars. 0% mutes a channel.</p>
       </fieldset>
       <p className="console__label">Sound devices</p>
       <div className="console__gain-controls">
@@ -800,14 +781,25 @@ function AvatarAudioPanel({
           </HelpField>
         })}
       </div>
-      <p className="console__detail">After saving, speakers apply to voice, music, and video. Microphone changes apply at the next conversation and next wake-listener start. System default follows the Mac’s selection.</p>
-      <p className="console__detail" role="status">{audioDevices?.reason === 'audio_devices_ready' ? 'Audio devices ready.' : audioDevices?.reason?.replaceAll('_', ' ') ?? 'Loading sound devices…'}</p>
+      <p className="console__detail">Microphone changes apply at the next conversation.</p>
+      {audioDevices?.reason !== 'audio_devices_ready' && <p className="console__detail" role="status">{audioDevices?.reason?.replaceAll('_', ' ') ?? 'Loading sound devices…'}</p>}
+      <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
       <section aria-label="Camera vision">
         <h3>Camera</h3>
-        <p>The configured camera supports gaze tracking and on-demand vision for every avatar. Ask “What am I holding?” or “Look at this.” A requested still is sent to the active conversation; images are never saved locally.</p>
         <button type="button" disabled={disabled || checkingCamera || !bridge?.checkCamera} onClick={() => void checkCamera()}>{checkingCamera ? 'Checking camera…' : 'Check camera capture'}</button>
-        <p role="status">{cameraCheck}</p>
+        {cameraCheck && <p role="status">{cameraCheck}</p>}
       </section>
+      <details className="console__technical"><summary>Diagnostics</summary>
+      <div className="console__overview-grid">
+        <OverviewField label="state" value={displayValue(value?.state)} />
+        <OverviewField label="FPS" value={value ? value.fps.toFixed(1) : '—'} />
+        <OverviewField label="mouth" value={value ? value.mouthOpen.toFixed(3) : '—'} />
+        <OverviewField label="underruns" value={displayValue(value?.audioUnderruns)} />
+        <OverviewField label="voice gain" value={value ? value.voiceGain.toFixed(2) : '—'} />
+        <OverviewField label="music gain" value={value ? value.musicGain.toFixed(2) : '—'} />
+        <OverviewField label="reason" value={displayValue(value?.reason)} />
+        <label className="console__overview-field"><small>waveform</small><meter min="0" max="1" value={value?.waveform ?? 0} /></label>
+      </div>
       <section aria-label="Wake microphone diagnostics">
         <h3>Wake microphone — live input</h3>
         <p role="status">{value?.wakeInput ? ({
@@ -827,8 +819,6 @@ function AvatarAudioPanel({
         <p className="console__detail">{value?.wakeInput ? `Peak ${value.wakeInput.state === 'silent' || value.wakeInput.state === 'signal' ? `${value.wakeInput.peak > 0 ? (20 * Math.log10(value.wakeInput.peak)).toFixed(1) : '−∞'} dBFS` : 'unavailable'} · Blocks ${value.wakeInput.blocks} · Last block ${value.wakeInput.lastBlockAgeMs === null ? 'not received' : `${value.wakeInput.lastBlockAgeMs} ms ago`} · Wake detections ${value.wakeInput.detections}` : 'Waiting for wake worker…'}</p>
         <p className="console__detail">Measures the existing wake stream only; no recording or transcription. Updates twice per second.</p>
       </section>
-      <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
-
       <details className="console__technical"><summary>Avatar motions, expressions and test tools</summary>
       <button type="button" onClick={() => onCommand({ type: 'stop_avatar_test' })}>Stop avatar tests</button>
       <p className="console__label">States / motions</p>
@@ -857,6 +847,7 @@ function AvatarAudioPanel({
         <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'music', action: 'play' })}>Play music</button>
         <button type="button" disabled={disabled || !developerMode} onClick={() => onCommand({ type: 'music', action: 'stop' })}>Stop music</button>
       </div>
+      </details>
       </details>
 
     </section>
@@ -1749,7 +1740,7 @@ export function ScenesPanel({
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
-      {visible && section === 'Music & video' && editingAvatar && draft ? <details><summary>Playback settings</summary><MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /></details> : null}
+      {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
@@ -1821,7 +1812,7 @@ export function ScenesPanel({
           <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
-        <p className="console__scene-result" role="status">{section === 'Music & video' && result === 'Edits stay in draft until you publish.' ? 'Folder links save immediately. Save & apply is for playback settings and imported files.' : section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result}</p>
+        {!(section === 'Music & video' && result === 'Edits stay in draft until you publish.') && <p className="console__scene-result" role="status">{section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result}</p>}
       </div>
       </div></div>
       {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}
@@ -1906,7 +1897,6 @@ export function ModelsPanel({
     <section className="console__panel" aria-labelledby="console-models">
       <div className="console__panel-heading">
         <div>
-          <p className="console__eyebrow">Console-only configured roles</p>
           <h2 id="console-models">Models</h2>
         </div>
         <span className="console__status console__status--mock">Mock / simulator</span>
@@ -1917,18 +1907,18 @@ export function ModelsPanel({
         <p className="console__fault" role="status">Models failed: {state.error}; {state.reason}</p>
       ) : null}
 
-      <p className="console__muted">Draft values are bounded inputs; only an explicit next session/job action creates simulated runtime evidence.</p>
+      <p className="console__muted">Model drafts apply to simulator tests.</p>
       <div className="console__model-draft-form">
         <HelpField help={FIELD_HELP.dialogueModel}>
-          <span>realtimeDialogue</span>
+          <span>Conversation</span>
           <input type="text" value={draft.realtimeDialogue} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, realtimeDialogue: event.currentTarget.value }))} />
         </HelpField>
         <HelpField help={FIELD_HELP.transcriptionModel}>
-          <span>inputTranscription</span>
+          <span>Transcription</span>
           <input type="text" value={draft.inputTranscription} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, inputTranscription: event.currentTarget.value }))} />
         </HelpField>
         <HelpField help={FIELD_HELP.extractionModel}>
-          <span>memoryExtractor</span>
+          <span>Memory extraction</span>
           <input type="text" value={draft.memoryExtractor} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, memoryExtractor: event.currentTarget.value }))} />
         </HelpField>
         <button
@@ -1942,6 +1932,7 @@ export function ModelsPanel({
         >Save Model Draft</button>
       </div>
 
+      <details className="console__technical"><summary>Model diagnostics</summary>
       <div className="console__model-cards">
         {CONSOLE_UI_CONTRACT.models.roles.map((role, index) => {
           const label = CONSOLE_UI_CONTRACT.models.cardLabels[index]
@@ -1981,6 +1972,7 @@ export function ModelsPanel({
       ) : (
         <p className="console__muted" role="status">No mock Test Draft result yet.</p>
       )}
+      </details>
     </section>
   )
 }
@@ -2421,7 +2413,10 @@ export function App(): React.JSX.Element {
         setActivePage(avatarEditing ? 'Avatars' : 'System'); setSystemPage(configEditing ? 'Config' : 'Models'); setNavigationMessage('')
       }}>Return to unfinished changes</button></div>}
       {activePage === 'System' && <nav className="console__subnav profile-sections" aria-label="System settings">
-        {SYSTEM_PAGES.map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page === 'Config' ? 'Advanced config' : page}</button>)}
+        {SYSTEM_PAGES.slice(0, 2).map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page}</button>)}
+        <details className="console__advanced-nav" open={!['Devices', 'Media folders'].includes(systemPage) || undefined}><summary>Advanced</summary>
+          <div>{SYSTEM_PAGES.slice(2).map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page === 'Config' ? 'Advanced config' : page}</button>)}</div>
+        </details>
       </nav>}
 
       <div className="console__panels">

@@ -9,6 +9,7 @@ export function applyPresentationAmbience(input: {
   activeAmbienceGain: number
   bgmVolume: number
   speechActive: boolean
+  mediaActive?: boolean
   routeReady: Promise<unknown>
   onFailure(reason: string): void
 }): () => void {
@@ -22,7 +23,7 @@ export function applyPresentationAmbience(input: {
   const started = performance.now()
   // Speech has priority even during greeting/farewell transitions. Keep the
   // loop running silently so restoring it does not restart the track.
-  if (phase === 'inactive') { audio.volume = 0; audio.pause() }
+  if (phase === 'inactive' || input.mediaActive) { audio.volume = 0; audio.pause() }
   else if (speechActive) audio.volume = 0
   else {
     if (target > 0) void input.routeReady.then(() => {

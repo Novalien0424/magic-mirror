@@ -1,6 +1,57 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
-## Current: actual folder BGM and preview recovered — 2026-10-04
+## Current: compact media Console and verified playback — 2026-10-04
+
+Music & video now shows a searchable filename list; folders, playback controls
+and help are collapsed. System keeps Devices and Media folders visible, with
+diagnostics and advanced pages behind disclosures. Save controls remain visible.
+
+Media tools await actual player startup before accepting. Failed files return a
+failure the avatar can explain. Video fills the display, requested media pauses
+BGM, and completion/Stop restores the avatar and BGM. The exact configured wake
+phrase stops media through the existing Realtime microphone; duplicate and
+negated input are covered, without acquiring a second microphone.
+
+Actual-file QA found incomplete linked-file transfers: Bike stalled at 1.127s
+with only 1.443s buffered; a complete read made playback succeed. Folder media
+now streams to EOF once before playback to prepare cloud-backed files, with
+bounded buffering, metadata caching and authorization rechecks. Existing range
+streaming remains in place. No-store responses and fresh playback URLs prevent
+stale video buffers after linked files change. The investigated native-protocol
+workaround was discarded; no Electron protocol defect is claimed.
+
+Media playback now mutes the processed voice output and disables automatic
+Realtime replies while keeping one microphone for the exact wake phrase.
+Ordinary playback-time speech is excluded from conversation and extraction,
+including delayed transcription arriving after playback ends. Stop/completion
+restores normal response generation and BGM. DevTools is closed and its saved
+docking preference is now a separate window; the split display was diagnostics.
+
+TDD: focused failing startup/BGM/wake/failure/cache checks were made green.
+Final focused command covers eleven test files: **181 passed**, exit 0.
+`npm run typecheck`, `npm run build`, and `git diff --check` exit 0.
+Mac `node scripts/run-phase4-qa.mjs --media-skill`: **16 checks, 7 captures**,
+exit 0; includes 8 MiB transfer, ranges crossing 4 MiB, fullscreen video,
+once/loop, BGM restoration, malformed-file failure, filename search, saved
+settings and completely black dormant output.
+[Passing QA](.artifacts/phase4-qa/2026-10-04T09-03-04-661Z/evidence.json).
+[Preserved cache regression](.artifacts/phase4-qa/2026-10-04T08-35-19-954Z/evidence.json).
+Screenshots for the filename list, Devices and fullscreen video were reviewed.
+
+Normal LaunchAgent runs the final quiet-playback build, PID **51739**, including
+the delayed-transcription guard. Clean startup was captured fully black, with
+no diagnostic panel. Saved v15
+active/draft remain identical SHA-256
+`56b65290bc964e3bbdbcabde468fa0f064f39252dadac9eb0e1ac70dc2b09bf4`.
+Actual Bike once playback reaches `media_completed`; actual 3 Worlds has crossed
+multiple complete loops, including on the quiet-playback build. Fullscreen
+1080×1920 video with no diagnostics was captured. Physical silence and spoken
+wake interruption remain pending operator confirmation; automated exact-ASR,
+mute routing and delayed-background-transcription regressions pass. No phase
+promotion. The Electron QA above predates the quiet-playback change; those
+voice changes have focused automated coverage plus the current live trial.
+
+## Previous: actual folder BGM and preview recovered — 2026-10-04
 
 Operator-selected Common MP3 is published in v15. Its original live/preview
 failure cleared after a clean LaunchAgent stop/start; the underlying cause is

@@ -79,6 +79,7 @@ export interface RealtimeRuntimeAudioOutput {
   readonly audioElement: HTMLAudioElement
   readonly analyser?: object
   readonly dispose: () => MaybePromise<void>
+  readonly setMuted?: (muted: boolean) => void
 }
 
 export type RealtimeRuntimeSession = RealtimeSessionHandle
@@ -184,6 +185,7 @@ export interface RealtimeRuntimeOwner {
   ) => Promise<RealtimeRuntimeOutcome>
   readonly dispose: () => Promise<RealtimeRuntimeOutcome>
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
+  readonly setMediaPlayback?: (active: boolean) => void
   readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: () => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
@@ -270,6 +272,12 @@ export function createRealtimeRuntimeOwner(
 ): RealtimeRuntimeOwner {
   let state: RealtimeRuntimeState = 'idle'
   let current: OwnedResources | undefined
+  let mediaPlayback = false
+  const setMediaPlayback = (active: boolean): void => {
+    mediaPlayback = active
+    current?.audioOutput.setMuted?.(active)
+    current?.session.setMediaPlayback?.(active)
+  }
   let startPromise: Promise<RealtimeRuntimeOutcome> | undefined
   let rolloverPromise: Promise<RealtimeRuntimeOutcome> | undefined
   let rolloverAbort: AbortController | undefined
@@ -470,6 +478,7 @@ export function createRealtimeRuntimeOwner(
         identity,
       }
       state = 'active'
+      if (mediaPlayback) setMediaPlayback(true)
       observeCompletedTranscripts(current)
       return result('start', 'success', 'started')
     } catch {
@@ -641,6 +650,7 @@ export function createRealtimeRuntimeOwner(
       identity: freezeIdentity(bundle.identity),
     }
     state = 'active'
+    if (mediaPlayback) setMediaPlayback(true)
     observeCompletedTranscripts(current)
     return result(
       'rollover',
@@ -792,6 +802,7 @@ export function createRealtimeRuntimeOwner(
     stop,
     dispose,
     interrupt,
+    setMediaPlayback,
     speakVerbatim,
     getSnapshot,
   })

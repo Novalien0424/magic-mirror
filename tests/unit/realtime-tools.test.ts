@@ -11,6 +11,16 @@ const specs = () => resolveRealtimeTools('Rest.').filter(spec => spec.handler ==
 const call = (tool: ReturnType<typeof bindRealtimeTools>[number], input: string) => invokeFunctionTool({tool, input, runContext:new RunContext({})})
 
 describe('structured Realtime tool catalog', () => {
+  it('keeps confirmed media silent but lets the avatar explain a playback failure', async () => {
+    const media = vi.fn(async (): Promise<'accepted' | 'failed'> => 'accepted')
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'play_media'), { play_media: media }, vi.fn())
+    const args = JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'loop' })
+    expect(isBackgroundResult(await call(tool, args))).toBe(true)
+    media.mockResolvedValueOnce('failed')
+    const result = await call(tool, args)
+    expect(isBackgroundResult(result)).toBe(false)
+    expect(result).toMatchObject({ status: 'failed', speech: 'model' })
+  })
   it('resumes the real SDK response after camera capture, with the image already in context', async () => {
     const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'capture_camera')
     const transport = new ScriptedRealtimeTransport(), errors = vi.fn()
@@ -116,7 +126,7 @@ describe('structured Realtime tool catalog', () => {
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))
     expect(media).not.toHaveBeenCalled()
     expect(await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'loop' })))
-      .toMatchObject({ content: { status: 'accepted', code: 'media_requested' } })
+      .toMatchObject({ content: { status: 'accepted', code: 'media_started' } })
     expect(media).toHaveBeenCalledExactlyOnceWith({ kind: 'video', assetId: 'clip', mode: 'loop' })
     const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', tools }), { transport: new ScriptedRealtimeTransport(), tracingDisabled: true })
     try {

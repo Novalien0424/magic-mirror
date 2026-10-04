@@ -5,6 +5,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { buildAvatarPrompt, type AvatarSessionSettings } from '../../shared/avatar-prompt'
+import { normalizeTranscript } from '../../main/scenes/spell-trigger'
 import { resolveRealtimeTools } from '../../shared/realtime-tools'
 import { bindRealtimeTools } from './realtime-tool-bindings'
 import { DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
@@ -117,6 +118,7 @@ export interface RealtimeSessionHandle {
   readonly getLastConnectFailureToken?: () => string | undefined
   connect(): Promise<void>
   interrupt(): Promise<void>
+  setMediaPlayback?(active: boolean): void
   close(reason: string): Promise<void>
   speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void
   onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
@@ -441,6 +443,7 @@ export function createRealtimeSession(
   let farewellResponseId: string | undefined
   let farewellAudioStarted = false
   let sleepAudioSuppressed = false
+  let mediaPlaybackActive = false
   let farewellSequence = 0
   let farewellCueId = ''
   const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
@@ -456,7 +459,7 @@ export function createRealtimeSession(
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
     const tools = bindRealtimeTools(toolSpecs, {
       capture_camera: async () => {
-        if (closed || returnToDormantPending || !input.onCameraCapture) return 'ignored'
+        if (closed || mediaPlaybackActive || returnToDormantPending || !input.onCameraCapture) return 'ignored'
         const frame = await input.onCameraCapture({ realtimeSessionId: input.sessionId, sessionGeneration })
         if (closed || returnToDormantPending) return 'ignored'
         if (!frame) return 'failed'
@@ -464,7 +467,7 @@ export function createRealtimeSession(
         return 'accepted'
       },
       play_media: async args => {
-        if (closed || returnToDormantPending || !input.onMediaRequest) return 'ignored'
+        if (closed || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
         return input.onMediaRequest({ action: 'play', kind: args.kind as 'video' | 'music', assetId: args.assetId as string,
           mode: args.mode as 'once' | 'loop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
       },
@@ -473,7 +476,7 @@ export function createRealtimeSession(
         return input.onMediaRequest({ action: 'stop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
       },
       return_to_dormant: async () => {
-        if (closed || returnToDormantPending || farewellRequested) return 'ignored'
+        if (closed || mediaPlaybackActive || returnToDormantPending || farewellRequested) return 'ignored'
         // Cut off a premature acknowledgement and require the farewell's own
         // output start/end pair, never the previous response's completion.
         const wasPlaying = returnToDormantAudioStarted
@@ -767,6 +770,12 @@ export function createRealtimeSession(
     }
   }
 
+  const mediaWakeItems = new Set<string>()
+  const mediaInputItems = new Set<string>()
+  const rememberMediaInput = (itemId: string): void => {
+    mediaInputItems.add(itemId)
+    if (mediaInputItems.size > 256) mediaInputItems.delete(mediaInputItems.values().next().value!)
+  }
   const handleTransportEvent = (event: unknown): void => {
     if (closed) return
     if (rawEventIsStale(event, input.sessionId)) {
@@ -782,6 +791,10 @@ export function createRealtimeSession(
       }
     }
     if (type === 'response.created' || type === 'response.done') {
+      if (mediaPlaybackActive && type === 'response.created') {
+        void interrupt()
+        return
+      }
       const response = readProperty(event, 'response')
       if (readProperty(readProperty(response, 'metadata'), 'mirror_sleep_cue') === farewellCueId && farewellRequested) {
         const responseId = readProperty(response, 'id')
@@ -834,6 +847,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'output_audio_buffer.started') {
+      if (mediaPlaybackActive) { void interrupt(); return }
       if (sleepAudioSuppressed && (!farewellResponseId || readProperty(event, 'response_id') !== farewellResponseId)) {
         emitMetadata(input, 'realtime_observer_event', 'info', 'sleep_nonfarewell_output_suppressed', sessionGeneration, createdAt)
         return
@@ -889,11 +903,13 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.speech_started') {
+      if (mediaPlaybackActive) return
       cancelPendingGreeting('wake_greeting_cancelled_visitor_speech')
       notifyAudioActivity('speech_started')
       return
     }
     if (type === 'input_audio_buffer.speech_stopped') {
+      if (mediaPlaybackActive) return
       notifyAudioActivity('speech_stopped')
       return
     }
@@ -925,6 +941,22 @@ export function createRealtimeSession(
         )
         return
       }
+      if (mediaPlaybackActive) rememberMediaInput(itemId)
+      const mediaInput = mediaInputItems.has(itemId)
+      if (mediaInput) transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId })
+      if (mediaInput && !mediaPlaybackActive) return
+      if (input.onMediaRequest && normalizeTranscript(transcript) === normalizeTranscript(input.avatar?.wakePhrase ?? DEFAULT_WAKE_PHRASE)) {
+        if (mediaWakeItems.has(itemId)) return
+        mediaWakeItems.add(itemId)
+        if (mediaWakeItems.size > 256) mediaWakeItems.delete(mediaWakeItems.values().next().value!)
+        // The active Realtime session already owns the microphone. Reuse its
+        // final ASR event; never acquire a second wake microphone during media.
+        void input.onMediaRequest({ action: 'stop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
+          .then(outcome => { if (!closed && outcome === 'accepted') return session.interrupt() })
+          .catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
+        return
+      }
+      if (mediaInput) return
       for (const listener of [...inputTranscriptCompletedListeners]) {
         try {
           listener(Object.freeze({ itemId, transcript }))
@@ -1126,6 +1158,8 @@ export function createRealtimeSession(
 
   const notifyInputItemCreated = (itemId: unknown): void => {
     if (typeof itemId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) return
+    if (mediaPlaybackActive) rememberMediaInput(itemId)
+    if (mediaInputItems.has(itemId)) return
     if (createdInputItemIds.has(itemId)) return
     createdInputItemIds.add(itemId)
     for (const listener of [...inputItemCreatedListeners]) {
@@ -1146,6 +1180,7 @@ export function createRealtimeSession(
 
   function speakVerbatim(text: string, signal?: AbortSignal, onFinished?: () => void): void {
     if (closed) throw new RealtimeSessionAdapterError('session_closed')
+    if (mediaPlaybackActive) throw new RealtimeSessionAdapterError('media_playback_active')
     if (text.trim().length === 0 || text.length > 1000) {
       throw new RealtimeSessionAdapterError('scene_dialogue_invalid')
     }
@@ -1231,12 +1266,26 @@ export function createRealtimeSession(
     return () => inputItemCreatedListeners.delete(listener)
   }
 
+  function setMediaPlayback(active: boolean): void {
+    if (closed || mediaPlaybackActive === active) return
+    mediaPlaybackActive = active
+    // Preserve the configured VAD and one mic owner, but prevent model replies.
+    transport.sendEvent({ type: 'session.update', session: { type: 'realtime', audio: { input: { turn_detection: {
+      type: turnDetection.type, create_response: !active, interrupt_response: true,
+      ...(turnDetection.eagerness ? { eagerness: turnDetection.eagerness } : {}),
+      ...(turnDetection.threshold !== undefined ? { threshold: turnDetection.threshold,
+        prefix_padding_ms: turnDetection.prefixPaddingMs, silence_duration_ms: turnDetection.silenceDurationMs } : {}),
+    } } } } })
+    if (active) void interrupt()
+  }
+
   return Object.freeze({
     realtimeSessionId: input.sessionId,
     sessionGeneration,
     connect,
     getLastConnectFailureToken: () => latestConnectFailureToken,
     interrupt,
+    setMediaPlayback,
     close,
     speakVerbatim,
     onOutputAudioBufferStopped,

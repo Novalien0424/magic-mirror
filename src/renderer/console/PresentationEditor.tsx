@@ -87,7 +87,7 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
         </select></HelpField>
         {folderError && <p role="alert">{folderError}</p>}
         <HelpField help={FIELD_HELP.ambienceVolume}>{reflective ? 'Dormant music volume' : 'Ambience volume'} · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input aria-label="Active BGM volume" type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
         {reflective ? <>
           <HelpField help={FIELD_HELP.entranceVideo}>Entrance mist video<select value={config.entranceVideoId ?? ''} onChange={e => edit({ entranceVideoId: e.currentTarget.value })}>
             <option value="">No video · soft fade</option>{videos.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
