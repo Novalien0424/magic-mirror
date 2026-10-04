@@ -2,7 +2,8 @@
 
 The `_media` source notes, processing descriptions and metadata are tracked.
 Downloaded/derived Mixkit WAV and WebM files remain on the development machine
-and are ignored by Git, except `raven/fog.webm`, archived at the operator's
+and are ignored by Git, except `raven/fog.webm` and
+`video-rain-leaves-embedded-audio-25s.webm`, archived at the operator's
 request on 2026-10-04 for restoring Raven on another machine. The project-owned
 `raven/crop.png` test image is also included. This is not a stock media library.
 
@@ -17,3 +18,6 @@ grant permission to redistribute the standalone media.
 
 The archived fog loop retains the source attribution and processing notes in
 `_media/raven/README.md`, with its SHA-256 in `_media/raven/checks.json`.
+The rain scene retains its provenance in `_media/SOURCES.md`. Raven's actual
+selected BGM is separately archived in `resources/music/raven-bgm.mp3`; see
+the [restoration instructions](../resources/voice/README.md).

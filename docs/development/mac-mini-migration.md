@@ -72,10 +72,11 @@ are runtime data: import the tracked Raven model through Console on the new
 machine. The repository archive does not copy Windows AppData or publish an
 avatar selection.
 
-## Saved voice and mist loop follow-up — 2026-10-04
+## Saved voice and referenced media follow-up — 2026-10-04
 
-The operator's saved Raven God voice tuning and exact eight-second fog loop
-are now archived. See [restore instructions](../../resources/voice/README.md).
+The operator's saved Raven God voice tuning, exact eight-second fog loop,
+selected `天使_intro` BGM and rain scene video are now archived.
+See [restore instructions](../../resources/voice/README.md).
 The built-in God preset was already committed; the saved tuning differs in
 speed and pitch. Import the fog through Console and apply the saved voice
 values to the intended avatar; these resources do not overwrite runtime data.
