@@ -1,5 +1,32 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
+## Current: local wake during loops, global Mac threshold 0.32 — 2026-10-04
+
+New logs confirmed repeated `media_wake_not_matched` while cloud ASR was used
+to interrupt looping media. Loop startup now requests the existing Dormant
+transition after player confirmation: Realtime closes/releases its microphone,
+then the local wake worker acquires it. Main preserves this loop through the
+intentional transition. Local wake stops media before normal conversation
+activation. Once playback retains its existing automatic completion path.
+The Mac package threshold default is **0.32**; Raven's published enabled
+override was already **0.32**, and saved operator config is unchanged.
+
+Renderer sleep cleanup and reflective CSS now preserve requested video during
+Dormant; music keeps the avatar visible while conversation remains disconnected.
+The initial live trial proved release→acquire→`wake_worker_listening`, but caught
+the renderer stopping/hiding video and produced `media_playback_timeout`; this
+failure is retained in telemetry at 09:52:59Z. Corrected live trial at 09:56Z
+confirmed `dormant`, no Realtime session, visible unpaused looping video at
+20.3 seconds, then the next complete-loop boundary at 09:57:00Z. A fullscreen
+1080×1920 capture confirms video remains visible. Telemetry records Realtime
+cleanup before local `wake_worker_listening`; no second mic owner was started.
+Eight focused files: **98 tests passed**; subsequent catalog/wake checks:
+**26 passed** (overlapping coverage). Typecheck/build and diff checks passed.
+Normal LaunchAgent PID **56497** runs the corrected build; debug window closed.
+Physical spoken wake detection remains pending operator confirmation; a
+speaker-generated synthetic phrase did not establish detection. Operator config
+is unchanged. No phase promotion.
+
 ## Current follow-up: wake diagnostics and debug errors — 2026-10-04
 
 Operator reported repeated spoken wake failures during the loop. Historical

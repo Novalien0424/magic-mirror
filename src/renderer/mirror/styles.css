@@ -22,7 +22,7 @@ body * { cursor: none !important; }
 .mirror-presentation[data-media-video="true"] > .presentation { opacity: 0; }
 .mirror-presentation[data-loading="true"] > .presentation,
 .mirror-presentation[data-loading="true"] > .scene-visual { visibility: hidden; opacity: 0; }
-.mirror-presentation[data-mode="reflective"]:not([data-phase="awake"]) > .scene-visual { visibility: hidden; opacity: 0; }
+.mirror-presentation[data-mode="reflective"]:not([data-phase="awake"]):not([data-media-video="true"]) > .scene-visual { visibility: hidden; opacity: 0; }
 .screen.screen--loading { background: #000000; }
 
 .avatar-stage {

@@ -8,12 +8,14 @@ export type WakeConversationAction = Readonly<{
 export function createWakeConversationActivation(options: {
   readonly getLifecycle: () => LifecycleState
   readonly startConversation: () => PromiseLike<Record<string, unknown>>
+  readonly beforeStart?: () => PromiseLike<void>
   readonly reacquireWake: () => PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
 }): { readonly handleWake: () => Promise<WakeConversationAction> } {
   return {
     async handleWake(): Promise<WakeConversationAction> {
       const lifecycle = options.getLifecycle()
       if (lifecycle === 'dormant') {
+        await options.beforeStart?.()
         const result = await Promise.resolve(options.startConversation())
         const status = result['status']
         const reason = result['reason']

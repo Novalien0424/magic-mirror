@@ -6,6 +6,7 @@ describe('wake conversation activation', () => {
     const calls: string[] = []
     const activation = createWakeConversationActivation({
       getLifecycle: () => 'dormant',
+      beforeStart: async () => { calls.push('stop_media') },
       startConversation: async () => {
         calls.push('start_conversation')
         return { status: 'success', reason: 'runtime_command_delivered' }
@@ -20,7 +21,7 @@ describe('wake conversation activation', () => {
       status: 'success',
       reason: 'runtime_command_delivered',
     })
-    expect(calls).toEqual(['start_conversation'])
+    expect(calls).toEqual(['stop_media', 'start_conversation'])
   })
 
   it('stays in OfflineLoop and reacquires local listening without starting cloud', async () => {

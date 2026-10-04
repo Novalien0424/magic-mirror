@@ -323,6 +323,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   })
   activation = createWakeConversationActivation({
     getLifecycle: () => runtime.snapshot().lifecycle,
+    beforeStart: async () => { await sceneRuntimeControl?.stopAll() },
     startConversation: () => runtime.manualStart(),
     reacquireWake: () => supervisor.acquire(),
   })
@@ -1279,6 +1280,8 @@ void app.whenReady().then(async () => {
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
+      void sceneRuntimeControl?.stopAll({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
+    } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {
       void sceneRuntimeControl?.stopAll()
     }
     boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'

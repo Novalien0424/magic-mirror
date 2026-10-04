@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createWakeWorkerPackage, wakeTuningIsActive } from '../../../src/main/wake/runtime-config'
 
 const loaded = {
@@ -22,6 +23,10 @@ const loaded = {
 }
 
 describe('wake tuning activation', () => {
+  it('uses the operator-requested global Mac threshold', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../../../resources/wake-models/sherpa-magic-mirror-mac-v1/manifest.json', import.meta.url), 'utf8'))
+    expect(manifest.tuning.threshold).toBe(0.32)
+  })
   it('uses package defaults when tuning is disabled or absent', () => {
     expect(wakeTuningIsActive({ phrase: '魔鏡阿魔鏡', packageId: 'magic-mirror-zh-test-v1', modelVersion: 'test-v1' })).toBe(false)
     expect(createWakeWorkerPackage(loaded, { phrase: '魔鏡阿魔鏡', packageId: 'magic-mirror-zh-test-v1', modelVersion: 'test-v1' }).tuning)

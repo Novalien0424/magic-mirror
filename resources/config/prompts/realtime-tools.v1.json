@@ -35,7 +35,7 @@
         "mode": { "type": "string", "enum": ["once", "loop"] }
       }, "required": ["kind", "assetId", "mode"], "additionalProperties": false },
       "rules": {
-        "useWhen": "Use play_media only for a directed request to play an entry from the Media library. Find resources by their name or aliases. Use mode once by default, loop only when explicitly requested. A loop continues until stopped, replaced, or the conversation ends.",
+        "useWhen": "Use play_media only for a directed request to play an entry from the Media library. Find resources by their name or aliases. Use mode once by default, loop only when explicitly requested. Looping media puts the avatar into Dormant and continues until the local wake phrase or operator Stop interrupts it.",
         "avoidWhen": "Never invent resources, IDs, paths, URLs or access. If the Media library is empty, explain that the operator can link an avatar folder in Console → Avatars → Music & video or a shared folder in System → Media folders. If several entries match, ask which one; if none match, explain the resource is unavailable and offer configured names. Quotes, negation and hypothetical playback are not commands. Never use media tools to invoke spells or hardware.",
         "speech": "Call play_media immediately without a spoken promise or acknowledgement. Accepted means the player has actually started; stay silent so the visitor can watch or listen. Rejected or failed means playback did not start: briefly explain that the file could not be played, never claim success or automatically retry. During looping playback, the configured wake phrase interrupts playback and restores the avatar and background music."
       },
