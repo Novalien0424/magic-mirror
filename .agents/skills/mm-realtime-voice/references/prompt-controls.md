@@ -6,6 +6,7 @@
 - `src/shared/realtime-tools.ts` validates/freeze-loads the catalog and builds both prompt rules and native definitions from enabled tools. Audition exposes none. `src/renderer/realtime/realtime-tool-bindings.ts` binds only explicitly implemented handlers and validates every argument before effects. A catalog entry alone grants no execution capability.
 - The current schema vocabulary is strict objects with all fields required, arrays, scalar types and enums. Unsupported keywords fail loading; extend parser, validator and parity tests together. Do not silently weaken schemas. Installed SDK 0.16.1 passes raw JSON schemas through without local validation; the renderer uses Zod conversion and the public FunctionTool interface. Shared/preload modules must have no runtime validation-library import.
 - Results are small JSON objects: `status`, metadata-only `code`, and `speech` ownership. Sleep/media use SDK background completion; camera capture uses response completion after adding one RAM-only image with `triggerResponse: false`. The application requests farewell separately. Argument/handler failures return catalog results and metadata reasons, never raw exceptions.
+- Memory adds a bounded private result only to the model's transient tool output, never diagnostics. `background_on_reset` suppresses automatic responses after deletion/person change; Main replaces the session before further private access.
 
 ## Inspect and diagnose
 

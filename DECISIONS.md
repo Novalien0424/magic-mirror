@@ -1,5 +1,25 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-04 — Reusable local lasting memory (user request)
+
+- Selected structured memories may persist in a private Main-owned SQLite file,
+  scoped by avatar and person. Raw transcripts/audio, transient context and
+  diagnostics retain invariant 1's RAM-only/content-free boundaries. This
+  supersedes older blanket RAM-only wording for selected memory records only.
+- Begin with explicit remember/correct/forget requests and authorized Console
+  editing; automatic extraction is not enabled. Verbal identity confirmation
+  is application-checked on a separate later turn. This is self-identification,
+  not biometric authentication. Guest IDs remain Main-only.
+- Retrieval is bounded lexical search with Chinese segmentation, not semantic
+  search. Use existing node:sqlite, no new server, vector extension or embedding
+  model. Reconsider vectors only with measured recall failures.
+- Memory lives outside public configuration and the prompt inspector. Console
+  edits require Dormant; voice deletion or person change replaces the cloud
+  session to remove old private context. No implicit sharing across avatars.
+- Private files use owner-only permissions and SQLite secure deletion. External
+  backups/OS snapshots are outside app deletion guarantees; no app backups of
+  this store are created. Local storage still sends selected recall to Realtime.
+
 [AGENTS](AGENTS.md) owns execution policy and canonical invariants; [PROGRESS](PROGRESS.md) owns current delivery/evidence. This file records implementation decisions, not task status. The [pre-compaction ledger](docs/archive/decisions-before-harness-2026-09-13.md) preserves complete dated wording and earlier source links.
 
 ## 2026-10-03 — Current Sol worker routing (user decision)

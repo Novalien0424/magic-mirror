@@ -79,6 +79,9 @@ export interface RealtimeSessionDependencies {
 }
 
 export interface CreateRealtimeSessionInput {
+  readonly onMemory?: import('../../shared/bridge').MirrorBridge['memory']
+  readonly onMemoryInput?: import('../../shared/bridge').MirrorBridge['memoryInput']
+  readonly onMemoryReset?: import('../../shared/bridge').MirrorBridge['resetMemorySession']
   readonly microphoneRecovery?: {
     readonly mediaDevices: MediaDevices
     readonly getConstraints: () => Promise<true | MediaTrackConstraints>
@@ -444,6 +447,10 @@ export function createRealtimeSession(
   let farewellAudioStarted = false
   let sleepAudioSuppressed = false
   let mediaPlaybackActive = false
+  let memoryResetPending = false
+  let memoryInputQueue: Promise<unknown> = Promise.resolve()
+  let memoryInputRevision = 0
+  const memoryInputWaiters = new Set<() => void>()
   let farewellSequence = 0
   let farewellCueId = ''
   const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
@@ -458,6 +465,28 @@ export function createRealtimeSession(
     const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
     const tools = bindRealtimeTools(toolSpecs, {
+      memory: async args => {
+        if (closed || mediaPlaybackActive || returnToDormantPending || !input.onMemory) return 'failed'
+        await memoryInputQueue
+        if (closed || mediaPlaybackActive || returnToDormantPending) return 'ignored'
+        const revision = memoryInputRevision
+        let memory = await input.onMemory(args as unknown as import('../../shared/memory').MemoryRequest,
+          { realtimeSessionId: input.sessionId, sessionGeneration })
+        if (memory.code === 'memory_confirmation_pending') {
+          if (revision === memoryInputRevision) await new Promise<void>(resolve => {
+            const done = () => { clearTimeout(timer); memoryInputWaiters.delete(done); resolve() }
+            const timer = setTimeout(done, 1500)
+            memoryInputWaiters.add(done)
+          })
+          await memoryInputQueue
+          if (closed || mediaPlaybackActive) return 'ignored'
+          memory = await input.onMemory(args as unknown as import('../../shared/memory').MemoryRequest,
+            { realtimeSessionId: input.sessionId, sessionGeneration })
+        }
+        if (closed || mediaPlaybackActive) return 'ignored'
+        memoryResetPending ||= ['memory_forgotten', 'memory_clean_session_required'].includes(memory.code)
+        return { outcome: memory.status, memory }
+      },
       capture_camera: async () => {
         if (closed || mediaPlaybackActive || returnToDormantPending || !input.onCameraCapture) return 'ignored'
         const frame = await input.onCameraCapture({ realtimeSessionId: input.sessionId, sessionGeneration })
@@ -510,6 +539,7 @@ export function createRealtimeSession(
       tracingDisabled: true,
       config: {
         tracing: null,
+        providerData: { truncation: { type: 'retention_ratio', retention_ratio: 0.8, token_limits: { post_instructions: 16000 } } },
         audio: {
           input: input.preview ? { turnDetection: null, transcription: null } : {
             noiseReduction: { type: 'far_field' },
@@ -693,6 +723,7 @@ export function createRealtimeSession(
   const closeLegacySession = (): void => {
     if (closed) return
     closed = true
+    for (const done of memoryInputWaiters) done()
     closePromise = (async () => {
       if (microphoneRecovery) await microphoneRecovery.stop()
       closeWithoutMetadata(session)
@@ -973,6 +1004,15 @@ export function createRealtimeSession(
         return
       }
       if (mediaInput) return
+      if (input.onMemoryInput) memoryInputQueue = memoryInputQueue.then(async () => {
+        if (!closed) {
+          const result = await input.onMemoryInput!('complete', itemId, transcript, { realtimeSessionId: input.sessionId, sessionGeneration })
+          memoryInputRevision++
+          for (const done of memoryInputWaiters) done()
+          return result
+        }
+        return undefined
+      }).catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
       for (const listener of [...inputTranscriptCompletedListeners]) {
         try {
           listener(Object.freeze({ itemId, transcript }))
@@ -1026,6 +1066,12 @@ export function createRealtimeSession(
   session.on('transport_event', handleTransportEvent)
   session.on('error', handleSessionError)
   session.on('agent_tool_end', (_context, _agent, completedTool) => {
+    if (!closed && memoryResetPending && readProperty(completedTool, 'name') === 'memory') {
+      memoryResetPending = false
+      void Promise.resolve(session.interrupt()).then(() => input.onMemoryReset?.({ realtimeSessionId: input.sessionId, sessionGeneration }))
+        .catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
+      return
+    }
     if (closed || !returnToDormantPending || farewellRequested || !sleepToolNames.has(readProperty(completedTool, 'name') as string)) return
     farewellRequested = true
     try {
@@ -1152,6 +1198,7 @@ export function createRealtimeSession(
     if (closePromise !== null) return closePromise
     cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
+    for (const done of memoryInputWaiters) done()
     closePromise = (async () => {
     await microphoneRecovery?.stop()
     clearTimeout(cueCancelTimer)
@@ -1178,6 +1225,10 @@ export function createRealtimeSession(
     if (mediaInputItems.has(itemId)) return
     if (createdInputItemIds.has(itemId)) return
     createdInputItemIds.add(itemId)
+    if (input.onMemoryInput) memoryInputQueue = memoryInputQueue.then(() => {
+      if (!closed) return input.onMemoryInput!('start', itemId, '', { realtimeSessionId: input.sessionId, sessionGeneration })
+      return undefined
+    }).catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
     for (const listener of [...inputItemCreatedListeners]) {
       try {
         listener(itemId)

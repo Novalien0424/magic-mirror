@@ -20,6 +20,8 @@ import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/br
 import type { LifecycleState } from '../shared/types'
 import type { ImportedMedia, MediaImportEntry } from '../shared/media-import'
 import { createVoicePreviewLease, type VoicePreviewLease } from './realtime/voice-preview'
+import { MemoryStore } from './memory/store'
+import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
 import { initializeAudioPreferences } from './audio-preferences'
 import { createCrashRecovery } from './crash-recovery'
@@ -41,6 +43,7 @@ import {
   dispatchMirrorRealtimeRuntimeCommand,
   publishSnapshot,
   registerIpcHandlers,
+  authorizeSender,
   type SceneRuntimeControl,
 } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
@@ -1276,7 +1279,32 @@ void app.whenReady().then(async () => {
       }
     },
   })
+  let memoryStore: MemoryStore | undefined
+  try {
+    memoryStore = new MemoryStore(join(app.getPath('userData'), 'private-memory', 'memory.sqlite'))
+    await runtime.setMemoryRuntimeStatus('ready')
+  } catch {
+    await runtime.setMemoryRuntimeStatus('degraded')
+    runtime.telemetry.emit({ module: 'memory', event: 'memory_storage', status: 'degraded', reason: 'memory_storage_unavailable', source: 'runtime' })
+  }
+  const memory = registerMemoryIpc({
+    handle: (channel, handler) => ipcMain.handle(channel, handler),
+    authorize: (event, kind) => authorizeSender(event, kind, windows).ok,
+    state: () => { const snapshot = runtime.snapshot(); return { active: snapshot.lifecycle === 'active',
+      avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration } },
+    store: () => memoryStore ??= new MemoryStore(join(app.getPath('userData'), 'private-memory', 'memory.sqlite')),
+    knownAvatar: async id => { const config = await runtime.console.getConfig(); return config.ok && !!config.value.active.avatarCatalog?.avatars.some(a => a.id === id) },
+    resetConversation: async () => {
+      const result = await runtime.rolloverAtSafeBoundary()
+      if (!['dispatched', 'success'].includes(result.status as string)) { await runtime.manualStop(); throw new Error('memory_session_reset_failed') }
+    },
+    canEdit: () => runtime.snapshot().lifecycle === 'dormant',
+    report: code => { if (code === 'memory_storage_unavailable') void runtime.setMemoryRuntimeStatus('degraded')
+      runtime.telemetry.emit({ module: 'memory', event: 'memory_operation', status: code.includes('failed') || code.includes('unavailable') ? 'degraded' : 'info', reason: code, source: 'runtime' }) },
+  })
+  app.once('will-quit', () => { try { memoryStore?.close() } catch { /* No private error content. */ } })
   runtime.subscribe((snapshot) => {
+    memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {

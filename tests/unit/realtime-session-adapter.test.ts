@@ -113,6 +113,42 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('waits for a late spoken identity confirmation before retrying recall', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    const memory = vi.fn().mockResolvedValueOnce({ status: 'rejected', code: 'memory_confirmation_pending' })
+      .mockResolvedValueOnce({ status: 'accepted', code: 'memory_recalled', entries: [] });
+    const memoryInput = vi.fn(async () => ({ status: 'accepted' as const, code: 'memory_identity_confirmed' }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMemory: memory, onMemoryInput: memoryInput });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
+    const result = agent.tools.find(t => t.name === 'memory')!.invoke({}, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' }));
+    await vi.waitFor(() => expect(memory).toHaveBeenCalledOnce());
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'late-confirmation' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'late-confirmation', transcript: 'yes' });
+    expect(await result).toMatchObject({ memory: { code: 'memory_recalled' } });
+    expect(memory).toHaveBeenCalledTimes(2);
+    await handle.close('manual_stop');
+  });
+  it('orders memory input observation before tools, drops late recall and resets only after tool output', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), order: string[] = [];
+    const memoryInput = vi.fn(async (phase: string) => { order.push(phase); return { status: 'accepted' as const, code: 'memory_turn_observed' } });
+    const memory = vi.fn(async () => { order.push('tool'); return { status: 'accepted' as const, code: 'memory_forgotten' } });
+    const reset = vi.fn(async () => ({ status: 'accepted' as const, code: 'memory_session_replaced' }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMemory: memory, onMemoryInput: memoryInput, onMemoryReset: reset });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'fixture-input' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'fixture-input', transcript: 'Synthetic confirmation' });
+    const tool = agent.tools.find(t => t.name === 'memory')!;
+    expect(isBackgroundResult(await tool.invoke({}, JSON.stringify({ action: 'forget', name: '', topic: 'Fixture', text: '', query: '' })))).toBe(true);
+    expect(order).toEqual(['start', 'complete', 'tool']);
+    expect(reset).not.toHaveBeenCalled();
+    probe.emit('agent_tool_end', {}, {}, { name: 'memory' });
+    await vi.waitFor(() => expect(reset).toHaveBeenCalledOnce());
+    expect(probe.interrupt).toHaveBeenCalledOnce();
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('Synthetic confirmation');
+    await handle.close('manual_stop');
+    expect(await tool.invoke({}, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' }))).toMatchObject({ status: 'failed' });
+    expect(memory).toHaveBeenCalledOnce();
+  });
   it('disables conversation during media, drops background turns, and still accepts the exact wake phrase', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn(), onMediaRequest = vi.fn(async () => 'accepted' as const);
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMediaRequest,

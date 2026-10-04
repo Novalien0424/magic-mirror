@@ -274,6 +274,8 @@ export interface BootSubscription {
 }
 
 export interface BootRuntime {
+  getPublishedAvatarId(): string
+  setMemoryRuntimeStatus(status: 'ready' | 'degraded'): Promise<void>
   readonly ready: Promise<void>
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
@@ -2048,6 +2050,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     })
   }
 
+  async function setMemoryRuntimeStatus(status: 'ready' | 'degraded'): Promise<void> {
+    await ready
+    modules.memory = status
+    refreshSnapshot()
+    notifyListeners()
+  }
+
   async function setCameraRuntimeStatus(status: 'ready' | 'degraded', reason: string): Promise<void> {
     await ready
     modules.camera = status
@@ -2652,6 +2661,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     },
     appendPhaseTestRecord,
     createInitialRuntimeSnapshotsForTest: () => consoleDataPlane.createInitialRuntimeSnapshotsForTest(),
+    getPublishedAvatarId: () => publishedAvatarId,
+    setMemoryRuntimeStatus,
     snapshot: () => projectAppSnapshot(current),
     handleRealtimeFailure,
     handleRealtimeRuntimeOutcome,

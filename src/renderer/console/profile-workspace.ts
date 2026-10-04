@@ -7,7 +7,7 @@ import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
 import { DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
 import { draftFingerprint } from './scene-editor-model'
 
-export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Spells & scenes'] as const
+export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Memories', 'Spells & scenes'] as const
 export const LIBRARY_SECTIONS = ['Rig library', 'Media library', 'Action library'] as const
 export type ProfileSection = typeof PROFILE_SECTIONS[number] | typeof LIBRARY_SECTIONS[number]
 

@@ -59,6 +59,7 @@ import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
 import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection, type SavedDraftRefresh } from './profile-workspace'
 import { ActiveAvatarPanel } from './ActiveAvatarPanel'
+import { MemoryPanel } from './MemoryPanel'
 import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
@@ -1725,7 +1726,7 @@ export function ScenesPanel({
       {rawDraft?.avatarCatalog && editingAvatar && <header className="profile-editing-header" aria-label="Current avatar being edited">
         <p className="console__eyebrow">Editing avatar settings</p>
         <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
-        <p>{section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? (applyOnSave ? 'This avatar is active on Mirror. Use Save & apply all changes below.' : 'This avatar is active on Mirror. Edits apply after you publish.') : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
+        <p>{section === 'Memories' ? 'Memory changes save immediately.' : section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? (applyOnSave ? 'This avatar is active on Mirror. Use Save & apply all changes below.' : 'This avatar is active on Mirror. Edits apply after you publish.') : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
         <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
           {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
         </select></HelpField>
@@ -1733,13 +1734,14 @@ export function ScenesPanel({
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
         {PROFILE_SECTIONS.map(label => <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
       </nav>
-      {section !== 'Music & video' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
+      {section !== 'Music & video' && section !== 'Memories' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
       <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
-        <p>{section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
+        <p>{section === 'Memories' ? 'What this avatar remembers between conversations.' : section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
       </div>
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
+      {visible && section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
@@ -1798,7 +1800,7 @@ export function ScenesPanel({
           </fieldset>
         </details>)}
       </fieldset> : null}
-      <div className="console__action-row console__publish-bar">
+      <div className="console__action-row console__publish-bar" hidden={section === 'Memories'}>
         <div className="profile-publish-status"><span>Published v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved changes' : payload?.publishDiff.changed.length ? 'Awaiting publish' : 'Up to date'}</span>
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>

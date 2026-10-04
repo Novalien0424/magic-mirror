@@ -14,7 +14,7 @@ Runtime model/voice IDs come from versioned config and frozen session/job snapsh
 | Barge-in, output completion, mic handoff, noisy-room tuning, rollover or profile change | [playback/lifecycle](references/playback-lifecycle.md) |
 | Responses memory extractor | [memory extraction](references/memory-extraction.md) |
 
-Transcripts, conversation audio, extracted values and injected private context remain RAM-only. Disable audio history and tracing before connect; never expose the master key. Voice never waits for transcripts; missing text disables transcript-driven controls with a metadata reason.
+Transcripts, conversation audio and injected private context remain RAM-only. The 2026-10-04 ruling permits selected structured memories in Main's private store. Disable audio history and tracing before connect; never expose the master key. Voice never waits for transcripts; missing text disables transcript-driven controls with a metadata reason.
 
 Use one microphone owner with release then acquire. Close caller-owned tracks explicitly. Current processed output mutes the SDK receiver and sends only the shared audio graph to speakers. Actual playback plus the processed tail, not generation completion, governs transitions.
 

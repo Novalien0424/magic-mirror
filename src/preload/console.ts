@@ -52,6 +52,7 @@ const FINALIZE_VISUAL_CHANNEL = 'console:finalize-visual' as const
 const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
+  memory: request => ipcRenderer.invoke('console:memory', request),
   wakeCalibration: command => ipcRenderer.invoke('console:wake-calibration', command),
   acquireVoicePreview(request) { return ipcRenderer.invoke('console:voice-preview-acquire', request) },
   releaseVoicePreview(token) { return ipcRenderer.invoke('console:voice-preview-release', token) },

@@ -9,7 +9,7 @@ description: "Resolve Magic Mirror privacy, guest identity, memory ownership, mi
 
 ## Non-obvious distinctions
 
-- **1 / 12:** diagnostics contain metadata, never utterances, conversation audio, extracted values, private prompts, credentials, camera frames or embeddings. The RAM Console transcript clears on Dormant/restart. Future memory schemas do not authorize persistence under today's ruling.
+- **1 / 12:** diagnostics contain metadata, never utterances, conversation audio, memory values, private prompts, credentials, camera frames or embeddings. The RAM Console transcript clears on Dormant/restart. The 2026-10-04 ruling permits explicitly selected structured memories in Main's private local store; raw conversations and injected context remain ephemeral.
 - **2 / 3 / 4:** public avatar/scene IDs and spoken names are not private guest IDs. Model confirmation returns only yes/no/unclear; Main resolves its pending candidate. Clear that candidate on denial, second ambiguous response, owner switch, session close or sleep. Multiple people require explicit conversation-owner selection, not model disambiguation.
 - **5 / 6:** freeze extraction ownership at turn start, not completion; any control intent skips extraction. Keep debug decisions content-free and Main-local where they include private IDs.
 - **7:** normalize and compare the entire final transcript. Partial adapter failure still consumes the turn's one scene trigger. Only approved typed presets control hardware.
