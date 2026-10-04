@@ -1117,15 +1117,15 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [])
 
   useEffect(() => {
-    avatarMediaControllerRef.current?.setLifecycle(view.state)
-    if (view.state !== 'active') {
+    avatarMediaControllerRef.current?.setLifecycle(mediaSkillState.active ? 'active' : view.state)
+    if (view.state !== 'active' && !mediaSkillState.active) {
       sceneVisualControllerRef.current?.handleCommand({
         type: 'scene_visual', action: 'stop', runId: 'all', sceneId: 'all',
       })
     }
     if (avatarState !== null) reportAvatarRuntime({ state: avatarState })
     else if (view.state === 'offlineLoop') reportAvatarRuntime({ state: 'OfflineLoop' })
-  }, [avatarState, view.state])
+  }, [avatarState, view.state, mediaSkillState.active])
 
   useEffect(() => {
     const bridge = window.magicMirror
@@ -1272,7 +1272,8 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     return (
       <div className="mirror-presentation" data-mode={presentation.config.mode} data-phase={presentationPhase} data-loading={!presentationLoaded}
         data-media-video={mediaSkillState.hideAvatar} style={{ '--media-fade-ms': `${mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
-        <PresentationStage payload={presentation} lifecycle={view.state} onPhase={phase => {
+        <PresentationStage payload={presentation}
+          lifecycle={mediaSkillState.active && !mediaSkillState.hideAvatar ? 'active' : view.state} onPhase={phase => {
           presentationPhaseRef.current = phase
           setPresentationPhase(phase)
           greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)

@@ -36,7 +36,7 @@
   ],
   "tuning": {
     "sampleRateHz": 16000,
-    "threshold": 0.45,
+    "threshold": 0.32,
     "score": 1,
     "numTrailingBlanks": 1
   },

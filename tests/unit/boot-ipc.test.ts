@@ -480,22 +480,22 @@ function registerTestIpcHandlers(
   events: MetadataEvent[],
   emit: (event: MetadataEvent) => void = (event) => events.push({ ...event }),
   extra: Record<string, unknown> = {},
-): RegisteredIpcHarness {
+): RegisteredIpcHarness & { control: mainIpc.SceneRuntimeControl } {
   const registered = makeIpcMainRegistrar()
   const register = registerIpcHandlers as unknown as (options: {
     ipcMain: IpcMainRegistrar
     runtime: BootRuntimeLike
     windows: unknown
     telemetry: { emit(event: MetadataEvent): void }
-  }) => void
-  register({
+  }) => mainIpc.SceneRuntimeControl
+  const control = register({
     ...extra,
     ipcMain: registered.ipcMain,
     runtime,
     windows,
     telemetry: { emit },
   })
-  return registered
+  return { ...registered, control }
 }
 
 function makeTrackedRendererWindows() {
@@ -595,7 +595,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
     const config = { musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
     const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
-    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia })
+    const requestSleep = vi.fn(async () => ({ status: 'success' }))
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia })
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
@@ -603,8 +604,15 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
     const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music')![1] as any
+    expect(requestSleep).not.toHaveBeenCalled()
     registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
     expect(await started).toBe('accepted')
+    expect(requestSleep).toHaveBeenCalledOnce()
+    send.mockClear()
+    await registered.control.stopAll({ preserveSleepingMedia: true })
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+    await registered.control.stopAll()
+    expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
     expect(getFolderMedia).toHaveBeenCalledWith('raven')
     await handler(event, { request: { action: 'stop' }, identity })
   })

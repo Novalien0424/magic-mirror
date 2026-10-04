@@ -193,7 +193,7 @@ export interface RegisterIpcHandlersOptions {
 }
 
 export interface SceneRuntimeControl {
-  stopAll(): Promise<void>
+  stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void>
 }
 
 export type SenderAuthResult =
@@ -1281,11 +1281,15 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     musicGain: 1,
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
+  let sleepingMedia = false
   const mediaSkill = createMediaSkillRuntime({
     activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
     dispatch: command => dispatchMirrorAvatarControl(command, windows),
-    report: reason => emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
-      status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason }),
+    report: reason => {
+      if (!mediaSkill.isActive()) sleepingMedia = false
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
+        status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason })
+    },
   })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0
@@ -1787,7 +1791,22 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       mediaSkill.stop('media_playback_failed')
       return 'failed'
     })
-    return typeof outcome === 'string' ? outcome : outcome.pending
+    const result = typeof outcome === 'string' ? outcome : await outcome.pending
+    if (result === 'accepted' && request.action === 'play' && request.mode === 'loop'
+      && current() && mediaSkill.isActive() && runtime.requestSleep) {
+      // Let the existing lifecycle release Realtime's mic before the local
+      // wake worker acquires it. The loop survives this intentional sleep.
+      sleepingMedia = true
+      try {
+        const sleep = await runtime.requestSleep()
+        if (readProperty(sleep, 'status') !== 'success') throw new Error('media_wake_handoff_failed')
+      } catch {
+        sleepingMedia = false
+        mediaSkill.stop('media_wake_handoff_failed')
+        return 'failed'
+      }
+    }
+    return result
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {
@@ -2460,8 +2479,14 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
 
   return Object.freeze({
-    async stopAll(): Promise<void> {
-      await enqueueSceneOperation(async () => { mediaSkill.stop(); await cachedSceneRuntime?.value.stopAll() })
+    async stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void> {
+      await enqueueSceneOperation(async () => {
+        if (!options?.preserveSleepingMedia || !sleepingMedia) {
+          sleepingMedia = false
+          mediaSkill.stop()
+        }
+        await cachedSceneRuntime?.value.stopAll()
+      })
     },
   })
 }
