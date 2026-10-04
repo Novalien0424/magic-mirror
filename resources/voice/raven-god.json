@@ -1,0 +1,23 @@
+{
+  "id": "raven-god",
+  "name": "Raven God (saved Windows tuning)",
+  "description": "Operator-published Raven voice settings from Windows config v29, exported 2026-10-04. Based on the built-in God profile, with speed 0.8 and pitch -4.",
+  "voice": "cedar",
+  "voiceSpeed": 0.8,
+  "speakingStyle": "Speak in a deep, resonant masculine bass register with calm authority and solemn, deliberate phrasing. Sustain rounded vowels and use controlled chest resonance, clear consonants and firm downward phrase endings. Leave natural pauses between clauses. Keep emotion restrained and speech intelligible; do not shout, growl, whisper or sing.",
+  "voiceEffects": {
+    "enabled": true,
+    "pitchSemitones": -4,
+    "formantSemitones": -1.5,
+    "formantCompensation": true,
+    "warmthDb": 1.8,
+    "brightnessDb": 0.4,
+    "grit": 0.02,
+    "roomMix": 0.16,
+    "roomSize": "hall",
+    "echoMix": 0.22,
+    "echoDelayMs": 230,
+    "echoRepeats": 3,
+    "outputTrimDb": -5.5
+  }
+}

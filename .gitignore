@@ -29,10 +29,11 @@ assets/avatar/
 assets/music/
 assets/offline/
 
-# Downloaded Mixkit test media stays local; source/provenance notes are tracked.
-# The public repository does not redistribute standalone stock media files.
+# Downloaded Mixkit test media stays local except the operator-requested Raven
+# fog loop needed for cross-machine restoration; provenance remains adjacent.
 /sample/_media/**/*.wav
 /sample/_media/**/*.webm
+!/sample/_media/raven/fog.webm
 
 # Raven's complete editable archive is tracked for cross-machine development.
 # Preserve its bytes with .gitattributes; see resources/avatar/Raven/README.md.
