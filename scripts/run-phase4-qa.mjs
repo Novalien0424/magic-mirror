@@ -7,7 +7,7 @@ import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--memory']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -23,10 +23,11 @@ const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
 const ritualOnly = process.argv.includes('--ritual')
 const mediaSkillOnly = process.argv.includes('--media-skill')
+const memoryOnly = process.argv.includes('--memory')
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || mediaSkillOnly
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || mediaSkillOnly || memoryOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()
@@ -258,6 +259,7 @@ const environment = {
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
   MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
+  MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',

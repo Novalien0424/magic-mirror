@@ -15,7 +15,7 @@ export interface RealtimeToolSpec {
   readonly description: string
   readonly parameters: ParameterSchema & { type: 'object'; properties: Record<string, ParameterSchema>; required: string[]; additionalProperties: false }
   readonly rules: { useWhen: string; avoidWhen: string; speech: string }
-  readonly completion: 'background' | 'response' | 'background_on_success'
+  readonly completion: 'background' | 'response' | 'background_on_success' | 'background_on_reset'
   readonly results: Readonly<Record<ToolOutcome, ToolResult>>
 }
 export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[] }
@@ -57,7 +57,7 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
     if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
       || !text(spec.name) || !/^[a-z][a-z0-9_]{0,63}$/.test(spec.name) || names.has(spec.name)
       || !text(spec.handler) || typeof spec.enabled !== 'boolean' || spec.availability !== 'conversation'
-      || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
+      || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success', 'background_on_reset'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
     names.add(spec.name)
     const parameters = spec.parameters, rules = spec.rules, results = spec.results
     if (!record(parameters) || parameters.type !== 'object' || !validSchema(parameters)

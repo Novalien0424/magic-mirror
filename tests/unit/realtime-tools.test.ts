@@ -11,6 +11,14 @@ const specs = () => resolveRealtimeTools('Rest.').filter(spec => spec.handler ==
 const call = (tool: ReturnType<typeof bindRealtimeTools>[number], input: string) => invokeFunctionTool({tool, input, runContext:new RunContext({})})
 
 describe('structured Realtime tool catalog', () => {
+  it('returns bounded memory results but suppresses generation for a clean memory reset', async () => {
+    const handler = vi.fn(async () => ({ outcome: 'accepted' as const, memory: { status: 'accepted' as const, code: 'memory_recalled', entries: [] } }))
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'memory'), { memory: handler }, vi.fn())
+    const args = JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' })
+    expect(await call(tool, args)).toMatchObject({ memory: { code: 'memory_recalled', entries: [] } })
+    handler.mockResolvedValueOnce({ outcome: 'accepted', memory: { status: 'accepted', code: 'memory_forgotten', entries: [] } })
+    expect(isBackgroundResult(await call(tool, args))).toBe(true)
+  })
   it('keeps confirmed media silent but lets the avatar explain a playback failure', async () => {
     const media = vi.fn(async (): Promise<'accepted' | 'failed'> => 'accepted')
     const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'play_media'), { play_media: media }, vi.fn())
@@ -120,7 +128,7 @@ describe('structured Realtime tool catalog', () => {
   })
   it('validates media arguments and serializes all native tools through the SDK', async () => {
     const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
-    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted' }, vi.fn())
+    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted', memory: async () => 'rejected' }, vi.fn())
     const play = tools.find(t => t.name === 'play_media')!
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))

@@ -67,6 +67,9 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'requestSleep'
   | 'requestMedia'
   | 'captureCamera'
+  | 'memory'
+  | 'memoryInput'
+  | 'resetMemorySession'
   | 'reportAvatarRuntime'
   | 'getSceneCatalog'
   | 'triggerScene'
@@ -464,6 +467,9 @@ function createMirrorRealtimeRuntimeOwner(
     onReturnToDormant: () => bridge.requestSleep(),
     onMediaRequest: (request, identity) => bridge.requestMedia(request, identity),
     onCameraCapture: identity => bridge.captureCamera(identity),
+    onMemory: bridge.memory,
+    onMemoryInput: bridge.memoryInput,
+    onMemoryReset: bridge.resetMemorySession,
     waitForWakePresentation,
     onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
     onCompletedInputTranscript: async (input) => {

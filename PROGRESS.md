@@ -1,5 +1,30 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-04
 
+## Current: reusable local memory — 2026-10-04
+
+Implemented explicit remember/recall/correct/forget with a private Main-owned
+SQLite/FTS5 store, scoped by avatar and verbally confirmed person. Console →
+Avatars → Memories supports immediate-save add/edit/search/delete. Automatic
+extraction remains off. No vector server, embedding model, dependency or runtime
+model change. [Research, design and limits](docs/reusable-memory-implementation-2026-10-04.md).
+
+TDD covered persistence, correction/deletion, Chinese retrieval, owner/session
+isolation, stale confirmations and late ASR confirmation. Twelve focused unit
+files: **225 passed**, exit 0. `npm run typecheck`, `npm run build`, and
+`git diff --check`: exit 0. `node scripts/run-phase4-qa.mjs --memory`: exit 0,
+**7 Console checks passed** using real rendered controls, preload, Main and
+SQLite in isolated user data. [QA evidence](.artifacts/phase4-qa/2026-10-04T13-13-07-280Z);
+empty-panel screenshot reviewed. Final build additionally clarifies the pending
+confirmation tool instruction; Console implementation is unchanged from that run.
+
+Normal app restored through the existing LaunchAgent, PID **68790**. Main,
+Mirror and Console reported ready; private database created with mode 0600.
+No operator config or existing memories were edited. Live spoken memory-tool
+selection, cloud acceptance of the requested truncation budget, and spoken
+remember → new session → recall → forget remain unverified. These are the next
+acceptance checks, not established by mocked SDK tests or Console QA. No phase
+promotion. Prior operator-confirmed media wake result remains below.
+
 ## Current: local wake during loops, global Mac threshold 0.32 — 2026-10-04
 
 New logs confirmed repeated `media_wake_not_matched` while cloud ASR was used

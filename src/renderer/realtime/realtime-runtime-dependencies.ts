@@ -152,6 +152,9 @@ function adaptRealtimeAudioOutput(
 }
 
 export interface CreateRealtimeRuntimeOwnerDependenciesInput {
+  readonly onMemory?: CreateRealtimeSessionInput['onMemory']
+  readonly onMemoryInput?: CreateRealtimeSessionInput['onMemoryInput']
+  readonly onMemoryReset?: CreateRealtimeSessionInput['onMemoryReset']
   readonly onAudioDegraded?: (reason: string) => void
   readonly audioDevices?: AudioDeviceRouter
   readonly eventSink: RealtimeRuntimeEventSink
@@ -307,6 +310,9 @@ export function createRealtimeRuntimeOwnerDependencies(
         onReturnToDormant: input.onReturnToDormant,
         onMediaRequest: input.onMediaRequest,
         onCameraCapture: input.onCameraCapture,
+        onMemory: input.onMemory,
+        onMemoryInput: input.onMemoryInput,
+        onMemoryReset: input.onMemoryReset,
         waitForOutputTail: async () => { await outputs.get(audioElement)?.waitForTail?.() },
         onAudioActivity: activity => {
           const output = outputs.get(audioElement)
