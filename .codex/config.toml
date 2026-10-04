@@ -1,4 +1,5 @@
-# Codex CLI discovery and dry-runs use --profile nova-auto; the profile is user-level and is never copied here.
+# Optional workers only; AGENTS.md defaults routine work to one agent.
+# CLI workers use the user-level nova-auto profile; never copy its contents here.
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 2

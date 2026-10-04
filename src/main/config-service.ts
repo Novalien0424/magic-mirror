@@ -157,7 +157,8 @@ const mirrorConfigBaseEnvelope = z.object({
 
 const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
   avatarCatalog: avatarCatalogSchema.optional(),
-  presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null).optional(),
+  presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null)
+    .transform(value => parsePresentation(value)!).optional(),
   reasoningEffort: reasoningEffortSchema,
   turnDetectionProfile: turnDetectionProfileSchema,
   visualAssets: z.array(managedVisualAssetSchema).max(256),
@@ -174,6 +175,11 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
     }
     if (p.ambienceId && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
       context.addIssue({ code: 'custom', path: ['presentation', 'ambienceId'], message: 'Unknown music asset' })
+    }
+    for (const key of ['entranceVideoId', 'exitVideoId'] as const) {
+      if (p[key] && !value.visualAssets.some(asset => asset.id === p[key] && asset.kind === 'video')) {
+        context.addIssue({ code: 'custom', path: ['presentation', key], message: 'Unavailable ritual video' })
+      }
     }
   }
   const parsed = sceneCollectionsSchema.safeParse({

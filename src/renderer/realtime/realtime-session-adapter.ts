@@ -94,7 +94,10 @@ export interface CreateRealtimeSessionInput {
   readonly eventSink: RealtimeMetadataEventSink
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: () => void | PromiseLike<void>
+  readonly onMediaRequest?: (request: import('../../shared/media-skill').MediaSkillRequest,
+    identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<import('../../shared/realtime-tools').ToolOutcome>
   readonly waitForOutputTail?: () => Promise<void>
+  readonly waitForWakePresentation?: (signal: AbortSignal) => Promise<void>
   readonly onAudioActivity?: (
     activity:
       | 'speech_started'
@@ -450,6 +453,15 @@ export function createRealtimeSession(
     const agentConstructor = dependencies?.RealtimeAgent ?? RealtimeAgent
     const sessionConstructor = dependencies?.RealtimeSession ?? RealtimeSession
     const tools = bindRealtimeTools(toolSpecs, {
+      play_media: async args => {
+        if (closed || returnToDormantPending || !input.onMediaRequest) return 'ignored'
+        return input.onMediaRequest({ action: 'play', kind: args.kind as 'video' | 'music', assetId: args.assetId as string,
+          mode: args.mode as 'once' | 'loop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
+      },
+      stop_media: async () => {
+        if (closed || !input.onMediaRequest) return 'ignored'
+        return input.onMediaRequest({ action: 'stop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
+      },
       return_to_dormant: async () => {
         if (closed || returnToDormantPending || farewellRequested) return 'ignored'
         // Cut off a premature acknowledgement and require the farewell's own
@@ -519,6 +531,55 @@ export function createRealtimeSession(
 
   let closed = false
   let closePromise: Promise<void> | null = null
+  let greetingState: 'pending' | 'sent' | 'cancelled' | 'none' = input.wakeGreeting?.trim() ? 'pending' : 'none'
+  const greetingAbort = new AbortController()
+  const cancelPendingGreeting = (reason: RealtimeMetadataReason) => {
+    if (greetingState !== 'pending') return
+    greetingState = 'cancelled'
+    greetingAbort.abort()
+    emitMetadata(input, 'realtime_observer_event', 'info', reason, sessionGeneration, createdAt)
+  }
+  const sendGreeting = () => {
+    if (closed || failureReported || greetingState !== 'pending' || greetingAbort.signal.aborted) return
+    greetingState = 'sent'
+    try { speakVerbatim(input.wakeGreeting!) }
+    catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_failed', sessionGeneration, createdAt) }
+  }
+  const scheduleGreeting = () => {
+    if (greetingState !== 'pending') return
+    const wait = input.waitForWakePresentation
+    if (!wait) { sendGreeting(); return }
+    // The detached task owns only greeting scheduling, never connect/ready.
+    void (async () => {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          let settled = false
+          const presentationAbort = new AbortController()
+          const finish = (error?: unknown) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer); greetingAbort.signal.removeEventListener('abort', abort)
+            presentationAbort.abort()
+            if (error !== undefined) reject(error); else resolve()
+          }
+          const abort = () => { const error = new Error('wake_greeting_cancelled'); error.name = 'AbortError'; finish(error) }
+          const timer = setTimeout(() => {
+            emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_gate_timeout', sessionGeneration, createdAt)
+            finish()
+          }, 10250)
+          greetingAbort.signal.addEventListener('abort', abort, { once: true })
+          if (greetingAbort.signal.aborted) { abort(); return }
+          void Promise.resolve().then(() => wait(presentationAbort.signal)).then(() => finish(),
+            error => finish(error ?? new Error('wake_presentation_failed')))
+        })
+      } catch (error) {
+        if (greetingState !== 'pending') return
+        if (readProperty(error, 'name') === 'AbortError') { cancelPendingGreeting('wake_greeting_gate_cancelled'); return }
+        emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_gate_failed', sessionGeneration, createdAt)
+      }
+      sendGreeting()
+    })()
+  }
   let cueSequence = 0
   const cues = new Map<string, { signal: AbortSignal; abort: () => void; finish?: () => void; responseId?: string; done: boolean; cleared: boolean; played: boolean }>()
   let cueMuted: boolean | undefined
@@ -634,6 +695,7 @@ export function createRealtimeSession(
   ): void => {
     if (closed || failureReported) return
     failureReported = true
+    cancelPendingGreeting('wake_greeting_cancelled_failure')
 
     const failure: RealtimeFailureInput = {
       kind,
@@ -817,6 +879,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.speech_started') {
+      cancelPendingGreeting('wake_greeting_cancelled_visitor_speech')
       notifyAudioActivity('speech_started')
       return
     }
@@ -922,6 +985,7 @@ export function createRealtimeSession(
   })
   // Interruption and completion stay on official RealtimeSession event surfaces.
   session.on('audio_interrupted', () => {
+    cancelPendingGreeting('wake_greeting_cancelled_interrupt')
     returnToDormantPending = false
     returnToDormantAudioStarted = false
     farewellRequested = false
@@ -995,10 +1059,7 @@ export function createRealtimeSession(
         })
       }
       if (!closed) emitReady('cause=connect_succeeded')
-      if (!closed && input.wakeGreeting?.trim()) {
-        try { speakVerbatim(input.wakeGreeting) }
-        catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_failed', sessionGeneration, createdAt) }
-      }
+      if (!closed) scheduleGreeting()
     } catch (error: unknown) {
       latestConnectFailureToken ??= classifyConnectFailure(error)
       if (!closed && !failureReported) {
@@ -1021,6 +1082,7 @@ export function createRealtimeSession(
 
   async function interrupt(): Promise<void> {
     if (closed) return
+    cancelPendingGreeting('wake_greeting_cancelled_interrupt')
     try {
       await session.interrupt()
     } catch {
@@ -1030,6 +1092,7 @@ export function createRealtimeSession(
 
   function close(reason: string): Promise<void> {
     if (closePromise !== null) return closePromise
+    cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
     closePromise = (async () => {
     await microphoneRecovery?.stop()

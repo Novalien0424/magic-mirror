@@ -11,6 +11,10 @@ const QA_SOURCE = readFileSync(
   new URL('../../src/main/phase4-qa.ts', import.meta.url),
   'utf8',
 )
+const CONSOLE_QA_SOURCE = readFileSync(
+  new URL('../../src/main/phase4-console-qa.ts', import.meta.url),
+  'utf8',
+)
 const PACKAGE_JSON = JSON.parse(readFileSync(
   new URL('../../package.json', import.meta.url),
   'utf8',
@@ -21,7 +25,7 @@ describe('Phase 4 live QA runner', () => {
     expect(RUNNER_SOURCE.indexOf('await createQaArtifact(repoRoot, stamp)')).toBeLessThan(RUNNER_SOURCE.indexOf('await Promise.all([mkdir'))
     expect(RUNNER_SOURCE.indexOf('await finishQaArtifact(repoRoot, stamp, exitCode)')).toBeGreaterThan(RUNNER_SOURCE.indexOf("child.once('close'"))
   })
-  it.each([['--unknown'], ['--manual', '--live'], ['--editor', '--console'], ['--live', '--live']])(
+  it.each([['--unknown'], ['--manual', '--live'], ['--editor', '--console'], ['--live', '--live'], ['--ritual', '--editor'], ['--ritual', '--live']])(
     'rejects ambiguous or unknown modes before any Electron launch: %j', (...args) => {
       const run = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/run-phase4-qa.mjs', import.meta.url)), ...args], { encoding: 'utf8', windowsHide: true })
       expect(run.status).not.toBe(0)
@@ -46,6 +50,22 @@ describe('Phase 4 live QA runner', () => {
     expect(RUNNER_SOURCE).toContain("repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()")
     expect(RUNNER_SOURCE.indexOf('phase4_qa_requires_canonical_checkout_cwd'))
       .toBeLessThan(RUNNER_SOURCE.indexOf('spawn(electron'))
+  })
+
+  it('selects the platform Electron executable and preserves the canonical Mac runtime boundary', () => {
+    expect(RUNNER_SOURCE).toContain("process.platform === 'win32' ? ['electron.exe']")
+    expect(RUNNER_SOURCE).toContain("process.platform === 'darwin' ? ['Electron.app', 'Contents', 'MacOS', 'Electron'] : ['electron']")
+    expect(RUNNER_SOURCE).toContain("repoRoot !== '/Users/novalien0424/magic-mirror'")
+    expect(RUNNER_SOURCE.indexOf('await verifyBuild(repoRoot)')).toBeLessThan(RUNNER_SOURCE.indexOf('spawn(electron'))
+  })
+
+  it('routes reflective ritual QA through Console with a visible portrait and no live mode', () => {
+    expect(RUNNER_SOURCE).toContain("const ritualOnly = process.argv.includes('--ritual')")
+    expect(RUNNER_SOURCE).toContain('|| videoFades || activeBgmOnly || ritualOnly')
+    expect(RUNNER_SOURCE.match(/^const editorOnly = .+$/m)?.[0]).not.toContain('ritualOnly')
+    expect(RUNNER_SOURCE.match(/^const live = .+$/m)?.[0]).not.toContain('ritualOnly')
+    expect(RUNNER_SOURCE).toContain("MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0'")
+    expect(CONSOLE_QA_SOURCE).toContain("if (process.env['MIRROR_REFLECTIVE_RITUAL_QA'] === '1') return runReflectiveRitualQa(input)")
   })
 
   it('observes a pending mouth probe when an earlier scene assertion fails', () => {

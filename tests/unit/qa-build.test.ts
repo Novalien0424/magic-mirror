@@ -15,7 +15,7 @@ async function fixture(): Promise<string> {
     await mkdir(join(root, file, '..'), { recursive: true })
     await writeFile(join(root, file), 'synthetic')
   }
-  for (const file of ['scripts/build-wake-score-native.ps1', 'scripts/prepare-wake-score-native.mjs',
+  for (const file of ['scripts/build-wake-score-native.ps1', 'scripts/build-wake-score-native.mjs', 'scripts/prepare-wake-score-native.mjs',
     'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift']) {
     await mkdir(join(root, file, '..'), { recursive: true })
     await writeFile(join(root, file), 'synthetic')

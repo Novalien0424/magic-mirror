@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { mirrorConfigSchema } from '../../src/main/config-service'
 import { avatarCatalogFor, projectActiveAvatar } from '../../src/shared/avatar-profiles'
+import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
 import type { MirrorConfig } from '../../src/shared/types'
 
 const baseline = () => { const { schemaVersion: _v, ...config } = JSON.parse(readFileSync('resources/config/default.json', 'utf8')); return config }
@@ -27,6 +28,20 @@ describe('avatar catalog configuration', () => {
   it('accepts two independent characters without losing legacy settings', () => {
     expect(mirrorConfigSchema.safeParse(twoAvatars()).success).toBe(true)
     expect(mirrorConfigSchema.safeParse(baseline()).success).toBe(true)
+  })
+  it('defaults legacy and existing avatars to independent enabled, empty media skills', () => {
+    const legacy = baseline() as MirrorConfig
+    expect(avatarCatalogFor(legacy).avatars[0]!.mediaSkill).toEqual(DEFAULT_MEDIA_SKILL)
+    expect(legacy.avatarCatalog).toBeUndefined()
+    const source = twoAvatars() as unknown as MirrorConfig
+    const catalog = avatarCatalogFor(source)
+    const parsed = mirrorConfigSchema.parse(source) as MirrorConfig
+    for (const avatar of [...catalog.avatars, ...parsed.avatarCatalog!.avatars]) expect(avatar.mediaSkill).toEqual(DEFAULT_MEDIA_SKILL)
+    catalog.avatars[0]!.mediaSkill!.resources.push({ kind: 'music', assetId: 'test-track', name: 'Test track', aliases: [] })
+    expect(catalog.avatars[1]!.mediaSkill!.resources).toEqual([])
+    expect(parsed.avatarCatalog!.avatars[0]!.mediaSkill!.resources).toEqual([])
+    expect(DEFAULT_MEDIA_SKILL.resources).toEqual([])
+    expect(source.avatarCatalog!.avatars[0]!.mediaSkill).toBeUndefined()
   })
   it('keeps active BGM levels with their avatar across persistence and activation', () => {
     const config = twoAvatars()

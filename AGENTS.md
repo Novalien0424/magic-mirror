@@ -16,91 +16,52 @@ Latest user request/routing → this file → newer DECISIONS rulings → produc
 - External/flaky actions get one retry at most, then the exact failure. Stop/cancel/abort terminates active commands and agents; do not substitute or restart the abandoned task.
 - Report meaningful findings, blockers and completion. Status/show/paste uses current evidence or the smallest direct capture.
 
-## Skills, models and proof
+## Skills and verification
 
-Current worker routing (user decision, 2026-10-03) is profile `nova-auto`,
-exact model `gpt-6.1-sol`, and reasoning effort `max`. This supersedes
-historical worker-route references, including Luna routes in older plans and
-records. Those records remain provenance, never active dispatch. Pin the
-exact worker ID; no auto-latest or silent model substitution. Runtime model
-IDs remain unchanged.
+**2026-10-04 workflow ruling:** default to one agent completing the fix and its
+focused checks. No mandatory survey → implementer → tester → reviewer chain,
+plan artifact, approval gate, or evidence report for routine work. Delegate only
+when an independent substantial task will save time. This supersedes older
+mandatory worker, tester-ownership, and repeated-review instructions.
 
-Write skill and harness instructions in English; preserve exact product phrases and necessary non-English examples. Load skills for their actual workflow, not a keyword match. Keep descriptions short; put conditional detail in references. Skills add domain facts, not blanket preloads, approval loops, fixed itineraries or repeated test/review gates.
+Load only task-relevant skills/references. Skills provide domain facts, not fixed
+itineraries. Write harness instructions in English and keep them concise.
+Realtime tool definitions, rules and results come from the versioned shared
+catalog; keep exact spell authorization in the application.
 
-Realtime function definitions, rules and results come from the versioned tool catalog shared by runtime and inspector. Bind and validate handlers explicitly; keep exact spell authorization in the application. See `mm-realtime-voice` for the contract.
+Use the smallest meaningful regression check for behavior changes and static
+checks for docs/config. The implementing agent may run them directly. Reuse
+passing evidence for unchanged code; rerun only after relevant changes or a
+concrete failure. Broaden checks only for affected integration, packaging,
+privacy, mic/restart ownership, or release boundaries. One final diff review is
+enough unless it finds a problem. No routine full suite or independent reviewer.
+Report changed files, check results and unresolved risks briefly; keep full
+failure output, but do not transcribe successful commands or source reads into
+reports. Add an evidence artifact only when useful for a reproducible runtime
+result or handoff. Never claim untested runtime acceptance.
 
-The interactive root uses the session's selected model/effort; workers use the exact dated route above and the dispatch contract below. Roles in `.codex/agents/` are bounded tools, not additional required stages. Workers do not delegate or create reviewers; root review follows their return.
+Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron
+smoke). Preserve unsaved operator edits before reload/restart.
 
-Match verification to the changed boundary: reads need no tests; docs/config need named static checks. Durable behavior/application work uses one focused failing test, the smallest implementation, then a green result before any refactor. The tester owns named validation; obey explicit task exclusions and report pending verification instead of claiming runtime acceptance. Temporary diagnostics stay narrowly enabled, content-free and are removed in the same task unless retention is requested.
+## Optional delegation
 
-Broaden for cross-cutting changes, dependencies/packaging, migrations, credentials, runtime models, mic/restart ownership, identity/privacy, release or phase exit. Full suite/build/demo/independent review are conditional, not routine. Check the final diff once; repeat only for a concrete finding. Report command, exit code and key result; full output on failure or request.
-
-Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron smoke). Preserve unsaved operator edits before reload/restart.
-
-## Dispatch contract
-
-For every post-plan implementation, repository survey or research, and
-test/validation worker, root launches a fresh profile-backed worker through
-the direct PATH-resolved `codex` wrapper. The canonical launchers use every
-routing flag explicitly; no `.Source` assignment is used. Selecting the actual
-platform workspace for `--cd` is user-authorized and does not permit silently
-changing the other routing flags. Substitute only the task prompt in the
-matching platform example.
-
-Canonical Windows PowerShell:
-
-```powershell
-codex exec --profile nova-auto --ephemeral --cd 'C:\Project\magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' $taskPrompt
-```
-
-Canonical macOS zsh for this workspace:
+Root uses the session's selected model/effort. When delegation is worthwhile,
+retain the user-selected worker route: profile `nova-auto`, exact model
+`gpt-6.1-sol`, effort `max`, through the PATH-resolved CLI. No silent substitution.
+Use the canonical platform workspace (`C:\Project\magic-mirror` on Windows):
 
 ```zsh
 codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
 ```
 
-Every task prompt must repeat these fields and values:
-
-```text
-model: "gpt-6.1-sol"
-reasoning_effort: "max"
-role: exactly one of "implementer", "surveyor", or "tester"
-fresh_worker: true
-task: one bounded unit with explicit non-goals
-write_scope: exact named files; read-only unless the named scope grants a write
-skills: relevant .agents/skills paths
-self_invariants: relevant canonical IDs; use IDs 1–12 for product behavior
-evidence: exact changed files, diff summary, complete command output and exit codes, and risks
-self_review: read the own diff/output; no more than 3 passes
-root_review: external root gate after return; not part of self-review
-```
-
-The dispatch must name the exact files, relevant skills, invariant IDs, read or
-write scope, and evidence format. Do not infer a role from a request or rely
-on the project backstop for model or effort. Every Codex CLI discovery or
-dry-run uses `--profile nova-auto`, `--ephemeral`, explicit
-`gpt-6.1-sol`, and explicit `max`. Profile-less collaboration calls may
-coordinate context only; they have no profile field and are not execution
-substitutes. A missing profile, model, effort, role, scope, skill, invariant,
-or evidence field is a dispatch failure.
-
-The implementer may write only the exact bounded paths named in its prompt and
-must use `apply_patch` for every write. The surveyor is read-only. The tester
-may run only the named validation commands and may write only the named
-ignored evidence artifact. No worker may widen its scope, modify immutable
-sources, create a review worker, or silently choose another model.
-
-## Worker evidence and privacy
-
-Use metadata-only artifacts and examples: IDs, enums, counts, timings,
-statuses, reasons, hashes, paths, and exit codes. Never place transcripts,
-audio, extracted memory values, private context, credentials, images,
-embeddings, prompts containing user content, or secrets in source, logs,
-reports, telemetry, or worker output. Survey/research findings must cite
-primary-source URLs and label each finding `verified` or `unverified`.
-Every worker returns exact files changed, a concise diff summary, complete
-stdout/stderr for every command with exit codes, and unresolved risks. A
-tester returns complete output even for a failed or unavailable command.
+Give a short task, owned paths, relevant constraints and expected checks.
+Workers preserve others' edits, stay in scope, use `apply_patch` for source
+writes, and do not delegate. Root integrates their result without creating a
+separate review stage. Successful output needs only commands, exits and key
+results; retain complete failures. Surveyors remain read-only; testers run the
+named checks. Use metadata-only evidence: no transcripts, audio, private context,
+memory values, credentials, images, embeddings or secrets. External findings
+cite primary sources and distinguish verified facts from inference.
 
 ## Canonical product invariants
 

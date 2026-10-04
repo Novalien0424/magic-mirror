@@ -143,6 +143,12 @@ export async function runProfileConsoleQa(input: Phase4QaInput): Promise<Phase4Q
     if(!await evaluate<boolean>("return button('Publish all changes').disabled"))throw Error('profile_invalid_publish_enabled')
     await shot('profile-invalid-save.png', '.console__publish-bar')
     await edit("set(control('Avatar name'),'Orion · Museum Guide')"); await save(); pass(step)
+    step='profile_save_canonicalized_draft'
+    await edit("set(control('Avatar name'),'  Orion · Museum Guide  ')")
+    await save()
+    await wait("return control('Avatar name').value==='Orion · Museum Guide' && !button('Publish all changes').disabled")
+    if(await evaluate<boolean>("const e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return e.defaultPrevented"))throw Error('profile_saved_reload_guard_retained')
+    pass(step)
     const saved=await input.runtime.console.getConfig(); if(!saved.ok||JSON.stringify(saved.value.active)!==activeBefore)throw Error('profile_save_changed_active')
     const profile=saved.value.draft.avatarCatalog?.avatars.find(a=>a.id===id)
     if(!profile||profile.modelId!==rig||profile.voice!=='cedar'||profile.voiceSpeed!==1.1||profile.voiceEffects?.pitchSemitones!==-3||profile.scenes.length!==1||profile.spells.length!==1)throw Error('profile_settings_not_isolated')

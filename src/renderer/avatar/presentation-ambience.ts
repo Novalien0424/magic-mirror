@@ -4,6 +4,7 @@ import type { PresentationPhase } from './presentation-controller'
 export function applyPresentationAmbience(input: {
   audio: Pick<HTMLAudioElement, 'volume' | 'play' | 'pause'>
   phase: PresentationPhase
+  reflective?: boolean
   ambienceGain: number
   activeAmbienceGain: number
   bgmVolume: number
@@ -14,7 +15,8 @@ export function applyPresentationAmbience(input: {
   const { audio, phase, speechActive } = input
   let cancelled = false
   let frame = 0
-  const authoredGain = phase === 'asleep' || phase === 'exiting' ? input.ambienceGain : input.activeAmbienceGain
+  const authoredGain = phase === 'exiting' && input.reflective ? 0
+    : phase === 'asleep' || phase === 'exiting' ? input.ambienceGain : input.activeAmbienceGain
   const target = Math.max(0, Math.min(1, authoredGain * input.bgmVolume))
   const start = audio.volume
   const started = performance.now()

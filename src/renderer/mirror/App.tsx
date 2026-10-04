@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { getAudioDeviceRouter } from '../audio-devices'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
 import type { PresentationPhase } from '../avatar/presentation-controller'
+import { createPresentationGreetingGate } from '../avatar/presentation-greeting-gate'
 import type {
   AvatarRuntimeSnapshot,
   MirrorBridge,
@@ -64,6 +65,7 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'onRealtimeRuntimeCommand'
   | 'onInterrupt'
   | 'requestSleep'
+  | 'requestMedia'
   | 'reportAvatarRuntime'
   | 'getSceneCatalog'
   | 'triggerScene'
@@ -380,6 +382,7 @@ function createMirrorRealtimeRuntimeOwner(
       turnId?: string
     }) => Promise<SceneTranscriptDecision>) | null,
   ) => void,
+  waitForWakePresentation?: (signal: AbortSignal) => Promise<void>,
 ): Readonly<{ owner: RealtimeRuntimeOwner; cancelAnnouncement: () => void; disposeSceneStatus: () => void }> {
   let owner: RealtimeRuntimeOwner
   const announcement = createSpellAnnouncement({ speak: text => owner.speakVerbatim(text).status === 'dispatched' })
@@ -458,6 +461,8 @@ function createMirrorRealtimeRuntimeOwner(
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
     },
     onReturnToDormant: () => bridge.requestSleep(),
+    onMediaRequest: (request, identity) => bridge.requestMedia(request, identity),
+    waitForWakePresentation,
     onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
     onCompletedInputTranscript: async (input) => {
       reportMirrorRealtimeMetadata(bridge, 'transcript', {
@@ -754,24 +759,37 @@ function OfflineLoopScreen(): React.JSX.Element {
 export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [presentation, setPresentation] = useState<PresentationPayload>({ config: { ...DEFAULT_PRESENTATION }, background: null })
+  const [presentationLoaded, setPresentationLoaded] = useState(false)
   const [presentationPhase, setPresentationPhase] = useState<PresentationPhase>('asleep')
+  const presentationRef = useRef(presentation); presentationRef.current = presentation
+  const presentationPhaseRef = useRef(presentationPhase); presentationPhaseRef.current = presentationPhase
+  const presentationLifecycleRef = useRef<LifecycleState>('starting')
+  const greetingGateRef = useRef<ReturnType<typeof createPresentationGreetingGate> | null>(null)
   const publishedVersion = readProperty(snapshot, 'configVersion')
   useEffect(() => {
     const bridge = window.magicMirror
-    if (!bridge || !('getPresentation' in bridge) || !bridge.getPresentation) return
+    if (!bridge || !('getPresentation' in bridge) || !bridge.getPresentation) { setPresentationLoaded(true); return }
     let disposed = false
     void bridge.getPresentation().then(value => {
-      if (!disposed) setPresentation(value ?? { config: { ...DEFAULT_PRESENTATION }, background: null })
+      if (!disposed) {
+        if (value) setPresentation(value)
+        setPresentationLoaded(true)
+        if (!value && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
+          kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable',
+        })
+      }
     }).catch(() => {
       if (!disposed && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
         kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable',
       })
+      if (!disposed) setPresentationLoaded(true)
     })
     return () => { disposed = true }
   }, [publishedVersion])
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
+  const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
   // Playback completion includes the processed speech tail. Visitor speech
   // interrupts and clears that output before this callback is delivered.
   const updateBgmSpeechPriority = (activity: AvatarAudioActivity): void => {
@@ -855,6 +873,19 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     }
   }, [])
   const view = projectMirrorSnapshot(snapshot)
+  presentationLifecycleRef.current = view.state
+  useLayoutEffect(() => {
+    const gate = createPresentationGreetingGate({ onReason: reason => {
+      const bridge = window.magicMirror
+      if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
+    } })
+    greetingGateRef.current = gate
+    gate.update(presentationRef.current.config, presentationPhaseRef.current, presentationLifecycleRef.current)
+    return () => { gate.dispose(); if (greetingGateRef.current === gate) greetingGateRef.current = null }
+  }, [])
+  useLayoutEffect(() => {
+    greetingGateRef.current?.update(presentation.config, presentationPhaseRef.current, view.state)
+  }, [presentation, view.state])
   const avatarState = projectAvatarState({
     lifecycle: view.state,
     conversation: conversationState,
@@ -918,9 +949,9 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           const context = pendingSceneMusicRef.current
           if (context !== null) {
             if (reason === 'avatar_music_started') {
-              pendingSceneMusicRef.current = null
+              if (context.sceneId !== 'media-skill') pendingSceneMusicRef.current = null
               reportSceneAction(context, 'acknowledged')
-            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_fade_completed') {
+            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_fade_completed' || reason === 'avatar_music_completed') {
               pendingSceneMusicRef.current = null
               reportSceneAction(context, 'completed')
             } else if (reason.startsWith('avatar_music_play_failed') || reason === 'avatar_music_analyser_inactive') {
@@ -978,7 +1009,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             coordinator.handleActivity(activity)
           }
         },
-      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler })
+      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler }, signal => greetingGateRef.current?.wait(signal) ?? Promise.resolve())
       const owner = sceneRuntime.owner
       realtimeRuntimeOwnerRef.current = owner
       const unsubscribe = subscribeMirrorRealtimeRuntime(
@@ -1186,6 +1217,10 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         sceneVisualControllerRef.current?.handleCommand(command)
         return
       }
+      if (command.type === 'media_skill_state') {
+        setMediaSkillState({ active: command.active, hideAvatar: command.hideAvatar, fadeMs: command.fadeMs })
+        return
+      }
       reportAvatarRuntime({ reason: `avatar_${command.type}_command_received` })
       avatarMediaControllerRef.current?.handleCommand(command)
     })
@@ -1227,9 +1262,14 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
 
   if (avatarState !== null) {
     return (
-      <>
-        <PresentationStage payload={presentation} lifecycle={view.state} onPhase={setPresentationPhase}
-          speechActive={avatarSpeechActive}
+      <div className="mirror-presentation" data-mode={presentation.config.mode} data-phase={presentationPhase} data-loading={!presentationLoaded}
+        data-media-video={mediaSkillState.hideAvatar} style={{ '--media-fade-ms': `${mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
+        <PresentationStage payload={presentation} lifecycle={view.state} onPhase={phase => {
+          presentationPhaseRef.current = phase
+          setPresentationPhase(phase)
+          greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)
+        }}
+          speechActive={avatarSpeechActive || mediaSkillState.active}
           onFailure={reason => {
             reportAvatarRuntime({ status: 'degraded', reason })
             const bridge = window.magicMirror
@@ -1291,9 +1331,11 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             if (host !== null && media !== null) host.replaceChildren(media as unknown as Node)
           }}
         />
-      </>
+      </div>
     )
   }
+
+  if (view.state === 'starting') return <div className="screen screen--loading" data-state="starting" aria-label="Mirror loading" />
 
   return (
     <div className={view.className} data-state={view.state}>

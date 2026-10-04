@@ -7,7 +7,7 @@ import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, parseRealtimeToolCatalog, resolve
 import { bindRealtimeTools } from '../../src/renderer/realtime/realtime-tool-bindings'
 
 const fresh = () => structuredClone(REALTIME_TOOLS) as any
-const specs = () => resolveRealtimeTools('Rest.')
+const specs = () => resolveRealtimeTools('Rest.').filter(spec => spec.handler === 'return_to_dormant')
 const call = (tool: ReturnType<typeof bindRealtimeTools>[number], input: string) => invokeFunctionTool({tool, input, runContext:new RunContext({})})
 
 describe('structured Realtime tool catalog', () => {
@@ -18,7 +18,7 @@ describe('structured Realtime tool catalog', () => {
     expect(rendered.description).toContain('"{{sleepPhrase}}"')
   })
   it('omits disabled tools and their rules, and exposes no audition tools', () => {
-    const catalog = fresh(); catalog.tools[0].enabled = false
+    const catalog = fresh(); catalog.tools.forEach((tool: any) => { tool.enabled = false })
     const resolved = resolveRealtimeTools('Rest.', false, parseRealtimeToolCatalog(catalog))
     expect(resolved).toEqual([]); expect(realtimeToolInstructions(resolved)).toBe('')
     expect(resolveRealtimeTools('Rest.', true)).toEqual([])
@@ -58,7 +58,7 @@ describe('structured Realtime tool catalog', () => {
   it('validates structured enum arguments for future explicitly bound tools', async () => {
     const catalog=fresh(); catalog.tools[0].parameters={type:'object',properties:{mode:{type:'string',enum:['calm','bright']}},required:['mode'],additionalProperties:false}
     const handler=vi.fn(async () => 'accepted' as const)
-    const [tool]=bindRealtimeTools(resolveRealtimeTools('Rest.',false,parseRealtimeToolCatalog(catalog)),{return_to_dormant:handler},vi.fn())
+    const [tool]=bindRealtimeTools(resolveRealtimeTools('Rest.',false,parseRealtimeToolCatalog(catalog)).filter(spec => spec.handler === 'return_to_dormant'),{return_to_dormant:handler},vi.fn())
     await call(tool,'{"mode":"invented"}'); expect(handler).not.toHaveBeenCalled()
     await call(tool,'{"mode":"calm"}'); expect(handler).toHaveBeenCalledExactlyOnceWith({mode:'calm'})
   })
@@ -88,5 +88,20 @@ describe('structured Realtime tool catalog', () => {
       expect(output.mock.calls[0][2]).toBe(false)
       expect(errors).not.toHaveBeenCalled()
     } finally {session.close()}
+  })
+  it('validates media arguments and serializes all three native tools through the SDK', async () => {
+    const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
+    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted' }, vi.fn())
+    const play = tools.find(t => t.name === 'play_media')!
+    await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
+    await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))
+    expect(media).not.toHaveBeenCalled()
+    expect(await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'loop' })))
+      .toMatchObject({ content: { status: 'accepted', code: 'media_requested' } })
+    expect(media).toHaveBeenCalledExactlyOnceWith({ kind: 'video', assetId: 'clip', mode: 'loop' })
+    const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', tools }), { transport: new ScriptedRealtimeTransport(), tracingDisabled: true })
+    try {
+      expect(new OpenAIRealtimeWebSocket().buildSessionPayload(await session.getInitialSessionConfig()).tools).toEqual(all.map(realtimeToolDefinition))
+    } finally { session.close() }
   })
 })

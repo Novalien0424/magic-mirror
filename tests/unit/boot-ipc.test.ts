@@ -17,6 +17,7 @@ import {
 } from '../../src/main/ipc'
 import { createLifecycleActor } from '../../src/main/lifecycle'
 import { DEFAULT_MODULE_STATUSES } from '../../src/main/module-registry'
+import { DEFAULT_PRESENTATION } from '../../src/shared/presentation'
 import type { ModuleId, ModuleStatus, OpStatus } from '../../src/shared/types'
 
 const RAW_CONFIG_ERROR = 'synthetic-config-raw-error'
@@ -551,6 +552,84 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('authorizes media against current session, published resources and avatar locks', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    const resource = { kind: 'music', assetId: 'music-test', name: 'Tone', aliases: [] }
+    const config = { musicAssets: [{ id: 'music-test' }], visualAssets: [], avatarCatalog: {
+      activeAvatarId: 'host', locks: [] as { kind: string; resourceId: string; avatarId: string }[],
+      avatars: [{ id: 'host', mediaSkill: { enabled: true, fadeMs: 0, gain: 0.5, resources: [resource] } }],
+    } }
+    const runtime = { ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config }
+    const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const envelope = { request: { action: 'play', kind: 'music', assetId: 'music-test', mode: 'loop' },
+      identity: { realtimeSessionId: 'session-media', sessionGeneration: 3 } }
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, envelope)).toBe('rejected')
+    expect(await handler(event, { ...envelope, identity: { ...envelope.identity, sessionGeneration: 2 } })).toBe('ignored')
+    expect(await handler(event, { ...envelope, request: { ...envelope.request, assetId: '../private' } })).toBe('rejected')
+    config.avatarCatalog.locks.push({ kind: 'music', resourceId: 'music-test', avatarId: 'other' })
+    expect(await handler(event, envelope)).toBe('rejected')
+    config.avatarCatalog.locks = []
+    expect(await handler(event, envelope)).toBe('accepted')
+    expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play', loop: true }))
+    expect(await handler(event, { ...envelope, request: { action: 'stop' } })).toBe('accepted')
+    expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+  })
+  it('resolves only managed video refs owned by the active avatar for Mirror presentation', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const presentation = { ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, exitMs: 2400,
+      entranceVideoId: 'mist-in', exitVideoId: 'mist-out' }
+    const active = { presentation, visualAssets: [
+      { id: 'mist-in', kind: 'video', fileName: 'managed-in.webm' },
+      { id: 'mist-out', kind: 'video', fileName: 'managed-out.webm' },
+    ], avatarCatalog: { activeAvatarId: 'host', avatars: [{ id: 'host', modelId: 'builtin-ren' }, { id: 'other' }], models: [],
+      locks: [] as { kind: string; resourceId: string; avatarId: string }[] } }
+    const getConfig = vi.fn(async () => ({ ok: true, value: { active } }))
+    const runtime = makeLifecycleNeutralMetadataRuntime([], startingSnapshot())
+    const registered = registerTestIpcHandlers(runtime, fixtures.windows, events, undefined, { console: { getConfig } })
+    const handler = registered.handlers.get('mirror:get-presentation')!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const result = await handler(event)
+    expect(result).toMatchObject({ config: presentation, background: null,
+      entranceVideo: { id: 'mist-in', kind: 'video' }, exitVideo: { id: 'mist-out', kind: 'video' } })
+    expect(JSON.stringify(result)).not.toContain('fileName'); expect(JSON.stringify(result)).not.toContain('host')
+    active.avatarCatalog.locks = [{ kind: 'visual', resourceId: 'mist-in', avatarId: 'other' }]
+    active.visualAssets[1].kind = 'image'
+    expect(await handler(event)).toMatchObject({ entranceVideo: null, exitVideo: null })
+    active.visualAssets = []
+    expect(await handler(event)).toMatchObject({ entranceVideo: null, exitVideo: null })
+    expect(await handler(event, { path: 'unmanaged.webm' })).toBeNull()
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })).toBeNull()
+  })
+
+  it('strictly validates ritual video refs in preload while accepting legacy payloads', async () => {
+    vi.resetModules()
+    let exposed: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
+    const config = { ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, entranceVideoId: 'mist-in', exitVideoId: 'mist-out' }
+    const valid = { config, background: null, entranceVideo: { id: 'mist-in', kind: 'video' }, exitVideo: { id: 'mist-out', kind: 'video' } }
+    let payload: unknown = valid
+    vi.doMock('electron', () => ({ contextBridge: { exposeInMainWorld: (_name: string, bridge: typeof exposed) => { exposed = bridge } },
+      ipcRenderer: { invoke: vi.fn(async () => payload), on: vi.fn(), removeListener: vi.fn(), send: vi.fn() } }))
+    try {
+      await import('../../src/preload/mirror')
+      expect(await exposed.getPresentation()).toEqual(valid)
+      for (const video of [{ id: 'missing', kind: 'video' }, { id: 'mist-in', kind: 'image' },
+        { id: 'mist-in', kind: 'video', path: 'unmanaged.webm' }, { id: '../mist-in', kind: 'video' }, undefined]) {
+        payload = { ...valid, entranceVideo: video }
+        expect(await exposed.getPresentation()).toBeNull()
+      }
+      payload = { ...valid, unexpected: true }
+      expect(await exposed.getPresentation()).toBeNull()
+      payload = { config: DEFAULT_PRESENTATION, background: null }
+      expect(await exposed.getPresentation()).toEqual(payload)
+      payload = { ...valid, entranceVideo: null, exitVideo: null }
+      expect(await exposed.getPresentation()).toEqual(payload)
+    } finally { vi.doUnmock('electron'); vi.resetModules() }
+  })
+
   it('limits media imports to valid Console picker requests and sanitizes failures', async () => {
     const fixtures = makeTrackedRendererWindows()
     const events: MetadataEvent[] = []
@@ -820,6 +899,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       reportRealtimeFailure: 'mirror:report-realtime-failure',
       reportRealtimeMetadata: REPORT_REALTIME_METADATA_CHANNEL,
       sleepRequest: 'mirror:sleep-request',
+      mediaSkill: 'mirror:media-skill',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',

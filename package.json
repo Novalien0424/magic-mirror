@@ -7,7 +7,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build:wake-native": "pwsh -NoProfile -File scripts/build-wake-score-native.ps1",
+    "build:wake-native": "node scripts/build-wake-score-native.mjs",
     "build": "electron-vite build",
     "generate:offline-loop": "node scripts/generate-offline-loop.mjs",
     "prepare:avatar": "node scripts/prepare-avatar-assets.mjs",

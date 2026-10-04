@@ -283,7 +283,7 @@ export interface BootRuntime {
   /** Main-owned published Phase 4 catalog; transcript text never enters this boundary. */
   getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
     MirrorConfig,
-    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
+    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters' | 'avatarCatalog'
   >>>
   /** Projects wake availability without gating unrelated conversation paths. */
   setWakeRuntimeStatus(status: 'ready' | 'degraded' | 'failed', reason: string): Promise<void>
@@ -2023,13 +2023,14 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function getPublishedSceneConfigForRuntime(): Promise<Readonly<Pick<
     MirrorConfig,
-    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters'
+    'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters' | 'avatarCatalog'
   >>> {
     await ready
     const active = (await configService?.read())?.active
     if (active === undefined) throw new Error('scene_config_unavailable')
     return Object.freeze({
       configVersion: active.configVersion,
+      avatarCatalog: active.avatarCatalog ? structuredClone(active.avatarCatalog) : undefined,
       wake: structuredClone(active.wake),
       visualAssets: structuredClone(active.visualAssets.filter(a => !active.avatarCatalog || canUseAvatarResource(active.avatarCatalog, active.avatarCatalog.activeAvatarId, 'visual', a.id))),
       musicAssets: structuredClone(active.musicAssets.filter(a => !active.avatarCatalog || canUseAvatarResource(active.avatarCatalog, active.avatarCatalog.activeAvatarId, 'music', a.id))),
