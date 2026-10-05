@@ -1,78 +1,45 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-05
 
-## Clock-out — 2026-10-05
+## Current: Realtime relationship memory implemented — 2026-10-05
 
-Research/design only this session; no new memory implementation, migration,
-model download, app restart or deployment. Runtime left untouched; runtime
-observations and PIDs below are dated evidence, not reverified live status.
+The user authorized implementation through TDD, self-review and thorough automated
+end-to-end QA, including a forthcoming large Markdown containing persona and history.
+Realtime voice/model IDs remain unchanged. Delivered: scoped private SQLite v2 in a
+Main worker, turn-bound background summary learning, confirmed-person brief,
+semantic-first plus keyword recall, revision/epoch/dependency guards, correction and
+forget cleanup, automatic/explicit/off/temporary modes, and a cancellable Markdown
+import with separate persona review. Raw conversation evidence stays RAM-only.
 
-All survey/design documents are saved locally:
-[Apple Silicon speech stack](docs/apple-silicon-voice-stack-survey-2026-10-04.md),
-[persona and memory portability](docs/persona-memory-migration-survey-2026-10-04.md),
-[memory research](docs/conversational-memory-research-2026-10-04.md),
-[architecture](docs/conversational-memory-architecture-2026-10-04.md),
-[initial self-review](docs/conversational-memory-self-review-2026-10-04.md),
-[production comparison and amended verdict](docs/conversational-memory-production-review-2026-10-05.md).
-The [earlier implementation record](docs/reusable-memory-implementation-2026-10-04.md)
-is explicitly marked as an insufficient foundation for the corrected scope.
+[Implementation, import guide and review](docs/relationship-memory-implementation-2026-10-05.md)
+links the design and evidence. [Earlier planning/foundation progress](docs/archive/memory-planning-progress-2026-10-05.md)
+is historical. The architecture is no longer waiting for permission to implement.
 
-Latest retrieval decision: semantic search is primary; keyword search only
-supplements it and cannot filter out semantic candidates. Compare lexical-only,
-vector-only and combined retrieval before choosing weights or a reranker.
-Next on resume: follow the six production-review amendments and begin bounded
-synthetic lifecycle checks plus local embedding/storage comparisons. Full
-conversational memory remains unbuilt; quality and performance are unmeasured.
+Focused regression: 258 tests passed across 23 files. Node/web typechecks and build
+pass. The real local Qwen3/MLX
+smoke passed bilingual similarity and concurrent query-priority checks (1.44 s load,
+14.2 ms warm mean; two synthetic relevance fixtures). More than 1 MiB of synthetic
+Markdown was chunked and distilled with a synthetic extractor; raw-history/persona
+markers did not enter SQLite and restart/isolation/correction/deletion checks passed.
 
-## Current design: full conversational memory — 2026-10-04
+The [final natural-provider live Electron run](.artifacts/phase4-qa/2026-10-05T04-09-01-242Z/evidence.json)
+passed 23 checks: production Console edits,
+policy/reload/draft retention/import, configured cloud extraction, actual Realtime
+confirmation/context acknowledgment/remembered answer, local cross-language recall,
+SQLite restart, guest/avatar isolation, and forget. Real WebRTC used a silent
+synthetic microphone and synthetic ASR edges; it does not pass human microphone
+or conversational-quality acceptance. Earlier natural-provider failures and their
+repairs are retained in the implementation report; these fixtures do not prove
+general conversational recall quality. No phase or packaged-deployment promotion.
 
-**2026-10-05 review:** compared the design with current AWS AgentCore, Google
-Memory Bank, Mem0, Zep, Letta and official OpenAI documentation. The
-[production review](docs/conversational-memory-production-review-2026-10-05.md)
-conditionally approves the direction with six amendments covering write
-consistency, pending context, retained evidence, deletion, retrieval selection
-and custom-engine scope. This addendum supersedes the earlier completeness
-verdict. No application changes or runtime acceptance in this review.
+Normal app restored through the existing LaunchAgent, PID **17514**. Operator
+configuration v15 is byte-for-byte unchanged across restoration. Startup reports
+Cubism, camera tracking, wake listening and local embeddings ready;
+[metadata evidence](.artifacts/memory-implementation-2026-10-05/runtime-restored.json).
 
-The user rejected explicit-only lexical memory as the target and requested
-short-term context plus automatic long-term vector memory for a few avatars
-and users. Latest direction: finish research, architectural design and
-self-review before building. Those documents are now saved:
-[research](docs/conversational-memory-research-2026-10-04.md),
-[architecture](docs/conversational-memory-architecture-2026-10-04.md),
-[self-review](docs/conversational-memory-self-review-2026-10-04.md).
-They cover current October sources, local storage/embedding alternatives,
-automatic semantic/episodic learning, Realtime response timing, deletion and
-quality/performance acceptance. Read-only hardware check: Apple M6, 32 GiB.
-No runtime changes, model downloads, dependency installs or migration in this
-research/design step. The existing implementation below remains the running
-foundation and is not acceptance of the corrected scope. Next: bounded model/
-storage integration comparisons, then the documented implementation sequence;
-embedding choice, latency and conversational quality still require measurements.
-
-## Current: reusable local memory — 2026-10-04
-
-Implemented explicit remember/recall/correct/forget with a private Main-owned
-SQLite/FTS5 store, scoped by avatar and verbally confirmed person. Console →
-Avatars → Memories supports immediate-save add/edit/search/delete. Automatic
-extraction remains off. No vector server, embedding model, dependency or runtime
-model change. [Research, design and limits](docs/reusable-memory-implementation-2026-10-04.md).
-
-TDD covered persistence, correction/deletion, Chinese retrieval, owner/session
-isolation, stale confirmations and late ASR confirmation. Twelve focused unit
-files: **225 passed**, exit 0. `npm run typecheck`, `npm run build`, and
-`git diff --check`: exit 0. `node scripts/run-phase4-qa.mjs --memory`: exit 0,
-**7 Console checks passed** using real rendered controls, preload, Main and
-SQLite in isolated user data. [QA evidence](.artifacts/phase4-qa/2026-10-04T13-13-07-280Z);
-empty-panel screenshot reviewed. Final build additionally clarifies the pending
-confirmation tool instruction; Console implementation is unchanged from that run.
-
-Normal app restored through the existing LaunchAgent, PID **68790**. Main,
-Mirror and Console reported ready; private database created with mode 0600.
-No operator config or existing memories were edited. Live spoken memory-tool
-selection, cloud acceptance of the requested truncation budget, and spoken
-remember → new session → recall → forget remain unverified. These are the next
-acceptance checks, not established by mocked SDK tests or Console QA. No phase
-promotion. Prior operator-confirmed media wake result remains below.
+Next: use **Avatars → Memories → Import Markdown** for the user's actual file,
+one person at a time. Persona is previewed separately; only distilled history is
+saved. Human testing will assess omissions, recall cues, interruptions and natural
+turn length. No user history has been imported in these synthetic tests.
 
 ## Current: local wake during loops, global Mac threshold 0.32 — 2026-10-04
 

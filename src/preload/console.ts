@@ -201,4 +201,5 @@ const bridge: ConsoleBridge = {
 }
 
 bridge.checkCamera = () => ipcRenderer.invoke('console:check-camera')
+bridge.memoryImport = request => ipcRenderer.invoke('console:memory-import', request)
 contextBridge.exposeInMainWorld('magicMirror', bridge)

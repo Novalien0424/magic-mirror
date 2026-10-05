@@ -1,0 +1,335 @@
+import { spawn, type ChildProcess } from 'node:child_process'
+import { constants } from 'node:fs'
+import { access } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { isAbsolute, join } from 'node:path'
+import manifest from '../../../resources/config/memory-embedding.v1.json'
+import type { MemoryEmbedder, MemoryEmbedding } from './contracts'
+
+export type MemoryEmbeddingReason = 'runtime_ready' | 'runtime_missing' | 'runtime_invalid'
+  | 'runtime_unsupported' | 'model_invalid' | 'startup_failed' | 'startup_timeout'
+  | 'request_timeout' | 'worker_failed' | 'malformed_output' | 'output_too_large'
+  | 'version_mismatch' | 'invalid_input' | 'input_too_long' | 'inference_failed'
+  | 'queue_full' | 'cancelled' | 'closed' | 'shutdown_timeout' | 'invalid_options'
+
+/** Metadata only. Never attach text, vectors, owner identifiers, or raw exceptions. */
+export interface MemoryEmbeddingEvent {
+  type: 'ready' | 'degraded' | 'dropped' | 'closed'
+  reason: MemoryEmbeddingReason
+  requestId?: string
+}
+
+export interface MemoryEmbedderOptions {
+  /** Absolute private directory prepared explicitly by prepare-memory-embedding.mjs. */
+  runtimeDirectory: string
+  report: (event: MemoryEmbeddingEvent) => void
+  /** Packaged resources may supply these; by default use the prepared runtime copies. */
+  workerPath?: string
+  manifestPath?: string
+  startupTimeoutMs?: number
+  requestTimeoutMs?: number
+  /** Total accepted requests, including startup/active/cancellation-draining work. */
+  maxQueue?: number
+}
+
+export class MemoryEmbeddingError extends Error {
+  constructor(readonly code: MemoryEmbeddingReason) {
+    super(code)
+    this.name = 'MemoryEmbeddingError'
+  }
+}
+
+interface Job {
+  id: string
+  text: string
+  purpose: 'query' | 'document'
+  resolve: (embedding: MemoryEmbedding) => void
+  reject: (error: MemoryEmbeddingError) => void
+  signal?: AbortSignal
+  onAbort?: () => void
+  settled: boolean
+  cancelled: boolean
+}
+
+const version = `memory-embedding.v1:${createHash('sha256').update(JSON.stringify(manifest.identity)).digest('hex')}`
+const MAX_FRAME_BYTES = 65_536
+const workerReasons = new Set(['invalid_input', 'input_too_long', 'inference_failed'])
+const startupReasons = new Set(['runtime_invalid', 'runtime_unsupported', 'model_invalid', 'startup_failed'])
+
+function object(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function keys(value: Record<string, unknown>, expected: string[]): boolean {
+  return Object.keys(value).length === expected.length && expected.every((key) => Object.hasOwn(value, key))
+}
+
+function normalized(values: unknown): number[] | null {
+  if (!Array.isArray(values) || values.length !== manifest.identity.dimensions) return null
+  let scale = 0
+  for (const value of values) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null
+    scale = Math.max(scale, Math.abs(value))
+  }
+  if (scale === 0) return null
+  // Scaling first avoids overflow and underflow in the L2 norm of finite outputs.
+  let sum = 0
+  for (const value of values as number[]) sum += (value / scale) ** 2
+  const norm = Math.sqrt(sum)
+  return (values as number[]).map((value) => (value / scale) / norm)
+}
+
+/**
+ * Main owns one instance for the application lifetime. Lazy startup never installs
+ * anything. A terminal failure requires an explicit new instance by its owner;
+ * this module never respawns, changes models, touches credentials, or owns a mic.
+ */
+export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbedder {
+  if (!options || typeof options.runtimeDirectory !== 'string' || !isAbsolute(options.runtimeDirectory)
+    || typeof options.report !== 'function') throw new MemoryEmbeddingError('invalid_options')
+  const startupTimeoutMs = options.startupTimeoutMs ?? 60_000
+  const requestTimeoutMs = options.requestTimeoutMs ?? 30_000
+  const maxQueue = options.maxQueue ?? 16
+  const workerPath = options.workerPath ?? join(options.runtimeDirectory, 'memory-embedding-worker.py')
+  const manifestPath = options.manifestPath ?? join(options.runtimeDirectory, 'manifest.json')
+  if (![options.runtimeDirectory, workerPath, manifestPath].every((path) => typeof path === 'string' && isAbsolute(path))
+    || typeof options.report !== 'function'
+    || !Number.isSafeInteger(maxQueue) || maxQueue < 1 || maxQueue > 128
+    || ![startupTimeoutMs, requestTimeoutMs].every((ms) => Number.isSafeInteger(ms) && ms > 0 && ms <= 300_000)) {
+    throw new MemoryEmbeddingError('invalid_options')
+  }
+  let state: 'idle' | 'starting' | 'ready' | 'failed' | 'closed' = 'idle'
+  let failure: MemoryEmbeddingReason = 'worker_failed'
+  let child: ChildProcess | null = null
+  let active: Job | null = null
+  let queue: Job[] = []
+  let sequence = 0n
+  let startupTimer: ReturnType<typeof setTimeout> | undefined
+  let requestTimer: ReturnType<typeof setTimeout> | undefined
+  let fragments: Buffer[] = []
+  let frameBytes = 0
+  let stopPromise: Promise<void> | undefined
+  let closePromise: Promise<void> | undefined
+  let exited = false
+  let exitResolve: (() => void) | undefined
+  let exitPromise: Promise<void> | undefined
+
+  function report(type: MemoryEmbeddingEvent['type'], reason: MemoryEmbeddingReason, requestId?: string) {
+    try { options.report(requestId ? { type, reason, requestId } : { type, reason }) } catch {
+      // Diagnostic consumers must not affect worker cleanup or conversation.
+    }
+  }
+
+  function settle(job: Job, result: MemoryEmbedding | MemoryEmbeddingReason) {
+    if (job.settled) return
+    job.settled = true
+    job.text = ''
+    if (job.onAbort) job.signal?.removeEventListener('abort', job.onAbort)
+    job.signal = undefined
+    job.onAbort = undefined
+    if (typeof result === 'string') {
+      report(result === 'cancelled' || result === 'queue_full' || result === 'invalid_input' ? 'dropped' : 'degraded', result, job.id)
+      job.reject(new MemoryEmbeddingError(result))
+    } else job.resolve(result)
+  }
+
+  function clearTimers() {
+    clearTimeout(startupTimer)
+    clearTimeout(requestTimer)
+    startupTimer = undefined
+    requestTimer = undefined
+  }
+
+  function stopWorker(): Promise<void> {
+    if (stopPromise) return stopPromise
+    if (!child || exited) return Promise.resolve()
+    const target = child
+    stopPromise = (async () => {
+      const waitExit = (ms: number) => new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), ms)
+        void exitPromise?.then(() => { clearTimeout(timer); resolve(true) })
+      })
+      try { target.kill('SIGTERM') } catch { /* Never forward OS error content. */ }
+      if (await waitExit(500)) return
+      try { target.kill('SIGKILL') } catch { /* Content-free timeout below. */ }
+      if (!await waitExit(500)) {
+        report('degraded', 'shutdown_timeout')
+        throw new MemoryEmbeddingError('shutdown_timeout')
+      }
+    })()
+    return stopPromise
+  }
+
+  function fail(reason: MemoryEmbeddingReason) {
+    if (state === 'closed' || state === 'failed') return
+    state = 'failed'
+    failure = reason
+    clearTimers()
+    fragments = []
+    frameBytes = 0
+    const jobs = active ? [active, ...queue] : queue
+    active = null
+    queue = []
+    if (!jobs.some((job) => !job.settled)) report('degraded', reason)
+    for (const job of jobs) settle(job, reason)
+    void stopWorker().catch(() => { /* Failure is reported; close() retains the rejection. */ })
+  }
+
+  function write(message: Record<string, unknown>) {
+    try {
+      child!.stdin!.write(`${JSON.stringify(message)}\n`, (error) => { if (error) fail('worker_failed') })
+    } catch { fail('worker_failed') }
+  }
+
+  function pump() {
+    if (state !== 'ready' || active || queue.length === 0) return
+    // Stable ordering within each purpose; recall precedes background indexing.
+    const queryIndex = queue.findIndex((job) => job.purpose === 'query')
+    active = queue.splice(queryIndex < 0 ? 0 : queryIndex, 1)[0]
+    // The wire sequence follows dispatch order, which differs from enqueue order under query priority.
+    active.id = String(++sequence)
+    requestTimer = setTimeout(() => fail('request_timeout'), requestTimeoutMs)
+    requestTimer.unref()
+    write({ type: 'embed', id: active.id, purpose: active.purpose, text: active.text })
+    // Active jobs retain only a cancellation tombstone, never another text copy.
+    if (active) active.text = ''
+  }
+
+  function handleFrame(bytes: Buffer) {
+    let value: unknown
+    try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) } catch {
+      fail('malformed_output'); return
+    }
+    if (!object(value)) { fail('malformed_output'); return }
+    if (state === 'starting') {
+      if (value.type === 'fatal' && keys(value, ['type', 'reason']) && startupReasons.has(value.reason as string)) {
+        fail(value.reason as MemoryEmbeddingReason); return
+      }
+      if (value.type !== 'ready' || !keys(value, ['type', 'version', 'dimensions'])) {
+        fail('malformed_output'); return
+      }
+      if (value.version !== version || value.dimensions !== manifest.identity.dimensions) {
+        fail('version_mismatch'); return
+      }
+      clearTimeout(startupTimer)
+      state = 'ready'
+      report('ready', 'runtime_ready')
+      pump()
+      return
+    }
+    if (state !== 'ready' || !active || value.id !== active.id) { fail('malformed_output'); return }
+    const job = active
+    let outcome: MemoryEmbedding | MemoryEmbeddingReason
+    if (value.type === 'embedding' && keys(value, ['type', 'id', 'values'])) {
+      const values = normalized(value.values)
+      if (!values) { fail('malformed_output'); return }
+      outcome = { version, values }
+    } else if (value.type === 'error' && keys(value, ['type', 'id', 'reason']) && workerReasons.has(value.reason as string)) {
+      outcome = value.reason as MemoryEmbeddingReason
+    } else if (value.type === 'cancelled' && keys(value, ['type', 'id']) && job.cancelled) outcome = 'cancelled'
+    else { fail('malformed_output'); return }
+    clearTimeout(requestTimer)
+    requestTimer = undefined
+    active = null
+    settle(job, outcome)
+    pump()
+  }
+
+  function acceptingOutput() { return state === 'starting' || state === 'ready' }
+
+  function stdout(chunk: Buffer) {
+    if (!acceptingOutput()) return
+    for (let offset = 0; offset < chunk.length;) {
+      const newline = chunk.indexOf(10, offset)
+      const end = newline < 0 ? chunk.length : newline
+      if (frameBytes + end - offset > MAX_FRAME_BYTES) { fail('output_too_large'); return }
+      fragments.push(chunk.subarray(offset, end))
+      frameBytes += end - offset
+      if (newline < 0) return
+      const frame = Buffer.concat(fragments, frameBytes)
+      fragments = []
+      frameBytes = 0
+      handleFrame(frame)
+      if (!acceptingOutput()) return
+      offset = newline + 1
+    }
+  }
+
+  async function start() {
+    state = 'starting'
+    startupTimer = setTimeout(() => fail('startup_timeout'), startupTimeoutMs)
+    startupTimer.unref()
+    const executable = join(options.runtimeDirectory, 'venv', 'bin', 'python')
+    try {
+      for (const [path, mode] of [[executable, constants.X_OK], [workerPath, constants.R_OK], [manifestPath, constants.R_OK]] as const) {
+        await access(path, mode)
+        if (state !== 'starting') return
+      }
+    } catch { fail('runtime_missing'); return }
+    if (state !== 'starting') return
+    try {
+      child = spawn(executable, ['-I', '-B', '-u', workerPath, '--runtime-directory', options.runtimeDirectory,
+        '--manifest', manifestPath, '--version', version], {
+        cwd: options.runtimeDirectory, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
+        // Explicit allowlist: neither process.env nor the root .env enters IPC/the child.
+        env: { LANG: 'en_US.UTF-8', PATH: '/usr/bin:/bin', HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1',
+          HF_HUB_DISABLE_TELEMETRY: '1', HF_HOME: join(options.runtimeDirectory, 'cache'),
+          TOKENIZERS_PARALLELISM: 'false', OMP_NUM_THREADS: '1' },
+      })
+      exitPromise = new Promise<void>((resolve) => { exitResolve = resolve })
+      child.once('close', () => { exited = true; exitResolve?.(); fail('worker_failed') })
+      child.once('error', () => fail('worker_failed'))
+      child.stdin?.on('error', () => fail('worker_failed'))
+      child.stdout?.on('error', () => fail('worker_failed'))
+      child.stdout?.on('data', stdout)
+      if (!child.stdin || !child.stdout) fail('worker_failed')
+    } catch { fail('worker_failed') }
+  }
+
+  return {
+    version,
+    embed(text, purpose, signal) {
+      const reject = (reason: MemoryEmbeddingReason) => {
+        report(reason === 'cancelled' || reason === 'queue_full' || reason === 'invalid_input' ? 'dropped' : 'degraded', reason)
+        return Promise.reject<MemoryEmbedding>(new MemoryEmbeddingError(reason))
+      }
+      if (state === 'closed') return reject('closed')
+      if (state === 'failed') return reject(failure)
+      if (signal?.aborted) return reject('cancelled')
+      if (typeof text !== 'string' || !text.trim() || !['query', 'document'].includes(purpose)
+        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u.test(text)
+        || Buffer.byteLength(text) > manifest.identity.maxTextBytes
+        || Buffer.byteLength(JSON.stringify({ type: 'embed', id: '0'.repeat(32), purpose, text })) > MAX_FRAME_BYTES) {
+        return reject('invalid_input')
+      }
+      if (queue.length + (active ? 1 : 0) >= maxQueue) return reject('queue_full')
+      const promise = new Promise<MemoryEmbedding>((resolve, rejectJob) => {
+        const job: Job = { id: '', text, purpose, resolve, reject: rejectJob, signal, settled: false, cancelled: false }
+        job.onAbort = () => {
+          job.cancelled = true
+          settle(job, 'cancelled')
+          if (active === job) write({ type: 'cancel', id: job.id })
+          else queue = queue.filter((queued) => queued !== job)
+        }
+        queue.push(job)
+        signal?.addEventListener('abort', job.onAbort, { once: true })
+      })
+      if (state === 'idle') void start()
+      else pump()
+      return promise
+    },
+    close() {
+      if (closePromise) return closePromise
+      state = 'closed'
+      clearTimers()
+      for (const job of active ? [active, ...queue] : queue) settle(job, 'closed')
+      active = null
+      queue = []
+      fragments = []
+      frameBytes = 0
+      report('closed', 'closed')
+      closePromise = stopWorker()
+      return closePromise
+    },
+  }
+}

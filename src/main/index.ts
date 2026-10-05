@@ -1,6 +1,6 @@
 import { allowPromptWindow } from '../shared/prompt-window'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile, open } from 'node:fs/promises'
 import {
   app,
   BrowserWindow,
@@ -20,7 +20,13 @@ import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/br
 import type { LifecycleState } from '../shared/types'
 import type { ImportedMedia, MediaImportEntry } from '../shared/media-import'
 import { createVoicePreviewLease, type VoicePreviewLease } from './realtime/voice-preview'
-import { MemoryStore } from './memory/store'
+import { createMemoryRepository, unavailableMemoryRepository } from './memory/repository'
+import { createMemoryEmbedder } from './memory/embedding'
+import { createMemoryExtractor } from './memory/extractor'
+import { MemoryLearning } from './memory/learning'
+import { MemoryIndexer } from './memory/indexer'
+import { MemoryImporter } from './memory/import'
+import { runMemoryLiveQa } from './memory/live-qa'
 import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
 import { initializeAudioPreferences } from './audio-preferences'
@@ -159,9 +165,11 @@ let sceneRuntimeControl: SceneRuntimeControl | null = null
 let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
 const phase4QaReadyKinds = new Set<MirrorWindowKind>()
 let phase4QaStarted = false
+let memoryPipelineQa: ((evidence: (step: string) => void) => Promise<void>) | undefined
 let wakeSupervisor: WakeSupervisor | null = null
 let wakeCalibration: ReturnType<typeof createWakeCalibration> | null = null
 let shutdownPromise: Promise<void> | null = null
+let shutdownMemory: (() => Promise<void>) | undefined
 let willQuitHandled = false
 let quitResourcesStopped = false
 let appQuitFinalizationStarted = false
@@ -803,6 +811,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     consoleOnly: process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1',
     editorOnly,
     cubismOnly: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1',
+    memoryPipeline: memoryPipelineQa,
     onEvidence: (step) => { evidence.push({ ...step }); marker('PHASE4_QA_STEP', { ...step }) },
   }).then((result) => {
     return finish({
@@ -1279,30 +1288,88 @@ void app.whenReady().then(async () => {
       }
     },
   })
-  let memoryStore: MemoryStore | undefined
-  try {
-    memoryStore = new MemoryStore(join(app.getPath('userData'), 'private-memory', 'memory.sqlite'))
-    await runtime.setMemoryRuntimeStatus('ready')
-  } catch {
-    await runtime.setMemoryRuntimeStatus('degraded')
-    runtime.telemetry.emit({ module: 'memory', event: 'memory_storage', status: 'degraded', reason: 'memory_storage_unavailable', source: 'runtime' })
+  const memoryReport = (code: string): void => {
+    if (code === 'memory_storage_unavailable') void runtime.setMemoryRuntimeStatus('degraded')
+    runtime.telemetry.emit({ module: 'memory', event: 'memory_operation', status: /failed|unavailable|invalid|timeout/.test(code) ? 'degraded' : 'info', reason: code, source: 'runtime' })
   }
+  let memoryStore: ReturnType<typeof createMemoryRepository>
+  try { memoryStore = createMemoryRepository(join(app.getPath('userData'), 'private-memory', 'memory.sqlite')) }
+  catch { memoryStore = unavailableMemoryRepository(); memoryReport('memory_storage_unavailable') }
+  void memoryStore.names('runtime-check').then(() => runtime.setMemoryRuntimeStatus('ready')).catch(() => memoryReport('memory_storage_unavailable'))
+  const memoryEmbedder = createMemoryEmbedder({ runtimeDirectory: app.isPackaged
+    ? join(app.getPath('userData'), 'memory-embedding') : join(app.getAppPath(), '.local', 'memory-embedding'),
+    report: event => memoryReport(`memory_embedding_${event.reason}`) })
+  const memoryIndexer = new MemoryIndexer(memoryStore, memoryEmbedder, memoryReport)
+  void memoryEmbedder.embed('Memory runtime readiness.', 'document').then(() => memoryIndexer.schedule())
+    .catch(() => memoryReport('memory_semantic_unavailable'))
+  const memoryExtractor = createMemoryExtractor({ credentialSource })
+  const memoryModel = async () => (await runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
+  const memoryLearning = new MemoryLearning({ repository: memoryStore, extract: memoryExtractor, model: memoryModel,
+    report: memoryReport, onCommitted: (avatarId, name) => {
+      memoryIndexer.schedule()
+      void memoryStore.policy(avatarId, name).then(async policy => {
+        const snapshot = runtime.snapshot()
+        if (policy.cleanupRequired && memory.relationship.invalidateLoaded({ active: snapshot.lifecycle === 'active',
+          avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration }, avatarId, name)) {
+          memoryReport('memory_context_refresh_required')
+          const reset = await runtime.rolloverAtSafeBoundary()
+          if (!['dispatched', 'success'].includes(reset.status as string)) await runtime.manualStop()
+        }
+      }).catch(() => memoryReport('memory_context_refresh_failed'))
+    } })
+  const memoryImporter = new MemoryImporter({ repository: memoryStore, extract: memoryExtractor, model: memoryModel,
+    canRun: () => runtime.snapshot().lifecycle === 'dormant', report: memoryReport, onChanged: () => memoryIndexer.schedule() })
+  memoryIndexer.schedule()
+  if (phase4QaEnabled && process.env['MIRROR_MEMORY_LIVE_QA'] === '1') memoryPipelineQa = async evidence => runMemoryLiveQa({
+    path: join(app.getPath('userData'), 'private-memory', 'synthetic-e2e.sqlite'), model: await memoryModel(),
+    extract: memoryExtractor, embedder: memoryEmbedder, evidence })
   const memory = registerMemoryIpc({
     handle: (channel, handler) => ipcMain.handle(channel, handler),
     authorize: (event, kind) => authorizeSender(event, kind, windows).ok,
-    state: () => { const snapshot = runtime.snapshot(); return { active: snapshot.lifecycle === 'active',
+    state: () => { const snapshot = runtime.snapshot(); return { active: snapshot.lifecycle === 'active', lifecycle: snapshot.lifecycle,
       avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration } },
-    store: () => memoryStore ??= new MemoryStore(join(app.getPath('userData'), 'private-memory', 'memory.sqlite')),
+    store: () => memoryStore,
+    learning: memoryLearning, embedder: memoryEmbedder, importer: memoryImporter,
+    onChanged: () => memoryIndexer.schedule(),
+    controlPhrases: async () => {
+      const config = await runtime.console.getConfig()
+      if (!config.ok) return []
+      const avatar = config.value.active.avatarCatalog?.avatars.find(a => a.id === runtime.getPublishedAvatarId())
+      return [...config.value.active.spells.map(spell => spell.phrase), ...(avatar?.spells ?? []).map(spell => spell.phrase), avatar?.sleepPhrase ?? '', avatar?.wakePhrase ?? ''].filter(Boolean)
+    },
+    pickMarkdown: async () => {
+      const selected = await dialog.showOpenDialog({ title: 'Import memory Markdown', properties: ['openFile'], filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }] })
+      if (selected.canceled || !selected.filePaths[0]) return null
+      const file = await open(selected.filePaths[0], 'r')
+      try {
+        const info = await file.stat()
+        if (!info.isFile() || info.size > 20 * 1024 * 1024) throw Error('memory_import_too_large')
+        const buffer = Buffer.alloc(Math.min(info.size + 1, 20 * 1024 * 1024 + 1))
+        let bytesRead = 0
+        while (bytesRead < buffer.length) {
+          const part = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead)
+          if (!part.bytesRead) break
+          bytesRead += part.bytesRead
+        }
+        if (bytesRead > info.size || bytesRead > 20 * 1024 * 1024) throw Error('memory_import_too_large')
+        if (bytesRead !== info.size) throw Error('memory_import_source_changed')
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead))
+      } finally { await file.close() }
+    },
     knownAvatar: async id => { const config = await runtime.console.getConfig(); return config.ok && !!config.value.active.avatarCatalog?.avatars.some(a => a.id === id) },
     resetConversation: async () => {
       const result = await runtime.rolloverAtSafeBoundary()
       if (!['dispatched', 'success'].includes(result.status as string)) { await runtime.manualStop(); throw new Error('memory_session_reset_failed') }
     },
     canEdit: () => runtime.snapshot().lifecycle === 'dormant',
-    report: code => { if (code === 'memory_storage_unavailable') void runtime.setMemoryRuntimeStatus('degraded')
-      runtime.telemetry.emit({ module: 'memory', event: 'memory_operation', status: code.includes('failed') || code.includes('unavailable') ? 'degraded' : 'info', reason: code, source: 'runtime' }) },
+    report: memoryReport,
   })
-  app.once('will-quit', () => { try { memoryStore?.close() } catch { /* No private error content. */ } })
+  shutdownMemory = async () => {
+    memory.close(); memoryImporter.cancel()
+    await memoryLearning.flush()
+    await Promise.allSettled([memoryLearning.close(), memoryImporter.idle(), memoryIndexer.close(), memoryEmbedder.close()])
+    await memoryStore.close()
+  }
   runtime.subscribe((snapshot) => {
     memory.observe()
     const previousLifecycle = mainLifecycle
@@ -1373,6 +1440,7 @@ function shutdownBootRuntime(): Promise<void> {
     .then(() => wakeCalibration?.stop(false))
     .then(() => wakeSupervisor?.shutdown())
     .then(() => runtime.shutdown())
+    .then(() => shutdownMemory?.())
     .catch(() => {
       marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })
     })

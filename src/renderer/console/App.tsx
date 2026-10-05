@@ -1387,6 +1387,7 @@ export function ScenesPanel({
   if (state.status === 'success') lastPayload.current = state.value
   const payload = lastPayload.current
   const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const [memoryEditing, setMemoryEditing] = useState(false)
   const retainLocalDraft = useRef(false)
   const acceptRefresh = useRef(false)
   const savedDraftRefresh = useRef<SavedDraftRefresh | null>(null)
@@ -1517,12 +1518,12 @@ export function ScenesPanel({
   }), [bridge])
 
   const editorDisabled = !bridgeAvailable || bridge === null || draft === null || payload === null || (busy && savePhase === 'idle')
-  const disabled = editorDisabled || busy || conflict || state.status !== 'success'
+  const disabled = editorDisabled || busy || conflict || memoryEditing || state.status !== 'success'
   const invalidPresentation = !!rawDraft && (!!rawDraft.presentation && !parsePresentation(rawDraft.presentation)
     || !!rawDraft.avatarCatalog?.avatars.some(avatar => !parsePresentation(avatar.presentation)))
   const dirty = rawDraft !== null && payload !== null
     && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
-  useEffect(() => onEditingChange?.(dirty || busy || conflict), [dirty, busy, conflict, onEditingChange])
+  useEffect(() => onEditingChange?.(dirty || busy || conflict || memoryEditing), [dirty, busy, conflict, memoryEditing, onEditingChange])
   useEffect(() => { setPublishReview(false) }, [dirty, editingId, section])
   const activeAvatar = payload?.active.avatarCatalog?.avatars.find(a => a.id === payload.active.avatarCatalog?.activeAvatarId)
   const deletingAvatar = rawDraft?.avatarCatalog?.avatars.find(avatar => avatar.id === deletingAvatarId)
@@ -1719,7 +1720,7 @@ export function ScenesPanel({
           onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</button>
         <p id="avatar-activation-reason" className="console__muted">{activationReason || 'Switch the published character. Editing alone does not switch the Mirror.'}</p>
         <nav aria-label="Shared library" className="profile-rail__library"><h3>Shared library</h3><p>Reusable across avatars</p>
-          {LIBRARY_SECTIONS.map(label => <button key={label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+          {LIBRARY_SECTIONS.map(label => <button key={label} disabled={memoryEditing} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
         </nav>
       </aside> : null}
       <div className="profile-workspace__editor">
@@ -1727,12 +1728,12 @@ export function ScenesPanel({
         <p className="console__eyebrow">Editing avatar settings</p>
         <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
         <p>{section === 'Memories' ? 'Memory changes save immediately.' : section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? (applyOnSave ? 'This avatar is active on Mirror. Use Save & apply all changes below.' : 'This avatar is active on Mirror. Edits apply after you publish.') : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
-        <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+        <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy || memoryEditing} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
           {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
         </select></HelpField>
       </header>}
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
-        {PROFILE_SECTIONS.map(label => <button key={label} type="button" aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        {PROFILE_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
       </nav>
       {section !== 'Music & video' && section !== 'Memories' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
       <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
@@ -1741,7 +1742,7 @@ export function ScenesPanel({
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
-      {visible && section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} />}
+      {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}

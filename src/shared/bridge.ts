@@ -240,7 +240,7 @@ interface SharedRendererBridge {
 
 export interface MirrorBridge extends SharedRendererBridge {
   memory?(request: import('./memory').MemoryRequest, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
-  memoryInput?(phase: 'start' | 'complete', itemId: string, transcript: string, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
+  memoryInput?(phase: import('./memory').MemoryInputPhase, itemId: string, transcript: string, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   resetMemorySession?(identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   onCameraTarget?(listener: (target: import('./camera-tracking').CameraTarget | null) => void): () => void
   getPresentation?(): Promise<import('./presentation').PresentationPayload | null>
@@ -266,6 +266,7 @@ export interface MirrorBridge extends SharedRendererBridge {
 
 export interface ConsoleBridge extends SharedRendererBridge {
   memory?(request: import('./memory').MemoryConsoleRequest): Promise<import('./memory').MemoryConsoleReply>
+  memoryImport?(request: import('./memory').MemoryImportRequest): Promise<import('./memory').MemoryImportStatus>
   wakeCalibration?(command: import('./wake-calibration').WakeCalibrationCommand): Promise<ConsoleResponse<import('./wake-calibration').WakeCalibrationSnapshot>>
   acquireVoicePreview?(request: import('./voice-preview').VoicePreviewRequest): Promise<import('./voice-preview').VoicePreviewResult>
   releaseVoicePreview?(token: string): Promise<boolean>
