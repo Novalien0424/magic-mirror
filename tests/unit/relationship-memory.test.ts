@@ -16,18 +16,32 @@ function setup() {
   const learning = { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn() }, report = vi.fn()
   const memory = new RelationshipMemory({ repository: repository as unknown as MemoryRepository, learning, report, controlPhrases: async () => ['exact spell'] })
   const confirm = async () => {
-    await memory.request(state, request('identify', { name: 'Alice' }))
+    const q = (await memory.request(state, request('identify', { name: 'Alice' }))).confirmation!
+    await memory.input(state, 'question_played', q.token, q.text)
     await memory.input(state, 'speech', 'confirmation', '')
     return memory.input(state, 'complete', 'confirmation', 'yes')
   }
   return { repository, learning, memory, confirm, report }
 }
 describe('Realtime relationship memory integration', () => {
+  it('treats an unsolicited save as unrequested, preserves actual policy and continues ordinary learning', async () => {
+    const p = setup(); await p.confirm()
+    await p.memory.input(state, 'speech', 'story', '')
+    await p.memory.input(state, 'complete', 'story', 'I design museum exhibits.')
+    expect(await p.memory.request(state, request('remember', { topic: 'Work', text: 'Designs exhibits' })))
+      .toMatchObject({ status: 'ignored', code: 'memory_action_not_requested', mode: 'automatic' })
+    expect(p.repository.save).not.toHaveBeenCalled()
+    expect(p.learning.invalidate).not.toHaveBeenCalled()
+    await p.memory.input(state, 'settled', 'story', '')
+    expect(p.learning.observe).toHaveBeenCalledOnce()
+  })
   it('uses a spoken self-introduction as a candidate when the model attempts recall first, never as confirmation', async () => {
     const p = setup()
     await p.memory.input(state, 'speech', 'intro', '')
     await p.memory.input(state, 'complete', 'intro', 'My name is Alice. What did we discuss?')
-    expect(await p.memory.request(state, request('recall'))).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice' })
+    const proposal = await p.memory.request(state, request('recall'))
+    expect(proposal).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice' })
+    await p.memory.input(state, 'question_played', proposal.confirmation!.token, proposal.confirmation!.text)
     expect(p.repository.brief).not.toHaveBeenCalled()
     await p.memory.input(state, 'speech', 'yes', '')
     expect((await p.memory.input(state, 'complete', 'yes', 'yes')).code).toBe('memory_identity_confirmed')

@@ -66,6 +66,7 @@ export class RelationshipMemory {
   async input(state: MemoryState, phase: MemoryInputPhase, itemId: string, text: string): Promise<MemoryReply> {
     this.observe(state)
     if (!state.active || this.closed) return result('memory_session_unavailable', 'rejected')
+    if (phase === 'question_played' || phase === 'question_cancelled') return this.identity.delivery(state, itemId, text, phase === 'question_played')
     if (phase === 'speech') {
       this.generation++; for (const abort of this.recalls) abort.abort()
       const generation = this.generation
@@ -105,7 +106,7 @@ export class RelationshipMemory {
       }
       const entries = policy.mode === 'off' || this.temporary ? [] : await this.options.repository.brief(state.avatarId, name)
       if (generation !== this.generation || this.identity.currentOwner(state) !== name) return result('memory_result_stale', 'rejected')
-      return { ...confirmed, entries, mode: this.temporary ? 'off' : policy.mode }
+      return { ...confirmed, entries, mode: this.temporary ? 'off' : policy.mode, temporary: this.temporary }
     }
     if (turn) {
       if (turn.text) return result('memory_transcript_duplicate')
@@ -169,7 +170,7 @@ export class RelationshipMemory {
     }
     const turn = this.turns.get(this.latest)
     if (!turn?.text || turn.name !== name) return result('memory_source_pending', 'rejected')
-    if (!management.test(turn.text)) return result('memory_source_required', 'rejected')
+    if (!management.test(turn.text)) return { ...result('memory_action_not_requested', 'ignored'), mode: policy.mode }
     turn.control = true
     this.options.learning.invalidate(avatarId, name)
     if (request.action === 'remember') {

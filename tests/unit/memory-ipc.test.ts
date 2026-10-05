@@ -28,7 +28,8 @@ describe('memory IPC authorization and lifecycle', () => {
   it('joins input start and completion, scopes recall in Main and logs only result codes', async () => {
     const p = setup()
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'start', itemId: 'first', transcript: '' })
-    await p.call('mirror:memory', 'mirror', p.request('identify', { name: 'Synthetic Person' }))
+    const q = (await p.call('mirror:memory', 'mirror', p.request('identify', { name: 'Synthetic Person' }))).confirmation
+    await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'question_played', itemId: q.token, transcript: q.text })
     expect((await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'first', transcript: 'yes' })).code).toBe('memory_confirmation_stale')
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'start', itemId: 'second', transcript: '' })
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'second', transcript: 'yes' })

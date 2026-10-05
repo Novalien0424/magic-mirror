@@ -113,6 +113,56 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('explains an unrequested save without describing a storage failure', async () => {
+    const probe = makeAdapterProbe();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe),
+      onMemory: async () => ({ status: 'ignored', code: 'memory_action_not_requested', mode: 'automatic' }) });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'remember', name: '', topic: 'Work', text: 'Designs exhibits', query: '' }));
+    expect(result).toMatchObject({ status: 'ignored', memory: { mode: 'automatic' }, guidance: expect.stringContaining('not a storage failure') });
+    await handle.close('manual_stop');
+  });
+  it('distinguishes invalid memory arguments from a completed empty lookup', async () => {
+    const probe = makeAdapterProbe(), onMemory = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemory });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'recall', query: 'project' }));
+    expect(result).toMatchObject({ memory: { status: 'rejected', code: 'memory_tool_arguments_rejected' } });
+    expect(onMemory).not.toHaveBeenCalled();
+    await handle.close('manual_stop');
+  });
+  it('waits for pre-tool speech playback before dispatching the identity question', async () => {
+    const probe = makeAdapterProbe();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), waitForOutputTail: async () => {},
+      onMemory: async () => ({ status: 'accepted', code: 'memory_confirmation_required', confirmation: { token: 'q', text: 'Are you Alex?' } }) });
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'preamble' } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'preamble' });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'preamble', status: 'completed', output: [{ content: [{ type: 'audio', transcript: 'Let me check.' }] }] } });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'identify', name: 'Alex', topic: '', text: '', query: '' }));
+    probe.emit('agent_tool_end', {}, {}, { name: 'memory' });
+    expect(probe.sendEvent.mock.calls.some(([e]) => e.type === 'session.update')).toBe(false);
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'preamble' });
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.some(([e]) => e.type === 'session.update')).toBe(true));
+    const update = probe.sendEvent.mock.calls.find(([e]) => e.type === 'session.update')![0];
+    probe.emit('transport_event', { type: 'session.updated', session: update.session });
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.some(([e]) => e.type === 'response.create')).toBe(true));
+    await handle.close('manual_stop');
+  });
+  it.each(['stopped', 'cleared'])('does not re-arm finished audio on a late response.done after output %s', async end => {
+    const probe = makeAdapterProbe();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), waitForOutputTail: async () => {},
+      onMemory: async () => ({ status: 'accepted', code: 'memory_confirmation_required', confirmation: { token: 'q', text: 'Are you Alex?' } }) });
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'greeting' } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'greeting' });
+    probe.emit('transport_event', { type: 'output_audio_buffer.' + end, response_id: 'greeting' });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'greeting', status: end === 'cleared' ? 'cancelled' : 'completed', output: [{ content: [{ type: 'audio', transcript: 'Hello.' }] }] } });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'identify', name: 'Alex', topic: '', text: '', query: '' }));
+    probe.emit('agent_tool_end', {}, {}, { name: 'memory' });
+    expect(probe.sendEvent.mock.calls.some(([e]) => e.type === 'session.update')).toBe(true);
+    await handle.close('manual_stop');
+  });
   it('keeps ordinary speech eligible when the model attempts an unsolicited memory save', async () => {
     const probe = makeAdapterProbe();
     const memoryInput = vi.fn(async (_phase: string) => ({ status: 'accepted' as const, code: 'memory_turn_observed' }));
@@ -141,27 +191,35 @@ describe("RealtimeSession adapter", () => {
     expect(JSON.stringify(result)).not.toContain('private-old-result');
     await handle.close('manual_stop');
   });
-  it('freezes speech ownership, settles the matching response and silently installs a confirmed brief', async () => {
+  it('delivers an application question then synchronizes the confirmed policy and brief before replying', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const memoryInput = vi.fn(async (phase: string) => phase === 'complete'
-      ? { status: 'accepted' as const, code: 'memory_identity_confirmed', entries: [{ id: 'private-row', topic: 'tea', text: 'Prefers green tea', updatedAt: '' }] }
-      : { status: 'accepted' as const, code: 'memory_turn_observed' });
-    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMemoryInput: memoryInput });
+      ? { status: 'accepted' as const, code: 'memory_identity_confirmed', mode: 'automatic' as const, entries: [{ id: 'private-row', topic: 'tea', text: 'Prefers green tea', updatedAt: '' }] }
+      : { status: 'accepted' as const, code: phase === 'question_played' ? 'memory_question_delivered' : 'memory_turn_observed' });
+    const onMemory = vi.fn(async () => ({ status: 'accepted' as const, code: 'memory_confirmation_required', confirmation: { token: 'question', text: 'Are you Alex?' } }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMemoryInput: memoryInput, onMemory, waitForOutputTail: async () => {} });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'identify', name: 'Alex', topic: '', text: '', query: '' }));
+    expect(isBackgroundResult(result)).toBe(true);
+    probe.emit('agent_tool_end', {}, {}, { name: 'memory' });
+    const update = () => probe.sendEvent.mock.calls.filter(([e]) => e.type === 'session.update').at(-1)![0];
+    probe.emit('transport_event', { type: 'session.updated', session: update().session });
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.some(([e]) => e.type === 'response.create')).toBe(true));
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'question-response', metadata: { mirror_memory_question: 'question' } } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'question-response' });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'question-response', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'question-response' });
+    await vi.waitFor(() => expect(memoryInput.mock.calls.map(c => c[0])).toContain('question_played'));
+    await vi.waitFor(() => expect(JSON.stringify(sink.mock.calls)).toContain('memory_question_delivered'));
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'confirm' });
     probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'confirm' });
-    probe.emit('transport_event', { type: 'response.created', response: { id: 'response-confirm' } });
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'confirm', transcript: 'yes' });
-    await vi.waitFor(() => expect(memoryInput).toHaveBeenCalledTimes(3));
-    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'conversation.item.create' }));
-    probe.emit('transport_event', { type: 'response.done', response: { id: 'response-confirm', status: 'completed', output: [] } });
-    await vi.waitFor(() => expect(memoryInput.mock.calls.map(c => c[0])).toContain('settled'));
-    expect(memoryInput.mock.calls.map(c => c[0])).toEqual(['speech', 'start', 'complete', 'settled']);
-    expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'conversation.item.create' }));
-    expect(JSON.stringify(probe.sendEvent.mock.calls)).toContain('Prefers green tea');
-    expect(JSON.stringify(probe.sendEvent.mock.calls)).not.toContain('private-row');
-    expect(probe.sendEvent.mock.calls.some(([event]) => event.type === 'response.create')).toBe(false);
-    const created = probe.sendEvent.mock.calls.find(([event]) => event.type === 'conversation.item.create')![0];
-    probe.emit('transport_event', { type: 'conversation.item.added', item: created.item });
+    await vi.waitFor(() => expect(update().session.instructions).toContain('Prefers green tea'));
+    expect(update().session.instructions).toContain('Automatic:');
+    expect(update().session.instructions).not.toContain('private-row');
+    expect(probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(1);
+    probe.emit('transport_event', { type: 'session.updated', session: update().session });
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(2));
     expect(JSON.stringify(sink.mock.calls)).toContain('memory_brief_installed');
     await handle.close('manual_stop');
   });

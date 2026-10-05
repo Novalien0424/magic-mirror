@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Phase4QaInput, Phase4QaResult } from './phase4-qa'
 import { MEMORY_CONVERSATION_FIXTURE as fixture } from './memory-conversation-fixture'
+import { confirmationQuestionMatches, judgeMemoryConversation, type SyntheticTurn } from './memory-conversation-judgment'
 
 /** User-authorized synthetic transcript recording, isolated QA only.
  * Only the microphone source is substituted. No transcript events, user text,
@@ -11,12 +12,13 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
   if (process.env['MIRROR_MEMORY_CONVERSATION_QA'] !== '1' || process.platform !== 'darwin') throw Error('memory_conversation_qa_unavailable')
   const root = join(input.outputDir, '..')
   const started = Date.now()
-  let checks = 0, step = 'prepare', installed = false, learned = false
+  let checks = 0, step = 'prepare', installed = false, learned = false, visitStarted = 0
   const pass = (name: string) => { checks++; input.onEvidence({ step: name, status: 'passed' }) }
   const evaluate = <T>(source: string) => input.mirror.webContents.executeJavaScript(`(async()=>{${source}})()`, true) as Promise<T>
   const wait = async (predicate: () => Promise<boolean>, reason: string, timeout = 35000) => {
     const end = Date.now() + timeout
     while (Date.now() < end) {
+      if (Date.now() - started > 360000) throw Error('memory_conversation_budget_exceeded')
       if (await predicate()) return
       await new Promise(resolve => setTimeout(resolve, 100))
     }
@@ -46,7 +48,7 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
         createDataChannel(...args){const c=super.createDataChannel(...args),send=c.send.bind(c);
           c.send=data=>{const e=JSON.parse(data);
             if(e.type==='conversation.item.create'&&e.item?.role==='user')q.inputText++;
-            if(e.type==='conversation.item.create'&&e.item?.id?.startsWith('memory-brief-'))q.briefs++;
+            if(e.type==='session.update'&&e.session?.instructions?.includes('Identity: verbally confirmed.'))q.briefs++;
             if(e.type==='conversation.item.create'&&e.item?.type==='function_call_output'){
               let r;try{r=JSON.parse(e.item.output)}catch{};q.tools.push({visit:q.visit,stage:q.stage,direction:'result',code:r?.memory?.code??r?.code??'',at:Date.now()})
             }send(data)};
@@ -54,7 +56,7 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
             if(['input_audio_buffer.speech_started','input_audio_buffer.speech_stopped','input_audio_buffer.committed'].includes(e.type))q.inputEvents.push({...base,event:e.type});
             if(e.type==='conversation.item.input_audio_transcription.completed'){q.asr++;q.records.push({...base,role:'visitor',text:e.transcript})}
             if(e.type==='response.output_audio_transcript.done'||e.type==='response.audio_transcript.done'){q.answers++;q.records.push({...base,role:'avatar',text:e.transcript})}
-            if(e.type==='response.function_call_arguments.done'){let a;try{a=JSON.parse(e.arguments)}catch{};q.tools.push({...base,direction:'call',tool:e.name,action:a?.action??''})}
+            if(e.type==='response.function_call_arguments.done'){let a;try{a=JSON.parse(e.arguments)}catch{};q.tools.push({...base,direction:'call',tool:e.name,action:a?.action??'',argumentShape:a&&typeof a==='object'?Object.fromEntries(Object.entries(a).map(([key,value])=>[key,value===null?'null':Array.isArray(value)?'array':typeof value])):{}})}
             if(e.type==='response.created')q.active=true;
             if(e.type==='response.done'){q.active=false;q.usage.push({...base,status:e.response?.status,usage:e.response?.usage})}
             if(e.type==='output_audio_buffer.started')q.audio=true;
@@ -84,10 +86,22 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
       input.onEvidence({ step: stage, status: 'completed' })
     }
     const start = async (visit: number) => {
+      visitStarted = Date.now()
       step = 'visit_' + visit + '_start'
       await evaluate(`const q=window.__memoryConversationQa;q.visit=${visit};q.stage='greeting';q.active=false;q.audio=false;q.stops=0`)
       await button('Start Conversation')
       await wait(() => evaluate('const q=window.__memoryConversationQa;return q.stops>0&&!q.active&&!q.audio'), 'greeting')
+    }
+    const checkQuestion = async (visit: number) => {
+      // A generated transcript is not a playback receipt. Wait for the production
+      // Main receipt before the synthetic visitor supplies its affirmative.
+      await wait(async () => {
+        const events = input.runtime.console.getEvents({ limit: 100, module: 'memory', source: 'runtime' })
+        return events.ok && events.value.events.some(e => e.reason === 'memory_question_delivered' && Date.parse(e.time) >= visitStarted)
+      }, 'question_playback')
+      const records = await evaluate<SyntheticTurn[]>('return window.__memoryConversationQa.records')
+      if (!confirmationQuestionMatches(records, visit, fixture.name)) throw Error('memory_conversation_wrong_confirmation_question')
+      pass('memory_conversation_question_' + visit)
     }
     const stop = async () => {
       await button('Disconnect')
@@ -96,6 +110,7 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
     }
     await start(1)
     await speak(0, 'first_identify')
+    await checkQuestion(1)
     await speak(1, 'first_confirm')
     await wait(async () => { const e = input.runtime.console.getEvents({ limit: 100, module: 'memory', source: 'runtime' }); return e.ok && e.value.events.some(e => e.reason === 'memory_identity_confirmed') }, 'first_confirmation')
     pass('memory_conversation_first_confirmation')
@@ -117,23 +132,23 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
     await writeFile(join(root, 'synthetic-learned-summaries.json'), JSON.stringify(summaries, null, 2), { mode: 0o600 })
     await start(2)
     await speak(4, 'return_identify')
+    await checkQuestion(2)
     await speak(5, 'return_confirm')
     await speak(6, 'recall_material')
     await speak(7, 'recall_commitment')
     await stop()
     pass('memory_conversation_second_closed')
-    const result = await evaluate<{ connections: number; inputText: number; asr: number; errors: string[]; material: boolean; commitment: boolean }>(`const q=window.__memoryConversationQa;
-      const answer=stage=>q.records.filter(r=>r.visit===2&&r.stage===stage&&r.role==='avatar').map(r=>r.text).join(' ');
-      const material=answer('recall_material'),commitment=answer('recall_commitment');
-      return {connections:q.connections.length,inputText:q.inputText,asr:q.asr,errors:q.errors,
-        material:/cork/i.test(material)&&/glare/i.test(material)&&/carry|light|weight/i.test(material),
-        commitment:/two|2/i.test(commitment)&&/sample/i.test(commitment)&&/friday/i.test(commitment)&&/afternoon/i.test(commitment)};`)
+    const route = await evaluate<{ connections: number; inputText: number; asr: number; errors: string[] }>('const q=window.__memoryConversationQa;return {connections:q.connections.length,inputText:q.inputText,asr:q.asr,errors:q.errors}')
+    const quality = judgeMemoryConversation(await evaluate<SyntheticTurn[]>('return window.__memoryConversationQa.records'))
+    const result = { ...route, ...quality }
     input.onEvidence({ step: 'memory_conversation_verdict', status: 'info', item: JSON.stringify(result) })
     if (result.connections !== 2 || result.inputText || result.asr < 8 || result.errors.length) throw Error('memory_conversation_real_route_failed')
     pass('memory_conversation_real_audio_route')
     if (!learned || !result.material || !result.commitment) throw Error('memory_conversation_recall_incomplete')
     pass('memory_conversation_material_recall')
     pass('memory_conversation_commitment_recall')
+    if (!quality.policy || !quality.grounded || !quality.compact || !quality.clean) throw Error('memory_conversation_quality_failed')
+    pass('memory_conversation_quality')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: 0, musicAnalyser: 'not_executed', visualCount: 0, consoleCheckCount: checks }
   } catch (error) {
     input.onEvidence({ step, status: 'failed', item: error instanceof Error && /^memory_conversation_[a-z_]+$/.test(error.message) ? error.message : 'memory_conversation_failed' })
