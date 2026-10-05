@@ -2,7 +2,7 @@ import type { AvatarProfile } from './avatar-profiles'
 import { buildAvatarPrompt, avatarProfileSessionSettings } from './avatar-prompt'
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, resolveRealtimeTools, realtimeToolDefinition } from './realtime-tools'
 import { DEFAULT_WAKE_PHRASE } from './avatar-commands'
-import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse } from './realtime-prompts'
+import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse, buildMemoryQuestion, buildMemoryState, buildMemoryAcknowledgment } from './realtime-prompts'
 import type { SceneActionDefinition } from './types'
 
 export const PROMPT_TABS = ['Session', 'Speech', 'Tools & input', 'Audition', 'Sources'] as const
@@ -22,11 +22,14 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
   const speech = (title: string, text: string, source: string): PromptSection => section(title,
     text ? json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
   return { name: avatar.name, pages: {
-    Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`)],
+    Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
+      section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),
       speech('Spell announcement · response.create', prompts.spellAnnouncement, `${REALTIME_PROMPT_SOURCE}#spellAnnouncement`),
-      ...actions.filter(a => a.kind === 'avatar_dialogue').map(a => speech(`Scene dialogue · ${a.name} (${a.id})`, a.text, `sceneActions[${a.id}].text`))],
+      ...actions.filter(a => a.kind === 'avatar_dialogue').map(a => speech(`Scene dialogue · ${a.name} (${a.id})`, a.text, `sceneActions[${a.id}].text`)),
+      speech('Identity question · synthetic name', buildMemoryQuestion('Example Visitor'), `${REALTIME_PROMPT_SOURCE}#memoryQuestion`),
+      section('Confirmation reply · synthetic automatic policy', json(buildMemoryAcknowledgment({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic' }, settings.speakingStyle)), `${REALTIME_PROMPT_SOURCE}#memoryAcknowledgments`)],
     'Tools & input': [...tools.flatMap(spec => [
       section(`${spec.name} · tool definition`, json(realtimeToolDefinition(spec)), `${REALTIME_TOOL_SOURCE} + ${profileSource}.sleepPhrase`),
       section(`${spec.name} · structured results`, json(spec.results), REALTIME_TOOL_SOURCE),

@@ -37,6 +37,8 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'memory_brief_oversized',
   'memory_brief_unacknowledged',
   'memory_brief_installed',
+  'memory_question_delivered',
+  'memory_dialogue_failed',
   'memory_input_unavailable',
   'sleep_nonfarewell_output_suppressed',
   'wake_greeting_failed',

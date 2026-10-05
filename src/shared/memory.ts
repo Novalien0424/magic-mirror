@@ -2,14 +2,16 @@
 export type MemoryMode = 'automatic' | 'explicit' | 'off'
 export interface MemoryEntry { id: string; topic: string; text: string; updatedAt: string; kind?: 'episode' | 'fact' | 'commitment'; revision?: number; state?: 'active' | 'resolved' | 'superseded'; eventAt?: string; keepInMind?: boolean }
 export type MemoryAction = 'identify' | 'remember' | 'recall' | 'forget' | 'policy' | 'temporary'
-export type MemoryInputPhase = 'speech' | 'start' | 'complete' | 'settled' | 'control'
+export type MemoryInputPhase = 'speech' | 'start' | 'complete' | 'settled' | 'control' | 'question_played' | 'question_cancelled'
 export interface MemoryRequest { action: MemoryAction; name: string; topic: string; text: string; query: string }
 export interface MemoryReply {
-  status: 'accepted' | 'rejected' | 'failed'
+  status: 'accepted' | 'ignored' | 'rejected' | 'failed'
   code: string
   name?: string
   entries?: MemoryEntry[]
   mode?: MemoryMode
+  temporary?: boolean
+  confirmation?: { token: string; text: string }
   coverage?: 'complete' | 'incomplete' | 'unavailable'
 }
 export interface MemoryConsoleRequest {

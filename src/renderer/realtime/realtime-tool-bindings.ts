@@ -3,6 +3,7 @@ import type { FunctionTool } from '@openai/agents'
 import { z } from 'zod'
 import { realtimeToolDefinition, type RealtimeToolSpec, type ToolOutcome } from '../../shared/realtime-tools'
 import { memoryNeedsReset } from '../../shared/memory'
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 
 export type RealtimeToolHandler = (arguments_: Readonly<Record<string, unknown>>) => Promise<ToolOutcome | { outcome: ToolOutcome; memory: import('../../shared/memory').MemoryReply }>
 export type ToolFailureReason = 'tool_arguments_rejected' | 'tool_execution_failed'
@@ -15,8 +16,9 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     const handler = handlers[spec.handler]!
     const validator = z.fromJSONSchema(spec.parameters)
     const result = (outcome: ToolOutcome, memory?: import('../../shared/memory').MemoryReply) => {
-      const payload = { ...spec.results[outcome], ...(memory ? { memory } : {}) }
-      const responds = memory?.code !== 'memory_result_stale' && (spec.completion === 'response'
+      const payload = { ...spec.results[outcome], ...(memory ? { memory } : {}),
+        ...(memory?.code === 'memory_action_not_requested' ? { guidance: REALTIME_PROMPTS.memoryActionNotRequested } : {}) }
+      const responds = memory?.code !== 'memory_result_stale' && memory?.code !== 'memory_confirmation_required' && (spec.completion === 'response'
         || spec.completion === 'background_on_success' && (outcome === 'failed' || outcome === 'rejected')
         || spec.completion === 'background_on_reset' && !memoryNeedsReset(memory?.code ?? ''))
       return responds ? payload : backgroundResult(payload)
@@ -29,7 +31,10 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
       invoke: async (_context, rawInput) => {
         let arguments_: Record<string, unknown>
         try { arguments_ = validator.parse(JSON.parse(rawInput)) as Record<string, unknown> }
-        catch { onFailure('tool_arguments_rejected'); return result('rejected') }
+        catch {
+          onFailure('tool_arguments_rejected')
+          return result('rejected', spec.handler === 'memory' ? { status: 'rejected', code: 'memory_tool_arguments_rejected' } : undefined)
+        }
         try {
           const value = await handler(Object.freeze(arguments_))
           const outcome = typeof value === 'string' ? value : value.outcome

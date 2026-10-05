@@ -1,71 +1,42 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-05
 
-## Current: real two-visit memory smoke — 2026-10-05
+## Current: conversation/memory improvements implemented; quality acceptance incomplete
 
-User authorized real API conversations and full synthetic transcript recording.
-[Test and full-transcript judgment](docs/testing/relationship-memory-real-conversation-2026-10-05.md):
-two fresh WebRTC sessions, eight real audio/ASR utterances, normal Console
-start/disconnect, automatic summary extraction, and two correct follow-up recalls.
-No guest history was preloaded; seven summaries were learned through production.
-Seven live checks passed in 266 seconds. Full synthetic transcripts remain in
-local ignored artifacts; ordinary visitor recording stays disabled.
+[Implementation, all five attempts and full-transcript judgments](docs/testing/conversation-quality-implementation-2026-10-05.md).
+Delivered: Main-owned confirmation bound to actual question playback; acknowledged
+identity/policy and bounded private brief; compact catalog-based speech; historical
+Markdown date/speaker provenance; invalid-tool feedback and completed-audio cleanup.
 
-The test exposed and fixed an adapter bug: an unsolicited rejected memory save
-was marking ordinary speech as control and suppressing automatic learning.
-Main now owns memory-intent classification from visitor words. TDD regression,
-110 focused tests, typechecks and build pass. Earlier failed runs are preserved.
+The user authorized three additional real API tests; all three were used. The
+final two-visit run completed eight real audio/ASR turns, learned three summaries,
+and correctly recalled cork plus both reasons, two samples for Maya, the changed
+Saturday deadline and non-delivery. The original judge falsely rejected a correct
+mention of superseded Friday. Its regression now distinguishes corrected history
+from a wrong current deadline; failed runtime evidence remains unchanged.
 
-**Memory recall passed; conversation quality did not.** The avatar repeated
-confirmation questions, incorrectly described automatic memory as explicit-only,
-averaged 51 words per visitor turn and added one unsupported first-visit claim.
-Next: repair confirmation/policy dialogue and compactness before human acceptance.
-No additional paid run was spent retrying wording. Existing Markdown import is
-ready for the user's future file; no actual user history was imported here.
+Full transcript review still found false save-failure commentary after an
+unrequested explicit write and unnecessary thinking narration. The former now
+returns ignored/no-action with actual policy and catalog guidance; local tests
+prove automatic learning continues. That final repair is not live verified.
+The prompt-only silence rule remains imperfect. No further API test is authorized;
+full conversation-quality acceptance is not claimed.
 
-Normal app restored through the existing LaunchAgent, PID **24396**, with operator
-configuration unchanged. Avatar, camera, wake listening and local embeddings report
-ready; [restoration evidence](.artifacts/phase4-qa/2026-10-05T06-09-23-569Z/runtime-restored.json).
+128 focused tests across 13 files pass using unchanged prior evidence; the final
+affected seven-file run passed 97. Node/web typechecks, build and diff checks pass.
+Three added runs used 63,668 reported Realtime tokens, excluding extraction;
+one cancelled-response usage event may duplicate greeting usage.
 
-## Current: Realtime relationship memory implemented — 2026-10-05
+Normal Raven restored through its existing LaunchAgent, PID **40010**.
+Console: Dormant/Ready, Raven, published v15, no needs-attention entries.
+Avatar, camera, wake and embeddings report ready. Operator configuration hashes
+are unchanged. [Restoration metadata](.artifacts/conversation-quality-implementation-2026-10-05/runtime-restored-final.json).
 
-The user authorized implementation through TDD, self-review and thorough automated
-end-to-end QA, including a forthcoming large Markdown containing persona and history.
-Realtime voice/model IDs remain unchanged. Delivered: scoped private SQLite v2 in a
-Main worker, turn-bound background summary learning, confirmed-person brief,
-semantic-first plus keyword recall, revision/epoch/dependency guards, correction and
-forget cleanup, automatic/explicit/off/temporary modes, and a cancellable Markdown
-import with separate persona review. Raw conversation evidence stays RAM-only.
-
-[Implementation, import guide and review](docs/relationship-memory-implementation-2026-10-05.md)
-links the design and evidence. [Earlier planning/foundation progress](docs/archive/memory-planning-progress-2026-10-05.md)
-is historical. The architecture is no longer waiting for permission to implement.
-
-Focused regression: 258 tests passed across 23 files. Node/web typechecks and build
-pass. The real local Qwen3/MLX
-smoke passed bilingual similarity and concurrent query-priority checks (1.44 s load,
-14.2 ms warm mean; two synthetic relevance fixtures). More than 1 MiB of synthetic
-Markdown was chunked and distilled with a synthetic extractor; raw-history/persona
-markers did not enter SQLite and restart/isolation/correction/deletion checks passed.
-
-The [final natural-provider live Electron run](.artifacts/phase4-qa/2026-10-05T04-09-01-242Z/evidence.json)
-passed 23 checks: production Console edits,
-policy/reload/draft retention/import, configured cloud extraction, actual Realtime
-confirmation/context acknowledgment/remembered answer, local cross-language recall,
-SQLite restart, guest/avatar isolation, and forget. Real WebRTC used a silent
-synthetic microphone and synthetic ASR edges; it does not pass human microphone
-or conversational-quality acceptance. Earlier natural-provider failures and their
-repairs are retained in the implementation report; these fixtures do not prove
-general conversational recall quality. No phase or packaged-deployment promotion.
-
-Normal app restored through the existing LaunchAgent, PID **17514**. Operator
-configuration v15 is byte-for-byte unchanged across restoration. Startup reports
-Cubism, camera tracking, wake listening and local embeddings ready;
-[metadata evidence](.artifacts/memory-implementation-2026-10-05/runtime-restored.json).
-
-Next: use **Avatars → Memories → Import Markdown** for the user's actual file,
-one person at a time. Persona is previewed separately; only distilled history is
-saved. Human testing will assess omissions, recall cues, interruptions and natural
-turn length. No user history has been imported in these synthetic tests.
+Next: verify the final feedback repair in a separately authorized live run and
+resolve narration reliability before claiming clean conversational acceptance.
+The user's actual Markdown import and human acoustic/conversation testing remain
+later work. No phase/model/dependency/schema change.
+[Earlier memory delivery and runtime snapshots](docs/archive/memory-delivery-progress-2026-10-05.md)
+are historical evidence, not acceptance of these latest changes.
 
 ## Current: local wake during loops, global Mac threshold 0.32 — 2026-10-04
 

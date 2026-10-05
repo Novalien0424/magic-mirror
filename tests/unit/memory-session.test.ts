@@ -10,10 +10,13 @@ describe('private memory session', () => {
   it('does not retrieve or write until a separate exact verbal confirmation', () => {
     const { session, store } = setup()
     expect(session.request(state, request('recall')).code).toBe('memory_identity_required')
-    expect(session.request(state, request('identify', { name: 'Fixture Person' })).code).toBe('memory_confirmation_required')
+    const first = session.request(state, request('identify', { name: 'Fixture Person' })).confirmation!
+    session.delivery(state, first.token, first.text, true)
     expect(store.recall).not.toHaveBeenCalled()
     session.turnStart(state, 'item-1')
     expect(session.transcript(state, 'item-1', 'Yes, but not me').code).toBe('memory_confirmation_unclear')
+    const again = session.request(state, request('identify', { name: 'Fixture Person' })).confirmation!
+    session.delivery(state, again.token, again.text, true)
     session.turnStart(state, 'item-2')
     expect(session.transcript(state, 'item-2', '是的').code).toBe('memory_identity_confirmed')
     expect(session.request(state, request('remember', { topic: 'Fixture', text: 'Synthetic value' })).code).toBe('memory_saved')
@@ -21,7 +24,7 @@ describe('private memory session', () => {
   })
   it('rejects stale confirmations and never silently switches a confirmed owner', () => {
     const { session, store } = setup()
-    session.request(state, request('identify', { name: 'Fixture A' }))
+    { const q = session.request(state, request('identify', { name: 'Fixture A' })).confirmation!; session.delivery(state, q.token, q.text, true) }
     session.turnStart(state, 'item-1')
     session.transcript(state, 'item-1', 'yes')
     expect(session.request(state, request('identify', { name: 'Fixture B' })).code).toBe('memory_clean_session_required')
@@ -32,11 +35,11 @@ describe('private memory session', () => {
   })
   it('clears confirmation on sleep, new session and avatar change; failed storage is content-free', () => {
     const { session, store } = setup()
-    session.request(state, request('identify', { name: 'Fixture A' }))
+    { const q = session.request(state, request('identify', { name: 'Fixture A' })).confirmation!; session.delivery(state, q.token, q.text, true) }
     session.turnStart(state, 'item-1')
     session.transcript(state, 'item-1', 'yes')
     expect(session.request({ ...state, avatarId: 'avatar-b' }, request('recall')).code).toBe('memory_identity_required')
-    session.request(state, request('identify', { name: 'Fixture A' }))
+    { const q = session.request(state, request('identify', { name: 'Fixture A' })).confirmation!; session.delivery(state, q.token, q.text, true) }
     session.turnStart(state, 'item-2')
     session.transcript(state, 'item-2', 'yes')
     store.save.mockImplementation(() => { throw new Error('PRIVATE synthetic detail') })
@@ -46,7 +49,7 @@ describe('private memory session', () => {
   })
   it('deletion blocks old-context reads until the application replaces the session', () => {
     const { session, store } = setup()
-    session.request(state, request('identify', { name: 'Fixture A' }))
+    { const q = session.request(state, request('identify', { name: 'Fixture A' })).confirmation!; session.delivery(state, q.token, q.text, true) }
     session.turnStart(state, 'item-1')
     session.transcript(state, 'item-1', 'yes')
     expect(session.request(state, request('forget', { topic: 'Fixture' })).code).toBe('memory_forgotten')

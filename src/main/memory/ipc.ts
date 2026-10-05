@@ -48,7 +48,7 @@ export function registerMemoryIpc(options: Options): { observe(): void; close():
     if (!options.authorize(event, 'mirror') || args.length !== 1 || !object(args[0])) return rejected()
     const envelope = args[0], state = current(envelope.identity)
     if (!state || Object.keys(envelope).length !== 4 || !validMemoryText(envelope.itemId, 128)
-      || !['speech', 'start', 'complete', 'settled', 'control'].includes(envelope.phase as string) || typeof envelope.transcript !== 'string' || envelope.transcript.length > 16000) return rejected()
+      || !['speech', 'start', 'complete', 'settled', 'control', 'question_played', 'question_cancelled'].includes(envelope.phase as string) || typeof envelope.transcript !== 'string' || envelope.transcript.length > 16000) return rejected()
     try {
       const result = await session.input(state, envelope.phase as MemoryInputPhase, envelope.itemId, envelope.transcript)
       if (!['memory_no_pending_confirmation', 'memory_confirmation_stale'].includes(result.code)) options.report(result.code)
