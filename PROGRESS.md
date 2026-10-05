@@ -1,4 +1,53 @@
-# Magic Mirror — Raven deployment on the final Mac, 2026-10-04
+# Magic Mirror — Raven deployment on the final Mac, 2026-10-05
+
+## Clock-out — 2026-10-05
+
+Research/design only this session; no new memory implementation, migration,
+model download, app restart or deployment. Runtime left untouched; runtime
+observations and PIDs below are dated evidence, not reverified live status.
+
+All survey/design documents are saved locally:
+[Apple Silicon speech stack](docs/apple-silicon-voice-stack-survey-2026-10-04.md),
+[persona and memory portability](docs/persona-memory-migration-survey-2026-10-04.md),
+[memory research](docs/conversational-memory-research-2026-10-04.md),
+[architecture](docs/conversational-memory-architecture-2026-10-04.md),
+[initial self-review](docs/conversational-memory-self-review-2026-10-04.md),
+[production comparison and amended verdict](docs/conversational-memory-production-review-2026-10-05.md).
+The [earlier implementation record](docs/reusable-memory-implementation-2026-10-04.md)
+is explicitly marked as an insufficient foundation for the corrected scope.
+
+Latest retrieval decision: semantic search is primary; keyword search only
+supplements it and cannot filter out semantic candidates. Compare lexical-only,
+vector-only and combined retrieval before choosing weights or a reranker.
+Next on resume: follow the six production-review amendments and begin bounded
+synthetic lifecycle checks plus local embedding/storage comparisons. Full
+conversational memory remains unbuilt; quality and performance are unmeasured.
+
+## Current design: full conversational memory — 2026-10-04
+
+**2026-10-05 review:** compared the design with current AWS AgentCore, Google
+Memory Bank, Mem0, Zep, Letta and official OpenAI documentation. The
+[production review](docs/conversational-memory-production-review-2026-10-05.md)
+conditionally approves the direction with six amendments covering write
+consistency, pending context, retained evidence, deletion, retrieval selection
+and custom-engine scope. This addendum supersedes the earlier completeness
+verdict. No application changes or runtime acceptance in this review.
+
+The user rejected explicit-only lexical memory as the target and requested
+short-term context plus automatic long-term vector memory for a few avatars
+and users. Latest direction: finish research, architectural design and
+self-review before building. Those documents are now saved:
+[research](docs/conversational-memory-research-2026-10-04.md),
+[architecture](docs/conversational-memory-architecture-2026-10-04.md),
+[self-review](docs/conversational-memory-self-review-2026-10-04.md).
+They cover current October sources, local storage/embedding alternatives,
+automatic semantic/episodic learning, Realtime response timing, deletion and
+quality/performance acceptance. Read-only hardware check: Apple M6, 32 GiB.
+No runtime changes, model downloads, dependency installs or migration in this
+research/design step. The existing implementation below remains the running
+foundation and is not acceptance of the corrected scope. Next: bounded model/
+storage integration comparisons, then the documented implementation sequence;
+embedding choice, latency and conversational quality still require measurements.
 
 ## Current: reusable local memory — 2026-10-04
 
