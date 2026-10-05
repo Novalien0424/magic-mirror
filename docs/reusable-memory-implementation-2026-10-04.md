@@ -1,5 +1,7 @@
 # Reusable local memory — research and implementation
 
+**Scope correction:** the user rejected this explicit-only design as the final outcome. Preserve this file as a record of the implemented foundation. The target is now the [conversational memory architecture](conversational-memory-architecture-2026-10-04.md), supported by fresh research and self-review; that replacement has not been built.
+
 Date: 2026-10-04. Scope: the current Magic Mirror Realtime application on the final Mac. This follows the [speech stack survey](apple-silicon-voice-stack-survey-2026-10-04.md) and [persona/memory survey](persona-memory-migration-survey-2026-10-04.md). Those surveys describe the pre-implementation baseline; this document records the implemented change.
 
 ## Decision
