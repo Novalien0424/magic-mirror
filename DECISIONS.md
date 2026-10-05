@@ -1,5 +1,30 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-05 — Realtime relationship memory and Markdown import (user authorization)
+
+- Keep the current Realtime voice path. Ordinary replies never wait for final
+  transcription, extraction or retrieval. Prefer compact conversational turns.
+- The user approved the reviewed relationship-memory design and instructed
+  implementation through TDD, self-review and thorough automated end-to-end QA.
+  A small confirmed-person brief and selective semantic/keyword recall supplement
+  the RAM-only current encounter. No implicit cross-person or cross-avatar sharing.
+- New scopes default to background distilled summaries; migrated explicit-only
+  scopes retain their policy. Automatic, explicit-only, off and encounter-temporary
+  controls apply in Main. Turn-start ownership, control exclusions, revisions,
+  source dependencies and scope epochs guard background writes and forgetting.
+- SQLite stays private in a Main-owned worker thread. A pinned local
+  Qwen3-Embedding-0.6B/MLX runtime supplies vectors on this final Mac; no cloud
+  embedding fallback or runtime model substitution. The embedding manifest is
+  versioned independently of the unchanged dialogue/transcription/extractor IDs.
+- The forthcoming large Markdown is explicitly in scope: preview persona headings
+  separately, then distill bounded history chunks using the configured extractor.
+  Only summaries persist. The source stays in place; persona changes require the
+  existing editor. Import is cancellable and requires Dormant. Already saved
+  summaries remain after cancellation or failure, visibly reported.
+- These rulings supersede the October 4 explicit-only/lexical-only restrictions.
+  Human conversation quality, actual microphone timing and physical presentation
+  remain later acceptance; automated synthetic tests do not claim those results.
+
 ## 2026-10-04 — Reusable local lasting memory (user request)
 
 - Selected structured memories may persist in a private Main-owned SQLite file,

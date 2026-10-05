@@ -27,14 +27,15 @@ describe('private local memory store', () => {
     const saved = store.save('raven', 'Alice', 'Tea', 'Synthetic jasmine tea preference.')
     expect(saved).toEqual({
       id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
-      topic: 'Tea', text: 'Synthetic jasmine tea preference.', updatedAt: expect.any(String)
+      topic: 'Tea', text: 'Synthetic jasmine tea preference.', updatedAt: expect.any(String),
+      kind: 'fact', revision: 1, state: 'active', eventAt: expect.any(String), keepInMind: false
     })
     store.close()
     expect(statSync(join(directory, 'private')).mode & 0o777).toBe(0o700)
     expect(statSync(path).mode & 0o777).toBe(0o600)
     const database = new DatabaseSync(path)
     try {
-      expect(database.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+      expect(database.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 })
       expect(database.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'delete' })
       // secure_delete is a connection setting; verify its effect on disk below.
       expect(database.prepare("SELECT v FROM memory_search_config WHERE k = 'secure-delete'").get())
@@ -68,6 +69,7 @@ describe('private local memory store', () => {
   it('corrects one normalized topic without changing its entry ID or duplicating it', () => {
     const original = store.save('raven', 'Alice', 'ＴＥＡ', 'Synthetic obsolete mint preference.')
     const corrected = store.save('raven', 'alice', 'tea', 'Synthetic corrected jasmine preference.')
+    store.setCleanupRequired('raven', 'alice', false)
     expect(corrected.id).toBe(original.id)
     expect(corrected.text).toBe('Synthetic corrected jasmine preference.')
     expect(store.list('raven', 'alice')).toEqual([corrected])
@@ -134,6 +136,7 @@ describe('private local memory store', () => {
     store.save('raven', 'Alice', 'Tea', obsolete)
     expect(store.recall('raven', 'alice', obsolete)).toHaveLength(1)
     store.save('raven', 'alice', 'Tea', replacement)
+    store.setCleanupRequired('raven', 'alice', false)
     expect(store.recall('raven', 'alice', obsolete)).toEqual([])
     expect(readFileSync(path).includes(Buffer.from(obsolete))).toBe(false)
     expect(store.forget('raven', 'alice', 'Tea')).toBe(true)
@@ -154,6 +157,8 @@ describe('private local memory store', () => {
       `)
       expect(() => store.save('raven', 'alice', 'Tea', 'Synthetic corrected jasmine choice.'))
         .toThrow(/^memory_storage_failed$/)
+      expect(store.policy('raven', 'alice').cleanupRequired).toBe(true)
+      store.setCleanupRequired('raven', 'alice', false)
       expect(store.list('raven', 'alice')).toEqual([original])
       expect(store.recall('raven', 'alice', 'mint')).toEqual([original])
       expect(store.recall('raven', 'alice', 'jasmine')).toEqual([])
@@ -163,6 +168,8 @@ describe('private local memory store', () => {
         BEGIN SELECT RAISE(ABORT, 'synthetic_failure_detail'); END;
       `)
       expect(() => store.forget('raven', 'alice', 'Tea')).toThrow(/^memory_storage_failed$/)
+      expect(store.policy('raven', 'alice').cleanupRequired).toBe(true)
+      store.setCleanupRequired('raven', 'alice', false)
       expect(store.list('raven', 'alice')).toEqual([original])
       expect(store.recall('raven', 'alice', 'mint')).toEqual([original])
     } finally {
@@ -222,12 +229,12 @@ describe('private local memory store', () => {
   it('rejects a future schema version without overwriting it', () => {
     store.close()
     const database = new DatabaseSync(path)
-    database.exec('PRAGMA user_version = 2')
+    database.exec('PRAGMA user_version = 3')
     database.close()
     expect(() => new MemoryStore(path)).toThrow(/^memory_schema_unsupported$/)
     const unchanged = new DatabaseSync(path)
     try {
-      expect(unchanged.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 })
+      expect(unchanged.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 })
     } finally {
       unchanged.close()
     }
@@ -242,13 +249,13 @@ describe('private local memory store', () => {
     expect(() => store.close()).not.toThrow()
   })
 
-  it('bounds a synthetic 2000-record scope and reads it promptly', () => {
-    for (let index = 0; index < 2000; index++) {
+  it('retains more than 2000 records while bounding reads promptly', () => {
+    for (let index = 0; index < 2005; index++) {
       store.save('raven', 'Alice', `Topic ${index}`, `Synthetic performance fixture ${index}.`)
     }
-    expect(() => store.save('raven', 'Alice', 'Overflow', 'Synthetic overflow fixture.'))
-      .toThrow(/^memory_limit_reached$/)
+    expect(() => store.save('raven', 'Alice', 'Overflow', 'Synthetic overflow fixture.')).not.toThrow()
     const correction = store.save('raven', 'ALICE', 'TOPIC 0', 'Synthetic corrected performance fixture.')
+    store.setCleanupRequired('raven', 'alice', false)
     const started = performance.now()
     expect(store.list('raven', 'alice')).toHaveLength(100)
     expect(store.recall('raven', 'alice', 'performance')).toHaveLength(8)

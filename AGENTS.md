@@ -68,10 +68,11 @@ cite primary sources and distinguish verified facts from inference.
 Preserve all 12 IDs; worker prompts name applicable IDs and reports identify those checked.
 
 1. Transcripts, conversation audio and injected private context are RAM-only;
-   diagnostics are metadata-only. Under the 2026-10-04 lasting-memory request,
-   explicitly selected structured memories may persist in Main's private local
-   memory database, scoped by avatar and confirmed person. No raw conversation
-   archive or automatic extraction is enabled by this exception.
+   diagnostics are metadata-only. Under the 2026-10-05 relationship-memory
+   implementation request, selected facts and validated distilled summaries
+   may persist in Main's private local database, scoped by avatar and confirmed
+   person. Automatic learning obeys the scope's policy; imported history stays
+   transient and persona edits stay separate. No raw conversation archive.
 2. Face recognition proposes; private memory loads only after verbal confirm.
 3. Guest/candidate profile IDs stay in Electron Main and never cross
    renderer/model boundaries.

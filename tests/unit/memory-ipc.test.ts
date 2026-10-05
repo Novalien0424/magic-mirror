@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerMemoryIpc } from '../../src/main/memory/ipc'
-import type { MemoryStore } from '../../src/main/memory/store'
+import type { MemoryRepository } from '../../src/main/memory/contracts'
 
 function setup() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   let active = true
   const state = () => ({ active, avatarId: 'fixture-avatar', realtimeSessionId: 'session', sessionGeneration: 1 })
-  const store = { save: vi.fn(), list: vi.fn(() => []), recall: vi.fn(() => []), names: vi.fn(() => []), forget: vi.fn(() => true) }
+  const store = { save: vi.fn(), list: vi.fn(() => []), hybridRecall: vi.fn(async () => ({ entries: [], incomplete: false })), recall: vi.fn(() => []), names: vi.fn(() => []), forget: vi.fn(() => true),
+    policy: vi.fn(async () => ({ mode: 'automatic', epoch: 1, cleanupRequired: false })), brief: vi.fn(async () => []), setCleanupRequired: vi.fn(async () => {}) }
   const reset = vi.fn(async () => undefined), report = vi.fn()
   registerMemoryIpc({ handle: (key, handler) => handlers.set(key, handler), authorize: (event, kind) => event === kind,
-    store: () => store as unknown as MemoryStore, state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
+    store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn() },
+    state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
   const identity = { realtimeSessionId: 'session', sessionGeneration: 1 }
   const call = async (key: string, event: string, value: unknown) => await handlers.get(key)!(event, value) as any
   const request = (action: string, extra = {}) => ({ request: { action, name: '', topic: '', text: '', query: '', ...extra }, identity })
@@ -31,7 +33,7 @@ describe('memory IPC authorization and lifecycle', () => {
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'start', itemId: 'second', transcript: '' })
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'second', transcript: 'yes' })
     await p.call('mirror:memory', 'mirror', p.request('recall', { name: 'Wrong Person', query: 'tea' }))
-    expect(p.store.recall).toHaveBeenCalledWith('fixture-avatar', 'Synthetic Person', 'tea')
+    expect(p.store.hybridRecall).toHaveBeenCalledWith('fixture-avatar', 'Synthetic Person', 'tea', undefined)
     expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Synthetic|Wrong|tea/)
     await p.call('mirror:memory-reset', 'mirror', p.identity)
     expect(p.reset).toHaveBeenCalledOnce()

@@ -1,6 +1,6 @@
 import { parseMemoryRequest, validMemoryText, type MemoryReply, type MemoryEntry } from '../../shared/memory'
 
-export interface MemoryState { active: boolean; avatarId: string; realtimeSessionId: string; sessionGeneration: number }
+export interface MemoryState { active: boolean; avatarId: string; realtimeSessionId: string; sessionGeneration: number; lifecycle?: string }
 interface Store {
   save(avatar: string, name: string, topic: string, text: string): unknown
   recall(avatar: string, name: string, query: string): MemoryEntry[]
@@ -20,6 +20,7 @@ export class MemorySession {
   private sequence = 0
   private pendingAfter = 0
   constructor(private readonly store: Store) {}
+  currentOwner(state: MemoryState): string { this.observe(state); return this.name }
   reset(): void { this.key = ''; this.name = ''; this.pending = ''; this.attempts = 0; this.blocked = false; this.seen.clear(); this.inputOrder.clear(); this.sequence = 0 }
   turnStart(state: MemoryState, itemId: string): void {
     this.observe(state)
