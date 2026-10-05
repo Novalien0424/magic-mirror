@@ -1,5 +1,31 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-05
 
+## Current: real two-visit memory smoke — 2026-10-05
+
+User authorized real API conversations and full synthetic transcript recording.
+[Test and full-transcript judgment](docs/testing/relationship-memory-real-conversation-2026-10-05.md):
+two fresh WebRTC sessions, eight real audio/ASR utterances, normal Console
+start/disconnect, automatic summary extraction, and two correct follow-up recalls.
+No guest history was preloaded; seven summaries were learned through production.
+Seven live checks passed in 266 seconds. Full synthetic transcripts remain in
+local ignored artifacts; ordinary visitor recording stays disabled.
+
+The test exposed and fixed an adapter bug: an unsolicited rejected memory save
+was marking ordinary speech as control and suppressing automatic learning.
+Main now owns memory-intent classification from visitor words. TDD regression,
+110 focused tests, typechecks and build pass. Earlier failed runs are preserved.
+
+**Memory recall passed; conversation quality did not.** The avatar repeated
+confirmation questions, incorrectly described automatic memory as explicit-only,
+averaged 51 words per visitor turn and added one unsupported first-visit claim.
+Next: repair confirmation/policy dialogue and compactness before human acceptance.
+No additional paid run was spent retrying wording. Existing Markdown import is
+ready for the user's future file; no actual user history was imported here.
+
+Normal app restored through the existing LaunchAgent, PID **24396**, with operator
+configuration unchanged. Avatar, camera, wake listening and local embeddings report
+ready; [restoration evidence](.artifacts/phase4-qa/2026-10-05T06-09-23-569Z/runtime-restored.json).
+
 ## Current: Realtime relationship memory implemented — 2026-10-05
 
 The user authorized implementation through TDD, self-review and thorough automated

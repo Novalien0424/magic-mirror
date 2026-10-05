@@ -5,9 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
+import { MEMORY_CONVERSATION_FIXTURE } from '../src/main/memory-conversation-fixture.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--memory', '--memory-live']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--memory', '--memory-live', '--memory-conversation']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -24,7 +25,8 @@ const activeBgmOnly = process.argv.includes('--active-bgm')
 const ritualOnly = process.argv.includes('--ritual')
 const mediaSkillOnly = process.argv.includes('--media-skill')
 const memoryLive = process.argv.includes('--memory-live')
-const memoryOnly = process.argv.includes('--memory') || memoryLive
+const memoryConversation = process.argv.includes('--memory-conversation')
+const memoryOnly = process.argv.includes('--memory') || memoryLive || memoryConversation
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly
 const videoFades = process.argv.includes('--video-fades')
@@ -232,6 +234,7 @@ if (memoryOnly) {
       modelId: 'builtin-ren', presentation: { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
         entranceMs: 800, exitMs: 900, wakeGreeting: 'Hello.', sleepFarewell: 'Goodbye.' }, scenes: [], spells: [] },
   ] }
+  if (memoryConversation) config.avatarCatalog.avatars[0].personality = MEMORY_CONVERSATION_FIXTURE.avatarPersona
 }
 if (ritualOnly) {
   const legacyPresentation = { mode: 'always_visible', backgroundId: '', ambienceId: '',
@@ -270,10 +273,11 @@ const environment = {
   MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
   MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
   MIRROR_MEMORY_LIVE_QA: memoryLive ? '1' : '0',
+  MIRROR_MEMORY_CONVERSATION_QA: memoryConversation ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
-  MIRROR_PHASE4_QA_LIVE: live || memoryLive ? '1' : '0',
+  MIRROR_PHASE4_QA_LIVE: live || memoryLive || memoryConversation ? '1' : '0',
   MIRROR_PHASE4_QA_LIFECYCLE_LIVE: lifecycleLive ? '1' : '0',
   MIRROR_PHASE4_QA_CONSOLE: consoleOnly ? '1' : '0',
   MIRROR_PHASE4_QA_EDITOR: editorOnly ? '1' : '0',
@@ -281,7 +285,7 @@ const environment = {
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive ? '300000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -317,7 +321,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : memoryLive ? 310_000 : cubismOnly ? 310_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)

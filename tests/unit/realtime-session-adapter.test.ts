@@ -113,6 +113,19 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('keeps ordinary speech eligible when the model attempts an unsolicited memory save', async () => {
+    const probe = makeAdapterProbe();
+    const memoryInput = vi.fn(async (_phase: string) => ({ status: 'accepted' as const, code: 'memory_turn_observed' }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemoryInput: memoryInput });
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'ordinary-story' });
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'ordinary-story' });
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'response-story' } });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'ordinary-story', transcript: 'I chose cork because it reduces glare.' });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'response-story', status: 'completed', output: [{ type: 'function_call', name: 'memory', arguments: JSON.stringify({ action: 'remember' }) }] } });
+    await vi.waitFor(() => expect(memoryInput.mock.calls.map(c => c[0])).toContain('settled'));
+    expect(memoryInput.mock.calls.map(c => c[0])).not.toContain('control');
+    await handle.close('manual_stop');
+  });
   it('silences a recall that finishes after a new spoken turn', async () => {
     const probe = makeAdapterProbe();
     let deliver!: (value: any) => void;
