@@ -880,7 +880,9 @@ export function createRealtimeSession(
           const itemId = memoryResponses.get(memoryResponseId)
           memoryResponses.delete(memoryResponseId)
           const output = readProperty(response, 'output')
-          const hasControl = Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call' && ['memory', ...sleepToolNames].includes(readProperty(item, 'name') as string))
+          // Main classifies memory-management intent from the visitor's actual
+          // words. An unsolicited/rejected model save must not erase ordinary evidence.
+          const hasControl = Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string))
           if (itemId && hasControl) memoryInput('control', itemId)
           if (itemId && readProperty(response, 'status') === 'completed') memoryInput('settled', itemId)
           installBrief()
