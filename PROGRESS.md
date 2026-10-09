@@ -56,10 +56,15 @@ conversation-quality acceptance has not been established.
 
 ## Runtime and next action
 
-Isolated Electron QA has finished; ordinary Raven is temporarily stopped.
-Restore the existing `com.magicmirror.launchagent` after QA, verify Ready/Dormant,
-media index and wake listening, and compare operator settings with the preserved
-[baseline](.artifacts/raven-conversation-2026-10-09/operator-before.json).
-Then commit and push the audited source and record actual deployment evidence.
+Source commit `7f6b377` is deployed through the existing
+`com.magicmirror.launchagent`, PID **50961**. Fresh startup evidence confirms Main
+and both renderers Ready, Dormant, media index ready and wake worker listening.
+All five operator settings hashes match the pre-QA baseline. The stamped build
+matches current source and output. [Deployment metadata](.artifacts/raven-conversation-2026-10-09/deployment.json)
+and [startup events](.artifacts/raven-conversation-2026-10-09/runtime-start-events.json).
+No alternate restart owner or new packaging/signing chain was introduced.
+
 The user has been asked whether to compare `gpt-realtime-2.1` with the pinned
 `gpt-realtime-2.1-mini`; no model change is authorized or performed yet.
+Next: resolve that choice for the remaining quality failures, and obtain actual
+microphone/wake and exact-spell acceptance. Failed evidence remains intact.

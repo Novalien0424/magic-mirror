@@ -161,3 +161,13 @@ and the installed SDK sends the documented
 [Realtime image message](https://developers.openai.com/api/docs/guides/realtime-conversations#image-inputs).
 Model capability support alone is not evidence that this application's visual
 answer works; the live result remains the acceptance criterion.
+
+## Deployment
+
+Source commit `7f6b377` was rebuilt and restored through the existing LaunchAgent,
+PID **50961**. Main and both renderers report Ready; fresh events confirm Dormant,
+the media-folder index and local wake listening. The five operator configuration,
+audio and folder hashes are unchanged. [Deployment metadata](../../.artifacts/raven-conversation-2026-10-09/deployment.json)
+and [startup events](../../.artifacts/raven-conversation-2026-10-09/runtime-start-events.json).
+Normal Raven remains running. This deploys the verified repairs; it does not
+declare full conversational or acoustic acceptance.
