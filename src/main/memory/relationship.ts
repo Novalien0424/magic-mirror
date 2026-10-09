@@ -2,12 +2,12 @@ import { MemorySession, type MemoryState } from './session'
 import { parseMemoryRequest, type MemoryReply, type MemoryInputPhase, type MemoryMode, MEMORY_CONTEXT_BYTES } from '../../shared/memory'
 import type { MemoryRepository, MemoryEmbedder } from './contracts'
 import type { MemoryLearning } from './learning'
-import type { MemoryInterpreter, MemoryIntentInput, MemoryIntentResult } from './intent'
+import { memoryInterpretationFailure, type MemoryInterpreter, type MemoryIntentInput, type MemoryIntentResult } from './intent'
 
 interface Turn { name: string; avatarId: string; epoch: number; text: string; settled: boolean; control: boolean; observedAt: string; submitted: boolean }
 interface Options {
   repository: MemoryRepository
-  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate'>
+  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude'>
   embedder?: MemoryEmbedder
   interpret?: MemoryInterpreter
   report(reason: string): void
@@ -16,6 +16,16 @@ interface Options {
 }
 const result = (code: string, status: MemoryReply['status'] = 'accepted'): MemoryReply => ({ code, status })
 const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/[。.!！?？\s]+$/u, '')
+async function untilAborted<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort!: () => void
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(Error('memory_operation_cancelled'))
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try { return await Promise.race([operation, cancelled]) }
+  finally { signal.removeEventListener('abort', onAbort) }
+}
 /** Main-only coordinator. Only content/result codes leave this boundary. */
 export class RelationshipMemory {
   private readonly identity = new MemorySession({ save: () => {}, recall: () => [], forget: () => false })
@@ -34,9 +44,21 @@ export class RelationshipMemory {
     try {
       if (!this.options.interpret) throw Error()
       const result = await this.options.interpret(input, abort.signal)
-      return abort.signal.aborted ? undefined : result
-    } catch { this.options.report('memory_interpretation_unavailable'); return undefined }
+      if (abort.signal.aborted) throw Error('memory_interpretation_cancelled')
+      return result
+    } catch (error) { this.options.report(abort.signal.aborted ? 'memory_interpretation_cancelled' : memoryInterpretationFailure(error)); return undefined }
     finally { this.recalls.delete(abort) }
+  }
+  private async candidateName(avatarId: string, supplied: string): Promise<string> {
+    // Spoken spacing is not stable across ASR turns. Resolve only a unique
+    // formatting candidate in Main; never merge records or load its facts.
+    const canonical = (value: string) => value.normalize('NFKC').trim().toLowerCase()
+    const names = await this.options.repository.names(avatarId), name = canonical(supplied)
+    const exact = names.find(existing => canonical(existing) === name)
+    if (exact) return exact
+    const compact = name.replace(/\s/gu, '')
+    const candidates = names.filter(existing => canonical(existing).replace(/\s/gu, '') === compact)
+    return candidates.length === 1 ? candidates[0]! : supplied
   }
   invalidateLoaded(state: MemoryState, avatarId: string, name: string): boolean {
     this.observe(state)
@@ -98,15 +120,19 @@ export class RelationshipMemory {
     if (phase === 'start') { this.identity.turnStart(state, itemId); return result('memory_turn_observed') }
     const turn = this.turns.get(itemId)
     if (phase === 'control') {
-      if (turn) { turn.control = true; this.options.learning.invalidate(turn.avatarId, turn.name) }
+      if (turn) { turn.control = true; this.options.learning.exclude(turn.avatarId, turn.name, itemId) }
       return result('memory_control_excluded')
     }
     if (phase === 'settled') { if (turn) { turn.settled = true; await this.finish(itemId, turn) }; return result('memory_turn_settled') }
     const question = this.identity.confirmation(state, itemId), generation = this.generation
     const judgment = question ? await this.interpret({ task: 'confirmation', text, question: question.text }) : undefined
     if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+    if (question && !judgment) {
+      this.identity.delivery(state, question.token, '', false)
+      return result('memory_confirmation_unavailable', 'failed')
+    }
     const confirmed = this.identity.transcript(state, itemId, text, question
-      ? { token: question.token, decision: judgment?.confirmation ?? 'unclear' } : undefined)
+      ? { token: question.token, decision: judgment!.confirmation } : undefined)
     if (confirmed.code === 'memory_identity_confirmed') {
       const name = this.identity.currentOwner(state), generation = this.generation
       let policy = await this.options.repository.policy(state.avatarId, name)
@@ -142,13 +168,18 @@ export class RelationshipMemory {
     if (request.action === 'identify') {
       const source = this.turns.get(this.latest), generation = this.generation
       if (!source?.text) return result('memory_source_pending', 'rejected')
-      const intent = await this.interpret({ task: 'request', text: source.text, request })
+      // Audio dialogue and final ASR can spell a spoken name differently.
+      // Main derives only a candidate from the actual introduction; the
+      // delivered question and a later answer still own confirmation.
+      const intent = await this.interpret({ task: 'introduction', text: source.text })
       if (generation !== this.generation) return result('memory_result_stale', 'rejected')
       if (!intent) return result('memory_interpretation_unavailable', 'failed')
-      if (!intent.authorized || normalize(intent.name) !== normalize(request.name)) return result('memory_action_not_requested', 'ignored')
+      if (!intent.authorized || !intent.name.trim()) return result('memory_action_not_requested', 'ignored')
+      const candidate = await this.candidateName(state.avatarId, intent.name)
+      if (generation !== this.generation) return result('memory_result_stale', 'rejected')
       source.control = true
-      if (source.name) this.options.learning.invalidate(source.avatarId, source.name)
-      return this.identity.request(state, request, intent.language)
+      if (source.name) this.options.learning.exclude(source.avatarId, source.name, this.latest)
+      return this.identity.request(state, { ...request, name: candidate }, intent.language)
     }
     const name = this.identity.currentOwner(state)
     if (this.temporary) return result('memory_disabled', 'rejected')
@@ -170,8 +201,11 @@ export class RelationshipMemory {
           const generation = this.generation, intent = await this.interpret({ task: 'introduction', text: source.text })
           if (generation !== this.generation) return result('memory_result_stale', 'rejected')
           if (!intent) return result('memory_interpretation_unavailable', 'failed')
-          if (intent.authorized && intent.name) return this.identity.request(state,
-            { action: 'identify', name: intent.name, topic: '', text: '', query: '' }, intent.language)
+          if (intent.authorized && intent.name.trim()) {
+            const candidate = await this.candidateName(state.avatarId, intent.name)
+            if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+            return this.identity.request(state, { action: 'identify', name: candidate, topic: '', text: '', query: '' }, intent.language)
+          }
         }
       }
       return locked
@@ -183,23 +217,32 @@ export class RelationshipMemory {
     if (request.action === 'recall') {
       if (policy.mode === 'off' || this.temporary) return result('memory_disabled', 'rejected')
       const abort = new AbortController(); this.recalls.add(abort)
-      const timer = setTimeout(() => abort.abort(), 1500)
       try {
         let embedding
         if (request.query.trim() && this.options.embedder) {
-          try { embedding = await this.options.embedder.embed(request.query, 'query', abort.signal) }
-          catch { if (!abort.signal.aborted) this.options.report('memory_semantic_unavailable') }
+          const semantic = new AbortController(), timer = setTimeout(() => semantic.abort(), 1500)
+          const signal = AbortSignal.any([abort.signal, semantic.signal])
+          try { embedding = await untilAborted(this.options.embedder.embed(request.query, 'query', signal), signal) }
+          catch { if (!abort.signal.aborted) this.options.report(semantic.signal.aborted ? 'memory_semantic_timeout' : 'memory_semantic_unavailable') }
+          finally { clearTimeout(timer) }
         }
-        if (abort.signal.aborted) return result(generation !== this.generation ? 'memory_result_stale' : 'memory_recall_unavailable', 'rejected')
-        const found = await this.options.repository.hybridRecall(avatarId, name, request.query, embedding)
-        const current = await this.options.repository.policy(avatarId, name)
-        if (generation !== this.generation || current.epoch !== policy.epoch || current.mode === 'off' || current.cleanupRequired) return result('memory_result_stale', 'rejected')
-        if (abort.signal.aborted) return result('memory_recall_unavailable', 'failed')
-        const entries = [...found.entries]
-        while (Buffer.byteLength(JSON.stringify(entries)) > MEMORY_CONTEXT_BYTES) entries.pop()
-        return { ...result(entries.length ? 'memory_recalled' : 'memory_no_match'), entries,
-          coverage: found.incomplete || !embedding && !!request.query.trim() ? 'incomplete' : 'complete' }
-      } finally { clearTimeout(timer); this.recalls.delete(abort) }
+        if (abort.signal.aborted || generation !== this.generation) return result('memory_result_stale', 'rejected')
+        // Keyword retrieval gets its own bounded budget after semantic degradation.
+        const timer = setTimeout(() => abort.abort(), 1500)
+        try {
+          const found = await untilAborted(this.options.repository.hybridRecall(avatarId, name, request.query, embedding), abort.signal)
+          const current = await untilAborted(this.options.repository.policy(avatarId, name), abort.signal)
+          if (generation !== this.generation || current.epoch !== policy.epoch || current.mode === 'off' || current.cleanupRequired) return result('memory_result_stale', 'rejected')
+          const entries = [...found.entries]
+          while (Buffer.byteLength(JSON.stringify(entries)) > MEMORY_CONTEXT_BYTES) entries.pop()
+          return { ...result(entries.length ? 'memory_recalled' : 'memory_no_match'), entries,
+            coverage: found.incomplete || !embedding && !!request.query.trim() ? 'incomplete' : 'complete' }
+        } catch (error) {
+          if (abort.signal.aborted) return generation !== this.generation ? result('memory_result_stale', 'rejected')
+            : { ...result('memory_recall_unavailable', 'failed'), coverage: 'unavailable' }
+          throw error
+        } finally { clearTimeout(timer) }
+      } finally { this.recalls.delete(abort) }
     }
     const turn = this.turns.get(this.latest)
     if (!turn?.text || turn.name !== name) return result('memory_source_pending', 'rejected')
@@ -213,10 +256,12 @@ export class RelationshipMemory {
       if (policy.mode === 'off' || this.temporary) return result('memory_disabled', 'rejected')
       const saved = await this.options.repository.save(avatarId, name, request.topic, request.text)
       this.options.onChanged?.()
-      if (generation !== this.generation || this.identity.currentOwner(state) !== name) return result('memory_result_stale', 'rejected')
       // The atomic write knows whether this was a correction; a bounded UI
       // search can miss an old target and leave stale private context loaded.
-      if ((saved.revision ?? 1) === 1) return result('memory_saved')
+      if ((saved.revision ?? 1) === 1) return generation !== this.generation || this.identity.currentOwner(state) !== name
+        ? result('memory_result_stale', 'rejected') : result('memory_saved')
+      // A committed correction still obliges the renderer to close old context,
+      // even when newer speech makes its conversational result stale.
       this.blocked = true; this.cleanup = { avatarId, name }
       await this.options.repository.setCleanupRequired(avatarId, name, true)
       return result('memory_corrected')

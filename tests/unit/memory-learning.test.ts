@@ -42,4 +42,66 @@ describe('summary learning lifecycle', () => {
     expect(p.repository.commitLearning).not.toHaveBeenCalled()
     await p.learning.close()
   })
+  it('removes a pending control item while retaining other eligible evidence for flush', async () => {
+    const p = setup()
+    const evidence: string[][] = []
+    p.extract.mockImplementation(async input => { evidence.push(input.evidence.map(e => e.id)); return [record] })
+    for (const itemId of ['ordinary', 'control']) await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId, text: 'synthetic', observedAt: '' })
+    try {
+      p.learning.exclude('raven', 'Alice', 'control')
+      await p.learning.flush()
+      expect(evidence).toEqual([['ordinary']])
+      expect(p.repository.commitLearning).toHaveBeenCalledOnce()
+    } finally { await p.learning.close() }
+  })
+  it('retries only unaffected evidence after an active batch gains a control exclusion', async () => {
+    const p = setup()
+    const evidence: string[][] = []
+    p.extract.mockImplementation(async input => { evidence.push(input.evidence.map(e => e.id)); return [record] })
+    let finish!: (records: LearningRecord[]) => void
+    p.extract.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    for (const itemId of ['ordinary', 'control']) await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId, text: 'synthetic', observedAt: '' })
+    const flush = p.learning.flush()
+    try {
+      await vi.waitFor(() => expect(p.extract).toHaveBeenCalledOnce())
+      p.learning.exclude('raven', 'Alice', 'control')
+      expect(p.extract.mock.calls[0]![1].aborted).toBe(true)
+      // New eligible evidence must also survive while the cancelled batch finishes.
+      await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'new-ordinary', text: 'synthetic', observedAt: '' })
+      finish([record]); await flush
+      expect(evidence).toEqual([['ordinary'], ['new-ordinary']])
+      expect(p.repository.commitLearning).toHaveBeenCalledTimes(2)
+    } finally { finish?.([]); await flush; await p.learning.close() }
+  })
+  it('excludes an observation still awaiting eligibility without invalidating its owner', async () => {
+    const p = setup()
+    const evidence: string[][] = []
+    p.extract.mockImplementation(async input => { evidence.push(input.evidence.map(e => e.id)); return [record] })
+    await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'ordinary', text: 'synthetic', observedAt: '' })
+    let finish!: (policy: { epoch: number; mode: string; cleanupRequired: boolean }) => void
+    p.repository.policy.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'control', text: 'synthetic', observedAt: '' })
+    try {
+      p.learning.exclude('raven', 'Alice', 'control')
+      finish({ epoch: 1, mode: 'automatic', cleanupRequired: false }); await pending
+      await p.learning.flush()
+      expect(evidence).toEqual([['ordinary']])
+      expect(p.repository.commitLearning).toHaveBeenCalledOnce()
+    } finally { finish?.({ epoch: 1, mode: 'automatic', cleanupRequired: false }); await pending; await p.learning.close() }
+  })
+  it('does not replay unaffected evidence after a scope mutation invalidates an excluded batch', async () => {
+    const p = setup()
+    let finish!: (records: LearningRecord[]) => void
+    p.extract.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    for (const itemId of ['ordinary', 'control']) await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId, text: 'synthetic', observedAt: '' })
+    const flush = p.learning.flush()
+    try {
+      await vi.waitFor(() => expect(p.extract).toHaveBeenCalledOnce())
+      p.learning.exclude('raven', 'Alice', 'control')
+      p.learning.invalidate('raven', 'Alice')
+      finish([record]); await flush
+      expect(p.extract).toHaveBeenCalledOnce()
+      expect(p.repository.commitLearning).not.toHaveBeenCalled()
+    } finally { finish?.([]); await flush; await p.learning.close() }
+  })
 })

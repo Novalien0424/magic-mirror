@@ -10,9 +10,9 @@ interface Options {
   tail(): Promise<void>
   interrupt(): Promise<void>
   failed(): void
-  report(reason: 'memory_question_delivered' | 'memory_dialogue_failed' | 'memory_brief_installed'): void
+  report(reason: 'memory_question_delivered' | 'memory_dialogue_failed' | 'memory_brief_installed' | 'memory_input_unavailable'): void
 }
-interface Question { token: string; text: string; responseId?: string; started: boolean; done: boolean; stopped: boolean; transcript: string }
+interface Question { token: string; text: string; responseId?: string; answerItemId?: string; started: boolean; done: boolean; stopped: boolean; transcript: string }
 /** Owns only the bounded identity exchange. Ordinary voice never waits on this coordinator. */
 export class MemoryDialogue {
   private phase: 'idle' | 'preparing' | 'speaking' | 'verifying' | 'awaiting' | 'answering' | 'applying' | 'closed' = 'idle'
@@ -42,13 +42,19 @@ export class MemoryDialogue {
       this.options.send({ type: 'response.create', response: { ...buildSpeechResponse(q.text, this.options.speakingStyle), metadata: { mirror_memory_question: q.token } } })
     } catch { this.fail() }
   }
-  speech(): void {
-    if (this.phase === 'awaiting') { clearTimeout(this.timer); this.phase = 'answering'; this.timer = setTimeout(() => this.fail(), 10000) }
+  speech(itemId: string): void {
+    if (this.phase === 'awaiting' && /^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) {
+      this.question!.answerItemId = itemId
+      // This starts at speech onset, so allow the utterance and final ASR as
+      // well as Main's bounded interpretation and the session acknowledgment.
+      clearTimeout(this.timer); this.phase = 'answering'; this.timer = setTimeout(() => this.fail(), 20000)
+    }
     else if (this.active) this.fail()
   }
   cancel(): void { if (this.active) this.fail() }
-  async answer(reply: MemoryReply): Promise<void> {
+  async answer(itemId: string, reply: MemoryReply): Promise<void> {
     if (this.phase !== 'answering') return
+    if (itemId !== this.question?.answerItemId) { this.options.report('memory_input_unavailable'); return }
     this.phase = 'applying'
     try {
       const confirmed = reply.code === 'memory_identity_confirmed'

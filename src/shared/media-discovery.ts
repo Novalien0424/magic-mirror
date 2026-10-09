@@ -62,7 +62,12 @@ function labelScore(label: string, query: string, compactQuery: string, clues: s
   const normalized = normalize(label), compact = normalized.replace(/ /g, '')
   if (normalized === query || compact === compactQuery) return 4
   if (normalized.includes(query) || compact.includes(compactQuery)) return 3
-  return clues.every(clue => normalized.includes(clue) || compact.includes(clue)) ? 2 : 0
+  if (clues.every(clue => normalized.includes(clue) || compact.includes(clue))) return 2
+  // A caller may retain polite/request words around a literal title or alias.
+  // Return a weak candidate, never select it or drop stronger matches. Latin
+  // word boundaries prevent "Rain" from matching "Rainbow".
+  return (normalized.includes(' ') && ` ${query} `.includes(` ${normalized} `)
+    || /\p{Script=Han}/u.test(normalized) && compact.length >= 2 && compactQuery.includes(compact)) ? 1 : 0
 }
 
 /** Pure discovery: retain ambiguous candidates and never select a resource or dispatch playback. */
@@ -94,7 +99,8 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
     .sort((a, b) => b.score - a.score || compare(a.name, b.name)
       || compare(a.resource.kind, b.resource.kind) || compare(a.resource.assetId, b.resource.assetId))
   const total = ranked.length
+  const ambiguous = !listing && total > 1 && ranked[0]!.score === ranked[1]!.score
   return { status: 'accepted', code: total > MAX_RESULTS ? 'media_discovery_truncated'
-    : listing ? 'media_discovery_listed' : total ? 'media_discovery_matches' : 'media_discovery_no_match',
+    : listing ? 'media_discovery_listed' : ambiguous ? 'media_discovery_ambiguous' : total ? 'media_discovery_matches' : 'media_discovery_no_match',
   resources: ranked.slice(0, MAX_RESULTS).map(candidate => candidate.resource), total }
 }

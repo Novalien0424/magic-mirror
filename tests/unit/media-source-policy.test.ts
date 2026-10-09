@@ -14,6 +14,46 @@ describe('visitor-owned media source restriction', () => {
     expect(localMediaOnly('Play Rain.')).toBe(false)
     expect(localMediaOnly('Do not search YouTube.')).toBe(true)
   })
+  it.each([
+    'Play only local music.', 'Play the local video.', 'Play Rain from our music folder.',
+    'Play Small Cloud from our video library.', 'Don’t use YouTube.', 'Do not go to YouTube.',
+    'Do not look on YouTube.', 'Play Distant Harbor from our vault instead of YouTube.',
+    'Play Distant Harbor from our vault rather than YouTube.',
+    'Do not search for Rain on YouTube.', 'Don’t play Small Cloud from YouTube.',
+    'Do not use the YouTube website.',
+  ])('keeps equivalent local-source and negative YouTube wording local: %s', text => {
+    expect(localMediaOnly(text)).toBe(true)
+  })
+  it.each([
+    'I watched it on YouTube yesterday. Play Rain from our vault.',
+    'The title mentions YouTube. Play it from our folder.',
+    'YouTube has many videos, but play Small Cloud from our video library.',
+  ])('does not let an incidental YouTube mention override an explicit local request: %s', text => {
+    expect(localMediaOnly(text)).toBe(true)
+  })
+  it('keeps a prior local constraint when YouTube is mentioned without requesting it', async () => {
+    const policy = createMediaSourcePolicy()
+    policy.begin('local'); policy.observe('local', 'Play Rain from our vault.')
+    policy.begin('discussion'); policy.observe('discussion', 'I read about YouTube yesterday.')
+    policy.searchedLocal()
+    expect(await policy.youtube()).toBe('restricted')
+  })
+  it.each(['Play Rain on YouTube.', 'On YouTube, play Rain.', 'YouTube, please.',
+    '在 YouTube 循環播放雨聲。', 'Play https://youtu.be/abcdefghijk', 'Play Rain on ＹｏｕＴｕｂｅ.'])('allows a directed YouTube choice: %s', async text => {
+    const policy = createMediaSourcePolicy()
+    policy.begin('local'); policy.observe('local', 'Play from our vault.')
+    policy.begin('youtube'); policy.observe('youtube', text)
+    expect(await policy.youtube()).toBe('allowed')
+  })
+  it('does not carry explicit YouTube authorization into a different request', async () => {
+    const policy = createMediaSourcePolicy()
+    policy.begin('youtube'); policy.observe('youtube', 'Play Rain on YouTube.')
+    expect(await policy.youtube()).toBe('allowed')
+    policy.begin('generic'); policy.observe('generic', 'Play Small Cloud.')
+    expect(await policy.youtube()).toBe('local_lookup_required')
+    policy.searchedLocal()
+    expect(await policy.youtube()).toBe('allowed')
+  })
   it('waits for current ASR before permitting network access and ignores an older turn', async () => {
     const policy = createMediaSourcePolicy()
     policy.begin('current')

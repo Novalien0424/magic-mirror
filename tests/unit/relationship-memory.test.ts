@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { RelationshipMemory } from '../../src/main/memory/relationship'
-import type { MemoryRepository } from '../../src/main/memory/contracts'
+import type { MemoryRepository, MemoryEmbedder } from '../../src/main/memory/contracts'
 import type { MemoryIntentInput, MemoryIntentResult } from '../../src/main/memory/intent'
 const state = { active: true, avatarId: 'raven', realtimeSessionId: 'session-a', sessionGeneration: 1 }
 const request = (action: string, extra = {}) => ({ action, name: '', topic: '', text: '', query: '', ...extra })
-function setup() {
+function setup(embedder?: MemoryEmbedder) {
   let mode = 'automatic', epoch = 1
   const repository = {
+    names: vi.fn(async (): Promise<string[]> => []),
     policy: vi.fn(async () => ({ mode, epoch, cleanupRequired: false })),
     brief: vi.fn(async () => [{ id: 'record', topic: 'Exhibition', text: 'Synthetic exhibition is upcoming.', updatedAt: '2026-10-05' }]),
     hybridRecall: vi.fn(async () => ({ entries: [], incomplete: false })),
@@ -15,14 +16,14 @@ function setup() {
     setPolicy: vi.fn(async (_a, _n, value) => { mode = value; return { mode, epoch: ++epoch, cleanupRequired: false } }),
     setCleanupRequired: vi.fn(async () => {}),
   }
-  const learning = { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn() }, report = vi.fn()
+  const learning = { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() }, report = vi.fn()
   // Stub semantic decisions; these tests prove application boundaries, not model accuracy.
   const interpret = vi.fn(async (input: MemoryIntentInput): Promise<MemoryIntentResult> => ({
     confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', language: 'en',
     authorized: input.task === 'introduction' || input.request?.action === 'identify' || input.request?.action === 'forget' || input.request?.action === 'temporary',
     name: input.task === 'introduction' || input.request?.action === 'identify' ? 'Alice' : '',
   }))
-  const memory = new RelationshipMemory({ repository: repository as unknown as MemoryRepository, learning, report, interpret, controlPhrases: async () => ['exact spell'] })
+  const memory = new RelationshipMemory({ repository: repository as unknown as MemoryRepository, learning, report, interpret, embedder, controlPhrases: async () => ['exact spell'] })
   const confirm = async () => {
     await memory.input(state, 'speech', 'intro', '')
     await memory.input(state, 'complete', 'intro', 'My name is Alice.')
@@ -34,6 +35,94 @@ function setup() {
   return { repository, learning, memory, confirm, report, interpret }
 }
 describe('Realtime relationship memory integration', () => {
+  it.each(['identify', 'recall'])('proposes a unique stored spacing variant through %s without loading private facts', async action => {
+    const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith', 'Unrelated Person'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is AliceSmith.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: 'AliceSmith', language: 'en' })
+    const proposal = await p.memory.request(state, request(action, { name: action === 'identify' ? 'AliceSmith' : '' }))
+    expect(proposal).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice Smith' })
+    expect(p.repository.names).toHaveBeenCalledWith('raven')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.hybridRecall).not.toHaveBeenCalled()
+  })
+  it.each([
+    [['AliceSmith', 'Alice Smith'], 'AliceSmith', 'AliceSmith'],
+    [['Alice Smith', 'Ali ceSmith'], 'AliceSmith', 'AliceSmith'],
+    [['Alyce Smith'], 'AliceSmith', 'AliceSmith'],
+    [['AliceSmith', 'AliceSmith.'], 'AliceSmith.', 'AliceSmith.'],
+  ] as const)('prefers exact labels and never guesses between formatting candidates or changes letters %#', async (names, supplied, expected) => {
+    const p = setup(); p.repository.names.mockResolvedValue([...names])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is AliceSmith.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: supplied, language: 'en' })
+    expect(await p.memory.request(state, request('identify', { name: supplied })))
+      .toMatchObject({ code: 'memory_confirmation_required', name: expected })
+    expect(p.repository.brief).not.toHaveBeenCalled()
+  })
+  it('drops a delayed formatting candidate after a session change', async () => {
+    const p = setup()
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alice.')
+    let finish!: (names: string[]) => void
+    p.repository.names.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = p.memory.request(state, request('identify', { name: 'Alice' }))
+    await vi.waitFor(() => expect(p.repository.names).toHaveBeenCalledOnce())
+    p.memory.observe({ ...state, realtimeSessionId: 'replacement' })
+    finish(['Alice'])
+    expect((await pending).code).toBe('memory_result_stale')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+  })
+  it('derives a candidate from Main introduction when the audio model spells the name differently', async () => {
+    const p = setup()
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alice.')
+    const proposal = await p.memory.request(state, request('identify', { name: 'Alyce' }))
+    expect(p.interpret).toHaveBeenLastCalledWith({ task: 'introduction', text: 'My name is Alice.' }, expect.any(AbortSignal))
+    expect(proposal).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice' })
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    await p.memory.input(state, 'question_played', proposal.confirmation!.token, proposal.confirmation!.text)
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    await p.memory.input(state, 'speech', 'answer', '')
+    expect((await p.memory.input(state, 'complete', 'answer', "That's me.")).code).toBe('memory_identity_confirmed')
+    expect(p.repository.brief).toHaveBeenCalledWith('raven', 'Alice')
+  })
+  it('ignores a fabricated identify name when the visitor did not introduce themselves', async () => {
+    const p = setup()
+    await p.memory.input(state, 'speech', 'story', '')
+    await p.memory.input(state, 'complete', 'story', 'Alice is my neighbor.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: false, name: '', language: 'en' })
+    expect((await p.memory.request(state, request('identify', { name: 'Alice' }))).code).toBe('memory_action_not_requested')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.save).not.toHaveBeenCalled()
+  })
+  it('rejects an introduction result after newer visitor speech', async () => {
+    const p = setup()
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alice.')
+    let finish!: (value: MemoryIntentResult) => void
+    p.interpret.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = p.memory.request(state, request('identify', { name: 'Alyce' }))
+    await p.memory.input(state, 'speech', 'correction', '')
+    finish({ confirmation: 'unclear', authorized: true, name: 'Alice', language: 'en' })
+    expect((await pending).code).toBe('memory_result_stale')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['Alice', 'Unrelated tool name', 'memory_identity_confirmed'],
+    ['Bob', 'Alice', 'memory_clean_session_required'],
+  ])('uses the Main-derived %s candidate for an already confirmed owner', async (name, toolName, code) => {
+    const p = setup(); await p.confirm(); p.repository.brief.mockClear()
+    await p.memory.input(state, 'speech', 'next-intro', '')
+    await p.memory.input(state, 'complete', 'next-intro', `My name is ${name}.`)
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name, language: 'en' })
+    const result = await p.memory.request(state, request('identify', { name: toolName }))
+    expect(result.code).toBe(code)
+    expect(result.confirmation).toBeUndefined()
+    expect(p.learning.exclude).toHaveBeenCalledWith('raven', 'Alice', 'next-intro')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    if (name !== 'Alice') expect((await p.memory.request(state, request('recall'))).code).toBe('memory_clean_session_required')
+  })
   it.each(['I remember building theater sets.', '我是博物館設計師。'])('keeps ordinary biographical evidence: %s', async text => {
     const p = setup(); await p.confirm()
     p.interpret.mockClear()
@@ -98,6 +187,25 @@ describe('Realtime relationship memory integration', () => {
     expect(p.repository.list).not.toHaveBeenCalled()
     expect((await p.memory.request(state, request('recall'))).code).toBe('memory_clean_session_required')
   })
+  it.each([1, 2])('retains committed correction cleanup after a new utterance (revision %i)', async revision => {
+    const p = setup(); await p.confirm()
+    await p.memory.input(state, 'speech', 'correction', '')
+    await p.memory.input(state, 'complete', 'correction', 'Keep the updated preference: mint tea.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: '', language: 'en' })
+    let finish!: (entry: { id: string; revision: number }) => void
+    p.repository.save.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = p.memory.request(state, request('remember', { topic: 'Tea', text: 'Prefers mint tea.' }))
+    await vi.waitFor(() => expect(p.repository.save).toHaveBeenCalledOnce())
+    await p.memory.input(state, 'speech', 'new-turn', '')
+    finish({ id: 'saved', revision })
+    expect(await pending).toMatchObject({ code: revision === 2 ? 'memory_corrected' : 'memory_result_stale' })
+    if (revision === 2) {
+      expect(p.repository.setCleanupRequired).toHaveBeenCalledWith('raven', 'Alice', true)
+      expect((await p.memory.request(state, request('recall'))).code).toBe('memory_clean_session_required')
+      await p.memory.reset()
+      expect(p.repository.setCleanupRequired).toHaveBeenLastCalledWith('raven', 'Alice', false)
+    } else expect(p.repository.setCleanupRequired).not.toHaveBeenCalled()
+  })
   it('ignores authorization arriving after a new utterance and fails closed without an interpreter result', async () => {
     const p = setup(); await p.confirm()
     await p.memory.input(state, 'speech', 'write', '')
@@ -127,6 +235,22 @@ describe('Realtime relationship memory integration', () => {
     await p.memory.input(state, 'speech', 'unrelated', '')
     await p.memory.input(state, 'complete', 'unrelated', 'yes')
     expect(p.repository.brief).not.toHaveBeenCalled()
+  })
+  it.each(['timeout', 'http', 'schema', 'cancelled', 'PRIVATE FIXTURE'])('cancels an unavailable confirmation without interpreting failure as ambiguity: %s', async cause => {
+    const p = setup()
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alice.')
+    const q = (await p.memory.request(state, request('identify', { name: 'Alice' }))).confirmation!
+    await p.memory.input(state, 'question_played', q.token, q.text)
+    await p.memory.input(state, 'speech', 'answer', '')
+    p.interpret.mockRejectedValueOnce(Error(cause === 'PRIVATE FIXTURE' ? cause : `memory_interpretation_${cause}`))
+    expect(await p.memory.input(state, 'complete', 'answer', 'yes')).toEqual({ status: 'failed', code: 'memory_confirmation_unavailable' })
+    expect(p.report).toHaveBeenCalledWith(cause === 'PRIVATE FIXTURE' ? 'memory_interpretation_unavailable' : `memory_interpretation_${cause}`)
+    await p.memory.input(state, 'speech', 'late-answer', '')
+    expect((await p.memory.input(state, 'complete', 'late-answer', 'yes')).code).toBe('memory_no_pending_confirmation')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.policy).not.toHaveBeenCalled()
+    expect(JSON.stringify(p.report.mock.calls)).not.toContain('PRIVATE')
   })
   it('treats an unsolicited save as unrequested, preserves actual policy and continues ordinary learning', async () => {
     const p = setup(); await p.confirm()
@@ -184,6 +308,60 @@ describe('Realtime relationship memory integration', () => {
     await p.memory.input(state, 'complete', 'control', 'exact spell')
     await p.memory.input(state, 'settled', 'control', '')
     expect(p.learning.observe).toHaveBeenCalledOnce()
+  })
+  it('excludes only a control item and preserves earlier eligible learning before flush', async () => {
+    const p = setup(); await p.confirm()
+    await p.memory.input(state, 'speech', 'ordinary', '')
+    await p.memory.input(state, 'complete', 'ordinary', 'My synthetic exhibition opens tomorrow.')
+    await p.memory.input(state, 'settled', 'ordinary', '')
+    await p.memory.input(state, 'speech', 'media-control', '')
+    await p.memory.input(state, 'complete', 'media-control', 'Play the fixture music.')
+    await p.memory.input(state, 'control', 'media-control', '')
+    await p.memory.input(state, 'settled', 'media-control', '')
+    expect(p.learning.exclude).toHaveBeenCalledWith('raven', 'Alice', 'media-control')
+    expect(p.learning.invalidate).not.toHaveBeenCalled()
+    expect(p.learning.observe).toHaveBeenCalledOnce()
+    p.memory.observe({ ...state, active: false })
+    expect(p.learning.flush).toHaveBeenCalledOnce()
+  })
+  it.each(['timeout', 'stale'] as const)('falls back after semantic timeout but never after stale-turn cancellation: %s', async cause => {
+    const embed = vi.fn(async (_text: string, _purpose: 'query' | 'document', signal?: AbortSignal): Promise<never> => new Promise((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(Error('PRIVATE FIXTURE')), { once: true })
+    }))
+    const p = setup({ version: 'configured-local', embed, close: async () => {} }); await p.confirm()
+    p.repository.hybridRecall.mockResolvedValueOnce({ entries: [{ id: 'keyword-hit', topic: 'Tea', text: 'Synthetic tea preference', updatedAt: '' }], incomplete: true } as any)
+    vi.useFakeTimers()
+    try {
+      const pending = p.memory.request(state, request('recall', { query: 'tea' }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(embed).toHaveBeenCalledOnce()
+      if (cause === 'stale') await p.memory.input(state, 'speech', 'replacement', '')
+      else await vi.advanceTimersByTimeAsync(1501)
+      const found = await pending
+      if (cause === 'timeout') {
+        expect(found).toMatchObject({ status: 'accepted', code: 'memory_recalled', coverage: 'incomplete', entries: [{ id: 'keyword-hit' }] })
+        expect(p.repository.hybridRecall).toHaveBeenCalledWith('raven', 'Alice', 'tea', undefined)
+        expect(p.report).toHaveBeenCalledWith('memory_semantic_timeout')
+      } else {
+        expect(found.code).toBe('memory_result_stale')
+        expect(p.repository.hybridRecall).not.toHaveBeenCalled()
+      }
+      expect(JSON.stringify(p.report.mock.calls)).not.toContain('PRIVATE')
+    } finally { vi.useRealTimers() }
+  })
+  it('bounds semantic and keyword waits even when an adapter ignores cancellation', async () => {
+    const embed = vi.fn(() => new Promise<never>(() => {}))
+    const p = setup({ version: 'configured-local', embed, close: async () => {} }); await p.confirm()
+    p.repository.hybridRecall.mockImplementation(() => new Promise(() => {}))
+    vi.useFakeTimers()
+    try {
+      const pending = p.memory.request(state, request('recall', { query: 'tea' }))
+      await vi.advanceTimersByTimeAsync(1501)
+      expect(p.repository.hybridRecall).toHaveBeenCalledWith('raven', 'Alice', 'tea', undefined)
+      await vi.advanceTimersByTimeAsync(1501)
+      expect(await pending).toEqual({ status: 'failed', code: 'memory_recall_unavailable', coverage: 'unavailable' })
+      expect(p.report).toHaveBeenCalledWith('memory_semantic_timeout')
+    } finally { vi.useRealTimers() }
   })
   it('rejects a delayed recall after a new utterance even within the same session', async () => {
     const p = setup(); await p.confirm()

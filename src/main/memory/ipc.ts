@@ -11,7 +11,7 @@ interface Options {
   authorize(event: unknown, kind: 'mirror' | 'console'): boolean
   state(): MemoryState
   store(): MemoryRepository
-  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate'>
+  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude'>
   embedder?: MemoryEmbedder
   interpret?: MemoryInterpreter
   controlPhrases?(): Promise<string[]>

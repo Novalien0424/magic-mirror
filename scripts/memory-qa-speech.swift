@@ -14,7 +14,7 @@ synthesizer.delegate = completion
 var results: [String] = []
 for text in texts {
     let utterance = AVSpeechUtterance(string: text)
-    utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+    utterance.voice = AVSpeechSynthesisVoice(language: text.range(of: "[\\p{Han}]", options: .regularExpression) == nil ? "en-US" : "zh-TW")
     utterance.rate = 0.51
     var samples = Data()
     var sampleRate: UInt32 = 22050
