@@ -10,8 +10,9 @@ function setup() {
     policy: vi.fn(async () => ({ mode: 'automatic', epoch: 1, cleanupRequired: false })), brief: vi.fn(async () => []), setCleanupRequired: vi.fn(async () => {}) }
   const reset = vi.fn(async () => undefined), report = vi.fn()
   registerMemoryIpc({ handle: (key, handler) => handlers.set(key, handler), authorize: (event, kind) => event === kind,
-    interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true, name: input.request?.name ?? '', language: 'en' }),
-    store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn() },
+    interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true,
+      name: input.task === 'introduction' ? 'Synthetic Person' : input.request?.name ?? '', language: 'en' }),
+    store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() },
     state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
   const identity = { realtimeSessionId: 'session', sessionGeneration: 1 }
   const call = async (key: string, event: string, value: unknown) => await handlers.get(key)!(event, value) as any

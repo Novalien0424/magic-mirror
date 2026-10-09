@@ -13,32 +13,35 @@ export class MemoryLearning {
   private tokens = new Map<string, number>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private running: Promise<void> | undefined
-  private active: { key: string; abort: AbortController } | undefined
+  private active: { key: string; batch: Batch; abort: AbortController; excluded: boolean } | undefined
   private closed = false
   private readonly consolidate: MemoryConsolidator
   constructor(private readonly options: Options) {
     this.consolidate = options.consolidate ?? createMemoryConsolidator({ repository: options.repository, extract: options.extract, report: options.report })
   }
   private key(avatarId: string, name: string): string { return JSON.stringify([avatarId, name.normalize('NFKC').trim().toLowerCase()]) }
+  private remember(unique: string): void {
+    this.seen.add(unique)
+    if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value!)
+  }
   async observe(item: Observation): Promise<void> {
     if (this.closed) return
     const key = this.key(item.avatarId, item.name), unique = `${key}:${item.itemId}`, token = this.tokens.get(key) ?? 0
     if (this.seen.has(unique)) return
     try {
       const policy = await this.options.repository.policy(item.avatarId, item.name)
-      if (this.closed || token !== (this.tokens.get(key) ?? 0) || policy.mode !== 'automatic' || policy.cleanupRequired || item.epoch !== undefined && item.epoch !== policy.epoch) {
+      if (this.closed || this.seen.has(unique) || token !== (this.tokens.get(key) ?? 0) || policy.mode !== 'automatic' || policy.cleanupRequired || item.epoch !== undefined && item.epoch !== policy.epoch) {
         this.options.report('memory_learning_ineligible'); return
       }
       const previous = this.batches.get(key)
       if (previous && previous.epoch !== policy.epoch) this.batches.delete(key)
       const batch = this.batches.get(key) ?? { avatarId: item.avatarId, name: item.name, epoch: policy.epoch,
         model: await this.options.model(), token, evidence: [] }
-      if (this.closed || token !== (this.tokens.get(key) ?? 0)) return
+      if (this.closed || this.seen.has(unique) || token !== (this.tokens.get(key) ?? 0)) return
       if (this.batches.size >= 8 && !this.batches.has(key) || batch.evidence.length >= 24 || item.text.length > 4000 || batch.evidence.reduce((n, e) => n + e.text.length, 0) + item.text.length > 16000) {
         this.options.report('memory_learning_overloaded'); return
       }
-      this.seen.add(unique)
-      if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value!)
+      this.remember(unique)
       batch.evidence.push({ id: item.itemId, text: item.text, observedAt: item.observedAt })
       this.batches.set(key, batch)
       this.options.report('memory_learning_pending')
@@ -52,6 +55,22 @@ export class MemoryLearning {
     this.batches.delete(key)
     if (this.active?.key === key) this.active.abort.abort()
   }
+  exclude(avatarId: string, name: string, itemId: string): void {
+    const key = this.key(avatarId, name)
+    // Also prevent an observation still awaiting policy/model from entering a batch.
+    this.remember(`${key}:${itemId}`)
+    const batch = this.batches.get(key)
+    if (batch) {
+      batch.evidence = batch.evidence.filter(e => e.id !== itemId)
+      if (!batch.evidence.length) this.batches.delete(key)
+    }
+    const active = this.active
+    if (active?.key === key && active.batch.evidence.some(e => e.id === itemId)) {
+      active.batch.evidence = active.batch.evidence.filter(e => e.id !== itemId)
+      active.excluded = true; active.abort.abort()
+    }
+    this.options.report('memory_learning_control_excluded')
+  }
   flush(): Promise<void> {
     if (this.running) return this.running
     clearTimeout(this.timer); this.timer = undefined
@@ -59,10 +78,12 @@ export class MemoryLearning {
     return this.running
   }
   private async drain(): Promise<void> {
-    while (!this.closed && this.batches.size) {
-      const [key, batch] = this.batches.entries().next().value!
-      this.batches.delete(key)
-      const abort = new AbortController(); this.active = { key, abort }
+    let retry: [string, Batch] | undefined
+    while (!this.closed && (retry || this.batches.size)) {
+      const [key, batch] = retry ?? this.batches.entries().next().value!
+      if (!retry) this.batches.delete(key)
+      retry = undefined
+      const abort = new AbortController(), active = { key, batch, abort, excluded: false }; this.active = active
       try {
         const policy = await this.options.repository.policy(batch.avatarId, batch.name)
         if (policy.mode !== 'automatic' || policy.cleanupRequired || policy.epoch !== batch.epoch || batch.token !== (this.tokens.get(key) ?? 0)) {
@@ -78,7 +99,14 @@ export class MemoryLearning {
         const reason = error instanceof Error && ['memory_invalid_input', 'memory_storage_failed', 'memory_extraction_invalid', 'memory_extraction_unavailable'].includes(error.message) ? error.message : 'memory_learning_unavailable'
         this.options.report(abort.signal.aborted ? 'memory_learning_cancelled' : reason)
       }
-      finally { batch.evidence.length = 0; this.active = undefined }
+      finally {
+        // Retry a bounded subset separately from newer evidence; scope mutations
+        // still invalidate all work through the owner token.
+        if (active.excluded && !this.closed && batch.token === (this.tokens.get(key) ?? 0) && batch.evidence.length) {
+          retry = [key, { ...batch, evidence: [...batch.evidence] }]
+        }
+        batch.evidence.length = 0; this.active = undefined
+      }
     }
   }
   async close(): Promise<void> {

@@ -769,7 +769,8 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     display: display.id, width: display.bounds.width, height: display.bounds.height,
     mirror: display.id === mirrorDisplay.id ? 'yes' : 'no',
   })
-  const mediaFunctional = process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
+  const ravenConversation = process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+  const mediaFunctional = ravenConversation || process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
   if (!editorOnly && !mediaFunctional && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
     exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason: 'phase4_qa_portrait_display_required' }, 2)
     return
@@ -793,7 +794,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     try {
       await writeFile(join(outputDir, '..', 'evidence.json'), JSON.stringify({
         platform: process.platform,
-        mode: mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
+        mode: ravenConversation ? 'raven_conversation' : mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
         live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
         display: { count: displays.length, mirror: portrait?.id, width: portrait?.bounds.width,
           height: portrait?.bounds.height, verified: !editorOnly && !mediaFunctional, console: consoleDisplay?.id },
@@ -1163,7 +1164,9 @@ void app.whenReady().then(async () => {
   sceneRuntimeControl = registerIpcHandlers({
     youtube: youtubePlayer,
     searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
-    captureCamera: () => cameraTracking?.capture() ?? Promise.resolve(null),
+    captureCamera: () => phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+      ? windows.get('mirror')!.webContents.executeJavaScript(`(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
+      : cameraTracking?.capture() ?? Promise.resolve(null),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     mediaFolders: async request => {
       await mediaFoldersReady

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { parseMediaDiscoveryReply, parseMediaDiscoveryRequest, rankMediaResources,
   type MediaDiscoveryReply, type MediaDiscoveryRequest } from '../../src/shared/media-discovery'
 import type { AvatarMediaResource } from '../../src/shared/media-skill'
+import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
+import { folderMediaSkill } from '../../src/shared/media-folders'
 
 const resource = (assetId: string, name: string, aliases: string[] = [], kind: 'music' | 'video' = 'music'): AvatarMediaResource =>
   ({ kind, assetId, name, aliases })
@@ -77,6 +79,32 @@ describe('media discovery reply boundary', () => {
 })
 
 describe('public local media ranking', () => {
+  it('finds literal aliases inside a request without confusing a title with a longer word', () => {
+    const resources = [resource('sky', 'Night Sky', ['northern lights clip'], 'video'), resource('rain', 'Rain')]
+    expect(ids(rankMediaResources(resources, request('Please show the northern lights clip', 'video')))).toEqual(['sky'])
+    expect(ids(rankMediaResources(resources, request('play rainbow')))).toEqual([])
+    expect(ids(rankMediaResources([resource('cloud', '雲海')], request('請播放雲海')))).toEqual(['cloud'])
+  })
+  it('marks equal best matches as ambiguous and retains all candidates', () => {
+    const resources = [resource('piano', 'Rain — Piano'), resource('violin', 'Rain — Violin')]
+    expect(rankMediaResources(resources, request('Rain'))).toMatchObject({ code: 'media_discovery_ambiguous', total: 2 })
+    expect(rankMediaResources(resources, request('Rain Piano'))).toMatchObject({ code: 'media_discovery_matches', total: 1 })
+  })
+  it('preserves synthetic imported aliases and Rain ambiguity alongside folder resources', () => {
+    const imported = [resource('qa-rain-piano', 'Rain — Fixture Pianist', ['雨聲鋼琴', '雨天鋼琴']),
+      resource('qa-rain-violin', 'Rain — Fixture Violinist', ['雨聲小提琴']),
+      resource('qa-small-cloud', 'Small Cloud', ['little cloud clip', '小雲片'], 'video')]
+    const skill = folderMediaSkill({ ...DEFAULT_MEDIA_SKILL, resources: imported }, [
+      { ...resource('folder-beacon', 'Folder Beacon'), origin: 'own' },
+      { ...resource('shared-lantern', 'Shared Lantern'), origin: 'shared' },
+    ])
+    expect(parseMediaDiscoveryReply(rankMediaResources(skill.resources, request('little cloud clip', 'video'))))
+      .toEqual(reply({ resources: [imported[2]!] }))
+    expect(ids(rankMediaResources(skill.resources, request('小雲片', 'video')))).toEqual(['qa-small-cloud'])
+    expect(ids(rankMediaResources(skill.resources, request('Rain', 'music')))).toEqual(['qa-rain-piano', 'qa-rain-violin'])
+    expect(ids(rankMediaResources(skill.resources, request('rain fixture pianist', 'music')))).toEqual(['qa-rain-piano'])
+    expect(rankMediaResources(skill.resources, request('Distant Harbor'))).toMatchObject({ total: 0, code: 'media_discovery_no_match' })
+  })
   it('ranks exact names, exact aliases, partial names, partial aliases and multi-part clues without selecting one', () => {
     const resources = [resource('alias-partial', 'Zither', ['Rain at night']), resource('name-partial', 'Rain at night'),
       resource('alias-exact', 'Evening', ['Rain']), resource('name-exact', 'Rain'), resource('unrelated', 'Sunshine')]

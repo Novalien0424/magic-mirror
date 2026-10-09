@@ -22,7 +22,8 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
       const payload = { ...spec.results[outcome], ...(memory ? { memory } : {}), ...(media ? { media } : {}), ...(youtube ? { youtube } : {}),
         ...(memory?.code === 'memory_action_not_requested' ? { guidance: REALTIME_PROMPTS.memoryActionNotRequested } : {}) }
       const responds = !media?.code.endsWith('_stale') && !youtube?.code.endsWith('_stale') && memory?.code !== 'memory_result_stale' && memory?.code !== 'memory_confirmation_required' && (spec.completion === 'response'
-        || spec.completion === 'background_on_success' && (outcome === 'failed' || outcome === 'rejected')
+        || spec.completion === 'background_on_success' && (outcome === 'failed' || outcome === 'rejected'
+          || outcome === 'ignored' && spec.results.ignored.speech === 'model')
         || spec.completion === 'background_on_reset' && !memoryNeedsReset(memory?.code ?? ''))
       return responds ? payload : backgroundResult(payload)
     }

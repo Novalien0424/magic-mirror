@@ -34,13 +34,15 @@ describe('memory pipeline with real private SQLite', () => {
       const reopened = asyncStore(store)
       const learning = new MemoryLearning({ repository: reopened, extract: async () => [], model: async () => 'configured', report: () => {} })
       const relationship = new RelationshipMemory({ repository: reopened, learning, report: () => {}, controlPhrases: async () => ['EXACT SPELL'],
-        interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true, name: input.request?.name ?? '', language: 'en' }) })
+        interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true,
+          name: input.task === 'introduction' ? 'SyntheticPerson' : input.request?.name ?? '', language: 'en' }) })
       const state = { active: true, avatarId: 'raven', realtimeSessionId: 'session-one', sessionGeneration: 1 }
       const request = (action: any, extra = {}) => ({ action, name: '', topic: '', text: '', query: '', ...extra })
       expect((await relationship.request(state, request('recall'))).code).toBe('memory_identity_required')
       await relationship.input(state, 'speech', 'intro', '')
       await relationship.input(state, 'complete', 'intro', 'My name is Synthetic Person.')
       const q = (await relationship.request(state, request('identify', { name: 'Synthetic Person' }))).confirmation!
+      expect(q.text.toLowerCase()).toContain('synthetic person')
       await relationship.input(state, 'question_played', q.token, q.text)
       await relationship.input(state, 'speech', 'confirm', '')
       const confirmed = await relationship.input(state, 'complete', 'confirm', 'yes')

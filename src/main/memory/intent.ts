@@ -14,6 +14,11 @@ export interface MemoryIntentResult {
   language: MemoryLanguage
 }
 export type MemoryInterpreter = (input: MemoryIntentInput, signal: AbortSignal) => Promise<MemoryIntentResult>
+const failureCodes = new Set(['memory_interpretation_unavailable', 'memory_interpretation_timeout',
+  'memory_interpretation_http', 'memory_interpretation_schema', 'memory_interpretation_cancelled'])
+export function memoryInterpretationFailure(error: unknown): string {
+  return error instanceof Error && failureCodes.has(error.message) ? error.message : 'memory_interpretation_unavailable'
+}
 const output = z.object({ confirmation: z.enum(['yes', 'no', 'unclear']), authorized: z.boolean(),
   name: z.string().max(80).refine(s => !/[\u0000-\u001f\u007f]/u.test(s)), language: z.enum(['en', 'zh-TW']) }).strict()
 const schema = { type: 'object', properties: { confirmation: { type: 'string', enum: ['yes', 'no', 'unclear'] },
@@ -30,17 +35,23 @@ const taskInstructions: Record<MemoryIntentInput['task'], string> = {
 /** Runs only for a pending confirmation or an explicit memory tool, never ordinary speech. */
 export function createMemoryInterpreter(options: { credentialSource: { get(): Promise<string | null> }; model(): Promise<string>; fetchImpl?: typeof fetch }): MemoryInterpreter {
   return async (input, signal) => {
-    if (!input.text.trim() || input.text.length > 4000 || signal.aborted) throw Error('memory_interpretation_unavailable')
+    if (signal.aborted) throw Error('memory_interpretation_cancelled')
+    if (!input.text.trim() || input.text.length > 4000) throw Error('memory_interpretation_unavailable')
+    let deadline: AbortSignal | undefined
     try {
       const [key, model] = await Promise.all([options.credentialSource.get(), options.model()])
       if (!key || !model || signal.aborted) throw Error()
+      deadline = AbortSignal.timeout(8000)
+      const requestSignal = AbortSignal.any([signal, deadline])
       const response = await (options.fetchImpl ?? fetch)('https://api.openai.com/v1/responses', {
-        method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]),
+        method: 'POST', signal: requestSignal,
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, store: false, instructions: `${instructions}\n${taskInstructions[input.task]}`, input: JSON.stringify(input),
           text: { format: { type: 'json_schema', name: 'memory_intent', strict: true, schema } } }),
       })
-      if (!response.ok || !response.body) throw Error()
+      requestSignal.throwIfAborted()
+      if (!response.ok) throw Error('memory_interpretation_http')
+      if (!response.body) throw Error('memory_interpretation_schema')
       const reader = response.body.getReader(), chunks: Uint8Array[] = []
       let size = 0
       try {
@@ -48,15 +59,20 @@ export function createMemoryInterpreter(options: { credentialSource: { get(): Pr
           const part = await reader.read()
           if (part.done) break
           size += part.value.byteLength
-          if (size > 8192) { await reader.cancel(); throw Error() }
+          if (size > 8192) { await reader.cancel().catch(() => {}); throw Error('memory_interpretation_schema') }
           chunks.push(part.value)
         }
       } finally { reader.releaseLock() }
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      if (signal.aborted || body.status !== 'completed' || !Array.isArray(body.output)) throw Error()
-      const parts = body.output.filter((p: { type: string }) => p.type === 'message').flatMap((p: { content?: unknown[] }) => p.content ?? [])
-      if (parts.length !== 1 || parts[0]?.type !== 'output_text') throw Error()
-      return output.parse(JSON.parse(parts[0].text))
-    } catch { throw Error('memory_interpretation_unavailable') }
+      requestSignal.throwIfAborted()
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        if (body.status !== 'completed' || !Array.isArray(body.output)) throw Error()
+        const parts = body.output.filter((p: { type: string }) => p.type === 'message').flatMap((p: { content?: unknown[] }) => p.content ?? [])
+        if (parts.length !== 1 || parts[0]?.type !== 'output_text') throw Error()
+        return output.parse(JSON.parse(parts[0].text))
+      } catch { throw Error('memory_interpretation_schema') }
+    } catch (error) {
+      throw Error(signal.aborted ? 'memory_interpretation_cancelled' : deadline?.aborted ? 'memory_interpretation_timeout' : memoryInterpretationFailure(error))
+    }
   }
 }

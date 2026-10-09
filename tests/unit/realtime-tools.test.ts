@@ -19,18 +19,82 @@ describe('structured Realtime tool catalog', () => {
     handler.mockResolvedValueOnce({ outcome: 'accepted', memory: { status: 'accepted', code: 'memory_forgotten', entries: [] } })
     expect(isBackgroundResult(await call(tool, args))).toBe(true)
   })
-  it('keeps confirmed media silent but lets the avatar explain a playback failure', async () => {
-    const media = vi.fn(async (): Promise<'accepted' | 'failed'> => 'accepted')
-    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'play_media'), { play_media: media }, vi.fn())
-    const args = JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'loop' })
-    expect(isBackgroundResult(await call(tool, args))).toBe(true)
-    media.mockResolvedValueOnce('failed')
-    const result = await call(tool, args)
-    expect(isBackgroundResult(result)).toBe(false)
-    expect(result).toMatchObject({ status: 'failed', speech: 'model' })
+  it.each([
+    ['play_media', { kind: 'video', assetId: 'clip', mode: 'once' }],
+    ['play_youtube', { kind: 'music', url: 'https://www.youtube.com/watch?v=abcdefghijk', mode: 'once' }],
+  ] as const)('keeps %s silent after a clarification selection but lets playback failures respond', async (name, arguments_) => {
+    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === name)
+    expect(spec[0].rules.speech).toContain('clarification selection')
+    expect(spec[0].rules.speech).toContain('ask no extra confirmation')
+    expect(spec[0].rules.speech).toContain('stay silent')
+    const media = vi.fn(async (): Promise<'accepted' | 'rejected' | 'failed'> => 'accepted')
+    const [tool] = bindRealtimeTools(spec, { [name]: media }, vi.fn())
+    const args = JSON.stringify(arguments_)
+    const accepted = await call(tool, args)
+    expect(isBackgroundResult(accepted)).toBe(true)
+    expect(accepted).toMatchObject({ content: { status: 'accepted', code: 'media_started', speech: 'none' } })
+    for (const outcome of ['rejected', 'failed'] as const) {
+      media.mockResolvedValueOnce(outcome)
+      const result = await call(tool, args)
+      expect(isBackgroundResult(result)).toBe(false)
+      expect(result).toMatchObject({ status: outcome, speech: 'model' })
+    }
+  })
+  it('distinguishes an active stop from declined playback or a quoted mention', () => {
+    const stop = resolveRealtimeTools('Rest.').find(t => t.name === 'stop_media')!
+    expect(stop.rules.useWhen).toContain('end current playback')
+    expect(stop.rules.useWhen).toContain('不要再播了')
+    expect(stop.rules.avoidWhen).toContain('do-not-start requests')
+    expect(stop.rules.avoidWhen).toContain('不要播放影片，聊聊雨天 after playback ends')
+    expect(stop.rules.avoidWhen).toContain('quoted, negated, hypothetical or incidental stop mentions')
+    expect(stop.rules.speech).toContain('If accepted, stay silent')
+    expect(stop.rules.speech).toContain('If ignored, no media was playing: answer the actual request')
+    expect(stop.rules.speech).toContain('If rejected or failed')
+    expect(realtimeToolInstructions([stop])).toContain(stop.rules.avoidWhen)
+    expect(realtimeToolInstructions([stop])).toContain(stop.rules.speech)
+  })
+  it.each([
+    ['accepted', 'media_stopped', 'none'],
+    ['ignored', 'media_not_playing', 'model'],
+    ['rejected', 'media_request_rejected', 'model'],
+    ['failed', 'media_stop_failed', 'model'],
+  ] as const)('uses catalog speech ownership after an %s stop through the real SDK', async (outcome, code, speech) => {
+    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'stop_media')
+    const transport = new ScriptedRealtimeTransport(), errors = vi.fn(), onFailure = vi.fn()
+    const output = vi.spyOn(transport, 'sendFunctionCallOutput'), stop = vi.fn(async () => outcome)
+    const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', instructions: realtimeToolInstructions(spec),
+      tools: bindRealtimeTools(spec, { stop_media: stop }, onFailure) }),
+      { transport, tracingDisabled: true, historyStoreAudio: false, config: { tracing: null } })
+    session.on('error', errors)
+    try {
+      await session.connect({ apiKey: 'synthetic-unused-credential' })
+      transport.emit('function_call', { type: 'function_call', id: 'stop-item', callId: 'stop-call', name: 'stop_media', arguments: '{}', responseId: 'fixture-response' })
+      await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+      expect(JSON.parse(output.mock.calls[0][1])).toEqual({ status: outcome, code, speech })
+      // Only an accepted stop suppresses the next model response.
+      expect(output.mock.calls[0][2]).toBe(outcome !== 'accepted')
+      expect(stop).toHaveBeenCalledExactlyOnceWith({})
+      expect(onFailure).not.toHaveBeenCalled()
+      expect(errors).not.toHaveBeenCalled()
+    } finally { session.close() }
+  })
+  it('allows stop validation and execution failures to respond without disclosing exception text', async () => {
+    const stop = vi.fn(async () => { throw new Error('private fixture') }), onFailure = vi.fn()
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'stop_media'), { stop_media: stop }, onFailure)
+    const rejected = await call(tool, '{"unexpected":true}')
+    expect(isBackgroundResult(rejected)).toBe(false)
+    expect(rejected).toEqual({ status: 'rejected', code: 'media_request_rejected', speech: 'model' })
+    expect(stop).not.toHaveBeenCalled()
+    const failed = await call(tool, '{}')
+    expect(isBackgroundResult(failed)).toBe(false)
+    expect(failed).toEqual({ status: 'failed', code: 'media_stop_failed', speech: 'model' })
+    expect(JSON.stringify(failed)).not.toContain('private fixture')
+    expect(stop).toHaveBeenCalledExactlyOnceWith({})
+    expect(onFailure.mock.calls).toEqual([['tool_arguments_rejected'], ['tool_execution_failed']])
   })
   it('resumes the real SDK response after camera capture, with the image already in context', async () => {
     const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'capture_camera')
+    expect(spec[0].results.accepted.speech).toBe('model')
     const transport = new ScriptedRealtimeTransport(), errors = vi.fn()
     const addImage = vi.spyOn(transport, 'addImage'), output = vi.spyOn(transport, 'sendFunctionCallOutput')
     const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', tools: bindRealtimeTools(spec, {

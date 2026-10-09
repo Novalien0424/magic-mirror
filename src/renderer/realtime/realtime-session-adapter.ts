@@ -537,8 +537,8 @@ export function createRealtimeSession(
           memory = await input.onMemory(args as unknown as import('../../shared/memory').MemoryRequest,
             { realtimeSessionId: input.sessionId, sessionGeneration })
         }
-        if (closed || mediaPlaybackActive || generation !== memoryTurnGeneration) return stale()
         memoryResetPending ||= memoryNeedsReset(memory.code)
+        if (closed || mediaPlaybackActive || generation !== memoryTurnGeneration) return stale()
         if (memory.confirmation) { pendingQuestion = memory.confirmation; questionToolEnded = false }
         return { outcome: memory.status, memory }
       },
@@ -1074,13 +1074,13 @@ export function createRealtimeSession(
     }
     if (type === 'input_audio_buffer.speech_started') {
       if (mediaPlaybackActive) return
-      memoryDialogue.speech()
+      const itemId = readProperty(event, 'item_id')
+      memoryDialogue.speech(typeof itemId === 'string' ? itemId : '')
       if (pendingQuestion) {
         memoryInput('question_cancelled', pendingQuestion.token)
         pendingQuestion = undefined; questionToolEnded = false
       }
       memoryTurnGeneration++
-      const itemId = readProperty(event, 'item_id')
       memoryLatestItem = typeof itemId === 'string' ? itemId : ''
       mediaSource.begin(memoryLatestItem)
       memoryInput('speech', memoryLatestItem)
@@ -1154,7 +1154,7 @@ export function createRealtimeSession(
       if (input.onMemoryInput) memoryInputQueue = memoryInputQueue.then(async () => {
         if (!closed) {
           const result = await input.onMemoryInput!('complete', itemId, transcript, { realtimeSessionId: input.sessionId, sessionGeneration })
-          if (!closed) void memoryDialogue.answer(result)
+          if (!closed) void memoryDialogue.answer(itemId, result)
           memoryInputRevision++
           for (const done of memoryInputWaiters) done()
           return result
