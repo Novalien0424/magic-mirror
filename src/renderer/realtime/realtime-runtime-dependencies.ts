@@ -164,6 +164,8 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
   readonly onMediaRequest?: CreateRealtimeSessionInput['onMediaRequest']
+  readonly onFindMedia?: CreateRealtimeSessionInput['onFindMedia']
+  readonly onSearchYoutube?: CreateRealtimeSessionInput['onSearchYoutube']
   readonly onCameraCapture?: CreateRealtimeSessionInput['onCameraCapture']
   readonly getAvatarDialogue?: () => Promise<{ wakeGreeting?: string; sleepFarewell?: string }>
   readonly waitForWakePresentation?: CreateRealtimeSessionInput['waitForWakePresentation']
@@ -309,6 +311,8 @@ export function createRealtimeRuntimeOwnerDependencies(
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
         onMediaRequest: input.onMediaRequest,
+        onFindMedia: input.onFindMedia,
+        onSearchYoutube: input.onSearchYoutube,
         onCameraCapture: input.onCameraCapture,
         onMemory: input.onMemory,
         onMemoryInput: input.onMemoryInput,

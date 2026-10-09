@@ -4,6 +4,7 @@ import { bootSequence } from '../../src/main/boot'
 type ProbeStatus = 'available' | 'unavailable'
 
 interface TestRuntimeOptions {
+  readonly completeSleepForDemo?: boolean
   readonly clientSecretBroker?: {
     probeModelAvailability(request: { readonly modelId: string }): Promise<{ readonly status: ProbeStatus }>
   }
@@ -25,6 +26,7 @@ interface TestRuntimeOptions {
 
 function createTestRuntime(options: TestRuntimeOptions = {}) {
   const runtime = bootSequence({
+    completeSleepForDemo: options.completeSleepForDemo,
     isPackaged: options.isPackaged,
     createTelemetry: () => ({
       emit() {},
@@ -75,6 +77,18 @@ async function startRuntime(runtime: ReturnType<typeof createTestRuntime>): Prom
 }
 
 describe('BootRuntime realtime runtime outcome reason', () => {
+  it('completes media-requested sleep through the offline simulator without stopping a nonexistent renderer session', async () => {
+    const dispatch = vi.fn(() => ({ status: 'success' as const, reason: 'runtime_command_delivered' as const }))
+    const runtime = createTestRuntime({ completeSleepForDemo: true, dispatchRealtimeRuntimeCommand: dispatch })
+    await runtime.ready
+    expect((await runtime.handleSimulator({ type: 'wake' })).op).toBe('success')
+    expect(runtime.snapshot().lifecycle).toBe('active')
+    expect(await runtime.requestSleep()).toEqual({ status: 'success', reason: 'simulated_sleep_handoff' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    expect(runtime.snapshot().realtimeSessionId).toBeNull()
+    expect(dispatch).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
   it('makes the sanitized failed reason readable before OfflineLoop subscribers run', async () => {
     const runtime = createTestRuntime()
     await startRuntime(runtime)

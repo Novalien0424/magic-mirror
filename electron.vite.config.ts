@@ -12,6 +12,8 @@ export default defineConfig({
         external: ['node:sqlite'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'youtube-qa': resolve(__dirname, 'src/main/youtube-qa.ts'),
+          'media-intent-qa': resolve(__dirname, 'src/main/media-intent-qa.ts'),
           'memory-storage-worker': resolve(__dirname, 'src/main/memory/storage-worker.ts'),
           'wake-worker': resolve(__dirname, 'src/main/wake/worker.ts'),
           'wake-evaluator': resolve(__dirname, 'src/main/wake/evaluate-cli.ts'),

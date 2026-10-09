@@ -2,6 +2,8 @@ import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
 import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
+import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
+import { parseYoutubeSearchRequest, type YoutubeSearchReply } from '../shared/youtube-search'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
@@ -83,6 +85,8 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   reportSceneAction: 'mirror:report-scene-action',
   reportSceneVisual: 'mirror:report-scene-visual',
   mediaSkill: 'mirror:media-skill',
+  findMedia: 'mirror:find-media',
+  searchYoutube: 'mirror:search-youtube',
   getSceneCatalog: 'mirror:get-scene-catalog',
   triggerScene: 'mirror:trigger-scene',
   stopScene: 'mirror:stop-scene',
@@ -157,6 +161,8 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly youtube?: import('../shared/youtube-media').YoutubePlayer
+  readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
   readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
   readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
@@ -1283,6 +1289,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
   let sleepingMedia = false
   const mediaSkill = createMediaSkillRuntime({
+    youtube: options.youtube,
     activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
     dispatch: command => dispatchMirrorAvatarControl(command, windows),
     report: reason => {
@@ -1745,6 +1752,48 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return frame
   })
 
+  for (const source of ['local', 'youtube'] as const) ipcMain.handle(source === 'local' ? MIRROR_IPC_CHANNELS.findMedia : MIRROR_IPC_CHANNELS.searchYoutube, async (event, ...args) => {
+    const reply = (code: string, status: 'failed' | 'rejected' = 'rejected') => source === 'local'
+      ? { status, code, resources: [], total: 0 } : { status, code, videos: [] }
+    const prefix = source === 'local' ? 'media_discovery' : 'youtube_search'
+    const auth = authorizeSender(event, 'mirror', windows)
+    if (!auth.ok) { senderRejected(telemetry, auth.reason); return reply(`${prefix}_invalid`) }
+    const envelope = args[0], identity = readProperty(envelope, 'identity')
+    const request = source === 'local' ? parseMediaDiscoveryRequest(readProperty(envelope, 'request')) : parseYoutubeSearchRequest(readProperty(envelope, 'request'))
+    if (args.length !== 1 || !exactKeys(envelope, ['request', 'identity']) || !request || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])) {
+      payloadRejected(telemetry); return reply(`${prefix}_invalid`)
+    }
+    const generation = consoleSceneGeneration
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return generation === consoleSceneGeneration && snapshot.lifecycle === 'active' && !mediaSkill.isActive()
+        && snapshot.realtimeSessionId !== null && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    const stale = () => {
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: `${prefix}_stale` })
+      return reply(`${prefix}_stale`)
+    }
+    if (!current()) return stale()
+    let result: MediaDiscoveryReply | YoutubeSearchReply
+    try {
+      if (source === 'youtube') result = await options.searchYoutube?.(request) ?? { status: 'failed', code: 'youtube_search_not_configured', videos: [] }
+      else {
+        const config = await runtime.getPublishedSceneConfigForRuntime?.()
+        if (!config) throw Error()
+        const catalog = config.avatarCatalog
+        const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL,
+          options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? [])
+        const resources = skill.enabled ? skill.resources.filter(resource => !catalog || canUseAvatarResource(catalog, catalog.activeAvatarId,
+          resource.kind === 'video' ? 'visual' : 'music', resource.assetId)) : []
+        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest)
+      }
+    } catch { result = reply(`${prefix}_unavailable`, 'failed') as MediaDiscoveryReply | YoutubeSearchReply }
+    if (!current()) return stale()
+    emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: result.status === 'accepted' ? 'info' : 'degraded', reason: result.code })
+    return result
+  })
+
   ipcMain.handle(MIRROR_IPC_CHANNELS.mediaSkill, async (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return 'rejected' }
@@ -1765,6 +1814,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     const outcome = await enqueueSceneOperation(async () => {
       if (!current()) { emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' }); return 'ignored' }
       if (request.action === 'stop') return mediaSkill.stop()
+      if (request.mode === 'loop' && !runtime.requestSleep) {
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_wake_handoff_unavailable' })
+        return 'failed'
+      }
       const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
       if (!current()) return 'ignored'
       if (!config) {
@@ -1774,25 +1827,33 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const catalog = config?.avatarCatalog
       const folderEntries = options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? []
       const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL, folderEntries)
-      const resource = skill.resources.find(r => r.kind === request.kind && r.assetId === request.assetId)
-      const available = folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind === 'video'
-        ? config?.visualAssets.some(a => a.id === request.assetId && a.kind === 'video')
-        : config?.musicAssets.some(a => a.id === request.assetId))
-      if (!skill.enabled || !resource || !available || catalog && !canUseAvatarResource(catalog, catalog.activeAvatarId,
-        request.kind === 'video' ? 'visual' : 'music', request.assetId)) {
+      const available = request.action === 'play_youtube' ? !!options.youtube : skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)
+        && (folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind === 'video'
+          ? config.visualAssets.some(a => a.id === request.assetId && a.kind === 'video') : config.musicAssets.some(a => a.id === request.assetId)))
+        && (!catalog || canUseAvatarResource(catalog, catalog.activeAvatarId, request.kind === 'video' ? 'visual' : 'music', request.assetId))
+      if (!skill.enabled || !available) {
         emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })
         return 'rejected'
       }
       await cachedSceneRuntime?.value.stopAll()
+      // Scene stopAll owns global local-player stops. Retire that owner before
+      // media takes over, so later Dormant cleanup cannot stop a preserved loop.
+      cachedSceneRuntime = null
       if (!current()) return 'ignored'
       // Release the command queue while awaiting the player, so Stop/replacement can cancel startup.
-      return { pending: mediaSkill.playConfirmed(request, skill) }
+      const pending = mediaSkill.playConfirmed(request, skill)
+      return { pending, runId: mediaSkill.activeRunId() }
     }).catch(() => {
       mediaSkill.stop('media_playback_failed')
       return 'failed'
     })
     const result = typeof outcome === 'string' ? outcome : await outcome.pending
-    if (result === 'accepted' && request.action === 'play' && request.mode === 'loop'
+    if (result === 'accepted' && request.action !== 'stop'
+      && (!current() || typeof outcome === 'string' || outcome.runId !== mediaSkill.activeRunId())) {
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' })
+      return 'ignored'
+    }
+    if (result === 'accepted' && request.action !== 'stop' && request.mode === 'loop'
       && current() && mediaSkill.isActive() && runtime.requestSleep) {
       // Let the existing lifecycle release Realtime's mic before the local
       // wake worker acquires it. The loop survives this intentional sleep.
@@ -1802,7 +1863,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         if (readProperty(sleep, 'status') !== 'success') throw new Error('media_wake_handoff_failed')
       } catch {
         sleepingMedia = false
-        mediaSkill.stop('media_wake_handoff_failed')
+        if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) mediaSkill.stop('media_wake_handoff_failed')
         return 'failed'
       }
     }

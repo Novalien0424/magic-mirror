@@ -113,6 +113,46 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('blocks model-requested YouTube search and playback for visitor folder-only speech before any network call', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
+    const onMediaRequest = vi.fn(async () => 'accepted' as const);
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onSearchYoutube, onMediaRequest });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'local' });
+    const pending = tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}');
+    expect(onSearchYoutube).not.toHaveBeenCalled();
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'local', transcript: 'Play Moonlit Lake from our vault.' });
+    expect(await pending).toMatchObject({ youtube: { code: 'youtube_search_source_restricted' } });
+    expect(await tools.find(t => t.name === 'play_youtube').invoke({}, '{"url":"https://youtu.be/abcdefghijk","kind":"music","mode":"once"}')).toMatchObject({ status: 'rejected' });
+    expect(onSearchYoutube).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_source_restricted' }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('Moonlit');
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'broaden' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'broaden', transcript: 'Try YouTube instead.' });
+    await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}');
+    expect(onSearchYoutube).toHaveBeenCalledOnce();
+    await handle.close('user_requested');
+  });
+  it('returns fresh media choices, drops interrupted searches, and marks media tool turns as controls', async () => {
+    const probe = makeAdapterProbe(), onMemoryInput = vi.fn(async () => ({ status: 'accepted' as const, code: 'memory_input_recorded' as const }));
+    let finish!: (value: import('../../src/shared/youtube-search').YoutubeSearchReply) => void;
+    const onSearchYoutube = vi.fn(() => new Promise<import('../../src/shared/youtube-search').YoutubeSearchReply>(resolve => { finish = resolve }));
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_matches', total: 1,
+      resources: [{ kind: 'music' as const, assetId: 'rain', name: 'Rain', aliases: [] }] }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube, onFindMedia, onMemoryInput });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    expect(await tools.find(t => t.name === 'find_media').invoke({}, '{"query":"rain","kind":"music"}')).toMatchObject({ media: { total: 1 } });
+    const pending = tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"rain"}');
+    await Promise.resolve();
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new-clue' });
+    finish({ status: 'accepted', code: 'youtube_search_results', videos: [] });
+    expect(isBackgroundResult(await pending)).toBe(true);
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'media-response' } });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'media-response', status: 'completed', output: [{ type: 'function_call', name: 'find_media' }] } });
+    await vi.waitFor(() => expect(onMemoryInput).toHaveBeenCalledWith('control', 'new-clue', '', expect.any(Object)));
+    await handle.close('manual_stop');
+  });
   it('explains an unrequested save without describing a storage failure', async () => {
     const probe = makeAdapterProbe();
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe),

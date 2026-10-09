@@ -1,5 +1,5 @@
 import type { AvatarControlCommand } from '../../../shared/bridge'
-import type { LifecycleState } from '../../../shared/types'
+import type { LifecycleState, SceneActionCommandContext } from '../../../shared/types'
 import type { RealtimeAudioOutput } from '../../realtime/realtime-audio-output'
 import type { AvatarAudioActivity, AvatarAudioOutput } from './avatar-audio-coordinator'
 import { createMusicDuckingController } from './music-ducking'
@@ -26,7 +26,7 @@ export interface CreateAvatarMediaControllerInput {
   readonly onRecordedOutput: (output: AvatarAudioOutput | null) => void
   readonly onActivity: (activity: AvatarAudioActivity) => void
   readonly onChanged: (snapshot: AvatarMediaSnapshot) => void
-  readonly eventSink: (reason: string) => void
+  readonly eventSink: (reason: string, context?: SceneActionCommandContext) => void
 }
 
 const DUCKING = Object.freeze({
@@ -36,6 +36,8 @@ const DUCKING = Object.freeze({
   restoreMs: 400,
   fadeOutMs: 2_000,
 })
+
+const MUSIC_PROGRESS_TIMEOUT_MS = 15_000
 
 function unit(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
@@ -91,8 +93,13 @@ export function createAvatarMediaController(
   let recordedSource: AudioBufferSourceNode | null = null
   let recordedGeneration = 0
   let fadePauseTimer: number | null = null
+  let fadeCompletionTimer: number | null = null
+  let musicAnalysisTimer: number | null = null
+  let musicProgressTimer: number | null = null
   let musicAnalysisGeneration = 0
   let sceneMusicLoadGeneration = 0
+  let musicContext: SceneActionCommandContext | undefined
+  let removeMusicPlaybackListeners: (() => void) | null = null
   let managedMusicObjectUrl: string | null = null
   let sceneVideoSource: MediaElementAudioSourceNode | null = null
   let sceneVideoGain: GainNode | null = null
@@ -133,11 +140,87 @@ export function createAvatarMediaController(
     `avatar_music_play_failed:code_${music.error?.code ?? 0}:network_${music.networkState}:ready_${music.readyState}`
   music.addEventListener('waiting', noteMusicUnderrun)
   music.addEventListener('stalled', noteMusicUnderrun)
-  music.addEventListener('ended', () => {
+
+  const emitMusicEvent = (reason: string, actionContext?: SceneActionCommandContext): void => {
+    try { input.eventSink(reason, actionContext) } catch { /* metadata cannot gate audio */ }
+  }
+
+  const invalidateMusicPlayback = (): number => {
     musicPlaying = false
-    input.eventSink('avatar_music_completed')
-  })
-  music.addEventListener('error', () => { if (!disposed && musicPlaying) input.eventSink(musicPlayFailureReason()) })
+    musicContext = undefined
+    musicAnalysisGeneration += 1
+    sceneMusicLoadGeneration += 1
+    if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
+    if (fadeCompletionTimer !== null) window.clearTimeout(fadeCompletionTimer)
+    if (musicAnalysisTimer !== null) window.clearTimeout(musicAnalysisTimer)
+    if (musicProgressTimer !== null) window.clearTimeout(musicProgressTimer)
+    fadePauseTimer = null
+    fadeCompletionTimer = null
+    musicAnalysisTimer = null
+    musicProgressTimer = null
+    removeMusicPlaybackListeners?.()
+    removeMusicPlaybackListeners = null
+    return sceneMusicLoadGeneration
+  }
+
+  const failMusicPlayback = (
+    generation: number,
+    actionContext?: SceneActionCommandContext,
+    reason = musicPlayFailureReason(),
+  ): void => {
+    if (disposed || generation !== sceneMusicLoadGeneration) return
+    invalidateMusicPlayback()
+    music.pause()
+    emitMusicEvent(reason, actionContext)
+  }
+
+  const watchMusicPlayback = (generation: number, actionContext?: SceneActionCommandContext): void => {
+    const ended = (): void => {
+      if (disposed || generation !== sceneMusicLoadGeneration || !musicPlaying || !music.ended) return
+      invalidateMusicPlayback()
+      emitMusicEvent('avatar_music_completed', actionContext)
+    }
+    const error = (): void => {
+      if (music.error !== null) failMusicPlayback(generation, actionContext)
+    }
+    music.addEventListener('ended', ended)
+    music.addEventListener('error', error)
+    removeMusicPlaybackListeners = () => {
+      music.removeEventListener('ended', ended)
+      music.removeEventListener('error', error)
+    }
+  }
+
+  const watchMusicProgress = (generation: number, actionContext?: SceneActionCommandContext): void => {
+    let lastPosition = music.currentTime
+    let lastProgressAt = performance.now()
+    const noteProgress = (): void => {
+      if (disposed || generation !== sceneMusicLoadGeneration || !musicPlaying) return
+      const position = music.currentTime
+      // A backward change at a loop boundary is progress too; waveform silence is not a stall.
+      if (Number.isFinite(position) && position !== lastPosition) {
+        lastPosition = position
+        lastProgressAt = performance.now()
+      }
+    }
+    const poll = (): void => {
+      if (disposed || generation !== sceneMusicLoadGeneration || !musicPlaying) return
+      musicProgressTimer = null
+      noteProgress()
+      if (performance.now() - lastProgressAt >= MUSIC_PROGRESS_TIMEOUT_MS) {
+        failMusicPlayback(generation, actionContext, 'avatar_music_play_failed:progress_timeout')
+        return
+      }
+      musicProgressTimer = window.setTimeout(poll, 1_000)
+    }
+    music.addEventListener('timeupdate', noteProgress)
+    const removePlaybackListeners = removeMusicPlaybackListeners
+    removeMusicPlaybackListeners = () => {
+      removePlaybackListeners?.()
+      music.removeEventListener('timeupdate', noteProgress)
+    }
+    musicProgressTimer = window.setTimeout(poll, 1_000)
+  }
 
   const ramp = (gain: GainNode, target: number, durationMs: number): void => {
     const now = context.currentTime
@@ -178,13 +261,11 @@ export function createAvatarMediaController(
   }
 
   const fadeAndPauseMusic = (): void => {
-    musicPlaying = false
-    musicAnalysisGeneration += 1
-    sceneMusicLoadGeneration += 1
+    const generation = invalidateMusicPlayback()
     // BGM stopping must not silence the independent embedded-video channel.
     ramp(musicGainNode, 0, DUCKING.fadeOutMs)
-    if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
     fadePauseTimer = window.setTimeout(() => {
+      if (disposed || generation !== sceneMusicLoadGeneration) return
       fadePauseTimer = null
       music.pause()
     }, DUCKING.fadeOutMs)
@@ -238,17 +319,18 @@ export function createAvatarMediaController(
 
   const observeMusicSignal = (generation: number, attempt = 0): void => {
     if (disposed || !musicPlaying || generation !== musicAnalysisGeneration) return
+    musicAnalysisTimer = null
     const samples = new Uint8Array(musicAnalyser.frequencyBinCount)
     musicAnalyser.getByteTimeDomainData(samples)
     if (samples.some((sample) => Math.abs(sample - 128) > 1)) {
-      input.eventSink('avatar_music_analyser_active')
+      emitMusicEvent('avatar_music_analyser_active')
       return
     }
     if (attempt >= 39) {
-      input.eventSink('avatar_music_analyser_inactive')
+      emitMusicEvent('avatar_music_analyser_inactive')
       return
     }
-    window.setTimeout(() => observeMusicSignal(generation, attempt + 1), 50)
+    musicAnalysisTimer = window.setTimeout(() => observeMusicSignal(generation, attempt + 1), 50)
   }
 
   const playRecorded = async (): Promise<void> => {
@@ -297,6 +379,7 @@ export function createAvatarMediaController(
       }
     },
     setLifecycle: (state: LifecycleState): void => {
+      if (disposed) return
       if (state === 'dormant' || state === 'suspending' || state === 'offlineLoop') fadeAndPauseMusic()
     },
     handleCommand: (command: AvatarControlCommand): void => {
@@ -314,73 +397,81 @@ export function createAvatarMediaController(
           fadeAndPauseMusic()
           return
         }
-        if (fadePauseTimer !== null) {
-          window.clearTimeout(fadePauseTimer)
-          fadePauseTimer = null
-        }
-        const generation = ++sceneMusicLoadGeneration
+        const generation = invalidateMusicPlayback()
+        music.pause()
         ramp(musicGainNode, musicGainSetting, 0)
         void resumeAudio().then(() => {
           if (disposed || generation !== sceneMusicLoadGeneration) return
+          watchMusicPlayback(generation)
           return music.play()
         }).then(() => {
-          if (!disposed && generation === sceneMusicLoadGeneration) musicPlaying = true
-        }).catch(() => { if (!disposed && generation === sceneMusicLoadGeneration) input.eventSink(musicPlayFailureReason()) })
+          if (disposed || generation !== sceneMusicLoadGeneration) return
+          musicPlaying = true
+          watchMusicProgress(generation)
+        }).catch(() => failMusicPlayback(generation))
         return
       }
       if (command.type === 'scene_music') {
         if (command.action === 'stop') {
-          musicPlaying = false
-          musicAnalysisGeneration += 1
-          sceneMusicLoadGeneration += 1
-          if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
+          const actionContext = command.context ?? musicContext
+          const generation = invalidateMusicPlayback()
           if (command.fadeDurationMs === 0) {
             music.pause()
             music.currentTime = 0
-            input.eventSink('avatar_music_stopped')
+            emitMusicEvent('avatar_music_stopped', actionContext)
             return
           }
           ramp(musicGainNode, 0, command.fadeDurationMs)
           fadePauseTimer = window.setTimeout(() => {
+            if (disposed || generation !== sceneMusicLoadGeneration) return
             fadePauseTimer = null
             music.pause()
             music.currentTime = 0
-            input.eventSink('avatar_music_stopped')
+            emitMusicEvent('avatar_music_stopped', actionContext)
           }, command.fadeDurationMs)
           return
         }
         if (command.action === 'fade') {
+          const generation = sceneMusicLoadGeneration
+          const actionContext = command.context ?? musicContext
+          if (fadeCompletionTimer !== null) window.clearTimeout(fadeCompletionTimer)
           musicGainSetting = unit(command.targetGain)
           effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
           ramp(musicGainNode, musicGainSetting, command.durationMs)
           changed()
-          window.setTimeout(() => input.eventSink('avatar_music_fade_completed'), command.durationMs)
+          const timer = window.setTimeout(() => {
+            if (disposed || generation !== sceneMusicLoadGeneration || fadeCompletionTimer !== timer) return
+            fadeCompletionTimer = null
+            emitMusicEvent('avatar_music_fade_completed', actionContext)
+          }, command.durationMs)
+          fadeCompletionTimer = timer
           return
         }
-        if (fadePauseTimer !== null) {
-          window.clearTimeout(fadePauseTimer)
-          fadePauseTimer = null
-        }
+        const actionContext = command.context
+        const generation = invalidateMusicPlayback()
+        musicContext = actionContext
+        music.pause()
         music.loop = command.loop
         musicGainSetting = unit(command.gain)
         effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
         ramp(musicGainNode, musicGainSetting, 0)
-        const generation = ++sceneMusicLoadGeneration
         void loadManagedMusic(command.assetId, command.preview === true, generation).then(async (loaded) => {
-          if (!loaded) return false
+          if (!loaded || disposed || generation !== sceneMusicLoadGeneration) return false
+          watchMusicPlayback(generation, actionContext)
           await resumeAudio()
           if (disposed || generation !== sceneMusicLoadGeneration) return false
           await music.play()
           return !disposed && generation === sceneMusicLoadGeneration
         }).then((played) => {
-          if (!played) return
+          if (!played || disposed || generation !== sceneMusicLoadGeneration) return
           musicPlaying = true
           musicAnalysisGeneration += 1
-          const generation = musicAnalysisGeneration
+          const analysisGeneration = musicAnalysisGeneration
           changed()
-          input.eventSink('avatar_music_started')
-          observeMusicSignal(generation)
-        }).catch(() => { if (!disposed && generation === sceneMusicLoadGeneration) input.eventSink(musicPlayFailureReason()) })
+          watchMusicProgress(generation, actionContext)
+          emitMusicEvent('avatar_music_started', actionContext)
+          observeMusicSignal(analysisGeneration)
+        }).catch(() => failMusicPlayback(generation, actionContext))
         return
       }
       if (command.type === 'voice_gain') {
@@ -404,14 +495,13 @@ export function createAvatarMediaController(
       stopVolumes()
       void outputRouting.then((detach) => detach())
       stopRecorded()
+      invalidateMusicPlayback()
       music.pause()
       setSceneVideoAudio(null)
-      musicPlaying = false
-      musicAnalysisGeneration += 1
-      sceneMusicLoadGeneration += 1
       if (managedMusicObjectUrl !== null) URL.revokeObjectURL(managedMusicObjectUrl)
       managedMusicObjectUrl = null
-      if (fadePauseTimer !== null) window.clearTimeout(fadePauseTimer)
+      music.removeEventListener('waiting', noteMusicUnderrun)
+      music.removeEventListener('stalled', noteMusicUnderrun)
       realtimeOutput?.audioElement.removeEventListener('waiting', noteRealtimeUnderrun)
       realtimeOutput?.audioElement.removeEventListener('stalled', noteRealtimeUnderrun)
       realtimeOutput = null

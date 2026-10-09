@@ -128,7 +128,8 @@ describe('structured Realtime tool catalog', () => {
   })
   it('validates media arguments and serializes all native tools through the SDK', async () => {
     const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
-    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted', memory: async () => 'rejected' }, vi.fn())
+    const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted', memory: async () => 'rejected',
+      find_media: async () => 'accepted', search_youtube: async () => 'accepted', play_youtube: async () => 'accepted' }, vi.fn())
     const play = tools.find(t => t.name === 'play_media')!
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))
@@ -140,5 +141,21 @@ describe('structured Realtime tool catalog', () => {
     try {
       expect(new OpenAIRealtimeWebSocket().buildSessionPayload(await session.getInitialSessionConfig()).tools).toEqual(all.map(realtimeToolDefinition))
     } finally { session.close() }
+  })
+  it('routes local-first lookup and explicit source restrictions through the shared catalog', () => {
+    const lookup = resolveRealtimeTools('Rest.').find(t => t.name === 'find_media')!
+    expect(lookup.rules.useWhen).toContain('call find_media first')
+    expect(lookup.rules.useWhen).toContain('explicit YouTube request skips local search')
+    for (const phrase of ['our folder', 'our vault', '我們的資料夾', '我們的寶庫']) expect(lookup.rules.useWhen).toContain(phrase)
+    expect(lookup.rules.speech).toContain('no suitable local match')
+    expect(resolveRealtimeTools('Rest.').find(t => t.name === 'play_youtube')!.rules.avoidWhen).toContain('Use once unless')
+  })
+  it('returns discovery candidates to the model but suppresses stale discovery replies', async () => {
+    const media = { status: 'accepted' as const, code: 'media_discovery_matches', resources: [{ kind: 'music' as const, assetId: 'rain', name: 'Rain', aliases: [] }], total: 1 }
+    const handler = vi.fn(async () => ({ outcome: 'accepted' as const, media }))
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'find_media'), { find_media: handler }, vi.fn())
+    expect(await call(tool, '{"query":"rain","kind":"music"}')).toMatchObject({ media })
+    handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_stale', resources: [], total: 0 } })
+    expect(isBackgroundResult(await call(tool, '{"query":"rain","kind":"music"}'))).toBe(true)
   })
 })

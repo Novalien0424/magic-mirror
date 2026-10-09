@@ -8,7 +8,7 @@ import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { MEMORY_CONVERSATION_FIXTURE } from '../src/main/memory-conversation-fixture.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--memory', '--memory-live', '--memory-conversation']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -23,7 +23,8 @@ const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
 const ritualOnly = process.argv.includes('--ritual')
-const mediaSkillOnly = process.argv.includes('--media-skill')
+const mediaSkillFunctional = process.argv.includes('--media-skill-functional')
+const mediaSkillOnly = process.argv.includes('--media-skill') || mediaSkillFunctional
 const memoryLive = process.argv.includes('--memory-live')
 const memoryConversation = process.argv.includes('--memory-conversation')
 const memoryOnly = process.argv.includes('--memory') || memoryLive || memoryConversation
@@ -271,6 +272,7 @@ const environment = {
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
   MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
+  MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: mediaSkillFunctional ? '1' : '0',
   MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
   MIRROR_MEMORY_LIVE_QA: memoryLive ? '1' : '0',
   MIRROR_MEMORY_CONVERSATION_QA: memoryConversation ? '1' : '0',

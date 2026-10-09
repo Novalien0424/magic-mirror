@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseMediaSkillRequest } from '../shared/media-skill'
+import { parseMediaDiscoveryRequest, parseMediaDiscoveryReply } from '../shared/media-discovery'
+import { parseYoutubeSearchRequest, parseYoutubeSearchReply } from '../shared/youtube-search'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
 import { isCameraSnapshot, isCameraTarget } from '../shared/camera-tracking'
@@ -526,6 +528,22 @@ const bridge: MirrorBridge = {
   memoryInput: (phase, itemId, transcript, identity) => ipcRenderer.invoke('mirror:memory-input', { phase, itemId, transcript, identity }),
   resetMemorySession: identity => ipcRenderer.invoke('mirror:memory-reset', identity),
 
+  async findMedia(request, identity) {
+    const parsed = parseMediaDiscoveryRequest(request)
+    const failure = { status: 'failed' as const, code: 'media_discovery_unavailable', resources: [], total: 0 }
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return failure
+    return parseMediaDiscoveryReply(await ipcRenderer.invoke('mirror:find-media', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
+  },
+  async searchYoutube(request, identity) {
+    const parsed = parseYoutubeSearchRequest(request)
+    const failure = { status: 'failed' as const, code: 'youtube_search_unavailable' as const, videos: [] }
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return failure
+    return parseYoutubeSearchReply(await ipcRenderer.invoke('mirror:search-youtube', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
+  },
   async requestMedia(request, identity) {
     const parsed = parseMediaSkillRequest(request)
     if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
