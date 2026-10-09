@@ -1,4 +1,4 @@
-import { parseMemoryRequest, validMemoryText, type MemoryReply, type MemoryEntry } from '../../shared/memory'
+import { parseMemoryRequest, validMemoryText, type MemoryReply, type MemoryEntry, type MemoryLanguage } from '../../shared/memory'
 import { randomUUID } from 'node:crypto'
 import { buildMemoryQuestion, sameSpokenQuestion } from '../../shared/realtime-prompts'
 
@@ -15,6 +15,7 @@ export class MemorySession {
   private key = ''
   private name = ''
   private pending = ''
+  private language: MemoryLanguage = 'en'
   private question?: { token: string; text: string; delivered: boolean; expires: number }
   private blocked = false
   private seen = new Set<string>()
@@ -45,7 +46,7 @@ export class MemorySession {
     const key = JSON.stringify([state.avatarId, state.realtimeSessionId, state.sessionGeneration])
     if (!state.active || this.key !== key) { this.reset(); if (state.active) this.key = key }
   }
-  request(state: MemoryState, raw: unknown): MemoryReply {
+  request(state: MemoryState, raw: unknown, language: MemoryLanguage = 'en'): MemoryReply {
     this.observe(state)
     const request = parseMemoryRequest(raw)
     if (!state.active || !request) return reply('memory_request_rejected')
@@ -57,7 +58,8 @@ export class MemorySession {
       }
       if (this.name) return reply('memory_identity_confirmed', 'accepted')
       this.pending = request.name.trim(); this.pendingAfter = this.sequence
-      this.question = { token: randomUUID(), text: buildMemoryQuestion(this.pending), delivered: false, expires: Date.now() + 60000 }
+      this.language = language
+      this.question = { token: randomUUID(), text: buildMemoryQuestion(this.pending, language), delivered: false, expires: Date.now() + 60000 }
       return { ...reply('memory_confirmation_required', 'accepted'), name: this.pending,
         confirmation: { token: this.question.token, text: this.question.text } }
     }
@@ -73,20 +75,28 @@ export class MemorySession {
       return reply(removed ? 'memory_forgotten' : 'memory_not_found', 'accepted')
     } catch { return reply('memory_storage_unavailable', 'failed') }
   }
-  transcript(state: MemoryState, itemId: string, transcript: string): MemoryReply {
+  confirmation(state: MemoryState, itemId: string): { token: string; text: string } | undefined {
+    this.observe(state)
+    const q = this.question
+    if (!state.active || this.blocked || !this.pending || !q?.delivered || Date.now() > q.expires
+      || (this.inputOrder.get(itemId) ?? 0) <= this.pendingAfter || this.seen.has(itemId)) return undefined
+    return { token: q.token, text: q.text }
+  }
+  transcript(state: MemoryState, itemId: string, _transcript: string, judgment?: { token: string; decision: 'yes' | 'no' | 'unclear' }): MemoryReply {
     this.observe(state)
     if (!state.active || this.blocked || !this.pending) return reply('memory_no_pending_confirmation')
     if (!this.question?.delivered) return reply('memory_question_not_delivered')
     if (Date.now() > this.question.expires) { this.pending = ''; this.question = undefined; return reply('memory_confirmation_expired') }
     if ((this.inputOrder.get(itemId) ?? 0) <= this.pendingAfter) return reply('memory_confirmation_stale')
     if (!validMemoryText(itemId, 128) || this.seen.has(itemId)) return reply('memory_confirmation_duplicate')
+    if (judgment && judgment.token !== this.question.token) return reply('memory_confirmation_stale')
     this.seen.add(itemId)
     if (this.seen.size > 128) this.seen.delete(this.seen.values().next().value!)
-    const value = normalize(transcript)
-    if (['yes', 'yes it is me', 'correct', '是', '是的', '對', '对', '對的', '对的', '沒錯', '没错', '我是本人'].includes(value)) {
-      this.name = this.pending; this.pending = ''; this.question = undefined; return reply('memory_identity_confirmed', 'accepted')
+    if (judgment?.decision === 'yes') {
+      this.name = this.pending; this.pending = ''; this.question = undefined
+      return { ...reply('memory_identity_confirmed', 'accepted'), language: this.language }
     }
     this.pending = ''; this.question = undefined
-    return reply(['no', '不是', '不對', '不对'].includes(value) ? 'memory_confirmation_cancelled' : 'memory_confirmation_unclear')
+    return reply(judgment?.decision === 'no' ? 'memory_confirmation_cancelled' : 'memory_confirmation_unclear')
   }
 }

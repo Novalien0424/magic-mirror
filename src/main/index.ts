@@ -23,6 +23,8 @@ import { createVoicePreviewLease, type VoicePreviewLease } from './realtime/voic
 import { createMemoryRepository, unavailableMemoryRepository } from './memory/repository'
 import { createMemoryEmbedder } from './memory/embedding'
 import { createMemoryExtractor } from './memory/extractor'
+import { createMemoryInterpreter } from './memory/intent'
+import { createMemoryConsolidator } from './memory/consolidator'
 import { MemoryLearning } from './memory/learning'
 import { MemoryIndexer } from './memory/indexer'
 import { MemoryImporter } from './memory/import'
@@ -1304,7 +1306,9 @@ void app.whenReady().then(async () => {
     .catch(() => memoryReport('memory_semantic_unavailable'))
   const memoryExtractor = createMemoryExtractor({ credentialSource })
   const memoryModel = async () => (await runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
-  const memoryLearning = new MemoryLearning({ repository: memoryStore, extract: memoryExtractor, model: memoryModel,
+  const memoryInterpreter = createMemoryInterpreter({ credentialSource, model: memoryModel })
+  const memoryConsolidator = createMemoryConsolidator({ repository: memoryStore, extract: memoryExtractor, embedder: memoryEmbedder, report: memoryReport })
+  const memoryLearning = new MemoryLearning({ repository: memoryStore, extract: memoryExtractor, consolidate: memoryConsolidator, model: memoryModel,
     report: memoryReport, onCommitted: (avatarId, name) => {
       memoryIndexer.schedule()
       void memoryStore.policy(avatarId, name).then(async policy => {
@@ -1317,7 +1321,7 @@ void app.whenReady().then(async () => {
         }
       }).catch(() => memoryReport('memory_context_refresh_failed'))
     } })
-  const memoryImporter = new MemoryImporter({ repository: memoryStore, extract: memoryExtractor, model: memoryModel,
+  const memoryImporter = new MemoryImporter({ repository: memoryStore, extract: memoryExtractor, consolidate: memoryConsolidator, model: memoryModel,
     canRun: () => runtime.snapshot().lifecycle === 'dormant', report: memoryReport, onChanged: () => memoryIndexer.schedule() })
   memoryIndexer.schedule()
   if (phase4QaEnabled && process.env['MIRROR_MEMORY_LIVE_QA'] === '1') memoryPipelineQa = async evidence => runMemoryLiveQa({
@@ -1329,7 +1333,7 @@ void app.whenReady().then(async () => {
     state: () => { const snapshot = runtime.snapshot(); return { active: snapshot.lifecycle === 'active', lifecycle: snapshot.lifecycle,
       avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration } },
     store: () => memoryStore,
-    learning: memoryLearning, embedder: memoryEmbedder, importer: memoryImporter,
+    learning: memoryLearning, embedder: memoryEmbedder, importer: memoryImporter, interpret: memoryInterpreter,
     onChanged: () => memoryIndexer.schedule(),
     controlPhrases: async () => {
       const config = await runtime.console.getConfig()

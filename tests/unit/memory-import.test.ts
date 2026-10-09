@@ -70,7 +70,7 @@ describe('large Markdown memory import', () => {
       }
       return 'committed' as const
     })
-    const repository = { policy: async () => ({ mode: 'explicit', epoch: 3, cleanupRequired: false }), list: vi.fn(async () => entries.map(entry => ({ ...entry }))), commitLearning: commit, setCleanupRequired: async () => {} } as unknown as MemoryRepository
+    const repository = { policy: async () => ({ mode: 'explicit', epoch: 3, cleanupRequired: false }), lookupTopics: vi.fn(async (_avatar: string, _name: string, topics: string[]) => entries.filter(entry => topics.includes(entry.topic)).map(entry => ({ ...entry }))), hybridRecall: async () => ({ entries: [], incomplete: false }), commitLearning: commit, setCleanupRequired: async () => {} } as unknown as MemoryRepository
     const extract = vi.fn(async (input: ExtractionInput) => {
       const cancelled = input.evidence.some(item => item.text.includes('cancelled the booking'))
       return [{ topic: 'booking', text: cancelled ? 'The earlier booking commitment was cancelled.' : 'Visitor committed to booking; it is not completed.', kind: 'commitment' as const, state: cancelled ? 'resolved' as const : 'active' as const, eventAt: '', sources: [], expectedRevision: input.existing[0]?.revision ?? null, keepInMind: false }]

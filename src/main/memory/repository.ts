@@ -21,7 +21,7 @@ function sanitized(value?: unknown): Error {
 /** An unavailable adapter lets unrelated conversation boot normally; it never creates fallback storage. */
 export function unavailableMemoryRepository(): MemoryRepository {
   const failed = async (): Promise<never> => { throw sanitized() }
-  return { names: failed, save: failed, list: failed, recall: failed, forget: failed,
+  return { names: failed, save: failed, list: failed, lookupTopics: failed, recall: failed, forget: failed,
     policy: failed, setPolicy: failed, brief: failed, commitLearning: failed,
     hybridRecall: failed, pendingIndex: failed, setEmbedding: failed, setCleanupRequired: failed,
     close: async () => {} }
@@ -100,6 +100,7 @@ export function createMemoryRepository(path: string, options: MemoryRepositoryOp
     names: avatarId => call('names', [avatarId]),
     save: (avatarId, name, topic, text) => call('save', [avatarId, name, topic, text]),
     list: (avatarId, name, query) => call('list', query === undefined ? [avatarId, name] : [avatarId, name, query]),
+    lookupTopics: (avatarId, name, topics) => call('lookupTopics', [avatarId, name, topics]),
     recall: (avatarId, name, query) => call('recall', [avatarId, name, query]),
     forget: (avatarId, name, topic) => call('forget', [avatarId, name, topic]),
     policy: (avatarId, name) => call('policy', [avatarId, name]),

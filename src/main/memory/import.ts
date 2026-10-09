@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { MemoryRepository } from './contracts'
 import type { HistoricalMemoryContext, MemoryExtractor } from './extractor'
+import { createMemoryConsolidator, type MemoryConsolidator } from './consolidator'
 import type { MemoryImportStatus } from '../../shared/memory'
 
 interface HistoryRange { start: number; end: number; historical: HistoricalMemoryContext }
@@ -89,14 +90,17 @@ export function prepareMemoryMarkdown(markdown: string): { persona: string; chun
   if (!chunks.length && !draft) throw Error('memory_import_empty')
   return { persona: draft, chunks, contexts }
 }
-interface Options { repository: MemoryRepository; extract: MemoryExtractor; model(): Promise<string>; canRun(): boolean; report(reason: string): void; onChanged?(): void }
+interface Options { repository: MemoryRepository; extract: MemoryExtractor; consolidate?: MemoryConsolidator; model(): Promise<string>; canRun(): boolean; report(reason: string): void; onChanged?(): void }
 /** One bounded import at a time, explicit operator scope, cancellable between every async boundary. */
 export class MemoryImporter {
   private current: MemoryImportStatus = { state: 'empty', chunks: 0, processed: 0, saved: 0, persona: '', code: 'memory_import_empty' }
   private staged?: { avatarId: string; name: string; chunks: string[]; contexts: HistoryRange[][] }
   private abort?: AbortController
   private running?: Promise<void>
-  constructor(private readonly options: Options) {}
+  private readonly consolidate: MemoryConsolidator
+  constructor(private readonly options: Options) {
+    this.consolidate = options.consolidate ?? createMemoryConsolidator({ repository: options.repository, extract: options.extract, report: options.report })
+  }
   status(): MemoryImportStatus { return { ...this.current } }
   owns(avatarId: string, name: string): boolean { return this.staged?.avatarId === avatarId && this.staged.name === name }
   stage(avatarId: string, name: string, markdown: string): MemoryImportStatus {
@@ -126,13 +130,10 @@ export class MemoryImporter {
         if (signal.aborted || !this.options.canRun()) throw Error()
         const policy = await this.options.repository.policy(staged.avatarId, staged.name)
         if (policy.epoch !== epoch || policy.mode === 'off' || policy.cleanupRequired) throw Error()
-        const existing = await this.options.repository.list(staged.avatarId, staged.name)
-        const records = await this.options.extract({ model, existing,
+        const { records, sourceRevisions } = await this.consolidate({ avatarId: staged.avatarId, name: staged.name, model,
           evidence: staged.contexts[i]!.map(({ start, end, historical }, part) => ({ id: `import-${i}-${part}`, text: staged.chunks[i]!.slice(start, end), observedAt, historical })) }, signal)
         if (signal.aborted || !this.options.canRun()) throw Error()
         if (records.length) {
-          const sourceTopics = new Set(records.flatMap(record => record.sources))
-          const sourceRevisions = Object.fromEntries(existing.filter(record => sourceTopics.has(record.topic)).map(record => [record.topic, record.revision ?? 1]))
           const committed = await this.options.repository.commitLearning(staged.avatarId, staged.name,
             { operationId: `${importId}:${i}`, epoch, origin: 'import', records, sourceRevisions })
           if (committed === 'stale') throw Error()

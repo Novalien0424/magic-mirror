@@ -1,5 +1,5 @@
 import source from '../../resources/config/prompts/realtime.v1.json'
-import type { MemoryReply } from './memory'
+import type { MemoryReply, MemoryLanguage } from './memory'
 
 export const REALTIME_PROMPT_SOURCE = 'resources/config/prompts/realtime.v1.json'
 // Static JSON imports give builders a checked shape without dependencies in the
@@ -44,7 +44,9 @@ export function buildSpeechResponse(text: string, speakingStyle: string) {
   }) }
 }
 
-export function buildMemoryQuestion(name: string): string { return renderPrompt('memoryQuestion', { name }) }
+export function buildMemoryQuestion(name: string, language: MemoryLanguage = 'en'): string {
+  return language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.question.replace('{{name}}', () => name) : renderPrompt('memoryQuestion', { name })
+}
 /** Punctuation/spacing do not change the question; added or changed words do. RAM only. */
 export function sameSpokenQuestion(expected: string, actual: string): boolean {
   const normalize = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '')
@@ -57,5 +59,5 @@ export function buildMemoryState(reply: MemoryReply): string {
 }
 export function buildMemoryAcknowledgment(reply: MemoryReply, speakingStyle: string) {
   const mode = reply.temporary ? 'temporary' : reply.mode ?? 'off'
-  return buildSpeechResponse(REALTIME_PROMPTS.memoryAcknowledgments[mode], speakingStyle)
+  return buildSpeechResponse((reply.language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.acknowledgments : REALTIME_PROMPTS.memoryAcknowledgments)[mode], speakingStyle)
 }

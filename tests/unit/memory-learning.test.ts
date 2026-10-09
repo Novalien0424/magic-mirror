@@ -5,7 +5,7 @@ import type { MemoryRepository, LearningRecord } from '../../src/main/memory/con
 const record: LearningRecord = { topic: 'Fixture', text: 'Distilled synthetic outcome.', kind: 'episode', state: 'active', eventAt: '', sources: [], expectedRevision: null, keepInMind: false }
 function setup() {
   let epoch = 1
-  const repository = { policy: vi.fn(async () => ({ epoch, mode: 'automatic', cleanupRequired: false })), list: vi.fn(async () => []), commitLearning: vi.fn(async (_a, _n, op) => op.epoch === epoch ? 'committed' : 'stale') }
+  const repository = { policy: vi.fn(async () => ({ epoch, mode: 'automatic', cleanupRequired: false })), lookupTopics: vi.fn(async () => []), hybridRecall: vi.fn(async () => ({ entries: [], incomplete: false })), commitLearning: vi.fn(async (_a, _n, op) => op.epoch === epoch ? 'committed' : 'stale') }
   const extract = vi.fn(async (_input: ExtractionInput, _signal: AbortSignal) => [record]), report = vi.fn()
   const learning = new MemoryLearning({ repository: repository as unknown as MemoryRepository, extract, model: async () => 'configured', report, debounceMs: 60_000 })
   return { learning, repository, extract, report, correct: () => epoch++ }

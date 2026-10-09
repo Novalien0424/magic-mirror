@@ -219,6 +219,18 @@ export class MemoryStore {
     })
   }
 
+  lookupTopics(avatarId: string, name: string, topics: string[]): MemoryEntry[] {
+    const label = labelFor(avatarId, name)
+    if (!Array.isArray(topics) || topics.length > 64) throw new MemoryFailure('memory_invalid_input')
+    const keys = [...new Set(topics.map(topic => normalized(topic, 120)))]
+    return this.useDatabase(database => {
+      const scope = this.scope(database, label)
+      if (!scope || !this.readable(scope)) return []
+      const rows = keys.map(topic => this.row(database, scope, topic)).filter((row): row is EntryRow => !!row)
+      return rows.filter(row => this.supported(database, row.id)).map(entryFor)
+    })
+  }
+
   recall(avatarId: string, name: string, query: string): MemoryEntry[] {
     const label = labelFor(avatarId, name)
     validated(query, 200, true)

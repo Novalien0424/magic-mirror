@@ -17,6 +17,7 @@ if (!isMainThread && parentPort) {
     names: { arity: [1], run: ([avatar]) => store!.names(avatar as string) },
     save: { arity: [4], run: ([avatar, name, topic, text]) => store!.save(avatar as string, name as string, topic as string, text as string) },
     list: { arity: [2, 3], run: ([avatar, name, query]) => store!.list(avatar as string, name as string, query as string | undefined) },
+    lookupTopics: { arity: [3], run: ([avatar, name, topics]) => store!.lookupTopics(avatar as string, name as string, topics as string[]) },
     recall: { arity: [3], run: ([avatar, name, query]) => store!.recall(avatar as string, name as string, query as string) },
     forget: { arity: [3], run: ([avatar, name, topic]) => store!.forget(avatar as string, name as string, topic as string) },
     policy: { arity: [2], run: ([avatar, name]) => store!.policy(avatar as string, name as string) },

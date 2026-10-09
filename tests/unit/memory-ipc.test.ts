@@ -10,6 +10,7 @@ function setup() {
     policy: vi.fn(async () => ({ mode: 'automatic', epoch: 1, cleanupRequired: false })), brief: vi.fn(async () => []), setCleanupRequired: vi.fn(async () => {}) }
   const reset = vi.fn(async () => undefined), report = vi.fn()
   registerMemoryIpc({ handle: (key, handler) => handlers.set(key, handler), authorize: (event, kind) => event === kind,
+    interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true, name: input.request?.name ?? '', language: 'en' }),
     store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn() },
     state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
   const identity = { realtimeSessionId: 'session', sessionGeneration: 1 }
@@ -27,10 +28,11 @@ describe('memory IPC authorization and lifecycle', () => {
   })
   it('joins input start and completion, scopes recall in Main and logs only result codes', async () => {
     const p = setup()
-    await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'start', itemId: 'first', transcript: '' })
+    await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'speech', itemId: 'first', transcript: '' })
+    await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'first', transcript: 'My name is Synthetic Person.' })
     const q = (await p.call('mirror:memory', 'mirror', p.request('identify', { name: 'Synthetic Person' }))).confirmation
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'question_played', itemId: q.token, transcript: q.text })
-    expect((await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'first', transcript: 'yes' })).code).toBe('memory_confirmation_stale')
+    expect((await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'first', transcript: 'yes' })).code).toBe('memory_transcript_duplicate')
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'start', itemId: 'second', transcript: '' })
     await p.call('mirror:memory-input', 'mirror', { identity: p.identity, phase: 'complete', itemId: 'second', transcript: 'yes' })
     await p.call('mirror:memory', 'mirror', p.request('recall', { name: 'Wrong Person', query: 'tea' }))

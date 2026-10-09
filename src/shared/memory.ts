@@ -1,5 +1,6 @@
 /** Private content crosses only authorized, transient IPC. Never log these values. */
 export type MemoryMode = 'automatic' | 'explicit' | 'off'
+export type MemoryLanguage = 'en' | 'zh-TW'
 export interface MemoryEntry { id: string; topic: string; text: string; updatedAt: string; kind?: 'episode' | 'fact' | 'commitment'; revision?: number; state?: 'active' | 'resolved' | 'superseded'; eventAt?: string; keepInMind?: boolean }
 export type MemoryAction = 'identify' | 'remember' | 'recall' | 'forget' | 'policy' | 'temporary'
 export type MemoryInputPhase = 'speech' | 'start' | 'complete' | 'settled' | 'control' | 'question_played' | 'question_cancelled'
@@ -11,6 +12,7 @@ export interface MemoryReply {
   entries?: MemoryEntry[]
   mode?: MemoryMode
   temporary?: boolean
+  language?: MemoryLanguage
   confirmation?: { token: string; text: string }
   coverage?: 'complete' | 'incomplete' | 'unavailable'
 }
