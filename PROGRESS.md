@@ -1,12 +1,47 @@
-# Magic Mirror — Raven deployment on the final Mac, 2026-10-05
+# Magic Mirror — Raven deployment on the final Mac, 2026-10-09
 
-## Current runtime: stopped at user request — 2026-10-08
+## Current runtime: deployed and running — 2026-10-09
 
-Raven quit cleanly (exit 0). LaunchAgent is not running; no project processes
-remain, and Computer Use confirms Electron is stopped and its HTML windows are
-closed. Display sleep was requested with `pmset displaysleepnow` (exit 0).
-Do not restart Raven without a subsequent user request. The runtime restoration
-record below is historical; implementation and failed QA findings are unchanged.
+The user authorized completion, deployment, commit and push. The verified media
+build (`37211fa`) is running through the existing LaunchAgent, PID **40509**.
+Fresh events confirm Dormant, media-folder index ready, wake worker ready and
+listening. Active/draft/previous config, audio and folder settings hashes are
+unchanged. [Deployment metadata](.artifacts/media-review-2026-10-09/deployment.json).
+No separate restart owner, new package/signing chain or settings migration.
+Computer Use UI inspection timed out twice; no new Raven visual acceptance is
+claimed. The October 8 stop and earlier restoration records below are historical.
+
+## Current media review and YouTube integration — 2026-10-09
+
+[Implementation, review findings and evidence](docs/testing/media-review-2026-10-09.md).
+Unspecified media requests now search the avatar's allowed local library first,
+then YouTube if no suitable match fits. Explicit folder/vault requests remain
+local; explicit YouTube requests go directly there. Once is the default; explicit
+loops use Dormant/local wake ownership. Fixed cached-scene loop interruption,
+stalled-music recovery, stale fade completion, and unreported stale media events.
+
+All five live YouTube checks pass: configured search, advancing playback, once
+completion, loop boundary and Stop cleanup. The local-media functional run passes
+17 checks, with 11 captures and active music analyser. Inspected frames show the
+looping video, returned avatar and avatar retained during looping music.
+The available display is 1920×1080 landscape, so portrait acceptance remains
+excluded; the original portrait gate is unchanged. YouTube uses system audio
+output and shows an official player even for music.
+
+Synthetic live model checks exposed conflicting local-miss instructions and an
+attempt to broaden an explicit vault request. Repaired the catalog and added
+application enforcement from the visitor's English/Chinese words, including
+late-ASR protection and mandatory local lookup before an unspecified-source
+YouTube request. The failed model sequence now passes adapter regression; the
+complete live intent matrix was not rerun after its retry limit. Physical
+speaker/wake-word accuracy and a fresh Raven visual check remain manual.
+
+392 focused tests across 20 files passed (375 media checks plus 17 boot checks;
+the boot/IPC follow-up reran 47 overlapping checks). Typechecks, production build
+and diff checks passed. Media implementation is committed as `37211fa`; the
+pre-existing memory work and unresolved retest findings were preserved separately
+in `d2d7180`. No dependency/model change or phase promotion. Memory findings below
+remain unresolved and are not part of media acceptance.
 
 ## Current: three live memory retests completed; acceptance failed
 
