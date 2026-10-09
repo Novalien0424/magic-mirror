@@ -1,5 +1,6 @@
 import { REALTIME_PROMPTS, buildAuditionPrompt, buildSpeechResponse } from '../../shared/realtime-prompts'
 import { memoryNeedsReset } from '../../shared/memory'
+import { createMediaSourcePolicy } from '../../shared/media-source-policy'
 import {
   RealtimeAgent,
   RealtimeSession,
@@ -104,6 +105,8 @@ export interface CreateRealtimeSessionInput {
   readonly onCameraCapture?: (identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<import('../../shared/camera-tracking').CameraSnapshot | null>
   readonly onMediaRequest?: (request: import('../../shared/media-skill').MediaSkillRequest,
     identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<import('../../shared/realtime-tools').ToolOutcome>
+  readonly onFindMedia?: NonNullable<import('../../shared/bridge').MirrorBridge['findMedia']>
+  readonly onSearchYoutube?: NonNullable<import('../../shared/bridge').MirrorBridge['searchYoutube']>
   readonly waitForOutputTail?: () => Promise<void>
   readonly waitForWakePresentation?: (signal: AbortSignal) => Promise<void>
   readonly onAudioActivity?: (
@@ -453,6 +456,7 @@ export function createRealtimeSession(
   let memoryInputQueue: Promise<unknown> = Promise.resolve()
   let memoryInputRevision = 0
   let memoryTurnGeneration = 0
+  const mediaSource = createMediaSourcePolicy()
   let memoryLatestItem = ''
   let memoryTransportClosed = false
   const memoryResponses = new Map<string, string>()
@@ -503,6 +507,7 @@ export function createRealtimeSession(
   const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
   const toolSpecs = resolveRealtimeTools(input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, input.preview)
   const sleepToolNames = new Set(toolSpecs.filter(spec => spec.handler === 'return_to_dormant').map(spec => spec.name))
+  const mediaToolNames = new Set(toolSpecs.filter(spec => ['find_media', 'search_youtube', 'play_media', 'play_youtube', 'stop_media'].includes(spec.handler)).map(spec => spec.name))
   try {
     const transportFactory = dependencies?.createTransport ?? createWebRtcRealtimeTransport
     transport = transportFactory({
@@ -544,6 +549,44 @@ export function createRealtimeSession(
         if (!frame) return 'failed'
         session.addImage(frame.dataUrl, { triggerResponse: false })
         return 'accepted'
+      },
+      find_media: async args => {
+        const generation = memoryTurnGeneration
+        const stale = () => ({ outcome: 'ignored' as const, media: { status: 'rejected' as const, code: 'media_discovery_stale', resources: [], total: 0 } })
+        if (closed || mediaPlaybackActive || returnToDormantPending) return stale()
+        const media = await input.onFindMedia?.({ query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' },
+          { realtimeSessionId: input.sessionId, sessionGeneration }) ?? { status: 'failed' as const, code: 'media_discovery_unavailable', resources: [], total: 0 }
+        if (closed || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
+        if (media.status === 'accepted') mediaSource.searchedLocal()
+        return { outcome: media.status, media }
+      },
+      search_youtube: async args => {
+        const generation = memoryTurnGeneration
+        const stale = () => ({ outcome: 'ignored' as const, youtube: { status: 'rejected' as const, code: 'youtube_search_stale' as const, videos: [] } })
+        if (closed || mediaPlaybackActive || returnToDormantPending) return stale()
+        const source = await mediaSource.youtube()
+        if (closed || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
+        if (source !== 'allowed') {
+          emitMetadata(input, 'realtime_observer_event', 'info', 'media_source_restricted', sessionGeneration, createdAt)
+          return { outcome: 'rejected', youtube: { status: 'rejected', code: source === 'pending' ? 'youtube_search_source_pending'
+            : source === 'local_lookup_required' ? 'youtube_search_local_lookup_required' : 'youtube_search_source_restricted', videos: [] } }
+        }
+        const youtube = await input.onSearchYoutube?.({ query: args.query as string }, { realtimeSessionId: input.sessionId, sessionGeneration })
+          ?? { status: 'failed' as const, code: 'youtube_search_not_configured' as const, videos: [] }
+        if (closed || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
+        return { outcome: youtube.status, youtube }
+      },
+      play_youtube: async args => {
+        const generation = memoryTurnGeneration
+        if (closed || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
+        const source = await mediaSource.youtube()
+        if (closed || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return 'ignored'
+        if (source !== 'allowed') {
+          emitMetadata(input, 'realtime_observer_event', 'info', 'media_source_restricted', sessionGeneration, createdAt)
+          return 'rejected'
+        }
+        return input.onMediaRequest({ action: 'play_youtube', kind: args.kind as 'video' | 'music', url: args.url as string,
+          mode: args.mode as 'once' | 'loop' }, { realtimeSessionId: input.sessionId, sessionGeneration })
       },
       play_media: async args => {
         if (closed || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
@@ -904,7 +947,8 @@ export function createRealtimeSession(
           })) memoryAudioResponses.add(memoryResponseId)
           // Main classifies memory-management intent from the visitor's actual
           // words. An unsolicited/rejected model save must not erase ordinary evidence.
-          const hasControl = Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string))
+          const hasControl = Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call'
+            && (sleepToolNames.has(readProperty(item, 'name') as string) || mediaToolNames.has(readProperty(item, 'name') as string)))
           if (itemId && hasControl) memoryInput('control', itemId)
           if (itemId && readProperty(response, 'status') === 'completed') memoryInput('settled', itemId)
           askPendingQuestion()
@@ -1038,6 +1082,7 @@ export function createRealtimeSession(
       memoryTurnGeneration++
       const itemId = readProperty(event, 'item_id')
       memoryLatestItem = typeof itemId === 'string' ? itemId : ''
+      mediaSource.begin(memoryLatestItem)
       memoryInput('speech', memoryLatestItem)
       cancelPendingGreeting('wake_greeting_cancelled_visitor_speech')
       notifyAudioActivity('speech_started')
@@ -1054,7 +1099,14 @@ export function createRealtimeSession(
     }
     if (type === 'conversation.item.created' || type === 'conversation.item.added' || type === 'conversation.item.done') {
       const item = readProperty(event, 'item')
-      if (readProperty(item, 'role') === 'user') notifyInputItemCreated(readProperty(item, 'id'))
+      if (readProperty(item, 'role') === 'user') {
+        const id = readProperty(item, 'id'), content = readProperty(item, 'content')
+        if (typeof id === 'string' && Array.isArray(content)) {
+          const text = content.filter(part => readProperty(part, 'type') === 'input_text').map(part => readProperty(part, 'text')).filter(part => typeof part === 'string').join(' ')
+          if (text) { mediaSource.begin(id); mediaSource.observe(id, text) }
+        }
+        notifyInputItemCreated(id)
+      }
       return
     }
     if (type === 'conversation.item.input_audio_transcription.completed') {
@@ -1098,6 +1150,7 @@ export function createRealtimeSession(
         return
       }
       if (mediaInput) return
+      mediaSource.observe(itemId, transcript)
       if (input.onMemoryInput) memoryInputQueue = memoryInputQueue.then(async () => {
         if (!closed) {
           const result = await input.onMemoryInput!('complete', itemId, transcript, { realtimeSessionId: input.sessionId, sessionGeneration })
@@ -1297,6 +1350,7 @@ export function createRealtimeSession(
     if (closePromise !== null) return closePromise
     cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
+    mediaSource.reset()
     pendingQuestion = undefined
     memoryDialogue.close()
     for (const done of memoryInputWaiters) done()
@@ -1437,6 +1491,7 @@ export function createRealtimeSession(
   function setMediaPlayback(active: boolean): void {
     if (closed || mediaPlaybackActive === active) return
     mediaPlaybackActive = active
+    if (!active) mediaSource.reset()
     if (active && memoryDialogue.active) { memoryDialogue.cancel(); return }
     // Preserve the configured VAD and one mic owner, but prevent model replies.
     transport.sendEvent({ type: 'session.update', session: { type: 'realtime', audio: { input: { turn_detection: {

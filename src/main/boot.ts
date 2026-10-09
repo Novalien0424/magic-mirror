@@ -2380,7 +2380,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     return stopRealtime('manual_stop')
   }
 
-  function requestSleep(): Promise<Record<string, unknown>> {
+  async function requestSleep(): Promise<Record<string, unknown>> {
+    // Offline demos use simulated sessions and do not own a renderer microphone.
+    // Keep their media-triggered sleep on the same explicit simulator seam.
+    if (options.completeSleepForDemo === true) {
+      const result = await handleSimulator({ type: 'sleep' })
+      return { status: result.op === 'success' ? 'success' : 'failed', reason: 'simulated_sleep_handoff' }
+    }
     return stopRealtime('sleep_command')
   }
 

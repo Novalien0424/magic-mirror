@@ -552,6 +552,62 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('discovers only current authorized local resources and discards stale YouTube searches without logging clues', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'discovery-session', sessionGeneration: 3 }
+    const own = { kind: 'music', assetId: 'own-rain', name: 'Rain piano', aliases: [], origin: 'own' }
+    const shared = { kind: 'music', assetId: 'shared-rain', name: 'Rain guitar', aliases: [], origin: 'shared' }
+    const locked = { kind: 'music', assetId: 'other', name: 'Rain locked', aliases: [] }
+    const config = { musicAssets: [{ id: 'other' }], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven',
+      avatars: [{ id: 'raven', mediaSkill: { enabled: true, fadeMs: 0, gain: .5, resources: [locked] } }],
+      locks: [{ kind: 'music', resourceId: 'other', avatarId: 'other-avatar' }] } }
+    const getFolderMedia = vi.fn(() => [own, shared])
+    let resolveSearch!: (value: unknown) => void
+    const searchYoutube = vi.fn(() => new Promise(resolve => { resolveSearch = resolve }))
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config } as never,
+      fixtures.windows, events, undefined, { getFolderMedia, searchYoutube })
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }, identity = { realtimeSessionId: 'discovery-session', sessionGeneration: 3 }
+    const find = registered.handlers.get(MIRROR_IPC_CHANNELS.findMedia)!, search = registered.handlers.get(MIRROR_IPC_CHANNELS.searchYoutube)!
+    expect(await find(event, { request: { query: 'Rain', kind: 'music' }, identity })).toMatchObject({ status: 'accepted', total: 2 })
+    expect(getFolderMedia).toHaveBeenCalledWith('raven')
+    getFolderMedia.mockReturnValue([own])
+    expect(await find(event, { request: { query: 'Rain', kind: 'music' }, identity })).toMatchObject({ total: 1 })
+    expect(await search({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, { request: { query: 'private-query' }, identity })).toMatchObject({ status: 'rejected' })
+    expect(searchYoutube).not.toHaveBeenCalled()
+    const pending = search(event, { request: { query: 'private-query' }, identity })
+    snapshot.sessionGeneration++
+    resolveSearch({ status: 'accepted', code: 'youtube_search_results', videos: [{ url: 'https://youtu.be/abcdefghijk', title: 'Fixture', channel: 'Fixture' }] })
+    expect(await pending).toEqual({ status: 'rejected', code: 'youtube_search_stale', videos: [] })
+    expect(JSON.stringify(events)).not.toContain('private-query')
+    expect(JSON.stringify(events)).not.toContain('Rain')
+  })
+  it('routes YouTube once completion and loop wake ownership through the existing media lifecycle', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = [], send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'youtube-session', sessionGeneration: 3 }
+    const config = { configVersion: 1, spells: [], scenes: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock' },
+      musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
+    let report!: (value: any) => void, context: any
+    const youtube = { play: vi.fn((request, callback) => { context = request.context; report = callback; return true }), stop: vi.fn() }
+    const requestSleep = vi.fn(async () => ({ status: 'success' }))
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never,
+      fixtures.windows, events, undefined, { youtube })
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!, event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'youtube-session', sessionGeneration: 3 }, request = { action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'once' }
+    const once = handler(event, { request, identity })
+    await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledOnce())
+    report({ ...context, status: 'acknowledged' }); expect(await once).toBe('accepted')
+    expect(requestSleep).not.toHaveBeenCalled()
+    report({ ...context, status: 'completed' })
+    expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ active: false, hideAvatar: false }))
+    const loop = handler(event, { request: { ...request, mode: 'loop' }, identity })
+    await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledTimes(2))
+    report({ ...context, status: 'acknowledged' }); expect(await loop).toBe('accepted')
+    expect(requestSleep).toHaveBeenCalledOnce()
+    await registered.control.stopAll({ preserveSleepingMedia: true })
+    expect(youtube.stop).toHaveBeenCalledOnce()
+    await registered.control.stopAll()
+    expect(youtube.stop).toHaveBeenCalledTimes(2)
+  })
   it('limits camera capture to the active Mirror session and drops frames after a session change', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'camera-session', sessionGeneration: 3 }
@@ -593,17 +649,20 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const send = vi.spyOn(fixtures.mirrorSender, 'send')
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
-    const config = { musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
+    const config = { configVersion: 1, spells: [], scenes: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock' },
+      musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
     const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
     const requestSleep = vi.fn(async () => ({ status: 'success' }))
     const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia })
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    // Even an earlier unavailable scene creates a cached executor with global stops.
+    await registered.handlers.get(CONSOLE_IPC_CHANNELS.runScene)!({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, 'absent-scene')
     expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toBe('rejected')
     const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
-    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music')![1] as any
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
     expect(requestSleep).not.toHaveBeenCalled()
     registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
     expect(await started).toBe('accepted')
@@ -611,6 +670,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     send.mockClear()
     await registered.control.stopAll({ preserveSleepingMedia: true })
     expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'stop' }))
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_visual', action: 'stop' }))
     await registered.control.stopAll()
     expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
     expect(getFolderMedia).toHaveBeenCalledWith('raven')
@@ -625,7 +686,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       activeAvatarId: 'host', locks: [] as { kind: string; resourceId: string; avatarId: string }[],
       avatars: [{ id: 'host', mediaSkill: { enabled: true, fadeMs: 0, gain: 0.5, resources: [resource] } }],
     } }
-    const runtime = { ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config }
+    const runtime = { ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config,
+      requestSleep: async () => ({ status: 'success' }) }
     const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
@@ -639,7 +701,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     config.avatarCatalog.locks = []
     const started = handler(event, envelope)
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
-    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music')![1] as any
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
     registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
     expect(await started).toBe('accepted')
     expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play', loop: true }))
@@ -968,6 +1030,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       reportRealtimeMetadata: REPORT_REALTIME_METADATA_CHANNEL,
       sleepRequest: 'mirror:sleep-request',
       mediaSkill: 'mirror:media-skill',
+      findMedia: 'mirror:find-media',
+      searchYoutube: 'mirror:search-youtube',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',

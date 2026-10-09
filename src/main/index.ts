@@ -31,7 +31,7 @@ import { MemoryImporter } from './memory/import'
 import { runMemoryLiveQa } from './memory/live-qa'
 import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
-import { initializeAudioPreferences } from './audio-preferences'
+import { initializeAudioPreferences, getAudioPreferences } from './audio-preferences'
 import { createCrashRecovery } from './crash-recovery'
 import { startCameraTracking, type CameraTrackingService } from './camera/tracker'
 import {
@@ -88,6 +88,8 @@ import { configureVideoDecoding } from './video-decoding-policy'
 import { createWakeWorkerPackage, wakeTuningIsActive } from './wake/runtime-config'
 import { createWakeCalibration } from './wake/calibration'
 import { requestWakeMicrophonePermission } from './wake/microphone-permission'
+import { createYoutubePlayer } from './avatar/youtube-player'
+import { createYoutubeCredentialSource, createYoutubeSearch } from './avatar/youtube-search'
 
 const isDarwin = process.platform === 'darwin'
 let cameraTracking: CameraTrackingService | null = null
@@ -767,7 +769,8 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     display: display.id, width: display.bounds.width, height: display.bounds.height,
     mirror: display.id === mirrorDisplay.id ? 'yes' : 'no',
   })
-  if (!editorOnly && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
+  const mediaFunctional = process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
+  if (!editorOnly && !mediaFunctional && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
     exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason: 'phase4_qa_portrait_display_required' }, 2)
     return
   }
@@ -780,7 +783,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
   consoleWindow.show()
   marker('PHASE4_QA_DISPLAY', { display_count: displays.length, mirror_display: portrait?.id ?? 0,
     width: portrait?.bounds.width ?? 0, height: portrait?.bounds.height ?? 0, scale_factor: portrait?.scaleFactor ?? 1,
-    console_display: consoleDisplay?.id ?? 0, status: editorOnly ? 'mirror_not_executed' : 'portrait_verified' })
+    console_display: consoleDisplay?.id ?? 0, status: editorOnly ? 'mirror_not_executed' : mediaFunctional ? 'functional_only_portrait_not_verified' : 'portrait_verified' })
   if (process.env['MIRROR_PHASE4_QA_MANUAL'] === '1') {
     marker('PHASE4_QA_MANUAL', { status: 'ready', evidence: 'not_executed' })
     return
@@ -790,10 +793,10 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     try {
       await writeFile(join(outputDir, '..', 'evidence.json'), JSON.stringify({
         platform: process.platform,
-        mode: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
+        mode: mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
         live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
         display: { count: displays.length, mirror: portrait?.id, width: portrait?.bounds.width,
-          height: portrait?.bounds.height, verified: !editorOnly, console: consoleDisplay?.id },
+          height: portrait?.bounds.height, verified: !editorOnly && !mediaFunctional, console: consoleDisplay?.id },
         result, evidence,
         humanAcceptance: 'not_executed', physicalHardware: 'not_executed',
       }, null, 2))
@@ -1154,7 +1157,12 @@ void app.whenReady().then(async () => {
       runtime.telemetry.emit({ module: 'avatar', event: 'voice_preview_stopped', status: 'info', reason, source: 'runtime' })
     },
   })
+  const youtubePlayer = createYoutubePlayer(() => windows.get('mirror'), { preferences: () => getAudioPreferences().preferences,
+    report: reason => runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason }) })
+  app.once('before-quit', () => youtubePlayer.stop())
   sceneRuntimeControl = registerIpcHandlers({
+    youtube: youtubePlayer,
+    searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
     captureCamera: () => cameraTracking?.capture() ?? Promise.resolve(null),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     mediaFolders: async request => {

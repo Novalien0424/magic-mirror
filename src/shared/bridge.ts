@@ -178,6 +178,8 @@ export interface MirrorChannelMap {
   readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
   readonly sleepRequest: 'mirror:sleep-request'
   readonly mediaSkill: 'mirror:media-skill'
+  readonly findMedia: 'mirror:find-media'
+  readonly searchYoutube: 'mirror:search-youtube'
   readonly avatarControl: 'mirror:avatar-control'
   readonly reportAvatarRuntime: 'mirror:report-avatar-runtime'
   readonly reportSceneAction: 'mirror:report-scene-action'
@@ -251,6 +253,8 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
   requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./realtime-tools').ToolOutcome>
+  findMedia?(request: import('./media-discovery').MediaDiscoveryRequest, identity: RealtimeSessionIdentity): Promise<import('./media-discovery').MediaDiscoveryReply>
+  searchYoutube?(request: import('./youtube-search').YoutubeSearchRequest, identity: RealtimeSessionIdentity): Promise<import('./youtube-search').YoutubeSearchReply>
   captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
   reportSceneAction(report: SceneActionRendererReport): void

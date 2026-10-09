@@ -1,3 +1,5 @@
+import { youtubeVideoId } from './youtube-media'
+
 /** Operator-curated local resources available to an avatar's conversational media skill. */
 export interface AvatarMediaResource {
   kind: 'video' | 'music'
@@ -38,12 +40,17 @@ export function parseMediaSkill(value: unknown): AvatarMediaSkill | null {
 
 export type MediaSkillRequest =
   | { action: 'play'; kind: 'video' | 'music'; assetId: string; mode: 'once' | 'loop' }
+  | { action: 'play_youtube'; kind: 'video' | 'music'; url: string; mode: 'once' | 'loop' }
   | { action: 'stop' }
 
 export function parseMediaSkillRequest(value: unknown): MediaSkillRequest | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   if (v.action === 'stop' && Object.keys(v).length === 1) return { action: 'stop' }
+  if (v.action === 'play_youtube' && Object.keys(v).length === 4 && typeof v.url === 'string' && youtubeVideoId(v.url)
+    && (v.kind === 'video' || v.kind === 'music') && (v.mode === 'once' || v.mode === 'loop')) {
+    return { action: 'play_youtube', kind: v.kind, url: v.url, mode: v.mode }
+  }
   if (Object.keys(v).length !== 4 || v.action !== 'play' || (v.kind !== 'video' && v.kind !== 'music')
     || typeof v.assetId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(v.assetId)
     || (v.mode !== 'once' && v.mode !== 'loop')) return null

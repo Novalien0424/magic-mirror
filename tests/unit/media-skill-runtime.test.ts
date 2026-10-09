@@ -12,6 +12,26 @@ describe('avatar media playback ownership', () => {
     const skill = { ...DEFAULT_MEDIA_SKILL, resources: [{ kind: 'video' as const, assetId: 'fog', name: 'Mist', aliases: [] }, { kind: 'music' as const, assetId: 'song', name: 'Song', aliases: [] }] }
     return { runtime, commands, reasons, skill }
   }
+  it('uses the same once/loop ownership for YouTube and releases the isolated player on Stop', async () => {
+    const { commands, reasons, skill } = setup()
+    let report!: (value: import('../../src/shared/types').SceneActionRendererReport) => void
+    let context!: import('../../src/shared/types').SceneActionCommandContext
+    const youtube = { play: vi.fn((request, callback) => { context = request.context; report = callback; return true }), stop: vi.fn() }
+    const runtime = createMediaSkillRuntime({ youtube, dispatch: command => { commands.push(command); return true }, report: reason => reasons.push(reason) })
+    const once = runtime.playConfirmed({ action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'once' }, skill)
+    report({ ...context, status: 'acknowledged' })
+    expect(await once).toBe('accepted')
+    report({ ...context, status: 'completed' })
+    expect(runtime.isActive()).toBe(false)
+    expect(commands.at(-1)).toMatchObject({ active: false, hideAvatar: false })
+    expect(youtube.stop).toHaveBeenCalledOnce()
+    const loop = runtime.playConfirmed({ action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'loop' }, skill)
+    report({ ...context, status: 'acknowledged' }); await loop
+    report({ ...context, status: 'completed' })
+    expect(runtime.isActive()).toBe(true)
+    runtime.stop()
+    expect(youtube.stop).toHaveBeenCalledTimes(2)
+  })
   it('fades the avatar before video and returns it after once playback', async () => {
     const { runtime, commands, skill } = setup()
     expect(runtime.play({ action: 'play', kind: 'video', assetId: 'fog', mode: 'once' }, skill)).toBe('accepted')
@@ -68,13 +88,14 @@ describe('avatar media playback ownership', () => {
     expect(commands.at(-1)).toMatchObject({ type: 'media_skill_state', active: false, hideAvatar: false })
   })
   it('settles a cancelled or timed-out startup without accepting a stale player report', async () => {
-    const { runtime, commands, skill } = setup()
+    const { runtime, commands, skill, reasons } = setup()
     const cancelled = runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'loop' }, skill)
     const old = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_music'; action: 'play' }>
     runtime.stop()
     await expect(cancelled).resolves.toBe('ignored')
     const pending = runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'once' }, skill)
     runtime.reportAction({ ...old.context!, status: 'acknowledged' })
+    expect(reasons).toContain('media_report_stale')
     await vi.advanceTimersByTimeAsync(15001)
     await expect(pending).resolves.toBe('failed')
   })

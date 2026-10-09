@@ -66,6 +66,8 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'onInterrupt'
   | 'requestSleep'
   | 'requestMedia'
+  | 'findMedia'
+  | 'searchYoutube'
   | 'captureCamera'
   | 'memory'
   | 'memoryInput'
@@ -466,6 +468,8 @@ function createMirrorRealtimeRuntimeOwner(
     },
     onReturnToDormant: () => bridge.requestSleep(),
     onMediaRequest: (request, identity) => bridge.requestMedia(request, identity),
+    onFindMedia: bridge.findMedia,
+    onSearchYoutube: bridge.searchYoutube,
     onCameraCapture: identity => bridge.captureCamera(identity),
     onMemory: bridge.memory,
     onMemoryInput: bridge.memoryInput,
@@ -810,7 +814,6 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const phase4QaTranscriptHandlerRef = useRef<Parameters<NonNullable<Parameters<typeof createMirrorRealtimeRuntimeOwner>[2]>>[0]>(null)
   const pendingSceneMotionRef = useRef(new Map<string, SceneActionCommandContext>())
   const pendingSceneDialogueRef = useRef(new Set<AbortController>())
-  const pendingSceneMusicRef = useRef<SceneActionCommandContext | null>(null)
   const avatarAudioOutputRef = useRef<RealtimeAudioOutput | null>(null)
   const avatarMediaControllerRef = useRef<AvatarMediaController | null>(null)
   const sceneVisualControllerRef = useRef<SceneVisualController | null>(null)
@@ -947,23 +950,20 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           coordinator?.handleActivity(activity)
         },
         onChanged: (metrics: AvatarMediaSnapshot) => reportAvatarRuntime(metrics),
-        eventSink: (reason) => {
+        eventSink: (reason, context) => {
           const failed = /failed|unavailable|inactive|underrun/.test(reason)
           reportAvatarRuntime({ ...(failed ? { status: 'degraded' as const } : {}), reason })
           const bridge = window.magicMirror
           if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
             bridge.reportRealtimeMetadata({ kind: 'avatar', status: failed ? 'degraded' : 'success', reason })
           }
-          const context = pendingSceneMusicRef.current
-          if (context !== null) {
+          if (context !== undefined) {
             if (reason === 'avatar_music_started') {
-              if (context.sceneId !== 'media-skill') pendingSceneMusicRef.current = null
               reportSceneAction(context, 'acknowledged')
-            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_fade_completed' || reason === 'avatar_music_completed') {
-              pendingSceneMusicRef.current = null
+            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_completed'
+              || reason === 'avatar_music_fade_completed' && context.sceneId !== 'media-skill') {
               reportSceneAction(context, 'completed')
-            } else if (reason.startsWith('avatar_music_play_failed') || reason === 'avatar_music_analyser_inactive') {
-              pendingSceneMusicRef.current = null
+            } else if (reason.startsWith('avatar_music_play_failed')) {
               reportSceneAction(context, 'failed', 'avatar_music_action_failed')
             }
           }
@@ -1218,9 +1218,6 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           reason,
         })
         return
-      }
-      if (command.type === 'scene_music' && command.context !== undefined) {
-        pendingSceneMusicRef.current = command.context
       }
       if (command.type === 'scene_visual') {
         sceneVisualControllerRef.current?.handleCommand(command)
