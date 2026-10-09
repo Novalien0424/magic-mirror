@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { MemoryRepository } from './contracts'
 import type { MemoryEvidence, MemoryExtractor } from './extractor'
+import { createMemoryConsolidator, type MemoryConsolidator } from './consolidator'
 
 interface Observation { avatarId: string; name: string; itemId: string; text: string; observedAt: string; epoch?: number }
 interface Batch { avatarId: string; name: string; epoch: number; model: string; evidence: MemoryEvidence[]; token: number }
-interface Options { repository: MemoryRepository; extract: MemoryExtractor; model(): Promise<string>; report(reason: string): void; onCommitted?(avatarId: string, name: string): void; debounceMs?: number }
+interface Options { repository: MemoryRepository; extract: MemoryExtractor; consolidate?: MemoryConsolidator; model(): Promise<string>; report(reason: string): void; onCommitted?(avatarId: string, name: string): void; debounceMs?: number }
 /** Bounded RAM-only ingestion. Persistent writes contain validated summaries only. */
 export class MemoryLearning {
   private batches = new Map<string, Batch>()
@@ -14,7 +15,10 @@ export class MemoryLearning {
   private running: Promise<void> | undefined
   private active: { key: string; abort: AbortController } | undefined
   private closed = false
-  constructor(private readonly options: Options) {}
+  private readonly consolidate: MemoryConsolidator
+  constructor(private readonly options: Options) {
+    this.consolidate = options.consolidate ?? createMemoryConsolidator({ repository: options.repository, extract: options.extract, report: options.report })
+  }
   private key(avatarId: string, name: string): string { return JSON.stringify([avatarId, name.normalize('NFKC').trim().toLowerCase()]) }
   async observe(item: Observation): Promise<void> {
     if (this.closed) return
@@ -64,12 +68,9 @@ export class MemoryLearning {
         if (policy.mode !== 'automatic' || policy.cleanupRequired || policy.epoch !== batch.epoch || batch.token !== (this.tokens.get(key) ?? 0)) {
           this.options.report('memory_learning_stale'); continue
         }
-        const existing = await this.options.repository.list(batch.avatarId, batch.name)
-        const records = await this.options.extract({ model: batch.model, evidence: batch.evidence, existing }, abort.signal)
+        const { records, sourceRevisions } = await this.consolidate({ avatarId: batch.avatarId, name: batch.name, model: batch.model, evidence: batch.evidence }, abort.signal)
         if (this.closed || abort.signal.aborted || batch.token !== (this.tokens.get(key) ?? 0)) { this.options.report('memory_learning_cancelled'); continue }
         if (!records.length) { this.options.report('memory_learning_no_change'); continue }
-        const sourceTopics = new Set(records.flatMap(record => record.sources))
-        const sourceRevisions = Object.fromEntries(existing.filter(record => sourceTopics.has(record.topic)).map(record => [record.topic, record.revision ?? 1]))
         const result = await this.options.repository.commitLearning(batch.avatarId, batch.name, { operationId: randomUUID(), epoch: batch.epoch, records, sourceRevisions })
         this.options.report(`memory_learning_${result}`)
         if (result === 'committed') this.options.onCommitted?.(batch.avatarId, batch.name)

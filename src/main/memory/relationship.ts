@@ -2,20 +2,20 @@ import { MemorySession, type MemoryState } from './session'
 import { parseMemoryRequest, type MemoryReply, type MemoryInputPhase, type MemoryMode, MEMORY_CONTEXT_BYTES } from '../../shared/memory'
 import type { MemoryRepository, MemoryEmbedder } from './contracts'
 import type { MemoryLearning } from './learning'
+import type { MemoryInterpreter, MemoryIntentInput, MemoryIntentResult } from './intent'
 
 interface Turn { name: string; avatarId: string; epoch: number; text: string; settled: boolean; control: boolean; observedAt: string; submitted: boolean }
 interface Options {
   repository: MemoryRepository
   learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate'>
   embedder?: MemoryEmbedder
+  interpret?: MemoryInterpreter
   report(reason: string): void
   controlPhrases(): Promise<string[]>
   onChanged?(): void
 }
 const result = (code: string, status: MemoryReply['status'] = 'accepted'): MemoryReply => ({ code, status })
 const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/[。.!！?？\s]+$/u, '')
-const management = /(?:remember|forget|recall|memory|memories|temporary|off the record|don't remember|do not remember|記住|记住|忘記|忘记|記憶|记忆|暫時|临时|別記|别记|不要記|不要记|更正|改正|correct|update my)/iu
-const control = /(?:my name is|i am called|call me|我是|我叫|叫我|換人|换人|切換|切换|我們是|我们是|go to sleep|晚安|睡覺|睡觉)/iu
 /** Main-only coordinator. Only content/result codes leave this boundary. */
 export class RelationshipMemory {
   private readonly identity = new MemorySession({ save: () => {}, recall: () => [], forget: () => false })
@@ -29,6 +29,15 @@ export class RelationshipMemory {
   private recalls = new Set<AbortController>()
   private cleanup: { avatarId: string; name: string } | undefined
   constructor(private readonly options: Options) {}
+  private async interpret(input: MemoryIntentInput): Promise<MemoryIntentResult | undefined> {
+    const abort = new AbortController(); this.recalls.add(abort)
+    try {
+      if (!this.options.interpret) throw Error()
+      const result = await this.options.interpret(input, abort.signal)
+      return abort.signal.aborted ? undefined : result
+    } catch { this.options.report('memory_interpretation_unavailable'); return undefined }
+    finally { this.recalls.delete(abort) }
+  }
   invalidateLoaded(state: MemoryState, avatarId: string, name: string): boolean {
     this.observe(state)
     if (!state.active || state.avatarId !== avatarId || this.identity.currentOwner(state) !== name) return false
@@ -93,7 +102,11 @@ export class RelationshipMemory {
       return result('memory_control_excluded')
     }
     if (phase === 'settled') { if (turn) { turn.settled = true; await this.finish(itemId, turn) }; return result('memory_turn_settled') }
-    const confirmed = this.identity.transcript(state, itemId, text)
+    const question = this.identity.confirmation(state, itemId), generation = this.generation
+    const judgment = question ? await this.interpret({ task: 'confirmation', text, question: question.text }) : undefined
+    if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+    const confirmed = this.identity.transcript(state, itemId, text, question
+      ? { token: question.token, decision: judgment?.confirmation ?? 'unclear' } : undefined)
     if (confirmed.code === 'memory_identity_confirmed') {
       const name = this.identity.currentOwner(state), generation = this.generation
       let policy = await this.options.repository.policy(state.avatarId, name)
@@ -112,7 +125,9 @@ export class RelationshipMemory {
       if (turn.text) return result('memory_transcript_duplicate')
       const phrases = await this.options.controlPhrases()
       turn.text = text.slice(0, 4000)
-      turn.control ||= management.test(text) || control.test(text) || phrases.some(p => normalize(p) === normalize(text))
+      // Actual application controls are excluded here. The background extractor
+      // interprets other control intent in context, without discarding word matches.
+      turn.control ||= phrases.some(p => normalize(p) === normalize(text))
       if (turn.control) this.options.report('memory_control_excluded')
       if (text.length > 4000) { turn.control = true; this.options.report('memory_evidence_oversized') }
       await this.finish(itemId, turn)
@@ -124,12 +139,26 @@ export class RelationshipMemory {
     const request = parseMemoryRequest(raw)
     if (!state.active || this.closed || !request) return result('memory_request_rejected', 'rejected')
     if (this.blocked) return result('memory_clean_session_required', 'rejected')
-    if (request.action === 'identify') return this.identity.request(state, request)
+    if (request.action === 'identify') {
+      const source = this.turns.get(this.latest), generation = this.generation
+      if (!source?.text) return result('memory_source_pending', 'rejected')
+      const intent = await this.interpret({ task: 'request', text: source.text, request })
+      if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+      if (!intent) return result('memory_interpretation_unavailable', 'failed')
+      if (!intent.authorized || normalize(intent.name) !== normalize(request.name)) return result('memory_action_not_requested', 'ignored')
+      source.control = true
+      if (source.name) this.options.learning.invalidate(source.avatarId, source.name)
+      return this.identity.request(state, request, intent.language)
+    }
     const name = this.identity.currentOwner(state)
     if (this.temporary) return result('memory_disabled', 'rejected')
     if (!name && request.action === 'temporary') {
       const source = this.turns.get(this.latest)
-      if (!source?.text || !management.test(source.text)) return result('memory_source_pending', 'rejected')
+      if (!source?.text) return result('memory_source_pending', 'rejected')
+      const generation = this.generation, intent = await this.interpret({ task: 'request', text: source.text, request })
+      if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+      if (!intent) return result('memory_interpretation_unavailable', 'failed')
+      if (!intent.authorized) return result('memory_action_not_requested', 'ignored')
       this.temporary = true; this.turns.clear(); return result('memory_temporary')
     }
     if (!name) {
@@ -137,9 +166,13 @@ export class RelationshipMemory {
       if (locked.code === 'memory_identity_required' && request.action === 'recall') {
         const source = this.turns.get(this.latest)
         if (source && !source.text) return result('memory_source_pending', 'rejected')
-        // A narrow spoken self-introduction can propose a label, never unlock it.
-        const supplied = /^(?:my name is|call me|我叫|請叫我|请叫我)\s*([^.!?。！？,，\n]{1,80})(?:[.!?。！？,，\n]|$)/iu.exec(source?.text.trim() ?? '')?.[1]?.trim()
-        if (supplied) return this.identity.request(state, { action: 'identify', name: supplied, topic: '', text: '', query: '' })
+        if (source?.text) {
+          const generation = this.generation, intent = await this.interpret({ task: 'introduction', text: source.text })
+          if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+          if (!intent) return result('memory_interpretation_unavailable', 'failed')
+          if (intent.authorized && intent.name) return this.identity.request(state,
+            { action: 'identify', name: intent.name, topic: '', text: '', query: '' }, intent.language)
+        }
       }
       return locked
     }
@@ -170,16 +203,20 @@ export class RelationshipMemory {
     }
     const turn = this.turns.get(this.latest)
     if (!turn?.text || turn.name !== name) return result('memory_source_pending', 'rejected')
-    if (!management.test(turn.text)) return { ...result('memory_action_not_requested', 'ignored'), mode: policy.mode }
+    const intent = await this.interpret({ task: 'request', text: turn.text, request })
+    if (generation !== this.generation || this.identity.currentOwner(state) !== name) return result('memory_result_stale', 'rejected')
+    if (!intent) return result('memory_interpretation_unavailable', 'failed')
+    if (!intent.authorized) return { ...result('memory_action_not_requested', 'ignored'), mode: policy.mode }
     turn.control = true
     this.options.learning.invalidate(avatarId, name)
     if (request.action === 'remember') {
       if (policy.mode === 'off' || this.temporary) return result('memory_disabled', 'rejected')
-      const existing = await this.options.repository.list(avatarId, name, request.topic)
-      if (generation !== this.generation || this.identity.currentOwner(state) !== name) return result('memory_result_stale', 'rejected')
-      await this.options.repository.save(avatarId, name, request.topic, request.text)
+      const saved = await this.options.repository.save(avatarId, name, request.topic, request.text)
       this.options.onChanged?.()
-      if (!existing.some(entry => normalize(entry.topic) === normalize(request.topic))) return result('memory_saved')
+      if (generation !== this.generation || this.identity.currentOwner(state) !== name) return result('memory_result_stale', 'rejected')
+      // The atomic write knows whether this was a correction; a bounded UI
+      // search can miss an old target and leave stale private context loaded.
+      if ((saved.revision ?? 1) === 1) return result('memory_saved')
       this.blocked = true; this.cleanup = { avatarId, name }
       await this.options.repository.setCleanupRequired(avatarId, name, true)
       return result('memory_corrected')

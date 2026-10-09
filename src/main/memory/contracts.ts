@@ -19,6 +19,8 @@ export interface MemoryRepository {
   names(avatarId: string): Promise<string[]>
   save(avatarId: string, name: string, topic: string, text: string): Promise<MemoryEntry>
   list(avatarId: string, name: string, query?: string): Promise<MemoryEntry[]>
+  /** Main-only exact normalized-topic retrieval across the entire readable scope. */
+  lookupTopics(avatarId: string, name: string, topics: string[]): Promise<MemoryEntry[]>
   recall(avatarId: string, name: string, query: string): Promise<MemoryEntry[]>
   forget(avatarId: string, name: string, topic: string): Promise<boolean>
   policy(avatarId: string, name: string): Promise<MemoryPolicy>

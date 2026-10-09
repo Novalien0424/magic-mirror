@@ -193,6 +193,24 @@ describe('private local memory store', () => {
     expect(Buffer.byteLength(JSON.stringify(recalled), 'utf8')).toBeLessThanOrEqual(MEMORY_CONTEXT_BYTES)
   })
 
+  it('looks up exact normalized topics throughout a readable scope with bounded requests', () => {
+    const old = store.save('raven', 'Alice', 'ＴＥＡ', 'Synthetic old preference.')
+    for (let i = 0; i < 120; i++) store.save('raven', 'Alice', `New ${i}`, `Synthetic newer record ${i}.`)
+    expect(store.list('raven', 'Alice').some(entry => entry.id === old.id)).toBe(false)
+    expect(store.lookupTopics('raven', 'ＡＬＩＣＥ', [' tea ', 'ＴＥＡ', 'Unknown'])).toEqual([old])
+    expect(store.lookupTopics('raven', 'Alice', [])).toEqual([])
+    expect(store.lookupTopics('owl', 'Alice', ['Tea'])).toEqual([])
+    expect(store.lookupTopics('raven', 'Bob', ['Tea'])).toEqual([])
+    for (const topics of [Array(65).fill('Tea'), [''], ['bad\nlabel'], null]) {
+      expect(() => store.lookupTopics('raven', 'Alice', topics as string[])).toThrow(/^memory_invalid_input$/)
+    }
+    store.setCleanupRequired('raven', 'Alice', true)
+    expect(store.lookupTopics('raven', 'Alice', ['Tea'])).toEqual([])
+    store.setCleanupRequired('raven', 'Alice', false)
+    store.setPolicy('raven', 'Alice', 'off')
+    expect(store.lookupTopics('raven', 'Alice', ['Tea'])).toEqual([])
+  })
+
   it('rejects invalid values without writing or exposing the supplied content', () => {
     const invalidCalls = [
       () => store.save('', 'Alice', 'Tea', 'Synthetic text.'),

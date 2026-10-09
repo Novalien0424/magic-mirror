@@ -4,6 +4,7 @@ import type { MemoryState } from './session'
 import { RelationshipMemory } from './relationship'
 import type { MemoryLearning } from './learning'
 import type { MemoryImporter } from './import'
+import type { MemoryInterpreter } from './intent'
 
 interface Options {
   handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void
@@ -12,6 +13,7 @@ interface Options {
   store(): MemoryRepository
   learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate'>
   embedder?: MemoryEmbedder
+  interpret?: MemoryInterpreter
   controlPhrases?(): Promise<string[]>
   onChanged?(): void
   importer?: MemoryImporter
@@ -26,7 +28,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 /** Separate content-bearing IPC. It never passes through telemetry or the public prompt inspector. */
 export function registerMemoryIpc(options: Options): { observe(): void; close(): void; relationship: RelationshipMemory } {
   const session = new RelationshipMemory({ repository: options.store(), learning: options.learning,
-    embedder: options.embedder, report: options.report, controlPhrases: options.controlPhrases ?? (async () => []), onChanged: options.onChanged })
+    embedder: options.embedder, interpret: options.interpret, report: options.report, controlPhrases: options.controlPhrases ?? (async () => []), onChanged: options.onChanged })
   const current = (identity: unknown): MemoryState | null => {
     const state = options.state()
     return state.active && state.avatarId && object(identity) && Object.keys(identity).length === 2

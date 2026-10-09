@@ -11,6 +11,7 @@ import { compileStorageWorker } from './memory-storage-fixtures'
 it('keeps unavailable storage as a nonthrowing startup adapter with content-free request failures', async () => {
   const repository = unavailableMemoryRepository()
   await expect(repository.policy('fixture-avatar', 'Synthetic Guest')).rejects.toThrow(/^memory_storage_failed$/)
+  await expect(repository.lookupTopics('fixture-avatar', 'Synthetic Guest', ['Tea'])).rejects.toThrow(/^memory_storage_failed$/)
   await expect(repository.close()).resolves.toBeUndefined()
 })
 
@@ -40,6 +41,9 @@ describe('Main memory repository worker facade', () => {
     const saved = await repository.save('raven', 'Alice', 'Tea', 'Synthetic worker fixture.')
     expect(await repository.names('raven')).toEqual(['alice'])
     expect(await repository.list('raven', 'Alice')).toEqual([saved])
+    expect(await repository.lookupTopics('raven', 'ＡＬＩＣＥ', [' ｔｅａ ', 'Tea', 'Absent'])).toEqual([saved])
+    expect(await repository.lookupTopics('owl', 'Alice', ['Tea'])).toEqual([])
+    expect(await repository.lookupTopics('raven', 'Bob', ['Tea'])).toEqual([])
     expect(await repository.recall('raven', 'Alice', 'worker')).toEqual([saved])
     expect(await repository.brief('raven', 'Alice')).toEqual([saved])
     const pending = await repository.pendingIndex('synthetic-v1', 1)

@@ -1,42 +1,74 @@
 # Magic Mirror — Raven deployment on the final Mac, 2026-10-05
 
-## Current: conversation/memory improvements implemented; quality acceptance incomplete
+## Current runtime: stopped at user request — 2026-10-08
 
-[Implementation, all five attempts and full-transcript judgments](docs/testing/conversation-quality-implementation-2026-10-05.md).
-Delivered: Main-owned confirmation bound to actual question playback; acknowledged
-identity/policy and bounded private brief; compact catalog-based speech; historical
-Markdown date/speaker provenance; invalid-tool feedback and completed-audio cleanup.
+Raven quit cleanly (exit 0). LaunchAgent is not running; no project processes
+remain, and Computer Use confirms Electron is stopped and its HTML windows are
+closed. Display sleep was requested with `pmset displaysleepnow` (exit 0).
+Do not restart Raven without a subsequent user request. The runtime restoration
+record below is historical; implementation and failed QA findings are unchanged.
 
-The user authorized three additional real API tests; all three were used. The
-final two-visit run completed eight real audio/ASR turns, learned three summaries,
-and correctly recalled cork plus both reasons, two samples for Maya, the changed
-Saturday deadline and non-delivery. The original judge falsely rejected a correct
-mention of superseded Friday. Its regression now distinguishes corrected history
-from a wrong current deadline; failed runtime evidence remains unchanged.
+## Current: three live memory retests completed; acceptance failed
 
-Full transcript review still found false save-failure commentary after an
-unrequested explicit write and unnecessary thinking narration. The former now
-returns ignored/no-action with actual policy and catalog guidance; local tests
-prove automatic learning continues. That final repair is not live verified.
-The prompt-only silence rule remains imperfect. No further API test is authorized;
-full conversation-quality acceptance is not claimed.
+[Live results and full transcript links](docs/testing/memory-live-retest-2026-10-05.md).
+All three newly authorized rounds were used (51,696 reported Realtime tokens,
+excluding Responses). Round 1 rejected a correctly transcribed natural identity
+affirmative. Task-specific interpreter instructions then passed local regressions
+and both identity exchanges in round 2. That round completed two production-route
+audio sessions and saved the biography plus corrected commitment, but the avatar
+denied finding the stored promise. Replies remained verbose and included lookup
+narration. Round 3 returned interpretation unavailable during identification and
+stopped before the intended retrieval diagnostic. All three runners exited 2;
+no fourth API run was made. The exact unavailable cause and whether the missed
+promise was retrieval omission or model context use remain unresolved.
 
-128 focused tests across 13 files pass using unchanged prior evidence; the final
-affected seven-file run passed 97. Node/web typechecks, build and diff checks pass.
-Three added runs used 63,668 reported Realtime tokens, excluding extraction;
-one cancelled-response usage event may duplicate greeting usage.
+The retest adds QA-only capture of exact synthetic memory context/tool results
+and output events. 29 affected intent/relationship/session tests, Node/web
+typechecks, production build and diff checks pass. No model/dependency/schema
+change, commit, push or phase promotion. Earlier unchanged-code checks below
+remain applicable; no general live-quality acceptance is claimed.
 
-Normal Raven restored through its existing LaunchAgent, PID **40010**.
-Console: Dormant/Ready, Raven, published v15, no needs-attention entries.
-Avatar, camera, wake and embeddings report ready. Operator configuration hashes
-are unchanged. [Restoration metadata](.artifacts/conversation-quality-implementation-2026-10-05/runtime-restored-final.json).
+Normal Raven restored via LaunchAgent, PID **52931**, Dormant/Ready, Raven
+published v15, no needs-attention entries. Operator config hashes are unchanged.
+[Restoration metadata](.artifacts/memory-live-retest-2026-10-05/runtime-restored.json).
+Next: content-free interpreter failure diagnosis, exact retrieval/context tracing,
+then conversational-quality repair and a separately authorized live retest.
+Actual user Markdown and human acoustic/conversation testing remain pending.
 
-Next: verify the final feedback repair in a separately authorized live run and
-resolve narration reliability before claiming clean conversational acceptance.
-The user's actual Markdown import and human acoustic/conversation testing remain
-later work. No phase/model/dependency/schema change.
-[Earlier memory delivery and runtime snapshots](docs/archive/memory-delivery-progress-2026-10-05.md)
-are historical evidence, not acceptance of these latest changes.
+## Previous: researched memory priority fixes implemented
+
+[Research, implementation boundaries and verification](docs/testing/memory-priority-fixes-2026-10-05.md).
+Ordinary biographical speech is no longer discarded by broad control-word regexes.
+Main interprets explicit memory operations and delivered-question answers in
+context, retaining ownership, playback, cancellation and stale-result checks.
+English/Chinese identity and policy disclosures come from the shared catalog.
+
+Background learning and Markdown import now retrieve exact and relevant scoped
+records before reconciling revisions, including corrections outside the latest
+100 rows. Explicit saves use the atomic revision to detect old-record corrections
+and refresh private context. Prompts favor brief, complete, situational replies;
+the hard 25-word rule and conflicting follow-up restriction are removed. QA word
+counts remain diagnostics rather than an acceptance gate.
+
+184 focused Node tests across 22 files pass. Node/web typechecks, production build
+and diff checks pass. Tests cover real SQLite/worker storage with synthetic model
+and vector responses; they do not establish live semantic interpretation quality.
+No additional paid API conversation, Electron launch/reload/restart, model change,
+dependency change, schema migration or phase promotion was performed. The new
+build is on disk; current-process acceptance remains the prior runtime evidence.
+
+Next: a separately authorized narrow two-session generated test, then the user's
+actual Markdown import and human acoustic/conversation testing. The earlier
+three-extra-run allowance is exhausted. Interpretation adds a bounded model call
+for identity/explicit operations; ordinary replies do not await it. Live latency,
+interpretation accuracy, retrieval coverage and narration reliability remain
+unverified for this change.
+
+[Previous implementation and all five live attempts](docs/testing/conversation-quality-implementation-2026-10-05.md)
+remain historical evidence. Last recorded normal restoration was LaunchAgent PID
+40010, Dormant/Ready, Raven published v15; it is not new acceptance of this build.
+[Restoration metadata](.artifacts/conversation-quality-implementation-2026-10-05/runtime-restored-final.json).
+[Earlier memory delivery snapshots](docs/archive/memory-delivery-progress-2026-10-05.md).
 
 ## Current: local wake during loops, global Mac threshold 0.32 — 2026-10-04
 
