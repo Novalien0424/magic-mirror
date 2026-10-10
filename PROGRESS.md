@@ -1,4 +1,32 @@
-# Magic Mirror — Raven wake decoder fix, 2026-10-10
+# Magic Mirror — TV HDMI investigation and Raven status, 2026-10-10
+
+## Current TV work
+
+The user requested reliable TV-side boot directly to HDMI and authorized ADB
+control. After enabling **Connect to the computer**, access on port 5038 to
+`10.0.0.4:5555` succeeded: ZC-3568D/RK3568, Android 11,
+`rk3568_r-userdebug 11 RD2A.211001.002 eng.zckj01.20240903.170918 release-keys`.
+The default HOME remains Launcher3; the foreground HDMI viewer was
+`com.android.rockchip.camera2/.RockchipCamera2`, launched by the existing Mac
+watchdog. Targeted settings/props inspection did not establish a native HDMI
+boot option. No replacement launcher or board configuration has been installed.
+
+At about 17:57 CST, ADB went offline during the first vendor APK read
+(`adb: error: connect failed: closed`). The connection retry timed out;
+root ping received no replies. Cause of the network loss is not established.
+Further board inspection and reboot/physical-remote acceptance remain blocked
+on restored access. Next: inspect vendor startup capabilities; prefer a native
+boot setting, otherwise qualify a TV-side HOME launcher with a Settings escape.
+
+Fixed the Mac watchdog's unsafe blank-foreground recovery: require an awake
+board, successful activity query and confirmed stock launcher before starting
+HDMI; check Android launch status before logging success. **11 fake-ADB cases
+pass**, plus zsh syntax and whitespace checks. Deployed via the existing root
+LaunchDaemon, PID **90483**; source/installed SHA256 matches
+`68b6f000670262215e236c3930a3bd157f6c47f01640a9975f74ab3289912383`.
+These are simulated control checks and installation evidence, not proof of
+physical TV standby/resume. [Operator details and test](deploy/macos/README.md).
+No Electron changes or credential access; invariants 9 and 10 apply.
 
 ## Current delivery
 
@@ -58,11 +86,13 @@ or packaging/signing claim is added.
 
 ## Runtime and next action
 
-The fix is deployed through the existing `com.magicmirror.launchagent`,
-PID **71712**. Main and both renderers are Ready; Raven is Dormant, the media index
-is ready and the wake worker is listening. The stamped build matches current
-source/output. All five operator settings hashes match the pre-investigation
-baseline. [Deployment metadata](.artifacts/wake-capture-2026-10-10/deployment.json)
+**Raven is stopped at the user's request.** At the current TV investigation,
+`com.magicmirror.launchagent` is unloaded and no Raven Electron process is
+running. Its plist remains installed; a future login can load it. Do not launch
+Raven for TV work. The earlier wake deployment reached Ready/Dormant at PID
+71712; that is historical evidence, not the current runtime. All five operator
+settings hashes matched the pre-investigation baseline then.
+[Deployment metadata](.artifacts/wake-capture-2026-10-10/deployment.json)
 and [startup events](.artifacts/wake-capture-2026-10-10/runtime-start-events.json).
 The existing LaunchAgent remains the sole restart owner. No synthetic spell or
 experimental keyword bias/threshold is published.

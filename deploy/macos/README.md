@@ -28,6 +28,17 @@ Rockchip's stock RK628D default and does not describe the panel.
 
 Homebrew adb 37.x aborts on macOS 27 in its mDNS code. Always export
 `ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0` before running adb.
+For operator access to the installed daemon's connection, use
+`adb -P 5038 -s 10.0.0.4:5555 ...`.
+
+The watchdog only opens HDMI when a successful foreground query identifies
+the stock launcher and the board reports `mWakefulness=Awake`. Standby, missing
+activity results and failed queries defer recovery. It leaves Settings and
+other foreground apps alone, and reports launch success only when Android's
+`am start -W` returns `Status: ok`. The focused check is
+`python3 deploy/macos/test-board-hdmi-keepalive.py` (fake ADB; no hardware access).
+This remains a Mac-dependent recovery mechanism, not a TV-side boot launcher.
+Actual remote standby/resume and standalone boot acceptance are still pending.
 
 ## One-time Mac setup
 
