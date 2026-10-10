@@ -7,10 +7,15 @@ Access returned at 19:32; vendor APK inspection confirmed native boot-app hooks.
 The user chose **AnyLauncher** to replace Quickstep as HOME. Official v1.13 is
 downloaded and inspected, but **not installed**: ADB dropped again before
 transfer. No TV boot properties/HOME selection were changed. The Mac watchdog
-was temporarily paused for inspection, then restored (PID **93141**); Raven
+is **paused/unloaded since 19:56** for the user's reboot/network capture; Raven
 remains stopped. Boot history proves a 19:34 requested reboot, while the later
-19:42 connection loss remains unexplained. Packet/protocol and root-daemon
-checks are in the report; do not equate failed probes with TV power-off.
+19:42 connection loss remains unexplained. At 20:00, the TV address sent ARP/mDNS
+traffic but did not answer unicast TCP/ICMP. The operator reports that Wi-Fi
+reconnection and a normal reboot did not restore access, and is testing the
+Connect to the computer toggle. A 15-minute reconnect/log-capture watcher
+started at 19:59; ADB had not returned by 20:07. Vendor network/reboot code
+candidates are documented but not yet tied
+to the incident. Do not equate failed probes with TV power-off.
 Next: restore stable access, install/configure AnyLauncher with Quickstep escape,
 and test independent reboot/standby with the Mac watchdog unloaded.
 
