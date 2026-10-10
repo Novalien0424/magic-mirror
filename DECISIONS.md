@@ -1,5 +1,31 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-10 — Black Dormant in reflective presentation (user ruling)
+
+- In `reflective` presentation mode, a healthy Dormant stays completely black:
+  no avatar, mark, silhouette, glint or on-screen wake-phrase hint. The
+  reflective TV reads as a plain mirror; Raven appearing after the wake phrase
+  is the intended surprise.
+- 「不黑畫面」 in the PRD, Tech Spec and Implementation Plan applies to failure
+  and recovery states (Maintenance, OfflineLoop, renderer recovery,
+  avatar-asset failure). Those must remain visibly distinct from black
+  Dormant. Operator liveness and wake health belong in the Console
+  (invariant 9).
+- Any post-wake acknowledgement must not spoil the black-to-reveal moment;
+  prefer an audio cue or an earlier ritual start over a Dormant visual.
+
+## 2026-10-10 — Spell effect timing under the requested review remediation
+
+The owner requested all fixes in the performance/correctness/UI review. Its
+MX-05 recommendation is adopted: an application-authorized normalized exact
+full transcript commits its approved scene before the spoken cue completes.
+The cue runs alongside the effect. Ambient VAD may interrupt cue speech but
+does not revoke an already completed authorization. Session changes, Stop,
+duplicate-turn protection and approved hardware presets retain their existing
+authority. Farewell still waits for processed playback before session closure.
+This supersedes older cue-before-effect implementation/evidence descriptions;
+see [the remediation ledger](docs/testing/review-remediation-2026-10-10.md).
+
 ## 2026-10-05 — Realtime relationship memory and Markdown import (user authorization)
 
 - Keep the current Realtime voice path. Ordinary replies never wait for final
