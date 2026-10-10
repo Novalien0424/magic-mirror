@@ -25,8 +25,31 @@ Official AnyLauncher **1.13**, versionCode **14**, was downloaded and inspected:
   be tested on this board; source inspection is not runtime acceptance.
 
 The Mac watchdog was restored at 19:48, then unloaded again at **19:56** for
-the user's reboot/network capture. Raven remains stopped/unloaded. Do not
-launch it for TV setup. The watchdog changes in commit `b98102e` remain deployed.
+the user's reboot/network capture. It remains unloaded. The user subsequently
+requested Raven launch for an HDMI check; current runtime is described below.
+The watchdog changes in commit `b98102e` remain deployed.
+
+## User-requested Raven / HDMI check
+
+The existing user LaunchAgent was bootstrapped, starting Raven PID **94357**.
+Main and both renderers reported Ready, with no new startup stderr. The Mac
+initially exposed only its sleeping virtual display. After user-activity wake,
+the HDMI display appeared as a duplicate of the virtual desktop at 4K/30 Hz;
+Main was waiting for its separately named `T749` target.
+
+Session-only display changes removed duplication and set the TV to portrait
+1080×1920 at 60 Hz. The **Virtual 16:9 desktop stayed Main**, origin `(0,0)`;
+**T749-fHD720 is extended to the right**, origin `(1920,0)`, rotation 90°.
+The user explicitly confirmed that this is the intended arrangement. Main
+then logged `MIRROR_DISPLAY_REHOMED display_id=3 label=T749-fHD720
+reason=target_returned`. At 20:37 the app remained on its first launch.
+
+Physical HDMI picture is **not yet verified**: the operator reports Android
+home/Settings remains on the TV. The installed HDMI viewer's verified app
+label is **HDMI-IN**; open it through the TV's app drawer. The 20:37 TCP 5555
+check still timed out, so no remote input-switch command could run. A native
+Mac UI inspection request also timed out; renderer-ready logs do not establish
+the avatar's rendered pixels. No screenshot or conversation data was retained.
 
 ## Verified board and startup behavior
 
@@ -179,11 +202,12 @@ availability on this vendor firmware still requires a live check.
 4. Reboot the TV with the Mac watchdog unloaded. Verify boot count increases,
    AnyLauncher remains HOME, and HDMI is foreground without a Mac launch call.
 5. Test standby/wake and Settings escape. ADB-injected power keys do not prove
-   the physical remote's behavior. Leave Raven stopped.
+   the physical remote's behavior. Preserve the latest user-directed Raven
+   runtime; it is currently running for the HDMI check.
 6. After passing independent boot, disable the Mac HDMI watchdog persistently
    so it does not compete with Quickstep escape. Keep a documented rollback to
    Quickstep and the existing watchdog.
 
 No screenshots, raw conversations, audio or credentials are retained. Project
-invariants 9/10 and the stopped-runtime boundary were preserved. No phase or
-physical-remote acceptance claim is made.
+invariants 9/10 were preserved; Raven was launched only after the user's later
+explicit request. No phase or physical-remote acceptance claim is made.

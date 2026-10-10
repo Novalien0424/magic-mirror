@@ -7,8 +7,9 @@ Access returned at 19:32; vendor APK inspection confirmed native boot-app hooks.
 The user chose **AnyLauncher** to replace Quickstep as HOME. Official v1.13 is
 downloaded and inspected, but **not installed**: ADB dropped again before
 transfer. No TV boot properties/HOME selection were changed. The Mac watchdog
-is **paused/unloaded since 19:56** for the user's reboot/network capture; Raven
-remains stopped. Boot history proves a 19:34 requested reboot, while the later
+is **paused/unloaded since 19:56** for the user's reboot/network capture. Raven
+was subsequently launched at the user's request for an HDMI check (below).
+Boot history proves a 19:34 requested reboot, while the later
 19:42 connection loss remains unexplained. At 20:00, the TV address sent ARP/mDNS
 traffic but did not answer unicast TCP/ICMP. The operator reports that Wi-Fi
 reconnection and a normal reboot did not restore access, and is testing the
@@ -88,12 +89,21 @@ or packaging/signing claim is added.
 
 ## Runtime and next action
 
-**Raven is stopped at the user's request.** At the current TV investigation,
-`com.magicmirror.launchagent` is unloaded and no Raven Electron process is
-running. Its plist remains installed; a future login can load it. Do not launch
-Raven for TV work. The earlier wake deployment reached Ready/Dormant at PID
-71712; that is historical evidence, not the current runtime. All five operator
-settings hashes matched the pre-investigation baseline then.
+**Raven is running at the user's subsequent request for an HDMI check.**
+At 20:37, `com.magicmirror.launchagent` is running PID **94357**, one launch,
+with both renderers Ready and no new startup stderr. The earlier stop boundary
+was superseded by this explicit launch request. The virtual desktop remains
+Main at `(0,0)`; `T749-fHD720` is extended to its **right**, `(1920,0)`, portrait
+**1080×1920 at 60 Hz**, rotation 90°. Display duplication was removed for the
+current session and the TV mode restored for this session. Main logged
+`MIRROR_DISPLAY_REHOMED ... reason=target_returned` for the TV. These are Mac
+runtime/display checks, not physical Raven visibility: the operator reports
+the TV is still showing Android home/Settings. ADB port 5555 still timed out
+at 20:37; opening **HDMI-IN** on the TV is the immediate next step.
+
+The earlier wake deployment reached Ready/Dormant at PID 71712; that is
+historical evidence. All five operator settings hashes matched the
+pre-investigation baseline then.
 [Deployment metadata](.artifacts/wake-capture-2026-10-10/deployment.json)
 and [startup events](.artifacts/wake-capture-2026-10-10/runtime-start-events.json).
 The existing LaunchAgent remains the sole restart owner. No synthetic spell or
