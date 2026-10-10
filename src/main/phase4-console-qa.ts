@@ -49,7 +49,7 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
-  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'wake_replay') return runRavenWakeReplayQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && ['wake_replay', 'wake_capture', 'wake_control'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')) return runRavenWakeReplayQa(input)
   if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'wake_diagnostic') return runRavenWakeDiagnosticQa(input)
   if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1') return runRavenConversationQa(input)
   if (process.env['MIRROR_MEMORY_CONVERSATION_QA'] === '1') return runMemoryConversationQa(input)

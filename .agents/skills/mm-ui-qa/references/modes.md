@@ -78,7 +78,14 @@ freshness/energy, route, delivery, detector and lifecycle evidence.
   bounded RAM-only PCM through the same implementation in Main, and compares live,
   identical replay, gain, keyword bias and clean-source recognition. Its successful
   exit means the diagnostic completed; inspect detection results separately.
-  Neither mode establishes human acceptance. `--launch-agent` uses a temporary one-shot job with
+  `--scenario wake_capture` additionally sends bounded clean/captured audio to the
+  configured real transcription provider, with no phrase hints, and tests native
+  input format and alternate local stimulus voices. It requires real-provider
+  authorization; retained results contain comparison metadata only.
+  `--scenario wake_control` stays local: package-default phrase, near-phrase
+  negatives, stock engine, wider search and independent Apple conversion.
+  These diagnostics never publish experimental keywords/tuning or establish human
+  acceptance. `--launch-agent` uses a temporary one-shot job with
   `KeepAlive: false`, matching the deployed launch context without another restart
   owner. Direct-spawn QA remains available by omitting that flag; a permission
   result in one launch context does not prove another's capture access.
@@ -88,6 +95,14 @@ provider output, not final processed speaker audibility. Distinguish generated
 dialogue, response ownership, processed output/tail completion and physical sound.
 Request fields and server-echoed transcription fields are separate evidence:
 missing echo alone does not prove a hint was ignored.
+
+An observer spanning several Realtime sessions must clear response/tool counters
+on local peer `close()` and new connection. WebRTC local close changes connection
+state without emitting `connectionstatechange`; waiting for that event can leave
+stale counters and falsely fail the next greeting. Acoustic retries require
+Dormant. A detected wake followed by a QA greeting timeout is not permission to
+reacquire wake input during Active. Retain audible and muted comparisons as
+separate results; a muted success never upgrades audible-loop acceptance.
 
 Run `npm run build` after code changes before Electron QA; the runners execute
 `out/`, not the source tree. The Phase 4 runner requires a completed build stamp
