@@ -7,7 +7,7 @@
 # - Relaunches the Rockchip HDMI-in viewer only when the board sits on its launcher,
 #   so an operator using Settings on the glass is never interrupted.
 # - Re-applies landscape rotation (the HDMI picture is 1920x1080 on a portrait panel).
-# Metadata-only log; installed as LaunchAgent com.magicmirror.board-hdmi.
+# Metadata-only log; installed as LaunchDaemon com.magicmirror.board-hdmi.
 
 export PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0
@@ -45,14 +45,37 @@ while true; do
     say "BOARD_CONNECTED target=$target"
   fi
 
-  top=$(adb -s "$target" shell "dumpsys activity activities | grep -m1 mResumedActivity" 2>/dev/null | awk '{print $4}')
+  # An absent foreground activity can mean standby or an interrupted ADB read.
+  # Neither is permission to wake the panel or start an activity.
+  if ! power=$(adb -s "$target" shell dumpsys power 2>/dev/null); then
+    note "HDMI_VIEW_DEFERRED target=$target reason=power_query_failed"
+    sleep $INTERVAL; continue
+  fi
+  if ! print -r -- "$power" | grep -q 'mWakefulness=Awake'; then
+    note "HDMI_VIEW_DEFERRED target=$target reason=not_awake"
+    sleep $INTERVAL; continue
+  fi
+  if ! activities=$(adb -s "$target" shell dumpsys activity activities 2>/dev/null); then
+    note "HDMI_VIEW_DEFERRED target=$target reason=activity_query_failed"
+    sleep $INTERVAL; continue
+  fi
+  top=$(print -r -- "$activities" | awk '/mResumedActivity/ {print $4; exit}')
   case "$top" in
     "$HDMI_ACTIVITY"|com.android.rockchip.camera2/*)
       note "HDMI_VIEW_ACTIVE target=$target" ;;
-    ""|"$LAUNCHER_PKG"/*)
-      adb -s "$target" shell "settings put system accelerometer_rotation 0; settings put system user_rotation 1" >/dev/null 2>&1
-      adb -s "$target" shell am start -n "$HDMI_ACTIVITY" >/dev/null 2>&1
-      say "HDMI_VIEW_LAUNCHED target=$target previous=${top:-none}"
+    "")
+      note "HDMI_VIEW_DEFERRED target=$target reason=no_resumed_activity" ;;
+    "$LAUNCHER_PKG"/*)
+      if ! adb -s "$target" shell "settings put system accelerometer_rotation 0 && settings put system user_rotation 1" >/dev/null 2>&1; then
+        note "HDMI_VIEW_DEFERRED target=$target reason=rotation_failed"
+        sleep $INTERVAL; continue
+      fi
+      if ! launch=$(adb -s "$target" shell am start -W -n "$HDMI_ACTIVITY" 2>/dev/null) ||
+          ! print -r -- "$launch" | grep -q '^Status: ok'; then
+        note "HDMI_VIEW_DEFERRED target=$target reason=launch_failed"
+        sleep $INTERVAL; continue
+      fi
+      say "HDMI_VIEW_LAUNCHED target=$target previous=$top"
       last_state="" ;;
     *)
       note "HDMI_VIEW_DEFERRED target=$target reason=operator_app_in_front app=${top%%/*}" ;;
