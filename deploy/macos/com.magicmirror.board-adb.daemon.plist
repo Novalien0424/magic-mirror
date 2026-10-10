@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.magicmirror.board-adb</string>
+  <key>ProgramArguments</key><array>
+    <string>/Library/Application Support/MagicMirror/adb</string>
+    <!-- Without -a, ADB binds only localhost. This release rejects a numeric
+         hostname in -L, so use its supported port option. -->
+    <string>-P</string><string>5038</string>
+    <string>server</string><string>nodaemon</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>ADB_MDNS</key><string>0</string>
+    <key>ADB_MDNS_AUTO_CONNECT</key><string>0</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/Library/Logs/MagicMirror/board-adb.log</string>
+  <key>StandardErrorPath</key><string>/Library/Logs/MagicMirror/board-adb.log</string>
+</dict></plist>

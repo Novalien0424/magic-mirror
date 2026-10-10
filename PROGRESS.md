@@ -3,32 +3,42 @@
 ## Current TV work
 
 **Latest:** [TV boot-to-HDMI investigation and resume steps](docs/testing/tv-hdmi-boot-2026-10-10.md).
-Access returned at 19:32; vendor APK inspection confirmed native boot-app hooks.
-The user chose **AnyLauncher** to replace Quickstep as HOME. Official v1.13 is
-downloaded and inspected, but **not installed**: ADB dropped again before
-transfer. No TV boot properties/HOME selection were changed. The Mac watchdog
-is **paused/unloaded since 19:56** for the user's reboot/network capture. Raven
-was subsequently launched at the user's request for an HDMI check (below).
-Boot history proves a 19:34 requested reboot, while the later
-19:42 connection loss remains unexplained. At 20:00, the TV address sent ARP/mDNS
-traffic but did not answer unicast TCP/ICMP. The operator reports that Wi-Fi
-reconnection and a normal reboot did not restore access, and is testing the
-Connect to the computer toggle. The 15-minute reconnect/log-capture watcher
-ended at **20:14:17 without ADB recovery**. The operator reports ping timeout
-when the TV is on and destination unreachable when off, consistent with the
-captured ARP reply while unicast requests timed out. Vendor network/reboot code
-candidates remain unproven. Do not equate failed probes with TV power-off.
-Next: restore stable access, install/configure AnyLauncher with Quickstep escape,
-and test independent reboot/standby with the Mac watchdog unloaded.
+Direct Ethernet restored ADB. Persistent addresses are **Mac en0 192.168.77.1/24**
+and **TV eth0 192.168.77.2/24**. Mac Internet remains on Wi-Fi; no Internet
+sharing is configured or required. Temporary bootpd has stopped. **AnyLauncher
+1.13 is installed and is default HOME**, forwarding to HDMI-IN; Quickstep is
+configured as backup. An agent-requested TV reboot increased boot count 49→50,
+preserved the address/HOME selection, and opened HDMI without Mac intervention.
+The old HDMI watchdog is unloaded and **persistently disabled**.
 
-Fixed the Mac watchdog's unsafe blank-foreground recovery: require an awake
+That reboot exposed a separate HDMI identity failure: macOS saw an unnamed
+1280×720 display instead of T749. Applying the TV's unchanged, checksum-valid
+EDID through BetterDisplay recovered T749 and its portrait layout. Automatic
+application to this connection's fallback display is enabled; a second reboot
+passed (boot count 50→51), retaining T749, HDMI and rotation. Layout is saved permanently: Virtual 16:9 Main,
+T749 to its right. **Mac rotation 90° + Android user_rotation=2 (180°) is
+physically confirmed upright.** Mac and Android screen captures were inspected.
+
+Wi-Fi RCA remains open. Three saved networks permit autojoin, but the latest
+scan record reports its connectivity manager disabled. Ethernet arbitration
+versus abnormal suppression is unresolved; link-statistics errors are not proof
+of packet failure. Wired ADB is the operational control path.
+Installed the standalone root **board-adb** daemon, listening only on
+127.0.0.1:5038. Wired standby/wake passed with it: Asleep/OFF remained reachable,
+then explicit wake returned Awake/ON and HDMI, without a TV reboot. Source and
+installed plist/binary hashes match; syntax/plist checks pass. An earlier stale
+host transport and rejected ADB listen syntax are retained in the report.
+**Next TV check:** the user will physically power down/reboot the TV. Software
+reboots do not establish hard-power or Mac cold-boot acceptance.
+
+Historical, now-disabled Mac watchdog fix: require an awake
 board, successful activity query and confirmed stock launcher before starting
 HDMI; check Android launch status before logging success. **11 fake-ADB cases
 pass**, plus zsh syntax and whitespace checks. Deployed via the existing root
 LaunchDaemon; source/installed SHA256 matches
 `68b6f000670262215e236c3930a3bd157f6c47f01640a9975f74ab3289912383`.
-These are simulated control checks and installation evidence, not proof of
-physical TV standby/resume. [Operator details and test](deploy/macos/README.md).
+These are simulated watchdog checks; it has been replaced by TV-side
+AnyLauncher and a standalone ADB server. [Operator runbook](deploy/macos/README.md).
 No Electron changes or credential access; invariants 9 and 10 apply.
 
 ## Current delivery
@@ -86,20 +96,37 @@ or packaging/signing claim is added.
   fallback, explicit YouTube, default once/return and loop/Dormant handoff.
   The remaining pre-playback preamble and memory-recall quality failures remain
   recorded in the [conversation report](docs/testing/raven-conversation-qa-2026-10-09.md).
+- Fresh real-Raven QA at 21:34/21:37 passed local-first fallback, once completion,
+  relevant follow-up and three of four empathy/context quality turns. Both runs
+  exited 2: playback had `tool_preamble`/`wrong_language`; the date-correction
+  turn had `wrong_language`. No provider errors. Avatar-only screenshot is
+  upright. These are synthetic PCM/real WebRTC ASR runs, not human acoustic
+  acceptance. [Run links and limits](docs/testing/tv-hdmi-boot-2026-10-10.md#clean-app-shutdown-and-current-conversation-evidence).
 
 ## Runtime and next action
 
-**Raven is running at the user's subsequent request for an HDMI check.**
-At 20:37, `com.magicmirror.launchagent` is running PID **94357**, one launch,
-with both renderers Ready and no new startup stderr. The earlier stop boundary
-was superseded by this explicit launch request. The virtual desktop remains
-Main at `(0,0)`; `T749-fHD720` is extended to its **right**, `(1920,0)`, portrait
-**1080×1920 at 60 Hz**, rotation 90°. Display duplication was removed for the
-current session and the TV mode restored for this session. Main logged
-`MIRROR_DISPLAY_REHOMED ... reason=target_returned` for the TV. These are Mac
-runtime/display checks, not physical Raven visibility: the operator reports
-the TV is still showing Android home/Settings. ADB port 5555 still timed out
-at 20:37; opening **HDMI-IN** on the TV is the immediate next step.
+**Raven is restored and running in reflective Dormant.** At 21:43:58 the sole
+app LaunchAgent started PID **4658** (fifth launch); both renderers are Ready,
+T749 is selected/full-screen, and wake input reports listening at 21:43:59.
+A fresh native screenshot confirms the expected black portrait Dormant screen.
+ADB daemon PID 4320 remains running; Virtual is Main and T749 is extended right.
+Normal Raven was cleanly stopped during both isolated QA runs; they did not
+overlap. The system is ready for the user's physical TV power-cycle check.
+
+At 21:23, `com.magicmirror.launchagent` had started PID **2967**, fourth launch,
+with both renderers Ready on T749. It reached Dormant, detected the user's wake
+at 21:23:41, and reached Active at 21:23:46. The operator confirmed Raven appears
+and, after the TV rotation correction, is upright. Reflective Dormant normally
+hides the avatar against black. A separate held-stop check proved clean exit 0,
+no remaining app/worker processes, and removal of Jabra audio assertions; the
+operator confirmed BGM stopped. An immediate restart resumes Dormant ambience.
+The operator reports unrelated YouTube speech. Metadata records a media lookup,
+but retained logs contain no conversation text; attribution remains open.
+At 21:32:11, the user's subsequent looping-media test detected wake, stopped
+media and handed off the microphone; Active followed at 21:32:15. The assistant's
+TV reboot/HDMI operations interrupted the live loop picture, so those blackouts
+are not classified as media-player faults. The user subsequently approved
+further testing. Standby/wake and isolated QA results are recorded above.
 
 The earlier wake deployment reached Ready/Dormant at PID 71712; that is
 historical evidence. All five operator settings hashes matched the
