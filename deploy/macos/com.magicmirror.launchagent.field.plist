@@ -28,6 +28,8 @@
     <dict>
       <key>MIRROR_DISPLAY</key>
       <string>T749</string>
+      <key>MIRROR_TV_HOST</key>
+      <string>192.168.77.2</string>
     </dict>
 
     <key>RunAtLoad</key>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSceneVisualController, type SceneVisualMedia } from '../../../src/renderer/mirror/scene-visual-controller'
+import { createSceneVisualController, videoHasAudio, type SceneVisualMedia } from '../../../src/renderer/mirror/scene-visual-controller'
 import type { AvatarControlCommand } from '../../../src/shared/bridge'
 
 class FakeMedia implements SceneVisualMedia {
@@ -85,6 +85,18 @@ function harness() {
 }
 
 describe('Mirror Scene visual controller', () => {
+  it.each([true, false])('detects embedded audio presence=%s and releases every inspection track', hasAudio => {
+    const videoTrack = { stop: vi.fn() }, audioTrack = { stop: vi.fn() }
+    const tracks = hasAudio ? [videoTrack, audioTrack] : [videoTrack]
+    const stream = { getVideoTracks: () => [videoTrack], getAudioTracks: () => hasAudio ? [audioTrack] : [], getTracks: () => tracks } as unknown as MediaStream
+    expect(videoHasAudio({ captureStream: () => stream })).toBe(hasAudio)
+    for (const track of tracks) expect(track.stop).toHaveBeenCalledOnce()
+  })
+  it('does not treat unavailable capture or unready metadata as proof of no audio', () => {
+    expect(videoHasAudio({})).toBeNull()
+    expect(videoHasAudio({ captureStream: () => { throw Error('unsupported') } })).toBeNull()
+    expect(videoHasAudio({ captureStream: () => new class { getVideoTracks() { return [] }; getTracks() { return [] } } as unknown as MediaStream })).toBeNull()
+  })
   it('retries a transient folder-video load once, before showing it, and fences cancelled retries', () => {
     const h = harness()
     h.controller.handleCommand(command({ assetId: 'folder-test' }))

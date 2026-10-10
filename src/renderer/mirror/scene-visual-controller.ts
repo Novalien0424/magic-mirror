@@ -24,6 +24,19 @@ export interface SceneVisualMedia {
   play(): Promise<void>
   pause(): void
   load(): void
+  captureStream?(): MediaStream
+}
+
+/** Inspect track metadata after loadeddata, never waveform silence or volume.
+ * Captured tracks are immediately stopped; no recording or extra output path. */
+export function videoHasAudio(media: Pick<SceneVisualMedia, 'captureStream'>): boolean | null {
+  let stream: MediaStream | undefined
+  try {
+    stream = media.captureStream?.()
+    if (!stream || stream.getVideoTracks().length === 0) return null
+    return stream.getAudioTracks().length > 0
+  } catch { return null }
+  finally { stream?.getTracks().forEach(track => track.stop()) }
 }
 
 export interface SceneVisualController {
@@ -67,6 +80,7 @@ export function createSceneVisualController(input: Readonly<{
   setVideoAudio: (element: SceneVisualMedia | null, gain: number, durationMs?: number) => void
   prepareFade?: (media: SceneVisualMedia) => void
   onLoadRetry?: () => void
+  onVideoAudio?: (hasAudio: boolean | 'unknown' | null, context: SceneActionCommandContext) => void
   schedule?: (callback: () => void, delayMs: number) => unknown
   clear?: (handle: unknown) => void
 }>): SceneVisualController {
@@ -92,6 +106,7 @@ export function createSceneVisualController(input: Readonly<{
     clearVisualTimers(visual)
     for (const [name, listener] of visual.listeners) visual.media.removeEventListener(name, listener)
     if (visual.audioAttached) input.setVideoAudio(null, 0)
+    if (visual.command.playback !== 'still') input.onVideoAudio?.(null, visual.command.context)
     if (visual.command.playback !== 'still') {
       try { visual.media.pause() } catch { /* already stopped */ }
       visual.media.src = ''
@@ -225,6 +240,7 @@ export function createSceneVisualController(input: Readonly<{
     media.muted = command.audio === 'muted'
     listen(visual, 'loadeddata', () => {
       if (!current(visual)) return
+      input.onVideoAudio?.(videoHasAudio(media) ?? 'unknown', command.context)
       emit(reportFor(command.context, { type: 'ready' }))
       if (command.audio === 'embedded') {
         visual.audioAttached = true

@@ -176,7 +176,10 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
     id: 'default_fallback', setup: 'fresh_guest',
     prerequisites: ['Bind youtubeQuery to a public playable video query with no suitable local match. Use actual search/player results; unavailable is not a pass.'],
     turns: [
-      turn({ id: 'local_then_external', language: 'en', visitorText: 'Play the video {{youtubeQuery}}.',
+      turn({ id: 'prior_local_request', language: 'en', visitorText: 'Only look in our folder for Distant Harbor. Do not search online for this one.',
+        criteria: [criterion('local_scope', 'Honor this request\'s explicit local-only scope; no internet lookup.')],
+        expected: { toolRoutes: [['find_media']], source: 'local_only', reply: 'local_unavailable' }, checks: ['source_scope'] }),
+      turn({ id: 'local_then_external', language: 'en', visitorText: 'A new request: play the video {{youtubeQuery}}.',
         criteria: [criterion('local_first', 'Search local first, assess full title/clues, then search YouTube without asking permission if none fits. A different title by the same creator is not a match.'),
           criterion('source_choice', 'Choose a clear actual returned YouTube result; never guess a URL or claim discovery proves playback.')],
         expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube']], source: 'local_then_youtube',
@@ -184,6 +187,11 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
         checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
       turn({ id: 'after_fallback', language: 'en', before: 'once_finished', visitorText: 'Now I would like a quiet evening. What is one simple idea?',
         criteria: [criterion('media_return', 'Conversation resumes normally after natural once completion; offer a small relevant idea.')], checks: ['conversation_resumed'] }),
+      turn({ id: 'chinese_fallback', language: 'zh-TW', visitorText: '換一個影片，幫我播放五秒倒數計時，最後有鈴聲的那種。',
+        criteria: [criterion('local_first', 'For this new general play request, search local then YouTube on a miss; do not claim internet search is prohibited.'),
+          criterion('source_choice', 'Play an actual matching returned result without asking permission to search.')],
+        expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube']], source: 'local_then_youtube', mode: 'once', reply: 'silent', qualityDimensions: [] },
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
     ],
   },
   {

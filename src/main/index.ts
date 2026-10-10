@@ -46,6 +46,7 @@ import {
   type Rect
 } from './display-target'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
+import { monitorTvPresence, parseTvHost, probeTvEthernet } from './tv-presence'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import {
   dispatchMirrorRealtimeRuntimeCommand,
@@ -144,6 +145,7 @@ let mirrorPlacement: MirrorPlacement | null = null
 /** Mirror windows that went through their first placement; anything else is still loading. */
 const placedMirrors = new WeakSet<BrowserWindow>()
 let displaySettleTimer: NodeJS.Timeout | null = null
+let tvPresence: ReturnType<typeof monitorTvPresence> | undefined
 
 /**
  * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
@@ -1061,6 +1063,27 @@ void app.whenReady().then(async () => {
 
   createWindows()
   watchMirrorDisplay()
+  const tvHost = parseTvHost(process.env['MIRROR_TV_HOST'])
+  if (isDarwin && mirrorDisplayMatch && tvHost && smokeMode.kind === 'off'
+    && !phase4QaEnabled && !phase1LiveSmokeEnabled) {
+    const displayNeedle = mirrorDisplayMatch.toLowerCase()
+    tvPresence = monitorTvPresence({
+      display: () => screen.getAllDisplays().some(display => display.label.toLowerCase().includes(displayNeedle))
+        ? 'present' : 'absent',
+      ethernet: signal => probeTvEthernet(tvHost, signal),
+      report: event => {
+        marker('TV_PRESENCE', event)
+        try {
+          runtime.telemetry.emit({ module: 'app', event: 'tv_presence', source: 'runtime',
+            status: event.reason === 'presence_query_unavailable' ? 'degraded' : 'info',
+            reason: `${event.reason};hdmi=${event.hdmi};ethernet=${event.ethernet}` })
+        } catch { /* Diagnostics cannot gate shutdown or conversation. */ }
+      },
+      onAbsent: () => app.quit(),
+    })
+  } else if (process.env['MIRROR_TV_HOST'] && !tvHost) {
+    marker('TV_PRESENCE_DISABLED', { reason: 'invalid_tv_host' })
+  }
   // Permission and capture startup never gate the Mirror, voice, or other adapters.
   if (isDarwin && smokeMode.kind === 'off' && !phase4QaEnabled && !phase1LiveSmokeEnabled) {
     void runtime.ready.then(async () => {
@@ -1468,6 +1491,7 @@ function shutdownBootRuntime(): Promise<void> {
 function stopQuitResources(): void {
   if (quitResourcesStopped) return
   quitResourcesStopped = true
+  tvPresence?.stop()
   if (displaySettleTimer !== null) {
     clearTimeout(displaySettleTimer)
     displaySettleTimer = null

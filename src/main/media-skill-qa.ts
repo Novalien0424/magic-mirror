@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { mkdir, copyFile, unlink, writeFile } from 'node:fs/promises'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
@@ -10,7 +11,7 @@ interface MediaPlaybackState {
   time: number; duration: number; loop: boolean; paused: boolean; ready: number; frames?: number
 }
 interface MediaQaState {
-  active: boolean; hidden?: string; phase?: string; opacity: number; avatarVisible: boolean
+  active: boolean; hidden?: string; phase?: string; mode?: string; opacity: number; avatarVisible: boolean
   video: MediaPlaybackState | null; music: MediaPlaybackState | null
 }
 
@@ -51,7 +52,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   const state = () => input.mirror.webContents.executeJavaScript(`(()=>{
     const p=document.querySelector('.mirror-presentation'),a=p?.querySelector('.presentation__avatar'),canvas=a?.querySelector('.avatar-stage__canvas'),v=document.querySelector('.scene-visual video');
     const probe=window.magicMirrorMediaSkillQa.snapshot();
-    return {...probe,hidden:p?.dataset.mediaVideo,phase:p?.dataset.phase,opacity:p?Number(getComputedStyle(p.querySelector('.presentation')).opacity):-1,
+    return {...probe,hidden:p?.dataset.mediaVideo,phase:p?.dataset.phase,mode:p?.querySelector('.presentation')?.dataset.mode,opacity:p?Number(getComputedStyle(p.querySelector('.presentation')).opacity):-1,
       avatarVisible:!!a&&p.dataset.loading==='false'&&a.querySelector('.avatar-stage')?.dataset.rendererState==='ready'&&Number(getComputedStyle(a).opacity)===1&&getComputedStyle(a).visibility==='visible'&&!!canvas&&canvas.width>0&&canvas.height>0&&canvas.getBoundingClientRect().height>0,
       video:v?{time:v.currentTime,duration:v.duration,loop:v.loop,paused:v.paused,ready:v.readyState,frames:v.getVideoPlaybackQuality().totalVideoFrames}:null};})()`, true) as Promise<MediaQaState>
   const session = () => {
@@ -88,8 +89,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => {
       const snapshot = input.runtime.snapshot(), s = await state(), media = s[kind]
       if (snapshot.lifecycle !== 'dormant' || snapshot.realtimeSessionId !== null || !s.active
-        || !media || !media.loop || media.paused || media.ready < 2 || !Number.isFinite(media.duration) || media.duration <= 0
-        || (kind === 'video' ? s.hidden !== 'true' || s.opacity !== 0 : !s.avatarVisible || s.opacity !== 1)) throw Error('media_qa_dormant_loop_lost')
+        || !media || !media.loop || media.paused
+        || (kind === 'video' ? s.hidden !== 'true' || s.opacity !== 0 : !s.avatarVisible || s.opacity !== 1)) {
+        throw Error(`media_qa_dormant_loop_lost_${snapshot.lifecycle}_${s.active}_${s.hidden}_${s.opacity}_${media?.loop}_${media?.paused}_${media?.ready}`)
+      }
+      // The loop's seek can temporarily drop readyState. Require advancing
+      // frames across the boundary below, within the existing bounded wait.
+      if (media.ready < 2 || !Number.isFinite(media.duration) || media.duration <= 0) return false
       if (firstFrames < 0) firstFrames = media.frames ?? 0
       if (previous > media.time + .2) crossed = true
       previous = media.time
@@ -231,10 +237,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     if ((await bgm())?.paused !== true || (await bgm())?.volume !== 0) throw Error('media_qa_bgm_not_paused')
     await starting
     await wait(async () => { const s = await state(); return s.active && s.opacity === 0 && !!s.video && !s.video.loop && !s.video.paused && s.video.time > .2 && (s.video.frames ?? 0) > 0 })
+    await wait(async () => { const b = await bgm(); return !!b && !b.paused && b.volume > 0 })
+    const bgmPosition = (await bgm())!.time
     if (!await input.mirror.webContents.executeJavaScript("(()=>{const v=document.querySelector('.scene-visual video'),r=v.getBoundingClientRect();return getComputedStyle(v).objectFit==='cover'&&r.width===innerWidth&&r.height===innerHeight})()")) throw Error('media_video_not_fullscreen')
     const before = (await state()).video!.frames ?? 0
     await delay(250)
     if (((await state()).video?.frames ?? 0) <= before) throw Error('media_qa_video_not_advancing')
+    if ((await bgm())!.time === bgmPosition) throw Error('media_qa_silent_video_bgm_not_advancing')
     await shot('media-video-playing.png', true)
     const videoRun = visualReports.find(r => r.type === 'playing')?.runId
     if (!videoRun) throw Error('media_qa_video_start_report_missing')
@@ -245,7 +254,9 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     pass()
     step = 'media_video_loop_dormant_and_wake_stop'
     await play('video', videoId, 'loop')
+    await wait(async () => { const b = await bgm(); return !!b && !b.paused && b.volume > 0 })
     await loopBoundary('video')
+    if ((await bgm())?.paused !== false || (await bgm())!.volume <= 0) throw Error('media_qa_loop_bgm_stopped')
     await shot('media-video-loop-dormant.png', true)
     // Simulator wake supplies a fresh session; interrupt through its authenticated production Stop route.
     await wake()
@@ -254,6 +265,17 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => { const b=await bgm();return !!b&&!b.paused&&b.volume>0 })
     session()
     await shot('media-video-wake-return.png', true)
+    pass()
+    step = 'media_embedded_audio_suppresses_bgm'
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-embedded-audio.webm'), join(ownFolder, 'Sky.webm'))
+    await evaluate("return window.magicMirror.mediaFolders({action:'refresh'})")
+    await play('video', videoId, 'once')
+    await wait(async () => { const v = (await state()).video; return !!v && !v.paused && v.time > .2 })
+    if ((await bgm())?.paused !== true || (await bgm())?.volume !== 0) throw Error('media_qa_embedded_audio_bgm_overlap')
+    await wait(returned)
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky.webm'))
+    await evaluate("return window.magicMirror.mediaFolders({action:'refresh'})")
+    await wait(async () => { const b = await bgm(); return !!b && !b.paused && b.volume > 0 })
     pass()
     step = 'media_music_once_visible'
     reports.length = 0; musicAnalyserActive = false
@@ -276,10 +298,22 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     if (reports.some(r => r.status === 'completed')) throw Error('media_qa_music_loop_ended')
     await shot('media-music-loop-dormant.png', true)
     await edit("click('Stop All')")
-    await wait(returned)
+    await wait(async () => {
+      const s = await state()
+      return !s.active && s.hidden === 'false' && s.phase === 'asleep' && s.opacity === 1
+        && s.video === null && (!s.music || s.music.paused)
+        && (s.mode === 'reflective' ? !s.avatarVisible : s.avatarVisible)
+    })
     if (input.runtime.snapshot().lifecycle !== 'dormant' || input.runtime.snapshot().realtimeSessionId !== null) throw Error('media_qa_console_stop_changed_lifecycle')
     await wait(async () => { const b=await bgm();return !!b&&!b.paused&&b.volume>0 })
-    await shot('media-music-console-stop.png', true)
+    if ((await state()).mode === 'reflective') {
+      const image = await input.mirror.webContents.capturePage(), pixels = image.toBitmap()
+      if (!pixels.length) throw Error('media_qa_dormant_capture_unavailable')
+      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] || pixels[i+1] || pixels[i+2]) throw Error('media_qa_stopped_dormant_not_black')
+      const png = image.toPNG(), file = 'media-music-console-stop.png'
+      await writeFile(join(input.outputDir, file), png)
+      screenshots++; input.onEvidence({ step, status: 'captured', file, sha256: createHash('sha256').update(png).digest('hex') })
+    } else await shot('media-music-console-stop.png', true)
     pass()
     step = 'media_folder_persistence_and_discovery'
     input.console.webContents.reload()

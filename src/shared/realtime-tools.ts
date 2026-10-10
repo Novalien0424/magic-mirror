@@ -87,5 +87,6 @@ export function realtimeToolDefinition(spec: RealtimeToolSpec) {
 }
 
 export function realtimeToolInstructions(specs: readonly RealtimeToolSpec[]): string {
-  return specs.map(spec => [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen].map(rule => `- ${rule}`).join('\n')).join('\n')
+  return specs.map(spec => `### ${spec.name}\n` + [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen]
+    .map(rule => `- ${rule}`).join('\n')).join('\n\n')
 }

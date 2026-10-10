@@ -688,9 +688,8 @@ function makeDeferredShutdown(): DeferredShutdown {
 }
 
 async function flushMicrotasks(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
+  // Main awaits camera, scenes, wake, runtime and memory in sequence.
+  for (let i = 0; i < 40; i++) await Promise.resolve()
 }
 
 function stubImmediateMarkerFlush(): ReturnType<typeof vi.spyOn> {
@@ -751,6 +750,7 @@ function makeMainIndexHarness(options: {
     subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
     handleSimulator: vi.fn(),
     setAvatarRuntimeStatus: vi.fn(() => Promise.resolve()),
+    setMemoryRuntimeStatus: vi.fn(() => Promise.resolve()),
     shutdown,
   }
 
@@ -790,6 +790,7 @@ function makeMainIndexHarness(options: {
     getAppPath: vi.fn(() => resolve(__dirname, '../..')),
     getVersion: vi.fn(() => 'synthetic-version'),
     isPackaged: false,
+    once: vi.fn(),
     on: vi.fn((event: string, handler: MainIndexHandler) => {
       appHandlers.set(event, handler)
     }),
@@ -803,6 +804,7 @@ function makeMainIndexHarness(options: {
   const electron = {
     app,
     BrowserWindow: FakeBrowserWindow,
+    Menu: { getApplicationMenu: vi.fn(() => null) },
     globalShortcut,
     ipcMain: { handle: vi.fn(), on: vi.fn() },
     dialog: { showOpenDialog: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })) },
@@ -836,6 +838,19 @@ function makeMainIndexHarness(options: {
     publishSnapshot: vi.fn(),
     registerIpcHandlers: vi.fn(),
   }))
+  vi.doMock('../../src/main/avatar/youtube-player', () => ({
+    createYoutubePlayer: () => ({ stop: vi.fn(), play: vi.fn() }),
+  }))
+  vi.doMock('../../src/main/memory/embedding', () => ({
+    createMemoryEmbedder: () => ({
+      embed: vi.fn(() => Promise.reject(new Error('synthetic_unavailable'))),
+      close: vi.fn(() => Promise.resolve()),
+    }),
+  }))
+  vi.doMock('../../src/main/memory/repository', async importOriginal => {
+    const actual = await importOriginal<typeof import('../../src/main/memory/repository')>()
+    return { ...actual, createMemoryRepository: actual.unavailableMemoryRepository }
+  })
   vi.doMock('../../src/main/display-sleep-blocker', () => ({
     createDisplaySleepBlocker: () => ({ start: vi.fn(), stop: vi.fn() }),
   }))

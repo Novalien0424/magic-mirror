@@ -802,6 +802,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
   const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
+  const [localVideoHasAudio, setLocalVideoHasAudio] = useState<boolean | null>(null)
   // Playback completion includes the processed speech tail. Visitor speech
   // interrupts and clears that output before this callback is delivered.
   const updateBgmSpeechPriority = (activity: AvatarAudioActivity): void => {
@@ -1113,6 +1114,11 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       ),
       prepareFade: (media) => { void getComputedStyle(media as unknown as Element).opacity },
       onLoadRetry: () => reportAvatarRuntime({ status: 'degraded', reason: 'media_load_retry' }),
+      onVideoAudio: (hasAudio, context) => {
+        if (context.sceneId !== 'media-skill') return
+        setLocalVideoHasAudio(hasAudio === 'unknown' ? null : hasAudio)
+        if (hasAudio === 'unknown') reportAvatarRuntime({ status: 'degraded', reason: 'media_video_audio_unknown' })
+      },
     })
     sceneVisualControllerRef.current = visual
     return () => {
@@ -1282,6 +1288,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)
         }}
           speechActive={avatarSpeechActive} mediaActive={mediaSkillState.active}
+          mediaWithoutAudio={mediaSkillState.active && mediaSkillState.hideAvatar && localVideoHasAudio === false}
           onFailure={reason => {
             reportAvatarRuntime({ status: 'degraded', reason })
             const bridge = window.magicMirror

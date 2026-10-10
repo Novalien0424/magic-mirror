@@ -14,7 +14,8 @@ if (process.platform !== 'darwin' || process.cwd() !== '/Users/novalien0424/magi
 const args = process.argv.slice(2), launchAgent = args.includes('--launch-agent')
 if (launchAgent) args.splice(args.indexOf('--launch-agent'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
-if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay', 'wake_capture', 'wake_control'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+const mediaBgm = selected === 'media_bgm'
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'media_bgm', 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay', 'wake_capture', 'wake_control'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)
@@ -54,6 +55,7 @@ function tone(seconds) {
   return wav
 }
 const wav = tone(8)
+if (mediaBgm) await writeFile(join(data, 'assets/music/phase4-qa-tone.wav'), wav)
 // The real folder scanner supplies opaque IDs and enforces own/shared scope.
 for (const [folder, names] of [['own', ['Folder Beacon', '雨夜鋼琴']], ['shared', ['Shared Lantern']]]) {
   for (const name of names) await writeFile(join(data, 'fixtures', folder, name + '.wav'), wav)
@@ -68,7 +70,7 @@ for (const media of RAVEN_SYNTHETIC_MEDIA) {
   if (video) config.visualAssets.push({ ...asset, kind: 'video', width: 360, height: 640, orientation: 'portrait', durationMs: 3000, audioTrack: 'absent', windowsDecode: 'passed' })
   else config.musicAssets.push(asset)
 }
-avatar.mediaSkill = { ...avatar.mediaSkill, resources: RAVEN_SYNTHETIC_MEDIA }
+avatar.mediaSkill = { ...avatar.mediaSkill, resources: mediaBgm ? [] : RAVEN_SYNTHETIC_MEDIA }
 config.adapters = { lighting: 'mock', fog: 'mock', music: 'mock' }
 const action = { id: 'qa-spell-light', name: 'QA light', enabled: true, kind: 'lighting', command: 'on', presetId: 'qa-blue' }
 const scene = { id: 'qa-spell-scene', name: 'QA scene', enabled: true, stages: [{ id: 'qa-spell-stage', name: 'QA stage', endCondition: { kind: 'duration', durationMs: 500 }, actionIds: [action.id] }] }
@@ -88,6 +90,8 @@ const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_Q
   MIRROR_PHASE4_QA_CONSOLE: '1', MIRROR_PHASE4_QA_OUTPUT_DIR: output, MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
 for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_LIVE', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR', 'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE'].includes(key)) delete env[key]
+if (mediaBgm) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0',
+  MIRROR_MEDIA_SKILL_QA: '1', MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: '1' })
 let exit
 if (launchAgent) exit = await runRavenQaLaunchAgent({ repo, root, stamp, environment: env })
 else {

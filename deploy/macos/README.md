@@ -111,6 +111,16 @@ adb -P 5038 -s 192.168.77.2:5555 shell input keyevent 223
 
 Startup enters reflective Dormant: a black HDMI picture with ambience is
 expected until wake. The held-stop check ended BGM and all app/worker processes.
+The field LaunchAgent sets `MIRROR_TV_HOST=192.168.77.2` alongside
+`MIRROR_DISPLAY=T749`. Main gracefully quits when both the target display and
+wired TV are absent continuously for at least 15 seconds. Either signal
+returning, or an uncertain probe, resets the countdown. The network check accepts
+an open/refused TCP port or a ping response; an offline ADB session alone is not
+TV absence. `TV_PRESENCE` markers and Console metadata record state changes.
+Clean exit 0 stays stopped under the existing LaunchAgent. After a long TV
+power-off/reboot, start Raven again with the kickstart command above; turning
+the TV on does not automatically restart a cleanly stopped app. Standby that
+retains Ethernet or HDMI intentionally does not trigger this shutdown.
 Wired standby/wake passed with the new server; full shutdown/power-removal wake
 and Mac cold boot remain untested. Allow roughly two minutes for TV boot/ADB.
 
