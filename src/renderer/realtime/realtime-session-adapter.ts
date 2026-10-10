@@ -1048,7 +1048,10 @@ export function createRealtimeSession(
         try {
           const ownerResponseId = farewellResponseId
           void Promise.resolve(input.waitForOutputTail?.()).then(() => {
-            if (!closed && farewellRequested && farewellResponseId === ownerResponseId) return request()
+            if (!closed && farewellRequested && farewellResponseId === ownerResponseId) {
+              emitMetadata(input, 'realtime_observer_event', 'success', 'sleep_farewell_completed', sessionGeneration, createdAt)
+              return request()
+            }
           }).catch(() => {
             emitMetadata(
               input,

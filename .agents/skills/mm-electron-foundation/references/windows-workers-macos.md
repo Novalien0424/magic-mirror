@@ -1,13 +1,15 @@
-# Windows, workers and the later macOS port
+# Windows, workers and the deployed Mac
 
 Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
 
-## Kiosk Windows
+## Kiosk windows
 
 - Visitor window: `simpleFullscreen: true` (macOS pre-Lion fullscreen -- no
   Space transition; don't mix `kiosk:true` with `setFullScreen()`),
   `alwaysOnTop`, CSS `cursor: none` (takes effect on next mouse move; no API).
-- Fullscreen transitions are async -- gate on `'enter-full-screen'` events.
+- Native `setFullScreen()` transitions are async; use their completion events.
+  `setSimpleFullScreen()` uses macOS's separate pre-Lion mode, so do not wait for
+  a native Space-transition event there. [Electron window API](https://www.electronjs.org/docs/latest/api/browser-window).
 - `powerSaveBlocker.start('prevent-display-sleep')` while app runs.
 - Console window: separate `BrowserWindow`, positioned via
   `screen.getAllDisplays()`, opened by shortcut/hot-corner from any state.
@@ -30,11 +32,12 @@ Repository implementation reference; installed code, current DECISIONS and focus
   child replies via `process.parentPort`).
 - Python face worker: `child_process.spawn` (utilityProcess is Node-only).
   **Drain stdout/stderr or the child deadlocks on a full pipe.**
-- TCC: mic/camera permission attributes to the parent .app bundle -- put
-  `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in Info.plist
-  and `com.apple.security.device.audio-input`/`.camera` entitlements with
-  hardenedRuntime; grants then cover spawned children. A missing key =
-  **silent denial, no dialog** -- the #1 "camera looks broken" cause. The
-  Console Audio/Camera cards display TCC authorization status explicitly
-  (Spec Section 6.2) so permission denial and dead hardware are distinguishable;
-  surface as `Degraded`, don't retry-loop.
+- TCC: inspect the actual app/helper signing and launch chain, required
+  `NSMicrophoneUsageDescription` / `NSCameraUsageDescription`, and applicable
+  hardened-runtime entitlements. Do not assume a parent's grant covers every
+  helper or another launch context. Read `getMediaAccessStatus` and request access
+  before native capture; separately measure delivered samples. Zero PCM alone
+  does not prove denial, and missing usage descriptions are not universally a
+  silent failure. [Electron permission API](https://www.electronjs.org/docs/latest/api/system-preferences#systempreferencesaskformediaaccessmediatype-macos).
+  Surface bounded permission/device reasons without retry loops. See
+  [physical wake evidence](../../mm-wake-word/references/handoff-platform.md).

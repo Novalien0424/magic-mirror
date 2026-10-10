@@ -7,6 +7,17 @@ import { openWakeCapture } from '../../../src/main/wake/capture'
 describe('wake native capture boundary', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('reads native drop counters before stream release without retaining audio', async () => {
+    const stream = Object.assign(new EventEmitter(), { overrunCount: 0, stop: vi.fn(() => { stream.overrunCount = 0 }) })
+    native.open.mockResolvedValue(stream)
+    const capture = await openWakeCapture({ onSamples: vi.fn(), onError: vi.fn() })
+    stream.overrunCount = 2
+    stream.emit('backpressure')
+    expect(capture.statistics?.()).toEqual({ overruns: 2, backpressure: 1 })
+    capture.stop()
+    expect(capture.statistics?.()).toEqual({ overruns: 0, backpressure: 1 })
+  })
+
   it('preserves allowlisted device failures without forwarding arbitrary error content', async () => {
     const stream = Object.assign(new EventEmitter(), { stop: vi.fn() })
     native.open.mockResolvedValue(stream)

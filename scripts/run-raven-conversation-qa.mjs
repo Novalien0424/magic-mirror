@@ -6,12 +6,15 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
+import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
 import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS } from '../src/main/raven-conversation-fixture.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 if (process.platform !== 'darwin' || process.cwd() !== '/Users/novalien0424/magic-mirror') throw Error('raven_qa_canonical_mac_required')
-const selected = process.argv[2] === '--scenario' && process.argv.length === 4 ? process.argv[3] : ''
-if (process.argv.length !== 2 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'additional_capabilities', 'camera'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+const args = process.argv.slice(2), launchAgent = args.includes('--launch-agent')
+if (launchAgent) args.splice(args.indexOf('--launch-agent'), 1)
+const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)
@@ -85,20 +88,24 @@ const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_Q
   MIRROR_PHASE4_QA_CONSOLE: '1', MIRROR_PHASE4_QA_OUTPUT_DIR: output, MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
 for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_LIVE', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR', 'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE'].includes(key)) delete env[key]
-const child = spawn(join(repo, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'), [repo], { cwd: repo, env, stdio: ['ignore', 'pipe', 'pipe'] })
-// Production logs are metadata-only; never expose native/provider diagnostic text.
-let pending = '', resultCount = 0, passed = false
-child.stdout.on('data', chunk => {
-  pending += chunk.toString()
-  const lines = pending.split(/\r?\n/); pending = lines.pop() ?? ''
-  for (const line of lines) if (/^(?:PHASE4_|BOOT_|LIFECYCLE_|WAKE_|SHUTDOWN_|WINDOW_)/.test(line)) {
-    process.stdout.write(line + '\n')
-    if (line.includes('PHASE4_QA_RESULT')) { resultCount++; passed = /status=passed|"status":"passed"/.test(line) }
-  }
-})
-child.stderr.resume()
-const code = await new Promise(resolveExit => { child.once('error', () => resolveExit(2)); child.once('exit', c => resolveExit(c ?? 2)) })
-const exit = code === 0 && resultCount === 1 && passed ? 0 : 2
+let exit
+if (launchAgent) exit = await runRavenQaLaunchAgent({ repo, root, stamp, environment: env })
+else {
+  const child = spawn(join(repo, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'), [repo], { cwd: repo, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  // Production logs are metadata-only; never expose native/provider diagnostic text.
+  let pending = '', resultCount = 0, passed = false
+  child.stdout.on('data', chunk => {
+    pending += chunk.toString()
+    const lines = pending.split(/\r?\n/); pending = lines.pop() ?? ''
+    for (const line of lines) if (/^(?:PHASE4_|BOOT_|LIFECYCLE_|WAKE_|SHUTDOWN_|WINDOW_)/.test(line)) {
+      process.stdout.write(line + '\n')
+      if (line.includes('PHASE4_QA_RESULT')) { resultCount++; passed = /status=passed|"status":"passed"/.test(line) }
+    }
+  })
+  child.stderr.resume()
+  const code = await new Promise(resolveExit => { child.once('error', () => resolveExit(2)); child.once('exit', c => resolveExit(c ?? 2)) })
+  exit = code === 0 && resultCount === 1 && passed ? 0 : 2
+}
 await finishQaArtifact(repo, stamp, exit)
 console.log(JSON.stringify({ event: 'raven_qa_complete', exit, evidence: join(root, 'evidence.json') }))
 process.exitCode = exit

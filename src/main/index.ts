@@ -87,7 +87,7 @@ import { runPhase4Qa } from './phase4-qa'
 import { configureVideoDecoding } from './video-decoding-policy'
 import { createWakeWorkerPackage, wakeTuningIsActive } from './wake/runtime-config'
 import { createWakeCalibration } from './wake/calibration'
-import { requestWakeMicrophonePermission } from './wake/microphone-permission'
+import { needsWakeMicrophonePermission, requestWakeMicrophonePermission } from './wake/microphone-permission'
 import { createYoutubePlayer } from './avatar/youtube-player'
 import { createYoutubeCredentialSource, createYoutubeSearch } from './avatar/youtube-search'
 
@@ -275,7 +275,9 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   }
   const signature = JSON.stringify(wake)
   if (signature === configuredWakeSignature) return
-  const requiresMicrophonePermission = isDarwin && smokeMode.kind === 'off' && !phase4QaEnabled && !phase1LiveSmokeEnabled
+  const requiresMicrophonePermission = needsWakeMicrophonePermission({ platform: process.platform,
+    smoke: smokeMode.kind === 'on', isolatedQa: phase4QaEnabled || phase1LiveSmokeEnabled,
+    nativeWakeQa: phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' })
   if (requiresMicrophonePermission && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
     await runtime.setWakeRuntimeStatus('degraded', 'wake_microphone_permission_required')
   }
@@ -807,6 +809,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     }
   }
   void runPhase4Qa({
+    wakeOwner: () => wakeSupervisor,
     runtime,
     mirror,
     console: consoleWindow,

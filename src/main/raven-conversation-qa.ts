@@ -22,7 +22,7 @@ interface Media { time: number; duration: number | null; loop: boolean; paused: 
 interface Observation { records: Turn[]; tools: Call[]; usage: { stage: string; status: string; tokens: number }[]; errors: string[]; inputText: number }
 interface Result { step: string; status: 'passed' | 'failed' | 'not_executed'; reason?: string; durationMs?: number; calls?: string[]; diagnostics?: string[]; utterances?: { visitor: number; avatar: number; audible: number }; recognition?: { exact: boolean; localOnly: boolean; youtube: boolean; loop: boolean }; lookups?: { kind: string; words: number; aliasExact: boolean; aliasContained: boolean; count: number }[] }
 
-async function synthesize(texts: string[]): Promise<string[]> {
+export async function synthesize(texts: string[]): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const child = spawn('/usr/bin/swift', [join(process.cwd(), 'scripts/memory-qa-speech.swift')], {
       stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', HOME: process.env['HOME'] },
@@ -54,6 +54,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const capabilityQuality: Record<string, Record<string, boolean>> = {}
   let protocol: { inputText: number; asr: number; errors: string[] } | undefined
   const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit' }[] = []
+  const spellRecognition: Record<string, unknown>[] = []
+  const controlSpeech: Record<string, unknown>[] = []
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
   const evaluate = <T>(source: string) => input.mirror.webContents.executeJavaScript(`(async()=>{${source}})()`, true) as Promise<T>
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -200,7 +202,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   // Its candidate comes from spoken self-identification, not a fabricated face.
   const selection = process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? ''
   const persist = (running: boolean) => writeFile(join(input.outputDir, '..', 'raven-results.json'), JSON.stringify({ selection: selection || 'all', running, passed: !running && accepted,
-    elapsedMs: Date.now() - started, results, quality, qualityDiagnostics, capabilityQuality, acousticEvidence, protocol, screenshots, route: 'synthetic_audio_real_webrtc_asr_tools_ipc_playback',
+    elapsedMs: Date.now() - started, results, quality, qualityDiagnostics, capabilityQuality, acousticEvidence, spellRecognition, controlSpeech, protocol, screenshots, route: 'synthetic_audio_real_webrtc_asr_tools_ipc_playback',
     transcriptRetention: 'none', humanAcousticAcceptance: 'not_executed' }, null, 2))
   if (selection && !['additional_capabilities', 'camera'].includes(selection) && !RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)) throw Error('raven_qa_scenario_invalid')
   const scenarios = [...RAVEN_CONVERSATION_SCENARIOS.filter(s => s.id !== 'identity_denial'), RAVEN_CONVERSATION_SCENARIOS.find(s => s.id === 'identity_denial')!].filter(s => !selection || s.id === selection)
@@ -221,6 +223,30 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const memoryLearned = async () => { const r = await memoryList(); return r.status === 'accepted' && !!r.entries?.some(e => /cork/i.test(e.text)) && r.entries.some(e => /sample/i.test(e.text)) }
   const assertTurn = async (turn: RavenFixtureTurn, stage: string, since: number) => {
     const observed = await observe(), calls = observed.tools.filter(c => c.stage === stage && c.direction === 'call')
+    if (['extended_spell', 'exact_spell', 'directed_sleep'].includes(turn.id)) {
+      const spoken = observed.records.filter(r => r.stage === stage && r.role === 'avatar' && r.audible)
+      const cue = turn.id === 'exact_spell' ? realtimeMessages.spellAnnouncement
+        : turn.id === 'directed_sleep' ? avatar.presentation.sleepFarewell : ''
+      const cueMatches = cue ? spoken.filter(r => normalizeTranscript(r.text) === normalizeTranscript(cue)).length : 0
+      controlSpeech.push({ stage, outputBufferStartedResponses: spoken.length, cueMatches, otherOutputBufferStartedResponses: spoken.length - cueMatches,
+        acousticAudibility: 'not_measured' })
+    }
+    if (turn.id === 'exact_spell') {
+      const expected = normalizeTranscript(spokenTexts.get(stage) ?? '')
+      const heard = observed.records.filter(r => r.stage === stage && r.role === 'visitor').map(r => r.text)
+      const comparisons = await new Promise<Record<string, unknown>[]>((resolveResult, reject) => {
+        const child = spawn('/usr/bin/swift', [join(process.cwd(), 'scripts/raven-qa-transcription-comparison.swift')], { stdio: ['pipe', 'pipe', 'pipe'] })
+        const chunks: Buffer[] = []; let size = 0
+        const timer = setTimeout(() => { child.kill(); reject(Error('raven_qa_comparison_timeout')) }, 15000)
+        child.stdout.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 8192) child.kill(); else chunks.push(chunk) })
+        child.stderr.resume()
+        child.once('error', () => { clearTimeout(timer); reject(Error('raven_qa_comparison_failed')) })
+        child.once('close', code => { clearTimeout(timer); try { if (code) throw Error(); resolveResult(JSON.parse(Buffer.concat(chunks).toString())) } catch { reject(Error('raven_qa_comparison_failed')) } })
+        child.stdin.end(JSON.stringify(heard.map(actual => ({ expected, actual: normalizeTranscript(actual) }))))
+      })
+      const configuration = await evaluate<Record<string, unknown>>(`const q=window.__ravenQa;const describe=a=>{const values=a.filter(Boolean),t=values.at(-1);return {count:values.length,fields:Object.keys(t??{}).sort(),modelMatches:t?.model===${JSON.stringify((await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).inputTranscription)},keywordCount:Array.isArray(t?.keywords)?t.keywords.length:null,keywordPresent:t?.keywords?.includes(${JSON.stringify(bindings.approvedSpell)})??false,languages:t?.languages??[],delay:t?.delay??null}};return {requested:describe(q.transcriptionRequests),acknowledged:describe(q.transcriptionConfigs)}`)
+      spellRecognition.push({ stage, transcriptItems: heard.length, comparisons, configuration })
+    }
     if (turn.id === 'first_identify' || turn.id === 'return_identify') {
       const call = calls.find(c => c.name === 'memory' && c.args?.action === 'identify')
       const reply = observed.tools.find(c => c.direction === 'result' && c.callId === call?.callId)?.result as { memory?: { name?: string } } | undefined
@@ -252,8 +278,21 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     if (checks.includes('memory_saved') && !events(since).some(e => e.reason === 'memory_saved')) throw Error('raven_qa_memory_save')
     const sceneCount = await evaluate<number>(`return window.__ravenQa.scenes.filter(e=>e.stage===${JSON.stringify(stage)}&&e.type==='started').length`)
     if (checks.includes('no_scene_trigger') && sceneCount) throw Error('raven_qa_scene_not_authorized')
-    if (checks.includes('approved_exact_scene') && sceneCount !== 1) throw Error('raven_qa_exact_scene_missing_or_duplicate')
-    if (checks.includes('farewell_tail_before_close')) await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'sleep_release')
+    if ((checks.includes('approved_exact_scene') || checks.includes('scene_once')) && sceneCount !== 1) throw Error('raven_qa_exact_scene_missing_or_duplicate')
+    if (checks.includes('announcement_tail_before_scene')) {
+      const announcement = events(since).find(e => e.reason === 'cause=spell_announcement_completed')
+      const sceneAt = await evaluate<number>(`return window.__ravenQa.scenes.find(e=>e.stage===${JSON.stringify(stage)}&&e.type==='started')?.at??0`)
+      if (!announcement || !sceneAt || Date.parse(announcement.time) > sceneAt) throw Error('raven_qa_scene_before_announcement_tail')
+    }
+    if (checks.includes('farewell_tail_before_close')) {
+      await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'sleep_release')
+      const timeline = events(since), cue = timeline.find(e => e.reason === 'sleep_farewell_completed')
+      const closed = timeline.find(e => e.reason === 'cause=close')
+      const acquired = timeline.find(e => e.reason === 'wake_worker_acquiring')
+      const releasedAt = await evaluate<number>(`return window.__ravenQa.mic.find(e=>e.type==='released'&&e.at>=${since})?.at??0`)
+      if (!cue || !closed || Date.parse(cue.time) > Date.parse(closed.time)) throw Error('raven_qa_close_before_farewell_tail')
+      if (!acquired || !releasedAt || releasedAt > Date.parse(acquired.time)) throw Error('raven_qa_wake_before_realtime_release')
+    }
     if (!observed.records.some(r => r.stage === stage && r.role === 'visitor')) throw Error('raven_qa_asr_missing')
   }
   try {

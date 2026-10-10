@@ -16,7 +16,8 @@ async function fixture(): Promise<string> {
     await writeFile(join(root, file), 'synthetic')
   }
   for (const file of ['scripts/build-wake-score-native.ps1', 'scripts/build-wake-score-native.mjs', 'scripts/prepare-wake-score-native.mjs',
-    'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'scripts/memory-qa-speech.swift']) {
+    'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'scripts/memory-qa-speech.swift',
+    'scripts/raven-qa-transcription-comparison.swift']) {
     await mkdir(join(root, file, '..'), { recursive: true })
     await writeFile(join(root, file), 'synthetic')
   }
@@ -56,10 +57,10 @@ describe('QA build provenance', () => {
     await writeFile(join(root, 'resources/wake-native/test.dll'), 'changed native library')
     await expect(verifyBuild(root)).rejects.toThrow('qa_build_stale')
   })
-  it('rejects a changed synthetic microphone generator after a build', async () => {
+  it.each(['scripts/memory-qa-speech.swift', 'scripts/raven-qa-transcription-comparison.swift'])('rejects changed QA helper %s after a build', async file => {
     const root = await fixture()
     await beginBuild(root); await finishBuild(root)
-    await writeFile(join(root, 'scripts/memory-qa-speech.swift'), 'changed audio fixture generator')
+    await writeFile(join(root, file), 'changed QA helper')
     await expect(verifyBuild(root)).rejects.toThrow('qa_build_stale')
   })
   it('rejects a source edit during the build and missing renderer output', async () => {

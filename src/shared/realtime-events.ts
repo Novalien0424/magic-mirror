@@ -32,6 +32,7 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'transcript_unavailable',
   'sleep_request_unavailable',
   'sleep_request_failed',
+  'sleep_farewell_completed',
   'tool_arguments_rejected',
   'tool_execution_failed',
   'media_source_restricted',
