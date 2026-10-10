@@ -53,7 +53,7 @@ class FakeAudio {
   error: { code: number } | null = null
   volume = 1
   readonly play = vi.fn(async () => { this.paused = false })
-  readonly pause = vi.fn(() => { this.paused = true })
+  readonly pause = vi.fn(() => { if (!this.paused) { this.paused = true; this.emit('pause') } })
   readonly listeners = new Map<string, Set<() => void>>()
   addEventListener(type: string, callback: () => void): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set())
@@ -75,13 +75,16 @@ afterEach(() => {
 function setupMusicController() {
   vi.useFakeTimers()
   const audioElements: FakeAudio[] = []
+  const contexts: FakeAudioContext[] = []
   class FakeAudioContext {
+    constructor() { contexts.push(this) }
     currentTime = 0
     destination = new FakeNode()
     createAnalyser = () => new FakeAnalyser()
     createGain = () => new FakeGain()
     createMediaElementSource = () => new FakeNode()
     resume = vi.fn(async () => undefined)
+    suspend = vi.fn(async () => undefined)
     setSinkId = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
   }
@@ -96,7 +99,7 @@ function setupMusicController() {
   const controller = createAvatarMediaController({
     onRecordedOutput: vi.fn(), onActivity: vi.fn(), onChanged: vi.fn(), eventSink,
   })
-  return { controller, music: audioElements[0]!, eventSink, fetchMedia }
+  return { controller, music: audioElements[0]!, context: contexts[0]!, eventSink, fetchMedia }
 }
 
 const sceneContext = (actionId: string): SceneActionCommandContext => ({
@@ -120,6 +123,19 @@ async function playSceneMusic(
 }
 
 describe('Avatar shared background audio bus', () => {
+  it('suspends the idle media graph and resumes only for attached playback', async () => {
+    const f = setupMusicController()
+    await flushMusicTasks()
+    expect(f.music.preload).toBe('none')
+    expect(f.context.suspend).toHaveBeenCalledOnce()
+    await playSceneMusic(f, sceneContext('play'))
+    expect(f.context.resume).toHaveBeenCalled()
+    const before = f.context.suspend.mock.calls.length
+    f.controller.handleCommand({ type: 'scene_music', action: 'stop', fadeDurationMs: 0 })
+    await flushMusicTasks()
+    expect(f.context.suspend.mock.calls.length).toBeGreaterThan(before)
+    f.controller.dispose()
+  })
   it('feeds authored music and embedded video through one duck gain and uses explicit draft media', async () => {
     const audioElements: FakeAudio[] = []
     const sources: FakeNode[] = []
@@ -133,6 +149,7 @@ describe('Avatar shared background audio bus', () => {
       createBufferSource = () => new FakeNode()
       decodeAudioData = vi.fn()
       resume = vi.fn(async () => undefined)
+      suspend = vi.fn(async () => undefined)
       setSinkId = vi.fn(async () => undefined)
       close = vi.fn(async () => undefined)
     }

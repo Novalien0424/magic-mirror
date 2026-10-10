@@ -28,7 +28,7 @@ class FakeWorker extends EventEmitter {
   message(message: unknown) { this.stdout.write(`${JSON.stringify(message)}\n`) }
 }
 
-function fixture(options: { maxQueue?: number; startupTimeoutMs?: number; requestTimeoutMs?: number } = {}) {
+function fixture(options: { maxQueue?: number; startupTimeoutMs?: number; requestTimeoutMs?: number; idleTimeoutMs?: number } = {}) {
   const worker = new FakeWorker()
   vi.mocked(spawn).mockReturnValue(worker as unknown as ChildProcess)
   const events: MemoryEmbeddingEvent[] = []
@@ -377,6 +377,130 @@ describe('Main local memory embedder (invariants 1, 3, 8–12)', () => {
     await rejection
     await Promise.resolve()
     expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('releases idle residency only with an empty queue and restarts cold for later work', async () => {
+    vi.useFakeTimers()
+    const f = fixture({ idleTimeoutMs: 50 })
+    const first = f.embedder.embed('Synthetic first', 'query')
+    await vi.advanceTimersByTimeAsync(0)
+    f.worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    const queued = f.embedder.embed('Synthetic queued', 'document')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(f.worker.kill).not.toHaveBeenCalled()
+    result(f); await first
+    await vi.advanceTimersByTimeAsync(100)
+    expect(f.worker.kill).not.toHaveBeenCalled()
+    result(f); await queued
+    await vi.advanceTimersByTimeAsync(49)
+    expect(f.worker.kill).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(f.worker.kill).toHaveBeenCalledOnce()
+    expect(spawn).toHaveBeenCalledTimes(1)
+    expect(f.events).toContainEqual({ type: 'degraded', reason: 'idle_stopped' })
+    const nextWorker = new FakeWorker()
+    vi.mocked(spawn).mockReturnValue(nextWorker as unknown as ChildProcess)
+    const next = f.embedder.embed('Synthetic independent', 'query')
+    await vi.advanceTimersByTimeAsync(0)
+    nextWorker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    // A late old-worker frame cannot fail or satisfy the new request.
+    result(f, 'unexpected')
+    nextWorker.message({ type: 'embedding', id: nextWorker.requests[0].id, values: syntheticVector() })
+    await next
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(f.events.filter(event => event.reason === 'cold_start')).toHaveLength(2)
+    await f.embedder.close()
+  })
+
+  it('recovers only later independent calls after backoff without replaying failed queued work', async () => {
+    vi.useFakeTimers()
+    const f = fixture({ requestTimeoutMs: 30 })
+    const first = f.embedder.embed('Synthetic timed-out', 'query')
+    const firstRejected = rejects(first, 'request_timeout')
+    await vi.advanceTimersByTimeAsync(0)
+    f.worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    const queued = f.embedder.embed('Synthetic old queued', 'document')
+    const queuedRejected = rejects(queued, 'request_timeout')
+    await vi.advanceTimersByTimeAsync(31)
+    await Promise.all([firstRejected, queuedRejected])
+    await rejects(f.embedder.embed('Synthetic too soon', 'query'), 'request_timeout')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(spawn).toHaveBeenCalledTimes(1)
+    const nextWorker = new FakeWorker()
+    vi.mocked(spawn).mockReturnValue(nextWorker as unknown as ChildProcess)
+    const next = f.embedder.embed('Synthetic independent', 'query')
+    await vi.advanceTimersByTimeAsync(0)
+    f.worker.message({ type: 'embedding', id: 'unexpected', values: syntheticVector() })
+    nextWorker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    nextWorker.message({ type: 'embedding', id: nextWorker.requests[0].id, values: syntheticVector() })
+    await next
+    expect(nextWorker.requests.map(request => request.text)).toEqual(['Synthetic independent'])
+    expect(f.worker.requests).toHaveLength(1)
+    await firstRejected
+    await f.embedder.close()
+  })
+
+  it('caps demand-driven rebuilds at three per rolling hour without a timer restart loop', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    let worker = f.worker
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) { worker = new FakeWorker(); vi.mocked(spawn).mockReturnValue(worker as unknown as ChildProcess) }
+      const pending = f.embedder.embed('Synthetic independent', 'query')
+      const rejected = rejects(pending, 'worker_failed')
+      await vi.advanceTimersByTimeAsync(0)
+      worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+      worker.emit('error', Error('Synthetic private detail'))
+      await rejected
+      await vi.advanceTimersByTimeAsync(8000)
+    }
+    await rejects(f.embedder.embed('Synthetic budget denied', 'query'), 'worker_failed')
+    expect(spawn).toHaveBeenCalledTimes(4)
+    expect(f.events).toContainEqual({ type: 'degraded', reason: 'recovery_budget_exhausted' })
+    await vi.advanceTimersByTimeAsync(3_600_000)
+    expect(spawn).toHaveBeenCalledTimes(4)
+    worker = new FakeWorker(); vi.mocked(spawn).mockReturnValue(worker as unknown as ChildProcess)
+    const later = f.embedder.embed('Synthetic later independent', 'query')
+    await vi.advanceTimersByTimeAsync(0)
+    worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    worker.message({ type: 'embedding', id: worker.requests[0].id, values: syntheticVector() })
+    await later
+    expect(spawn).toHaveBeenCalledTimes(5)
+    await f.embedder.close()
+  })
+
+  it('keeps a failed embedder unavailable when its old process cannot be confirmed stopped', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    f.worker.kill.mockReturnValue(false)
+    const pending = f.embedder.embed('Synthetic uncertain', 'query')
+    const rejected = rejects(pending, 'worker_failed')
+    await vi.advanceTimersByTimeAsync(0)
+    f.worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    f.worker.emit('error', Error('Synthetic private detail')); await rejected
+    await vi.advanceTimersByTimeAsync(1001)
+    await rejects(f.embedder.embed('Synthetic independent', 'query'), 'worker_failed')
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(f.events).toContainEqual({ type: 'degraded', reason: 'shutdown_timeout' })
+    await rejects(f.embedder.close(), 'shutdown_timeout')
+  })
+
+  it('can close with new work queued during an idle shutdown without creating another process', async () => {
+    vi.useFakeTimers()
+    const f = fixture({ idleTimeoutMs: 50 })
+    f.worker.kill.mockReturnValue(true)
+    const first = f.embedder.embed('Synthetic first', 'query')
+    await vi.advanceTimersByTimeAsync(0)
+    f.worker.message({ type: 'ready', version: f.embedder.version, dimensions: DIMENSIONS })
+    result(f); await first
+    await vi.advanceTimersByTimeAsync(50)
+    const next = f.embedder.embed('Synthetic pending', 'query')
+    const rejected = rejects(next, 'closed')
+    const closed = f.embedder.close()
+    f.worker.emit('close', null, 'SIGTERM')
+    await closed; await rejected
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(f.worker.requests).toHaveLength(1)
   })
 
   it('contains a throwing report callback so diagnostics cannot block recall cleanup', async () => {

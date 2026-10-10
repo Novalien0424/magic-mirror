@@ -11,6 +11,37 @@ function setup() {
   return { dialogue, sent, receipt, failed, tail, report, ack, tick }
 }
 describe('ordered memory dialogue', () => {
+  it('accepts one answer after the output tail while the delivery receipt is pending', async () => {
+    const p = setup()
+    let finishReceipt!: (reply: { status: 'accepted'; code: string }) => void
+    p.receipt.mockImplementationOnce(() => new Promise(resolve => { finishReceipt = resolve }))
+    const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    p.dialogue.speech('answer')
+    await p.dialogue.answer('answer', { status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] })
+    expect(p.failed).not.toHaveBeenCalled()
+    expect(p.sent.filter(e => e.type === 'session.update')).toHaveLength(1)
+    finishReceipt({ status: 'accepted', code: 'memory_question_delivered' }); await p.tick()
+    expect(p.sent.filter(e => e.type === 'session.update')).toHaveLength(2)
+    p.ack(); await p.tick()
+    expect(p.report).toHaveBeenCalledWith('memory_brief_installed')
+    p.dialogue.close()
+  })
+  it('still rejects speech while the processed question tail is playing', async () => {
+    const p = setup(); p.tail.mockImplementationOnce(() => new Promise(() => {}))
+    const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    p.dialogue.speech('early')
+    expect(p.failed).toHaveBeenCalledOnce()
+    expect(p.receipt.mock.calls.some(c => c[0] === 'question_played')).toBe(false)
+    p.dialogue.close()
+  })
   it('uses the selected disclosure language for both question and policy acknowledgment', () => {
     expect(buildMemoryQuestion('小林', 'zh-TW')).toBe('你是小林嗎？')
     expect(buildMemoryAcknowledgment({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'explicit', language: 'zh-TW' }, '').instructions).toContain('我只會記住你明確請我保存的內容。')

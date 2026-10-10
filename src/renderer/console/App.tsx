@@ -3,13 +3,17 @@ import { HelpField } from './HelpField'
 import { WakeRecoveryStatus } from './WakeRecoveryStatus'
 import { FIELD_HELP } from './field-help-text'
 import * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createConsoleRuntimeStore, type ConsoleRuntimeStore } from './runtime-store'
+import { RuntimeStatusStrip } from './RuntimeStatusStrip'
+import { NumberInput } from './NumberInput'
+import { FieldErrorsContext, focusInvalidField, normalizeFieldPath, resolveFieldErrors, type FieldErrorTarget } from './field-errors'
+import { OperatorMessage, ReasonDetail, operatorMessageText, reasonCopy } from './reason-copy'
 import { getAudioDeviceRouter } from '../audio-devices'
 
 import {
   AVATAR_RUNTIME_STATES,
   type AvatarControlCommand,
-  type AvatarRuntimeSnapshot,
   type ConsoleBridge,
 } from '../../shared/bridge'
 import type {
@@ -17,6 +21,7 @@ import type {
   ConsoleConfigPayload,
   ConsoleDiffConfirmation,
   ConsoleEventSummary,
+  ConsoleFieldError,
   ConsoleEventsQuery,
   ConsoleLifecycleActionResult,
   ConsoleModuleObservation,
@@ -234,11 +239,6 @@ type ModelsState =
   | { readonly status: 'success'; readonly value: ConsoleModelsPayload }
   | ({ readonly status: 'failure' } & ConsoleFailure)
 
-type AvatarRuntimeState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'success'; readonly value: AvatarRuntimeSnapshot }
-  | ({ readonly status: 'failure' } & ConsoleFailure)
-
 const BRIDGE_FAILURE: ConsoleFailure = {
   error: 'console_request_rejected',
   reason: 'cause=console_data_plane_unavailable',
@@ -415,7 +415,9 @@ function ModuleSummary({
   return (
     <div className="console__module-summary">
       <span className="console__label">{label}</span>
-      {summary ? <BoundedSummary summary={summary} /> : <span className="console__muted">—</span>}
+      {summary ? <><span>{reasonCopy(summary.reason ?? summary.error_code ?? summary.event).message}</span>
+        <span> {reasonCopy(summary.reason ?? summary.error_code ?? summary.event).recovery}</span>
+        <details><summary>Technical detail</summary><BoundedSummary summary={summary} /></details></> : <span className="console__muted">—</span>}
     </div>
   )
 }
@@ -484,7 +486,9 @@ function OverviewPanel({
         <OverviewField label="Wake phrase" value={displayValue(activeConfig?.wake.phrase)} />
         <OverviewField label="Published configuration" value={activeConfig ? `Version ${activeConfig.configVersion}` : 'Loading'} />
       </div>
-      {state.status === 'failure' ? <p className="console__fault" role="alert">{state.error}: {state.reason}</p> : null}
+      {state.status === 'failure' ? <ReasonDetail code={state.reason} /> : null}
+      <p>{overview ? MODULES.some(module => ['failed', 'degraded'].includes(overview.modules[module].status))
+        ? 'Some modules need attention.' : '✓ All modules normal.' : 'Module status unavailable.'}</p>
       <ul className="console__modules" aria-label="Needs attention">
         {MODULES.filter(module => overview && ['failed', 'degraded'].includes(overview.modules[module].status)).map(module =>
           <li key={module} className="console__module-card">
@@ -505,7 +509,7 @@ function OverviewPanel({
           <MetadataEntry name="package" value={activeConfig?.wake.packageId} />
           <MetadataEntry name="model version" value={activeConfig?.wake.modelVersion} />
           <MetadataEntry
-            name="mic owner"
+            name="expected mic owner (from lifecycle)"
             value={overview === null ? undefined : overview.lifecycle === 'active' ? 'realtime' : overview.lifecycle === 'dormant' || overview.lifecycle === 'offlineLoop' ? 'wake' : 'handoff'}
           />
           <MetadataEntry name="idle policy" value="Resets after user input and avatar playback; paused during speech" />
@@ -517,7 +521,7 @@ function OverviewPanel({
         <p className="console__request-state" aria-live="polite">Loading Overview…</p>
       ) : null}
       {state.status === 'failure' ? (
-        <p className="console__fault" role="status">Overview failed: {state.error}; {state.reason}</p>
+        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
 
       <div className="console__overview-grid">
@@ -601,13 +605,11 @@ function LifecycleControls({
         <div className="console__result console__result--success" role="status" aria-live="polite">
           <strong>Lifecycle action: {state.result.action}</strong>
           <span>Status: {state.result.status}</span>
-          <span>Reason: {state.result.reason}</span>
+          <OperatorMessage text={state.result.reason} />
         </div>
       ) : null}
       {state.status === 'failure' ? (
-        <p className="console__result console__result--failed" role="status" aria-live="polite">
-          Lifecycle action failed: {state.error}; {state.reason}
-        </p>
+        <div className="console__result console__result--failed"><ReasonDetail code={state.reason} /></div>
       ) : null}
     </section>
   )
@@ -674,29 +676,28 @@ function SimulatorPanel({
         </div>
       ) : null}
       {state.status === 'failure' ? (
-        <p className="console__result console__result--failed" role="status" aria-live="polite">
-          Simulator failed: {state.error}; {state.reason}
-        </p>
+        <div className="console__result console__result--failed"><ReasonDetail code={state.reason} /></div>
       ) : null}
     </section>
   )
 }
 
 function AvatarAudioPanel({
-  state,
+  store,
   disabled,
   developerMode,
   onCommand,
   onSave,
   bridge,
 }: {
-  readonly state: AvatarRuntimeState
+  readonly store: ConsoleRuntimeStore
   readonly disabled: boolean
   readonly developerMode: boolean
   readonly onCommand: (command: AvatarControlCommand) => void
   readonly onSave: (preferences: AudioPreferences) => Promise<boolean>
   readonly bridge: ConsoleBridge | null
 }): React.JSX.Element {
+  const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
   const value = state.status === 'success' ? state.value : null
   const audioDevices = value?.audioDevices
   const [draftPreferences, setDraftPreferences] = useState<AudioPreferences | null>(null)
@@ -734,7 +735,7 @@ function AvatarAudioPanel({
         <span className={statusClass(value?.status ?? state.status)}>{value?.status ?? state.status}</span>
       </div>
 
-      {state.status === 'failure' ? <p className="console__fault">{state.error}; {state.reason}</p> : null}
+      {state.status === 'failure' ? <ReasonDetail code={state.reason} /> : null}
       <div className="console__device-save console__action-row">
         <button type="button" className="console__primary" disabled={disabled || saving || !audioDevices} onClick={() => void save()}>{saving ? 'Saving…' : 'Save device settings'}</button>
         {draftPreferences && <button type="button" disabled={saving} onClick={() => { setDraftPreferences(null); setSaveResult('Changes discarded.') }}>Discard changes</button>}
@@ -902,7 +903,7 @@ function EventsPanel({
           <p className="console__eyebrow">Metadata only</p>
           <h2 id="console-events">Events</h2>
         </div>
-        <span className="console__status">RAM page</span>
+        <span className="console__status">Recent events</span>
       </div>
 
       {loading ? <p className="console__request-state" aria-live="polite">Loading Events…</p> : null}
@@ -910,7 +911,7 @@ function EventsPanel({
         <p className="console__success" role="status">Loaded {state.events.length} metadata events.</p>
       ) : null}
       {state.status === 'failure' ? (
-        <p className="console__fault" role="status">Events failed: {state.error}; {state.reason}</p>
+        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
 
       <div className="console__filters" aria-label="Event filters">
@@ -980,7 +981,7 @@ function EventsPanel({
         </table>
       </div>
       <div className="console__pagination">
-        <span>beforeSequence: cursor; nextBeforeSequence: {displayValue(state.nextBeforeSequence)}</span>
+        <span>{state.nextBeforeSequence === null ? 'No older events' : 'Older events available'}</span>
         <button type="button" disabled={!canLoadOlder} onClick={onLoadOlder}>Load older events</button>
       </div>
     </section>
@@ -1014,9 +1015,7 @@ export function PhaseTestsPanel({
         <p className="console__request-state" aria-live="polite">Loading Phase Tests…</p>
       ) : null}
       {state.status === 'failure' ? (
-        <p className="console__fault" role="status">
-          Phase Tests failed: {state.error}; {state.reason}
-        </p>
+        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
       {state.status === 'success' && latest === null ? (
         <p className="console__notice" role="status">No Phase {phase} records yet.</p>
@@ -1093,6 +1092,8 @@ export function ConfigPanel({
     config === null ? null : safeDraftFromConfig(config.draft),
   )
   const [result, setResult] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<readonly ConsoleFieldError[]>([])
+  const panel = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -1111,6 +1112,13 @@ export function ConfigPanel({
     setBusy(true)
     try {
       const response = await action()
+      const activeIndex = draft?.avatarCatalog?.avatars.findIndex(a => a.id === draft.avatarCatalog?.activeAvatarId)
+      setFieldErrors(response.ok ? [] : (response.fields ?? []).map(field => {
+        const path = normalizeFieldPath(field.path)
+        const avatarPath = `avatarCatalog.avatars.${activeIndex}.`
+        const suffix = path.startsWith(avatarPath) ? path.slice(avatarPath.length) : path
+        return { ...field, path: suffix === 'name' ? 'personaName' : suffix === 'wakePhrase' ? 'wake.phrase' : suffix }
+      }))
       setResult(response.ok ? 'Operation completed.' : `${response.error}: ${response.reason}${response.fields?.length
         ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
       if (response.ok) onChanged()
@@ -1122,10 +1130,11 @@ export function ConfigPanel({
   }
 
   return (
-    <section className="console__panel" aria-labelledby="console-config">
+    <FieldErrorsContext.Provider value={{ errors: fieldErrors, focus: fieldErrors[0] ?? null }}>
+    <section ref={panel} className="console__panel" aria-labelledby="console-config" onChangeCapture={() => setFieldErrors([])}>
       <div className="console__panel-heading">
         <div>
-          <p className="console__eyebrow">Main-owned safe fields</p>
+          <p className="console__eyebrow">Application settings</p>
           <h2 id="console-config">Config</h2>
         </div>
         <span className="console__status">Safe Draft</span>
@@ -1133,7 +1142,7 @@ export function ConfigPanel({
 
       {state.status === 'loading' ? <p className="console__request-state">Loading Config…</p> : null}
       {state.status === 'failure' ? (
-        <p className="console__fault" role="status">Config failed: {state.error}; {state.reason}</p>
+        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
       {config === null ? <p className="console__muted">Config is unavailable until Main is ready.</p> : null}
 
@@ -1168,7 +1177,7 @@ export function ConfigPanel({
 
         <fieldset>
           <legend>Draft safe fields</legend>
-          <HelpField help={FIELD_HELP.configPersona}>
+          <HelpField fieldPath="personaName" help={FIELD_HELP.configPersona}>
             <span>personaName</span>
             <input
               type="text"
@@ -1177,7 +1186,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, personaName: event.currentTarget.value }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.configVoice}>
+          <HelpField fieldPath="voice" help={FIELD_HELP.configVoice}>
             <span>voice</span>
             <input
               type="text"
@@ -1186,16 +1195,16 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, voice: event.currentTarget.value }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.idle}>
-            <span>idleSeconds</span>
-            <input
+          <HelpField fieldPath="idleSeconds" help={FIELD_HELP.idle}>
+            <span>Sleep after inactivity (seconds)</span>
+            <NumberInput min={1} max={86400}
               type="number"
               value={draft?.idleSeconds ?? ''}
               disabled={disabled}
               onChange={(event) => updateDraft((current) => ({ ...current, idleSeconds: Number(event.currentTarget.value) }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.wakePhrase}>
+          <HelpField fieldPath="wake.phrase" help={FIELD_HELP.wakePhrase}>
             <span>wake.phrase</span>
             <input
               type="text"
@@ -1205,7 +1214,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, phrase: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.wakeVersion}>
+          <HelpField fieldPath="wake.modelVersion" help={FIELD_HELP.wakeVersion}>
             <span>wake.modelVersion</span>
             <input
               type="text"
@@ -1214,7 +1223,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, wake: { ...current.wake, modelVersion: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.wakePackage}>
+          <HelpField fieldPath="wake.packageId" help={FIELD_HELP.wakePackage}>
             <span>wake.packageId</span>
             <input
               type="text"
@@ -1226,7 +1235,7 @@ export function ConfigPanel({
               }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.faceDetector}>
+          <HelpField fieldPath="faceModel.detectorId" help={FIELD_HELP.faceDetector}>
             <span>faceModel.detectorId</span>
             <input
               type="text"
@@ -1235,7 +1244,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, detectorId: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.faceRecognizer}>
+          <HelpField fieldPath="faceModel.recognizerId" help={FIELD_HELP.faceRecognizer}>
             <span>faceModel.recognizerId</span>
             <input
               type="text"
@@ -1244,7 +1253,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, faceModel: { ...current.faceModel, recognizerId: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.offlineVideo}>
+          <HelpField fieldPath="assets.offlineLoopVideo" help={FIELD_HELP.offlineVideo}>
             <span>assets.offlineLoopVideo</span>
             <input
               type="text"
@@ -1253,7 +1262,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, offlineLoopVideo: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.avatarDirectory}>
+          <HelpField fieldPath="assets.avatarDir" help={FIELD_HELP.avatarDirectory}>
             <span>assets.avatarDir</span>
             <input
               type="text"
@@ -1262,7 +1271,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, avatarDir: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.musicDirectory}>
+          <HelpField fieldPath="assets.musicDir" help={FIELD_HELP.musicDirectory}>
             <span>assets.musicDir</span>
             <input
               type="text"
@@ -1271,7 +1280,7 @@ export function ConfigPanel({
               onChange={(event) => updateDraft((current) => ({ ...current, assets: { ...current.assets, musicDir: event.currentTarget.value } }))}
             />
           </HelpField>
-          <HelpField help={FIELD_HELP.lightingAdapter}>
+          <HelpField fieldPath="adapters.lighting" help={FIELD_HELP.lightingAdapter}>
             <span>adapters.lighting</span>
             <select
               value={draft?.adapters.lighting ?? 'mock'}
@@ -1282,7 +1291,7 @@ export function ConfigPanel({
               <option value="physical">physical</option>
             </select>
           </HelpField>
-          <HelpField help={FIELD_HELP.fogAdapter}>
+          <HelpField fieldPath="adapters.fog" help={FIELD_HELP.fogAdapter}>
             <span>adapters.fog</span>
             <select
               value={draft?.adapters.fog ?? 'mock'}
@@ -1293,7 +1302,7 @@ export function ConfigPanel({
               <option value="physical">physical</option>
             </select>
           </HelpField>
-          <HelpField help={FIELD_HELP.musicAdapter}>
+          <HelpField fieldPath="adapters.music" help={FIELD_HELP.musicAdapter}>
             <span>adapters.music</span>
             <select
               value={draft?.adapters.music ?? 'mock'}
@@ -1308,10 +1317,13 @@ export function ConfigPanel({
       </div>
 
       <div className="console__action-row">
-        <button type="button" disabled={disabled} onClick={() => bridge && draft && void run(() => bridge.saveDraft(draft))}>Save Draft</button>
+        <button type="button" disabled={disabled} onClick={() => {
+          if (panel.current && focusInvalidField(panel.current)) { setResult('Correct the highlighted field before saving.'); return }
+          if (bridge && draft) void run(() => bridge.saveDraft(draft))
+        }}>Save Draft</button>
         <button type="button" disabled={disabled || dirty} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
       </div>
-      <p role="status">{result}{dirty ? ' · Unsaved edits — Save Draft first.' : ''}</p>
+      <p role="status">{result}{dirty ? ' · Unsaved edits — save changes first.' : ''}</p>
 
       {config?.draftTest ? (
         <p className={config.draftTest.result === 'mock_passed' ? 'console__success' : 'console__fault'} role="status">
@@ -1347,6 +1359,7 @@ export function ConfigPanel({
         ))}
       </div>
     </section>
+    </FieldErrorsContext.Provider>
   )
 }
 
@@ -1387,6 +1400,9 @@ export function ScenesPanel({
   if (state.status === 'success') lastPayload.current = state.value
   const payload = lastPayload.current
   const [rawDraft, setRawDraft] = useState<ConsoleConfigDraftInput | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<readonly FieldErrorTarget[]>([])
+  const panel = useRef<HTMLElement>(null)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [memoryEditing, setMemoryEditing] = useState(false)
   const retainLocalDraft = useRef(false)
   const acceptRefresh = useRef(false)
@@ -1408,6 +1424,7 @@ export function ScenesPanel({
     ? editingAvatarId : rawDraft?.avatarCatalog?.activeAvatarId ?? ''
   const draft = rawDraft ? projectAvatarDraft(rawDraft, editingId) : null
   const editingAvatar = rawDraft?.avatarCatalog?.avatars.find(a => a.id === editingId)
+  const avatarFieldPath = editingAvatar ? `avatar.${editingAvatar.id}` : ''
   const [libraryModels, setLibraryModels] = useState<import('../../shared/avatar-profiles').AvatarModel[]>([])
   const editingModel = libraryModels.find(m => m.id === editingAvatar?.modelId) ?? rawDraft?.avatarCatalog?.models.find(m => m.id === editingAvatar?.modelId)
   const setDraft = (update: React.SetStateAction<ConsoleConfigDraftInput | null>): void => {
@@ -1435,7 +1452,15 @@ export function ScenesPanel({
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
   const [section, setSection] = useState<ProfileSection>('Persona')
-  const applyOnSave = section === 'Music & video' || section === 'Appearance'
+  const showFieldErrors = (fields: readonly ConsoleFieldError[] | undefined, submitted: ConsoleConfigDraftInput): void => {
+    const errors = resolveFieldErrors(fields ?? [], submitted, editingId)
+    setFieldErrors(errors)
+    const first = errors[0]
+    if (first?.avatarId) setEditingAvatarId(first.avatarId)
+    if (first?.section) setSection(first.section)
+  }
+  const hasModelChanges = payload?.publishDiff.changed.some(change => change.kind === 'model') ?? false
+  const applyOnSave = (section === 'Music & video' || section === 'Appearance') && !hasModelChanges
   const voiceOnly = section === 'Voice'
   const dialogueOnly = PROFILE_SECTIONS.includes(section as typeof PROFILE_SECTIONS[number]) && section !== 'Spells & scenes'
   const personaOnly = section === 'Persona'
@@ -1521,15 +1546,19 @@ export function ScenesPanel({
   const disabled = editorDisabled || busy || conflict || memoryEditing || state.status !== 'success'
   const invalidPresentation = !!rawDraft && (!!rawDraft.presentation && !parsePresentation(rawDraft.presentation)
     || !!rawDraft.avatarCatalog?.avatars.some(avatar => !parsePresentation(avatar.presentation)))
-  const dirty = rawDraft !== null && payload !== null
-    && draftFingerprint(safeDraftFromConfig(rawDraft)) !== draftFingerprint(safeDraftFromConfig(payload.draft))
+  const localFingerprint = useMemo(() => rawDraft ? draftFingerprint(safeDraftFromConfig(rawDraft)) : null, [rawDraft])
+  const savedFingerprint = useMemo(() => payload ? draftFingerprint(safeDraftFromConfig(payload.draft)) : null, [payload])
+  const dirty = localFingerprint !== null && savedFingerprint !== null && localFingerprint !== savedFingerprint
   useEffect(() => onEditingChange?.(dirty || busy || conflict || memoryEditing), [dirty, busy, conflict, memoryEditing, onEditingChange])
   useEffect(() => { setPublishReview(false) }, [dirty, editingId, section])
   const activeAvatar = payload?.active.avatarCatalog?.avatars.find(a => a.id === payload.active.avatarCatalog?.activeAvatarId)
   const deletingAvatar = rawDraft?.avatarCatalog?.avatars.find(avatar => avatar.id === deletingAvatarId)
   const deleteReason = avatarDeletionReason(rawDraft?.avatarCatalog, editingId, activeAvatar?.id ?? '')
-  const changes = payload ? workspaceChanges(safeDraftFromConfig(payload.active), safeDraftFromConfig(payload.draft)) : []
-  const unsavedChanges = payload && rawDraft ? workspaceChanges(safeDraftFromConfig(payload.draft), rawDraft) : []
+  const changes = useMemo(() => payload ? [
+    ...workspaceChanges(safeDraftFromConfig(payload.active), safeDraftFromConfig(payload.draft)),
+    ...payload.publishDiff.changed.filter(change => change.kind === 'model').map(change => `AI model: ${change.path}`),
+  ] : [], [payload])
+  const unsavedChanges = useMemo(() => payload && rawDraft ? workspaceChanges(safeDraftFromConfig(payload.draft), rawDraft) : [], [payload, rawDraft])
   const activationReason = avatarActivationReason(payload, editingId, dirty || conflict, lifecycle)
   const replaceAction = (actionId: string, next: SceneActionDefinition): void => {
     setDraft((current) => current === null ? current : {
@@ -1545,6 +1574,8 @@ export function ScenesPanel({
     if (refresh) setBusy(true)
     try {
       const response = await operation()
+      if (!response.ok && rawDraft && response.fields?.length) showFieldErrors(response.fields, rawDraft)
+      else if (response.ok && refresh) setFieldErrors([])
       const testFailed = response.ok && typeof response.value === 'object' && response.value !== null
         && 'result' in response.value && response.value.result === 'failed'
       setResult(response.ok ? testFailed ? 'Draft test failed; check saved media and configuration.' : message : `${response.error}: ${response.reason}${response.fields?.length
@@ -1559,7 +1590,7 @@ export function ScenesPanel({
 
   const saveAndCheck = async (apply = false): Promise<void> => {
     if (!bridge || !rawDraft || busy) return
-    if (invalidPresentation) { setResult('Fix the presentation timing and fields in Appearance before saving or publishing.'); return }
+    if (panel.current && focusInvalidField(panel.current)) { setResult('Correct the highlighted field before saving.'); return }
     const snapshot = projectAvatarDraft(rawDraft)
     const fingerprint = draftFingerprint(safeDraftFromConfig(snapshot))
     const abort = new AbortController()
@@ -1572,9 +1603,11 @@ export function ScenesPanel({
     try {
       const response = await bridge.saveDraft(snapshot)
       if (!response.ok) {
+        if (current()) showFieldErrors(response.fields, snapshot)
         setResult(`Cannot save (${response.error}): ${response.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || response.reason}. Your edits are retained.`)
         return
       }
+      setFieldErrors([])
       savedFingerprint = draftFingerprint(safeDraftFromConfig(response.value.draft))
       if (!current()) { setResult('Draft saved. Newer edits or an aborted check remain unchecked; Save again.'); return }
       setSavePhase('checking'); setResult('Saved. Checking configuration and media…')
@@ -1590,6 +1623,7 @@ export function ScenesPanel({
       const checked = await bridge.testDraft()
       if (!current()) { setResult('Newer edits or an aborted check remain unchecked; Save again.'); return }
       if (!checked.ok || checked.value.result !== 'mock_passed') {
+        if (!checked.ok) showFieldErrors(checked.fields, snapshot)
         setResult(`Saved, but checking failed: ${checked.ok ? checked.value.reason : checked.reason}. Check the media and configuration, then Save again.`)
         return
       }
@@ -1601,9 +1635,13 @@ export function ScenesPanel({
           setResult('Saved, but the draft changed during checking. Review and apply again.'); return
         }
         if (fresh.value.publishDiff.changed.length) {
+          if (fresh.value.publishDiff.changed.some(change => change.kind === 'model')) {
+            setResult('Saved and checked. AI model changes need review in Publish all changes before they can go live.')
+            return
+          }
           setResult('Applying checked changes…')
           const applied = await bridge.publish(confirmationFromDiff(fresh.value.publishDiff))
-          if (!applied.ok) { setResult(`Saved, but could not apply: ${applied.reason}. Your edits are retained.`); return }
+          if (!applied.ok) { showFieldErrors(applied.fields, snapshot); setResult(`Saved, but could not apply: ${applied.reason}. Your edits are retained.`); return }
           setPreviewRevision(value => value + 1)
         }
         setResult(current() ? 'Saved and applied. Ready for the next conversation.' : 'Saved changes applied. Newer edits remain unapplied.')
@@ -1628,7 +1666,7 @@ export function ScenesPanel({
   useEffect(() => () => { ++sceneTestGeneration.current; saveCheckController.current?.abort() }, [])
 
   const saveUnavailableReason = payload?.draft.avatarCatalog && !payload.draft.avatarCatalog.avatars.some(a => a.id === editingId)
-    ? 'Save Draft first to create this avatar, then save individual steps.' : ''
+    ? 'Save all changes to create this avatar, then save individual steps.' : ''
   const testUnavailableReason = saveUnavailableReason || (payload?.active.avatarCatalog && editingId !== payload.active.avatarCatalog.activeAvatarId
     ? 'Load this avatar before testing its scenes. You can still edit and save its draft.' : '')
   const isSceneSaved = (sceneId: string, stepId?: string): boolean => {
@@ -1645,9 +1683,11 @@ export function ScenesPanel({
       const next = buildSceneDraftSave(safeDraftFromConfig(payload.draft), rawDraft, editingId, sceneId, stepId)
       const saved = await bridge.saveDraft(next)
       if (!saved.ok) {
+        showFieldErrors(saved.fields, next)
         setResult(`Cannot save: ${saved.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || saved.reason}`)
         return
       }
+      setFieldErrors([])
       retainLocalDraft.current = true
       onChanged()
       if (generation !== sceneTestGeneration.current) return
@@ -1670,19 +1710,22 @@ export function ScenesPanel({
   }
 
   return (
-    <section className="console__panel console__scenes" aria-labelledby="console-scenes">
+    <FieldErrorsContext.Provider value={{ errors: fieldErrors, focus: fieldErrors[0] ?? null }}>
+    <section ref={panel} className="console__panel console__scenes" aria-labelledby="console-scenes" onChangeCapture={() => setFieldErrors([])}>
       <div className="console__panel-heading profile-workspace-heading">
         <div>
           <p className="console__eyebrow">Avatar workspace</p>
           <h2 id="console-scenes">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared library' : 'Avatars'}</h2>
         </div>
+        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All scenes stopped.')}>Stop All</button>
       </div>
 
-      {state.status === 'failure' ? <p className="console__fault">{state.error}: {state.reason} <button disabled={!bridgeAvailable} onClick={onChanged}>Retry loading saved configuration</button></p> : null}
-      <p className="console__sr-only" aria-live="polite">{result}</p>
+      {state.status === 'failure' ? <div className="console__fault"><ReasonDetail code={state.reason} /><button disabled={!bridgeAvailable} onClick={onChanged}>Retry loading saved configuration</button></div> : null}
+      <p className="console__sr-only" aria-live="polite">{operatorMessageText(result)}</p>
 
       {conflict ? <div className="console__fault" role="alert">The saved configuration changed while you were editing. Your edits are retained; saving is blocked to prevent overwriting newer changes.
-        <button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false) }}>Discard my edits and reload saved changes</button>
+        {confirmDiscard ? <><span>This replaces your unsaved edits with the latest saved draft.</span><button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false); setConfirmDiscard(false) }}>Discard edits</button><button onClick={() => setConfirmDiscard(false)}>Keep editing</button></>
+          : <button onClick={() => setConfirmDiscard(true)}>Discard my edits and reload saved changes</button>}
       </div> : null}
       <div className={`profile-workspace${section === 'Music & video' ? ' profile-workspace--media' : ''}`}>
       {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
@@ -1714,8 +1757,8 @@ export function ScenesPanel({
         }}>Duplicate</button>
         <button type="button" className="console__danger" disabled={disabled || !!deleteReason} aria-describedby="avatar-delete-reason"
           onClick={() => { setDeleteError(''); setDeletingAvatarId(editingId) }}>Delete avatar</button>
-        </div>
         {deleteReason && <p id="avatar-delete-reason" className="console__muted">{deleteReason}</p>}
+        </div>
         <button type="button" disabled={disabled || !!activationReason} aria-describedby="avatar-activation-reason"
           onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</button>
         <p id="avatar-activation-reason" className="console__muted">{activationReason || 'Switch the published character. Editing alone does not switch the Mirror.'}</p>
@@ -1748,7 +1791,7 @@ export function ScenesPanel({
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
-        <div className="console__action-row"><HelpField help={FIELD_HELP.modelBundle}>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
+        <div className="console__action-row"><HelpField fieldPath={`${avatarFieldPath}.modelId`} help={FIELD_HELP.modelBundle}>Model bundle<select disabled={disabled} value={editingAvatar.modelId} onChange={e => {
           const modelId = e.currentTarget.value
           const model = availableModels.find(item => item.id === modelId)
           const catalog = rawDraft.avatarCatalog!
@@ -1775,13 +1818,13 @@ export function ScenesPanel({
       {visible && section === 'Appearance' ? <details key={`rig-${editingId}`}><summary>Advanced rig preview · local only</summary><CubismStudio key={editingAvatar?.modelId} bridge={bridge} visible={visible} assignedModel={editingModel ?? null} /></details> : null}
 
       {personaOnly && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
-        <HelpField help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
-        <HelpField help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
+        <HelpField fieldPath={`${avatarFieldPath}.presentation.wakeGreeting`} help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
+        <HelpField fieldPath={`${avatarFieldPath}.presentation.sleepFarewell`} error={!((draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell) ?? '').trim() ? 'Enter a sleep farewell.' : undefined} help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
         <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
       </div></fieldset> : null}
       {(!dialogueOnly || section === 'Music & video') && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
-      {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
+      {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} avatarId={editingAvatar?.id} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
         onSave={(id, stepId) => void saveScene(id, stepId)} isSaved={isSceneSaved}
         onTest={(id, scope) => void saveScene(id, scope?.stageId, scope ?? 'scene')}
         onStop={() => stopSceneTests('Test stopped.')}
@@ -1804,18 +1847,18 @@ export function ScenesPanel({
       <div className="console__action-row console__publish-bar" hidden={section === 'Memories'}>
         <div className="profile-publish-status"><span>Published v{payload?.active.configVersion ?? '—'} · {dirty ? 'Unsaved changes' : payload?.publishDiff.changed.length ? 'Awaiting publish' : 'Up to date'}</span>
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
-        <details className="profile-scope-details"><summary>Change scope</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
+        <details className="profile-scope-details"><summary>Change scope · {dirty ? unsavedChanges.length : changes.length} areas</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton aria-label={applyOnSave ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : applyOnSave ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled || invalidPresentation} onClick={() => void saveAndCheck(applyOnSave)}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : applyOnSave ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
-        {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check aborted. Waiting for the pending save / check to finish safely…') }}>Abort check</button>}
+        <HelpButton aria-label={applyOnSave ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : applyOnSave ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled} onClick={() => void saveAndCheck(applyOnSave)}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : applyOnSave ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
+        {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check stopped. Waiting for the pending save / check to finish safely…') }}>Stop check</button>}
         {!applyOnSave && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
-        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All Scenes stopped.')}>Stop All</button>
         </div>
         {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>
           <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
-        {!(section === 'Music & video' && result === 'Edits stay in draft until you publish.') && <p className="console__scene-result" role="status">{section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result}</p>}
+        {hasModelChanges && <p className="console__notice">AI model changes are included. Save, then review Publish all changes before applying.</p>}
+        {!(section === 'Music & video' && result === 'Edits stay in draft until you publish.') && <div className="console__scene-result"><OperatorMessage text={section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result} /></div>}
       </div>
       </div></div>
       {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}
@@ -1846,6 +1889,7 @@ export function ScenesPanel({
           })()
         }} />}
     </section>
+    </FieldErrorsContext.Provider>
   )
 }
 
@@ -1907,10 +1951,10 @@ export function ModelsPanel({
 
       {state.status === 'loading' ? <p className="console__request-state">Loading Models…</p> : null}
       {state.status === 'failure' ? (
-        <p className="console__fault" role="status">Models failed: {state.error}; {state.reason}</p>
+        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
 
-      <p className="console__muted">Model drafts apply to simulator tests.</p>
+      <p className="console__muted">Model settings join the shared saved draft. Review and publish the draft to use them in the next conversation.</p>
       <div className="console__model-draft-form">
         <HelpField help={FIELD_HELP.dialogueModel}>
           <span>Conversation</span>
@@ -2013,7 +2057,8 @@ export function App(): React.JSX.Element {
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
-  const [avatarRuntimeState, setAvatarRuntimeState] = useState<AvatarRuntimeState>({ status: 'loading' })
+  const [runtimeStore] = useState(createConsoleRuntimeStore)
+  const setAvatarRuntimeState = runtimeStore.set
   const [moduleFilter, setModuleFilter] = useState<EventModuleFilter>('all')
   const [statusFilter, setStatusFilter] = useState<EventStatusFilter>('all')
   const [sourceFilter, setSourceFilter] = useState<EventSourceFilter>('all')
@@ -2261,8 +2306,10 @@ export function App(): React.JSX.Element {
     const bridge = bridgeRef.current
     if (bridge === null) return
     let stopped = false
+    let polling = false
     const refresh = async (): Promise<void> => {
-      if (document.hidden) return
+      if (document.hidden || polling) return
+      polling = true
       try {
         const response = await bridge.getAvatarRuntime()
         if (stopped || !mountedRef.current) return
@@ -2271,7 +2318,7 @@ export function App(): React.JSX.Element {
         else if (response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
       } catch {
         if (!stopped && mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
-      }
+      } finally { polling = false }
     }
     void refresh()
     const interval = window.setInterval(() => void refresh(), 500)
@@ -2392,8 +2439,8 @@ export function App(): React.JSX.Element {
         <span className="console__status">{overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
       </header>
 
-      {avatarRuntimeState.status === 'success' && avatarRuntimeState.value.wakeInput?.recovery?.state !== 'recovered'
-        && <WakeRecoveryStatus recovery={avatarRuntimeState.value.wakeInput?.recovery} />}
+      <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
+        phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
 
       {bridgeError ? (
         <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
@@ -2443,7 +2490,7 @@ export function App(): React.JSX.Element {
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
-            state={avatarRuntimeState}
+            store={runtimeStore}
             developerMode={developerMode}
             disabled={!bridgeAvailable}
             onCommand={controlAvatar}

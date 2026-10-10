@@ -40,6 +40,8 @@ describe('summary learning lifecycle', () => {
     expect(p.extract.mock.calls[0]![0].evidence).toHaveLength(1)
     p.learning.invalidate('raven', 'Alice'); finish([record]); await flush
     expect(p.repository.commitLearning).not.toHaveBeenCalled()
+    expect(p.report).toHaveBeenCalledWith('memory_learning_invalidated;count=1')
+    expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Alice|synthetic/)
     await p.learning.close()
   })
   it('removes a pending control item while retaining other eligible evidence for flush', async () => {
@@ -103,5 +105,33 @@ describe('summary learning lifecycle', () => {
       expect(p.extract).toHaveBeenCalledOnce()
       expect(p.repository.commitLearning).not.toHaveBeenCalled()
     } finally { finish?.([]); await flush; await p.learning.close() }
+  })
+
+  it('reports counts for discarded pending evidence without owner IDs or content', async () => {
+    const p = setup()
+    for (const itemId of ['first', 'second']) await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId, text: 'PRIVATE SYNTHETIC', observedAt: '' })
+    p.learning.invalidate('raven', 'Alice')
+    await p.learning.flush()
+    expect(p.report).toHaveBeenCalledWith('memory_learning_invalidated;count=2')
+    expect(p.repository.commitLearning).not.toHaveBeenCalled()
+    expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/raven|Alice|PRIVATE|first|second/)
+    await p.learning.close()
+  })
+
+  it('never resubmits an excluded batch after a storage mutation has an uncertain result', async () => {
+    const p = setup()
+    let failed!: (error: Error) => void
+    p.repository.commitLearning.mockImplementationOnce(() => new Promise<'committed' | 'stale'>((_resolve, reject) => { failed = reject }))
+    for (const itemId of ['ordinary', 'control']) await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId, text: 'PRIVATE SYNTHETIC', observedAt: '' })
+    const flush = p.learning.flush()
+    try {
+      await vi.waitFor(() => expect(p.repository.commitLearning).toHaveBeenCalledOnce())
+      p.learning.exclude('raven', 'Alice', 'control')
+      failed(Error('memory_storage_failed')); await flush
+      expect(p.repository.commitLearning).toHaveBeenCalledOnce()
+      expect(p.extract).toHaveBeenCalledOnce()
+      expect(p.report).toHaveBeenCalledWith('memory_learning_retry_skipped;cause=mutation_started')
+      expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Alice|PRIVATE|raven/)
+    } finally { failed?.(Error('memory_storage_failed')); await flush; await p.learning.close() }
   })
 })

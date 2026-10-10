@@ -62,4 +62,24 @@ describe('private memory session', () => {
     expect(session.request(state, request('remember', { topic: 'Fixture', text: 'Old value' })).status).toBe('rejected')
     expect(store.save).not.toHaveBeenCalled()
   })
+
+  it('uses monotonic confirmation deadlines across forward and backward wall-clock steps', () => {
+    let elapsed = 1000
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => elapsed)
+    const wallClock = vi.spyOn(Date, 'now').mockReturnValue(0)
+    try {
+      const { session } = setup()
+      const q = session.request(state, request('identify', { name: 'Fixture' })).confirmation!
+      wallClock.mockReturnValue(9_000_000)
+      elapsed += 100
+      expect(session.delivery(state, q.token, q.text, true).code).toBe('memory_question_delivered')
+      session.turnStart(state, 'answer')
+      wallClock.mockReturnValue(-9_000_000)
+      elapsed += 59_999
+      expect(session.confirmation(state, 'answer')).toEqual(q)
+      elapsed += 2
+      expect(session.confirmation(state, 'answer')).toBeUndefined()
+      expect(answer(session, state, 'answer', 'yes').code).toBe('memory_confirmation_expired')
+    } finally { clock.mockRestore(); wallClock.mockRestore() }
+  })
 })

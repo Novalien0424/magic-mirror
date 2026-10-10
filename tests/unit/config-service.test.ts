@@ -400,6 +400,16 @@ afterEach(async () => {
 })
 
 describe('ConfigService contract', () => {
+  it('emits config_loaded once for repeated reads and again after published version changes', async () => {
+    const h = makeMemoryHarness()
+    seedSlots(h, 'mock-config', baseConfig(), baseConfig())
+    const service = h.service()
+    await service.read(); await service.read(); await service.read()
+    expect(h.events.filter(event => event.event === 'config_loaded')).toHaveLength(1)
+    await service.publish()
+    await service.read()
+    expect(h.events.filter(event => event.event === 'config_loaded')).toHaveLength(2)
+  })
   it.each([false, true])('deletes one inactive avatar in both slots, preserves other drafts and compensates a write failure (%s)', async (fail) => {
     const harness = makeMemoryHarness()
     const catalog = avatarCatalogFor(baseConfig())

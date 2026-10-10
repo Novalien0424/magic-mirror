@@ -3,6 +3,14 @@ import { parseMemoryRequest, type MemoryReply, type MemoryInputPhase, type Memor
 import type { MemoryRepository, MemoryEmbedder } from './contracts'
 import type { MemoryLearning } from './learning'
 import { memoryInterpretationFailure, type MemoryInterpreter, type MemoryIntentInput, type MemoryIntentResult } from './intent'
+import { venueObservedAt } from './calendar'
+import { Converter } from 'opencc-js/t2cn'
+
+// Candidate lookup only: storage keys and existing owner scopes never change.
+// Traditional variants may collapse, so only a unique candidate can be proposed.
+let foldScript: ReturnType<typeof Converter> | undefined
+const nameKey = (value: string): string => (foldScript ??= Converter({ from: 't', to: 'cn' }))(value)
+  .normalize('NFKC').trim().toLowerCase().replace(/\s/gu, '')
 
 interface Turn { name: string; avatarId: string; epoch: number; text: string; settled: boolean; control: boolean; observedAt: string; submitted: boolean }
 interface Options {
@@ -49,15 +57,17 @@ export class RelationshipMemory {
     } catch (error) { this.options.report(abort.signal.aborted ? 'memory_interpretation_cancelled' : memoryInterpretationFailure(error)); return undefined }
     finally { this.recalls.delete(abort) }
   }
-  private async candidateName(avatarId: string, supplied: string): Promise<string> {
+  private async candidateName(avatarId: string, supplied: string): Promise<string | undefined> {
     // Spoken spacing is not stable across ASR turns. Resolve only a unique
     // formatting candidate in Main; never merge records or load its facts.
     const canonical = (value: string) => value.normalize('NFKC').trim().toLowerCase()
     const names = await this.options.repository.names(avatarId), name = canonical(supplied)
     const exact = names.find(existing => canonical(existing) === name)
     if (exact) return exact
-    const compact = name.replace(/\s/gu, '')
-    const candidates = names.filter(existing => canonical(existing).replace(/\s/gu, '') === compact)
+    const folded = nameKey(supplied)
+    const candidates = names.filter(existing => nameKey(existing) === folded)
+    if (candidates.length > 1) { this.options.report('memory_identity_name_ambiguous'); return undefined }
+    if (names.length && !candidates.length) this.options.report('memory_identity_name_unmatched')
     return candidates.length === 1 ? candidates[0]! : supplied
   }
   invalidateLoaded(state: MemoryState, avatarId: string, name: string): boolean {
@@ -68,13 +78,13 @@ export class RelationshipMemory {
     return true
   }
   observe(state: MemoryState): void {
+    if (!state.active) this.temporary = false
     const key = state.active ? JSON.stringify([state.avatarId, state.realtimeSessionId, state.sessionGeneration]) : ''
     if (this.key !== key) {
       if (this.key) void this.options.learning.flush()
       this.key = key; this.turns.clear(); this.latest = ''; this.blocked = false; this.generation++
       for (const abort of this.recalls) abort.abort()
       this.identity.reset()
-      if (!state.active && (!state.lifecycle || state.lifecycle === 'dormant')) this.temporary = false
     }
     this.identity.observe(state)
   }
@@ -102,18 +112,19 @@ export class RelationshipMemory {
       this.generation++; for (const abort of this.recalls) abort.abort()
       const generation = this.generation
       const name = this.identity.currentOwner(state)
+      const observedAt = venueObservedAt()
       this.identity.turnStart(state, itemId); this.latest = itemId
       if (this.turns.has(itemId)) return result('memory_turn_duplicate')
       if (this.blocked || this.temporary) return result('memory_turn_unowned')
       if (!name) {
         this.turns.clear()
-        this.turns.set(itemId, { name: '', avatarId: state.avatarId, epoch: 0, text: '', settled: false, control: true, submitted: false, observedAt: new Date().toISOString() })
+        this.turns.set(itemId, { name: '', avatarId: state.avatarId, epoch: 0, text: '', settled: false, control: true, submitted: false, observedAt })
         return result('memory_turn_unowned')
       }
       const policy = await this.options.repository.policy(state.avatarId, name)
       if (generation !== this.generation) return result('memory_turn_stale')
       this.turns.set(itemId, { name, avatarId: state.avatarId, epoch: policy.epoch, text: '', settled: false,
-        control: policy.cleanupRequired, submitted: false, observedAt: new Date().toISOString() })
+        control: policy.cleanupRequired, submitted: false, observedAt })
       if (this.turns.size > 128) { this.turns.delete(this.turns.keys().next().value!); this.options.report('memory_turn_evicted') }
       return result('memory_turn_observed')
     }
@@ -179,6 +190,7 @@ export class RelationshipMemory {
       if (generation !== this.generation) return result('memory_result_stale', 'rejected')
       source.control = true
       if (source.name) this.options.learning.exclude(source.avatarId, source.name, this.latest)
+      if (!candidate) return result('memory_identity_name_ambiguous', 'rejected')
       return this.identity.request(state, { ...request, name: candidate }, intent.language)
     }
     const name = this.identity.currentOwner(state)
@@ -204,6 +216,7 @@ export class RelationshipMemory {
           if (intent.authorized && intent.name.trim()) {
             const candidate = await this.candidateName(state.avatarId, intent.name)
             if (generation !== this.generation) return result('memory_result_stale', 'rejected')
+            if (!candidate) return result('memory_identity_name_ambiguous', 'rejected')
             return this.identity.request(state, { action: 'identify', name: candidate, topic: '', text: '', query: '' }, intent.language)
           }
         }

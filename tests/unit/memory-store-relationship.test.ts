@@ -234,6 +234,61 @@ describe('relationship memory storage', () => {
     db.close()
   })
 
+  it('pages past unsupported rows for other owners and ignores unsupported missing or malformed vectors', () => {
+    expect(commit('paging-source', [record('Source')])).toBe('committed')
+    const source = store.pendingIndex('synthetic-v1', 1)[0]
+    store.setEmbedding(source.avatarId, source.name, source.entry.id, source.revision, { version: 'synthetic-v1', values: [1, 0] })
+    for (let batch = 0; batch < 5; batch++) {
+      expect(store.commitLearning('raven', 'Alice', { operationId: `hidden-batch-${batch}`, epoch: store.policy('raven', 'Alice').epoch,
+        sourceRevisions: { Source: 1 }, records: Array.from({ length: 60 }, (_, i) => record(`Hidden ${batch * 60 + i}`, { sources: ['Source'] })) })).toBe('committed')
+    }
+    expect(store.commitLearning('raven', 'Alice', { operationId: 'hidden-transitive', epoch: store.policy('raven', 'Alice').epoch,
+      sourceRevisions: { 'Hidden 0': 1 }, records: [record('Indirect', { sources: ['Hidden 0'] })] })).toBe('committed')
+    const eligible = store.save('owl', 'Bob', 'Eligible', 'Synthetic independent summary.')
+    const db = new DatabaseSync(path)
+    db.exec('UPDATE memory_dependencies SET source_revision=0 WHERE source_id IN (SELECT id FROM memory_entries WHERE topic=\'Source\')')
+    db.prepare(`INSERT INTO memory_vectors (entry_id, revision, version, dimensions, vector)
+      SELECT id, revision, 'synthetic-v1', 2, zeroblob(16) FROM memory_entries WHERE topic = ?`).run('Hidden 0')
+    expect(store.pendingIndex('synthetic-v1', 1)).toEqual([{ avatarId: 'owl', name: 'bob', entry: eligible, revision: 1 }])
+    expect(store.pendingIndex('synthetic-v1', 8)).toHaveLength(1)
+    const found = store.hybridRecall('raven', 'Alice', 'absent phrase', { version: 'synthetic-v1', values: [1, 0] })
+    expect(found).toEqual({ entries: [source.entry], incomplete: false })
+    expect(store.pendingIndex('synthetic-v1', 0)).toEqual([])
+    db.close()
+  })
+
+  it('stores calendar days separately from offset-bearing instants and rejects fabricated invalid dates', () => {
+    const dates = ['2024-03-05', '2024-03-05T00:00:00+08:00', '2024-03-04T16:00:00Z']
+    expect(commit('event-days', dates.map((eventAt, i) => record(`Event ${i}`, { eventAt })))).toBe('committed')
+    expect(store.list('raven', 'Alice').map(entry => entry.eventAt).sort()).toEqual([...dates].sort())
+    for (const eventAt of ['2024-02-30', '2024-02-30T00:00:00+08:00', '2024-03-05T00:00:00']) {
+      expect(() => commit(`bad-date-${eventAt.replace(/[^0-9]/g, '')}`, [record('Invalid date', { eventAt })])).toThrow('memory_invalid_input')
+    }
+  })
+
+  it('does not collapse script-distinct person scopes or expose another spelling’s records', () => {
+    const names = ['陈小华', '陳小華', '发', '發', '髮']
+    for (const name of names) store.save('raven', name, 'Fixture', 'Synthetic person-scoped value.')
+    const db = new DatabaseSync(path)
+    expect(new Set(db.prepare('SELECT owner_id FROM memory_scopes').all().map(row => row.owner_id)).size).toBe(names.length)
+    db.close()
+    for (const name of names) expect(store.recall('raven', name, 'person')).toHaveLength(1)
+    expect(store.names('owl')).toEqual([])
+  })
+
+  it('orders explicit instants across offsets while calendar-only dates retain day precision', () => {
+    expect(commit('offset-order', [record('Local early', { eventAt: '2024-03-05T00:00:00+08:00' }),
+      record('UTC later', { eventAt: '2024-03-04T16:30:00Z' }), record('Calendar same day', { eventAt: '2024-03-05' })])).toBe('committed')
+    expect(store.brief('raven', 'Alice').at(-1)?.topic).toBe('UTC later')
+    for (const item of store.pendingIndex('synthetic-v1', 100)) {
+      store.setEmbedding(item.avatarId, item.name, item.entry.id, item.revision, { version: 'synthetic-v1', values: [1, 0] })
+    }
+    expect(store.hybridRecall('raven', 'Alice', 'absent phrase', { version: 'synthetic-v1', values: [1, 0] }).entries.map(entry => entry.topic))
+      .toEqual(['UTC later', 'Local early', 'Calendar same day'])
+    expect(commit('calendar-next-day', [record('Calendar next day', { eventAt: '2024-03-06' })])).toBe('committed')
+    expect(store.brief('raven', 'Alice').at(-1)?.eventAt).toBe('2024-03-06')
+  })
+
   it('builds a bounded active brief from current facts, commitments, keep-in-mind and a recent episode', () => {
     expect(commit('brief-1', [
       record('Recent encounter', { eventAt: '2026-10-04T00:00:00.000Z' }),

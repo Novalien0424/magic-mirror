@@ -44,7 +44,7 @@ export function buildSpeechResponse(text: string, speakingStyle: string) {
   }) }
 }
 
-export function buildMemoryQuestion(name: string, language: MemoryLanguage = 'en'): string {
+export function buildMemoryQuestion(name: string, language: MemoryLanguage = 'zh-TW'): string {
   return language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.question.replace('{{name}}', () => name) : renderPrompt('memoryQuestion', { name })
 }
 /** Punctuation/spacing do not change the question; added or changed words do. RAM only. */

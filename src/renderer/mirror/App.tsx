@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createAvatarRuntimeReporter } from './avatar-runtime-reporter'
 import { getAudioDeviceRouter } from '../audio-devices'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
@@ -410,6 +411,7 @@ function createMirrorRealtimeRuntimeOwner(
   const sceneTranscript = createSceneTranscriptController({
     bridge,
     interrupt: async () => owner.interrupt(),
+    isCurrentSession: sessionId => owner.getSnapshot().state === 'active' && owner.getSnapshot().currentIdentity?.realtimeSessionId === sessionId,
     announceSpell: async () => {
       const sessionId = owner.getSnapshot().currentIdentity?.realtimeSessionId
       const result = await announcement.run()
@@ -559,12 +561,12 @@ export const MIRROR_STATE_COPY: Readonly<Record<LifecycleState, { readonly title
   active: Object.freeze({ title: 'Active', detail: 'Ready for conversation.' }),
   suspending: Object.freeze({ title: 'Suspending', detail: 'Returning to sleep.' }),
   offlineLoop: Object.freeze({
-    title: 'OfflineLoop',
-    detail: 'Cloud unavailable; local fallback is playing.',
+    title: '魔鏡暫時失聯',
+    detail: '遠方的聲音暫時中斷，請稍後再喚醒我。',
   }),
   maintenance: Object.freeze({
-    title: 'Maintenance',
-    detail: 'Local service unavailable; see the Console.',
+    title: '魔鏡休息中',
+    detail: '請洽現場人員協助。',
   }),
 })
 
@@ -579,7 +581,7 @@ interface MirrorProjectionOptions {
   readonly offlineAssetAvailable?: boolean
 }
 
-const OFFLINE_LOOP_ASSET_UNAVAILABLE = 'offline_loop_asset_unavailable'
+const OFFLINE_LOOP_ASSET_UNAVAILABLE = MIRROR_STATE_COPY.offlineLoop.detail
 const MAINTENANCE_SCREEN_CLASS = 'screen screen--maintenance'
 
 type OfflineLoopMediaStatus = 'unavailable' | 'playing'
@@ -684,13 +686,6 @@ function isLifecycleState(value: unknown): value is LifecycleState {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(MIRROR_STATE_COPY, value)
 }
 
-function stableMaintenanceCode(value: unknown): string {
-  const code = isRecord(value) ? readProperty(value, 'code') : undefined
-  return typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code)
-    ? code
-    : MIRROR_STATE_COPY.maintenance.detail
-}
-
 export function projectMirrorSnapshot(
   snapshot: unknown,
   options: MirrorProjectionOptions = {},
@@ -713,7 +708,7 @@ export function projectMirrorSnapshot(
       state,
       className: MAINTENANCE_SCREEN_CLASS,
       title: copy.title,
-      detail: stableMaintenanceCode(readProperty(snapshot, 'maintenance')),
+      detail: copy.detail,
     }
   }
 
@@ -803,6 +798,8 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
   const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
   const [localVideoHasAudio, setLocalVideoHasAudio] = useState<boolean | null>(null)
+  const [coverVisual, setCoverVisual] = useState(false)
+  const [scenePlaying, setScenePlaying] = useState(false)
   // Playback completion includes the processed speech tail. Visitor speech
   // interrupts and clears that output before this callback is delivered.
   const updateBgmSpeechPriority = (activity: AvatarAudioActivity): void => {
@@ -820,26 +817,25 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   const sceneVisualControllerRef = useRef<SceneVisualController | null>(null)
   const sceneVisualHostRef = useRef<HTMLDivElement | null>(null)
   const presentedSceneVisualRef = useRef<SceneVisualMedia | null>(null)
-  const avatarMetricsRef = useRef<AvatarRuntimeSnapshot>({
-    status: 'not_ready',
-    reason: 'avatar_renderer_not_ready',
-    state: 'Dormant',
-    fps: 0,
-    waveform: 0,
-    mouthOpen: 0,
-    audioUnderruns: 0,
-    voiceGain: 1,
-    musicGain: 1,
-  })
-
-  const reportAvatarRuntime = (patch: Partial<AvatarRuntimeSnapshot>): void => {
-    const next = Object.freeze({ ...avatarMetricsRef.current, ...patch })
-    avatarMetricsRef.current = next
+  const runtimeReporter = useRef<ReturnType<typeof createAvatarRuntimeReporter> | null>(null)
+  runtimeReporter.current ??= createAvatarRuntimeReporter(next => {
     const bridge = window.magicMirror
     if (bridge !== undefined && 'reportAvatarRuntime' in bridge) {
-      try { bridge.reportAvatarRuntime(next) } catch { /* reporting cannot gate rendering */ }
+      bridge.reportAvatarRuntime(next)
     }
-  }
+  })
+  const reportAvatarRuntime = (patch: Partial<AvatarRuntimeSnapshot>): void => runtimeReporter.current?.report(patch)
+  useEffect(() => () => runtimeReporter.current?.dispose(), [])
+  const attachSceneVisual = useCallback((host: HTMLDivElement | null) => {
+    sceneVisualHostRef.current = host
+    const media = presentedSceneVisualRef.current
+    if (host && media && host.firstChild !== (media as unknown as Node)) host.replaceChildren(media as unknown as Node)
+  }, [])
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (!bridge || !('onSceneStatus' in bridge)) return
+    return bridge.onSceneStatus(event => setScenePlaying(event.type !== 'finished'))
+  }, [])
   const reportSceneAction = (
     context: SceneActionCommandContext,
     status: 'acknowledged' | 'completed' | 'failed' | 'timeout',
@@ -900,7 +896,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [presentation, view.state])
   const avatarState = projectAvatarState({
     lifecycle: view.state,
-    conversation: conversationState,
+    conversation: scenePlaying && !avatarSpeechActive ? 'scene' : conversationState,
   })
   const avatarStateRef = useRef(avatarState)
   avatarStateRef.current = avatarState
@@ -1018,7 +1014,8 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             coordinator.handleActivity(activity)
           }
         },
-      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler }, signal => greetingGateRef.current?.wait(signal) ?? Promise.resolve())
+      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler },
+      signal => greetingGateRef.current?.wait(signal) ?? Promise.resolve())
       const owner = sceneRuntime.owner
       realtimeRuntimeOwnerRef.current = owner
       const unsubscribe = subscribeMirrorRealtimeRuntime(
@@ -1103,6 +1100,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       createVideo: () => document.createElement('video') as unknown as SceneVisualMedia,
       present: (media) => {
         presentedSceneVisualRef.current = media
+        setCoverVisual(media?.className.split(' ').includes('scene-visual__media--cover') ?? false)
         const host = sceneVisualHostRef.current
         if (host !== null) host.replaceChildren(...(media === null ? [] : [media as unknown as Node]))
       },
@@ -1269,8 +1267,8 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   if (bridgeMissing) {
     return (
       <div className="screen screen--starting">
-        <p className="screen__title">Starting</p>
-        <p className="screen__detail">bridge_unavailable</p>
+        <p className="screen__title">魔鏡休息中</p>
+        <p className="screen__detail">請洽現場人員協助。</p>
       </div>
     )
   }
@@ -1295,6 +1293,8 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
           }}>
         <AvatarCanvas
+          paused={mediaSkillState.hideAvatar || coverVisual || presentationPhase === 'inactive'
+            || presentation.config.mode === 'reflective' && presentationPhase === 'asleep' && !mediaSkillState.active}
           model={presentation.model}
           state={presentationPhase === 'entering' ? 'Waking' : presentationPhase === 'exiting' ? 'Suspending' : avatarState}
           forceFallback={avatarFallbackInjected}
@@ -1344,12 +1344,14 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         <div
           className="scene-visual"
           aria-hidden="true"
-          ref={(host) => {
-            sceneVisualHostRef.current = host
-            const media = presentedSceneVisualRef.current
-            if (host !== null && media !== null) host.replaceChildren(media as unknown as Node)
-          }}
+          ref={attachSceneVisual}
         />
+        {coverVisual && !mediaSkillState.active && view.state === 'active' && <div className="scene-conversation" role="status" lang="zh-Hant">
+          <span aria-hidden="true">{avatarSpeechActive ? '◉' : '◇'}</span>{avatarSpeechActive ? '渡鴉正在說話' : '渡鴉在聽'}
+        </div>}
+        {scenePlaying && view.state === 'active' && <div className="scene-conversation scene-conversation--spell" role="status" lang="zh-Hant">
+          ◇ 施法中
+        </div>}
       </div>
     )
   }

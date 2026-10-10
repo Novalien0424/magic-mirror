@@ -52,12 +52,13 @@ export async function runSpellLiveQa(input: Phase4QaInput): Promise<Phase4QaResu
   await evaluate(`const q=window.__spellQa;q.phase='cast';q.lastStop=0;`)
   const cast = await evaluate<{ decision: string; reason?: string; result?: { status: string } }>(
     `return window.magicMirrorPhase4Qa.injectFinalTranscript('施放咒語，下雨','qa-live-rain')`)
-  const audio = await evaluate<{ valid: boolean; errors: number }>(`const q=window.__spellQa;return {valid:q.prefixes===1&&!q.extra&&q.lastStop>0&&q.sceneStart>=q.lastStop,errors:q.errors}`)
-  if (cast.decision !== 'triggered' || cast.result?.status !== 'completed' || !audio.valid || audio.errors) {
+  await wait(`return window.__spellQa.lastStop>0`, 'spell_cue_playback')
+  const audio = await evaluate<{ valid: boolean; errors: number }>(`const q=window.__spellQa;return {valid:q.prefixes===1&&!q.extra&&q.sceneStart>0&&q.sceneStart<=q.lastStop,errors:q.errors}`)
+  if (cast.decision !== 'triggered' || cast.result?.status !== 'accepted' || !audio.valid || audio.errors) {
     input.onEvidence({ step: 'live_spell_comparison', status: 'failed', item: `${cast.decision}_${cast.reason ?? cast.result?.status ?? 'none'}_audio_${audio.valid}_errors_${audio.errors}` })
     throw new Error('phase4_qa_spell_order')
   }
-  input.onEvidence({ step: 'live_spell_prefix_audio_before_video', status: 'passed' })
+  input.onEvidence({ step: 'live_spell_scene_independent_of_cue', status: 'passed' })
   const duplicate = await evaluate<{ decision: string; reason: string }>(`return window.magicMirrorPhase4Qa.injectFinalTranscript('施放咒語，下雨','qa-live-rain')`)
   if (duplicate.reason !== 'duplicate_turn') throw new Error('phase4_qa_spell_duplicate')
   input.onEvidence({ step: 'live_spell_duplicate_rejected', status: 'passed' })

@@ -51,9 +51,12 @@ export class MemoryLearning {
   }
   invalidate(avatarId: string, name: string): void {
     const key = this.key(avatarId, name)
+    const count = (this.batches.get(key)?.evidence.length ?? 0)
+      + (this.active?.key === key ? this.active.batch.evidence.length : 0)
     this.tokens.set(key, (this.tokens.get(key) ?? 0) + 1)
     this.batches.delete(key)
     if (this.active?.key === key) this.active.abort.abort()
+    this.options.report(`memory_learning_invalidated;count=${count}`)
   }
   exclude(avatarId: string, name: string, itemId: string): void {
     const key = this.key(avatarId, name)
@@ -84,6 +87,7 @@ export class MemoryLearning {
       if (!retry) this.batches.delete(key)
       retry = undefined
       const abort = new AbortController(), active = { key, batch, abort, excluded: false }; this.active = active
+      let mutationStarted = false
       try {
         const policy = await this.options.repository.policy(batch.avatarId, batch.name)
         if (policy.mode !== 'automatic' || policy.cleanupRequired || policy.epoch !== batch.epoch || batch.token !== (this.tokens.get(key) ?? 0)) {
@@ -92,6 +96,7 @@ export class MemoryLearning {
         const { records, sourceRevisions } = await this.consolidate({ avatarId: batch.avatarId, name: batch.name, model: batch.model, evidence: batch.evidence }, abort.signal)
         if (this.closed || abort.signal.aborted || batch.token !== (this.tokens.get(key) ?? 0)) { this.options.report('memory_learning_cancelled'); continue }
         if (!records.length) { this.options.report('memory_learning_no_change'); continue }
+        mutationStarted = true
         const result = await this.options.repository.commitLearning(batch.avatarId, batch.name, { operationId: randomUUID(), epoch: batch.epoch, records, sourceRevisions })
         this.options.report(`memory_learning_${result}`)
         if (result === 'committed') this.options.onCommitted?.(batch.avatarId, batch.name)
@@ -100,10 +105,11 @@ export class MemoryLearning {
         this.options.report(abort.signal.aborted ? 'memory_learning_cancelled' : reason)
       }
       finally {
-        // Retry a bounded subset separately from newer evidence; scope mutations
-        // still invalidate all work through the owner token.
+        // Retry only before storage begins: a timed-out write may have committed.
+        // Scope mutations still invalidate all work through the owner token.
         if (active.excluded && !this.closed && batch.token === (this.tokens.get(key) ?? 0) && batch.evidence.length) {
-          retry = [key, { ...batch, evidence: [...batch.evidence] }]
+          if (mutationStarted) this.options.report('memory_learning_retry_skipped;cause=mutation_started')
+          else retry = [key, { ...batch, evidence: [...batch.evidence] }]
         }
         batch.evidence.length = 0; this.active = undefined
       }

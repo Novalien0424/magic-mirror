@@ -23,6 +23,44 @@ function fixture() {
 afterEach(() => vi.useRealTimers())
 
 describe('Main-owned camera recovery', () => {
+  it('sends only changed gaze targets, including one clear for repeated empty frames', async () => {
+    const f = fixture(), worker = f.children[0]!
+    const face = '{"type":"faces","faces":[{"x":0.2,"y":0.2,"width":0.3,"height":0.3}]}\n'
+    worker.stdout.write(face); worker.stdout.write(face)
+    expect(f.onTarget).toHaveBeenCalledOnce()
+    worker.stdout.write('{"type":"faces","faces":[]}\n')
+    worker.stdout.write('{"type":"faces","faces":[]}\n')
+    expect(f.onTarget).toHaveBeenCalledTimes(2)
+    expect(f.onTarget).toHaveBeenLastCalledWith(null)
+    await f.service.stop()
+    expect(f.onTarget).toHaveBeenCalledTimes(2)
+  })
+  it('uses elapsed time across wall-clock jumps without killing a responsive camera', async () => {
+    const f = fixture(), worker = f.children[0]!
+    for (let i = 0; i < 10; i++) {
+      worker.stdout.write('{"type":"heartbeat"}\n')
+      vi.setSystemTime(Date.now() + 600_000)
+      await vi.advanceTimersByTimeAsync(1000)
+    }
+    expect(worker.kill).not.toHaveBeenCalled()
+    await f.service.stop()
+  })
+  it('replays the current target once to a new renderer without restoring repeated frame sends', async () => {
+    const f = fixture(), worker = f.children[0]!
+    const face = '{"type":"faces","faces":[{"x":0.2,"y":0.2,"width":0.3,"height":0.3}]}\n'
+    f.service.republishTarget()
+    expect(f.onTarget).not.toHaveBeenCalled()
+    worker.stdout.write(face)
+    const target = f.onTarget.mock.lastCall?.[0]
+    f.service.republishTarget()
+    worker.stdout.write(face)
+    expect(f.onTarget).toHaveBeenCalledTimes(2)
+    expect(f.onTarget).toHaveBeenLastCalledWith(target)
+    await f.service.stop()
+    f.service.republishTarget()
+    expect(f.onTarget).toHaveBeenCalledTimes(3)
+    expect(f.onTarget).toHaveBeenLastCalledWith(null)
+  })
   it('captures only on request, rejects overlap, and cancels on stop without logging frames', async () => {
     const f = fixture(), worker = f.children[0]!
     const result = f.service.capture()

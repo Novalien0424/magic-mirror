@@ -17,7 +17,7 @@ const wakePackage = {
 class FakeChild implements WakeWorkerChild {
   private readonly listeners = new Map<string, Array<(...args: never[]) => void>>()
   readonly commands: WakeWorkerCommand[] = []
-  readonly kill = vi.fn()
+  readonly kill = vi.fn(() => this.emitExit())
 
   on(event: 'message' | 'exit', listener: (...args: never[]) => void): void {
     const current = this.listeners.get(event) ?? []
@@ -43,6 +43,46 @@ function flush(): Promise<void> {
 }
 
 describe('wake worker supervisor', () => {
+  it('waits for confirmed child exit before recycling native allocations', async () => {
+    const first = new FakeChild(), second = new FakeChild()
+    first.kill.mockImplementation(() => {})
+    const spawn = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    const supervisor = createWakeSupervisor({ spawn, onWake() {} })
+    const start = supervisor.start({ package: wakePackage })
+    first.emitMessage({ type: 'ready', requestId: first.commands[0]!.requestId, packageId: wakePackage.packageId })
+    await start
+    const recycle = supervisor.restart({ package: wakePackage })
+    first.emitMessage({ type: 'stopped', requestId: first.commands[1]!.requestId })
+    await flush()
+    expect(first.kill).toHaveBeenCalledOnce()
+    expect(supervisor.microphoneUnowned()).toBe(false)
+    expect(spawn).toHaveBeenCalledOnce()
+    first.emitExit()
+    await flush()
+    second.emitMessage({ type: 'ready', requestId: second.commands[0]!.requestId, packageId: wakePackage.packageId })
+    expect((await recycle).status).toBe('success')
+    const stopped = supervisor.shutdown()
+    second.emitMessage({ type: 'stopped', requestId: second.commands[1]!.requestId })
+    await stopped
+    expect(supervisor.microphoneUnowned()).toBe(true)
+  })
+  it('refuses a replacement when process termination times out', async () => {
+    vi.useFakeTimers()
+    const child = new FakeChild()
+    child.kill.mockImplementation(() => {})
+    const spawn = vi.fn(() => child), supervisor = createWakeSupervisor({ spawn, onWake() {} })
+    const start = supervisor.start({ package: wakePackage })
+    child.emitMessage({ type: 'ready', requestId: child.commands[0]!.requestId, packageId: wakePackage.packageId })
+    await start
+    const recycle = supervisor.restart({ package: wakePackage })
+    child.emitMessage({ type: 'stopped', requestId: child.commands[1]!.requestId })
+    await vi.advanceTimersByTimeAsync(5001)
+    expect(await recycle).toEqual({ status: 'failed', reason: 'wake_worker_exit_timeout' })
+    expect(spawn).toHaveBeenCalledOnce()
+    expect(supervisor.microphoneUnowned()).toBe(false)
+    child.emitExit()
+    expect(supervisor.microphoneUnowned()).toBe(true)
+  })
   it('retries a missing microphone after a long unplug and cancels retries on handoff', async () => {
     vi.useFakeTimers()
     let plugged = false
@@ -68,13 +108,15 @@ describe('wake worker supervisor', () => {
     await supervisor.start({ package: wakePackage })
     await supervisor.acquire()
     await vi.advanceTimersByTimeAsync(31000)
-    plugged = true
-    await vi.advanceTimersByTimeAsync(10000)
-    expect(supervisor.snapshot().status).toBe('acquiring')
     await supervisor.release()
     const count = spawn.mock.calls.length
     await vi.advanceTimersByTimeAsync(30000)
     expect(spawn).toHaveBeenCalledTimes(count)
+    plugged = true
+    expect((await supervisor.acquire()).reason).toBe('wake_microphone_waiting_for_device')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(supervisor.snapshot().status).toBe('acquiring')
+    expect(spawn).toHaveBeenCalledTimes(count + 1)
     await supervisor.shutdown()
   })
   it.each(['send', 'timer'] as const)('reports a replacement worker %s failure instead of staying restarting', async (failure) => {
@@ -117,7 +159,7 @@ describe('wake worker supervisor', () => {
         })
       }
     }
-    const children = [new RespondingChild(), new RespondingChild(), new RespondingChild()]
+    const children = [new RespondingChild(), new RespondingChild(), new RespondingChild(), new RespondingChild()]
     const spawn = vi.fn(() => children[spawn.mock.calls.length - 1])
     const supervisor = createWakeSupervisor({ spawn, onWake() {} })
     await supervisor.start({ package: wakePackage })
@@ -146,7 +188,7 @@ describe('wake worker supervisor', () => {
       expect(supervisor.snapshot().input.recovery).toMatchObject({ state: 'recovered', attempts: 2 })
       await calibration.stop(true)
       expect(supervisor.configuration()).toEqual(wakePackage)
-      expect(spawn).toHaveBeenCalledTimes(3)
+      expect(spawn).toHaveBeenCalledTimes(4)
     } finally {
       await calibration.stop(false)
       await supervisor.shutdown()
@@ -196,6 +238,8 @@ describe('wake worker supervisor', () => {
     vi.useFakeTimers()
     const first = new FakeChild()
     const second = new FakeChild()
+    first.kill.mockImplementation(() => {})
+    second.kill.mockImplementation(() => {})
     const spawn = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
     const supervisor = createWakeSupervisor({ spawn, onWake() {} })
     const started = supervisor.start({ package: wakePackage })

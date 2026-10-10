@@ -44,6 +44,12 @@ type RendererMetadataReport = {
 }
 
 type MetadataEvent = Record<string, unknown>
+
+it('suppresses snapshot publication after shutdown before checking closed windows', async () => {
+  const emit = vi.fn()
+  await publishSnapshot('mirror', {}, {}, { emit }, () => true)
+  expect(emit).not.toHaveBeenCalled()
+})
 type ModuleStatuses = Partial<Record<ModuleId, ModuleStatus>>
 type BootFailure = 'config' | 'model' | 'sqlite'
 type SimulatorResult = {

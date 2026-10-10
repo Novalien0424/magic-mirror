@@ -331,10 +331,10 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const sceneCount = await evaluate<number>(`return window.__ravenQa.scenes.filter(e=>e.stage===${JSON.stringify(stage)}&&e.type==='started').length`)
     if (checks.includes('no_scene_trigger') && sceneCount) throw Error('raven_qa_scene_not_authorized')
     if ((checks.includes('approved_exact_scene') || checks.includes('scene_once')) && sceneCount !== 1) throw Error('raven_qa_exact_scene_missing_or_duplicate')
-    if (checks.includes('announcement_tail_before_scene')) {
+    if (checks.includes('scene_without_announcement_gate')) {
       const announcement = events(since).find(e => e.reason === 'cause=spell_announcement_completed')
       const sceneAt = await evaluate<number>(`return window.__ravenQa.scenes.find(e=>e.stage===${JSON.stringify(stage)}&&e.type==='started')?.at??0`)
-      if (!announcement || !sceneAt || Date.parse(announcement.time) > sceneAt) throw Error('raven_qa_scene_before_announcement_tail')
+      if (!announcement || !sceneAt || Date.parse(announcement.time) < sceneAt) throw Error('raven_qa_scene_waited_for_announcement')
     }
     if (checks.includes('farewell_tail_before_close')) {
       await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'sleep_release')
@@ -417,10 +417,20 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         }
         const ran = await check(stage, async () => {
           if (turn.before === 'identity_question_played' && !events(visitStarted).some(e => e.reason === 'memory_question_delivered')) throw Error('raven_qa_question_not_delivered')
-          const since = await speak(speechIndex, stage, turn.expected.reply === 'silent')
+          // A rejected exact command may correctly produce no audio. Still
+          // collect ASR comparison and scene evidence instead of timing out
+          // before those independent checks can explain the failure.
+          const since = await speak(speechIndex, stage, ['silent', 'application_spell'].includes(turn.expected.reply))
           await assertTurn(turn, stage, since)
         })
         if (!ran && scenario.id === 'two_visit_memory' && ['first_identify', 'first_confirm', 'return_identify', 'return_confirm'].includes(turn.id)) missingPrerequisite = true
+        if (!ran && scenario.id === 'sleep_spells' && turn.id !== 'directed_sleep'
+          && input.runtime.snapshot().lifecycle !== 'active') {
+          // Preserve an incorrect sleep verdict, but recover so independent
+          // spell authorization and playback checks still produce evidence.
+          const recovered = await check(stage + '_operator_recovery', async () => { await stop(); await start() })
+          if (!recovered) missingPrerequisite = true
+        }
         if (!ran && (await state()).media && input.runtime.snapshot().lifecycle === 'active') {
           await check(stage + '_media_recovery', async () => {
             const stopped = await input.console.webContents.executeJavaScript('window.magicMirror.stopScenes()')

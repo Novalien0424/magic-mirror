@@ -103,7 +103,7 @@ export function createConfiguredSherpaDetector(wakePackage: WakeWorkerPackage): 
     modelConfig: {
       transducer: { encoder, decoder, joiner },
       tokens,
-      numThreads: 2,
+      numThreads: 1,
       debug: 0,
       provider: 'cpu',
     },

@@ -5,12 +5,14 @@ import { createHash } from 'node:crypto'
 import { isAbsolute, join } from 'node:path'
 import manifest from '../../../resources/config/memory-embedding.v1.json'
 import type { MemoryEmbedder, MemoryEmbedding } from './contracts'
+import { MemoryWorkerRecovery } from './recovery'
 
 export type MemoryEmbeddingReason = 'runtime_ready' | 'runtime_missing' | 'runtime_invalid'
   | 'runtime_unsupported' | 'model_invalid' | 'startup_failed' | 'startup_timeout'
   | 'request_timeout' | 'worker_failed' | 'malformed_output' | 'output_too_large'
   | 'version_mismatch' | 'invalid_input' | 'input_too_long' | 'inference_failed'
   | 'queue_full' | 'cancelled' | 'closed' | 'shutdown_timeout' | 'invalid_options'
+  | 'cold_start' | 'idle_stopped' | 'recovery_backoff' | 'recovery_budget_exhausted'
 
 /** Metadata only. Never attach text, vectors, owner identifiers, or raw exceptions. */
 export interface MemoryEmbeddingEvent {
@@ -30,6 +32,8 @@ export interface MemoryEmbedderOptions {
   requestTimeoutMs?: number
   /** Total accepted requests, including startup/active/cancellation-draining work. */
   maxQueue?: number
+  /** Release model residency after this much time with no active or queued work. */
+  idleTimeoutMs?: number
 }
 
 export class MemoryEmbeddingError extends Error {
@@ -81,8 +85,8 @@ function normalized(values: unknown): number[] | null {
 
 /**
  * Main owns one instance for the application lifetime. Lazy startup never installs
- * anything. A terminal failure requires an explicit new instance by its owner;
- * this module never respawns, changes models, touches credentials, or owns a mic.
+ * anything. Idle shutdown and bounded demand-driven recovery reuse the pinned
+ * runtime. Failed jobs remain failed; this module never owns a mic or credentials.
  */
 export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbedder {
   if (!options || typeof options.runtimeDirectory !== 'string' || !isAbsolute(options.runtimeDirectory)
@@ -90,15 +94,17 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
   const startupTimeoutMs = options.startupTimeoutMs ?? 60_000
   const requestTimeoutMs = options.requestTimeoutMs ?? 30_000
   const maxQueue = options.maxQueue ?? 16
+  const idleTimeoutMs = options.idleTimeoutMs ?? 300_000
   const workerPath = options.workerPath ?? join(options.runtimeDirectory, 'memory-embedding-worker.py')
   const manifestPath = options.manifestPath ?? join(options.runtimeDirectory, 'manifest.json')
   if (![options.runtimeDirectory, workerPath, manifestPath].every((path) => typeof path === 'string' && isAbsolute(path))
     || typeof options.report !== 'function'
     || !Number.isSafeInteger(maxQueue) || maxQueue < 1 || maxQueue > 128
-    || ![startupTimeoutMs, requestTimeoutMs].every((ms) => Number.isSafeInteger(ms) && ms > 0 && ms <= 300_000)) {
+    || ![startupTimeoutMs, requestTimeoutMs].every((ms) => Number.isSafeInteger(ms) && ms > 0 && ms <= 300_000)
+    || !Number.isSafeInteger(idleTimeoutMs) || idleTimeoutMs < 1 || idleTimeoutMs > 3_600_000) {
     throw new MemoryEmbeddingError('invalid_options')
   }
-  let state: 'idle' | 'starting' | 'ready' | 'failed' | 'closed' = 'idle'
+  let state: 'idle' | 'starting' | 'ready' | 'stopping' | 'failed' | 'closed' = 'idle'
   let failure: MemoryEmbeddingReason = 'worker_failed'
   let child: ChildProcess | null = null
   let active: Job | null = null
@@ -106,6 +112,7 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
   let sequence = 0n
   let startupTimer: ReturnType<typeof setTimeout> | undefined
   let requestTimer: ReturnType<typeof setTimeout> | undefined
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
   let fragments: Buffer[] = []
   let frameBytes = 0
   let stopPromise: Promise<void> | undefined
@@ -113,6 +120,9 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
   let exited = false
   let exitResolve: (() => void) | undefined
   let exitPromise: Promise<void> | undefined
+  let generation = 0
+  let recoveryBlocked = false
+  const recovery = new MemoryWorkerRecovery()
 
   function report(type: MemoryEmbeddingEvent['type'], reason: MemoryEmbeddingReason, requestId?: string) {
     try { options.report(requestId ? { type, reason, requestId } : { type, reason }) } catch {
@@ -136,18 +146,21 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
   function clearTimers() {
     clearTimeout(startupTimer)
     clearTimeout(requestTimer)
+    clearTimeout(idleTimer)
     startupTimer = undefined
     requestTimer = undefined
+    idleTimer = undefined
   }
 
   function stopWorker(): Promise<void> {
     if (stopPromise) return stopPromise
     if (!child || exited) return Promise.resolve()
     const target = child
+    const targetExit = exitPromise
     stopPromise = (async () => {
       const waitExit = (ms: number) => new Promise<boolean>((resolve) => {
         const timer = setTimeout(() => resolve(false), ms)
-        void exitPromise?.then(() => { clearTimeout(timer); resolve(true) })
+        void targetExit?.then(() => { clearTimeout(timer); resolve(true) })
       })
       try { target.kill('SIGTERM') } catch { /* Never forward OS error content. */ }
       if (await waitExit(500)) return
@@ -163,6 +176,8 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
   function fail(reason: MemoryEmbeddingReason) {
     if (state === 'closed' || state === 'failed') return
     state = 'failed'
+    generation++
+    recovery.failed()
     failure = reason
     clearTimers()
     fragments = []
@@ -172,17 +187,20 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
     queue = []
     if (!jobs.some((job) => !job.settled)) report('degraded', reason)
     for (const job of jobs) settle(job, reason)
-    void stopWorker().catch(() => { /* Failure is reported; close() retains the rejection. */ })
+    void stopWorker().catch(() => { recoveryBlocked = true /* Never spawn beside an unconfirmed shutdown. */ })
   }
 
   function write(message: Record<string, unknown>) {
+    const current = generation
     try {
-      child!.stdin!.write(`${JSON.stringify(message)}\n`, (error) => { if (error) fail('worker_failed') })
+      child!.stdin!.write(`${JSON.stringify(message)}\n`, (error) => { if (error && current === generation) fail('worker_failed') })
     } catch { fail('worker_failed') }
   }
 
   function pump() {
-    if (state !== 'ready' || active || queue.length === 0) return
+    if (state !== 'ready' || active) return
+    if (queue.length === 0) { armIdleStop(); return }
+    clearTimeout(idleTimer); idleTimer = undefined
     // Stable ordering within each purpose; recall precedes background indexing.
     const queryIndex = queue.findIndex((job) => job.purpose === 'query')
     active = queue.splice(queryIndex < 0 ? 0 : queryIndex, 1)[0]
@@ -193,6 +211,23 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
     write({ type: 'embed', id: active.id, purpose: active.purpose, text: active.text })
     // Active jobs retain only a cancellation tombstone, never another text copy.
     if (active) active.text = ''
+  }
+
+  function armIdleStop() {
+    if (idleTimer || state !== 'ready' || active || queue.length) return
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined
+      if (state !== 'ready' || active || queue.length) return
+      state = 'stopping'; generation++
+      report('degraded', 'idle_stopped')
+      void stopWorker().then(() => {
+        if (state !== 'stopping') return
+        child = null; stopPromise = undefined; exitPromise = undefined; exitResolve = undefined; exited = false
+        state = 'idle'
+        if (queue.length) void start()
+      }, () => { recoveryBlocked = true; fail('shutdown_timeout') })
+    }, idleTimeoutMs)
+    idleTimer.unref()
   }
 
   function handleFrame(bytes: Buffer) {
@@ -257,16 +292,23 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
 
   async function start() {
     state = 'starting'
+    const current = ++generation
+    report('degraded', 'cold_start')
+    if (child) {
+      try { await stopWorker() } catch { recoveryBlocked = true; fail('shutdown_timeout'); return }
+      if (state !== 'starting' || current !== generation) return
+      child = null; stopPromise = undefined; exitPromise = undefined; exitResolve = undefined; exited = false
+    }
     startupTimer = setTimeout(() => fail('startup_timeout'), startupTimeoutMs)
     startupTimer.unref()
     const executable = join(options.runtimeDirectory, 'venv', 'bin', 'python')
     try {
       for (const [path, mode] of [[executable, constants.X_OK], [workerPath, constants.R_OK], [manifestPath, constants.R_OK]] as const) {
         await access(path, mode)
-        if (state !== 'starting') return
+        if (state !== 'starting' || current !== generation) return
       }
-    } catch { fail('runtime_missing'); return }
-    if (state !== 'starting') return
+    } catch { if (current === generation) fail('runtime_missing'); return }
+    if (state !== 'starting' || current !== generation) return
     try {
       child = spawn(executable, ['-I', '-B', '-u', workerPath, '--runtime-directory', options.runtimeDirectory,
         '--manifest', manifestPath, '--version', version], {
@@ -277,11 +319,12 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
           TOKENIZERS_PARALLELISM: 'false', OMP_NUM_THREADS: '1' },
       })
       exitPromise = new Promise<void>((resolve) => { exitResolve = resolve })
-      child.once('close', () => { exited = true; exitResolve?.(); fail('worker_failed') })
-      child.once('error', () => fail('worker_failed'))
-      child.stdin?.on('error', () => fail('worker_failed'))
-      child.stdout?.on('error', () => fail('worker_failed'))
-      child.stdout?.on('data', stdout)
+      const resolveExit = exitResolve
+      child.once('close', () => { resolveExit?.(); if (current === generation) { exited = true; fail('worker_failed') } })
+      child.once('error', () => { if (current === generation) fail('worker_failed') })
+      child.stdin?.on('error', () => { if (current === generation) fail('worker_failed') })
+      child.stdout?.on('error', () => { if (current === generation) fail('worker_failed') })
+      child.stdout?.on('data', (chunk: Buffer) => { if (current === generation) stdout(chunk) })
       if (!child.stdin || !child.stdout) fail('worker_failed')
     } catch { fail('worker_failed') }
   }
@@ -294,7 +337,6 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
         return Promise.reject<MemoryEmbedding>(new MemoryEmbeddingError(reason))
       }
       if (state === 'closed') return reject('closed')
-      if (state === 'failed') return reject(failure)
       if (signal?.aborted) return reject('cancelled')
       if (typeof text !== 'string' || !text.trim() || !['query', 'document'].includes(purpose)
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u.test(text)
@@ -302,6 +344,16 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
         || Buffer.byteLength(JSON.stringify({ type: 'embed', id: '0'.repeat(32), purpose, text })) > MAX_FRAME_BYTES) {
         return reject('invalid_input')
       }
+      if (state === 'failed') {
+        if (recoveryBlocked) return reject(failure)
+        const permission = recovery.take()
+        if (permission !== 'allowed') {
+          report('degraded', `recovery_${permission}`)
+          return reject(failure)
+        }
+        state = 'idle'
+      }
+      clearTimeout(idleTimer); idleTimer = undefined
       if (queue.length + (active ? 1 : 0) >= maxQueue) return reject('queue_full')
       const promise = new Promise<MemoryEmbedding>((resolve, rejectJob) => {
         const job: Job = { id: '', text, purpose, resolve, reject: rejectJob, signal, settled: false, cancelled: false }
@@ -309,7 +361,7 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
           job.cancelled = true
           settle(job, 'cancelled')
           if (active === job) write({ type: 'cancel', id: job.id })
-          else queue = queue.filter((queued) => queued !== job)
+          else { queue = queue.filter((queued) => queued !== job); armIdleStop() }
         }
         queue.push(job)
         signal?.addEventListener('abort', job.onAbort, { once: true })
@@ -321,6 +373,7 @@ export function createMemoryEmbedder(options: MemoryEmbedderOptions): MemoryEmbe
     close() {
       if (closePromise) return closePromise
       state = 'closed'
+      generation++
       clearTimers()
       for (const job of active ? [active, ...queue] : queue) settle(job, 'closed')
       active = null

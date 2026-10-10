@@ -430,6 +430,8 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     }))
     expect(MIRROR_IPC_CHANNELS).toEqual({
       mediaSkill: 'mirror:media-skill',
+      findMedia: 'mirror:find-media',
+      searchYoutube: 'mirror:search-youtube',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
@@ -588,6 +590,33 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expect(await read(authorizedEvent(registered))).toMatchObject({ ok: true, value: { wakeInput: input } })
     expect(JSON.stringify(registered.events)).not.toContain('lastBlockAgeMs')
     expectNoSensitiveOutput(registered.events)
+  })
+
+  it('bounds invalid avatar-report floods while valid reports continue to arrive', async () => {
+    vi.useFakeTimers()
+    try {
+      const registered = makeHarness(), report = getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)
+      for (let i = 0; i < 60; i++) report(authorizedMirrorEvent(registered), { reason: 'Bad:Reason' })
+      expect(registered.events.filter(event => event.event === 'ipc_payload_invalid')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(registered.events.filter(event => event.event === 'ipc_payload_invalid')).toHaveLength(2)
+      expect(registered.events.at(-1)?.reason).toBe('payload_schema_invalid;repeated_count=59')
+      report(authorizedMirrorEvent(registered), { status: 'ready', reason: 'cubism_avatar_ready', state: 'Dormant',
+        fps: 0, waveform: 0, mouthOpen: 0, audioUnderruns: 0, voiceGain: 1, musicGain: 1 })
+      expect(await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)(authorizedEvent(registered)))
+        .toMatchObject({ ok: true, value: { status: 'ready' } })
+    } finally { vi.useRealTimers() }
+  })
+  it('retains unchanged device inventory when a metric-only snapshot omits it', async () => {
+    const registered = makeHarness(), report = getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)
+    const audioDevices = { preferences: { inputId: '', inputLabel: '', outputId: '' }, reason: 'audio_devices_ready',
+      devices: [{ deviceId: 'synthetic-output', kind: 'audiooutput', label: 'Synthetic output' }] }
+    const metrics = { status: 'ready', reason: 'cubism_avatar_ready', state: 'Dormant', fps: 0,
+      waveform: 0, mouthOpen: 0, audioUnderruns: 0, voiceGain: 1, musicGain: 1 }
+    report(authorizedMirrorEvent(registered), { ...metrics, audioDevices })
+    report(authorizedMirrorEvent(registered), { ...metrics, fps: 30 })
+    expect(await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)(authorizedEvent(registered)))
+      .toMatchObject({ ok: true, value: { fps: 30, audioDevices: { devices: audioDevices.devices } } })
   })
 
   it('tests an unpublished draft step and keeps its feedback on the preview runtime', async () => {

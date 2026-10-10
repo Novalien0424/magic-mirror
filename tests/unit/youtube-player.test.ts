@@ -27,6 +27,19 @@ const parent = () => Object.assign(new EventEmitter(), { isDestroyed: () => fals
 afterEach(() => { vi.useRealTimers(); f.views.length = 0; f.partitions.length = 0; f.state = { state: -1, time: 0, error: false } })
 
 describe('isolated visible YouTube player', () => {
+  it('uses elapsed playback progress across NTP jumps and still times out a stuck player', async () => {
+    vi.useFakeTimers()
+    const win = parent(), report = vi.fn(), player = createYoutubePlayer(() => win as never)
+    player.play(request, report)
+    vi.setSystemTime(Date.now() + 3_600_000)
+    f.state = { state: 1, time: 1, error: false }
+    await vi.advanceTimersByTimeAsync(500)
+    expect(report).toHaveBeenLastCalledWith({ ...request.context, status: 'acknowledged' })
+    vi.setSystemTime(Date.now() - 7_200_000)
+    await vi.advanceTimersByTimeAsync(30_500)
+    expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', errorCode: 'youtube_playback_timeout' }))
+    player.stop()
+  })
   it('keeps YouTube controls visible and configures single-video looping with the required app origin', () => {
     const html = youtubePlayerHtml({ ...request, mode: 'loop' })
     expect(html).toContain('"loop":1,"playlist":"abcdefghijk"')

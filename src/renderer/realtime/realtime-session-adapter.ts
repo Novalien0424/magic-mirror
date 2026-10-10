@@ -1318,6 +1318,9 @@ export function createRealtimeSession(
   async function interrupt(): Promise<void> {
     if (closed) return
     cancelPendingGreeting('wake_greeting_cancelled_interrupt')
+    // WebRTC interrupt sends a server clear but does not emit audio_interrupted.
+    // Mute and flush our audible graph before waiting for that network request.
+    notifyAudioActivity('interrupted')
     try {
       await session.interrupt()
     } catch {

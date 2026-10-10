@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -105,6 +105,17 @@ describe('wake model package', () => {
       if (!result.ok) throw new Error(result.reason)
       expect(await readFile(result.artifactPaths.get('keywords')!, 'utf8')).toBe('n ǐ h ǎo @avatar_wake\n')
       expect(result.artifactPaths.get('keywords')).not.toBe(join(directory, 'keywords.txt'))
+      const file = result.artifactPaths.get('keywords')!
+      const before = await stat(file, { bigint: true })
+      const input = { rootDirectory: root, platform: 'darwin-arm64', customKeywordsDirectory: join(root, 'derived'),
+        forceCustomKeywords: true, wake: { phrase: '你好', packageId: spec.packageId, modelVersion: spec.modelVersion } }
+      await loadWakeModelPackage(input)
+      expect((await stat(file, { bigint: true })).mtimeNs).toBe(before.mtimeNs)
+      await writeFile(file, 'synthetic incomplete file')
+      const damaged = await stat(file, { bigint: true })
+      await Promise.all([loadWakeModelPackage(input), loadWakeModelPackage(input)])
+      expect(await readFile(file, 'utf8')).toBe('n ǐ h ǎo @avatar_wake\n')
+      expect((await stat(file, { bigint: true })).ino).not.toBe(damaged.ino)
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 

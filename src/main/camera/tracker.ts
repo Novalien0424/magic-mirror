@@ -2,10 +2,15 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createNearestFaceTracker, parseCameraFrame } from './nearest-face'
 import { isCameraSnapshot, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
 
-export interface CameraTrackingService { stop(): Promise<void>; capture(): Promise<CameraSnapshot | null> }
+export interface CameraTrackingService {
+  stop(): Promise<void>
+  capture(): Promise<CameraSnapshot | null>
+  republishTarget(): void
+}
 
 /** Main alone owns the native capture child. Its private pipe is never copied to telemetry. */
 export function startCameraTracking(input: {
+  now?: () => number
   spawn?: (executable: string, args: string[], options: { stdio: 'pipe'; env: Record<string, string> }) => ChildProcessWithoutNullStreams
   executable: string
   cameraName: string
@@ -13,12 +18,19 @@ export function startCameraTracking(input: {
   onStatus(status: 'ready' | 'degraded', reason: string): void
 }): CameraTrackingService {
   const selector = createNearestFaceTracker()
+  const now = input.now ?? (() => performance.now())
   let child: ChildProcessWithoutNullStreams | null = null
   let stopped = false
   let restart: NodeJS.Timeout | undefined
   let retryDelay = 1000
   let lastFrameAt = 0
-  let lastMessageAt = Date.now()
+  let lastMessageAt = now()
+  let lastTarget: CameraTarget | null | undefined
+  const sendTarget = (target: CameraTarget | null): void => {
+    if (lastTarget !== undefined && lastTarget?.x === target?.x && lastTarget?.y === target?.y) return
+    lastTarget = target
+    input.onTarget(target)
+  }
   let statusKey = ''
   let stale = true
   let captureSequence = 0
@@ -27,14 +39,14 @@ export function startCameraTracking(input: {
     const key = `${state}:${reason}`
     if (key !== statusKey && !stopped) { statusKey = key; input.onStatus(state, reason) }
   }
-  const clear = (): void => { selector.reset(); input.onTarget(null); stale = true }
+  const clear = (): void => { selector.reset(); sendTarget(null); stale = true }
   const launch = (): void => {
     if (stopped) return
     status('degraded', 'camera_worker_starting')
     const current = (input.spawn ?? spawn)(input.executable, [input.cameraName], {
       stdio: 'pipe', env: { PATH: '/usr/bin:/bin' },
     })
-    lastMessageAt = Date.now()
+    lastMessageAt = now()
     child = current
     current.stdin.on('error', () => capturePending?.finish(null))
     let pending = ''
@@ -54,7 +66,7 @@ export function startCameraTracking(input: {
         const line = pending.slice(0, newline); pending = pending.slice(newline + 1)
         let value: unknown
         try { value = JSON.parse(line) } catch { status('degraded', 'camera_worker_message_invalid'); continue }
-        lastMessageAt = Date.now()
+        lastMessageAt = now()
         if (value && typeof value === 'object' && (value as { type?: unknown }).type === 'snapshot') {
           const frame = value as Record<string, unknown>
           const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height }
@@ -65,8 +77,8 @@ export function startCameraTracking(input: {
           && (value as { type: unknown }).type === 'heartbeat') continue
         const faces = parseCameraFrame(value)
         if (faces !== null) {
-          lastFrameAt = Date.now(); stale = false; retryDelay = 1000
-          input.onTarget(selector.update(faces, lastFrameAt))
+          lastFrameAt = now(); stale = false; retryDelay = 1000
+          sendTarget(selector.update(faces, lastFrameAt))
           status('ready', 'camera_tracking_ready')
           continue
         }
@@ -93,18 +105,22 @@ export function startCameraTracking(input: {
     })
   }
   const watchdog = setInterval(() => {
-    if (child && Date.now() - lastMessageAt > 12000) {
+    if (child && now() - lastMessageAt > 12000) {
       status('degraded', 'camera_worker_unresponsive')
       child.kill('SIGKILL')
-      lastMessageAt = Date.now()
+      lastMessageAt = now()
     }
-    if (!stale && Date.now() - lastFrameAt > 1500) {
+    if (!stale && now() - lastFrameAt > 1500) {
       clear(); status('degraded', 'camera_frames_stale')
     }
   }, 500)
   watchdog.unref()
   launch()
   return {
+    republishTarget() {
+      // A recreated renderer has lost its previous gaze state.
+      if (!stopped && lastTarget !== undefined) input.onTarget(lastTarget)
+    },
     capture() {
       const current = child
       if (stopped || !current || capturePending) return Promise.resolve(null)

@@ -15,8 +15,9 @@ interface Options {
 interface Question { token: string; text: string; responseId?: string; answerItemId?: string; started: boolean; done: boolean; stopped: boolean; transcript: string }
 /** Owns only the bounded identity exchange. Ordinary voice never waits on this coordinator. */
 export class MemoryDialogue {
-  private phase: 'idle' | 'preparing' | 'speaking' | 'verifying' | 'awaiting' | 'answering' | 'applying' | 'closed' = 'idle'
+  private phase: 'idle' | 'preparing' | 'speaking' | 'verifying' | 'receipting' | 'awaiting' | 'answering' | 'applying' | 'closed' = 'idle'
   private question?: Question
+  private earlyAnswer?: { itemId: string; reply: MemoryReply }
   private revision = 0
   private timer?: ReturnType<typeof setTimeout>
   private update?: { instructions: string; automatic: boolean; resolve(): void; reject(): void; timer: ReturnType<typeof setTimeout> }
@@ -43,16 +44,22 @@ export class MemoryDialogue {
     } catch { this.fail() }
   }
   speech(itemId: string): void {
-    if (this.phase === 'awaiting' && /^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) {
+    if ((this.phase === 'awaiting' || this.phase === 'receipting') && !this.question?.answerItemId && /^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) {
       this.question!.answerItemId = itemId
       // This starts at speech onset, so allow the utterance and final ASR as
       // well as Main's bounded interpretation and the session acknowledgment.
-      clearTimeout(this.timer); this.phase = 'answering'; this.timer = setTimeout(() => this.fail(), 20000)
+      clearTimeout(this.timer); if (this.phase === 'awaiting') this.phase = 'answering'
+      this.timer = setTimeout(() => this.fail(), 20000)
     }
     else if (this.active) this.fail()
   }
   cancel(): void { if (this.active) this.fail() }
   async answer(itemId: string, reply: MemoryReply): Promise<void> {
+    if (this.phase === 'receipting') {
+      if (itemId === this.question?.answerItemId && !this.earlyAnswer) this.earlyAnswer = { itemId, reply }
+      else this.options.report('memory_input_unavailable')
+      return
+    }
     if (this.phase !== 'answering') return
     if (itemId !== this.question?.answerItemId) { this.options.report('memory_input_unavailable'); return }
     this.phase = 'applying'
@@ -104,12 +111,21 @@ export class MemoryDialogue {
       // Existing processed output owns its tail. The question timeout also bounds this wait.
       await this.options.tail()
       if (this.phase !== 'verifying' || this.question !== q) return
+      // Queue the receipt before accepting a new answer; Main still authorizes
+      // it before any answer result can install private context.
+      this.phase = 'receipting'
       const receipt = await this.options.input('question_played', q.token, q.transcript)
-      if (this.phase !== 'verifying' || this.question !== q) return
+      if (this.phase !== 'receipting' || this.question !== q) return
       if (receipt.code !== 'memory_question_delivered') { this.fail(); return }
-      clearTimeout(this.timer); this.phase = 'awaiting'
-      this.timer = setTimeout(() => this.fail(), 60000)
       this.options.report('memory_question_delivered')
+      if (q.answerItemId) {
+        this.phase = 'answering'
+        const early = this.earlyAnswer; this.earlyAnswer = undefined
+        if (early) await this.answer(early.itemId, early.reply)
+      } else {
+        clearTimeout(this.timer); this.phase = 'awaiting'
+        this.timer = setTimeout(() => this.fail(), 60000)
+      }
     } catch { this.fail() }
   }
   private fail(): void {
@@ -123,7 +139,7 @@ export class MemoryDialogue {
     this.options.failed()
   }
   close(): void {
-    this.phase = 'closed'; this.question = undefined; clearTimeout(this.timer)
+    this.phase = 'closed'; this.question = undefined; this.earlyAnswer = undefined; clearTimeout(this.timer)
     if (this.update) { clearTimeout(this.update.timer); this.update.reject(); this.update = undefined }
   }
 }

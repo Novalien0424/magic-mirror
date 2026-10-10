@@ -37,8 +37,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return createElement(
       'div',
       { className: 'screen screen--fault' },
-      createElement('p', { className: 'screen__title' }, this.state.failure.code),
-      createElement('p', { className: 'screen__detail' }, this.state.failure.reason),
+      createElement('p', { className: 'screen__title' }, this.props.label === 'mirror' ? '魔鏡休息中' : 'This view could not load'),
+      createElement('p', { className: 'screen__detail' }, this.props.label === 'mirror' ? '請洽現場人員協助。' : 'Reopen the Console. If this continues, restart Magic Mirror.'),
     )
   }
 }

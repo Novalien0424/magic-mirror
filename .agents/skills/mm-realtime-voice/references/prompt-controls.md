@@ -21,13 +21,20 @@ punctuation removal, Han spacing and an explicit fixed-prefix script equivalence
 it is not general Simplified/Traditional or homophone conversion.
 [Transcript controller](../../../../src/renderer/mirror/scene-transcript-controller.ts)
 rejects a mismatch before interruption, cue announcement or scene IPC. After a
-match it interrupts, awaits the application announcement, then calls Main.
+match it interrupts old output and calls Main before requesting the application
+announcement. Under the owner's 2026-10-10 review-remediation request (MX-05),
+scene execution no longer waits for speech completion; later VAD may cancel
+the cue but cannot revoke an already authorized scene.
 [Main sender authorization](../../../../src/main/ipc.ts) and
 [scene runtime](../../../../src/main/scenes/scene-runtime.ts) check the request,
 enabled spell/scene, duplicate turn and cooldown. Approved presets own hardware
 effects; fluent dialogue or audible response counts confer no authorization.
 
-Greeting, farewell, scene dialogue and audition use response-scoped instructions, `input: []`, `tool_choice: none`; never persistent imperative user messages. Announcements must finish actual processed playback before effects; interruption/session change cancels pending effects.
+Greeting, farewell, scene dialogue and audition use response-scoped instructions,
+`input: []`, `tool_choice: none`; never persistent imperative user messages.
+Farewell still finishes processed playback before session closure. Spell cue
+speech runs alongside its authorized scene; session change and Stop still clean
+up the scene. Do not reintroduce the old cue-completion authorization gate.
 
 ## Evidence
 

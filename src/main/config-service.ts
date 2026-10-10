@@ -1028,7 +1028,7 @@ function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
+export function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
   const fromLeaves = new Map<string, unknown>()
   const toLeaves = new Map<string, unknown>()
   flattenJson(from, '', fromLeaves)
@@ -1056,6 +1056,15 @@ function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
 
 export function createConfigService(options: ConfigServiceOptions): ConfigService {
   const resolved = resolveConfigOptions(options)
+  const events = resolved.events
+  let lastLoadedReason: string | undefined
+  resolved.events = { emit(event) {
+    if (event.event === 'config_loaded') {
+      if (event.reason === lastLoadedReason) return
+      lastLoadedReason = event.reason
+    }
+    events.emit(event)
+  } }
 
   return {
     async initialize(): Promise<ConfigSlots> {

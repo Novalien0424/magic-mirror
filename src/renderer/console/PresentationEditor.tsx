@@ -1,4 +1,5 @@
 import { HelpField } from './HelpField'
+import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
 import { useEffect, useState } from 'react'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
@@ -17,6 +18,7 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
   bridge?: ConsoleBridge | null; avatarId?: string
 }) {
   const config = draft.presentation ?? DEFAULT_PRESENTATION
+  const fieldPath = (field: string): string => `${avatarId ? `avatar.${avatarId}.` : ''}presentation.${field}`
   const [lifecycle, setLifecycle] = useState<LifecycleState>('dormant')
   const [phase, setPhase] = useState<PresentationPhase>('asleep')
   const [previewKind, setPreviewKind] = useState<'entrance' | 'exit' | 'cycle' | null>(null)
@@ -71,44 +73,44 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
     <p>Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep.</p>
     <div className="presentation-editor__layout">
       <fieldset className="console__form-grid" disabled={disabled}>
-        <HelpField help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
+        <HelpField fieldPath={fieldPath('mode')} help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
           <option value="always_visible">Always visible</option><option value="emerge">Emerge from mist</option>
           <option value="reflective">Reflective mirror · black when dormant</option>
         </select></HelpField>
         <button type="button" onClick={() => edit({ mode: 'reflective', blackHoldMs: 400, revealStartMs: 1500, entranceMs: 4000, exitMs: 2400 })}>Quiet, ceremonial dread</button>
-        {!reflective ? <HelpField help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
+        {!reflective ? <HelpField fieldPath={fieldPath('backgroundId')} help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
           <option value="">Built-in atmosphere</option>{draft.visualAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
         </select></HelpField> : null}
-        <HelpField help={FIELD_HELP.ambience}>{reflective ? 'Dormant music (loops)' : 'Sleep ambience (loops)'}<select aria-label="Dormant music" value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
+        <HelpField fieldPath={fieldPath('ambienceId')} help={FIELD_HELP.ambience}>{reflective ? 'Dormant music (loops)' : 'Sleep ambience (loops)'}<select aria-label="Dormant music" value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
           <option value="">No ambience</option>
           {(['own', 'shared'] as const).map(origin => <optgroup key={origin} label={origin === 'own' ? 'Avatar folder' : 'Common / shared folder'}>{folderMusic.filter(a => a.origin === origin).map(a => <option value={a.assetId} key={a.assetId}>{a.name}</option>)}</optgroup>)}
           <optgroup label="Imported music">{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}</optgroup>
           {config.ambienceId && !draft.musicAssets.some(a => a.id === config.ambienceId) && !folderMusic.some(a => a.assetId === config.ambienceId) && <option value={config.ambienceId}>Selected music unavailable — check linked folders</option>}
         </select></HelpField>
         {folderError && <p role="alert">{folderError}</p>}
-        <HelpField help={FIELD_HELP.ambienceVolume}>{reflective ? 'Dormant music volume' : 'Ambience volume'} · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input aria-label="Active BGM volume" type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('ambienceGain')} help={FIELD_HELP.ambienceVolume}>{reflective ? 'Dormant music volume' : 'Ambience volume'} · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('activeAmbienceGain')} help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input aria-label="Active BGM volume" type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
         {reflective ? <>
-          <HelpField help={FIELD_HELP.entranceVideo}>Entrance mist video<select value={config.entranceVideoId ?? ''} onChange={e => edit({ entranceVideoId: e.currentTarget.value })}>
+          <HelpField fieldPath={fieldPath('entranceVideoId')} error={config.entranceVideoId && !entranceVideo ? 'Select an available entrance video or No video.' : undefined} help={FIELD_HELP.entranceVideo}>Entrance mist video<select value={config.entranceVideoId ?? ''} onChange={e => edit({ entranceVideoId: e.currentTarget.value })}>
             <option value="">No video · soft fade</option>{videos.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
           </select></HelpField>
-          <HelpField help={FIELD_HELP.exitVideo}>Exit mist video<select value={config.exitVideoId ?? ''} onChange={e => edit({ exitVideoId: e.currentTarget.value })}>
+          <HelpField fieldPath={fieldPath('exitVideoId')} error={config.exitVideoId && !exitVideo ? 'Select an available exit video or No video.' : undefined} help={FIELD_HELP.exitVideo}>Exit mist video<select value={config.exitVideoId ?? ''} onChange={e => edit({ exitVideoId: e.currentTarget.value })}>
             <option value="">No video · soft fade</option>{videos.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
           </select></HelpField>
-          <HelpField help={FIELD_HELP.ritualBlend}>Entrance video background<select value={config.entranceBlend ?? 'screen'} onChange={e => edit({ entranceBlend: e.currentTarget.value as 'screen' | 'normal' })}>
+          <HelpField fieldPath={fieldPath('entranceBlend')} help={FIELD_HELP.ritualBlend}>Entrance video background<select value={config.entranceBlend ?? 'screen'} onChange={e => edit({ entranceBlend: e.currentTarget.value as 'screen' | 'normal' })}>
             <option value="screen">Black background · screen blend</option><option value="normal">Transparent background · normal blend</option>
           </select></HelpField>
-          <HelpField help={FIELD_HELP.ritualBlend}>Exit video background<select value={config.exitBlend ?? 'screen'} onChange={e => edit({ exitBlend: e.currentTarget.value as 'screen' | 'normal' })}>
+          <HelpField fieldPath={fieldPath('exitBlend')} help={FIELD_HELP.ritualBlend}>Exit video background<select value={config.exitBlend ?? 'screen'} onChange={e => edit({ exitBlend: e.currentTarget.value as 'screen' | 'normal' })}>
             <option value="screen">Black background · screen blend</option><option value="normal">Transparent background · normal blend</option>
           </select></HelpField>
-          <HelpField help={FIELD_HELP.blackHold}>Black hold seconds<input type="number" min="0" max="10" step="0.1" value={blackHoldMs / 1000} onChange={e => edit({ blackHoldMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-          <HelpField help={FIELD_HELP.revealStart}>Reveal starts at seconds<input type="number" min="0" max="10" step="0.1" value={revealStartMs / 1000} onChange={e => edit({ revealStartMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+          <HelpField fieldPath={fieldPath('blackHoldMs')} error={reflective && blackHoldMs > revealStartMs ? timingError : undefined} help={FIELD_HELP.blackHold}>Black hold seconds<NumberInput type="number" min="0" max="10" step="0.1" value={blackHoldMs / 1000} onChange={e => edit({ blackHoldMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+          <HelpField fieldPath={fieldPath('revealStartMs')} error={reflective && revealStartMs >= config.entranceMs ? 'Reveal must start before the entrance ends.' : undefined} help={FIELD_HELP.revealStart}>Reveal starts at seconds<NumberInput type="number" min="0" max="10" step="0.1" value={revealStartMs / 1000} onChange={e => edit({ revealStartMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
           <p className="console__muted">Black hold ≤ reveal start &lt; entrance duration. The avatar fades in from the reveal start until the entrance ends.</p>
         </> : null}
-        <HelpField help={FIELD_HELP.entrance}>Entrance seconds<input type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <HelpField help={FIELD_HELP.exit}>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <HelpField help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={config.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => edit({ wakeGreeting: e.currentTarget.value })} /></HelpField>
-        <HelpField help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => edit({ sleepFarewell: e.currentTarget.value })} /></HelpField>
+        <HelpField fieldPath={fieldPath('entranceMs')} help={FIELD_HELP.entrance}>Entrance seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('exitMs')} help={FIELD_HELP.exit}>Exit seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('wakeGreeting')} help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={config.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => edit({ wakeGreeting: e.currentTarget.value })} /></HelpField>
+        <HelpField fieldPath={fieldPath('sleepFarewell')} error={!(config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell ?? '').trim() ? 'Enter a sleep farewell.' : undefined} help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => edit({ sleepFarewell: e.currentTarget.value })} /></HelpField>
         {error ? <p className="console__fault" role="alert">{error} Fix this before previewing, saving or publishing.</p> : null}
         <p className="console__muted">Videos are muted. Music mutes during avatar speech, then fades back in. Uses your selected speakers.{reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''}</p>
         {reflective && (!entranceVideo || !exitVideo) ? <p className="console__muted">Missing video uses a soft fade. No mist is generated.</p> : null}

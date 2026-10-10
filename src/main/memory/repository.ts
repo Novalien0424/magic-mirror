@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { Worker, type WorkerOptions } from 'node:worker_threads'
 import type { MemoryRepository } from './contracts'
+import { MemoryWorkerRecovery } from './recovery'
 
 /** Injectable only inside Main/tests. This worker is a thread, never a utility/renderer process. */
 export type MemoryStorageWorker = Pick<Worker, 'postMessage' | 'terminate'> & {
@@ -12,6 +13,8 @@ export type MemoryStorageWorker = Pick<Worker, 'postMessage' | 'terminate'> & {
 export interface MemoryRepositoryOptions {
   workerFactory?: (filename: string, options: WorkerOptions) => MemoryStorageWorker
   requestTimeoutMs?: number
+  /** Metadata-only lifecycle reasons; no request arguments, identifiers or native errors. */
+  report?(reason: string): void
 }
 const failureCodes = new Set(['memory_invalid_input', 'memory_schema_unsupported', 'memory_storage_failed'])
 function sanitized(value?: unknown): Error {
@@ -30,67 +33,114 @@ export function unavailableMemoryRepository(): MemoryRepository {
 export function createMemoryRepository(path: string, options: MemoryRepositoryOptions = {}): MemoryRepository {
   const timeoutMs = options.requestTimeoutMs ?? 10_000
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) throw sanitized('memory_invalid_input')
-  let worker: MemoryStorageWorker
-  try {
-    worker = (options.workerFactory ?? ((filename, workerOptions) => new Worker(filename, workerOptions)))(
-      join(__dirname, 'memory-storage-worker.js'),
-      { workerData: { path }, env: {}, execArgv: [], stdout: true, stderr: true }
-    )
-    // Native/provider output is never forwarded to diagnostics.
-    worker.stdout?.resume()
-    worker.stderr?.resume()
-  } catch { throw sanitized() }
-  let status: 'open' | 'closing' | 'failed' | 'closed' = 'open'
+  type Run = { worker: MemoryStorageWorker; healthy: boolean; remove(): void; termination?: Promise<void> }
+  let current: Run | undefined
+  let status: 'open' | 'recovering' | 'closing' | 'failed' | 'closed' = 'failed'
   let sequence = 0
-  let termination: Promise<void> | undefined
   let closing: Promise<void> | undefined
+  let recovering: Promise<void> | undefined
+  let recoveryBlocked = false
+  const recovery = new MemoryWorkerRecovery()
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>()
-  const terminate = () => termination ??= Promise.resolve().then(() => worker.terminate()).then(() => undefined, () => { throw sanitized() })
-  const fail = () => {
-    if (status === 'closed') return
-    status = 'failed'
+  const report = (reason: string) => { try { options.report?.(reason) } catch { /* Diagnostics never gate memory cleanup. */ } }
+  const rejectPending = () => {
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(sanitized()) }
     pending.clear()
-    void terminate().catch(() => { /* close reports sanitized termination failures. */ })
   }
-  const onMessage = (message: unknown) => {
-    if (!message || typeof message !== 'object') return
-    const reply = message as { id?: unknown; ok?: unknown; value?: unknown; error?: unknown }
-    if (typeof reply.id !== 'number' || !Number.isSafeInteger(reply.id)) return
-    const request = pending.get(reply.id)
-    if (!request) return
-    clearTimeout(request.timer); pending.delete(reply.id)
-    if (reply.ok === true) request.resolve(reply.value)
-    else request.reject(sanitized(reply.error))
+  const terminate = (run: Run): Promise<void> => run.termination ??= new Promise((resolve, reject) => {
+    const failed = () => { recoveryBlocked = true; report('memory_storage_shutdown_timeout'); reject(sanitized()) }
+    const timer = setTimeout(failed, 1000)
+    timer.unref()
+    void Promise.resolve().then(() => run.worker.terminate()).then(() => {
+      clearTimeout(timer); run.remove(); resolve()
+    }, () => { clearTimeout(timer); failed() })
+  })
+  const fail = (run: Run, reason = 'memory_storage_unavailable') => {
+    if (current !== run || status === 'closed' || status === 'failed') return
+    if (status !== 'closing') status = 'failed'
+    recovery.failed(); report(reason)
+    // The worker may already have committed a timed-out mutation. Never replay it.
+    rejectPending()
+    void terminate(run).catch(() => { /* close retains the sanitized rejection. */ })
   }
-  const onError = () => fail()
-  const onExit = () => { if (status !== 'closed') fail() }
-  worker.on('message', onMessage)
-  worker.on('error', onError)
-  worker.on('exit', onExit)
+  const open = () => {
+    try {
+      const worker = (options.workerFactory ?? ((filename, workerOptions) => new Worker(filename, workerOptions)))(
+        join(__dirname, 'memory-storage-worker.js'),
+        { workerData: { path }, env: {}, execArgv: [], stdout: true, stderr: true }
+      )
+      const onMessage = (message: unknown) => {
+        if (current !== run || !['open', 'closing'].includes(status) || !message || typeof message !== 'object') return
+        const reply = message as { id?: unknown; ok?: unknown; value?: unknown; error?: unknown }
+        if (typeof reply.id !== 'number' || !Number.isSafeInteger(reply.id)) return
+        const request = pending.get(reply.id)
+        if (!request) return
+        if (reply.ok !== true && ['memory_storage_failed', 'memory_schema_unsupported'].includes(reply.error as string)) {
+          if (reply.error === 'memory_schema_unsupported') recoveryBlocked = true
+          fail(run, reply.error === 'memory_schema_unsupported' ? 'memory_schema_unsupported' : 'memory_storage_unavailable')
+          return
+        }
+        clearTimeout(request.timer); pending.delete(reply.id)
+        if (reply.ok === true) {
+          if (!run.healthy && status === 'open') { run.healthy = true; report('memory_storage_ready') }
+          request.resolve(reply.value)
+        } else request.reject(sanitized(reply.error))
+      }
+      const onError = () => fail(run)
+      const onExit = () => { if (status !== 'closing' || pending.size) fail(run) }
+      const run: Run = { worker, healthy: false, remove: () => {
+        worker.off('message', onMessage); worker.off('error', onError); worker.off('exit', onExit)
+      } }
+      current = run; status = 'open'
+      worker.on('message', onMessage); worker.on('error', onError); worker.on('exit', onExit)
+      // Native/provider output is never forwarded to diagnostics.
+      worker.stdout?.resume(); worker.stderr?.resume()
+      return true
+    } catch {
+      if (current && status === 'open') fail(current)
+      else { status = 'failed'; recovery.failed(); report('memory_storage_unavailable') }
+      return false
+    }
+  }
+  const recover = (): Promise<void> => {
+    if (recovering) return recovering
+    if (recoveryBlocked) return Promise.reject(sanitized())
+    const permission = recovery.take()
+    if (permission !== 'allowed') { report(`memory_storage_recovery_${permission}`); return Promise.reject(sanitized()) }
+    status = 'recovering'
+    recovering = (async () => {
+      if (current) await terminate(current)
+      if (status !== 'recovering') throw sanitized()
+      current = undefined
+      if (!open()) throw sanitized()
+    })().finally(() => { recovering = undefined })
+    return recovering
+  }
+  open()
   const call = <T>(method: string, args: unknown[], duringClose = false): Promise<T> => {
+    if (!duringClose && (recovering || status === 'failed')) return (recovering ?? recover()).then(() => call<T>(method, args))
     if (status !== 'open' && !(duringClose && status === 'closing')) return Promise.reject(sanitized())
     return new Promise<T>((resolve, reject) => {
       const id = ++sequence
-      const timer = setTimeout(fail, timeoutMs)
+      const run = current!
+      const timer = setTimeout(() => fail(run), timeoutMs)
       pending.set(id, { resolve: value => resolve(value as T), reject, timer })
-      try { worker.postMessage({ id, method, args }) } catch { fail() }
+      try { run.worker.postMessage({ id, method, args }) } catch { fail(run) }
     })
   }
   const close = (): Promise<void> => {
     if (closing) return closing
     const wasOpen = status === 'open'
-    if (wasOpen) status = 'closing'
+    status = 'closing'
     closing = (async () => {
       try {
         if (wasOpen) await call<void>('close', [], true)
       } catch { /* An unavailable worker is still terminated below. */ }
       finally {
-        for (const request of pending.values()) { clearTimeout(request.timer); request.reject(sanitized()) }
-        pending.clear()
-        try { await terminate() } finally {
+        rejectPending()
+        try { if (current) await terminate(current) } finally {
           status = 'closed'
-          worker.off('message', onMessage); worker.off('error', onError); worker.off('exit', onExit)
+          current?.remove(); current = undefined
         }
       }
     })()

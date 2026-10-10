@@ -15,6 +15,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var deviceID: String?
     var lastFrame = ProcessInfo.processInfo.systemUptime
     var lastDetection = 0.0
+    var lastFace = ProcessInfo.processInfo.systemUptime
     var lastReason = ""
     var stopping = false
     var timer: DispatchSourceTimer?
@@ -145,7 +146,10 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 } else { emit(["type": "snapshot", "id": id]) }
             }
         }
-        guard !stopping, now - lastDetection >= 0.2,
+        // An empty room needs fewer Vision passes. A newly detected face
+        // restores normal gaze updates within at most half a second.
+        let detectionInterval = now - lastFace >= 60 ? 0.5 : 0.2
+        guard !stopping, now - lastDetection >= detectionInterval,
               let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastDetection = now
         autoreleasepool {
@@ -159,6 +163,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                         return ["x": Double(box.minX), "y": Double(1 - box.maxY),
                                 "width": Double(box.width), "height": Double(box.height)]
                     }
+                if !boxes.isEmpty { lastFace = now }
                 status("camera_tracking_ready", ready: true)
                 emit(["type": "faces", "faces": boxes])
             } catch { status("camera_detection_failed") }

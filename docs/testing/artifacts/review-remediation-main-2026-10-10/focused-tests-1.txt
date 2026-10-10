@@ -1,0 +1,105 @@
+Command: npm exec -- vitest run tests/unit/boot-runtime.test.ts tests/unit/boot-ipc.test.ts tests/unit/lifecycle.test.ts tests/unit/config-service.test.ts tests/unit/console-config-models.test.ts tests/unit/client-secret-broker.test.ts tests/unit/realtime-client-secret-broker.test.ts tests/unit/realtime-session-start-bundle.test.ts tests/main/camera/tracker.test.ts tests/unit/youtube-player.test.ts tests/main/wake/supervisor.test.ts tests/main/wake/calibration.test.ts tests/main/wake/model-package.test.ts tests/main/wake/detector.test.ts
+Exit: 1
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/console-config-models.test.ts (25 tests | 1 failed) 111ms
+     × registers every 9B channel with exact methods and preserves the existing Console/Mirror channels 3ms
+ ❯ tests/main/wake/supervisor.test.ts (16 tests | 3 failed) 9ms
+     × reports a replacement worker timer failure instead of staying restarting 1ms
+     × lets Start live test recover after automatic worker recovery is exhausted 1ms
+     × verifies first audio, recovers a missing stream once, and fails visibly if replacement stalls 1ms
+
+ Test Files  2 failed | 12 passed (14)
+      Tests  4 failed | 241 passed (245)
+   Start at  22:53:33
+   Duration  2.32s (transform 293ms, setup 0ms, import 518ms, tests 686ms, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/console-config-models.test.ts > Phase 0 Task 9B Console-only IPC/auth RED contract > registers every 9B channel with exact methods and preserves the existing Console/Mirror channels
+AssertionError: expected { …(21) } to deeply equal { …(18) }
+
+- Expected
++ Received
+
+  {
+    "avatarControl": "mirror:avatar-control",
++   "findMedia": "mirror:find-media",
+    "getSceneCatalog": "mirror:get-scene-catalog",
+    "getSnapshot": "mirror:get-snapshot",
+    "interrupt": "mirror:interrupt",
++   "mediaSkill": "mirror:media-skill",
+    "ready": "boot:renderer-ready",
+    "realtimeRuntimeCommand": "mirror:realtime-runtime-command",
+    "reportAvatarRuntime": "mirror:report-avatar-runtime",
+    "reportRealtimeFailure": "mirror:report-realtime-failure",
+    "reportRealtimeMetadata": "mirror:report-realtime-metadata",
+    "reportRealtimeRuntimeOutcome": "mirror:report-realtime-runtime-outcome",
+    "reportSceneAction": "mirror:report-scene-action",
+    "reportSceneVisual": "mirror:report-scene-visual",
+    "requestRealtimeClientSecret": "mirror:request-realtime-client-secret",
+    "sceneStatus": "mirror:scene-status",
++   "searchYoutube": "mirror:search-youtube",
+    "sleepRequest": "mirror:sleep-request",
+    "snapshot": "mirror:snapshot",
+    "stopScene": "mirror:stop-scene",
+    "triggerScene": "mirror:trigger-scene",
+  }
+
+ ❯ tests/unit/console-config-models.test.ts:1317:33
+    1315|       ready: 'boot:renderer-ready',
+    1316|     }))
+    1317|     expect(MIRROR_IPC_CHANNELS).toEqual({
+       |                                 ^
+    1318|       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-ou…
+    1319|       reportRealtimeFailure: 'mirror:report-realtime-failure',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/main/wake/supervisor.test.ts > wake worker supervisor > reports a replacement worker timer failure instead of staying restarting
+Error: synthetic timer failure
+ ❯ scheduleTimeout tests/main/wake/supervisor.test.ts:86:30
+     84|     const supervisor = createWakeSupervisor({ spawn, onWake() {},
+     85|       scheduleTimeout: (callback, delay) => {
+     86|         if (failTimer) throw new Error('synthetic timer failure')
+       |                              ^
+     87|         return setTimeout(callback, delay)
+     88|       } })
+ ❯ exited src/main/wake/supervisor.ts:436:15
+ ❯ Object.shutdown src/main/wake/supervisor.ts:426:26
+ ❯ tests/main/wake/supervisor.test.ts:100:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/main/wake/supervisor.test.ts > wake worker supervisor > lets Start live test recover after automatic worker recovery is exhausted
+TypeError: Cannot read properties of undefined (reading 'on')
+ ❯ exited src/main/wake/supervisor.ts:435:20
+    433|         resolve(value)
+    434|       }
+    435|       currentChild.on('exit', () => finish(true))
+       |                    ^
+    436|       timer = scheduleTimeout(() => finish(false), requestTimeoutMs)
+    437|       try { currentChild.kill() } catch { finish(false) }
+ ❯ Object.shutdown src/main/wake/supervisor.ts:426:26
+ ❯ tests/main/wake/supervisor.test.ts:152:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/main/wake/supervisor.test.ts > wake worker supervisor > verifies first audio, recovers a missing stream once, and fails visibly if replacement stalls
+AssertionError: expected 'wake_worker_restarting' to be 'wake_audio_stalled' // Object.is equality
+
+Expected: "wake_audio_stalled"
+Received: "wake_worker_restarting"
+
+ ❯ tests/main/wake/supervisor.test.ts:210:42
+    208|     await vi.advanceTimersByTimeAsync(3001)
+    209|     expect(first.kill).toHaveBeenCalledOnce()
+    210|     expect(supervisor.snapshot().reason).toBe('wake_audio_stalled')
+       |                                          ^
+    211|     first.emitExit()
+    212|     second.emitMessage({ type: 'ready', requestId: second.commands[0].…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+

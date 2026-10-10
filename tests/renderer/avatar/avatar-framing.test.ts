@@ -25,9 +25,11 @@ describe('fixed height and authored Layout avatar framing', () => {
     model.setupFromLayout(new Map([[dimension, 1.2], ['x', 0.15], ['y', -0.2]]))
     const before = [...model.getArray()]
     const scale = dimension === 'height' ? 0.6 : 0.8
+    const reusable = createAvatarMvp(1, 1, model)
     for (let frame = 0; frame < 100; frame++) {
       const [width, height] = frame % 2 ? [540, 960] : [1080, 1920]
-      const mvp = createAvatarMvp(width, height, model)
+      const mvp = createAvatarMvp(width, height, model, reusable)
+      expect(mvp).toBe(reusable)
       expect(mvp.getScaleX()).toBeCloseTo(scale * 16 / 9, 6)
       expect(mvp.getScaleY()).toBeCloseTo(scale, 6)
       expect(mvp.transformX(0)).toBeCloseTo(0.15 * 16 / 9, 6)

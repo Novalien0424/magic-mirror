@@ -145,13 +145,15 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
     setVolume(value) { volume = Math.max(0, Math.min(1, value)); applyGain() },
     setMuted(value) { muted = value; applyGain() },
     interrupt() {
+      if (disposed || interrupted) return
       interrupted = true; ++generation; applyGain(); input.disconnect(); input.connect(drain)
       // Reconfigure invokes the upstream WASM reset; disconnect the input so no
       // cancelled remote samples can refill it. Recreate both spatial buffers.
+      const roomBuffer = room.buffer, echoBuffer = echo.buffer
       direct.disconnect(); room.disconnect(); room = context.createConvolver()
-      room.buffer = roomImpulse(context, settings.roomSize); room.connect(wet)
+      room.buffer = roomBuffer; room.connect(wet)
       echo.disconnect(); echo = context.createConvolver(); echo.normalize = false
-      echo.buffer = echoImpulse(context, settings.echoDelayMs, settings.echoRepeats); echo.connect(echoWet)
+      echo.buffer = echoBuffer; echo.connect(echoWet)
       // Native filters, oversampling and compressor lookahead also hold samples.
       // Recreate these short stateful stages while muted, not only the worklet.
       mix.disconnect()

@@ -24,8 +24,9 @@ onReady:e=>{e.target.setVolume(config.volume);e.target.playVideo()},onError:e=>{
 
 /** Separate in-memory session and sandbox: no microphone, files, prompts or IPC. */
 export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, options: {
-  preferences?: () => AudioPreferences; report?: (reason: string) => void
+  preferences?: () => AudioPreferences; report?: (reason: string) => void; now?: () => number
 } = {}): YoutubePlayer {
+  const now = options.now ?? (() => performance.now())
   const isolated = session.fromPartition('magic-mirror-youtube', { cache: false })
   isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   isolated.setPermissionCheckHandler(() => false)
@@ -59,7 +60,7 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
       const view = new WebContentsView({ webPreferences: { session: isolated, sandbox: true, contextIsolation: true,
         nodeIntegration: false, webSecurity: true, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' } })
       const contents = view.webContents
-      let stopped = false, started = false, polling = false, lastPosition = -1, lastProgress = Date.now()
+      let stopped = false, started = false, polling = false, lastPosition = -1, lastProgress = now()
       let failureCode = 'youtube_playback_failed'
       const emit = (status: 'acknowledged' | 'completed' | 'failed') => report({ ...request.context, status,
         ...(status === 'failed' ? { errorCode: failureCode } : {}) })
@@ -81,7 +82,7 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
       }
       const poll = async () => {
         if (stopped) return
-        if (Date.now() - lastProgress > (started ? 30000 : 60000)) { failureCode = 'youtube_playback_timeout'; fail(); return }
+        if (now() - lastProgress > (started ? 30000 : 60000)) { failureCode = 'youtube_playback_timeout'; fail(); return }
         if (polling) return
         polling = true
         try {
@@ -100,8 +101,8 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
           }
           if (state?.state === 1 && typeof state.time === 'number' && Number.isFinite(state.time)) {
             if (!started) { started = true; emit('acknowledged') }
-            if (lastPosition !== state.time) { lastPosition = state.time; lastProgress = Date.now() }
-          } else if (started && state?.state === 2) lastProgress = Date.now() // Viewer paused using YouTube's controls.
+            if (lastPosition !== state.time) { lastPosition = state.time; lastProgress = now() }
+          } else if (started && state?.state === 2) lastProgress = now() // Viewer paused using YouTube's controls.
           else if (started && state?.state === 0 && request.mode === 'once') { cleanup(); emit('completed') }
         } catch { fail() } finally { polling = false }
       }
