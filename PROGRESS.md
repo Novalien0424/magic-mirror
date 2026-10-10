@@ -1,4 +1,33 @@
-# Magic Mirror — TV HDMI investigation and Raven status, 2026-10-10
+# Magic Mirror — media delivery and review remediation, 2026-10-10
+
+## Latest delivery and runtime
+
+[Media, compact prompt, BGM and TV-loss evidence](docs/testing/media-fallback-bgm-tv-shutdown-2026-10-10.md).
+Removed the sticky transcript-regex YouTube block. The final real-Raven run
+passes local-first→YouTube→play and once completion/return in English and Chinese,
+while respecting a prior local-only request. Playback preambles still fail
+quality (exit 2). The final empathy/context run passes all four turns (exit 0);
+Chinese ASR fidelity remains separately flagged. Session prose is 43% shorter,
+tool-rule prose 22% shorter, with no new intent regex or extra confirmation gate.
+
+Silent-video BGM passes 18 functional Raven checks with 11 captures, including
+continuous BGM across a loop, embedded-audio suppression, wake/stop and black
+Dormant. 164 focused tests, both typechecks and the production build pass.
+These are synthetic-provider/functional results, not new human wake acceptance.
+
+The field LaunchAgent now configures the wired TV host. Main quits through its
+normal cleanup when HDMI and Ethernet are both absent continuously for at least
+15 seconds. The deployed absence check reached clean exit 0; current runtime
+and final settings/process verification are recorded in the linked report.
+Normal Raven and isolated QA did not overlap.
+
+The owner then requested systematic remediation of
+[the performance/correctness/UI review](docs/testing/performance-correctness-uiux-review-2026-10-10.md).
+[Finding ledger](docs/testing/review-remediation-2026-10-10.md) tracks the new work.
+Next: resolve verified findings by subsystem, run focused checks and visible QA,
+then deploy and push the integrated result. Preserve healthy reflective black
+Dormant and the sole LaunchAgent restart owner. The earlier physical wake,
+Wi-Fi and human-acceptance limits below remain open.
 
 ## Current TV work
 
@@ -107,9 +136,9 @@ or packaging/signing claim is added.
   upright. These are synthetic PCM/real WebRTC ASR runs, not human acoustic
   acceptance. [Run links and limits](docs/testing/tv-hdmi-boot-2026-10-10.md#clean-app-shutdown-and-current-conversation-evidence).
 
-## Runtime and next action
+## Earlier TV runtime and remaining physical acceptance
 
-**Raven is restored and running in reflective Dormant.** At 21:43:58 the sole
+**Historical runtime before the media work.** At 21:43:58 the sole
 app LaunchAgent started PID **4658** (fifth launch); both renderers are Ready,
 T749 is selected/full-screen, and wake input reports listening at 21:43:59.
 A fresh native screenshot confirms the expected black portrait Dormant screen.

@@ -209,8 +209,8 @@ describe('structured Realtime tool catalog', () => {
   it('routes local-first lookup and explicit source restrictions through the shared catalog', () => {
     const lookup = resolveRealtimeTools('Rest.').find(t => t.name === 'find_media')!
     expect(lookup.rules.useWhen).toContain('call find_media first')
-    expect(lookup.rules.useWhen).toContain('explicit YouTube request skips local search')
-    for (const phrase of ['our folder', 'our vault', '我們的資料夾', '我們的寶庫']) expect(lookup.rules.useWhen).toContain(phrase)
+    expect(lookup.rules.useWhen).toContain('unless the visitor explicitly requests YouTube')
+    expect(lookup.rules.useWhen).toContain('not every later media request')
     expect(lookup.rules.speech).toContain('no suitable local match')
     expect(resolveRealtimeTools('Rest.').find(t => t.name === 'play_youtube')!.rules.avoidWhen).toContain('Use once unless')
   })
@@ -219,6 +219,12 @@ describe('structured Realtime tool catalog', () => {
     const handler = vi.fn(async () => ({ outcome: 'accepted' as const, media }))
     const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'find_media'), { find_media: handler }, vi.fn())
     expect(await call(tool, '{"query":"rain","kind":"music"}')).toMatchObject({ media })
+    expect(await call(tool, '{"query":"rain","kind":"music"}')).not.toHaveProperty('guidance')
+    handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_no_match', resources: [], total: 0 } })
+    expect(await call(tool, '{"query":"missing","kind":"music"}')).toMatchObject({
+      media: { code: 'media_discovery_no_match', resources: [], total: 0 },
+      guidance: expect.stringContaining('continue with search_youtube'),
+    })
     handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_stale', resources: [], total: 0 } })
     expect(isBackgroundResult(await call(tool, '{"query":"rain","kind":"music"}'))).toBe(true)
   })

@@ -7,7 +7,6 @@ import config from '../../resources/config/default.json'
 import { buildAvatarPrompt } from '../shared/avatar-prompt'
 import { resolveRealtimeTools } from '../shared/realtime-tools'
 import { rankMediaResources } from '../shared/media-discovery'
-import { createMediaSourcePolicy } from '../shared/media-source-policy'
 import { bindRealtimeTools } from '../renderer/realtime/realtime-tool-bindings'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import { createClientSecretBroker } from './realtime/client-secret-broker'
@@ -48,8 +47,6 @@ async function finish(exit: number, reason?: string) {
 void app.whenReady().then(async () => {
   const broker = createClientSecretBroker({ credentialStore: createEnvironmentCredentialSource(), events: { emit() {} } })
   for (const scenario of scenarios) {
-    const source = createMediaSourcePolicy()
-    source.begin(scenario.name); source.observe(scenario.name, scenario.text)
     const calls: { name: string; mode?: unknown; valid?: boolean }[] = []
     let responseDone = 0, lastActivity = Date.now(), failed = false, replied = false
     const local = scenario.ambiguous ? [...resources, { ...resources[0], assetId: 'fixture-rain-other', name: 'Rain — Another Pianist' }] : resources
@@ -58,11 +55,9 @@ void app.whenReady().then(async () => {
       find_media: async args => {
         record('find_media')
         const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' })
-        source.searchedLocal()
         return { outcome: media.status, media }
       },
       search_youtube: async () => {
-        if (await source.youtube() !== 'allowed') return { outcome: 'rejected', youtube: { status: 'rejected', code: 'youtube_search_source_restricted', videos: [] } }
         record('search_youtube')
         return { outcome: 'accepted', youtube: { status: 'accepted', code: 'youtube_search_results', videos: [
           { url: 'https://www.youtube.com/watch?v=M7lc1UVf-VE', title: 'Moonlit Lake — Fixture Pianist', channel: 'Fixture Pianist' },
@@ -70,7 +65,6 @@ void app.whenReady().then(async () => {
       },
       play_media: async args => { record('play_media', args.mode, args.assetId === 'fixture-rain'); return 'accepted' },
       play_youtube: async args => {
-        if (await source.youtube() !== 'allowed') return 'rejected'
         record('play_youtube', args.mode, args.url === 'https://www.youtube.com/watch?v=M7lc1UVf-VE'); return 'accepted'
       },
       stop_media: async () => { record('stop_media'); return 'accepted' },

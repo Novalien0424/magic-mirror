@@ -113,25 +113,21 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
-  it('blocks model-requested YouTube search and playback for visitor folder-only speech before any network call', async () => {
+  it('does not carry a regex folder restriction into a new model-directed YouTube fallback or wait for final ASR', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
     const onMediaRequest = vi.fn(async () => 'accepted' as const);
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onSearchYoutube, onMediaRequest });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'local' });
-    const pending = tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}');
-    expect(onSearchYoutube).not.toHaveBeenCalled();
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'local', transcript: 'Play Moonlit Lake from our vault.' });
-    expect(await pending).toMatchObject({ youtube: { code: 'youtube_search_source_restricted' } });
-    expect(await tools.find(t => t.name === 'play_youtube').invoke({}, '{"url":"https://youtu.be/abcdefghijk","kind":"music","mode":"once"}')).toMatchObject({ status: 'rejected' });
-    expect(onSearchYoutube).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
-    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_source_restricted' }));
-    expect(JSON.stringify(sink.mock.calls)).not.toContain('Moonlit');
-    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'broaden' });
-    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'broaden', transcript: 'Try YouTube instead.' });
-    await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}');
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new-request' });
+    expect(await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}')).toMatchObject({ youtube: { code: 'youtube_search_results' } });
+    await tools.find(t => t.name === 'play_youtube').invoke({}, '{"url":"https://youtu.be/abcdefghijk","kind":"music","mode":"once"}');
     expect(onSearchYoutube).toHaveBeenCalledOnce();
+    expect(onMediaRequest).toHaveBeenCalledOnce();
+    expect(sink).not.toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_source_restricted' }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('Moonlit');
     await handle.close('user_requested');
   });
   it('returns fresh media choices, drops interrupted searches, and marks media tool turns as controls', async () => {

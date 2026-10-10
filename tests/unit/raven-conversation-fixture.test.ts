@@ -5,7 +5,6 @@ import {
   type RavenScenarioId, type RavenQualityVerdict, type RavenFixtureTurn, type RavenSemanticCategory,
 } from '../../src/main/raven-conversation-fixture'
 import { createSpellTriggerGuard } from '../../src/main/scenes/spell-trigger'
-import { localMediaOnly } from '../../src/shared/media-source-policy'
 import { REALTIME_TOOLS } from '../../src/shared/realtime-tools'
 
 function scenario(id: RavenScenarioId) {
@@ -73,14 +72,12 @@ describe('bounded synthetic Raven fixture', () => {
   })
 
   it('keeps English/Chinese folder and sticky scope local, and requires ordered default fallback', () => {
-    let localOnly = false
     for (const turn of scenario('local_scope').turns) {
-      localOnly = localMediaOnly(renderRavenVisitorText(turn, {}), localOnly)
-      expect(localOnly).toBe(true)
       expect(turn.expected.source).toBe('local_only')
       expect(turn.expected.toolRoutes.flat().some(tool => tool.includes('youtube'))).toBe(false)
     }
     const fallback = fixtureTurn('default_fallback', 'local_then_external').expected
+    expect(scenario('default_fallback').turns[0]!.expected.source).toBe('local_only')
     expect(fallback.toolRoutes).toEqual([['find_media', 'search_youtube', 'play_youtube']])
     expect(fallback.criteria.some(c => c.category === 'local_first')).toBe(true)
     expect(fallback.runtimeChecks).toContain('selection')

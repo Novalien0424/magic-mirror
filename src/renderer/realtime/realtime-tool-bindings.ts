@@ -20,6 +20,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     const result = (outcome: ToolOutcome, memory?: import('../../shared/memory').MemoryReply,
       media?: import('../../shared/media-discovery').MediaDiscoveryReply, youtube?: import('../../shared/youtube-search').YoutubeSearchReply) => {
       const payload = { ...spec.results[outcome], ...(memory ? { memory } : {}), ...(media ? { media } : {}), ...(youtube ? { youtube } : {}),
+        ...(spec.handler === 'find_media' && media?.code === 'media_discovery_no_match' ? { guidance: REALTIME_PROMPTS.mediaNoMatch } : {}),
         ...(memory?.code === 'memory_action_not_requested' ? { guidance: REALTIME_PROMPTS.memoryActionNotRequested } : {}) }
       const responds = !media?.code.endsWith('_stale') && !youtube?.code.endsWith('_stale') && memory?.code !== 'memory_result_stale' && memory?.code !== 'memory_confirmation_required' && (spec.completion === 'response'
         || spec.completion === 'background_on_success' && (outcome === 'failed' || outcome === 'rejected'

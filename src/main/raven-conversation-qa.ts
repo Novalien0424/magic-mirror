@@ -10,7 +10,6 @@ import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTH
 import { judgeRavenConversation } from './raven-conversation-judge'
 import realtimeMessages from '../../resources/config/prompts/realtime.v1.json'
 import type { WakeInputSnapshot } from '../shared/wake-input'
-import { localMediaOnly } from '../shared/media-source-policy'
 import { normalizeTranscript } from './scenes/spell-trigger'
 import { convertWakeQaPcm } from './raven-wake-asr-qa'
 import { createConfiguredSherpaDetector, WAKE_MAX_ACTIVE_PATHS } from './wake/sherpa-detector'
@@ -23,7 +22,7 @@ interface State {
 }
 interface Media { time: number; duration: number | null; loop: boolean; paused: boolean; ready: number }
 interface Observation { records: Turn[]; tools: Call[]; usage: { stage: string; status: string; tokens: number }[]; errors: string[]; inputText: number }
-interface Result { step: string; status: 'passed' | 'failed' | 'not_executed'; reason?: string; durationMs?: number; calls?: string[]; diagnostics?: string[]; utterances?: { visitor: number; avatar: number; audible: number }; recognition?: { exact: boolean; localOnly: boolean; youtube: boolean; loop: boolean }; lookups?: { kind: string; words: number; aliasExact: boolean; aliasContained: boolean; count: number }[] }
+interface Result { step: string; status: 'passed' | 'failed' | 'not_executed'; reason?: string; durationMs?: number; calls?: string[]; diagnostics?: string[]; utterances?: { visitor: number; avatar: number; audible: number }; recognition?: { exact: boolean; youtube: boolean; loop: boolean }; lookups?: { kind: string; words: number; aliasExact: boolean; aliasContained: boolean; count: number }[] }
 
 export async function synthesize(texts: string[], voice?: { language: 'zh-TW' | 'zh-CN'; rate: number }): Promise<string[]> {
   return new Promise((resolve, reject) => {
@@ -95,7 +94,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       }) ?? []
       return { calls, lookups, utterances: { visitor: records.filter(r => r.role === 'visitor').length,
         avatar: records.filter(r => r.role === 'avatar').length, audible: records.filter(r => r.role === 'avatar' && r.audible).length },
-        ...(spoken ? { recognition: { exact: normalizeTranscript(heard) === normalizeTranscript(spoken), localOnly: localMediaOnly(heard), youtube: /youtube|youtu\.be/iu.test(heard), loop: /\b(?:loop|repeat)\b|循環|循环|重複|重复/u.test(heard) } } : {}),
+        ...(spoken ? { recognition: { exact: normalizeTranscript(heard) === normalizeTranscript(spoken), youtube: /youtube|youtu\.be/iu.test(heard), loop: /\b(?:loop|repeat)\b|循環|循环|重複|重复/u.test(heard) } } : {}),
         diagnostics: [...new Set(events(start).map(e => e.reason).filter((r): r is string => typeof r === 'string' && /^(?:memory|youtube|media|wake|realtime|camera)_[a-z0-9_]+$/.test(r)))].slice(0, 40) }
     }
     try { await operation(); report({ step: name, status: 'passed', durationMs: Date.now() - start, ...await metadata() }); await persist(true); return true }
@@ -144,7 +143,14 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     return !s.media && s.hidden === 'false' && s.opacity >= .99 && s.avatarReady && s.avatarVisible && s.phase === 'awake'
   }
   const localCompleted = async (since: number) => {
-    await wait(async () => events(since).some(e => e.reason === 'media_completed') && await returned(), 'media_return', 120000)
+    try {
+      await wait(async () => events(since).some(e => e.reason === 'media_completed') && await returned(), 'media_return', 120000)
+    } catch (error) {
+      const remote = await youtubeState()
+      if (remote) input.onEvidence({ step: 'youtube_playback_timeout', status: 'info',
+        item: `state=${remote.state};seconds=${Math.round(remote.time)};duration=${Math.round(remote.duration)};error=${remote.error}` })
+      throw error
+    }
     if (!events(since).some(e => e.reason === 'media_playing') || input.runtime.snapshot().lifecycle !== 'active') throw Error('raven_qa_media_not_started')
     await delay(500)
   }
