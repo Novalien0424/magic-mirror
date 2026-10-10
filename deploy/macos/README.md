@@ -28,8 +28,9 @@ Rockchip's stock RK628D default and does not describe the panel.
    192.168.77.1 and DNS placeholders 0.0.0.0; Android Internet is not required.
 4. AnyLauncher HOME is `com.tumuyan.fixedplay/.MainActivity`. Select HDMI-IN
    (`com.android.rockchip.camera2/.RockchipCamera2`) as primary, mode `r2`, and
-   Quickstep as secondary. Two software reboots passed; physical power-cycle
-   and rapid-HOME escape acceptance remain pending.
+   Quickstep as secondary. Two software reboots and the user's subsequent
+   power-on check passed; explicit mains-removal and rapid-HOME escape
+   acceptance remain pending.
 5. Set `accelerometer_rotation=0` and **`user_rotation=2`** through wired ADB.
    Combined with Mac rotation 90°, this is physically confirmed upright.
 

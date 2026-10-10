@@ -355,17 +355,24 @@ denied, not verified absent. No speculative vendor-property changes were made.
 Normal Raven was restored through its sole LaunchAgent at **21:43:58**, PID
 4658, both renderers Ready, T749 selected/full-screen, wake listening at
 21:43:59. A fresh native screenshot shows the expected black reflective-Dormant
-portrait screen. The user can now perform the physical TV power-cycle check.
+portrait screen.
 
-- User will perform a physical TV power-down/reboot after the assistant's work.
-  Verify automatic HDMI, upright picture and wired ADB afterward. Two software
-  reboots and wired standby/wake already passed; hard power removal is distinct.
+At **21:50:25**, after the user reported powering on the TV, the read-only
+acceptance check passed: boot count **51→52**, Awake / display ON, static
+192.168.77.2/24, AnyLauncher HOME, HDMI-IN resumed, rotation 2. No assistant
+wake or HDMI-launch command was sent during this check. ADB reconnected through
+the same server PID 4320. Mac T749 remained 1080×1920@60, rotation 90°, extended
+right of Virtual Main. Existing Raven PID 4658 logged target removal followed
+by automatic rehoming, without an Electron restart. A fresh native screenshot
+shows the expected black reflective-Dormant screen. This verifies the
+user-operated TV startup; whether mains power was removed was not established.
+
 - Verify rapid-HOME Quickstep escape physically. Explicit rollback is
   `cmd package set-home-activity --user 0 com.android.launcher3/.uioverrides.QuickstepLauncher`.
   Settings remains accessible by ADB. Do not restore the old watchdog without
   correcting its obsolete Wi-Fi target and rotation 1.
-- Mac cold boot, hard TV power cycle, physical remote and future Bluetooth
-  button integration remain untested. No button has been installed.
+- Mac cold boot, explicit mains-removal recovery, remote shortcut behavior and
+  future Bluetooth button integration remain untested. No button is installed.
 - The exact earlier off-topic response remains unattributed. Controlled Raven
   QA found language and tool-preamble failures; preserve those failed results.
 

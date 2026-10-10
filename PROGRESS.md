@@ -28,8 +28,12 @@ Installed the standalone root **board-adb** daemon, listening only on
 then explicit wake returned Awake/ON and HDMI, without a TV reboot. Source and
 installed plist/binary hashes match; syntax/plist checks pass. An earlier stale
 host transport and rejected ADB listen syntax are retained in the report.
-**Next TV check:** the user will physically power down/reboot the TV. Software
-reboots do not establish hard-power or Mac cold-boot acceptance.
+**User power-on check passed at 21:50:** boot count 51→52, Awake/ON,
+AnyLauncher still HOME, HDMI-IN foreground without an assistant launch call,
+static wired address and both rotations preserved. Raven's existing PID 4658
+automatically rehomed its window to T749; a screenshot shows reflective Dormant.
+The user reported powering on the TV; mains removal was not separately
+established. Mac cold boot remains untested.
 
 Historical, now-disabled Mac watchdog fix: require an awake
 board, successful activity query and confirmed stock launcher before starting
@@ -111,7 +115,7 @@ T749 is selected/full-screen, and wake input reports listening at 21:43:59.
 A fresh native screenshot confirms the expected black portrait Dormant screen.
 ADB daemon PID 4320 remains running; Virtual is Main and T749 is extended right.
 Normal Raven was cleanly stopped during both isolated QA runs; they did not
-overlap. The system is ready for the user's physical TV power-cycle check.
+overlap. The subsequent user power-on check passed as recorded above.
 
 At 21:23, `com.magicmirror.launchagent` had started PID **2967**, fourth launch,
 with both renderers Ready on T749. It reached Dormant, detected the user's wake
