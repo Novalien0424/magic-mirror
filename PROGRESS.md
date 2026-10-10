@@ -2,27 +2,23 @@
 
 ## Current TV work
 
-The user requested reliable TV-side boot directly to HDMI and authorized ADB
-control. After enabling **Connect to the computer**, access on port 5038 to
-`10.0.0.4:5555` succeeded: ZC-3568D/RK3568, Android 11,
-`rk3568_r-userdebug 11 RD2A.211001.002 eng.zckj01.20240903.170918 release-keys`.
-The default HOME remains Launcher3; the foreground HDMI viewer was
-`com.android.rockchip.camera2/.RockchipCamera2`, launched by the existing Mac
-watchdog. Targeted settings/props inspection did not establish a native HDMI
-boot option. No replacement launcher or board configuration has been installed.
-
-At about 17:57 CST, ADB went offline during the first vendor APK read
-(`adb: error: connect failed: closed`). The connection retry timed out;
-root ping received no replies. Cause of the network loss is not established.
-Further board inspection and reboot/physical-remote acceptance remain blocked
-on restored access. Next: inspect vendor startup capabilities; prefer a native
-boot setting, otherwise qualify a TV-side HOME launcher with a Settings escape.
+**Latest:** [TV boot-to-HDMI investigation and resume steps](docs/testing/tv-hdmi-boot-2026-10-10.md).
+Access returned at 19:32; vendor APK inspection confirmed native boot-app hooks.
+The user chose **AnyLauncher** to replace Quickstep as HOME. Official v1.13 is
+downloaded and inspected, but **not installed**: ADB dropped again before
+transfer. No TV boot properties/HOME selection were changed. The Mac watchdog
+was temporarily paused for inspection, then restored (PID **93141**); Raven
+remains stopped. Boot history proves a 19:34 requested reboot, while the later
+19:42 connection loss remains unexplained. Packet/protocol and root-daemon
+checks are in the report; do not equate failed probes with TV power-off.
+Next: restore stable access, install/configure AnyLauncher with Quickstep escape,
+and test independent reboot/standby with the Mac watchdog unloaded.
 
 Fixed the Mac watchdog's unsafe blank-foreground recovery: require an awake
 board, successful activity query and confirmed stock launcher before starting
 HDMI; check Android launch status before logging success. **11 fake-ADB cases
 pass**, plus zsh syntax and whitespace checks. Deployed via the existing root
-LaunchDaemon, PID **90483**; source/installed SHA256 matches
+LaunchDaemon; source/installed SHA256 matches
 `68b6f000670262215e236c3930a3bd157f6c47f01640a9975f74ab3289912383`.
 These are simulated control checks and installation evidence, not proof of
 physical TV standby/resume. [Operator details and test](deploy/macos/README.md).
