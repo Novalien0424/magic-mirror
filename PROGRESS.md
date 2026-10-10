@@ -12,10 +12,11 @@ remains stopped. Boot history proves a 19:34 requested reboot, while the later
 19:42 connection loss remains unexplained. At 20:00, the TV address sent ARP/mDNS
 traffic but did not answer unicast TCP/ICMP. The operator reports that Wi-Fi
 reconnection and a normal reboot did not restore access, and is testing the
-Connect to the computer toggle. A 15-minute reconnect/log-capture watcher
-started at 19:59; ADB had not returned by 20:07. Vendor network/reboot code
-candidates are documented but not yet tied
-to the incident. Do not equate failed probes with TV power-off.
+Connect to the computer toggle. The 15-minute reconnect/log-capture watcher
+ended at **20:14:17 without ADB recovery**. The operator reports ping timeout
+when the TV is on and destination unreachable when off, consistent with the
+captured ARP reply while unicast requests timed out. Vendor network/reboot code
+candidates remain unproven. Do not equate failed probes with TV power-off.
 Next: restore stable access, install/configure AnyLauncher with Quickstep escape,
 and test independent reboot/standby with the Mac watchdog unloaded.
 

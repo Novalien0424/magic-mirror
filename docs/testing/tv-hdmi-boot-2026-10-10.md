@@ -117,6 +117,16 @@ captures boot history, selected vendor properties, interface/routes, power state
 configuration-file metadata and filtered system/network logs when ADB returns.
 No new TV logs were obtainable during the outage.
 
+The watcher ended at **20:14:17** without an ADB recovery. A fresh neighbor
+check at **20:06:37** had received an ARP reply for `10.0.0.4` from the expected
+board MAC after clearing only that target's Mac ARP entry; TCP still timed out.
+The operator later reported ping **request timeout while the TV is on**, versus
+**destination unreachable while off**. This is consistent with neighbor
+resolution working while on and failing while off; the sender/error details
+of the operator's unreachable response were not captured. It does not identify
+whether the unicast failure is in the TV, access point or return path.
+Metadata capture: `.artifacts/tv-hdmi-2026-10-10/fresh-neighbor-check.txt`.
+
 [Apple documents root/daemon local-network exemptions](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
 [Android distinguishes ADB offline from device power state](https://developer.android.com/tools/adb).
 Do not report a failed probe as proof that the TV is powered off.
