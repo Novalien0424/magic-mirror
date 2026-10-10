@@ -14,7 +14,7 @@ if (process.platform !== 'darwin' || process.cwd() !== '/Users/novalien0424/magi
 const args = process.argv.slice(2), launchAgent = args.includes('--launch-agent')
 if (launchAgent) args.splice(args.indexOf('--launch-agent'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
-if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay', 'wake_capture', 'wake_control'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)

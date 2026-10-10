@@ -31,6 +31,17 @@ Identical live/replay misses localize the result to the delivered waveform plus
 detector configuration; they do not distinguish device DSP, room acoustics,
 conversion or model robustness. Clean-source success alone cannot do that either.
 
+Use a second known keyword on the same acoustic route when a phrase keeps
+failing: success localizes the failure to phrase-dependent acoustic recognition,
+not necessarily a broken keyword compiler. A valid phoneme encoding does not
+guarantee robust recognition. Compare stock and instrumented engines with clean
+positive controls for each. When testing native-rate capture, wait for delivered
+preroll and stream EOF before freezing its PCM; native stop can flush queued
+samples. An offline decibri conversion shares the same library as live capture;
+an independent converter tests a different boundary. Unhinted cloud ASR is only
+an authorized diagnostic, never an implicit wake fallback or proof of correct
+capture when the same ASR also misrecognizes the clean source.
+
 Installed decibri 5.7.0 captures the device default format and resamples to the
 requested format. At Jabra's 32 kHz, `framesPerBuffer: 1600` requests 50 ms native
 buffers while reblocking delivered 16 kHz PCM into 100 ms chunks. Read native
@@ -39,6 +50,16 @@ not lost samples. Zero counters do not exclude native-to-JS queue latency; compa
 sample totals, delivery timing and processing duration as well. These are
 [version-specific source findings](https://github.com/decibri/decibri/blob/npm-v5.7.0/crates/decibri/src/microphone.rs),
 not permission or human-accuracy evidence.
+
+When media continues in Dormant, Realtime's browser mic/AEC has already closed;
+native wake does not inherit it. The current capture options enable no software
+AEC. Installed decibri 5.7.0 supports `aec: 'tau'` plus `pushAecReference()`, but
+without the actual played reference PCM it passes input through unchanged.
+Reference delivery must match playback timing, declared rate/channels and capture
+dtype, stay in RAM, and stop with the owner. Verify the real playback sink and
+compare audible/muted media before attributing a miss to playback interference.
+See the [installed contract](../../../../node_modules/decibri/src/decibri.d.ts)
+and the follow-up RCA; a keyword threshold change is not echo cancellation.
 
 ## macOS permission and QA boundary
 
@@ -109,3 +130,11 @@ scores, so observed partial-token maxima are not a hard decoder limit. Neither
 that result nor a speakerphone's documented echo cancellation establishes human
 far-field accuracy. Use the report's route-specific evidence and current runtime
 state; do not turn a dated hypothesis into a general skill rule.
+
+The [same-day follow-up](../../../../docs/testing/wake-phrase-rca-2026-10-10.md)
+subsequently isolated decoder search width on identical captured PCM. A wider
+search recovered missed phrases without changing tokens, bias or threshold.
+Search width is a separate control: inspect the loaded configuration and compare
+representative positives/negatives before recommending threshold changes. The
+Mac implementation now uses 32 paths; Windows retains four. This is bounded
+acoustic evidence, not a human accuracy or false-wake-rate guarantee.

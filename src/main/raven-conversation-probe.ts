@@ -7,9 +7,11 @@ export function ravenConversationProbe(speech: string[]): string {
     active:0,audio:false,stops:0,interrupts:0,asr:0,inputText:0,last:Date.now(),media:false,mediaEvents:[],scenes:[],privateContexts:[],mic:[],speech:${JSON.stringify(speech)}};
   q.audibleResponses=new Set();q.transcriptionConfigs=[];q.transcriptionRequests=[];
   q.calls=new Map();q.responses=new Map();q.inputs=new Map();q.openCalls=new Set();q.pendingResponses=0;
+  const resetConnectionState=()=>{q.active=0;q.pendingResponses=0;q.openCalls.clear();q.audio=false;q.last=Date.now()};
   const Peer=window.RTCPeerConnection;
   window.RTCPeerConnection=class extends Peer {
-    constructor(...args){super(...args);q.connections.push(this);this.addEventListener('connectionstatechange',()=>{if(this.connectionState==='closed'&&q.connections.at(-1)===this){q.active=0;q.pendingResponses=0;q.openCalls.clear();q.audio=false;q.last=Date.now()}})}
+    constructor(...args){super(...args);q.connections.push(this);resetConnectionState();this.addEventListener('connectionstatechange',()=>{if(this.connectionState==='closed'&&q.connections.at(-1)===this)resetConnectionState()})}
+    close(){super.close();if(q.connections.at(-1)===this)resetConnectionState()}
     createDataChannel(...args){const c=super.createDataChannel(...args),send=c.send.bind(c);
       c.send=data=>{const e=JSON.parse(data);
         if(e.type==='session.update')q.transcriptionRequests.push(e.session?.audio?.input?.transcription??e.session?.input_audio_transcription??null);

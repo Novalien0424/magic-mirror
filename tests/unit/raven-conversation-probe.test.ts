@@ -5,7 +5,7 @@ import { ravenConversationProbe } from '../../src/main/raven-conversation-probe'
 function probe(globals: Record<string, unknown> = {}) {
   const channel = new EventTarget() as EventTarget & { send(value: string): void }
   channel.send = () => {}
-  class Peer extends EventTarget { createDataChannel() { return channel } }
+  class Peer extends EventTarget { connectionState = 'connected'; createDataChannel() { return channel }; close() { this.connectionState = 'closed' } }
   class Media { play() {} }
   const window = { RTCPeerConnection: Peer, magicMirror: { onAvatarControl: () => () => {}, onSceneStatus: () => () => {} } } as Record<string, any>
   runInNewContext(ravenConversationProbe([]), { window, navigator: { mediaDevices: {} }, HTMLMediaElement: Media, HTMLAudioElement: Media, setTimeout, clearTimeout, ...globals })
@@ -15,6 +15,19 @@ function probe(globals: Record<string, unknown> = {}) {
 }
 
 describe('Raven real protocol observation', () => {
+  it('clears response and tool bookkeeping when a local close emits no state event', () => {
+    const { q, emit, send } = probe()
+    emit({ type: 'response.created', response: { id: 'old' } })
+    emit({ type: 'response.function_call_arguments.done', call_id: 'unfinished', name: 'play_media', arguments: '{}' })
+    emit({ type: 'output_audio_buffer.started', response_id: 'old' })
+    send({ type: 'response.create' })
+    q.connections[0].close()
+    expect(q.active).toBe(0)
+    expect(q.pendingResponses).toBe(0)
+    expect(q.openCalls.size).toBe(0)
+    expect(q.audio).toBe(false)
+  })
+
   it('resolves a function name from its item and keeps late results on the originating turn', () => {
     const { q, emit, send } = probe()
     q.stage = 'request'

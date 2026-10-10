@@ -1,5 +1,8 @@
 # Raven wake and spell RCA — 2026-10-10
 
+Later investigation: [phrase-specific decoder search-width RCA and fix](wake-phrase-rca-2026-10-10.md).
+The physical wake findings below are the earlier baseline, not the final state.
+
 Scope: the deployed Mac, published Raven/Cedar, physical Jabra capture and
 real-provider spell recognition. The operator is away. No human speech or
 far-field acceptance is claimed. Raw audio, transcripts and private context stay

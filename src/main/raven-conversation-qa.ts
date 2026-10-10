@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { app, webContents } from 'electron'
+import { Speaker } from 'decibri'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { ravenConversationProbe } from './raven-conversation-probe'
 import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTHETIC_VISITORS, parseRavenQualityVerdict, renderRavenVisitorText,
@@ -11,6 +12,8 @@ import realtimeMessages from '../../resources/config/prompts/realtime.v1.json'
 import type { WakeInputSnapshot } from '../shared/wake-input'
 import { localMediaOnly } from '../shared/media-source-policy'
 import { normalizeTranscript } from './scenes/spell-trigger'
+import { convertWakeQaPcm } from './raven-wake-asr-qa'
+import { createConfiguredSherpaDetector, WAKE_MAX_ACTIVE_PATHS } from './wake/sherpa-detector'
 
 interface Turn { stage: string; visit: number; role: 'visitor' | 'avatar'; text: string; at: number; audible?: boolean }
 interface Call { stage: string; direction: 'call' | 'result'; callId: string; name?: string; args?: Record<string, unknown>; result?: unknown; at: number }
@@ -22,10 +25,11 @@ interface Media { time: number; duration: number | null; loop: boolean; paused: 
 interface Observation { records: Turn[]; tools: Call[]; usage: { stage: string; status: string; tokens: number }[]; errors: string[]; inputText: number }
 interface Result { step: string; status: 'passed' | 'failed' | 'not_executed'; reason?: string; durationMs?: number; calls?: string[]; diagnostics?: string[]; utterances?: { visitor: number; avatar: number; audible: number }; recognition?: { exact: boolean; localOnly: boolean; youtube: boolean; loop: boolean }; lookups?: { kind: string; words: number; aliasExact: boolean; aliasContained: boolean; count: number }[] }
 
-export async function synthesize(texts: string[]): Promise<string[]> {
+export async function synthesize(texts: string[], voice?: { language: 'zh-TW' | 'zh-CN'; rate: number }): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const child = spawn('/usr/bin/swift', [join(process.cwd(), 'scripts/memory-qa-speech.swift')], {
-      stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', HOME: process.env['HOME'] },
+      stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin', HOME: process.env['HOME'],
+        ...(voice ? { MIRROR_QA_SPEECH_LANGUAGE: voice.language, MIRROR_QA_SPEECH_RATE: String(voice.rate) } : {}) },
     })
     const chunks: Buffer[] = []; let bytes = 0
     const timer = setTimeout(() => { child.kill(); reject(Error('raven_qa_synthesis_timeout')) }, 150000)
@@ -53,7 +57,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const qualityDiagnostics: { scenario: string; turn: string; codes: string[] }[] = []
   const capabilityQuality: Record<string, Record<string, boolean>> = {}
   let protocol: { inputText: number; asr: number; errors: string[] } | undefined
-  const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit' }[] = []
+  const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit'; output: string; backgroundMediaMuted: boolean; maxActivePaths: number; phraseMatches: boolean; cleanSourceDetections?: number; sourceDurationMs?: number }[] = []
   const spellRecognition: Record<string, unknown>[] = []
   const controlSpeech: Record<string, unknown>[] = []
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
@@ -163,17 +167,57 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       return crossed
     }, 'loop_boundary', youtube ? 120000 : 15000)
   }
-  const acousticWake = async (index: number) => {
+  const acousticWake = async (index: number, backgroundMediaMuted = false) => {
+    const owner = input.wakeOwner?.(), pack = owner?.configuration()
+    if (!owner || !pack) throw Error('raven_qa_wake_owner_unavailable')
+    if (input.runtime.snapshot().lifecycle !== 'dormant') throw Error('raven_qa_wake_requires_dormant')
+    // A separate physical speaker is the visitor stimulus. The configured Jabra
+    // remains Raven's output and sole native wake input; its own playback is not
+    // a representative external voice through a speakerphone's DSP.
+    const output = Speaker.devices().find(d => d.name === 'Mac mini Speakers')
+    if (!output) throw Error('raven_qa_separate_speaker_unavailable')
+    const play = async () => {
+      const wave = Buffer.from(await evaluate<string>(`window.__ravenQa.stage='acoustic_wake';return window.__ravenQa.speech[${index}]`), 'base64')
+      const source = Int16Array.from({ length: (wave.length - 44) / 2 }, (_, i) => wave.readInt16LE(44 + i * 2))
+      const clean = await convertWakeQaPcm(source, wave.readUInt32LE(24), 16000, true)
+      const detector = createConfiguredSherpaDetector(pack)
+      evidence.cleanSourceDetections = 0
+      evidence.sourceDurationMs = source.length / wave.readUInt32LE(24) * 1000
+      try {
+        for (let at = 0; at < clean.length + 40000; at += 1600) {
+          if (detector.process(at < clean.length ? clean.subarray(at, at + 1600) : new Int16Array(1600)).status === 'detected') evidence.cleanSourceDetections++
+        }
+      } finally { clean.fill(0); detector.close() }
+      const pcm = await convertWakeQaPcm(source, wave.readUInt32LE(24), output.defaultSampleRate)
+      const channels = output.maxOutputChannels, rate = output.defaultSampleRate
+      const bytes = Buffer.alloc((pcm.length + rate * 2) * channels * 2)
+      for (let i = 0; i < pcm.length; i++) for (let c = 0; c < channels; c++) bytes.writeInt16LE(pcm[i]!, ((i + rate) * channels + c) * 2)
+      let speaker: Awaited<ReturnType<typeof Speaker.open>> | undefined, timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        speaker = await Speaker.open({ device: { id: output.id }, sampleRate: rate, channels, dtype: 'int16' })
+        await Promise.race([(async () => { await speaker.writeAsync(bytes); await speaker.drainAsync(); await delay(2500) })(),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(Error('raven_qa_playback_timeout')), 10000) })])
+      } finally { clearTimeout(timer); speaker?.stop(); wave.fill(0); source.fill(0); pcm.fill(0); bytes.fill(0) }
+    }
     const detections = () => input.console.webContents.executeJavaScript('(async()=>{const r=await window.magicMirror.getAvatarRuntime();return r.value?.wakeInput?.detections??-1})()') as Promise<number>
+    // Loop handoff releases Realtime asynchronously; the next scripted turn can
+    // arrive before the native stream's first block, especially after another
+    // assertion failed early. Wait for real delivered input before the stimulus.
+    await wait(async () => {
+      const current = await wakeInput()
+      return !!current && ['signal', 'silent'].includes(current.state) && (current.lastBlockAgeMs ?? Infinity) < 2000
+    }, 'wake_input_ready', 12000)
     const before = await detections(), generation = input.runtime.snapshot().sessionGeneration
     const baseline = await wakeInput()
     const evidence = { blocks: 0, detections: 0, beforeRms: baseline?.rms ?? 0, maxRms: 0, maxPeak: 0, freshSamples: 0, playbackCompleted: false,
-      sink: await evaluate<'default' | 'explicit'>("return window.__ravenQa.wakeOutputId?'explicit':'default'") }
+      sink: 'explicit' as const, output: output.name, backgroundMediaMuted,
+      maxActivePaths: WAKE_MAX_ACTIVE_PATHS, phraseMatches: pack.phrase === avatar?.wakePhrase,
+      cleanSourceDetections: 0, sourceDurationMs: 0 }
     acousticEvidence.push(evidence)
     if (!baseline || !['signal', 'silent'].includes(baseline.state) || (baseline.lastBlockAgeMs ?? Infinity) > 2000) throw Error('raven_qa_wake_input_stale')
     let finished = false
     await Promise.all([
-      evaluate(`window.__ravenQa.stage='acoustic_wake';return window.__ravenQa.speak(${index},true)`)
+      play()
         .then(() => { evidence.playbackCompleted = true }).finally(() => { finished = true }),
       (async () => {
         while (!finished) {
@@ -190,6 +234,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     ])
     await wait(async () => input.runtime.snapshot().lifecycle === 'active' && input.runtime.snapshot().sessionGeneration > generation && !(await state()).media, 'acoustic_wake', 25000)
     await wait(async () => { const s = await state(); return !s.active && !s.audio && Date.now() - s.last > 1800 && s.phase === 'awake' }, 'wake_greeting')
+    if ((await wakeInput())?.state !== 'inactive') throw Error('raven_qa_duplicate_microphone_owner')
     if (before < 0 || await detections() <= before) throw Error('raven_qa_wake_receipt_missing')
   }
   const config = await input.runtime.console.getConfig()
@@ -209,6 +254,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const texts = scenarios.flatMap(s => s.turns.map(t => renderRavenVisitorText(t, bindings)))
   const extra = {
     wake: texts.push(avatar.wakePhrase!) - 1,
+    wakeLoopSetup: texts.push('Loop Folder Beacon from our folder.') - 1,
     denialIntroduction: texts.push('My name is Mira Vale.') - 1,
     ownFolder: texts.push('Play Folder Beacon from our folder.') - 1,
     chineseFolder: texts.push('請播放我們資料夾的雨夜鋼琴。') - 1,
@@ -335,12 +381,32 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
           if (!ready) { missingPrerequisite = true; report({ step: stage, status: 'not_executed', reason: 'raven_qa_prerequisite_failed' }); continue }
         }
         if (turn.before === 'operator_stop_loop') {
-          const looping = input.runtime.snapshot().lifecycle === 'dormant' && (await state()).media
-          const woke = looping && await check(scenario.id + '_acoustic_wake', () => acousticWake(extra.wake))
+          let looping = input.runtime.snapshot().lifecycle === 'dormant' && (await state()).media
+          if (!looping && scenario.id === 'local_loop') {
+            // The conversation fixture intentionally contains ambiguous Rain
+            // titles. Preserve that result, then name a unique fixture to make
+            // the independent physical wake diagnostic executable.
+            looping = await check('wake_loop_diagnostic_setup', async () => {
+              await speak(extra.wakeLoopSetup, 'wake_loop_diagnostic_setup', true)
+              await loopDormant()
+            })
+          }
+          let woke = looping && await check(scenario.id + '_acoustic_wake', () => acousticWake(extra.wake))
           if (!looping) report({ step: scenario.id + '_acoustic_wake', status: 'not_executed', reason: 'raven_qa_loop_not_running' })
+          if (looping && !woke && scenario.id === 'local_loop') {
+            // Keep the audible-loop failure above. This separate diagnostic asks
+            // whether removing playback masking recovers the identical wake
+            // stimulus; it cannot turn the original acceptance result into a pass.
+            woke = await check(scenario.id + '_muted_media_diagnostic_wake', async () => {
+              await evaluate(`const q=window.__ravenQa,m=q.music;if(!m)throw Error('raven_qa_loop_audio_unavailable');q.mutedLoop={element:m,muted:m.muted};m.muted=true`)
+              try { await delay(1500); await acousticWake(extra.wake, true) }
+              finally { await evaluate(`const q=window.__ravenQa;if(q.mutedLoop){q.mutedLoop.element.muted=q.mutedLoop.muted;delete q.mutedLoop}`) }
+            })
+          }
           if (!woke) {
             // Recover for independent quality cases, retaining the failed wake.
-            await check(scenario.id + '_operator_recovery', async () => { await stop(); await start() })
+            const recovered = await check(scenario.id + '_operator_recovery', async () => { await stop(); await start() })
+            if (!recovered) { report({ step: stage, status: 'not_executed', reason: 'raven_qa_prerequisite_failed' }); continue }
           }
         }
         const ran = await check(stage, async () => {

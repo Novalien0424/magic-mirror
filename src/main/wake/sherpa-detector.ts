@@ -4,6 +4,11 @@ import { wakeScoreSchema, type WakeScore } from '../../shared/wake-score'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+// Paired Mac capture/replay showed four paths pruning Raven's wake candidate;
+// 32 covered both tested voices/rates; eight and 16 still missed some positives.
+// Keyword bias and acceptance threshold remain package-owned.
+export const WAKE_MAX_ACTIVE_PATHS = process.platform === 'darwin' ? 32 : 4
+
 interface SherpaStream {
   acceptWaveform(input: { readonly samples: Float32Array; readonly sampleRate: number }): void
 }
@@ -102,7 +107,7 @@ export function createConfiguredSherpaDetector(wakePackage: WakeWorkerPackage): 
       debug: 0,
       provider: 'cpu',
     },
-    maxActivePaths: 4,
+    maxActivePaths: WAKE_MAX_ACTIVE_PATHS,
     numTrailingBlanks: wakePackage.tuning.numTrailingBlanks ?? 1,
     keywordsScore: wakePackage.tuning.score,
     keywordsThreshold: wakePackage.tuning.threshold,
