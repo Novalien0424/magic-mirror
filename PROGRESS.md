@@ -1,33 +1,46 @@
-# Magic Mirror — media delivery and review remediation, 2026-10-10
+# Magic Mirror — review remediation, 2026-10-11
 
 ## Latest delivery and runtime
 
-[Media, compact prompt, BGM and TV-loss evidence](docs/testing/media-fallback-bgm-tv-shutdown-2026-10-10.md).
-Removed the sticky transcript-regex YouTube block. The final real-Raven run
-passes local-first→YouTube→play and once completion/return in English and Chinese,
-while respecting a prior local-only request. Playback preambles still fail
-quality (exit 2). The final empathy/context run passes all four turns (exit 0);
-Chinese ASR fidelity remains separately flagged. Session prose is 43% shorter,
-tool-rule prose 22% shorter, with no new intent regex or extra confirmation gate.
+[Finding ledger and current evidence](docs/testing/review-remediation-2026-10-10.md)
+cover every ID in the requested performance/correctness/UI review: PE-01–15,
+CO-01–13, CX-01–14, MX-01–12 and its MM-01–07 references. MX-01 is intentional
+black Dormant; other findings have scoped implementations and focused checks.
+The separate whole-project review is not claimed complete.
 
-Silent-video BGM passes 18 functional Raven checks with 11 captures, including
-continuous BGM across a loop, embedded-audio suppression, wake/stop and black
-Dormant. 164 focused tests, both typechecks and the production build pass.
-These are synthetic-provider/functional results, not new human wake acceptance.
+Main lifecycle recovery now closes old session authority, waits for microphone
+release and bounds recovery; hidden rendering/Console/embedding work is reduced.
+Memory preserves local calendar dates, recovers workers without replaying failed
+writes, and proposes unique script-variant names before verbal confirmation.
+Console errors identify/focus fields, editing no longer rerenders at meter rate,
+Stop All stays reachable, and Chinese Mirror failures remain visible. The
+authorized exact spell starts its scene without waiting for the optional cue.
+Operator sleep spelling was corrected through Console publish. Retired privileged
+HDMI watchdog files are inert; independent ADB and AnyLauncher stay in place.
 
-The field LaunchAgent now configures the wired TV host. Main quits through its
-normal cleanup when HDMI and Ethernet are both absent continuously for at least
-15 seconds. The deployed absence check reached clean exit 0; current runtime
-and final settings/process verification are recorded in the linked report.
-Normal Raven and isolated QA did not overlap.
+284 Main checks, 211 memory checks and additional renderer/Console integration
+checks pass; both typechecks and production build pass. Real Raven evidence
+includes renderer crash/recovery, hidden FPS 0/resume and 18 media/BGM checks.
+The final calendar retry passes all four cases; a prior invalid proposal was
+rejected and remains recorded. Normal Raven and isolated QA never overlap.
 
-The owner then requested systematic remediation of
-[the performance/correctness/UI review](docs/testing/performance-correctness-uiux-review-2026-10-10.md).
-[Finding ledger](docs/testing/review-remediation-2026-10-10.md) tracks the new work.
-Next: resolve verified findings by subsystem, run focused checks and visible QA,
-then deploy and push the integrated result. Preserve healthy reflective black
-Dormant and the sole LaunchAgent restart owner. The earlier physical wake,
-Wi-Fi and human-acceptance limits below remain open.
+**Open acceptance:** final live media routing/playback/once-return passes in
+English and Chinese, but preambles and some wrong-language replies still fail
+quality. Negated sleep stays Active after the prompt fix. Exact spell passed
+the focused retry after an earlier ASR mismatch, but extra non-cue speech still
+fails quality. No fuzzy authorization, intent regex or model substitution was
+added. Physical wake under audible looping media, TV/Mac cold boot, camera power
+savings and live Wi-Fi RCA remain unqualified. The TV is currently absent from
+both HDMI and wired control. Final deployment metadata is in the ledger.
+
+Final deployment through the existing LaunchAgent exited **0** after **15.042 s**
+of dual absence. No app workers remain, the five settings files are unchanged,
+and independent ADB remains running. Raven is currently stopped; start it after
+the TV returns. This is checkout deployment, not new package/cold-boot acceptance.
+
+[Earlier media/BGM/TV-loss delivery](docs/testing/media-fallback-bgm-tv-shutdown-2026-10-10.md)
+and the historical field observations below remain available. New human speech
+and physical TV acceptance are not inferred from synthetic/provider checks.
 
 ## Current TV work
 

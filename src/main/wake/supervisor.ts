@@ -65,12 +65,14 @@ export interface WakeSupervisor {
   release(): Promise<WakeSupervisorResult>
   updateConfig(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult>
   shutdown(): Promise<WakeSupervisorResult>
+  restart(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult>
+  microphoneUnowned(): boolean
   snapshot(): WakeSupervisorSnapshot
   configuration(): WakeWorkerPackage | null
 }
 
 export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSupervisor {
-  const now = options.now ?? Date.now
+  const now = options.now ?? (() => performance.now())
   let acquiredAt = 0
   let lastBlockAt: number | null = null
   let blocks = 0
@@ -104,10 +106,10 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     'wake_microphone_selection_unavailable'])
   const pending = new Map<string, PendingRequest>()
 
-  function cancelDeviceRetry(): void {
+  function cancelDeviceRetry(reset = true): void {
     if (deviceRetry !== null) clearScheduledTimeout(deviceRetry)
     deviceRetry = null
-    deviceUnavailable = false
+    if (reset) deviceUnavailable = false
   }
 
   function retryMissingDevice(): void {
@@ -378,6 +380,10 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   async function acquire(): Promise<WakeSupervisorResult> {
     shouldListen = true
+    if (child === null && deviceUnavailable && !shuttingDown) {
+      retryMissingDevice()
+      return action('failed', 'wake_microphone_waiting_for_device')
+    }
     const inputLabel = getAudioPreferences().preferences.inputLabel
     const result = await request({ type: 'acquire_microphone', ...(inputLabel ? { inputLabel } : {}) }, 'microphone_acquired')
     if (result.status === 'failed' && status !== 'starting' && !deviceUnavailable) shouldListen = false
@@ -386,7 +392,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
 
   async function release(): Promise<WakeSupervisorResult> {
     shouldListen = false
-    cancelDeviceRetry()
+    cancelDeviceRetry(false)
     cancelAudioWatchdog()
     if (child === null) {
       if (status !== 'failed') publishStatus('released')
@@ -416,15 +422,40 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     }
     const currentChild = child
     const result = await request({ type: 'shutdown' }, 'stopped')
-    child = null
-    try {
-      currentChild.kill()
-    } catch {
-      // The worker already acknowledged stopped; kill is best-effort process cleanup.
+    if (child !== currentChild) return result
+    const exited = await new Promise<boolean>(resolve => {
+      let settled = false
+      let timer: unknown
+      const finish = (value: boolean): void => {
+        if (settled) return
+        settled = true
+        try { clearScheduledTimeout(timer) } catch { /* Exit is already confirmed or timed out. */ }
+        resolve(value)
+      }
+      currentChild.on('exit', () => finish(true))
+      try { timer = scheduleTimeout(() => finish(false), requestTimeoutMs) }
+      catch {
+        try { currentChild.kill() } catch { /* Remains owned until its exit. */ }
+        finish(child !== currentChild)
+        return
+      }
+      try { currentChild.kill() } catch { finish(false) }
+    })
+    if (!exited) {
+      publishStatus('failed', 'wake_worker_exit_timeout')
+      return action('failed', 'wake_worker_exit_timeout')
     }
     return result
   }
 
-  return { start, acquire, release, updateConfig, shutdown, snapshot,
+  async function restart(input: { readonly package: WakeWorkerPackage }): Promise<WakeSupervisorResult> {
+    const stopped = await shutdown()
+    // Only confirmed process exit permits creating another native mic owner.
+    if (child !== null) return stopped
+    return start(input)
+  }
+
+  return { start, acquire, release, updateConfig, shutdown, restart, snapshot,
+    microphoneUnowned: () => child === null,
     configuration: () => initialization?.package ?? null }
 }

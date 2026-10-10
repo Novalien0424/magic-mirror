@@ -29,6 +29,7 @@ export function createSceneTranscriptController(input: Readonly<{
   bridge: SceneTranscriptBridge
   interrupt: () => Promise<unknown>
   announceSpell?: () => Promise<SpellAnnouncementResult>
+  isCurrentSession?: (sessionId: string) => boolean
   metadataSink?: (reason: string, realtimeSessionId: string) => void
 }>): SceneTranscriptController {
   const boundaries = new Map<string, { runId: string | null; turnId: string }>()
@@ -115,17 +116,24 @@ export function createSceneTranscriptController(input: Readonly<{
           report(reason, completed.realtimeSessionId)
           return { decision: 'ignored', reason }
         }
-        await input.interrupt()
-        if (input.announceSpell) {
-          const announcement = await input.announceSpell()
-          if (announcement.status !== 'completed') {
-            report(announcement.reason, completed.realtimeSessionId)
-            return { decision: 'failed', reason: announcement.reason }
-          }
-          report('spell_announcement_completed', completed.realtimeSessionId)
+        if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
+          report('spell_session_stale', completed.realtimeSessionId)
+          return { decision: 'ignored', reason: 'spell_session_stale' }
         }
+        await input.interrupt()
+        if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
+          report('spell_session_stale', completed.realtimeSessionId)
+          return { decision: 'ignored', reason: 'spell_session_stale' }
+        }
+        // The exact completed command authorizes the scene. Speech is feedback,
+        // not a second authorization gate that ambient VAD can revoke.
         const result = await input.bridge.triggerScene({ spellId: decision.spellId, turnId: decision.turnId })
         report(result.status === 'accepted' ? 'spell_command_accepted' : 'spell_command_rejected', completed.realtimeSessionId)
+        if (result.status === 'accepted' && input.announceSpell && input.isCurrentSession?.(completed.realtimeSessionId) !== false) {
+          void Promise.resolve().then(() => input.announceSpell!()).then(announcement => {
+            report(announcement.status === 'completed' ? 'spell_announcement_completed' : announcement.reason, completed.realtimeSessionId)
+          }).catch(() => report('spell_announcement_unavailable', completed.realtimeSessionId))
+        }
         return {
           decision: 'triggered',
           result,

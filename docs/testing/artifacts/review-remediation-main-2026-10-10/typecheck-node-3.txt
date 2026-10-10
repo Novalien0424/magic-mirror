@@ -1,0 +1,9 @@
+Command: npm run typecheck:node
+Exit: 2
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/renderer/console/HelpField.tsx(16,7): error TS6133: 'helpText' is declared but its value is never read.
+tests/unit/memory-learning.test.ts(124,62): error TS2322: Type 'Promise<string>' is not assignable to type 'Promise<"stale" | "committed">'.
+  Type 'string' is not assignable to type '"stale" | "committed"'.

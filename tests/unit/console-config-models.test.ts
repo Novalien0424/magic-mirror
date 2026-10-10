@@ -477,6 +477,13 @@ function expectEvent(events: readonly ConfigEvent[], event: string, reason?: str
 }
 
 describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', () => {
+  it('reads one slots snapshot for getConfig and computes both diffs from it', async () => {
+    const h = makeController()
+    const read = vi.spyOn(h.service, 'read'), diff = vi.spyOn(h.service, 'diff')
+    expect((await h.controller.getConfig()).ok).toBe(true)
+    expect(read).toHaveBeenCalledOnce()
+    expect(diff).not.toHaveBeenCalled()
+  })
   it('restores the original draft when loading a published avatar fails', async () => {
     const harness = makeController({ getLifecycle: () => 'dormant' })
     const catalog = avatarCatalogFor(harness.initialSlots.draft)
@@ -621,6 +628,53 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expect(await activeRevision(harness)).toBe(activeBefore)
     expectEvent(harness.events, 'config_draft_rejected', 'cause=payload_schema_invalid')
     expectNoSensitiveOutput({ result, before, after, events: harness.events })
+    expectMetadataOnly(harness.events)
+  })
+
+  it('returns precise catalog field paths and safe schema codes without saving invalid input', async () => {
+    const harness = makeController()
+    const before = await harness.service.read()
+    const input = { ...safeDraftInput(before.draft), avatarCatalog: avatarCatalogFor(before.draft) }
+    const avatar = input.avatarCatalog.avatars[0]
+    avatar.name = ''
+    avatar.personality = TEST_PRIVATE_MEMORY_SENTINEL.repeat(1000)
+    avatar.scenes = [{ id: 'fixture-scene', name: 'Fixture scene', enabled: true, stages: [{
+      id: 'fixture-step', name: 'Fixture step', actionIds: ['fixture-action'],
+      endCondition: { kind: 'duration', durationMs: -1 },
+    }] }]
+    avatar.spells = [{ id: 'fixture-trigger', name: 'Fixture trigger', phrase: '', sceneId: 'fixture-scene', enabled: true, cooldownMs: -1 }]
+
+    const result = await harness.controller.saveDraft(input)
+
+    expect(result).toMatchObject({ ok: false, error: 'console_config_invalid', fields: expect.arrayContaining([
+      { path: 'avatarCatalog.avatars[0].name', message: 'too_small' },
+      { path: 'avatarCatalog.avatars[0].personality', message: 'too_big' },
+      { path: 'avatarCatalog.avatars[0].scenes[0].stages[0].endCondition.durationMs', message: 'too_small' },
+      { path: 'avatarCatalog.avatars[0].spells[0].phrase', message: 'too_small' },
+      { path: 'avatarCatalog.avatars[0].spells[0].cooldownMs', message: 'too_small' },
+    ]) })
+    expect(harness.metrics.draftSaveCalls).toBe(0)
+    expect(await harness.service.read()).toEqual(before)
+    expectNoSensitiveOutput({ result, events: harness.events })
+    expectMetadataOnly(harness.events)
+  })
+
+  it('reports action branch fields instead of a collapsed union failure', async () => {
+    const harness = makeController()
+    const before = await harness.service.read()
+    const input: ConsoleConfigDraftInput = { ...safeDraftInput(before.draft), sceneActions: [
+      { id: 'fixture-dialogue', name: 'Fixture dialogue', enabled: true, kind: 'avatar_dialogue', text: '' },
+      { id: 'fixture-music', name: 'Fixture music', enabled: true, kind: 'music', command: 'play', assetId: '', gain: -1, loop: false },
+    ] }
+    const result = await harness.controller.saveDraft(input)
+    expect(result).toMatchObject({ ok: false, fields: expect.arrayContaining([
+      { path: 'sceneActions[0].text', message: 'too_small' },
+      { path: 'sceneActions[1].assetId', message: 'invalid_format' },
+      { path: 'sceneActions[1].gain', message: 'too_small' },
+    ]) })
+    expect(harness.metrics.draftSaveCalls).toBe(0)
+    expect(await harness.service.read()).toEqual(before)
+    expectNoSensitiveOutput({ result, events: harness.events })
     expectMetadataOnly(harness.events)
   })
 
@@ -1315,6 +1369,9 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       ready: 'boot:renderer-ready',
     }))
     expect(MIRROR_IPC_CHANNELS).toEqual({
+      findMedia: 'mirror:find-media',
+      mediaSkill: 'mirror:media-skill',
+      searchYoutube: 'mirror:search-youtube',
       reportRealtimeRuntimeOutcome: 'mirror:report-realtime-runtime-outcome',
       reportRealtimeFailure: 'mirror:report-realtime-failure',
       reportRealtimeMetadata: 'mirror:report-realtime-metadata',

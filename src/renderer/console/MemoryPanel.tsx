@@ -8,6 +8,7 @@ export function MemoryPanel({ bridge, avatarId, onEditingChange }: { bridge: Con
   const [entries, setEntries] = useState<MemoryEntry[]>([]), [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [deleting, setDeleting] = useState('')
   const [mode, setMode] = useState<MemoryMode>('automatic')
+  const [confirmOff, setConfirmOff] = useState(false)
   const [importStatus, setImportStatus] = useState<MemoryImportStatus | null>(null)
   const generation = useRef(0)
   const listTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -48,7 +49,7 @@ export function MemoryPanel({ bridge, avatarId, onEditingChange }: { bridge: Con
     const timer = setTimeout(() => { void run('list') }, 180); listTimer.current = timer
     return () => { clearTimeout(timer); generation.current++ }
   }, [avatarId, name, query, bridge])
-  useEffect(() => { clear(); setImportStatus(null) }, [avatarId, name])
+  useEffect(() => { clear(); setImportStatus(null); setConfirmOff(false) }, [avatarId, name])
   const importing = importStatus?.state === 'running'
   const dirty = !!topic || !!text
   useEffect(() => { onEditingChange?.(dirty || !!importing || importStatus?.state === 'staged'); return () => onEditingChange?.(false) }, [dirty, importing, importStatus?.state, onEditingChange])
@@ -63,9 +64,15 @@ export function MemoryPanel({ bridge, avatarId, onEditingChange }: { bridge: Con
     <label>Person<input value={name} list={`memory-people-${avatarId}`} maxLength={80} placeholder="Name" disabled={busy || importing || dirty} onChange={e => setName(e.target.value)} /></label>
     <datalist id={`memory-people-${avatarId}`}>{names.map(value => <option key={value} value={value} />)}</datalist>
     {name.trim() && <>
-      <label>Memory mode<select value={mode} disabled={busy || importing} onChange={e => void run('policy', '', e.target.value as MemoryMode)}>
+      <label>Memory mode<select value={mode} disabled={busy || importing} onChange={e => {
+        if (e.target.value === 'off') setConfirmOff(true)
+        else { setConfirmOff(false); void run('policy', '', e.target.value as MemoryMode) }
+      }}>
         <option value="automatic">Automatic summaries</option><option value="explicit">Only when asked</option><option value="off">Memory off</option>
       </select></label>
+      {confirmOff && <div className="console__notice">Turn off recall and learning for this person? Saved memories will remain.
+        <button disabled={busy || importing} onClick={() => { setConfirmOff(false); void run('policy', '', 'off') }}>Turn memory off</button>
+        <button onClick={() => setConfirmOff(false)}>Keep current mode</button></div>}
       <label>Search<input value={query} maxLength={200} onChange={e => setQuery(e.target.value)} placeholder="Search memories" /></label>
       <form onSubmit={e => { e.preventDefault(); void run('save') }}>
         <label>Topic<input value={topic} maxLength={120} required disabled={busy || editing} onChange={e => setTopic(e.target.value)} placeholder="A short label" /></label>

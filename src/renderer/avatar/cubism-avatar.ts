@@ -13,6 +13,7 @@ import type { ACubismMotion } from '../../vendor/live2d/Framework/dist/motion/ac
 import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
 import { InvalidMotionQueueEntryHandleValue } from '../../vendor/live2d/Framework/dist/motion/cubismmotionqueuemanager'
 import type { CubismIdHandle } from '../../vendor/live2d/Framework/dist/id/cubismid'
+import { CubismMatrix44 } from '../../vendor/live2d/Framework/dist/math/cubismmatrix44'
 import { CubismWebGLOffscreenManager } from '../../vendor/live2d/Framework/dist/rendering/cubismoffscreenmanager'
 import {
   renExpressionForState,
@@ -30,6 +31,11 @@ const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
 const FPS_SAMPLE_COUNT = 120
 const METRICS_INTERVAL_MS = 500
+const GAZE_PARAMETERS = [
+  ['ParamAngleX', 'x', 7], ['ParamAngleY', 'y', 5],
+  ['ParamEyeBallX', 'x', .6], ['ParamEyeBallY', 'y', .5],
+] as const
+const GAZE_STATES = new Set<AvatarState>(['Listening', 'Thinking', 'Speaking'])
 
 export type CubismAvatarFailureReason =
   | 'avatar_core_unavailable'
@@ -59,6 +65,7 @@ export interface CubismAvatarMetrics {
 }
 
 export interface CubismAvatarRenderer {
+  setPaused?(paused: boolean): void
   setLookTarget?(target: CameraTarget | null): void
   initialize(): Promise<void>
   setState(state: AvatarState): void
@@ -154,6 +161,10 @@ class MagicMirrorCubismModel extends CubismUserModel {
   #lifecycleStarted = false
   readonly #previewValues = new Map<string, number>()
   readonly #motionEntries: CubismCapabilities['motions'] = []
+  readonly #continuousIds = CONTINUOUS_PARAMETERS.map(name => ({ name, id: CubismFramework.getIdManager().getId(name) }))
+  readonly #gazeIds = GAZE_PARAMETERS.map(([name, axis, scale]) => ({ id: CubismFramework.getIdManager().getId(name), axis, scale }))
+  readonly #projection = new CubismMatrix44()
+  readonly #viewport = [0, 0, 0, 0]
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -524,22 +535,19 @@ class MagicMirrorCubismModel extends CubismUserModel {
     }
     try {
       if (this.#performance !== null && !this.#previewNeutral) {
-        for (const name of CONTINUOUS_PARAMETERS) {
-          const id = CubismFramework.getIdManager().getId(name)
+        for (const { name, id } of this.#continuousIds) {
           this._model.setParameterValueById(id,
             this.#continuity.sample(name, this._model.getParameterValueById(id), deltaSeconds))
         }
       }
       const gaze = this.#gaze.step(deltaSeconds, performance.now(),
         !this.#previewNeutral && this.#oneShotGroup === null
-        && ['Listening', 'Thinking', 'Speaking'].includes(this.#state))
+        && GAZE_STATES.has(this.#state))
       // Apply after authored continuity, before preview overrides. Saved body parameters
       // precede this overlay, so gaze cannot accumulate or rewrite authored curves.
-      for (const [name, value] of [['ParamAngleX', gaze.x * 7], ['ParamAngleY', gaze.y * 5],
-        ['ParamEyeBallX', gaze.x * 0.6], ['ParamEyeBallY', gaze.y * 0.5]] as const) {
-        const id = CubismFramework.getIdManager().getId(name)
+      for (const { id, axis, scale } of this.#gazeIds) {
         if (this._model.getParameterIndex(id) < this._model.getParameterCount()) {
-          this._model.addParameterValueById(id, value)
+          this._model.addParameterValueById(id, gaze[axis] * scale)
         }
       }
       for (const [id, value] of this.#previewValues) {
@@ -555,11 +563,12 @@ class MagicMirrorCubismModel extends CubismUserModel {
     if (!this.isInitialized()) return
     const width = this.#canvas.width
     const height = this.#canvas.height
-    const projection = createAvatarMvp(width, height, this._modelMatrix)
+    const projection = createAvatarMvp(width, height, this._modelMatrix, this.#projection)
+    this.#viewport[2] = width; this.#viewport[3] = height
     this.getRenderer().setMvpMatrix(projection)
     this.getRenderer().setRenderState(
       this.#gl.getParameter(this.#gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer,
-      [0, 0, width, height],
+      this.#viewport,
     )
     this.getRenderer().drawModel(resolveCubismShaderBaseUrl())
   }
@@ -582,6 +591,7 @@ export function createCubismAvatarRenderer(
   let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null
   let frameId: number | null = null
   let disposed = false
+  let paused = false
   let previousTimestamp = 0
   let lastMetricsTimestamp = 0
   let state: AvatarState = 'Dormant'
@@ -595,7 +605,7 @@ export function createCubismAvatarRenderer(
 
   const frame = (timestamp: number): void => {
     frameId = null
-    if (disposed || model === null || gl === null) return
+    if (disposed || paused || model === null || gl === null) return
     const deltaMs = previousTimestamp === 0 ? 16.67 : Math.min(100, timestamp - previousTimestamp)
     previousTimestamp = timestamp
 
@@ -695,7 +705,19 @@ export function createCubismAvatarRenderer(
       report(input.eventSink, softwareRenderer
         ? { status: 'degraded', reason: 'avatar_software_renderer' }
         : { status: 'ready', reason: 'cubism_avatar_ready' })
-      frameId = requestAnimationFrame(frame)
+      if (!paused) frameId = requestAnimationFrame(frame)
+    },
+    setPaused: (next: boolean): void => {
+      if (disposed || next === paused) return
+      paused = next
+      previousTimestamp = 0
+      frameTimes.length = 0
+      if (frameId !== null) cancelAnimationFrame(frameId)
+      frameId = null
+      if (!paused && model?.isInitialized()) frameId = requestAnimationFrame(frame)
+      if (paused) {
+        try { input.metricsSink(Object.freeze({ fps: 0, mouthOpen, state })) } catch { /* Observational only. */ }
+      }
     },
     setState: (next: AvatarState): void => {
       state = next

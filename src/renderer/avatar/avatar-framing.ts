@@ -7,8 +7,9 @@ export function createAvatarMvp(
   width: number,
   height: number,
   modelMatrix: CubismMatrix44,
+  projection = new CubismMatrix44(),
 ): CubismMatrix44 {
-  const projection = new CubismMatrix44()
+  projection.loadIdentity()
   projection.scale(height / width, 1)
   projection.multiplyByMatrix(modelMatrix)
   return projection

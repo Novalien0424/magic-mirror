@@ -161,6 +161,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly isShuttingDown?: () => boolean
   readonly youtube?: import('../shared/youtube-media').YoutubePlayer
   readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
   readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
@@ -838,13 +839,13 @@ function senderRejected(telemetry: IpcEventSink, reason: SenderRejectionReason):
   })
 }
 
-function payloadRejected(telemetry: IpcEventSink): void {
+function payloadRejected(telemetry: IpcEventSink, repeatedCount?: number): void {
   emit(telemetry, {
     module: 'app',
     event: 'ipc_payload_invalid',
     status: 'failed',
     error_code: 'ipc_payload_invalid',
-    reason: 'payload_schema_invalid',
+    reason: repeatedCount ? `payload_schema_invalid;repeated_count=${repeatedCount}` : 'payload_schema_invalid',
     source: 'runtime',
   })
 }
@@ -911,7 +912,9 @@ export async function publishSnapshot(
   value: unknown,
   windows: TrackedWindows,
   telemetry: IpcEventSink,
+  isShuttingDown?: () => boolean,
 ): Promise<void> {
+  if (isShuttingDown?.()) return
   const tracked = getTrackedWindow(windows, kind)
   const channel = kind === 'mirror' ? MIRROR_IPC_CHANNELS.snapshot : CONSOLE_IPC_CHANNELS.snapshot
   if (tracked === null) {
@@ -1541,6 +1544,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     }
   })
 
+  let lastInvalidAvatarReport = -Infinity
+  let repeatedInvalidReports = 0
+  let invalidReportSummary: ReturnType<typeof setTimeout> | undefined
   ipcMain.on(MIRROR_IPC_CHANNELS.reportAvatarRuntime, (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) {
@@ -1548,10 +1554,23 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     if (args.length !== 1 || !isValidAvatarRuntimeSnapshot(args[0])) {
-      payloadRejected(telemetry)
+      if (performance.now() - lastInvalidAvatarReport >= 1000) {
+        lastInvalidAvatarReport = performance.now()
+        payloadRejected(telemetry)
+      } else {
+        repeatedInvalidReports++
+        invalidReportSummary ??= setTimeout(() => {
+          invalidReportSummary = undefined
+          if (!options.isShuttingDown?.()) payloadRejected(telemetry, repeatedInvalidReports)
+          repeatedInvalidReports = 0
+        }, 1000)
+        invalidReportSummary.unref?.()
+      }
       return
     }
-    avatarRuntime = Object.freeze({ ...(args[0] as AvatarRuntimeSnapshot) })
+    const report = args[0] as AvatarRuntimeSnapshot
+    avatarRuntime = Object.freeze({ ...report, ...(report.audioDevices || avatarRuntime.audioDevices
+      ? { audioDevices: report.audioDevices ?? avatarRuntime.audioDevices } : {}) })
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneAction, (event, ...args) => {
@@ -2493,7 +2512,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         return
       }
       options.onReady?.('mirror')
-      void publishSnapshot('mirror', runtime.snapshot(), windows, telemetry)
+      void publishSnapshot('mirror', runtime.snapshot(), windows, telemetry, options.isShuttingDown)
       return
     }
 
@@ -2504,7 +2523,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         return
       }
       options.onReady?.('console')
-      void publishSnapshot('console', runtime.snapshot(), windows, telemetry)
+      void publishSnapshot('console', runtime.snapshot(), windows, telemetry, options.isShuttingDown)
       return
     }
 

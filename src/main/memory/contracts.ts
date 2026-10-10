@@ -7,6 +7,7 @@ export interface LearningRecord {
   text: string
   kind: 'episode' | 'fact' | 'commitment'
   state: 'active' | 'resolved' | 'superseded'
+  /** Calendar-only YYYY-MM-DD, an instant with its explicit original offset, or empty when unknown. */
   eventAt: string
   sources: string[]
   expectedRevision: number | null

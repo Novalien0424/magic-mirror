@@ -50,7 +50,9 @@ export function createWakeCalibration(input: {
       if (previous?.touched && supervisor) {
         try {
           check(await supervisor.release())
-          check(await supervisor.updateConfig({ package: previous.original }))
+          // The addon has no native destroy API; process exit reclaims all
+          // spotters built by slider edits before normal listening resumes.
+          check(await supervisor.restart({ package: previous.original }))
           if (reacquire && generation === restorationGeneration && input.canListen()) check(await supervisor.acquire())
         } catch { return snapshot('wake_calibration_restore_failed') }
         finally { pendingRestorations-- }

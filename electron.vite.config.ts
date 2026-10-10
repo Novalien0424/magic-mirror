@@ -39,6 +39,7 @@ export default defineConfig({
     publicDir: resolve(__dirname, 'resources/generated'),
     plugins: [react()],
     build: {
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           mirror: resolve(__dirname, 'src/renderer/mirror/index.html'),

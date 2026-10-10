@@ -15,7 +15,7 @@ export class MemorySession {
   private key = ''
   private name = ''
   private pending = ''
-  private language: MemoryLanguage = 'en'
+  private language: MemoryLanguage = 'zh-TW'
   private question?: { token: string; text: string; delivered: boolean; expires: number }
   private blocked = false
   private seen = new Set<string>()
@@ -29,11 +29,11 @@ export class MemorySession {
     this.observe(state)
     const q = this.question
     if (!q || q.token !== token || !this.pending || !state.active) return reply('memory_question_stale')
-    if (!completed || Date.now() > q.expires || !sameSpokenQuestion(q.text, text)) {
+    if (!completed || performance.now() > q.expires || !sameSpokenQuestion(q.text, text)) {
       this.pending = ''; this.question = undefined; return reply('memory_question_rejected')
     }
     if (q.delivered) return reply('memory_question_duplicate')
-    q.delivered = true; q.expires = Date.now() + 60000; this.pendingAfter = this.sequence
+    q.delivered = true; q.expires = performance.now() + 60000; this.pendingAfter = this.sequence
     return reply('memory_question_delivered', 'accepted')
   }
   turnStart(state: MemoryState, itemId: string): void {
@@ -46,7 +46,7 @@ export class MemorySession {
     const key = JSON.stringify([state.avatarId, state.realtimeSessionId, state.sessionGeneration])
     if (!state.active || this.key !== key) { this.reset(); if (state.active) this.key = key }
   }
-  request(state: MemoryState, raw: unknown, language: MemoryLanguage = 'en'): MemoryReply {
+  request(state: MemoryState, raw: unknown, language: MemoryLanguage = 'zh-TW'): MemoryReply {
     this.observe(state)
     const request = parseMemoryRequest(raw)
     if (!state.active || !request) return reply('memory_request_rejected')
@@ -59,7 +59,7 @@ export class MemorySession {
       if (this.name) return reply('memory_identity_confirmed', 'accepted')
       this.pending = request.name.trim(); this.pendingAfter = this.sequence
       this.language = language
-      this.question = { token: randomUUID(), text: buildMemoryQuestion(this.pending, language), delivered: false, expires: Date.now() + 60000 }
+      this.question = { token: randomUUID(), text: buildMemoryQuestion(this.pending, language), delivered: false, expires: performance.now() + 60000 }
       return { ...reply('memory_confirmation_required', 'accepted'), name: this.pending,
         confirmation: { token: this.question.token, text: this.question.text } }
     }
@@ -78,7 +78,7 @@ export class MemorySession {
   confirmation(state: MemoryState, itemId: string): { token: string; text: string } | undefined {
     this.observe(state)
     const q = this.question
-    if (!state.active || this.blocked || !this.pending || !q?.delivered || Date.now() > q.expires
+    if (!state.active || this.blocked || !this.pending || !q?.delivered || performance.now() > q.expires
       || (this.inputOrder.get(itemId) ?? 0) <= this.pendingAfter || this.seen.has(itemId)) return undefined
     return { token: q.token, text: q.text }
   }
@@ -86,7 +86,7 @@ export class MemorySession {
     this.observe(state)
     if (!state.active || this.blocked || !this.pending) return reply('memory_no_pending_confirmation')
     if (!this.question?.delivered) return reply('memory_question_not_delivered')
-    if (Date.now() > this.question.expires) { this.pending = ''; this.question = undefined; return reply('memory_confirmation_expired') }
+    if (performance.now() > this.question.expires) { this.pending = ''; this.question = undefined; return reply('memory_confirmation_expired') }
     if ((this.inputOrder.get(itemId) ?? 0) <= this.pendingAfter) return reply('memory_confirmation_stale')
     if (!validMemoryText(itemId, 128) || this.seen.has(itemId)) return reply('memory_confirmation_duplicate')
     if (judgment && judgment.token !== this.question.token) return reply('memory_confirmation_stale')

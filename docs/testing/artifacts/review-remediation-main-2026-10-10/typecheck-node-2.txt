@@ -1,0 +1,26 @@
+Command: npm run typecheck:node
+Exit: 2
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/main/index.ts(982,5): error TS2322: Type '() => Promise<Readonly<{ status: "success" | "failed"; reason: string; }>> | null' is not assignable to type '() => PromiseLike<{ readonly status: "failed" | "success"; readonly reason: string; }>'.
+  Type 'Promise<Readonly<{ status: "failed" | "success"; reason: string; }>> | null' is not assignable to type 'PromiseLike<{ readonly status: "failed" | "success"; readonly reason: string; }>'.
+    Type 'null' is not assignable to type 'PromiseLike<{ readonly status: "failed" | "success"; readonly reason: string; }>'.
+src/main/index.ts(984,7): error TS2322: Type 'Promise<Readonly<{ status: "failed" | "success"; reason: string; }> | { status: string; reason: string; }>' is not assignable to type 'Promise<Readonly<{ status: "failed" | "success"; reason: string; }>>'.
+  Type 'Readonly<{ status: "failed" | "success"; reason: string; }> | { status: string; reason: string; }' is not assignable to type 'Readonly<{ status: "failed" | "success"; reason: string; }>'.
+    Type '{ status: string; reason: string; }' is not assignable to type 'Readonly<{ status: "failed" | "success"; reason: string; }>'.
+      Types of property 'status' are incompatible.
+        Type 'string' is not assignable to type '"failed" | "success"'.
+tests/unit/boot-runtime.test.ts(84,5): error TS2322: Type '() => Promise<{ result: "mock_passed"; reason: "synthetic_probe_passed"; }>' is not assignable to type '(...args: readonly unknown[]) => ConsoleDraftProbeResult | PromiseLike<ConsoleDraftProbeResult>'.
+  Type 'Promise<{ result: "mock_passed"; reason: "synthetic_probe_passed"; }>' is not assignable to type 'ConsoleDraftProbeResult | PromiseLike<ConsoleDraftProbeResult>'.
+    Type 'Promise<{ result: "mock_passed"; reason: "synthetic_probe_passed"; }>' is not assignable to type 'PromiseLike<ConsoleDraftProbeResult>'.
+      Types of property 'then' are incompatible.
+        Type '<TResult1 = { result: "mock_passed"; reason: "synthetic_probe_passed"; }, TResult2 = never>(onfulfilled?: ((value: { result: "mock_passed"; reason: "synthetic_probe_passed"; }) => TResult1 | PromiseLike<TResult1>) | null | undefined, onrejected?: ((reason: any) => TResult2 | PromiseLike<...>) | ... 1 more ... | unde...' is not assignable to type '<TResult1 = ConsoleDraftProbeResult, TResult2 = never>(onfulfilled?: ((value: ConsoleDraftProbeResult) => TResult1 | PromiseLike<TResult1>) | null | undefined, onrejected?: ((reason: any) => TResult2 | PromiseLike<...>) | ... 1 more ... | undefined) => PromiseLike<...>'.
+          Types of parameters 'onfulfilled' and 'onfulfilled' are incompatible.
+            Types of parameters 'value' and 'value' are incompatible.
+              Type '{ result: "mock_passed"; reason: "synthetic_probe_passed"; }' is not assignable to type 'ConsoleDraftProbeResult'.
+                Types of property 'reason' are incompatible.
+                  Type '"synthetic_probe_passed"' is not assignable to type '"cause=mock_probe_failed" | "cause=all_configured_ids_observed" | "cause=draft_invalid"'.
+tests/unit/memory-learning.test.ts(124,62): error TS2322: Type 'Promise<string>' is not assignable to type 'Promise<"stale" | "committed">'.
+  Type 'string' is not assignable to type '"stale" | "committed"'.

@@ -68,6 +68,8 @@ export function createAvatarAudioCoordinator(
   let outputPlaying = false
   let tapAttached = false
   let disposed = false
+  let thinkingTimer: ReturnType<typeof setTimeout> | undefined
+  const clearThinking = () => { clearTimeout(thinkingTimer); thinkingTimer = undefined }
 
   const emit = (event: AvatarAudioCoordinatorEvent | LipSyncDriverEvent): void => {
     try {
@@ -143,6 +145,7 @@ export function createAvatarAudioCoordinator(
     },
     handleActivity: (activity: AvatarAudioActivity): void => {
       if (disposed) return
+      clearThinking()
       switch (activity) {
         case 'speech_started':
           if (outputPlaying) interrupt()
@@ -150,6 +153,12 @@ export function createAvatarAudioCoordinator(
           return
         case 'speech_stopped':
           project('thinking')
+          thinkingTimer = setTimeout(() => {
+            thinkingTimer = undefined
+            if (disposed || outputPlaying) return
+            project('listening')
+            emit({ status: 'degraded', reason: 'avatar_thinking_without_output' })
+          }, 8000)
           return
         case 'output_started':
           outputPlaying = true
@@ -169,6 +178,7 @@ export function createAvatarAudioCoordinator(
     dispose: (): void => {
       if (disposed) return
       disposed = true
+      clearThinking()
       outputPlaying = false
       stopDriver()
       output = null

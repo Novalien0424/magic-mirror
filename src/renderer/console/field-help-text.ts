@@ -68,7 +68,7 @@ export const FIELD_HELP = {
   motionGroup: 'Choose a motion group exported by the rig. The scene requests that group’s first clip. A name does not guarantee every rig has the matching animation; test it with the assigned avatar.',
   expression: 'Choose an exported Cubism expression pose. It changes the face until another expression or reset replaces it. Availability and visible artwork depend on the assigned rig; test the result.',
   hardwareCommand: 'ON activates the approved preset; OFF releases it; Value requests a normalized level from 0 to 1. The configured adapter determines whether this is simulated or sent to supported hardware.',
-  approvedPreset: 'The identifier of an already approved lighting or fog preset. It is not a free-form hardware command. Use a preset configured for your adapter; an unknown preset cannot control a device.',
+  approvedPreset: 'Choose the default or a saved simulator preset. No physical lighting or fog adapter catalog is connected in this build. Simulation never proves a physical device response.',
   hardwareValue: 'A normalized preset level from 0 to 1. The hardware adapter defines what the level means; it is not universally brightness, power or fog density. Start with an approved low-output test.',
   musicCommand: 'Play starts the selected audio track. Fade changes the current track’s level over a duration. Stop ends the current track, optionally fading out first. These actions share the existing scene-music player.',
   musicAsset: 'Choose an imported audio asset for this action. Use Browse & upload audio if the track is missing. The scene-music path is controlled by the System BGM slider.',

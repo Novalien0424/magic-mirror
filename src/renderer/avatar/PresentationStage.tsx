@@ -5,6 +5,7 @@ import { getAudioDeviceRouter } from '../audio-devices'
 import { createPresentationController, type PresentationPhase } from './presentation-controller'
 import { applyPresentationAmbience } from './presentation-ambience'
 import { playRitualVideo } from './ritual-video-controller'
+import { playWakeCue } from './wake-cue'
 import './presentation.css'
 
 export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false, speechActive = false, mediaActive = false, mediaWithoutAudio = false, initialPhase = 'asleep' }: {
@@ -22,6 +23,13 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const [ritualVisible, setRitualVisible] = useState(false)
   const [readyId, setReadyId] = useState<string | null>(null)
   const [bgmVolume, setBgmVolume] = useState(0)
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const changed = () => setReducedMotion(query.matches)
+    query.addEventListener('change', changed)
+    return () => query.removeEventListener('change', changed)
+  }, [])
   useEffect(() => getAudioDeviceRouter().watchVolumes(volumes => setBgmVolume(volumes.bgm)), [])
   const failure = useRef(onFailure); failure.current = onFailure
   const phaseListener = useRef(onPhase); phaseListener.current = onPhase
@@ -48,6 +56,11 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     config.entranceVideoId, config.exitVideoId, config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase])
   useLayoutEffect(() => { controller.current?.update(lifecycle) }, [lifecycle])
   useLayoutEffect(() => { phaseListener.current?.(phase) }, [phase])
+  useEffect(() => {
+    if (phase === 'entering' && config.mode === 'reflective' && !silent && !draft) {
+      return playWakeCue(reason => failure.current?.(reason))
+    }
+  }, [phase, config.mode, silent, draft])
   useEffect(() => { setReadyId(null) }, [background?.id])
 
   useEffect(() => {
@@ -70,7 +83,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const ritualVideo = ritualKind === 'entrance' ? payload.entranceVideo : ritualKind === 'exit' ? payload.exitVideo : null
   useLayoutEffect(() => {
     setRitualVisible(false)
-    if (config.mode !== 'reflective' || !ritualKind) return
+    if (config.mode !== 'reflective' || !ritualKind || reducedMotion) return
     const video = ritualRef.current
     if (!ritualVideo || !video) { failure.current?.('presentation_ritual_video_missing'); return }
     return playRitualVideo({ video,
@@ -79,7 +92,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
       durationMs: ritualKind === 'entrance' ? config.entranceMs : config.exitMs,
       onVisible: setRitualVisible, onFailure: reason => failure.current?.(reason) })
   }, [config.mode, ritualKind, ritualVideo?.id, config.blackHoldMs, config.revealStartMs, config.entranceMs, config.exitMs,
-    config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase, draft])
+    config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase, draft, reducedMotion])
 
   useLayoutEffect(() => {
     if (!config.ambienceId || silent) return

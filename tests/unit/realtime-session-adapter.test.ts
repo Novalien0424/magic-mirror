@@ -113,6 +113,17 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it('mutes local output synchronously before an application interrupt reaches WebRTC', async () => {
+    const probe = makeAdapterProbe(), order: string[] = [];
+    let complete!: () => void;
+    probe.interrupt.mockImplementation(() => { order.push('transport'); return new Promise<void>(resolve => { complete = resolve }) });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe),
+      onAudioActivity: activity => { if (activity === 'interrupted') order.push('local') } });
+    const pending = handle.interrupt();
+    expect(order).toEqual(['local', 'transport']);
+    complete(); await pending;
+    await handle.close('manual_stop');
+  });
   it('does not carry a regex folder restriction into a new model-directed YouTube fallback or wait for final ASR', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
@@ -926,7 +937,7 @@ describe("RealtimeSession adapter", () => {
             transcription: {
               model: "configured-transcription-model",
               languages: ["zh-tw", "en"],
-              keywords: ["魔鏡阿魔鏡", "恭送渡鴨大人"],
+              keywords: ["魔鏡阿魔鏡", "恭送渡鴉大人"],
               delay: "medium",
             },
             turnDetection: {

@@ -31,11 +31,22 @@ function expectBrokerError(promise: Promise<unknown>, code: string) {
 }
 
 describe('ClientSecretBroker model availability probe', () => {
+  it.each(['issue', 'probeModelAvailability'] as const)('bounds stalled %s transport and emits only the stable fetch failure', async operation => {
+    const emit = vi.fn()
+    const broker = createClientSecretBroker({ requestTimeoutMs: 15,
+      credentialStore: { get: async () => 'synthetic-credential' }, events: { emit } })
+    const fetchImpl = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(new Error('synthetic private transport detail')), { once: true })
+    }))
+    await expectBrokerError(broker[operation]({ modelId: 'synthetic-model', fetchImpl }), 'realtime_client_secret_fetch_failed')
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ reason: 'cause=fetch_failed' }))
+    expect(JSON.stringify(emit.mock.calls)).not.toContain('synthetic private transport detail')
+  })
   it('cancels preview credential transport using the caller signal', async () => {
     const { broker } = createFixture()
     const abort = new AbortController()
     const fetchImpl = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      expect(init?.signal).toBe(abort.signal)
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
       init?.signal?.addEventListener('abort', () => reject(new Error('synthetic_abort')), { once: true })
     }))
     const pending = broker.issue({ modelId: 'configured-model-v1', signal: abort.signal, fetchImpl })

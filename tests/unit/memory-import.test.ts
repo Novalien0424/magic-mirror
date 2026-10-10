@@ -98,7 +98,11 @@ describe('large Markdown memory import', () => {
     expect(contexts.filter(context => context.headings.some(heading => /Conversation$|Date unknown| or /u.test(heading))).every(context => context.sourceAt === '')).toBe(true)
     expect(contexts.find(context => context.headings.includes('User'))).toMatchObject({ sourceAt: '2021-03-10', speaker: 'visitor' })
     expect(contexts.find(context => context.headings.includes('Assistant'))).toMatchObject({ sourceAt: '2021-03-10', speaker: 'assistant' })
-    expect(contexts.at(-1)?.sourceAt).toBe('2021-03-11T14:30:00.000Z')
+    expect(contexts.at(-1)?.sourceAt).toBe('2021-03-11T22:30:00+08:00')
+  })
+  it.each(['2024-03-05T00:30:00+08:00', '2024-03-04T16:30:00Z', '2024-03-05'])('preserves source-local calendar anchors near Taiwan midnight %#', sourceAt => {
+    const plan = prepareMemoryMarkdown(`# History\n## Conversation ${sourceAt}\nUser: Tomorrow is tentative.`)
+    expect(plan.contexts.flat().at(-1)?.historical.sourceAt).toBe(sourceAt)
   })
   it('ignores headings and speaker labels inside fenced examples and reports bounded heading context', () => {
     const report = vi.fn()

@@ -1,0 +1,5 @@
+Command: launchctl print system/com.magicmirror.board-hdmi
+Exit: 113 (expected: obsolete service is unloaded)
+
+Bad request.
+Could not find service "com.magicmirror.board-hdmi" in domain for system

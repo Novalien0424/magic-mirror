@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
 import { avatarCatalogFor, projectActiveAvatar, type AvatarWakeTuning } from '../shared/avatar-profiles'
 import { avatarCatalogSchema } from './avatar/avatar-config'
+import { sceneActionSchema } from './scenes/scene-config'
+import type { ZodIssue } from 'zod'
 
 import type {
   ConfigService,
   ConfigSlots,
 } from './config-service'
-import { ConfigServiceError } from './config-service'
+import { ConfigServiceError, makeConfigDiff } from './config-service'
 import {
   buildModelSettingsSimulatorEvidence,
   createJobModelSnapshot,
@@ -129,6 +131,7 @@ export type ConsoleConfigRefreshResult =
     }
 
 export interface ConsoleConfigControllerOptions {
+  readonly onSlotsRead?: (slots: ConfigSlots) => void
   readonly getWakeTuningDefaults?: (wake: MirrorConfig['wake']) => Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>
   readonly getLifecycle?: () => string
   readonly acquireAvatarSwitch?: () => (() => void) | null
@@ -191,6 +194,20 @@ function nonEmptyString(value: unknown): value is string {
 
 function safeFieldError(path: string, message: string): ConsoleFieldError {
   return { path, message }
+}
+
+function schemaFieldErrors(issues: readonly ZodIssue[], prefix: string): ConsoleFieldError[] {
+  return issues.flatMap(issue => {
+    if (issue.code === 'invalid_union') {
+      // Ignore branches for other kinds/commands; never return schema messages or input values.
+      const matching = issue.errors.filter(branch => !branch.some(error =>
+        error.code === 'invalid_value' && ['kind', 'command'].includes(String(error.path.at(-1)))))
+      if (matching.length === 1) return schemaFieldErrors(matching[0], prefix)
+    }
+    const path = issue.path.reduce<string>((result, segment) => typeof segment === 'number'
+      ? `${result}[${segment}]` : /^[a-zA-Z][a-zA-Z0-9_]*$/.test(String(segment)) ? `${result}.${String(segment)}` : result, prefix)
+    return [safeFieldError(path, issue.code)]
+  })
 }
 
 function safeFields(fields: readonly ConsoleFieldError[]): readonly ConsoleFieldError[] {
@@ -484,8 +501,9 @@ function draftInputValidation(value: unknown):
 
   const stringFields = ['personaName', 'voice'] as const
   const catalog = readProperty(value, 'avatarCatalog')
-  if (catalog !== undefined && !avatarCatalogSchema.safeParse(catalog).success) {
-    return { ok: false, fields: [safeFieldError('avatarCatalog', 'invalid_avatar_catalog')] }
+  if (catalog !== undefined) {
+    const parsed = avatarCatalogSchema.safeParse(catalog)
+    if (!parsed.success) return { ok: false, fields: schemaFieldErrors(parsed.error.issues, 'avatarCatalog') }
   }
   for (const field of stringFields) {
     const fieldValue = readProperty(value, field)
@@ -504,6 +522,11 @@ function draftInputValidation(value: unknown):
       return { ok: false, fields: [safeFieldError(field, 'invalid_type')] }
     }
   }
+  const actionErrors = (readProperty(value, 'sceneActions') as unknown[]).flatMap((action, index) => {
+    const parsed = sceneActionSchema.safeParse(action)
+    return parsed.success ? [] : schemaFieldErrors(parsed.error.issues, `sceneActions[${index}]`)
+  })
+  if (actionErrors.length) return { ok: false, fields: actionErrors }
 
   const nested = [
     ['wake', ['phrase', 'modelVersion', 'packageId']],
@@ -766,6 +789,7 @@ export function createConsoleConfigController(
     const service = getService(options)
     if (service === null) return null
     const slots = await service.read()
+    options.onSlotsRead?.(slots)
     const resolution = resolveModelSettings(slots)
     cachedResolution = resolution
     return { service, slots, resolution }
@@ -773,12 +797,13 @@ export function createConsoleConfigController(
 
   async function readOperationDiff(
     operation: ConfigOperation,
+    existingState?: ControllerState,
   ): Promise<OperationDiff | null> {
-    const state = await readState()
+    const state = existingState ?? await readState()
     if (state === null) return null
     const from: 'active' | 'previous' = operation === 'publish' ? 'active' : 'previous'
     const to: 'draft' | 'active' = operation === 'publish' ? 'draft' : 'active'
-    const serviceDiff = await state.service.diff(from, to)
+    const serviceDiff = makeConfigDiff(state.slots[from], state.slots[to])
     const changes = configDiffFromService(serviceDiff)
     return {
       operation,
@@ -814,8 +839,8 @@ export function createConsoleConfigController(
     try {
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
-      const publish = await readOperationDiff('publish')
-      const rollback = await readOperationDiff('rollback')
+      const publish = await readOperationDiff('publish', state)
+      const rollback = await readOperationDiff('rollback', state)
       if (publish === null || rollback === null) {
         return responseError('console_not_ready', 'cause=config_service_unavailable')
       }

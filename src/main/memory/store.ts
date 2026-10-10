@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { MEMORY_CONTEXT_BYTES, MEMORY_TEXT_MAX, validMemoryText, type MemoryEntry, type MemoryMode } from '../../shared/memory'
 import type { IndexRecord, LearningCommit, LearningRecord, MemoryEmbedding, MemoryPolicy } from './contracts'
+import { compareEventDatesDescending, memoryEventDate } from './calendar'
 
 const LIST_LIMIT = 100
 const RECALL_LIMIT = 8
@@ -110,7 +111,7 @@ function proposalsFor(commit: LearningCommit): Proposal[] {
     validated(record.text, MEMORY_TEXT_MAX)
     validated(record.eventAt, 40, true)
     if (!['episode', 'fact', 'commitment'].includes(record.kind) || !['active', 'resolved', 'superseded'].includes(record.state)
-      || record.eventAt !== '' && (!/^\d{4}-\d{2}-\d{2}T/.test(record.eventAt) || !Number.isFinite(Date.parse(record.eventAt)))
+      || record.eventAt !== '' && !memoryEventDate(record.eventAt)
       || typeof record.keepInMind !== 'boolean' || !Array.isArray(record.sources) || record.sources.length > 64
       || record.expectedRevision !== null && (!Number.isSafeInteger(record.expectedRevision) || record.expectedRevision < 1)) throw new MemoryFailure('memory_invalid_input')
     const sources = record.sources.map(source => normalized(source, 120))
@@ -363,7 +364,9 @@ export class MemoryStore {
         ORDER BY keep_in_mind DESC, CASE kind WHEN 'commitment' THEN 0 ELSE 1 END, updated_at DESC, id LIMIT ?`)
         .all(scope.ownerId, LIST_LIMIT) as unknown as EntryRow[]
       const episodes = database.prepare(`SELECT * FROM memory_entries WHERE owner_key = ? AND kind = 'episode' AND state = 'active'
-        ORDER BY event_at DESC, updated_at DESC, id LIMIT ?`).all(scope.ownerId, RECALL_LIMIT) as unknown as EntryRow[]
+        ORDER BY CASE WHEN length(event_at) = 10 THEN event_at ELSE date(event_at, '+8 hours') END DESC,
+        CASE WHEN length(event_at) = 10 THEN NULL ELSE julianday(event_at) END DESC,
+        updated_at DESC, id LIMIT ?`).all(scope.ownerId, RECALL_LIMIT) as unknown as EntryRow[]
       const episode = episodes.find(row => this.supported(database, row.id) && bounded([entryFor(row)], BRIEF_BYTES).length)
       const entries = episode ? [entryFor(episode)] : []
       for (const row of current) {
@@ -395,10 +398,18 @@ export class MemoryStore {
       let incomplete = vector === undefined
       if (vector && embedding) {
         const dimension = database.prepare('SELECT dimensions FROM memory_embedding_versions WHERE version = ?').get(embedding.version)?.dimensions
-        const missing = database.prepare(`SELECT 1 FROM memory_entries e LEFT JOIN memory_vectors v
+        const missing = database.prepare(`SELECT e.rowid, e.id FROM memory_entries e LEFT JOIN memory_vectors v
           ON v.entry_id = e.id AND v.revision = e.revision AND v.version = ? AND v.dimensions = ?
-          WHERE e.owner_key = ? AND e.state != 'superseded' AND v.entry_id IS NULL LIMIT 1`).get(embedding.version, vector.length, scope.ownerId)
-        incomplete = !!missing || dimension !== undefined && dimension !== vector.length
+          WHERE e.owner_key = ? AND e.state != 'superseded' AND v.entry_id IS NULL AND e.rowid > ?
+          ORDER BY e.rowid LIMIT ?`)
+        incomplete = dimension !== undefined && dimension !== vector.length
+        let missingCursor = 0
+        while (!incomplete) {
+          const rows = missing.all(embedding.version, vector.length, scope.ownerId, missingCursor, SCAN_BATCH)
+          if (!rows.length) break
+          if (rows.some(row => this.supported(database, row.id as string))) { incomplete = true; break }
+          missingCursor = rows.at(-1)!.rowid as number
+        }
         if (dimension === vector.length) {
           let cursor = 0
           const scan = database.prepare(`SELECT e.*, v.vector FROM memory_entries e JOIN memory_vectors v ON v.entry_id = e.id
@@ -409,8 +420,9 @@ export class MemoryStore {
             if (!batch.length) break
             for (const row of batch) {
               cursor = row.rowid
+              if (!this.supported(database, row.id)) continue
               const values = decodeVector(row.vector, vector.length)
-              if (!values || !this.supported(database, row.id)) { incomplete = true; continue }
+              if (!values) { incomplete = true; continue }
               const score = values.reduce((sum, value, index) => sum + value * vector[index], 0)
               if (score < SEMANTIC_THRESHOLD) continue
               const previous = candidates.get(row.id)
@@ -424,7 +436,7 @@ export class MemoryStore {
           }
         }
       }
-      const ranked = [...candidates.values()].sort((a, b) => b.score - a.score || b.row.event_at.localeCompare(a.row.event_at) || a.row.id.localeCompare(b.row.id))
+      const ranked = [...candidates.values()].sort((a, b) => b.score - a.score || compareEventDatesDescending(a.row.event_at, b.row.event_at) || a.row.id.localeCompare(b.row.id))
       return { entries: bounded(ranked.map(candidate => entryFor(candidate.row))), incomplete }
     })
   }
@@ -433,11 +445,22 @@ export class MemoryStore {
     validated(version, 128)
     if (!Number.isSafeInteger(limit) || limit < 0) throw new MemoryFailure('memory_invalid_input')
     return this.useDatabase(database => {
-      const rows = database.prepare(`SELECT e.* FROM memory_entries e JOIN memory_scopes s ON s.owner_id = e.owner_key
+      const maximum = Math.min(limit, LIST_LIMIT), records: IndexRecord[] = []
+      const scan = database.prepare(`SELECT e.* FROM memory_entries e JOIN memory_scopes s ON s.owner_id = e.owner_key
         LEFT JOIN memory_vectors v ON v.entry_id = e.id AND v.revision = e.revision AND v.version = ?
         WHERE s.mode != 'off' AND s.cleanup_required = 0 AND e.state != 'superseded' AND v.entry_id IS NULL
-        ORDER BY e.rowid LIMIT ?`).all(version, Math.min(limit, LIST_LIMIT)) as unknown as EntryRow[]
-      return rows.filter(row => this.supported(database, row.id)).map(row => ({ avatarId: row.avatar_id, name: row.owner_name, entry: entryFor(row), revision: row.revision }))
+        AND e.rowid > ? ORDER BY e.rowid LIMIT ?`)
+      let cursor = 0
+      while (records.length < maximum) {
+        const rows = scan.all(version, cursor, SCAN_BATCH) as unknown as EntryRow[]
+        if (!rows.length) break
+        for (const row of rows) {
+          cursor = row.rowid
+          if (this.supported(database, row.id)) records.push({ avatarId: row.avatar_id, name: row.owner_name, entry: entryFor(row), revision: row.revision })
+          if (records.length === maximum) break
+        }
+      }
+      return records
     })
   }
 

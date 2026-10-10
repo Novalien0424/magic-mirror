@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Match the production React plugin when Node checks render Console components.
+  esbuild: { jsx: 'automatic' },
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',

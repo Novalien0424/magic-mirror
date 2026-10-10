@@ -2,6 +2,7 @@ import * as React from 'react'
 import type { ConsoleWakeTuningDefaults } from '../../shared/console-types'
 import { useEffect, useRef, useState } from 'react'
 import { HelpField } from './HelpField'
+import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
 import type { AvatarProfile, AvatarWakeTuning } from '../../shared/avatar-profiles'
 import { DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
@@ -16,6 +17,7 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled, focusName, o
   avatar: AvatarProfile; onChange(avatar: AvatarProfile): void; disabled: boolean
 }): React.JSX.Element {
   const nameInput = useRef<HTMLInputElement>(null)
+  const fieldPath = (field: string): string => `avatar.${avatar.id}.${field}`
   const [tuningOpen, setTuningOpen] = useState(false)
   useEffect(() => {
     if (focusName && !disabled) { nameInput.current?.focus(); nameInput.current?.select(); onNameFocused?.() }
@@ -49,11 +51,11 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled, focusName, o
   const optionalNumber = (value: string): number | undefined => value.trim() === '' ? undefined : Number(value)
   return <fieldset disabled={disabled} className="avatar-character"><legend className="console__sr-only">Persona</legend>
     <div className="console__form-grid">
-      <HelpField help={FIELD_HELP.avatarName}>Avatar name<input ref={nameInput} aria-label="Avatar name" maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></HelpField>
-      <HelpField help={FIELD_HELP.avatarWakePhrase}>Wake phrase<input aria-label="Avatar wake phrase" maxLength={96} value={settings.wakePhrase} onChange={e => updateWakePhrase(e.currentTarget.value)} /></HelpField>
-      <HelpField help={FIELD_HELP.avatarSleepPhrase}>Sleep phrase<input aria-label="Avatar sleep phrase" maxLength={96} value={settings.sleepPhrase} onChange={e => onChange({ ...avatar, sleepPhrase: e.currentTarget.value })} /></HelpField>
-      <HelpField help={FIELD_HELP.personality}>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></HelpField>
-      <HelpField help={FIELD_HELP.idle}>Sleep after inactivity (seconds)<input type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></HelpField>
+      <HelpField fieldPath={fieldPath('name')} error={!avatar.name.trim() ? 'Enter an avatar name.' : undefined} help={FIELD_HELP.avatarName}>Avatar name<input required ref={nameInput} aria-label="Avatar name" aria-invalid={!avatar.name.trim() || undefined} maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></HelpField>
+      <HelpField fieldPath={fieldPath('wakePhrase')} help={FIELD_HELP.avatarWakePhrase}>Wake phrase<input aria-label="Avatar wake phrase" maxLength={96} value={settings.wakePhrase} onChange={e => updateWakePhrase(e.currentTarget.value)} /></HelpField>
+      <HelpField fieldPath={fieldPath('sleepPhrase')} help={FIELD_HELP.avatarSleepPhrase}>Sleep phrase<input aria-label="Avatar sleep phrase" maxLength={96} value={settings.sleepPhrase} onChange={e => onChange({ ...avatar, sleepPhrase: e.currentTarget.value })} /></HelpField>
+      <HelpField fieldPath={fieldPath('personality')} help={FIELD_HELP.personality}>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></HelpField>
+      <HelpField fieldPath={fieldPath('idleSeconds')} help={FIELD_HELP.idle}>Sleep after inactivity (seconds)<NumberInput type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></HelpField>
     </div>
     <details className="avatar-wake-tuning" onToggle={event => setTuningOpen(event.currentTarget.open)}>
       <summary>Wake sensitivity tuning</summary>
@@ -61,10 +63,10 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled, focusName, o
       {wakeDefaults ? <p aria-label="Wake package defaults">Package defaults: threshold {wakeDefaults.threshold} · score {wakeDefaults.score} · trailing blanks {wakeDefaults.numTrailingBlanks}.</p>
         : <p role="status">Package values unavailable. Check the wake package status; existing overrides are retained.</p>}
       <div className="console__form-grid">
-        <HelpField help={FIELD_HELP.avatarWakeTuningEnable}>Use per-avatar tuning<input aria-label="Enable avatar wake tuning" type="checkbox" checked={tuningEnabled} onChange={e => updateTuning({ enabled: e.currentTarget.checked })} /></HelpField>
-        <HelpField help={FIELD_HELP.avatarWakeThreshold}>Threshold override (0–1)<input aria-label="Wake threshold override" type="number" min={0} max={1} step={0.01} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('threshold')} onChange={e => updateTuning({ threshold: optionalNumber(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.avatarWakeScore}>Score override (&gt;0)<input aria-label="Wake score override" type="number" min={0.01} max={100} step={0.01} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('score')} onChange={e => updateTuning({ score: optionalNumber(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.avatarWakeTrailingBlanks}>Trailing blanks (1–100)<input aria-label="Wake trailing blanks override" type="number" min={1} max={100} step={1} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('numTrailingBlanks')} onChange={e => updateTuning({ numTrailingBlanks: optionalNumber(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('wakeTuning.enabled')} help={FIELD_HELP.avatarWakeTuningEnable}>Use per-avatar tuning<input aria-label="Enable avatar wake tuning" type="checkbox" checked={tuningEnabled} onChange={e => updateTuning({ enabled: e.currentTarget.checked })} /></HelpField>
+        <HelpField fieldPath={fieldPath('wakeTuning.threshold')} help={FIELD_HELP.avatarWakeThreshold}>Threshold override (0–1)<input aria-label="Wake threshold override" type="number" min={0} max={1} step={0.01} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('threshold')} onChange={e => updateTuning({ threshold: optionalNumber(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('wakeTuning.score')} help={FIELD_HELP.avatarWakeScore}>Score override (&gt;0)<input aria-label="Wake score override" type="number" min={0.01} max={100} step={0.01} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('score')} onChange={e => updateTuning({ score: optionalNumber(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('wakeTuning.numTrailingBlanks')} help={FIELD_HELP.avatarWakeTrailingBlanks}>Trailing blanks (1–100)<input aria-label="Wake trailing blanks override" type="number" min={1} max={100} step={1} placeholder="Unavailable" disabled={!tuningEnabled} value={effective('numTrailingBlanks')} onChange={e => updateTuning({ numTrailingBlanks: optionalNumber(e.currentTarget.value) })} /></HelpField>
       </div>
       <p aria-label="Effective wake tuning">Effective draft values: threshold {effective('threshold') === '' ? 'unavailable' : effective('threshold')} ({tuningEnabled && tuning?.threshold !== undefined ? 'override' : 'package'}) · score {effective('score') === '' ? 'unavailable' : effective('score')} ({tuningEnabled && tuning?.score !== undefined ? 'override' : 'package'}) · trailing blanks {effective('numTrailingBlanks') === '' ? 'unavailable' : effective('numTrailingBlanks')} ({tuningEnabled && tuning?.numTrailingBlanks !== undefined ? 'override' : 'package'}).</p>
       {calibrationBridge?.wakeCalibration && wakeDefaults && <WakeCalibrationPanel bridge={calibrationBridge} visible={visible && tuningOpen} avatarName={avatar.name}

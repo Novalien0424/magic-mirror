@@ -1,0 +1,8 @@
+Command: npm run typecheck:node
+Exit: 2
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/main/memory/repository.ts(114,11): error TS2367: This comparison appears to be unintentional because the types '"recovering"' and '"open"' have no overlap.
+src/renderer/console/App.tsx(14,8): error TS6133: 'AvatarRuntimeSnapshot' is declared but its value is never read.

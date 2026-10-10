@@ -18,8 +18,10 @@
     <string>/var/root</string>
   </dict>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>KeepAlive</key>
+  <false/>
+  <key>Disabled</key>
   <true/>
   <key>ThrottleInterval</key>
   <integer>15</integer>

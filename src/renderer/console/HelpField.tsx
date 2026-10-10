@@ -1,6 +1,8 @@
-import React, { Children, cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState,
+import React, { Children, cloneElement, isValidElement, useContext, useEffect, useId, useLayoutEffect, useRef, useState,
   type LabelHTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { NumberInput } from './NumberInput'
+import { FieldErrorsContext, fieldErrorText, focusInvalidField } from './field-errors'
 
 export function placeFieldHelp(anchor: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'>,
   popup: Pick<DOMRect, 'width' | 'height'>, viewport: { width: number; height: number }): { left: number; top: number } {
@@ -11,7 +13,9 @@ export function placeFieldHelp(anchor: Pick<DOMRect, 'left' | 'right' | 'top' | 
   return { left, top }
 }
 
-const isControl = (type: unknown): boolean => type === 'input' || type === 'select' || type === 'textarea'
+const isControl = (type: unknown): boolean => type === 'input' || type === 'select' || type === 'textarea' || type === NumberInput
+const helpText = (text: string): ReactNode => text.split(/([\u3400-\u9fff，。；「」]+)/u).map((part, index) =>
+  /[\u3400-\u9fff]/u.test(part) ? <span key={index} lang="zh-Hant">{part}</span> : part)
 function labelText(children: ReactNode): string {
   return Children.toArray(children).map(child => {
     if (typeof child === 'string' || typeof child === 'number') return String(child)
@@ -21,10 +25,20 @@ function labelText(children: ReactNode): string {
 }
 
 /** The help trigger is outside the label and stays available in disabled fieldsets. */
-export function HelpField({ help, children, className = '', helpLabel, descriptionId, ...labelProps }:
-  LabelHTMLAttributes<HTMLLabelElement> & { help: string; helpLabel?: string; descriptionId?: string }): React.JSX.Element {
+export function HelpField({ help, children, className = '', helpLabel, descriptionId, fieldPath, error, ...labelProps }:
+  LabelHTMLAttributes<HTMLLabelElement> & { help: string; helpLabel?: string; descriptionId?: string; fieldPath?: string; error?: string }): React.JSX.Element {
   const generatedId = useId()
   const id = descriptionId ?? generatedId
+  const errorId = `${id}-error`
+  const validation = useContext(FieldErrorsContext)
+  const issue = validation.errors.find(field => field.path === fieldPath)
+  const fieldError = error || (issue ? fieldErrorText(issue.message) : '')
+  const container = useRef<HTMLDivElement>(null)
+  const focused = useRef<typeof validation.focus>(null)
+  useLayoutEffect(() => {
+    if (validation.focus && validation.focus !== focused.current && validation.focus.path === fieldPath
+      && container.current && focusInvalidField(container.current, fieldPath)) focused.current = validation.focus
+  })
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ left: 12, top: 12 })
   const trigger = useRef<HTMLSpanElement>(null), popup = useRef<HTMLDivElement>(null)
@@ -36,7 +50,12 @@ export function HelpField({ help, children, className = '', helpLabel, descripti
     if (!isValidElement<Record<string, unknown>>(child)) return child
     if (isControl(child.type)) {
       checkbox ||= child.props.type === 'checkbox'
-      return cloneElement(child, { 'aria-describedby': [child.props['aria-describedby'], id].filter(Boolean).join(' ') })
+      return cloneElement(child, {
+        'data-field-path': fieldPath,
+        'aria-invalid': fieldError ? true : child.props['aria-invalid'],
+        'aria-errormessage': fieldError ? errorId : child.props['aria-errormessage'],
+        'aria-describedby': [child.props['aria-describedby'], id, fieldError ? errorId : ''].filter(Boolean).join(' '),
+      })
     }
     return child.props.children ? cloneElement(child, {}, describe(child.props.children as ReactNode)) : child
   })
@@ -81,8 +100,8 @@ export function HelpField({ help, children, className = '', helpLabel, descripti
   }
   const tooltip = <div id={id} role="tooltip" ref={popup} className="field-help__tooltip" hidden={!open} style={position}
     onPointerEnter={() => { clearTimeout(timer.current); interaction.current.hovered = true }}
-    onPointerLeave={() => { interaction.current.hovered = false; leave() }}>{help}</div>
-  return <div className={`field-help ${className}`} data-checkbox={checkbox || undefined}>
+    onPointerLeave={() => { interaction.current.hovered = false; leave() }}>{helpText(help)}</div>
+  return <div ref={container} className={`field-help ${className}`} data-checkbox={checkbox || undefined}>
     <label {...labelProps}>{fields}</label>
     {/* A native button inherits fieldset[disabled]; this keyboard button does not. */}
     <span ref={trigger} className="field-help__trigger" role="button" tabIndex={0} aria-label={`Help: ${name}`}
@@ -101,6 +120,7 @@ export function HelpField({ help, children, className = '', helpLabel, descripti
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle() } }}>
       <span aria-hidden="true">?</span>
     </span>
+    {fieldError && <span id={errorId} className="field-error" style={{ gridColumn: '1 / -1' }}>{fieldError}</span>}
     {typeof document === 'undefined' ? tooltip : createPortal(tooltip, document.body)}
   </div>
 }

@@ -26,6 +26,22 @@ function output(): AvatarAudioOutput {
 }
 
 describe('actual-output avatar audio coordination', () => {
+  it('leaves Thinking after a silent response without fabricating output completion', async () => {
+    vi.useFakeTimers()
+    const onConversationState = vi.fn(), eventSink = vi.fn()
+    const coordinator = createAvatarAudioCoordinator({ onConversationState, eventSink })
+    try {
+      coordinator.handleActivity('speech_stopped')
+      expect(onConversationState).toHaveBeenLastCalledWith('thinking')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(onConversationState).toHaveBeenLastCalledWith('listening')
+      expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'avatar_thinking_without_output' }))
+      coordinator.handleActivity('speech_stopped')
+      coordinator.handleActivity('output_started')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(onConversationState).toHaveBeenLastCalledWith('speaking')
+    } finally { coordinator.dispose(); vi.useRealTimers() }
+  })
   it('starts lip sync only from actual output and projects speaking/listening', () => {
     const renderPort = renderer()
     const audioOutput = output()

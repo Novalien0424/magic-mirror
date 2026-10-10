@@ -26,7 +26,7 @@ function harness() {
 }
 
 describe('Scene transcript control boundary', () => {
-  it('waits for the incantation before dispatching the skill and never plays after cancellation', async () => {
+  it('starts an authorized scene without waiting for its spoken cue, even when later VAD interrupts the cue', async () => {
     for (const status of ['completed', 'failed'] as const) {
       const h = harness()
       let finish!: (value: { status: 'completed' } | { status: 'failed'; reason: string }) => void
@@ -35,11 +35,23 @@ describe('Scene transcript control boundary', () => {
       controller.handleInputItemCreated('cast')
       const pending = controller.handleCompletedTranscript({ itemId: 'cast', transcript: 'Begin the show', realtimeSessionId: 'test' })
       await vi.waitFor(() => expect(announce).toHaveBeenCalledTimes(1))
-      expect(h.bridge.triggerScene).not.toHaveBeenCalled()
+      expect(h.bridge.triggerScene).toHaveBeenCalledOnce()
       finish(status === 'completed' ? { status } : { status, reason: 'spell_announcement_cancelled' })
       const result = await pending
-      expect(result.decision).toBe(status === 'completed' ? 'triggered' : 'failed')
-      expect(h.bridge.triggerScene).toHaveBeenCalledTimes(status === 'completed' ? 1 : 0)
+      expect(result.decision).toBe('triggered')
+      expect(h.bridge.triggerScene).toHaveBeenCalledOnce()
+    }
+  })
+  it('rejects a session that changes while interrupting old output, and never announces a rejected scene', async () => {
+    for (const stale of [true, false]) {
+      const h = harness(), announce = vi.fn(), current = vi.fn().mockReturnValueOnce(true).mockReturnValue(!stale)
+      if (!stale) h.bridge.triggerScene.mockResolvedValue({ status: 'rejected', reason: 'scene_busy' } as never)
+      const controller = createSceneTranscriptController({ bridge: h.bridge, interrupt: h.interrupt, announceSpell: announce, isCurrentSession: current })
+      controller.handleInputItemCreated('cast')
+      const result = await controller.handleCompletedTranscript({ itemId: 'cast', transcript: 'Begin the show', realtimeSessionId: 'test' })
+      expect(result.decision).toBe(stale ? 'ignored' : 'triggered')
+      expect(h.bridge.triggerScene).toHaveBeenCalledTimes(stale ? 0 : 1)
+      expect(announce).not.toHaveBeenCalled()
     }
   })
   it('runs the short rain command once across punctuation, spaces and prefix script variants', async () => {

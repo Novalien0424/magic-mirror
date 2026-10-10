@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
+import { LEGACY_SLEEP_PHRASE } from '../shared/avatar-commands'
 import { folderMediaSkill, type FolderMediaEntry } from '../shared/media-folders'
-import { canUseAvatarAction, canUseAvatarResource, type WakeRuntimeConfig } from '../shared/avatar-profiles'
+import { canUseAvatarAction, canUseAvatarResource, type AvatarModel, type WakeRuntimeConfig } from '../shared/avatar-profiles'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -42,6 +43,7 @@ import {
 } from './module-mocks'
 import {
   createLifecycleActor as defaultCreateLifecycleActor,
+  LEGAL_TARGETS,
   type LifecycleActor,
   type LifecycleContext,
   type LifecycleEvent,
@@ -174,6 +176,7 @@ interface RecoveryProbeTimer {
 }
 
 interface RecoveryProbeCycle {
+  readonly abort: AbortController
   readonly token: number
   readonly timers: RecoveryProbeTimer[]
   terminalTimer: RecoveryProbeTimer | null
@@ -210,10 +213,12 @@ export interface AssetPreflightOptions {
 
 export interface WakeMicrophoneHandoff {
   release(): PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
-  acquire(): PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+  acquire(): PromiseLike<{ readonly status: 'success' | 'failed' | 'degraded'; readonly reason: string }>
 }
 
 export interface BootOptions {
+  readonly rebuildWakeOwner?: () => PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+  readonly onFatalFailure?: (reason: string) => void
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   readonly appVersion?: string
   readonly buildCommit?: string
@@ -274,6 +279,10 @@ export interface BootSubscription {
 }
 
 export interface BootRuntime {
+  handleMirrorRendererGone(): void
+  handleMirrorRendererReady(): Promise<void>
+  getAvatarModelForRuntime(id: string): Readonly<AvatarModel> | undefined
+  getPublishedControlPhrasesForRuntime(): readonly string[]
   getPublishedAvatarId(): string
   setMemoryRuntimeStatus(status: 'ready' | 'degraded'): Promise<void>
   readonly ready: Promise<void>
@@ -644,35 +653,7 @@ function createFallbackActor(telemetry: Pick<Telemetry, 'emit'>): LifecycleActor
     sceneInvocationId: null,
   }
   const listeners = new Set<(snapshot: LifecycleSnapshot) => void>()
-  const transitions: Partial<Record<LifecycleState, Partial<Record<LifecycleEvent['type'], LifecycleState>>>> = {
-    starting: { LOCAL_READY: 'dormant', LOCAL_CORE_FAILED: 'maintenance' },
-    dormant: { WAKE_DETECTED: 'activating', LOCAL_CORE_FAILED: 'maintenance' },
-    activating: {
-      REALTIME_READY: 'active',
-      CLOUD_FAILED: 'offlineLoop',
-      LOCAL_AUDIO_FAILED: 'maintenance',
-      LOCAL_CORE_FAILED: 'maintenance',
-    },
-    active: {
-      REALTIME_SESSION_REPLACED: 'active',
-      CLOUD_FAILED: 'offlineLoop',
-      SLEEP_REQUESTED: 'suspending',
-      IDLE_TIMEOUT: 'suspending',
-      LOCAL_AUDIO_FAILED: 'maintenance',
-      LOCAL_CORE_FAILED: 'maintenance',
-    },
-    suspending: {
-      MEDIA_CLOSED: 'dormant',
-      LOCAL_AUDIO_FAILED: 'maintenance',
-      LOCAL_CORE_FAILED: 'maintenance',
-    },
-    offlineLoop: {
-      RECOVERY_PASSED: 'dormant',
-      LOCAL_AUDIO_FAILED: 'maintenance',
-      LOCAL_CORE_FAILED: 'maintenance',
-    },
-    maintenance: { RETRY_STARTUP: 'starting', LOCAL_CORE_FAILED: 'maintenance' },
-  }
+  const transitions = LEGAL_TARGETS
 
   function notify(): void {
     const snapshot = { state, context: { ...context } }
@@ -893,7 +874,35 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let publishedAvatarSettings: Readonly<AvatarSessionSettings> | undefined
   let publishedAvatarId = ''
+  let publishedConfig: MirrorConfig | null = null
+  let publishedControlPhrases: readonly string[] | null = null
+  const avatarModels = new Map<string, AvatarModel>()
+  function cacheAvatarModels(slots: ConfigSlots): void {
+    avatarModels.clear()
+    for (const model of [...(slots.draft?.avatarCatalog?.models ?? []), ...(slots.active.avatarCatalog?.models ?? [])]) {
+      avatarModels.set(model.id, structuredClone(model))
+    }
+  }
+  function cachePublishedConfig(slots: ConfigSlots): void {
+    publishedConfig = structuredClone(slots.active)
+    cacheAvatarModels(slots)
+    const avatar = slots.active.avatarCatalog?.avatars.find(a => a.id === slots.active.avatarCatalog?.activeAvatarId)
+    publishedControlPhrases = Array.isArray(slots.active.spells) && slots.active.wake
+      ? Object.freeze([...slots.active.spells.map(s => s.phrase), ...(avatar?.spells ?? []).map(s => s.phrase),
+        avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, avatar?.wakePhrase ?? slots.active.wake.phrase].filter(Boolean)) : null
+  }
   let avatarSwitchInProgress = false
+  let rolloverStopping = false
+  let wakeReacquire: Promise<boolean> | null = null
+  let maintenanceMode: 'audio' | 'renderer' | 'core' | null = null
+  let maintenanceDeadline: unknown = null
+  let maintenanceRetry: unknown = null
+  let maintenanceRetryUsed = false
+  let runtimeStopped = false
+  let stopDeadline: unknown = null
+  let startDeadline: unknown = null
+  let stopReceiptProcessing = false
+  const secretRequests = new Set<AbortController>()
   let configService: ConfigService | null = options.configService ?? null
   let sqliteService: SqlitePhaseTestService | null = null
   const realtimeRecoveryUnavailable: Record<string, unknown> = Object.freeze({
@@ -1152,6 +1161,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function sendLifecycle(event: LifecycleEvent): boolean {
+    if (runtimeStopped) return false
     if (event.type === 'WAKE_DETECTED' && avatarSwitchInProgress) {
       emitMetadata(telemetry, { module: 'avatar', event: 'wake_deferred', status: 'info', reason: 'avatar_switch_in_progress', source: 'runtime' })
       return false
@@ -1186,6 +1196,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       if (recoveryProbeCycle !== null && lifecycleView.state !== 'offlineLoop') {
         cancelRecoveryProbeCycle()
       }
+      if (lifecycleView.state === 'maintenance' && event.type === 'LOCAL_CORE_FAILED') beginMaintenanceRecovery('core')
       refreshSnapshot()
       return true
     } catch {
@@ -1240,6 +1251,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     if (cycle === null) return
 
     recoveryProbeCycle = null
+    cycle.abort.abort()
     recoveryProbeCycleToken += 1
     for (const timer of cycle.timers) {
       try {
@@ -1264,6 +1276,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     reason: string,
   ): void {
     if (!isCurrentRecoveryProbeCycle(cycle)) return
+    if (wakeReacquire !== null) {
+      void wakeReacquire.then(acquired => {
+        if (acquired && isCurrentRecoveryProbeCycle(cycle)) finishRecoveryProbeCycle(cycle, reason)
+      })
+      return
+    }
 
     cancelRecoveryProbeCycle()
     if (!sendLifecycle({ type: 'RECOVERY_PASSED' })) {
@@ -1319,6 +1337,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     try {
       issueResult = options.clientSecretBroker.issue({
         modelId: activeModelSettings.realtimeDialogue,
+        signal: cycle.abort.signal,
       })
     } catch {
       settleRecoveryProbe(cycle, timer, false)
@@ -1343,6 +1362,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
 
     const cycle: RecoveryProbeCycle = {
+      abort: new AbortController(),
       token: recoveryProbeCycleToken + 1,
       timers: [],
       terminalTimer: null,
@@ -1409,6 +1429,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function recordRealtimeStartFailure(): void {
+    cancelStartDeadline()
     pendingRealtimeSessionIdentity = null
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
@@ -1426,6 +1447,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function recordRealtimeStopFailure(): void {
+    cancelStopDeadline()
     pendingRealtimeSessionIdentity = null
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
@@ -1441,13 +1463,17 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     }
     refreshSnapshot()
     notifyListeners()
+    beginMaintenanceRecovery('audio')
   }
 
   function recordRealtimeRolloverFailure(): void {
     pendingRealtimeSessionIdentity = null
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
-    sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_rollover_failed' })
+    // The renderer may still own the old private session. Require its explicit
+    // stop receipt before OfflineLoop or any wake acquisition.
+    rolloverStopping = true
+    sendLifecycle({ type: 'SLEEP_REQUESTED' })
     lastError = {
       module: 'openai',
       error_code: 'realtime_runtime_rollover_failed',
@@ -1456,7 +1482,95 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenance = null
     refreshSnapshot()
     notifyListeners()
-    if (lifecycleState() === 'offlineLoop') startRecoveryProbeCycle()
+    dispatchStopForRecovery()
+  }
+
+  function cancelStopDeadline(): void {
+    if (stopDeadline !== null) cancelRealtimeTimer(stopDeadline)
+    stopDeadline = null
+  }
+  function cancelStartDeadline(): void {
+    if (startDeadline !== null) cancelRealtimeTimer(startDeadline)
+    startDeadline = null
+  }
+  function dispatchStopForRecovery(): void {
+    cancelStopDeadline()
+    try {
+      const result = options.dispatchRealtimeRuntimeCommand?.({ operation: 'stop', reason: 'manual_stop' })
+      if (result?.status !== 'success') { recordRealtimeStopFailure(); return }
+      stopDeadline = scheduleRealtimeTimer(() => {
+        stopDeadline = null
+        if (!runtimeStopped) recordRealtimeStopFailure()
+      }, 15_000)
+    } catch { recordRealtimeStopFailure() }
+  }
+
+  function cancelMaintenanceRecovery(): void {
+    if (maintenanceDeadline !== null) cancelRealtimeTimer(maintenanceDeadline)
+    if (maintenanceRetry !== null) cancelRealtimeTimer(maintenanceRetry)
+    maintenanceDeadline = maintenanceRetry = null
+    maintenanceMode = null
+  }
+  function beginMaintenanceRecovery(mode: 'audio' | 'renderer' | 'core'): void {
+    if (runtimeStopped || options.onFatalFailure === undefined) return
+    if (maintenanceMode !== null) return
+    maintenanceMode = mode
+    emitMetadata(telemetry, { module: 'app', event: 'maintenance_recovery', status: 'degraded',
+      reason: `cause=${mode}_owner_failed`, source: 'runtime' })
+    try {
+      maintenanceDeadline = scheduleRealtimeTimer(() => {
+        maintenanceDeadline = null
+        if (!runtimeStopped && maintenanceMode !== null) options.onFatalFailure?.('maintenance_recovery_exhausted')
+      }, 15_000)
+      if (mode === 'audio' && !maintenanceRetryUsed && options.rebuildWakeOwner) {
+        maintenanceRetryUsed = true
+        maintenanceRetry = scheduleRealtimeTimer(() => {
+          maintenanceRetry = null
+          if (!runtimeStopped && maintenanceMode === 'audio') dispatchStopForRecovery()
+        }, 1000)
+      }
+    } catch { options.onFatalFailure('maintenance_recovery_timer_failed') }
+  }
+  async function finishMaintenanceRecovery(rebuild: boolean): Promise<void> {
+    const mode = maintenanceMode
+    try {
+      if (rebuild && (await options.rebuildWakeOwner?.())?.status !== 'success') return
+      if (runtimeStopped || mode === null || maintenanceMode !== mode) return
+      if (!await acquireWakeSafely()) return
+      if (runtimeStopped || maintenanceMode !== mode) return
+      cancelMaintenanceRecovery()
+      rolloverStopping = false
+      sendLifecycle({ type: 'RETRY_STARTUP' })
+      sendLifecycle({ type: 'LOCAL_READY' })
+      lastError = null
+      maintenance = null
+      refreshSnapshot()
+      notifyListeners()
+      emitMetadata(telemetry, { module: 'app', event: 'maintenance_recovery', status: 'success',
+        reason: 'owner_rebuild_succeeded', source: 'runtime' })
+    } catch {
+      emitMetadata(telemetry, { module: 'app', event: 'maintenance_recovery', status: 'failed',
+        reason: 'owner_rebuild_failed', source: 'runtime' })
+    }
+  }
+  function handleMirrorRendererGone(): void {
+    if (runtimeStopped) return
+    cancelStopDeadline()
+    cancelStartDeadline()
+    for (const request of secretRequests) request.abort()
+    pendingRealtimeSessionIdentity = pendingRealtimeRolloverSessionIdentity = null
+    rolloverStopping = false
+    sendLifecycle({ type: 'LOCAL_CORE_FAILED', errorCode: 'mirror_renderer_gone' })
+    lastError = { module: 'app', error_code: 'mirror_renderer_gone', time: nowValue(now) }
+    maintenance = { code: 'mirror_renderer_gone', detail: 'cause=renderer_process_gone' }
+    if (maintenanceMode !== null) cancelMaintenanceRecovery()
+    beginMaintenanceRecovery('renderer')
+    refreshSnapshot()
+    notifyListeners()
+  }
+  async function handleMirrorRendererReady(): Promise<void> {
+    await ready
+    if (maintenanceMode === 'renderer' && !runtimeStopped) await finishMaintenanceRecovery(false)
   }
 
   let readySettled = false
@@ -1508,6 +1622,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     try {
       configSlots = await configInitializer.initialize()
+      cachePublishedConfig(configSlots)
       const configuredIdle = readProperty(readProperty(configSlots, 'active'), 'idleSeconds')
       if (typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle > 0) {
         activeIdleSeconds = configuredIdle
@@ -1678,8 +1793,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     const firstFailure = failures[0]
     if (firstFailure === undefined) {
-      sendLifecycle({ type: 'LOCAL_READY' })
+      // A crash may arrive before boot has attached its lifecycle actor.
+      // Keep authority closed until the replacement renderer is ready.
+      sendLifecycle(maintenanceMode === 'renderer'
+        ? { type: 'LOCAL_CORE_FAILED', errorCode: 'mirror_renderer_gone' }
+        : { type: 'LOCAL_READY' })
     } else {
+      if (maintenanceMode === 'renderer') cancelMaintenanceRecovery()
       maintenance = { code: firstFailure.errorCode, detail: firstFailure.reason }
       lastError = {
         module: firstFailure.module,
@@ -1711,6 +1831,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   })
   void ready.then(() => {
     readySettled = true
+    if (lifecycleState() === 'maintenance') beginMaintenanceRecovery('core')
   })
 
   const phaseTestsReader: PhaseTestRecordReader = {
@@ -1755,6 +1876,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function shutdown(): Promise<void> {
     if (shutdownPromise !== null) return shutdownPromise
 
+    runtimeStopped = true
+    cancelStopDeadline()
+    cancelStartDeadline()
+    cancelMaintenanceRecovery()
+    for (const request of secretRequests) request.abort()
+    pendingRealtimeSessionIdentity = null
     lastRealtimeRuntimeOutcomeReason = null
     pendingRealtimeRolloverSessionIdentity = null
     realtimePlaybackSessionId = null
@@ -1968,11 +2095,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     if (lifecycleView.state === 'active' && pendingRealtimeRolloverSessionIdentity !== null) {
       return pendingRealtimeRolloverSessionIdentity
     }
-    return authoritativeRealtimeSessionIdentity()
+    return lifecycleView.state === 'active' ? authoritativeRealtimeSessionIdentity() : null
   }
 
   async function requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>> {
     await ready
+    if (runtimeStopped) throw new RealtimeSessionUnavailableError()
 
     const identity = currentRealtimeSessionIdentity()
     if (identity === null) throw new RealtimeSessionUnavailableError()
@@ -1993,7 +2121,15 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       ...(avatarSettings ? { getAvatarSettings: () => avatarSettings } : {}),
       broker,
     })
-    return issuer.issue()
+    const request = new AbortController()
+    secretRequests.add(request)
+    try {
+      const result = await issuer.issue(request.signal)
+      const currentIdentity = currentRealtimeSessionIdentity()
+      if (runtimeStopped || currentIdentity?.realtimeSessionId !== identity.realtimeSessionId
+        || currentIdentity.sessionGeneration !== identity.sessionGeneration) throw new RealtimeSessionUnavailableError()
+      return result
+    } finally { secretRequests.delete(request) }
   }
 
   async function getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>> {
@@ -2005,8 +2141,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function getPublishedWakeConfigForRuntime(): Promise<Readonly<WakeRuntimeConfig>> {
     await ready
-    const slots = await configService?.read()
-    const wake = readProperty(readProperty(slots, 'active'), 'wake')
+    const activeConfig = publishedConfig
+    const wake = readProperty(activeConfig, 'wake')
     const phrase = readProperty(wake, 'phrase')
     const modelVersion = readProperty(wake, 'modelVersion')
     const packageId = readProperty(wake, 'packageId')
@@ -2015,7 +2151,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       || typeof modelVersion !== 'string'
       || typeof packageId !== 'string'
     ) throw new Error('wake_config_unavailable')
-    const activeAvatar = readProperty(readProperty(slots, 'active'), 'avatarCatalog')
+    const activeAvatar = readProperty(activeConfig, 'avatarCatalog')
     const activeAvatarId = readProperty(activeAvatar, 'activeAvatarId')
     const avatars = readProperty(activeAvatar, 'avatars')
     const active = Array.isArray(avatars)
@@ -2035,8 +2171,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     'configVersion' | 'wake' | 'visualAssets' | 'musicAssets' | 'sceneActions' | 'spells' | 'scenes' | 'adapters' | 'avatarCatalog'
   >>> {
     await ready
-    const active = (await configService?.read())?.active
-    if (active === undefined) throw new Error('scene_config_unavailable')
+    const active = publishedConfig
+    if (active === null) throw new Error('scene_config_unavailable')
     return Object.freeze({
       configVersion: active.configVersion,
       avatarCatalog: active.avatarCatalog ? structuredClone(active.avatarCatalog) : undefined,
@@ -2108,6 +2244,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function recordWakeHandoffFailure(errorCode: string): void {
+    cancelStartDeadline()
     pendingRealtimeSessionIdentity = null
     pendingRealtimeRolloverSessionIdentity = null
     cancelRealtimeRolloverTimer()
@@ -2128,17 +2265,29 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       reason: 'cause=microphone_handoff_failed',
       source: 'runtime',
     })
+    beginMaintenanceRecovery('audio')
   }
 
+  async function acquireWakeSafely(): Promise<boolean> {
+    if (runtimeStopped) return false
+    const result = await options.wakeMicrophoneHandoff?.acquire()
+    if (runtimeStopped) return false
+    if (result?.status === 'failed') return false
+    if (result?.status === 'degraded') emitMetadata(telemetry, { module: 'wake', event: 'wake_module_unavailable',
+      status: 'degraded', reason: safeReason(result.reason, 'wake_worker_unavailable'), source: 'runtime' })
+    return true
+  }
   function reacquireWakeAfterCloudFailure(): void {
     const handoff = options.wakeMicrophoneHandoff
-    if (handoff === undefined) return
-    void Promise.resolve()
-      .then(() => handoff.acquire())
-      .then((result) => {
-        if (result.status !== 'success') recordWakeHandoffFailure('wake_microphone_acquire_failed')
+    if (handoff === undefined || runtimeStopped || wakeReacquire !== null) return
+    wakeReacquire = Promise.resolve()
+      .then(() => acquireWakeSafely())
+      .then((acquired) => {
+        if (!acquired && !runtimeStopped) recordWakeHandoffFailure('wake_microphone_acquire_failed')
+        return acquired
       })
-      .catch(() => recordWakeHandoffFailure('wake_microphone_acquire_failed'))
+      .catch(() => { if (!runtimeStopped) recordWakeHandoffFailure('wake_microphone_acquire_failed'); return false })
+      .finally(() => { wakeReacquire = null })
   }
 
   async function probeConfiguredModelAvailability(): Promise<'available' | 'unavailable' | 'probe_failed'> {
@@ -2165,6 +2314,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     input: RealtimeFailureInput,
   ): Promise<Record<string, unknown>> {
     await ready
+    if (runtimeStopped) return emitRealtimeRuntimeResult('failure', 'ignored', 'runtime_shutting_down')
     lastRealtimeRuntimeOutcomeReason = null
     const kindValue = readProperty(input, 'kind')
     const kind = kindValue === 'connect' || kindValue === 'ice' || kindValue === 'active_disconnect'
@@ -2251,6 +2401,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function manualStart(): Promise<Record<string, unknown>> {
     await ready
+    if (runtimeStopped) return emitRealtimeRuntimeResult('start', 'ignored', 'runtime_shutting_down')
+    if (wakeReacquire !== null) await wakeReacquire
+    if (runtimeStopped) return emitRealtimeRuntimeResult('start', 'ignored', 'runtime_shutting_down')
     lastRealtimeRuntimeOutcomeReason = null
     const dispatch = options.dispatchRealtimeRuntimeCommand
     if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
@@ -2334,6 +2487,11 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     if (dispatchResult.status === 'failed') {
       recordRealtimeStartFailure()
+    } else if (options.onFatalFailure) {
+      startDeadline = scheduleRealtimeTimer(() => {
+        startDeadline = null
+        if (!runtimeStopped && lifecycleState() === 'activating') recordWakeHandoffFailure('realtime_activation_timeout')
+      }, 30_000)
     }
     return emitRealtimeRuntimeResult('start', dispatchResult.status, dispatchResult.reason)
   }
@@ -2342,6 +2500,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     cause: 'manual_stop' | 'sleep_command' | 'idle_timeout',
   ): Promise<Record<string, unknown>> {
     await ready
+    if (runtimeStopped) return emitRealtimeRuntimeResult('stop', 'ignored', 'runtime_shutting_down')
     lastRealtimeRuntimeOutcomeReason = null
     const dispatch = options.dispatchRealtimeRuntimeCommand
     if (dispatch === undefined) return emitRealtimeRecoveryUnavailable()
@@ -2372,6 +2531,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     if (dispatchResult.status === 'failed') {
       recordRealtimeStopFailure()
+    } else if (options.onFatalFailure) {
+      cancelStopDeadline()
+      stopDeadline = scheduleRealtimeTimer(() => {
+        stopDeadline = null
+        if (!runtimeStopped && lifecycleState() === 'suspending') recordRealtimeStopFailure()
+      }, 15_000)
     }
     return emitRealtimeRuntimeResult('stop', dispatchResult.status, dispatchResult.reason)
   }
@@ -2407,14 +2572,22 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   async function acquireWakeMicrophoneThenCommitStop(reason: string): Promise<Record<string, unknown>> {
     let acquired = false
     try {
-      const result = await Promise.resolve(options.wakeMicrophoneHandoff?.acquire())
-      acquired = result?.status === 'success'
+      acquired = await acquireWakeSafely()
     } catch {
       acquired = false
     }
     if (!acquired) {
       recordWakeHandoffFailure('wake_microphone_acquire_failed')
       return emitRealtimeRuntimeResult('stop', 'failed', 'wake_microphone_acquire_failed')
+    }
+    if (runtimeStopped || lifecycleState() !== 'suspending') return emitRealtimeRuntimeResult('stop', 'ignored', 'outcome_ignored_wrong_state')
+    if (rolloverStopping) {
+      rolloverStopping = false
+      sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_rollover_failed' })
+      refreshSnapshot()
+      notifyListeners()
+      startRecoveryProbeCycle()
+      return emitRealtimeRuntimeResult('stop', 'success', reason)
     }
     return commitRealtimeStop(reason)
   }
@@ -2431,9 +2604,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     const state = lifecycleState()
 
     if (
-      operation === 'unknown'
+      runtimeStopped || operation === 'unknown'
       || (operation === 'start' && (state !== 'activating' || pendingRealtimeSessionIdentity === null))
-      || (operation === 'stop' && state !== 'suspending')
+      || (operation === 'stop' && (stopReceiptProcessing || (state !== 'suspending' && !(state === 'maintenance' && maintenanceMode === 'audio'))))
       || (operation === 'rollover' && (state !== 'active' || pendingRealtimeRolloverSessionIdentity === null))
     ) {
       return emitRealtimeRuntimeResult(operation, 'ignored', 'outcome_ignored_wrong_state')
@@ -2477,6 +2650,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return emitRealtimeRuntimeResult('start', 'ignored', 'outcome_ignored_wrong_state')
       }
       if (status === 'success') {
+        cancelStartDeadline()
         lastRealtimeRuntimeOutcomeReason = null
         const committed = sendLifecycle({
           type: 'REALTIME_READY',
@@ -2501,11 +2675,15 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       return emitRealtimeRuntimeResult('start', 'failed', reason)
     }
 
-    if (status === 'success') {
+    if (status === 'success' || (status === 'ignored' && reason === 'stop_no_active_session')) {
+      cancelStopDeadline()
       lastRealtimeRuntimeOutcomeReason = null
-      return options.wakeMicrophoneHandoff === undefined
-        ? commitRealtimeStop(reason)
+      stopReceiptProcessing = true
+      const operation = state === 'maintenance'
+        ? finishMaintenanceRecovery(true).then(() => emitRealtimeRuntimeResult('stop',
+          lifecycleState() === 'dormant' ? 'success' : 'failed', 'maintenance_owner_rebuild'))
         : acquireWakeMicrophoneThenCommitStop(reason)
+      return operation.finally(() => { stopReceiptProcessing = false })
     }
 
     lastRealtimeRuntimeOutcomeReason = reason
@@ -2515,6 +2693,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function rolloverAtSafeBoundary(): Promise<Record<string, unknown>> {
     await ready
+    if (runtimeStopped) return emitRealtimeRuntimeResult('rollover', 'ignored', 'runtime_shutting_down')
     const dispatch = options.dispatchRealtimeRuntimeCommand
     const state = lifecycleState()
     if (state !== 'active') {
@@ -2580,6 +2759,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       resolvedModelSettings = null
       publishedAvatarSettings = undefined
       publishedAvatarId = ''
+      publishedConfig = null
+      publishedControlPhrases = null
+      avatarModels.clear()
       configVersion = null
       refreshSnapshot()
       notifyListeners()
@@ -2597,6 +2779,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
         return refreshFailure()
       }
       configVersion = activeVersion
+      cachePublishedConfig(slots)
       resolvedModelSettings = resolution
       publishedAvatarSettings = slots.active?.persona ? avatarSessionSettings(slots.active) : undefined
       publishedAvatarId = slots.active?.avatarCatalog?.activeAvatarId ?? ''
@@ -2626,6 +2809,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       return () => { avatarSwitchInProgress = false }
     },
     getConfigService: () => configService,
+    onSlotsRead: cacheAvatarModels,
     getModelSettings: () => resolvedModelSettings,
     refreshConfig,
     getDeveloperMode: () => developerMode.enabled,
@@ -2651,6 +2835,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   })
 
   const runtime: BootRuntime = {
+    handleMirrorRendererGone,
+    handleMirrorRendererReady,
+    getAvatarModelForRuntime: id => avatarModels.get(id),
+    getPublishedControlPhrasesForRuntime: () => {
+      if (publishedControlPhrases === null) throw new Error('memory_control_phrases_unavailable')
+      return publishedControlPhrases
+    },
     ready,
     console: consoleDataPlane,
     requestRealtimeClientSecret,

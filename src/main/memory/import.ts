@@ -3,6 +3,7 @@ import type { MemoryRepository } from './contracts'
 import type { HistoricalMemoryContext, MemoryExtractor } from './extractor'
 import { createMemoryConsolidator, type MemoryConsolidator } from './consolidator'
 import type { MemoryImportStatus } from '../../shared/memory'
+import { memoryEventDate } from './calendar'
 
 interface HistoryRange { start: number; end: number; historical: HistoricalMemoryContext }
 interface Heading { level: number; text: string; sourceAt?: string; speaker?: HistoricalMemoryContext['speaker']; truncated?: true }
@@ -23,7 +24,7 @@ function sourceTime(title: string): string | undefined {
   const parsed = Date.parse(`${day}T00:00:00.000Z`)
   if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== day) return ''
   const timestamp = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})/u.exec(source)?.[0]
-  return timestamp ? Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toISOString() : '' : day
+  return timestamp ? memoryEventDate(timestamp) ? timestamp : '' : day
 }
 function sameContext(a: HistoricalMemoryContext, b: HistoricalMemoryContext): boolean {
   return a.sourceAt === b.sourceAt && a.speaker === b.speaker && a.headingsTruncated === b.headingsTruncated

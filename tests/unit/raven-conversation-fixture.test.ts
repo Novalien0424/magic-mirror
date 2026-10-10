@@ -32,7 +32,7 @@ describe('bounded synthetic Raven fixture', () => {
   it('has immutable independent scenarios, unique turn/category codes and bounded catalog routes', () => {
     expect(recursivelyFrozen(RAVEN_CONVERSATION_FIXTURE)).toBe(true)
     expect(new Set(RAVEN_CONVERSATION_SCENARIOS.map(s => s.id)).size).toBe(RAVEN_CONVERSATION_SCENARIOS.length)
-    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(9)
+    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(10)
     for (const s of RAVEN_CONVERSATION_SCENARIOS) {
       expect(s.turns.length).toBeGreaterThan(1)
       expect(s.turns.length).toBeLessThanOrEqual(12)
@@ -117,7 +117,7 @@ describe('bounded synthetic Raven fixture', () => {
     const attempt = { status: 'final' as const, turnId: t.id, transcript: renderRavenVisitorText(t, binding) }
     expect(guard.evaluate(attempt).decision).toBe('trigger')
     expect(guard.evaluate(attempt)).toMatchObject({ decision: 'ignore', reason: 'duplicate_turn' })
-    expect(t.expected.runtimeChecks).toEqual(expect.arrayContaining(['approved_exact_scene', 'scene_once', 'announcement_tail_before_scene']))
+    expect(t.expected.runtimeChecks).toEqual(expect.arrayContaining(['approved_exact_scene', 'scene_once', 'scene_without_announcement_gate']))
     expect(fixtureTurn('sleep_spells', 'directed_sleep').expected.runtimeChecks)
       .toEqual(expect.arrayContaining(['farewell_tail_before_close', 'mic_release_before_acquire']))
   })

@@ -49,14 +49,16 @@ export function createAvatarMediaController(
   const context = new AudioContext()
   // Electron supports AudioContext.setSinkId; TypeScript's DOM lib omits it.
   const outputRouting = getAudioDeviceRouter().attach(context as AudioContext & { setSinkId(id: string): Promise<void> }, () => disposed)
+  let audioTransition: Promise<unknown> = Promise.resolve()
   const resumeAudio = async (): Promise<void> => {
     await outputRouting
-    if (!disposed) await context.resume()
+    audioTransition = audioTransition.catch(() => undefined).then(() => { if (!disposed) return context.resume() })
+    await audioTransition
   }
   const music = new Audio()
   music.crossOrigin = 'anonymous'
   music.src = '../audio/test-music.wav'
-  music.preload = 'auto'
+  music.preload = 'none'
   music.loop = true
 
   const recordedAnalyser = context.createAnalyser()
@@ -104,6 +106,14 @@ export function createAvatarMediaController(
   let sceneVideoSource: MediaElementAudioSourceNode | null = null
   let sceneVideoGain: GainNode | null = null
   let sceneVideoElement: HTMLVideoElement | null = null
+  const suspendIfIdle = (): void => {
+    audioTransition = audioTransition.then(() => {
+      if (!disposed && music.paused && !recordedSource && !sceneVideoElement) return context.suspend()
+    }).catch(() => input.eventSink('avatar_audio_suspend_failed'))
+  }
+  music.addEventListener('pause', suspendIfIdle)
+  music.addEventListener('ended', suspendIfIdle)
+  void outputRouting.then(suspendIfIdle).catch(() => input.eventSink('avatar_audio_route_failed'))
 
   const snapshot = (): AvatarMediaSnapshot => Object.freeze({
     voiceGain: voiceGain * volumes.avatar,
@@ -253,6 +263,7 @@ export function createAvatarMediaController(
     try { recordedSource?.stop() } catch { /* already stopped */ }
     recordedSource?.disconnect()
     recordedSource = null
+    suspendIfIdle()
     if (wasPlaying) {
       ducking.setSpeechActive(false)
       input.onActivity('output_stopped')
@@ -300,7 +311,7 @@ export function createAvatarMediaController(
     sceneVideoSource = null
     sceneVideoGain = null
     sceneVideoElement = null
-    if (element === null || disposed) return
+    if (element === null || disposed) { suspendIfIdle(); return }
     try {
       sceneVideoSource = context.createMediaElementSource(element)
       sceneVideoGain = context.createGain()
@@ -347,6 +358,7 @@ export function createAvatarMediaController(
       if (recordedSource !== source) return
       source.disconnect()
       recordedSource = null
+      suspendIfIdle()
       ducking.setSpeechActive(false)
       input.onActivity('output_stopped')
       input.onRecordedOutput(null)
@@ -502,6 +514,8 @@ export function createAvatarMediaController(
       managedMusicObjectUrl = null
       music.removeEventListener('waiting', noteMusicUnderrun)
       music.removeEventListener('stalled', noteMusicUnderrun)
+      music.removeEventListener('pause', suspendIfIdle)
+      music.removeEventListener('ended', suspendIfIdle)
       realtimeOutput?.audioElement.removeEventListener('waiting', noteRealtimeUnderrun)
       realtimeOutput?.audioElement.removeEventListener('stalled', noteRealtimeUnderrun)
       realtimeOutput = null

@@ -16,7 +16,7 @@ function setup(embedder?: MemoryEmbedder) {
     setPolicy: vi.fn(async (_a, _n, value) => { mode = value; return { mode, epoch: ++epoch, cleanupRequired: false } }),
     setCleanupRequired: vi.fn(async () => {}),
   }
-  const learning = { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() }, report = vi.fn()
+  const learning = { observe: vi.fn(async (_item: { observedAt: string }) => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() }, report = vi.fn()
   // Stub semantic decisions; these tests prove application boundaries, not model accuracy.
   const interpret = vi.fn(async (input: MemoryIntentInput): Promise<MemoryIntentResult> => ({
     confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', language: 'en',
@@ -48,7 +48,6 @@ describe('Realtime relationship memory integration', () => {
   })
   it.each([
     [['AliceSmith', 'Alice Smith'], 'AliceSmith', 'AliceSmith'],
-    [['Alice Smith', 'Ali ceSmith'], 'AliceSmith', 'AliceSmith'],
     [['Alyce Smith'], 'AliceSmith', 'AliceSmith'],
     [['AliceSmith', 'AliceSmith.'], 'AliceSmith.', 'AliceSmith.'],
   ] as const)('prefers exact labels and never guesses between formatting candidates or changes letters %#', async (names, supplied, expected) => {
@@ -284,6 +283,79 @@ describe('Realtime relationship memory integration', () => {
     expect((await p.memory.request(state, request('recall'))).code).toBe('memory_disabled')
     expect(p.repository.policy).not.toHaveBeenCalled()
     expect(p.learning.observe).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('clears temporary mode on active → suspending → dormant for the next encounter (owned=%s)', async owned => {
+    const p = setup()
+    if (owned) await p.confirm()
+    await p.memory.input(state, 'speech', 'temporary', '')
+    await p.memory.input(state, 'complete', 'temporary', 'Let us talk off the record.')
+    expect((await p.memory.request(state, request('temporary'))).code).toBe('memory_temporary')
+    await p.memory.reset()
+    expect((await p.memory.request(state, request('recall'))).code).toBe('memory_disabled')
+    p.memory.observe({ ...state, active: false, lifecycle: 'suspending' })
+    p.memory.observe({ ...state, active: false, lifecycle: 'dormant' })
+    const confirmed = await p.confirm()
+    expect(confirmed).toMatchObject({ code: 'memory_identity_confirmed', temporary: false, mode: 'automatic' })
+    await p.memory.input(state, 'speech', 'ordinary-next-visitor', '')
+    await p.memory.input(state, 'complete', 'ordinary-next-visitor', 'Synthetic ordinary evidence.')
+    await p.memory.input(state, 'settled', 'ordinary-next-visitor', '')
+    expect(p.learning.observe).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'ordinary-next-visitor' }))
+  })
+
+  it('captures Taiwan-local observation time at speech onset, before a later midnight-crossing policy reply', async () => {
+    const p = setup(); await p.confirm()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-09T16:30:00Z'))
+      let finish!: (policy: { mode: string; epoch: number; cleanupRequired: boolean }) => void
+      p.repository.policy.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const speech = p.memory.input(state, 'speech', 'relative-day', '')
+      vi.setSystemTime(new Date('2026-10-10T16:30:00Z'))
+      finish({ mode: 'automatic', epoch: 1, cleanupRequired: false }); await speech
+      await p.memory.input(state, 'complete', 'relative-day', 'Tomorrow is the planned visit.')
+      await p.memory.input(state, 'settled', 'relative-day', '')
+      expect(p.learning.observe).toHaveBeenCalledWith(expect.objectContaining({ observedAt: '2026-10-10T00:30:00.000+08:00' }))
+      expect(Date.parse(p.learning.observe.mock.calls[0][0].observedAt)).toBe(Date.parse('2026-10-09T16:30:00Z'))
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['identify', 'recall'])('proposes the unique stored Traditional label through %s, then waits for spoken confirmation', async action => {
+    const p = setup(); p.repository.names.mockResolvedValue(['陳小華'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is 陈小华.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: '陈小华', language: 'zh-TW' })
+    const proposal = await p.memory.request(state, request(action, { name: '陈小华' }))
+    expect(proposal).toMatchObject({ code: 'memory_confirmation_required', name: '陳小華' })
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.policy).not.toHaveBeenCalled()
+    expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/陳|陈|raven/)
+    await p.memory.input(state, 'question_played', proposal.confirmation!.token, proposal.confirmation!.text)
+    await p.memory.input(state, 'speech', 'answer', '')
+    await p.memory.input(state, 'complete', 'answer', 'yes')
+    expect(p.repository.brief).toHaveBeenCalledWith('raven', '陳小華')
+  })
+  it.each([
+    [['發', '髮'], '发'],
+    [['Alice Smith', 'Ali ceSmith'], 'AliceSmith'],
+  ])('does not guess or create a scope when folded candidates are ambiguous %#', async (names, supplied) => {
+    const p = setup(); p.repository.names.mockResolvedValue(names as string[])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'Synthetic self-introduction')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: supplied as string, language: 'zh-TW' })
+    expect(await p.memory.request(state, request('identify', { name: supplied }))).toEqual({ status: 'rejected', code: 'memory_identity_name_ambiguous' })
+    expect(p.report).toHaveBeenCalledWith('memory_identity_name_ambiguous')
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.policy).not.toHaveBeenCalled()
+    expect(p.repository.save).not.toHaveBeenCalled()
+  })
+  it('preserves an exact stored script label when another existing owner folds to it', async () => {
+    const p = setup(); p.repository.names.mockResolvedValue(['陳小華', '陈小华'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'Synthetic self-introduction')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: '陈小华', language: 'zh-TW' })
+    expect(await p.memory.request(state, request('identify', { name: '陈小华' }))).toMatchObject({ code: 'memory_confirmation_required', name: '陈小华' })
+    expect(p.repository.brief).not.toHaveBeenCalled()
   })
   it('loads a bounded brief only after separate confirmation and never exposes an owner ID', async () => {
     const p = setup()

@@ -3,7 +3,7 @@
  */
 export type RavenScenarioId =
   | 'empathy_context' | 'local_media' | 'local_scope' | 'default_fallback'
-  | 'youtube_modes' | 'local_loop' | 'identity_denial' | 'two_visit_memory' | 'sleep_spells'
+  | 'youtube_modes' | 'local_loop' | 'identity_denial' | 'two_visit_memory' | 'sleep_spells' | 'spell_control'
 export type RavenFixtureBinding = 'youtubeQuery' | 'approvedSpell' | 'sleepPhrase'
 /** memory.* denotes the catalog's memory tool with that action, not another tool. */
 export type RavenFixtureTool =
@@ -23,7 +23,7 @@ export type RavenRuntimeCheck =
   | 'question_played' | 'private_memory_unlocked' | 'policy_disclosed'
   | 'clean_owner_session' | 'turn_start_owner' | 'control_extraction_skipped'
   | 'memory_saved' | 'learning_settled' | 'no_scene_trigger' | 'approved_exact_scene'
-  | 'scene_once' | 'announcement_tail_before_scene' | 'farewell_tail_before_close'
+  | 'scene_once' | 'scene_without_announcement_gate' | 'farewell_tail_before_close'
 export interface RavenSemanticCriterion {
   readonly category: RavenSemanticCategory
   readonly expectation: string
@@ -288,6 +288,20 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
     ],
   },
   {
+    id: 'spell_control', setup: 'fresh_guest',
+    prerequisites: ['Use the same isolated approved spell and published Raven settings; independently diagnose exact recognition and scene/cue ordering in a fresh conversation.'],
+    turns: [
+      turn({ id: 'exact_spell', language: 'zh-TW', visitorText: '{{approvedSpell}}',
+        criteria: [criterion('spell_boundary', 'Only the application normalized full-transcript match authorizes one approved scene; speak only its supplied announcement.')],
+        expected: { reply: 'application_spell', qualityDimensions: [] },
+        checks: ['approved_exact_scene', 'scene_once', 'scene_without_announcement_gate', 'control_extraction_skipped'] }),
+      turn({ id: 'directed_sleep', language: 'zh-TW', before: 'scene_finished', visitorText: '{{sleepPhrase}}',
+        criteria: [criterion('command_intent', 'Call dormant silently; only the application supplies the configured farewell.')],
+        expected: { toolRoutes: [['return_to_dormant']], reply: 'application_farewell', qualityDimensions: [] },
+        checks: ['farewell_tail_before_close', 'mic_release_before_acquire', 'control_extraction_skipped'] }),
+    ],
+  },
+  {
     id: 'sleep_spells', setup: 'fresh_guest',
     prerequisites: ['Bind published sleepPhrase and one isolated approved full spell beginning with 施放咒語. Keep the hidden spell catalog out of the runtime persona; only application authorization may run approved presets.'],
     turns: [
@@ -305,7 +319,7 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
       turn({ id: 'exact_spell', language: 'zh-TW', visitorText: '{{approvedSpell}}',
         criteria: [criterion('spell_boundary', 'Only the application normalized full-transcript match authorizes one approved scene; speak only its supplied announcement, never an independent success claim.')],
         expected: { reply: 'application_spell', qualityDimensions: [] },
-        checks: ['approved_exact_scene', 'scene_once', 'announcement_tail_before_scene', 'control_extraction_skipped'] }),
+        checks: ['approved_exact_scene', 'scene_once', 'scene_without_announcement_gate', 'control_extraction_skipped'] }),
       turn({ id: 'after_spell', language: 'zh-TW', before: 'scene_finished', visitorText: '我們繼續聊展覽吧。如果只有十分鐘，我能先準備什麼？',
         criteria: [criterion('practical_help', 'Give one feasible preparation step in Chinese; return to normal conversation without disclosing spell mechanics.')], checks: ['conversation_resumed'] }),
       turn({ id: 'directed_sleep', language: 'zh-TW', visitorText: '{{sleepPhrase}}',

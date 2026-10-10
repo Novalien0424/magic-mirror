@@ -16,6 +16,7 @@ function harness() {
   const supervisor = {
     release: vi.fn(async () => { calls.push('release'); return success }),
     updateConfig: vi.fn(async ({ package: value }: { package: WakeWorkerPackage }) => { calls.push(value.calibration ? 'test' : 'restore'); config = value; return success }),
+    restart: vi.fn(async ({ package: value }: { package: WakeWorkerPackage }) => { calls.push('recycle'); config = value; return success }),
     acquire: vi.fn(async () => { calls.push('acquire'); return success }),
     configuration: () => config,
     snapshot: () => ({ status: 'listening', reason: null, input: { state: 'signal', blocks: 5, peak: 0.5, rms: 0.2,
@@ -67,7 +68,7 @@ describe('live wake calibration ownership', () => {
     expect((await h.controller.command({ type: 'read', sessionId: started.sessionId! })).detections).toBe(0)
     await h.controller.command({ type: 'stop', sessionId: started.sessionId! })
     expect(h.supervisor.configuration()).toEqual(original)
-    expect(h.calls.slice(-3)).toEqual(['release', 'restore', 'acquire'])
+    expect(h.calls.slice(-3)).toEqual(['release', 'recycle', 'acquire'])
   })
   it('never reacquires after conversation takes ownership, including a pending model load', async () => {
     const h = harness()
@@ -107,7 +108,7 @@ describe('live wake calibration ownership', () => {
     const restoring = h.controller.stop(true)
     const handoff = h.controller.stop(false)
     await restoring; await handoff
-    expect(h.calls).toEqual(['release', 'test', 'acquire', 'release', 'restore'])
+    expect(h.calls).toEqual(['release', 'test', 'acquire', 'release', 'recycle'])
     expect(h.supervisor.configuration()).toEqual(original)
   })
   it('reports ownership until a pending restoration finishes so a config refresh can reacquire', async () => {

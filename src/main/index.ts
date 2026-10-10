@@ -29,6 +29,7 @@ import { MemoryLearning } from './memory/learning'
 import { MemoryIndexer } from './memory/indexer'
 import { MemoryImporter } from './memory/import'
 import { runMemoryLiveQa } from './memory/live-qa'
+import { runMemoryCalendarQa } from './memory/calendar-live-qa'
 import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
 import { initializeAudioPreferences, getAudioPreferences } from './audio-preferences'
@@ -72,6 +73,7 @@ import { loadWakeModelPackage } from './wake/model-package'
 import {
   createWakeSupervisor,
   type WakeSupervisor,
+  type WakeSupervisorResult,
   type WakeWorkerChild,
 } from './wake/supervisor'
 import type { WakeWorkerPackage } from './wake/protocol'
@@ -174,11 +176,15 @@ let phase4QaStarted = false
 let memoryPipelineQa: ((evidence: (step: string) => void) => Promise<void>) | undefined
 let wakeSupervisor: WakeSupervisor | null = null
 let wakeCalibration: ReturnType<typeof createWakeCalibration> | null = null
+let wakeOwnerRebuild: Promise<WakeSupervisorResult> | null = null
 let shutdownPromise: Promise<void> | null = null
 let shutdownMemory: (() => Promise<void>) | undefined
 let willQuitHandled = false
 let quitResourcesStopped = false
 let appQuitFinalizationStarted = false
+let shutdownStarted = false
+let requestedExitCode: number | null = null
+let stopYoutube: (() => void) | undefined
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -286,7 +292,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   const permission = await requestWakeMicrophonePermission({
     required: requiresMicrophonePermission,
     request: () => systemPreferences.askForMediaAccess('microphone'),
-    stopping: () => shutdownPromise !== null || appQuitFinalizationStarted,
+    stopping: () => shutdownStarted,
   })
   if (permission === 'stopped') return
   if (permission !== 'granted') {
@@ -311,11 +317,13 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   }
 
   const workerPackage: WakeWorkerPackage = createWakeWorkerPackage(loaded, wake)
-  if (shutdownPromise !== null || appQuitFinalizationStarted) return
+  if (shutdownStarted) return
   if (wakeSupervisor !== null) {
     const released = await wakeSupervisor.release()
     if (released.status !== 'success') return
-    const updated = await wakeSupervisor.updateConfig({ package: workerPackage })
+    const updated = wakeSupervisor.microphoneUnowned()
+      ? await wakeSupervisor.start({ package: workerPackage })
+      : await wakeSupervisor.updateConfig({ package: workerPackage })
     if (updated.status !== 'success') return
     configuredWakeSignature = signature
     if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
@@ -449,7 +457,7 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
 
   win.once('closed', () => {
     if (windows.get(kind) === win) windows.delete(kind)
-    if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
+    if (kind === 'mirror' && !shutdownStarted) stopScenes()
   })
 
   // The mirror is the visitor-facing glass: show it as soon as it can paint.
@@ -479,9 +487,13 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   if (entry.from === 'dev-server') {
     const url = new URL(entry.url)
     if (phase4QaQuery !== undefined) url.searchParams.set('phase4Qa', phase4QaQuery.phase4Qa)
-    void win.loadURL(url.toString())
+    void win.loadURL(url.toString()).catch(() => {
+      if (windows.get(kind) === win && !shutdownStarted) exitWithMarker('APP_EXIT', { code: 1, window: kind, reason: 'window_load_failed' }, 1)
+    })
   } else {
-    void win.loadFile(entry.file, phase4QaQuery === undefined ? undefined : { query: phase4QaQuery })
+    void win.loadFile(entry.file, phase4QaQuery === undefined ? undefined : { query: phase4QaQuery }).catch(() => {
+      if (windows.get(kind) === win && !shutdownStarted) exitWithMarker('APP_EXIT', { code: 1, window: kind, reason: 'window_load_failed' }, 1)
+    })
   }
 
   return win
@@ -599,7 +611,8 @@ function watchMirrorDisplay(): void {
 /** Task 1 interface: both Phase 0 windows, created in one call. */
 export function createWindows(): void {
   createWindow('mirror')
-  createWindow('console')
+  // Synthetic harnesses explicitly require both readiness receipts.
+  if (smokeMode.kind === 'on' || phase1LiveSmokeEnabled || phase4QaEnabled) createWindow('console')
 }
 
 function windowKindOf(sender: WebContents): MirrorWindowKind | null {
@@ -610,6 +623,7 @@ function windowKindOf(sender: WebContents): MirrorWindowKind | null {
 }
 
 function onRendererReady(sender: WebContents): void {
+  if (shutdownStarted) return
   // Authorization comes from the sender's identity, never from a renderer-supplied value.
   const kind = windowKindOf(sender)
   if (kind === null) {
@@ -626,22 +640,27 @@ function onRendererReady(sender: WebContents): void {
   if (kind === 'mirror') {
     mirrorRendererReady = true
     boot.lifecycle = mainLifecycle
+    cameraTracking?.republishTarget()
+    void bootRuntime?.handleMirrorRendererReady().catch(() => fatalMainFailure('renderer_recovery_failed'))
   }
 }
 
 function onRenderProcessGone(contents: WebContents, details: Electron.RenderProcessGoneDetails): void {
+  if (shutdownStarted) return
   const kind = windowKindOf(contents)
   if (kind === null) {
     marker('RENDERER_GONE_UNTRACKED', { reason: details.reason })
     return
   }
 
-  if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
-
   const decision = crashRecovery.decide({ window: kind, reason: details.reason, exitCode: details.exitCode })
   if (decision.action === 'ignore') return
 
   marker('RENDERER_GONE', { window: kind, reason: details.reason, exit_code: details.exitCode })
+  if (kind === 'mirror') {
+    stopScenes()
+    bootRuntime?.handleMirrorRendererGone()
+  }
 
   if (decision.action === 'give_up') {
     // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts; do not relaunch in-app.
@@ -663,10 +682,10 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
 }
 
 function toggleConsoleWindow(): void {
-  const win = windows.get('console')
+  if (shutdownStarted) return
+  let win = windows.get('console')
   if (win === undefined || win.isDestroyed()) {
-    marker('CONSOLE_TOGGLE_IGNORED', { reason: 'console_window_missing' })
-    return
+    win = createWindow('console')
   }
 
   if (win.isVisible()) {
@@ -695,12 +714,19 @@ function registerConsoleShortcut(): void {
 
 /** Logs a final marker and exits once it has reached the pipe — the exit code is the contract. */
 function exitWithMarker(name: string, fields: MarkerFields, code: number): void {
+  if (requestedExitCode !== null) return
+  requestedExitCode = code
+  shutdownStarted = true
+  cameraStopping = true
   let exited = false
   const quit = (): void => {
     if (exited) return
     exited = true
+    // Cleanup is bounded; launchd remains the only process restart owner.
+    const deadline = setTimeout(() => app.exit(code), 15_000)
     stopQuitResources()
     void shutdownBootRuntime().then(() => {
+      clearTimeout(deadline)
       if (code === 1) {
         app.exit(1)
         return
@@ -708,9 +734,24 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
       app.exit(code)
     })
   }
-  process.stdout.write(formatMarker(name, fields), quit)
+  try { process.stdout.write(formatMarker(name, fields), quit) } catch { quit() }
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
 }
+
+function fatalMainFailure(reason: string): void {
+  try { bootRuntime?.telemetry.emit({ module: 'app', event: 'main_process_failed',
+    status: 'failed', reason, source: 'runtime' }) } catch { /* Metadata sink cannot gate fatal exit. */ }
+  exitWithMarker('APP_EXIT', { code: 1, reason }, 1)
+}
+function stopScenes(input?: { preserveSleepingMedia?: boolean }): void {
+  void Promise.resolve().then(() => sceneRuntimeControl?.stopAll(input)).catch(() => {
+    try { bootRuntime?.telemetry.emit({ module: 'app', event: 'scene_cleanup_failed',
+      status: 'degraded', reason: 'scene_cleanup_rejected', source: 'runtime' }) } catch { /* Local degradation. */ }
+  })
+}
+// Never log raw thrown values: they may contain conversation or credential data.
+process.on('uncaughtException', () => fatalMainFailure('main_uncaught_exception'))
+process.on('unhandledRejection', () => fatalMainFailure('main_unhandled_rejection'))
 
 function finishSmokeRun(): void {
   const verdict = evaluateSmoke(boot)
@@ -774,7 +815,8 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     mirror: display.id === mirrorDisplay.id ? 'yes' : 'no',
   })
   const ravenConversation = process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
-  const mediaFunctional = ravenConversation || process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
+  const reviewUi = process.env['MIRROR_REVIEW_UI_QA'] === '1'
+  const mediaFunctional = ravenConversation || reviewUi || process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
   if (!editorOnly && !mediaFunctional && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
     exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason: 'phase4_qa_portrait_display_required' }, 2)
     return
@@ -798,7 +840,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     try {
       await writeFile(join(outputDir, '..', 'evidence.json'), JSON.stringify({
         platform: process.platform,
-        mode: ravenConversation ? 'raven_conversation' : mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
+        mode: reviewUi ? 'review_ui' : ravenConversation ? 'raven_conversation' : mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
         live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
         display: { count: displays.length, mirror: portrait?.id, width: portrait?.bounds.width,
           height: portrait?.bounds.height, verified: !editorOnly && !mediaFunctional, console: consoleDisplay?.id },
@@ -924,6 +966,7 @@ void app.whenReady().then(async () => {
     credentialStore: credentialSource,
     events: deferredCredentialEvents.sink,
   })
+  const wakeDefaults = new Map<string, Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>>()
 
   const runtime: BootRuntime = bootSequence({
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
@@ -941,26 +984,56 @@ void app.whenReady().then(async () => {
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,
+    onFatalFailure: fatalMainFailure,
+    rebuildWakeOwner: () => {
+      if (wakeOwnerRebuild) return wakeOwnerRebuild
+      const rebuilding = (async (): Promise<WakeSupervisorResult> => {
+        await wakeCalibration?.stop(false)
+        if (!wakeSupervisor) return { status: 'success', reason: 'wake_microphone_not_configured' }
+        const wake = await runtime.getPublishedWakeConfigForRuntime()
+        const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+          platform: `${process.platform}-${process.arch}`, customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+          forceCustomKeywords: wakeTuningIsActive(wake) })
+        if (!loaded.ok) return { status: 'failed', reason: loaded.reason }
+        return wakeSupervisor.restart({ package: createWakeWorkerPackage(loaded, wake) })
+      })().finally(() => { wakeOwnerRebuild = null })
+      wakeOwnerRebuild = rebuilding
+      return rebuilding
+    },
     wakeMicrophoneHandoff: {
       release: async () => {
-        await wakeCalibration?.stop(false)
+        const calibration = await wakeCalibration?.stop(false)
+        if (calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_calibration_restore_failed' }
         return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
       },
-      acquire: () => wakeSupervisor?.acquire() ?? Promise.resolve({
-        status: 'success' as const,
-        reason: 'wake_microphone_not_configured',
-      }),
+      acquire: async () => {
+        await wakeOwnerRebuild
+        const calibration = await wakeCalibration?.stop(false)
+        if (shutdownStarted || calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_microphone_acquire_cancelled' }
+        if (!wakeSupervisor) return { status: 'degraded' as const, reason: 'wake_microphone_not_configured' }
+        const result = await wakeSupervisor.acquire()
+        return result.status === 'failed' && wakeSupervisor.microphoneUnowned()
+          ? { status: 'degraded' as const, reason: result.reason } : result
+      },
     },
     onWakeConfigChanged: () => configureWakeRuntime(runtime),
-    getWakeTuningDefaults: async wake => {
-      const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
-        platform: `${process.platform}-${process.arch}`,
-        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
-      })
-      if (!loaded.ok) return null
-      const defaults = createWakeWorkerPackage(loaded, wake).tuning
-      return { packageId: loaded.manifest.packageId, threshold: defaults.threshold!, score: defaults.score!,
-        numTrailingBlanks: defaults.numTrailingBlanks ?? 1 }
+    getWakeTuningDefaults: wake => {
+      const key = JSON.stringify(wake)
+      const cached = wakeDefaults.get(key)
+      if (cached) return cached
+      const result = (async () => {
+        const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+          platform: `${process.platform}-${process.arch}`,
+          customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+        })
+        if (!loaded.ok) return null
+        const defaults = createWakeWorkerPackage(loaded, wake).tuning
+        return { packageId: loaded.manifest.packageId, threshold: defaults.threshold!, score: defaults.score!,
+          numTrailingBlanks: defaults.numTrailingBlanks ?? 1 }
+      })()
+      wakeDefaults.set(key, result)
+      if (wakeDefaults.size > 16) wakeDefaults.delete(wakeDefaults.keys().next().value!)
+      return result
     },
     validateWakeConfig: async (wake, tuning) => {
       const result = await loadWakeModelPackage({
@@ -1000,7 +1073,7 @@ void app.whenReady().then(async () => {
   void mediaFoldersReady.then(reportFolderHealth)
   let refreshingFolders = false
   const folderTimer = setInterval(() => {
-    if (refreshingFolders) return
+    if (refreshingFolders || !['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle) || shutdownStarted) return
     refreshingFolders = true
     void mediaFoldersReady.then(() => mediaFolders.refresh()).then(reportFolderHealth).catch(() => runtime.telemetry.emit({ module: 'avatar', event: 'media_folders',
       source: 'runtime', status: 'degraded', reason: 'media_folder_refresh_failed' })).finally(() => { refreshingFolders = false })
@@ -1112,8 +1185,7 @@ void app.whenReady().then(async () => {
         const [id, ...segments] = decodeURIComponent(url.pathname.slice(1)).split('/')
         if (!/^model-[a-z0-9-]{1,80}$/.test(id)) return new Response(null, { status: 404 })
         const file = segments.join('/')
-        const config = await runtime.console.getConfig()
-        const model = importedModels.get(id) ?? (config.ok ? [...(config.value.active.avatarCatalog?.models ?? []), ...(config.value.draft.avatarCatalog?.models ?? [])].find(m => m.id === id) : undefined)
+        const model = importedModels.get(id) ?? runtime.getAvatarModelForRuntime(id)
         if (!model?.files.includes(file)) return new Response(null, { status: 404 })
         const path = await safeAvatarFile(join(avatarStorageDir, id), file)
         return serveMediaFile(request, path, file.endsWith('.png') ? 'image/png' : /\.jpe?g$/i.test(file) ? 'image/jpeg' : file.endsWith('.json') ? 'application/json' : 'application/octet-stream')
@@ -1186,8 +1258,10 @@ void app.whenReady().then(async () => {
   })
   const youtubePlayer = createYoutubePlayer(() => windows.get('mirror'), { preferences: () => getAudioPreferences().preferences,
     report: reason => runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason }) })
+  stopYoutube = () => youtubePlayer.stop()
   app.once('before-quit', () => youtubePlayer.stop())
   sceneRuntimeControl = registerIpcHandlers({
+    isShuttingDown: () => shutdownStarted,
     youtube: youtubePlayer,
     searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
     captureCamera: () => phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
@@ -1329,19 +1403,18 @@ void app.whenReady().then(async () => {
   })
   const memoryReport = (code: string): void => {
     if (code === 'memory_storage_unavailable') void runtime.setMemoryRuntimeStatus('degraded')
+    if (code === 'memory_storage_ready') void runtime.setMemoryRuntimeStatus('ready')
     runtime.telemetry.emit({ module: 'memory', event: 'memory_operation', status: /failed|unavailable|invalid|timeout/.test(code) ? 'degraded' : 'info', reason: code, source: 'runtime' })
   }
   let memoryStore: ReturnType<typeof createMemoryRepository>
-  try { memoryStore = createMemoryRepository(join(app.getPath('userData'), 'private-memory', 'memory.sqlite')) }
+  try { memoryStore = createMemoryRepository(join(app.getPath('userData'), 'private-memory', 'memory.sqlite'), { report: memoryReport }) }
   catch { memoryStore = unavailableMemoryRepository(); memoryReport('memory_storage_unavailable') }
   void memoryStore.names('runtime-check').then(() => runtime.setMemoryRuntimeStatus('ready')).catch(() => memoryReport('memory_storage_unavailable'))
   const memoryEmbedder = createMemoryEmbedder({ runtimeDirectory: app.isPackaged
     ? join(app.getPath('userData'), 'memory-embedding') : join(app.getAppPath(), '.local', 'memory-embedding'),
     report: event => memoryReport(`memory_embedding_${event.reason}`) })
   const memoryIndexer = new MemoryIndexer(memoryStore, memoryEmbedder, memoryReport)
-  void memoryEmbedder.embed('Memory runtime readiness.', 'document').then(() => memoryIndexer.schedule())
-    .catch(() => memoryReport('memory_semantic_unavailable'))
-  const memoryExtractor = createMemoryExtractor({ credentialSource })
+  const memoryExtractor = createMemoryExtractor({ credentialSource, report: memoryReport })
   const memoryModel = async () => (await runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
   const memoryInterpreter = createMemoryInterpreter({ credentialSource, model: memoryModel })
   const memoryConsolidator = createMemoryConsolidator({ repository: memoryStore, extract: memoryExtractor, embedder: memoryEmbedder, report: memoryReport })
@@ -1364,6 +1437,14 @@ void app.whenReady().then(async () => {
   if (phase4QaEnabled && process.env['MIRROR_MEMORY_LIVE_QA'] === '1') memoryPipelineQa = async evidence => runMemoryLiveQa({
     path: join(app.getPath('userData'), 'private-memory', 'synthetic-e2e.sqlite'), model: await memoryModel(),
     extract: memoryExtractor, embedder: memoryEmbedder, evidence })
+  if (phase4QaEnabled && process.env['MIRROR_MEMORY_CALENDAR_QA'] === '1') memoryPipelineQa = async evidence => {
+    let validationReason = 'memory_extraction_invalid'
+    const extract = createMemoryExtractor({ credentialSource, report: reason => { validationReason = reason; memoryReport(reason) } })
+    await runMemoryCalendarQa({ model: await memoryModel(), evidence, extract: async (input, signal) => {
+      try { return await extract(input, signal) }
+      catch (error) { if (error instanceof Error && error.message === 'memory_extraction_invalid') throw Error(validationReason); throw error }
+    } })
+  }
   const memory = registerMemoryIpc({
     handle: (channel, handler) => ipcMain.handle(channel, handler),
     authorize: (event, kind) => authorizeSender(event, kind, windows).ok,
@@ -1373,10 +1454,12 @@ void app.whenReady().then(async () => {
     learning: memoryLearning, embedder: memoryEmbedder, importer: memoryImporter, interpret: memoryInterpreter,
     onChanged: () => memoryIndexer.schedule(),
     controlPhrases: async () => {
-      const config = await runtime.console.getConfig()
-      if (!config.ok) return []
-      const avatar = config.value.active.avatarCatalog?.avatars.find(a => a.id === runtime.getPublishedAvatarId())
-      return [...config.value.active.spells.map(spell => spell.phrase), ...(avatar?.spells ?? []).map(spell => spell.phrase), avatar?.sleepPhrase ?? '', avatar?.wakePhrase ?? ''].filter(Boolean)
+      try { return [...runtime.getPublishedControlPhrasesForRuntime()] }
+      catch {
+        memoryReport('memory_control_phrases_unavailable')
+        // Reject this evidence input before it can be submitted for extraction.
+        throw new Error('memory_control_phrases_unavailable')
+      }
     },
     pickMarkdown: async () => {
       const selected = await dialog.showOpenDialog({ title: 'Import memory Markdown', properties: ['openFile'], filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }] })
@@ -1412,17 +1495,19 @@ void app.whenReady().then(async () => {
     await memoryStore.close()
   }
   runtime.subscribe((snapshot) => {
+    if (shutdownStarted) return
     memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
-      void sceneRuntimeControl?.stopAll({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
+      stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {
-      void sceneRuntimeControl?.stopAll()
+      stopScenes()
     }
     boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
-    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
-    void publishSnapshot('console', snapshot, windows, runtime.telemetry)
+    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry, () => shutdownStarted)
+    // A lazy Console has no receiver until the operator opens it.
+    if (windows.has('console')) void publishSnapshot('console', snapshot, windows, runtime.telemetry, () => shutdownStarted)
   })
 
   if (phase1LiveSmokeEnabled) {
@@ -1467,6 +1552,7 @@ void app.whenReady().then(async () => {
 })
 
 function shutdownBootRuntime(): Promise<void> {
+  shutdownStarted = true
   cameraStopping = true
   if (shutdownPromise !== null) return shutdownPromise
   const runtime = bootRuntime
@@ -1475,30 +1561,41 @@ function shutdownBootRuntime(): Promise<void> {
     return shutdownPromise
   }
 
-  shutdownPromise = Promise.resolve()
-    .then(() => cameraTracking?.stop())
-    .then(() => sceneRuntimeControl?.stopAll())
-    .then(() => wakeCalibration?.stop(false))
-    .then(() => wakeSupervisor?.shutdown())
-    .then(() => runtime.shutdown())
-    .then(() => shutdownMemory?.())
-    .catch(() => {
-      marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })
-    })
+  // Cancel lifecycle/probe timers immediately, including during clean quit.
+  const runtimeShutdown = runtime.shutdown()
+  shutdownPromise = (async () => {
+    const steps = [
+      () => stopYoutube?.(),
+      () => cameraTracking?.stop(),
+      () => sceneRuntimeControl?.stopAll(),
+      () => wakeOwnerRebuild?.catch(() => undefined),
+      () => wakeCalibration?.stop(false),
+      () => wakeSupervisor?.shutdown(),
+      () => shutdownMemory?.(),
+      () => runtimeShutdown,
+    ]
+    for (const [index, step] of steps.entries()) {
+      try { await step() }
+      catch { marker('SHUTDOWN_FAILED', { reason: 'resource_cleanup_rejected', step: index }) }
+    }
+  })()
   return shutdownPromise
 }
 
 function stopQuitResources(): void {
+  shutdownStarted = true
   if (quitResourcesStopped) return
   quitResourcesStopped = true
-  tvPresence?.stop()
+  try { tvPresence?.stop() } catch { marker('SHUTDOWN_FAILED', { reason: 'tv_monitor_stop_failed' }) }
   if (displaySettleTimer !== null) {
     clearTimeout(displaySettleTimer)
     displaySettleTimer = null
   }
-  globalShortcut.unregisterAll()
-  displaySleepBlocker?.stop()
+  try { globalShortcut.unregisterAll() } catch { marker('SHUTDOWN_FAILED', { reason: 'shortcut_release_failed' }) }
+  try { displaySleepBlocker?.stop() } catch { marker('SHUTDOWN_FAILED', { reason: 'display_blocker_release_failed' }) }
 }
+
+app.on('before-quit', () => { shutdownStarted = true; cameraStopping = true })
 
 app.on('will-quit', (event) => {
   if (willQuitHandled) return
@@ -1507,10 +1604,13 @@ app.on('will-quit', (event) => {
   stopQuitResources()
   if (appQuitFinalizationStarted) return
   appQuitFinalizationStarted = true
+  const deadline = setTimeout(() => app.exit(requestedExitCode ?? 0), 15_000)
 
   void shutdownBootRuntime().then(() => {
+    clearTimeout(deadline)
     // Release before app.quit() so Electron's reentrant will-quit is allowed through.
     willQuitHandled = true
+    if (requestedExitCode !== null) { app.exit(requestedExitCode); return }
     app.quit()
   })
 })

@@ -1,0 +1,86 @@
+Task: memory remediation, Node-only synthetic checks. No operator data was used.
+
+Read probe: cat src/main/realtime/memory-dialogue.ts && cat src/main/memory/session.ts
+Exit: 1
+cat: src/main/realtime/memory-dialogue.ts: No such file or directory
+
+Read probe: rg -n 'export (interface|type) Telemetry|count|details|reason:' src/main/telemetry.ts src/shared/telemetry.ts
+Exit: 2
+rg: src/shared/telemetry.ts: No such file or directory (os error 2)
+src/main/telemetry.ts:6:export type TelemetryEventInput = Omit<MirrorEvent, 'time'>
+src/main/telemetry.ts:7:export type TelemetrySource = NonNullable<MirrorEvent['source']>
+src/main/telemetry.ts:9:export interface TelemetryFileOperations {
+src/main/telemetry.ts:17:export type TelemetryClock = () => string
+src/main/telemetry.ts:19:export interface TelemetryDrainScheduler {
+src/main/telemetry.ts:23:export interface TelemetryOptions {
+src/main/telemetry.ts:31:export interface TelemetryPageRequest {
+src/main/telemetry.ts:39:export interface TelemetryPage {
+src/main/telemetry.ts:44:export interface TelemetryCounters {
+src/main/telemetry.ts:54:export interface TelemetryStats extends TelemetryCounters {
+src/main/telemetry.ts:60:export interface Telemetry {
+src/main/telemetry.ts:85:export type TelemetryInternalErrorCode =
+src/main/telemetry.ts:256:function countUnknownEnumerableFields(record: Record<string, unknown>): number | null {
+src/main/telemetry.ts:258:    let count = 0
+src/main/telemetry.ts:260:      if (!ALLOWED_FIELDS.has(key)) count += 1
+src/main/telemetry.ts:264:      if (Object.prototype.propertyIsEnumerable.call(record, symbol)) count += 1
+src/main/telemetry.ts:267:    return count
+src/main/telemetry.ts:284:  const extraFieldCount = countUnknownEnumerableFields(value)
+src/main/telemetry.ts:362:  const reason: string | undefined = reasonValue === undefined ? undefined : (reasonValue as string)
+src/main/telemetry.ts:425:  const counters: TelemetryCounters = {
+src/main/telemetry.ts:445:      counters.ramEvictedCount += 1
+src/main/telemetry.ts:462:    reason: string,
+src/main/telemetry.ts:480:    counters.telemetryDroppedCount += droppedCount
+src/main/telemetry.ts:483:      counters.writerFailureCount += 1
+src/main/telemetry.ts:485:      counters.rotationFailureCount += 1
+src/main/telemetry.ts:491:      `cause=${kind};dropped_count=${droppedCount}`,
+src/main/telemetry.ts:498:    counters.telemetryDroppedCount += droppedCount
+src/main/telemetry.ts:499:    counters.schedulerFailureCount += 1
+src/main/telemetry.ts:503:      `cause=scheduler_failure;dropped_count=${droppedCount}`,
+src/main/telemetry.ts:619:      counters.telemetryDroppedCount += 1
+src/main/telemetry.ts:627:        counters.rejectedEventCount += 1
+src/main/telemetry.ts:654:        counters.extraFieldStrippedCount += normalizedResult.extraFieldCount
+src/main/telemetry.ts:658:          `field_count=${normalizedResult.extraFieldCount}`,
+src/main/telemetry.ts:664:      counters.rejectedEventCount += 1
+src/main/telemetry.ts:678:      counters.telemetryDroppedCount += 1
+src/main/telemetry.ts:731:      ...counters,
+
+Initial focused command: node_modules/.bin/vitest run tests/unit/memory-embedding.test.ts tests/unit/memory-repository.test.ts tests/unit/memory-storage-worker.test.ts tests/unit/memory-session.test.ts tests/unit/memory-learning.test.ts tests/unit/memory-extractor.test.ts tests/unit/relationship-memory.test.ts tests/unit/memory-store-relationship.test.ts --reporter=dot
+Exit: 1
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+······················································x··································································································
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/memory-store-relationship.test.ts > relationship memory storage > pages past unsupported rows for other owners and ignores unsupported missing or malformed vectors
+AssertionError: expected 'stale' to be 'committed' // Object.is equality
+
+Expected: "committed"
+Received: "stale"
+
+ ❯ tests/unit/memory-store-relationship.test.ts:242:146
+    240|     store.setEmbedding(source.avatarId, source.name, source.entry.id, …
+    241|     for (let batch = 0; batch < 5; batch++) {
+    242|       expect(commit(`hidden-batch-${batch}`, Array.from({ length: 60 }…
+       |                                                                                                                                                  ^
+    243|     }
+    244|     expect(commit('hidden-transitive', [record('Indirect', { sources: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 7 passed (8)
+      Tests  1 failed | 148 passed (149)
+   Start at  22:54:02
+   Duration  5.22s (transform 128ms, setup 0ms, import 362ms, tests 4.13s, environment 0ms)
+
+Initial command: npm run typecheck:node
+Exit: 2
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/main/memory/repository.ts(114,11): error TS2367: This comparison appears to be unintentional because the types '"recovering"' and '"open"' have no overlap.
+tests/unit/relationship-memory.test.ts(320,25): error TS2532: Object is possibly 'undefined'.
+tests/unit/relationship-memory.test.ts(320,58): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.

@@ -59,7 +59,7 @@ Cancel pending effects on interruption, session change, stop or disposal. Keep
 failures local and observable without blocking unrelated conversation.
 
 Check an invalid command/help request for forbidden coaching, a valid command for
-exact requested speech before the effect, and interruption/duplicate/stale-event
+exact requested speech and the authorized effect ordering, and interruption/duplicate/stale-event
 behavior where relevant to the change. Use focused checks at the observed
 boundary; provider evaluation requires that work to be in scope. Distinguish
 prompt assertions, synthetic text, virtual-microphone WebRTC ASR, provider output,
