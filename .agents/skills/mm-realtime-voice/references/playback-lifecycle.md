@@ -18,6 +18,11 @@ Repository implementation reference; installed code, current DECISIONS and focus
 - We supply `mediaStream`, so `close()` does not stop mic tracks. Stop them
   explicitly before handing the mic back to the wake worker.
 
+These are transport/processed-graph completion boundaries. They establish
+application sequencing, not physical sound at the speaker or native microphone.
+For no-wake/no-speech RCA, compare routes, current-owner input freshness/energy,
+permissions and lifecycle separately using [physical wake RCA](../../mm-wake-word/references/handoff-platform.md).
+
 Exactly one microphone owner exists at a time. Use the explicit release-then-
 acquire handoff between the wake worker and renderer; a failed handoff is local
 Maintenance, not cloud OfflineLoop.
@@ -30,8 +35,9 @@ Maintenance, not cloud OfflineLoop.
   `900` ms, and automatic response/interruption enabled. Semantic VAD `low` is
   an alternate for premature turn endings, not the default noise filter.
 - Read the current versioned per-avatar transcription/language/sleep configuration. Do not hard-code historical model IDs or farewell words. Avoid stacking browser denoising over speaker DSP and provider far-field processing without field evidence.
-- Automated evidence covers the exact SDK config and a live provider session;
-  a human judges recognition, false turns, pause handling, and barge-in quality.
+- SDK/config and provider checks cover their tested inputs and routes;
+  representative physical evidence is needed for recognition, false turns,
+  pause handling and barge-in quality on the deployed microphone.
 
 ## Profile switch and reconnect
 

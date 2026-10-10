@@ -5,13 +5,14 @@ export function ravenConversationProbe(speech: string[]): string {
   return `
   const q=window.__ravenQa={stage:'greeting',visit:0,records:[],tools:[],usage:[],errors:[],connections:[],tracks:[],
     active:0,audio:false,stops:0,interrupts:0,asr:0,inputText:0,last:Date.now(),media:false,mediaEvents:[],scenes:[],privateContexts:[],mic:[],speech:${JSON.stringify(speech)}};
-  q.audibleResponses=new Set();
+  q.audibleResponses=new Set();q.transcriptionConfigs=[];q.transcriptionRequests=[];
   q.calls=new Map();q.responses=new Map();q.inputs=new Map();q.openCalls=new Set();q.pendingResponses=0;
   const Peer=window.RTCPeerConnection;
   window.RTCPeerConnection=class extends Peer {
     constructor(...args){super(...args);q.connections.push(this);this.addEventListener('connectionstatechange',()=>{if(this.connectionState==='closed'&&q.connections.at(-1)===this){q.active=0;q.pendingResponses=0;q.openCalls.clear();q.audio=false;q.last=Date.now()}})}
     createDataChannel(...args){const c=super.createDataChannel(...args),send=c.send.bind(c);
       c.send=data=>{const e=JSON.parse(data);
+        if(e.type==='session.update')q.transcriptionRequests.push(e.session?.audio?.input?.transcription??e.session?.input_audio_transcription??null);
         if(e.type==='response.create'){q.pendingResponses++;q.last=Date.now()}
         if(e.type==='conversation.item.create'&&e.item?.role==='user'&&e.item.content?.some(x=>x.type==='input_text'))q.inputText++;
         if(e.type==='session.update'&&e.session?.instructions?.includes('Identity: verbally confirmed.'))q.privateContexts.push({stage:q.stage,visit:q.visit,at:Date.now()});
@@ -20,6 +21,7 @@ export function ravenConversationProbe(speech: string[]): string {
           let result;try{result=JSON.parse(e.item.output)}catch{};q.tools.push({stage:q.calls.get(e.item.call_id)?.stage??q.stage,direction:'result',callId:e.item.call_id,result,at:Date.now()});q.last=Date.now();
         }send(data)};
       c.addEventListener('message',m=>{const e=JSON.parse(m.data),base={visit:q.visit,stage:q.responses.get(e.response_id)??q.stage,at:Date.now()};
+        if(e.type==='session.updated')q.transcriptionConfigs.push(e.session?.audio?.input?.transcription??e.session?.input_audio_transcription??null);
         if(e.type==='input_audio_buffer.speech_started')q.inputs.set(e.item_id,q.stage);
         if(e.type==='response.output_item.added'&&e.item?.type==='function_call')q.calls.set(e.item.call_id,{name:e.item.name,stage:base.stage});
         if(e.type==='conversation.item.input_audio_transcription.completed'){q.asr++;q.records.push({...base,stage:q.inputs.get(e.item_id)??q.stage,role:'visitor',text:e.transcript});q.last=Date.now()}
@@ -59,6 +61,6 @@ export function ravenConversationProbe(speech: string[]): string {
       audio:q.audio,active:q.active+q.pendingResponses+q.openCalls.size,stops:q.stops,interrupts:q.interrupts,asr:q.asr,last:q.last,connections:q.connections.length,
       released:q.tracks.every(t=>t.readyState==='ended')&&q.connections.every(c=>c.connectionState==='closed')};
   };
-  q.dispose=()=>{q.unsubscribe();q.unsubscribeScenes();q.speech=[];q.records=[];q.tools=[];q.scenes=[];q.music=null;HTMLMediaElement.prototype.play=play;window.RTCPeerConnection=Peer;delete window.__ravenQa};
+  q.dispose=()=>{q.unsubscribe();q.unsubscribeScenes();q.speech=[];q.records=[];q.tools=[];q.scenes=[];q.transcriptionConfigs=[];q.transcriptionRequests=[];q.music=null;HTMLMediaElement.prototype.play=play;window.RTCPeerConnection=Peer;delete window.__ravenQa};
   `
 }

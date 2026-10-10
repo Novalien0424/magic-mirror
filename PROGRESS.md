@@ -1,70 +1,68 @@
-# Magic Mirror — Raven conversation and media QA, 2026-10-10
+# Magic Mirror — Raven wake/spell RCA, 2026-10-10
 
 ## Current delivery
 
-The user authorized real Raven conversations with real APIs, in-scope repairs,
-deployment, commit and push. [Review, reproduction and retained results](docs/testing/raven-conversation-qa-2026-10-09.md).
-The suite uses published Raven, Cedar voice and imported Raven rig; synthesized
-visitor audio travels through real WebRTC/ASR, production tools, IPC and players.
-Dialogue/audio/private context stay in RAM; evidence contains bounded metadata.
+The user authorized physical microphone/unmute investigation, real Raven/API
+conversation QA, in-scope repairs, deployment, commit and push.
+[RCA, primary-source research and reproducible evidence](docs/testing/wake-spell-rca-2026-10-10.md).
 
-Repaired alias lookup with extra wording, explicit ambiguity, source constraints,
-negative-playback vs stop behavior, ignored-stop replies and a contradictory
-camera silence result. Unspecified media remains local-first then YouTube;
-explicit folder/vault stays local, explicit YouTube goes directly there. Once
-is default and restores conversation; explicit loops enter Dormant with Realtime
-mic release before local wake acquisition.
+Fixed the native Raven QA microphone-permission bypass, added an isolated
+one-shot LaunchAgent runner, and added bounded RAM-only physical capture/replay
+diagnostics. Spell QA now records request/acknowledgement and exact-match
+comparison metadata, and explicitly asserts cue/scene, farewell/close and
+release/acquire ordering. A completed farewell emits a bounded metadata event.
+Wake, voice, roleplay, QA, invariant and Mac foundation guidance now separates
+verified behavior from assumptions and synthetic from physical evidence.
 
-Repaired memory timeout diagnostics, input-item-bound confirmation, keyword
-fallback after semantic timeout, control-turn learning exclusion and correction
-cleanup. Main derives identity candidates from the spoken introduction and can
-propose a unique existing whitespace variant. Exact labels win; ambiguous names
-are not selected, records are not merged, and private facts remain locked until
-the application question and a separate verbal confirmation.
+**118 focused Node tests across seven files pass.** Node/web typechecks and the
+production build pass. Operator configuration, device preferences, media folders,
+production tuning, dependencies and model IDs are unchanged. No transcripts,
+conversation recordings, private context or credentials enter retained evidence.
+Invariants 1, 7, 8, 9, 10, 11 and 12 were directly examined; no phase acceptance
+or packaging/signing claim is added.
 
-**376 affected Node tests across 16 files pass**, including real SQLite/worker
-integration, SDK tool behavior, memory ownership and boot/IPC. Node/web typechecks
-and production builds pass. Self-audit preserved invariants 1–12 within these
-boundaries. No dependencies, pinned model IDs, operator settings or phase status
-changed. [Earlier delivery and runtime history](docs/archive/progress-before-raven-conversation-qa-2026-10-10.md).
+## Current findings and limits
 
-## Live evidence and remaining limits
-
-- Own/shared folders and Chinese filenames: exact real playback and natural end
-  passed. Local alias, ambiguity clarification, selected piano, default once,
-  return to conversation, negative and quoted requests pass runtime checks.
-- Local-first YouTube fallback and explicit YouTube once/loop pass real playback
-  checks. Loops cross a boundary in Dormant with local wake capture acquired.
-- Bilingual empathy/correction and practical follow-up pass the integrated
-  quality scenario. Spoken interruption, lip movement and the changed request
-  pass. Camera image capture and correct shape/color/position answers pass after
-  the speech-contract fix.
-- Local conversation still produced one forbidden pre-playback preamble.
-  Successful playback does not establish perfect conversation quality.
-- The final two-visit run confirms the same scope, saves three records and
-  completes all runtime checks. Eight of ten conversation turns pass quality;
-  material recall is incomplete and commitment recall is flagged for an
-  invented fact. The earlier whitespace-split scope failure remains in evidence.
-- Automated acoustic wake trials received fresh but zero-signal PCM; sound
-  delivery to the native microphone was not demonstrated. Exact synthetic spell
-  recognition also failed. No fuzzy spell bypass, wake threshold or device
-  preference change. The October 4 human wake pass is historical evidence.
-
-This is functional landscape QA, not new portrait, physical camera/hardware,
-far-field wake, packaging/signing/TCC or phase acceptance. Complete live
-conversation-quality acceptance has not been established.
+- Jabra input/output unmute writes succeeded and read back unmuted. Native
+  input is delivered. Raven's dormant ambience explains an open output stream;
+  Apple Music was open but not streaming during the process check.
+- Physical synthesized wake still fails. Clean source matches 12/12 tokens;
+  identical captured PCM fails live and on replay. Fresh detector state,
+  rechunking, gain, speaker-tail hold and offline keyword-bias changes did not
+  recover it. Measured delivery is about 16 kHz with zero reported drops.
+  The remaining boundary is captured waveform plus detector robustness, not a
+  proven TCC, Jabra DSP, resampler or threshold defect. Human speech/placement
+  acceptance is unavailable while the operator is away.
+- Fresh real-provider runs recognize the exact fixture spell and trigger one
+  scene; quoted/extended phrases trigger none. The final run also passes explicit
+  cue/scene, farewell/close and mic release/acquire ordering. Published Raven has **no
+  configured spells/scenes**; the isolated mock fixture is not production setup.
+- Command dialogue quality remains imperfect. The final unchanged-prompt run
+  passes 6/8 turns; extended spell and directed sleep fail quality. The earlier
+  baseline passed 5/8; a shorter contextual prompt passed 3/8 and was reverted. Automatic dialogue
+  can start before final ASR reaches the exact spell check. Generated output
+  counts do not establish final physical audibility.
+- Earlier media QA passed own/shared folder playback, local-first YouTube
+  fallback, explicit YouTube, default once/return and loop/Dormant handoff.
+  The remaining pre-playback preamble and memory-recall quality failures remain
+  recorded in the [conversation report](docs/testing/raven-conversation-qa-2026-10-09.md).
 
 ## Runtime and next action
 
-Source commit `7f6b377` is deployed through the existing
-`com.magicmirror.launchagent`, PID **50961**. Fresh startup evidence confirms Main
-and both renderers Ready, Dormant, media index ready and wake worker listening.
-All five operator settings hashes match the pre-QA baseline. The stamped build
-matches current source and output. [Deployment metadata](.artifacts/raven-conversation-2026-10-09/deployment.json)
-and [startup events](.artifacts/raven-conversation-2026-10-09/runtime-start-events.json).
-No alternate restart owner or new packaging/signing chain was introduced.
+The RCA build is deployed through the existing `com.magicmirror.launchagent`,
+PID **63129**. Main and both renderers are Ready; Raven is Dormant, the media index
+is ready and the wake worker is listening. The stamped build matches current
+source/output. All five operator settings hashes match the pre-investigation
+baseline. [Deployment metadata](.artifacts/wake-spell-rca-2026-10-10/deployment.json)
+and [startup events](.artifacts/wake-spell-rca-2026-10-10/runtime-start-events.json).
+The existing LaunchAgent remains the sole restart owner. No synthetic spell or
+diagnostic tuning is published.
 
-The user has been asked whether to compare `gpt-realtime-2.1` with the pinned
-`gpt-realtime-2.1-mini`; no model change is authorized or performed yet.
-Next: resolve that choice for the remaining quality failures, and obtain actual
-microphone/wake and exact-spell acceptance. Failed evidence remains intact.
+Next: obtain a representative human wake trial on the current Jabra route;
+configure the intended spells/approved scenes; evaluate a compact command cue
+handoff against processed output ownership without regex speech filters or
+delaying ordinary dialogue. The previously offered larger-model comparison has
+not been answered or performed. Physical wake and full conversation-quality
+acceptance remain open. Failed evidence is retained.
+
+[Previous delivery/runtime snapshot](docs/archive/progress-before-wake-spell-rca-2026-10-10.md).

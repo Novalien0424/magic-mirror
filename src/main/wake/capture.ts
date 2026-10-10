@@ -3,6 +3,8 @@ import { matchMicrophoneName } from '../../shared/audio-devices'
 
 export interface WakeCapture {
   stop(): void
+  /** Read before stop: the native stream releases its overrun counter on close. */
+  statistics?(): { overruns: number; backpressure: number }
 }
 
 /** Only fixed diagnostic codes cross the worker boundary, never native messages. */
@@ -47,6 +49,8 @@ export async function openWakeCapture(input: {
   })
   let stopped = false
   let failed = false
+  let backpressure = 0
+  microphone.on('backpressure', () => { backpressure++ })
   const fail = (reason: string): void => {
     if (stopped || failed) return
     failed = true
@@ -68,6 +72,7 @@ export async function openWakeCapture(input: {
     input.onSamples(samples)
   })
   return {
+    statistics: () => ({ overruns: microphone.overrunCount, backpressure }),
     stop: () => {
       if (stopped) return
       stopped = true

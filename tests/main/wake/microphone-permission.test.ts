@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { requestWakeMicrophonePermission } from '../../../src/main/wake/microphone-permission'
+import { needsWakeMicrophonePermission, requestWakeMicrophonePermission } from '../../../src/main/wake/microphone-permission'
 
 describe('native wake microphone permission', () => {
+  it('checks real Mac capture even when the QA runner also sets a smoke timeout', () => {
+    expect(needsWakeMicrophonePermission({ platform: 'darwin', smoke: true, isolatedQa: true, nativeWakeQa: true })).toBe(true)
+    expect(needsWakeMicrophonePermission({ platform: 'darwin', smoke: false, isolatedQa: false, nativeWakeQa: false })).toBe(true)
+    expect(needsWakeMicrophonePermission({ platform: 'darwin', smoke: true, isolatedQa: true, nativeWakeQa: false })).toBe(false)
+    expect(needsWakeMicrophonePermission({ platform: 'win32', smoke: false, isolatedQa: false, nativeWakeQa: true })).toBe(false)
+  })
   it('requests permission before allowing native capture', async () => {
     let resolve!: (allowed: boolean) => void
     const request = vi.fn(() => new Promise<boolean>(done => { resolve = done }))
@@ -26,7 +32,7 @@ describe('native wake microphone permission', () => {
     expect(await result).toBe('stopped')
   })
 
-  it('does not prompt on other platforms, isolated QA, or after shutdown', async () => {
+  it('does not prompt when native Mac capture is not required, or after shutdown', async () => {
     const request = vi.fn(async () => true)
     expect(await requestWakeMicrophonePermission({ required: false, request, stopping: () => false })).toBe('granted')
     expect(await requestWakeMicrophonePermission({ required: true, request, stopping: () => true })).toBe('stopped')

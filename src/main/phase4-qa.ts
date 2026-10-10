@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { BrowserWindow, NativeImage } from 'electron'
 
 import type { BootRuntime } from './boot'
+import type { WakeSupervisor } from './wake/supervisor'
 import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS } from '../shared/types'
 import { runPhase4ConsoleQa } from './phase4-console-qa'
 import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
@@ -35,6 +36,7 @@ export interface Phase4QaResult {
 
 export interface Phase4QaInput {
   readonly runtime: BootRuntime
+  readonly wakeOwner?: () => WakeSupervisor | null
   readonly mirror: QaWindow
   readonly console: QaWindow
   readonly outputDir: string

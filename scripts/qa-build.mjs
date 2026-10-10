@@ -9,7 +9,8 @@ const inputs = ['src', 'resources/generated', 'resources/avatar', 'resources/con
   'tsconfig.json', 'tsconfig.node.json', 'tsconfig.web.json',
   'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs', 'scripts/generate-avatar-audio.mjs',
   'scripts/native', 'scripts/build-wake-score-native.ps1', 'scripts/build-wake-score-native.mjs', 'scripts/prepare-wake-score-native.mjs',
-  'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'scripts/memory-qa-speech.swift']
+  'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'scripts/memory-qa-speech.swift',
+  'scripts/raven-qa-transcription-comparison.swift']
 const requiredOutputs = ['main/index.js', 'preload/mirror.js', 'preload/console.js',
   'renderer/mirror/index.html', 'renderer/console/index.html']
 const manifestName = '.qa-build.json'

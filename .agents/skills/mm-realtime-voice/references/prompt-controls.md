@@ -14,12 +14,36 @@ Trace published avatar settings through Main, preload and session dispatch. The 
 
 Wake detection, sleep intent, wake greeting and farewell are separate controls. Transcription hints use selected wake/sleep/enabled spell phrases; they neither authorize effects nor guarantee recognition. Local wake text requires its compiled keyword package.
 
-Hidden spells stay in the application matcher and transcription hints, outside persona instructions and model-selected tools. Match the normalized full final transcript once per turn; no fuzzy/substring/LLM fallback, player coaching or added confirmation. Check enabled/published scope and reason metadata; inspect a failed transcript only in RAM. Follow `roleplay-control-prompts` for speech/effect ordering.
+Hidden spells stay in the application matcher and transcription hints, outside persona instructions and model-selected tools. Match the normalized full final transcript once per turn; no fuzzy/substring/LLM authorization fallback. Check active-avatar enabled/published scope and reason metadata; empty legacy root collections do not establish an empty avatar catalog. Inspect failed text only in RAM. Follow [roleplay-control-prompts](../../roleplay-control-prompts/SKILL.md) for concise contextual dialogue and cue wording; do not repair ASR by adding regex speech filters, broader silence rules, coaching/confirmation gates or extra model constraints.
+
+[Normalization](../../../../src/main/scenes/spell-trigger.ts) applies NFKC, Unicode
+punctuation removal, Han spacing and an explicit fixed-prefix script equivalence;
+it is not general Simplified/Traditional or homophone conversion.
+[Transcript controller](../../../../src/renderer/mirror/scene-transcript-controller.ts)
+rejects a mismatch before interruption, cue announcement or scene IPC. After a
+match it interrupts, awaits the application announcement, then calls Main.
+[Main sender authorization](../../../../src/main/ipc.ts) and
+[scene runtime](../../../../src/main/scenes/scene-runtime.ts) check the request,
+enabled spell/scene, duplicate turn and cooldown. Approved presets own hardware
+effects; fluent dialogue or audible response counts confer no authorization.
 
 Greeting, farewell, scene dialogue and audition use response-scoped instructions, `input: []`, `tool_choice: none`; never persistent imperative user messages. Announcements must finish actual processed playback before effects; interruption/session change cancels pending effects.
 
 ## Evidence
 
-Check schema/inspector parity, unavailable tools, invalid arguments, safe failure, duplicate/stale calls and ordinary follow-up after greeting. Windows lifecycle QA compares actual wire definitions/results and speech/playback using synthetic input, storing only flags/counts. Separate this from microphone ASR and physical output. Silent-tool prompting cannot guarantee silence before tool intent; preserve observed violations.
+Choose checks for the failing boundary: schema/inspector parity, arguments,
+duplicate/stale events, exact matching or cue/playback ordering. Lifecycle/spell
+QA uses synthetic text; Raven conversation QA sends synthesized PCM through a
+virtual microphone and real WebRTC ASR. Neither proves physical microphone or
+speaker acceptance. Prompt assertions and audible counts alone do not establish
+spoken compliance; keep invalid/failed quality evaluations visible.
 
-API guidance checked 2026-09-17: [Realtime tools](https://developers.openai.com/api/docs/guides/realtime-mcp), [voice prompting](https://developers.openai.com/api/docs/guides/voice-prompting), [function calling](https://developers.openai.com/api/docs/guides/function-calling). Recheck installed SDK and current official docs when changing the contract.
+The [2026-10-10 RCA](../../../../docs/testing/wake-spell-rca-2026-10-10.md)
+records an earlier ASR mismatch and a later exact-match/scene pass with unchanged
+recognition settings. Extra speech remained a separate quality failure. Compare
+outbound transcription configuration, returned server fields, recognition and
+cue-only speech separately: an absent echo of a request field is not proof the
+provider ignored it. The published avatar had no spells/scenes; the QA fixture
+supplied one. These are dated results, not a universal diagnosis or accuracy rate.
+
+Prompt/transcription guidance checked 2026-10-10: [voice prompting](https://developers.openai.com/api/docs/guides/voice-prompting), [Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription). API/tool contract details still come from installed source and [Realtime tools](https://developers.openai.com/api/docs/guides/realtime-mcp).
