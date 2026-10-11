@@ -1,6 +1,6 @@
 # Focused avatar survey
 
-Answer only questions that affect the requested authoring outcome. Identify available source (portrait/PSD/partial layers/CMO/runtime), actual Photopea/Cubism mode and tools, current importer/IDs/Core compatibility, and concrete art bottlenecks. Windows and later Mac evidence remain separate; investigate licenses/budget only when relevant.
+Answer only questions that affect the requested authoring outcome. Identify available source (portrait/PSD/partial layers/CMO/runtime), actual Photopea/Cubism mode and tools, current importer/IDs/Core compatibility, and concrete art bottlenecks. Investigate licenses/budget only when relevant.
 
 Distinguish current code, official documentation, observed tool behavior, recommendations and unknowns. Use existing source and the chosen Photopea/Cubism route: complete PSD→rig, image→separation, CMO→resume or runtime→validation as appropriate. Side-view or nonhuman art can need manual hierarchy; that does not make a PNG impossible to rig.
 

@@ -1,7 +1,5 @@
 # Visual evidence and Cubism inspection
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
-
 ## General visual evidence
 
 The runner creates `.artifacts/phase4-qa/<timestamp>/` with isolated config,
@@ -56,10 +54,7 @@ Separate writable-but-unrigged IDs from visible motion; inspect meaningful
 eye, mouth and head changes. Never publish the operator's draft to test a rig.
 The Ren fixture's light-coat pixel coverage catches the observed partial-mask
 regression; keep that fixture-specific assertion separate from general assets.
-Live dialogue comparisons may normalize punctuation/case, not extra words or
-changed wording. On timeout retain only comparison categories, counts and
-settings-match booleans, never provider text.
-
-Record commands, exit codes, case counts, exact artifact locations, display evidence,
-visual observations, and remaining manual checks in a task report. Only the operator's
-separate acceptance closes Phase 4; this skill cannot advance phases or tag releases.
+Application-spoken cue comparisons may normalize punctuation/case, not extra
+words or changed wording; each provider result is one sample of a probabilistic
+model. On timeout retain only comparison categories, counts and settings-match
+booleans, never provider text.

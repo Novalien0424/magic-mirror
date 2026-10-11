@@ -1,20 +1,18 @@
 ---
 name: mm-invariants
-description: "Resolve Magic Mirror privacy, guest identity, memory ownership, mic exclusivity, exact spell matching or visible degradation boundaries."
+description: "Resolve Magic Mirror invariant edge cases: diagnostics privacy, guest/candidate identity, memory ownership, control-turn extraction, spoken-command matching, mic ownership, visible degradation or model IDs."
 ---
 
-# Invariant interpretation
+# Invariant edge cases
 
-[AGENTS](../../../AGENTS.md#canonical-product-invariants) is the single owner of the 12 canonical IDs; [DECISIONS](../../../DECISIONS.md) supplies dated implementation rulings. Apply only the IDs implicated by the task.
+[AGENTS](../../../AGENTS.md#canonical-product-invariants) states the 12 invariants and [DECISIONS](../../../DECISIONS.md) the dated rulings. This page adds only distinctions their text does not settle. Apply the IDs the task implicates.
 
-## Non-obvious distinctions
+- **1 / 12:** Diagnostics never carry utterances, conversation audio, memory values, private prompts, credentials, camera frames or embeddings. The Console transcript is session RAM and clears on Dormant/restart.
+- **2 / 3 / 4:** Public avatar/scene IDs and spoken names are not guest IDs. Identity confirmation returns only yes/no/unclear; Main resolves its pending candidate and clears it on denial, a second unclear answer, owner switch, session close or sleep. Several people need explicit conversation-owner selection, not model disambiguation.
+- **5 / 6:** Debug decisions that involve private IDs stay content-free and Main-local.
+- **7:** "Normalized" includes deterministic pronunciation folding from the shared lexicon (DECISIONS 2026-10-11). The whole final utterance must still be the command: no substring, edit-distance or model-judged match. Partial adapter failure still consumes the turn's one trigger. Shared callers, cue timing and current gaps: [prompt controls](../mm-realtime-voice/references/prompt-controls.md).
+- **8 / 10:** A failed mic handoff is local Maintenance, not cloud OfflineLoop. SDK session close does not release caller-owned tracks.
+- **9:** Repeated identical failures may collapse into a reasoned counter, never disappear. Sanitize raw errors before telemetry. Mock adapters need operator configuration, never automatic substitution.
+- **11:** A bounded retry reuses the same configured ID. Publishing a tested draft or a whole-config rollback changes configuration; a runtime failure never selects another model.
 
-- **1 / 12:** diagnostics contain metadata, never utterances, conversation audio, memory values, private prompts, credentials, camera frames or embeddings. The RAM Console transcript clears on Dormant/restart. Current invariant 1 permits selected facts and validated distilled summaries through Main's avatar/person-scoped memory policy; raw conversations and injected context remain ephemeral.
-- **2 / 3 / 4:** public avatar/scene IDs and spoken names are not private guest IDs. Model confirmation returns only yes/no/unclear; Main resolves its pending candidate. Clear that candidate on denial, second ambiguous response, owner switch, session close or sleep. Multiple people require explicit conversation-owner selection, not model disambiguation.
-- **5 / 6:** freeze extraction ownership at turn start, not completion; any control intent skips extraction. Keep debug decisions content-free and Main-local where they include private IDs.
-- **7:** normalize and compare the entire final transcript. Partial adapter failure still consumes the turn's one scene trigger. Only approved typed presets control hardware.
-- **8 / 10:** a failed mic handoff is local Maintenance, not cloud OfflineLoop. SDK session close does not release caller-owned tracks. An unrelated camera, extractor or adapter cannot block speech.
-- **9:** repeated identical failures may collapse into a reasoned counter, never disappear. Sanitize raw errors before telemetry. Mock adapters require operator configuration, not automatic substitution.
-- **11:** a bounded retry uses the same configured ID. Publish of a tested draft or whole-config rollback changes configuration; runtime failure never selects another model.
-
-No speaker diarization or continuous post-confirmation face tracking is implied. Guest-facing memory-management tools and privacy-grade backup erasure require their own scoped product work; historical/future plans are not authorization.
+Not implied: speaker diarization, continuous identity tracking after confirmation, or privacy-grade erasure of external backups. Each needs its own scoped work.

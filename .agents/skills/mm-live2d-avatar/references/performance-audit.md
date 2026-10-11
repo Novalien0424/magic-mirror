@@ -9,7 +9,8 @@ degrees. Derive the acting brief from the user's character; do not prescribe
 human VTuber gestures for an animal or enforce one sleep behavior globally.
 
 Raven's September 2026 brief: Dormant is closed-eyed rest with extremely slight
-movement. Waking is a gentle eye opening and tiny posture adjustment. Listening
+movement (seen only outside `reflective` presentation, whose Dormant is black,
+and in Console preview). Waking is a gentle eye opening and tiny posture adjustment. Listening
 waits attentively; Thinking briefly looks aside with a long hold; Speaking lets
 audio lead; Scene makes one modest gesture; Suspending settles and closes the
 eyes. Finite lifecycle states can be interrupted early or held indefinitely.
@@ -71,7 +72,7 @@ feather deformation; preserve provenance and export a fresh MOC/atlas together.
 ## Evidence and delivery
 
 Separate four evidence levels: asset structure, real SDK parameter playback,
-current rendered appearance, and canonical Windows integration/artistic approval.
+current rendered appearance, and Mirror integration/artistic approval.
 Test interruptions, long holds, loop seams, output onset/offset, reset, sliders
 and action completion. A synthetic mouth slider is not output-audio validation.
 
@@ -82,5 +83,5 @@ over time, not just sampled stills. Keep visible defects open even if tests pass
 
 If desktop/browser access is unavailable or policy-blocked, record the exact
 boundary and complete the code/artifact work. Do not label an unviewed candidate
-as accepted, reuse old QA as new evidence, auto-select the live model, or claim
-the inaccessible personal authoring skill was updated.
+as accepted, reuse old QA as new evidence or auto-select the live model. Rig
+authoring itself belongs to [avatar studio](../../magic-mirror-avatar-studio/SKILL.md).

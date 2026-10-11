@@ -1,23 +1,37 @@
 ---
 name: mm-realtime-voice
-description: "Implement or debug Magic Mirror Realtime sessions, voice playback, transcripts, mic handoff, profile switching or Responses extraction."
+description: "Implement or debug Magic Mirror Realtime sessions, prompts/tools, voice playback, transcripts, spoken commands, mic handoff, profile switching or Responses extraction."
 ---
 
 # Realtime voice
 
-Runtime model/voice IDs come from versioned config and frozen session/job snapshots, never this skill or the coding-agent model. Pinned SDK code and accepted contract tests own API details.
+Raven is a speech-to-speech LLM, not a deterministic program. Prompts shape
+behavior rates; application code owns authorization, ordering and
+application-owned turns. Runtime model, voice and transcription IDs come only
+from versioned config and frozen snapshots. The pinned SDK and contract tests
+own API details.
 
 | Boundary | Read |
 |---|---|
-| Structured tool registry, prompt inspector or spoken controls | [Prompts and structured controls](references/prompt-controls.md) |
-| Session construction, transcription context, ASR mismatch or privacy flags | [SDK/session](references/sdk-session.md) |
-| Barge-in, output completion, mic handoff, noisy-room tuning, rollover or profile change | [playback/lifecycle](references/playback-lifecycle.md) |
+| Prompt design, preambles, language, persona | [roleplay-control-prompts](../roleplay-control-prompts/SKILL.md) |
+| Tool catalog, prompt inspector, spoken commands and spells | [prompt controls](references/prompt-controls.md) |
+| Session construction, transcription config, privacy flags | [SDK/session](references/sdk-session.md) |
+| Barge-in, output completion, mic handoff, rollover, profile change | [playback/lifecycle](references/playback-lifecycle.md) |
 | Responses memory extractor | [memory extraction](references/memory-extraction.md) |
 
-Transcripts, conversation audio and injected private context remain RAM-only; current invariant 1 permits selected facts and validated distilled summaries in Main's private local store. Disable audio history and tracing before connect. Credentials stay within the existing Main/ephemeral boundary. Dialogue can precede final transcription; missing text disables transcript-driven controls with a metadata reason.
+- **Dialogue can start before the final transcript.** Raven hears raw audio
+  and replies independently of the separate ASR model. Transcript-driven
+  controls must handle late or missing text with a metadata reason.
+- **For a spell or command failure, isolate one boundary at a time:** input
+  delivery, final ASR, application matching, model reply, cue playback, then
+  Main execution.
+- **Know what each check proves.** Synthetic WebRTC ASR exercises the provider
+  path only. Physical microphone and speaker acceptance need those routes
+  ([physical wake boundaries](../mm-wake-word/references/handoff-platform.md)).
+- **Output completion means playback.** The processed output mutes the SDK
+  receiver, and actual playback plus its processed tail, not generation
+  completion, governs transitions.
 
-For spell RCA, distinguish input delivery, final ASR, exact application matching, cue playback and Main scene execution. Dialogue instructions and transcription context have different jobs. Synthetic WebRTC ASR can exercise the provider/control path, but physical microphone and speaker acceptance need evidence from those routes. See [physical wake boundaries](../mm-wake-word/references/handoff-platform.md).
-
-Use one microphone owner with release then acquire. Close caller-owned tracks explicitly. Current processed output mutes the SDK receiver and sends only the shared audio graph to speakers. Actual playback plus the processed tail, not generation completion, governs transitions.
-
-Close old-owner history before clean verbal confirmation and agent update. Guest IDs stay in Main; extraction uses the turn-start owner and skips control turns. Preserve reasoned stale-event rejection. [AGENTS](../../../AGENTS.md) owns the canonical invariants and execution policy.
+[AGENTS](../../../AGENTS.md) owns the invariants (privacy, single mic owner,
+profile change, extraction ownership) and execution policy. Do not restate them
+here.

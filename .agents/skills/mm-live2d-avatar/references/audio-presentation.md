@@ -1,6 +1,6 @@
 # Audio clock, layout and media ownership
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed code, current DECISIONS and contract tests outrank version notes here.
 
 ## Output audio is the speaking clock
 

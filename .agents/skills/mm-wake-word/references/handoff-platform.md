@@ -1,8 +1,10 @@
 # Physical wake RCA and microphone handoff
 
-Mac is the canonical Raven deployment target. Inspect the actual input route and
-loaded implementation; historical Windows or synthetic results do not establish
-physical Mac acceptance.
+Inspect the actual input route and loaded implementation; synthetic results do
+not establish physical acceptance.
+
+Contents: failed-boundary table and capture/replay method; macOS permission and
+QA boundary; mic handoff and sleep; native versions; lessons from dated RCAs.
 
 ## Locate the failed boundary
 
@@ -65,10 +67,9 @@ and the follow-up RCA; a keyword threshold change is not echo cancellation.
 
 [Main](../../../../src/main/index.ts) requests microphone access before native
 wake capture. [Permission policy/helper](../../../../src/main/wake/microphone-permission.ts)
-now uses `needsWakeMicrophonePermission`, with normal Mac operation and Raven's
-`nativeWakeQa` included. The failed-run baseline excluded Phase 4 QA; that dated
-finding does not describe this subsequent source change or prove runtime access.
-The helper still returns `granted` when `required` is false, without querying TCC.
+uses `needsWakeMicrophonePermission`, covering normal Mac operation and Raven's
+`nativeWakeQa`; inspect eligibility for the chosen QA mode.
+The helper returns `granted` when `required` is false, without querying TCC.
 Real microphone QA must use the production permission/status path, or explicitly
 report bypassed coverage as unproven. Synthetic renderer input does not exempt
 native wake capture in the same run. See [QA evidence modes](../../mm-ui-qa/references/modes.md).
@@ -83,20 +84,23 @@ permission, device, resampling, stalled-delivery and detector failures distinct.
 [Apple usage description](https://developer.apple.com/documentation/bundleresources/information-property-list/nsmicrophoneusagedescription),
 [Apple audio-input entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.device.audio-input).
 
-## Mic Handoff (invariant #8)
+## Mic handoff and sleep
 
 Normal wake capture holds the mic in Dormant/OfflineLoop. On detection: worker closes its stream
 and confirms release -> Main tells renderer to acquire -> Realtime session
 owns mic. Reverse on Suspending/OfflineLoop - and note the Realtime SDK's
 `close()` does NOT stop app-owned mic tracks: the renderer must `track.stop()`
 each track before Main hands the mic back. Retained tracks violate ownership;
-whether the device reports busy depends on the backend. Handoff failure is a
-local audio fault -> Maintenance, rather than a cloud OfflineLoop failure.
-During Active the worker must not reopen the mic. The active
-avatar's exact wake phrase may stop its running scene through the transcript
-controller; it does not start a second wake listener or request sleep.
+whether the device reports busy depends on the backend.
+During Active the worker must not reopen the mic. While media plays, the
+Realtime session's final ASR matching the active avatar's wake phrase stops the
+media ([session adapter](../../../../src/renderer/realtime/realtime-session-adapter.ts));
+it does not start a second wake listener or request sleep.
 
-The Active-only sleep command uses the current avatar configuration and directed-intent contract, never a wake keyword. Preserve the configured exact farewell; reject quoted, negated, hypothetical or incidental mentions. After goodbye playback completes,
+Sleep is Active-only model intent (`return_to_dormant`), never a wake keyword or
+transcript regex. Quoted, negated, hypothetical or incidental mentions should not
+sleep; the prompt shapes that rate and real-provider QA measures it. The
+application supplies the configured farewell wording. After its playback completes,
 Main owns the payload-free transition back to Dormant and the release-then-
 acquire mic handoff.
 
@@ -107,34 +111,26 @@ raise `LOCAL_AUDIO_FAILED`. Do not equate every worker failure with a whole-app
 restart or Maintenance. Calibration detection deliberately retains its capture
 for measurement, unlike normal wake activation.
 
-## Native version evidence
+## Native versions
 
-As checked 2026-10-10, installed `sherpa-onnx-node` and `sherpa-onnx-darwin-arm64`
-are both 1.13.6. [Detector module resolution](../../../../src/main/wake/sherpa-detector.ts)
+[Detector module resolution](../../../../src/main/wake/sherpa-detector.ts)
 can select a separate packaged/development score extension before the npm
 binding. Check the resolved module and platform binary, not just a package label.
+[Upstream issue #3791](https://github.com/k2-fsa/sherpa-onnx/issues/3791) (fixed in
+[1.13.5](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.5)) is a bounded
+historical Apple Silicon regression, not the cause of every miss or authority to
+change pins.
 
-[Upstream issue #3791](https://github.com/k2-fsa/sherpa-onnx/issues/3791) reports a
-1.13.4/ORT 1.27.0 zipformer convolution regression on SME-capable Apple Silicon,
-with a working ORT 1.27.1 comparison. [Release 1.13.5](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.5)
-includes ORT and macOS signature fixes. This is a bounded historical failure,
-not a claim that all KWS misses share that cause or authority to change pins.
+## Lessons from dated RCAs
 
-## Dated diagnostic evidence
+- Snapshot polling can miss intermediate scores; observed partial-token maxima
+  are not a hard decoder limit.
+- Decoder search width is its own control. Wider search recovered misses on
+  identical captured PCM without changing tokens, bias or threshold; `WAKE_MAX_ACTIVE_PATHS`
+  is 32 on Mac. Inspect the loaded configuration before recommending threshold changes.
+- A speakerphone's documented echo cancellation and clean-PCM success do not
+  establish human far-field accuracy.
 
-The [2026-10-10 RCA](../../../../docs/testing/wake-spell-rca-2026-10-10.md)
-separates the earlier unmeasured speaker attempts from a later LaunchAgent run
-with granted permission and fresh nonzero Jabra input. Clean PCM recognized the
-phrase; the physical route did not. Snapshot polling can miss intermediate
-scores, so observed partial-token maxima are not a hard decoder limit. Neither
-that result nor a speakerphone's documented echo cancellation establishes human
-far-field accuracy. Use the report's route-specific evidence and current runtime
-state; do not turn a dated hypothesis into a general skill rule.
-
-The [same-day follow-up](../../../../docs/testing/wake-phrase-rca-2026-10-10.md)
-subsequently isolated decoder search width on identical captured PCM. A wider
-search recovered missed phrases without changing tokens, bias or threshold.
-Search width is a separate control: inspect the loaded configuration and compare
-representative positives/negatives before recommending threshold changes. The
-Mac implementation now uses 32 paths; Windows retains four. This is bounded
-acoustic evidence, not a human accuracy or false-wake-rate guarantee.
+Evidence: [2026-10-10 RCA](../../../../docs/testing/wake-spell-rca-2026-10-10.md),
+[follow-up](../../../../docs/testing/wake-phrase-rca-2026-10-10.md). These are
+dated, route-specific results, not accuracy or false-wake rates.

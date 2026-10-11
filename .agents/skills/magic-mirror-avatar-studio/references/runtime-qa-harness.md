@@ -16,12 +16,12 @@ Choose poses from the defect, not a universal grid. `run-v08-qa.mjs` defaults to
 
 ## Setup when needed
 
-```powershell
-$avatarHarness = 'C:/Users/b8901/.codex/skills/magic-mirror-avatar-studio/scripts/runtime-qa'
-$env:RAVEN_MODEL_ROOT = 'C:/path/to/fresh-runtime'
-$env:RAVEN_PROJECT_ROOT = 'C:/path/to/magic-mirror'
-$env:RAVEN_QA_PORT = '4177'
-node "$env:RAVEN_PROJECT_ROOT/node_modules/vite/bin/vite.js" --config "$avatarHarness/vite.config.mjs"
+```sh
+export RAVEN_PROJECT_ROOT=/Users/novalien0424/magic-mirror
+export RAVEN_MODEL_ROOT=/path/to/fresh-runtime
+export RAVEN_QA_PORT=4177
+node "$RAVEN_PROJECT_ROOT/node_modules/vite/bin/vite.js" \
+  --config "$RAVEN_PROJECT_ROOT/.agents/skills/magic-mirror-avatar-studio/scripts/runtime-qa/vite.config.mjs"
 ```
 
 The project supplies Core/Framework shaders. Set `RAVEN_MODEL3` for multiple manifests; `/runtime/model3.json` maps to it. Confirm served identity once per unchanged run. Use a job-owned CDP browser with exactly one page, never personal browser/Electron: runners select the first page. Reuse a verified harness; recheck stale processes after interruption and close owned helpers when finished.

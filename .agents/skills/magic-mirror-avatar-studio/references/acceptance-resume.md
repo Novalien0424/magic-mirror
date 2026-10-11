@@ -24,12 +24,12 @@ On resume, verify the source needed for the next action; hash changed/ambiguous 
 
 Use [perceptual QA](perceptual-qa.md) for affected checks. Choose anatomy-appropriate forms: a bird beak does not automatically need human vowels, and an arm repair does not require a new frontal head pose. Preserve validated behavior and check shared-parent/mask regressions.
 
-```powershell
-node '<skill-root>/scripts/validate-bundle.mjs' --project 'C:/Project/magic-mirror' --model '<job-root>/runtime/avatar.model3.json'
+```sh
+node .agents/skills/magic-mirror-avatar-studio/scripts/validate-bundle.mjs --project /Users/novalien0424/magic-mirror --model '<job-root>/runtime/avatar.model3.json'
 ```
 
 Exit 0 establishes static validity only. Official samples can clarify format/tool behavior when needed; their success cannot stand in for this model. Use current compatibility/targets, not historical performance numbers.
 
-Use normal import/preview and record the loaded export identity. Preserve drafts; saved library import, draft assignment and publication are distinct. Deliver the actual editable source and matching runtime. If making archives, verify their payload hashes after readback; unchanged clips/art can be reused with provenance. Agent inspection is not user acceptance; Windows evidence is not Mac validation.
+Use normal import/preview and record the loaded export identity. Preserve drafts; saved library import, draft assignment and publication are distinct. Deliver the actual editable source and matching runtime. If making archives, verify their payload hashes after readback; unchanged clips/art can be reused with provenance. Agent inspection is not user acceptance.
 
 When the user accepts the result, mark it complete and retain its source/evidence as the next baseline. A later learning-only request updates instructions/checkpoint, not the accepted model, old evidence or verified archives. Reopen authoring only for new requested work. Promote reusable diagnosis and operation lessons to the skill; leave coordinates, object IDs, tuning, ports and version histories in the job.
