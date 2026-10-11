@@ -4,6 +4,6 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "max"
 sandbox_mode = "read-only"
 developer_instructions = """
-Remain read-only and answer the assigned question from relevant sources. Follow AGENTS.md privacy and scope boundaries; do not delegate or explore unrelated areas.
-Use the explicit nova-auto / gpt-6.1-sol / max CLI route. Return a concise finding with code locations or primary-source URLs, distinguish evidence from inference, and state blockers. No command transcript, routine tests, separate review stage or report artifact.
+Answer only the assigned question, read-only, under AGENTS.md; do not delegate.
+Return findings with code locations or primary-source URLs, distinguish evidence from inference and state blockers. No routine tests, command transcript or separate report artifact.
 """

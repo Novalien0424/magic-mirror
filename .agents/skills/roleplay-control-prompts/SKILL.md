@@ -5,74 +5,47 @@ description: "Design or repair prompts for a realtime voice character (e.g. Rave
 
 # Roleplay control prompts
 
-A realtime speech-to-speech model is probabilistic. A prompt shapes rates; it
-never authorizes effects or guarantees silence. Application code owns
-authority and ordering; the prompt owns character and conversation.
+A realtime prompt shapes behavior rates; it cannot guarantee silence or
+authorize effects. The application owns matching, effect ordering, cues,
+farewells and identity questions. The model owns character, conversation and
+native tool selection from the versioned catalog.
 
-## Split authority
+## Diagnose before prompting
 
-- **Application-owned:**
-  - spell/command matching and once-per-turn execution;
-  - effect ordering;
-  - cue and farewell wording;
-  - identity questions.
-- **Model-owned:**
-  - persona;
-  - ordinary replies;
-  - choosing native tools from a versioned catalog.
+Separate delivery, ASR, matching, model reply and playback. The model hears raw
+audio and can reply before final ASR: suppress/cancel replies on application-owned
+turns in code. Keep hidden commands in the matcher/transcription hints, outside
+dialogue prompts. ASR misses do not justify dialogue restrictions, confirmation
+gates or regex speech filters.
 
-  Keep hidden command catalogs out of the dialogue prompt. They belong only in
-  the matcher and the transcription hints.
-- **Turns the application owns must not get a model reply** (e.g. a recognized
-  spell). Suppress or cancel that reply in code. "Stay silent" in the prompt
-  is not enough: the model hears raw audio and can answer before the final
-  transcript exists.
-- **Separate the failing boundary before editing the prompt.** The boundaries
-  are delivery, ASR, matching, model reply and playback. Do not treat an ASR
-  miss with dialogue restrictions, confirmation gates or regex speech filters.
+## Prompt design
 
-## Write the prompt (current OpenAI realtime guidance)
+- Use short sections for role, language, delivery, tools and character. State
+  each rule once; descriptions explain tools, rules guide their use. Replace
+  superseded instructions instead of accumulating exceptions.
+- Realtime-2 preambles are a model default, with no API switch. Make the desired
+  policy explicit and align tool descriptions with it. Magic Mirror's current
+  [owner rulings](../../../DECISIONS.md) allow one short in-character line before
+  slow YouTube search, none for quick tools, and an Active-only nonverbal cue.
+- Avoid quoting unwanted phrases; mark useful style examples as variable.
+- Language follows the owner's complete-sentence rule: default Taiwan Mandarin
+  with Traditional characters; a complete English sentence switches to English.
+  Greetings, names, media titles and tool data do not select it. A per-turn
+  language hint is a candidate to test, not an implemented guarantee.
+- Give unusual-name pronunciation (渡鴉 dù yā). Persona owns character/delivery;
+  configured voice, speed and DSP own audio treatment.
+- Hidden spells must not be taught, confirmed or corrected. Application cues
+  use exact approved wording; consult the rulings for unmatched spell attempts.
 
-- **Section order:** Role/Personality, Language, Pacing/Variety, Tools and
-  Preambles, Character rules. Use short bullets. Say each rule once, in one
-  place: either the tool description (what the tool does and when to call it)
-  or the tool rules. Delete a superseded rule; never stack a contradiction on
-  top of it.
-- **Preambles:** gpt-realtime-2 models speak preambles before tools *by
-  default*. State the desired policy explicitly in the prompt and in tool
-  descriptions ("Preamble: none."). There is no API flag. Pair a no-preamble
-  policy with a non-verbal application progress cue for slow tools.
-- **Sample phrases:** never quote a phrase you want avoided. The model copies
-  quoted phrases. Style samples, if any, must say "vary; do not repeat
-  verbatim".
-- **Language:** pin it explicitly. Reply in the language of the visitor's
-  latest substantive utterance. Chinese means Taiwan Mandarin with Traditional
-  characters. Greeting language, names, titles and English tool data do not
-  switch it. A per-turn language line set by the application from the
-  visitor's transcript is a stronger control than prose alone.
-- **Pronunciation and voice:** give the reading of unusual names (渡鴉 dù yā).
-  Keep pacing, brevity and variety in the persona text. Voice, speed and DSP
-  belong in configuration.
-- **For a hidden spell game:** the character reacts in character to failed
-  attempts without revealing or correcting incantations. Performance cues come
-  from the application and are spoken exactly.
+## Evidence
 
-## Prove it
+Measure preambles, language, extra application-turn speech and persona quality
+over repeated real-provider runs; retain failures. Distinguish prompt assertions,
+synthetic text/PCM, provider output, physical playback and human microphone
+accuracy. Required speech-before-effect ordering uses actual playback plus its
+processed tail, never request time or a fixed delay.
 
-- Measure rates over repeated real-provider runs, not single passes, and keep
-  failed runs. Track the preamble rate, wrong-language rate, extra speech on
-  application-owned turns and persona consistency.
-- Separate these evidence classes:
-  - prompt assertions;
-  - synthetic text;
-  - synthetic PCM through WebRTC ASR;
-  - provider output;
-  - physical playback;
-  - human microphone accuracy.
-- If speech must precede an effect, prove it from actual playback plus its
-  processed tail, never from request time or a fixed delay.
-
-Magic Mirror specifics (files, matcher, rulings, evidence):
+Magic Mirror wiring, implementation gaps and evidence:
 [prompt controls](../mm-realtime-voice/references/prompt-controls.md).
 Sources checked 2026-10-11:
 [realtime models prompting](https://developers.openai.com/api/docs/guides/realtime-models-prompting),

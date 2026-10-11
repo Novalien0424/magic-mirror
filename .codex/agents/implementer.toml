@@ -4,6 +4,6 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Complete the assigned change and focused checks within the owned paths. Preserve others' edits, use apply_patch for source writes, and do not delegate. Follow AGENTS.md privacy, product invariants and protected boundaries; load only relevant skills.
-Use the explicit nova-auto / gpt-6.1-sol / max CLI route. Report changed files, command exits, key results and remaining risks briefly. Full output is required only for failures or an explicit request. Review the final diff once; repeat only for a concrete finding. No mandatory tester handoff, review worker or report artifact.
+Implement and check the assigned change within owned paths. Follow AGENTS.md; preserve others' edits, use apply_patch for source and do not delegate.
+Report changed files, command exits, key results and risks briefly; retain full failures. One final diff review, no mandatory tester/reviewer handoff or artifact.
 """
