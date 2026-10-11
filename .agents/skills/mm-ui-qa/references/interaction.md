@@ -1,11 +1,4 @@
-# Host and production UI interaction
-
-## Host and interaction boundaries
-
-Use `/Users/novalien0424/magic-mirror` for canonical Mac QA, and
-`C:\Project\magic-mirror` for Windows development QA. AGENTS owns runtime
-exclusivity, operator-edit preservation and the Windows-only firewall rules;
-those rules are not Mac permission evidence.
+# Display and production UI interaction
 
 Visual modes require an OS-reported portrait display and verify the actual
 Mirror window's display. `PHASE4_QA_DISPLAY` records the selection and display

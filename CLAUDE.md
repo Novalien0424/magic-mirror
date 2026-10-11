@@ -86,7 +86,8 @@ npm run build                              # prebuild regenerates assets and sta
 - `src/vendor/live2d` — vendored Cubism Framework/Core; do not edit.
 - `resources/avatar/Raven/vN/` — versioned avatar masters; new authoring gets a
   new version (see its README). `deploy/macos/` — field tooling (display,
-  board-HDMI watchdog, Jabra audio preference, LaunchAgent).
+  board ADB daemon (the HDMI watchdog is retired), Jabra audio preference,
+  LaunchAgent).
 - `tests/{unit,main,renderer,integration}` — Vitest (node environment,
   serial files).
 

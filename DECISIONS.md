@@ -1,5 +1,74 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-11 — TV power, conversation behavior and kiosk settings (user rulings)
+
+Accepted from the [second audit](docs/testing/second-audit-remaining-failures-2026-10-11.md).
+
+- **Power is human-controlled.** A person turns the TV on and off. When the TV
+  is off, Magic Mirror exits after the absence grace, by design. A future
+  Bluetooth button will start it; until then, start it through
+  `com.magicmirror.launchagent`. Auto-start before the TV, or auto-resume
+  after the TV returns, is not required.
+- **Preambles.**
+  - Quick tools get no spoken preamble.
+  - Before a slow YouTube search, Raven may say one short in-character line in
+    the reply language. It never names the tool or the mechanism.
+  - The application adds a non-verbal working cue in Active only.
+- **Language.**
+  - Default: Taiwan Mandarin in Traditional characters.
+  - Switch to English only on a complete English sentence.
+  - The Chinese greeting stays, and it does not set the reply language.
+- **Sound-alike scope** (refines the entry below).
+  - Accepted: homophones, tone differences, Simplified/Traditional, and the
+    in/ing and en/eng merges.
+  - Held until tested: zh/z, ch/c, sh/s.
+  - The whole utterance must still be the command.
+  - Stop-phrase and media-wake turns are control turns that skip extraction
+    (invariant 6).
+- **Spells.** An unmatched utterance starting with 「施放咒語」 gets one fixed
+  application-spoken, in-character retry line. The line reveals nothing about
+  spells.
+- **Model trial.** A QA-only A/B of `gpt-realtime-2.1` against `-mini` is
+  approved. A production switch needs separate approval and a versioned config
+  change (invariant 11).
+- **Persona.** Adopt the proposed sage persona after the prompt trial passes.
+- **AI disclosure.** By venue signage; nothing is shown in Dormant. Raven
+  answers truthfully, in character, if sincerely asked whether it is human.
+- **Memory.** An explicit visitor request to forget, change policy or go
+  temporary needs no extra confirmation question.
+- **Wake during media.**
+  - An audible deciding test is approved, run with the app stopped.
+  - Looping media plays about 12 dB quieter while Dormant and is restored on
+    wake, with a metadata reason.
+- **Kiosk settings.**
+  - Start the Mac when power is connected.
+  - No screen lock.
+  - Skip BetterDisplay's staged update and freeze its auto-update.
+- **Wi-Fi acceptance.**
+  - The TV's Wi-Fi root-cause item is closed as not required, because wired
+    ADB is the control path.
+  - The Mac's Wi-Fi is the Wi-Fi acceptance item.
+
+## 2026-10-11 — Spoken commands accept sound-alike wording (user ruling)
+
+- Raven is a speaking avatar, so phrases the application matches from speech
+  accept transcripts that sound the same or nearly the same. This covers
+  homophones, tone differences, Simplified/Traditional script and
+  similar-sounding words, for example 渡鴨/渡鴉 or 銀登/銀燈.
+- It applies to scene spells, the scene stop phrase, the wake phrase matched
+  from Realtime ASR during media, and future spoken commands. The local wake
+  detector already matches by pronunciation tokens. Sleep stays model-intent
+  routing.
+- In invariant 7, "normalized" now includes this deterministic local
+  pronunciation folding. It uses the shared pronunciation lexicon, never a
+  model guess. The whole utterance must still be the command. Added, missing
+  or different words, quotations, negations and hypotheticals do not trigger.
+  Mismatches keep metadata-only reasons (invariant 9).
+- The exact sound-alike classes are an implementation choice. Toneless pinyin
+  is the baseline; common Taiwan Mandarin merges such as in/ing, en/eng and
+  zh/z, ch/c, sh/s are candidates. Each must be proven with positive and
+  negative phrase lists before release.
+
 ## 2026-10-10 — Black Dormant in reflective presentation (user ruling)
 
 - In `reflective` presentation mode, a healthy Dormant stays completely black:

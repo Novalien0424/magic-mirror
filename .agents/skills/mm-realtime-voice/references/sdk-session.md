@@ -75,20 +75,35 @@ inspect keys or retain them in evidence.
   disables transcript-driven controls and extraction for that turn with a
   metadata reason, without holding ordinary conversation hostage.
 
-For a scoped recognition experiment, use a short transcription-only `prompt`
-describing the recording context, such as “Taiwan Mandarin fantasy dialogue
-using Traditional Chinese spell names.” Keep literal enabled-phrase `keywords`
-and expected `languages` separate. These are candidate context improvements,
-not a proven repair or instructions to force a spell into the transcript. Do
-not change dialogue restrictions, exact matching, model IDs or tuning merely
-because ASR differed. Validate synthesis voice/locale and RAM-only PCM
-duration/level/clipping when synthetic input is involved.
+### Transcription facts (checked 2026-10-11)
 
-[Official Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription)
-supports recording context, literal keyword hints, expected languages and delay;
-keywords do not mandate output. Model-specific fields must follow the configured
-model's contract rather than a copied example. Compare request/acknowledgement
-flags, exact-match outcome and event timing separately; keep raw text/audio in RAM.
+- **`gpt-live-transcribe` is a streaming STT model.** Its model page lists
+  transcription sessions with `turn_detection: null`. Using it inside this
+  speech-to-speech `server_vad` session works empirically but is
+  undocumented. Pre-commit deltas are documented only for transcription
+  sessions; measure them before relying on them here.
+- **`keywords`** are soft hints. Any `<`, `>`, CR or LF rejects the whole
+  update.
+- **`prompt`** (recording context) is supported. Use it to describe the
+  context, e.g. 「台灣華語與英語的魔鏡對話；咒語以「施放咒語」開頭；請用繁體中文。」,
+  never to force an expected phrase.
+- **`languages`.** `zh-tw` is valid; unsupported codes are rejected.
+- **`delay`.** The API reference says it is gpt-realtime-whisper only, while
+  the guide example uses it with live-transcribe. Treat it as possibly ignored
+  and A/B it.
+- **Detected `languages`** in completed events come from `gpt-transcribe`,
+  which needs WebSocket.
+- **Acknowledgement is not application.** The server acknowledgement echoes
+  `language`, `languages`, `model` and `prompt`, but not `keywords` or
+  `delay`. A missing echo proves neither application nor rejection.
+
+Sources:
+[Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription),
+[speech-to-text](https://developers.openai.com/api/docs/guides/speech-to-text),
+[gpt-live-transcribe](https://developers.openai.com/api/docs/models/gpt-live-transcribe).
+ASR misses are fixed in recognition config or in the sound-alike matcher
+([prompt controls](prompt-controls.md)), never with dialogue restrictions.
+Keep raw text and audio in RAM.
 
 Final transcripts, conversation audio and injected private context remain
 RAM-only, including during debugging. Selected facts and validated distilled

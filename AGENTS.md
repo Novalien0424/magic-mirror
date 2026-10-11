@@ -6,7 +6,7 @@ Complete the requested outcome with the smallest correct change and relevant evi
 
 Latest user request/routing → this file → newer DECISIONS rulings → product/spec/implementation/stack documents → PROGRESS → applicable domain facts → history. This ordering resolves project documents, not system/developer instructions.
 
-`PROGRESS.md` owns current delivery, runtime, blockers and evidence links; `DECISIONS.md` owns durable rulings. Read each only as the task needs. For another-session QA, start with current PROGRESS evidence/runbook links and `mm-ui-qa`; prior passes are historical evidence.
+`PROGRESS.md` owns current delivery, runtime, blockers and evidence links; `DECISIONS.md` owns durable rulings. Read each only as the task needs. For QA, start with current PROGRESS runbook links and `mm-ui-qa`; prior passes are history.
 
 ## Execution
 
@@ -18,27 +18,30 @@ Latest user request/routing → this file → newer DECISIONS rulings → produc
 
 ## Skills and verification
 
-**2026-10-04 workflow ruling:** default to one agent completing the fix and its
-focused checks. No mandatory survey → implementer → tester → reviewer chain,
-plan artifact, approval gate, or evidence report for routine work. Delegate only
-when an independent substantial task will save time. This supersedes older
-mandatory worker, tester-ownership, and repeated-review instructions.
+**2026-10-04 workflow ruling:** one agent completes the fix and its focused
+checks. No mandatory survey/implementer/tester/reviewer chain, plan artifact,
+approval gate, independent reviewer or routine full suite; one final diff review
+is enough unless it finds a problem. Delegate only when an independent
+substantial task will save time.
 
-Load only task-relevant skills/references. Skills provide domain facts, not fixed
-itineraries. Write harness instructions in English and keep them concise.
-Realtime tool definitions, rules and results come from the versioned shared
-catalog; keep exact spell authorization in the application.
+Load only task-relevant skills/references. Skills hold domain facts and link
+AGENTS/DECISIONS instead of restating them. Write harness instructions in
+English and keep them concise.
+
+Raven's dialogue is a probabilistic realtime speech model. Prompts and the
+versioned tool catalog shape behavior rates; application code owns
+authorization, ordering and application-spoken turns. Judge model behavior by
+rates over repeated real-provider runs with synthetic and human audio, keep
+failures, and never add regex speech filters (`roleplay-control-prompts`).
 
 Use the smallest meaningful regression check for behavior changes and static
-checks for docs/config. The implementing agent may run them directly. Reuse
-passing evidence for unchanged code; rerun only after relevant changes or a
-concrete failure. Broaden checks only for affected integration, packaging,
-privacy, mic/restart ownership, or release boundaries. One final diff review is
-enough unless it finds a problem. No routine full suite or independent reviewer.
-Report changed files, check results and unresolved risks briefly; keep full
-failure output, but do not transcribe successful commands or source reads into
-reports. Add an evidence artifact only when useful for a reproducible runtime
-result or handoff. Never claim untested runtime acceptance.
+checks for docs/config; run them directly. Reuse passing evidence for unchanged
+code; rerun only after relevant changes or a concrete failure. Broaden checks
+only for affected integration, packaging, privacy, mic/restart ownership or
+release boundaries. Report changed files, check results and unresolved risks
+briefly; keep full failure output, but do not transcribe successful commands or
+source reads. Add an evidence artifact only when useful for a reproducible
+runtime result or handoff. Never claim untested runtime acceptance.
 
 Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron
 smoke). Preserve unsaved operator edits before reload/restart.
@@ -68,58 +71,54 @@ cite primary sources and distinguish verified facts from inference.
 Preserve all 12 IDs; worker prompts name applicable IDs and reports identify those checked.
 
 1. Transcripts, conversation audio and injected private context are RAM-only;
-   diagnostics are metadata-only. Under the 2026-10-05 relationship-memory
-   implementation request, selected facts and validated distilled summaries
-   may persist in Main's private local database, scoped by avatar and confirmed
-   person. Automatic learning obeys the scope's policy; imported history stays
-   transient and persona edits stay separate. No raw conversation archive.
+   diagnostics are metadata-only. Main's private local database may keep
+   selected facts and validated distilled summaries, scoped by avatar and
+   confirmed person under that scope's learning policy. Imported history stays
+   transient, persona edits stay separate, and no raw conversation is archived.
 2. Face recognition proposes; private memory loads only after verbal confirm.
 3. Guest/candidate profile IDs stay in Electron Main and never cross
    renderer/model boundaries.
 4. Profile change closes old history, confirms in a clean Persona+Master-only
    session, then updates the agent.
 5. Extraction writes to the owner snapshot captured at turn start.
-6. Identity/naming/switch/group/sleep/spell control turns skip extraction.
-7. Scene trigger is normalized exact full-transcript match, once per turn;
-   approved presets alone control hardware.
+6. Identity/naming/switch/group/sleep and spoken-command (spell, stop,
+   media-wake) control turns skip extraction.
+7. A spoken command (scene spell, stop phrase, media wake) triggers only when
+   the whole final transcript equals it after deterministic normalization,
+   including shared-lexicon sound-alike folding; never substring, edit distance
+   or model judgment. The application authorizes once per turn; approved presets
+   alone control hardware.
 8. Exactly one microphone owner, with explicit release then acquire.
 9. Every ignore/drop/fallback/degrade is visitor-visible or a metadata-only
    Console event with a reason.
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Runtime model IDs come only from versioned config; no silent substitution.
-12. Under the dated personal-build ruling, ignored root `.env`
-    `OPENAI_API_KEY` is the sole master-key source and Electron Main alone loads
-    it. No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env, or
-    alternate fallback. Agents/workers never inspect or output its value;
-    missing/empty/read failures remain metadata-only reasons.
+12. Electron Main alone loads `OPENAI_API_KEY` from the ignored root `.env`,
+    the sole master-key source. No Console provisioning, `safeStorage`,
+    Keychain, DPAPI, process-env or other fallback. Agents/workers never inspect
+    or output its value; missing/empty/read failures are metadata-only reasons.
 
 ## Platform and protected boundaries
 
-- **2026-10-03 user authority:** this Mac is the FINAL deployment target for
-  Raven. The canonical Mac workspace is `/Users/novalien0424/magic-mirror`;
-  explicitly scoped deployment work here is authorized. This supersedes older
-  deferred-Mac/M4-port wording without changing phase acceptance or runtime
-  model IDs. Target TCC, signing, entitlements, packaged workers, LaunchAgent,
-  power/performance and wake quality require their own actual Mac evidence.
-- Windows development and functional results remain Windows evidence; never
-  claim Mac readiness from them. On Windows, launch development Electron only
-  from canonical `C:\Project\magic-mirror`. On Mac, use the canonical Mac
-  workspace. Worktrees may run Node-only tests, typechecks/build/package, never
-  Electron runtime demos or live smoke. A task's explicit no-launch boundary
-  remains binding.
-- On Windows, before the first Electron run verify persistent Private rules
-  `MagicMirror.Development.Electron.TCP` and
-  `MagicMirror.Development.Electron.UDP` target canonical
-  `node_modules\electron\dist\electron.exe`. If absent/mismatched, stop and
-  ask for elevated `scripts\configure-windows-electron-firewall.ps1` once
-  from canonical checkout. Never create worktree rules or rely on a Defender
-  prompt. After an exact match, recheck only if path/install changes or an
-  actual lookup fails; do not ask again otherwise.
+- This Mac (`/Users/novalien0424/magic-mirror`) is Raven's final deployment
+  target (2026-10-03); scoped deployment work here is authorized. Mac TCC,
+  signing, entitlements, packaged workers, LaunchAgent, power/performance and
+  wake quality need actual Mac evidence; Windows results never establish them.
+- Launch Electron only from the canonical checkout (Windows:
+  `C:\Project\magic-mirror`). Worktrees may run Node-only tests, typecheck,
+  build and package, never Electron runtime, demos or live smoke. An explicit
+  no-launch boundary stays binding.
+- Windows only: before the first Electron run, verify persistent Private rules
+  `MagicMirror.Development.Electron.TCP`/`.UDP` target canonical
+  `node_modules\electron\dist\electron.exe`. If absent or mismatched, stop and
+  ask once for elevated `scripts\configure-windows-electron-firewall.ps1` from
+  the canonical checkout. Never create worktree rules or rely on a Defender
+  prompt; recheck only after a path/install change or a failed lookup.
 - User LaunchAgent `KeepAlive={SuccessfulExit=false}` is the sole Electron
   restart owner. Recreate a failed renderer once; a failed or repeated recovery
   exits with code 1 for LaunchAgent supervision. Never `app.relaunch()` or a
-  second Electron restart owner. Board-HDMI recovery and audio-preference
-  services do not own or restart Electron.
+  second Electron restart owner. Field services (board ADB daemon, audio
+  preference) never own or restart Electron; the board-HDMI watchdog is retired.
 - Do not modify `scripts/install-node-lts.ps1`, immutable historical inputs,
   protected review/product docs, dependencies, runtime model config or phase
   status unless the task explicitly requires and names it.

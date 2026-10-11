@@ -2,7 +2,7 @@
   "schema_version": 3,
   "job_id": null,
   "scope": "portrait-to-half-body-cubism",
-  "project_root": "C:\\Project\\magic-mirror",
+  "project_root": "/Users/novalien0424/magic-mirror",
   "work_root": null,
   "updated_at": null,
   "stage": "survey",

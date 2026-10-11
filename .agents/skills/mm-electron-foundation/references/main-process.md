@@ -1,6 +1,6 @@
 # Main process, lifecycle and persistence
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed code, current DECISIONS and contract tests outrank version notes here.
 
 ## Process Model & IPC
 

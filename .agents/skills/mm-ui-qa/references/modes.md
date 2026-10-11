@@ -20,17 +20,11 @@ these routes. [Raven runner](../../../../scripts/run-raven-conversation-qa.mjs)
 adds an isolated fixture spell/scene with mock hardware, so a fixture pass does
 not establish that the ordinary published avatar has enabled spells/scenes.
 
-The [failed-run baseline](../../../../.artifacts/wake-spell-rca-2026-10-10/results.json)
-skipped the normal Mac microphone request for Phase 4 QA. Current
-[Main permission setup](../../../../src/main/index.ts) uses
-[the policy/helper](../../../../src/main/wake/microphone-permission.ts) to include
-Raven native-wake QA; inspect eligibility for the chosen mode. The helper's
-`granted` result when `required` is false remains a skip, not an OS status
-measurement. Acoustic or human-microphone QA must exercise the real
-permission/status path and report any bypass explicitly. Neither a source fix
-nor silent PCM proves a TCC outcome. Follow
-[physical wake RCA](../../mm-wake-word/references/handoff-platform.md) for native
-freshness/energy, route, delivery, detector and lifecycle evidence.
+Acoustic or human-microphone QA must exercise the real permission/status path and
+report any bypass explicitly; neither a source fix nor silent PCM proves a TCC
+outcome. [Physical wake RCA](../../mm-wake-word/references/handoff-platform.md)
+owns permission eligibility, native freshness/energy, route, delivery, detector
+and lifecycle evidence.
 
 ## Choose the evidence needed
 
@@ -40,8 +34,10 @@ freshness/energy, route, delivery, detector and lifecycle evidence.
   Retain failures; a tool-call pass does not prove pre-tool silence or mic ASR.
 
 - `node scripts/run-phase4-qa.mjs --spells-live`: synthetic text with real
-  provider speech; compares no-coaching behavior and exact prefix playback
-  before one scene. Stores comparison flags only. Does not prove microphone ASR.
+  provider speech; checks no-coaching behavior, one application cue without
+  extra speech, and one scene starting no later than cue completion (DECISIONS
+  2026-10-10). Stores comparison flags only. Does not prove microphone ASR or
+  sound-alike matching.
 - `node scripts/run-phase4-qa.mjs --video-fades`: focused Console import,
   fade editing, Save/Publish and portrait playback with computed opacity and
   embedded-video gain samples. Does not prove physical speaker output.
@@ -89,6 +85,10 @@ freshness/energy, route, delivery, detector and lifecycle evidence.
   `KeepAlive: false`, matching the deployed launch context without another restart
   owner. Direct-spawn QA remains available by omitting that flag; a permission
   result in one launch context does not prove another's capture access.
+  Agent shells under a long-lived tmux server have no login audit session, so
+  macOS hands any microphone they open digital zeros (observed 2026-10-11).
+  Run acoustic probes through the `--launch-agent` Electron path, or from the
+  owner's own Terminal session.
 
 Raven probe response counts based on `output_audio_buffer.started` describe
 provider output, not final processed speaker audibility. Distinguish generated
@@ -104,13 +104,12 @@ Dormant. A detected wake followed by a QA greeting timeout is not permission to
 reacquire wake input during Active. Retain audible and muted comparisons as
 separate results; a muted success never upgrades audible-loop acceptance.
 
-Run `npm run build` after code changes before Electron QA; the runners execute
-`out/`, not the source tree. The Phase 4 runner requires a completed build stamp
-and verifies input/output content hashes before launching. Missing, interrupted,
-stale or altered builds must be rebuilt, not bypassed. Each run retains the
-hashes and build time in `build.json`; credentials/user data are never inputs.
-Both runners require the canonical host checkout; Raven conversation QA is
-Mac-only. Prefer a named npm mode, or pass one supported flag directly to the
-Phase 4 Node runner; npm/PowerShell argument forwarding can consume flags.
+The Phase 4 runner requires a completed `npm run build` stamp and verifies
+input/output content hashes before launching. Missing, interrupted, stale or
+altered builds must be rebuilt, not bypassed. Each run retains the hashes and
+build time in `build.json`; credentials/user data are never inputs. Both runners
+require the canonical checkout; Raven conversation QA is Mac-only. Prefer a named
+npm mode, or pass one supported flag directly to the Phase 4 Node runner; npm
+argument forwarding can consume flags.
 Unknown/combined modes are rejected. Fixture fields such as `windowsDecode`
 are schema/provenance labels, not proof of Mac decoding or physical acceptance.
