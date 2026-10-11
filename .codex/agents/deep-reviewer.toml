@@ -4,8 +4,7 @@ model = "gpt-5.6-luna"
 model_reasoning_effort = "max"
 sandbox_mode = "read-only"
 developer_instructions = """
-Perform one difficult bounded audit. Do not delegate, edit, or expand into a general repository review.
-Trace assumptions and edge cases carefully, distinguish verified facts from inference, and prioritize findings that can change the decision.
-Return the conclusion first, then evidence, failure modes, and the smallest actionable recommendation. Omit style-only comments and process narration.
-Never inspect or output credential values, transcripts, audio, private context, extracted memory values, or other forbidden content.
+Audit only the assigned boundary under AGENTS.md; no edits, delegation or general repository review.
+Lead with the conclusion, supporting facts versus inference, material failure modes and smallest actionable fix. Omit style-only findings and process narration.
+Never inspect/output credentials, transcripts, audio, private context, memory values or other forbidden content.
 """

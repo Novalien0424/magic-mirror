@@ -1,130 +1,120 @@
 # Magic Mirror — Working contract
 
-Complete the requested outcome with the smallest correct change and relevant evidence. Prioritize correctness/privacy, surgical scope, then time and token cost. Continue through in-scope fixes and checks until done or concretely blocked; stop when the requested boundary is proven.
+Complete the requested outcome with the smallest correct change and relevant
+evidence. Prioritize correctness/privacy, scope, then time and token cost.
+Continue until done or concretely blocked; stop at the proven task boundary.
 
-## Authority and context
+## Authority and execution
 
-Latest user request/routing → this file → newer DECISIONS rulings → product/spec/implementation/stack documents → PROGRESS → applicable domain facts → history. This ordering resolves project documents, not system/developer instructions.
+Project precedence: latest user request/routing → this file → newer DECISIONS
+rulings → product/spec/implementation/stack → PROGRESS → domain facts → history.
+`DECISIONS.md` owns durable rulings; `PROGRESS.md` owns current delivery, runtime,
+blockers and evidence. Read only what the task needs.
 
-`PROGRESS.md` owns current delivery, runtime, blockers and evidence links; `DECISIONS.md` owns durable rulings. Read each only as the task needs. For QA, start with current PROGRESS runbook links and `mm-ui-qa`; prior passes are history.
+- Explain/review/diagnose/plan: inspect and report. Fix/change/build: implement
+  and check. Bounded work needs no plan artifact or repeated approval.
+- Start at the named path/symbol/error with targeted `rg`. Preserve others'
+  edits; avoid adjacent cleanup, refactors, renames or formatting sweeps.
+- In-scope reads, reversible edits, isolated tests and task-caused repairs are
+  authorized. Ask only for unresolved destructive actions, external writes, purchases,
+  credential rotation, irreversible migration or material expansion. Existing
+  explicit authority persists.
+- External/flaky actions get at most one retry, then report the exact failure.
+  Stop/cancel/abort terminates active work; do not restart or substitute it.
+- Report meaningful findings and blockers. Status requests use current evidence
+  or the smallest direct capture.
 
-## Execution
+## Verification and skills
 
-- Explain/review/diagnose/plan means inspect and report. Fix/change/build means make the authorized local change and finish its relevant checks. Obvious bounded work needs no plan artifact or repeated approval.
-- Start at the named path, symbol or error; use targeted `rg` and follow relevant callers/imports. Preserve user edits. No adjacent cleanup, refactor, rename, dependency update or formatting sweep.
-- In-scope reads, reversible edits, isolated tests and task-caused repairs are authorized. Ask only for unresolved destructive actions, external writes, purchases, credential rotation, irreversible migration or material expansion; existing explicit authority persists.
-- External/flaky actions get one retry at most, then the exact failure. Stop/cancel/abort terminates active commands and agents; do not substitute or restart the abandoned task.
-- Report meaningful findings, blockers and completion. Status/show/paste uses current evidence or the smallest direct capture.
+One agent normally implements and checks (2026-10-04 ruling). No mandatory
+agent chain, plan, approval gate, independent review or full suite. Use focused
+regressions for behavior and static checks for docs/config; reuse unchanged
+passing evidence. Broaden only for affected integration, packaging, privacy,
+mic/restart ownership or release boundaries. Review the final diff once unless
+it reveals a problem. Retain full failures; summarize successful checks. Create
+evidence artifacts only for useful reproduction/handoff; never claim untested
+runtime acceptance.
 
-## Skills and verification
-
-**2026-10-04 workflow ruling:** one agent completes the fix and its focused
-checks. No mandatory survey/implementer/tester/reviewer chain, plan artifact,
-approval gate, independent reviewer or routine full suite; one final diff review
-is enough unless it finds a problem. Delegate only when an independent
-substantial task will save time.
-
-Load only task-relevant skills/references. Skills hold domain facts and link
-AGENTS/DECISIONS instead of restating them. Write harness instructions in
-English and keep them concise.
-
-Raven's dialogue is a probabilistic realtime speech model. Prompts and the
-versioned tool catalog shape behavior rates; application code owns
-authorization, ordering and application-spoken turns. Judge model behavior by
-rates over repeated real-provider runs with synthetic and human audio, keep
-failures, and never add regex speech filters (`roleplay-control-prompts`).
-
-Use the smallest meaningful regression check for behavior changes and static
-checks for docs/config; run them directly. Reuse passing evidence for unchanged
-code; rerun only after relevant changes or a concrete failure. Broaden checks
-only for affected integration, packaging, privacy, mic/restart ownership or
-release boundaries. Report changed files, check results and unresolved risks
-briefly; keep full failure output, but do not transcribe successful commands or
-source reads. Add an evidence artifact only when useful for a reproducible
-runtime result or handoff. Never claim untested runtime acceptance.
-
-Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron
+Load relevant skills/references only. Keep harness instructions in English;
+skills hold domain facts, not duplicated policy. Realtime prompts/tools come
+from the versioned catalog; application code owns authorization and ordering.
+Use `roleplay-control-prompts` for model behavior, without regex speech filters.
+For QA, start at PROGRESS and `mm-ui-qa`; historical passes are not fresh QA.
+Never overlap normal Electron, Electron QA or full `npm test` (includes Electron
 smoke). Preserve unsaved operator edits before reload/restart.
 
 ## Optional delegation
 
-Root uses the session's selected model/effort. When delegation is worthwhile,
-retain the user-selected worker route: profile `nova-auto`, exact model
-`gpt-6.1-sol`, effort `max`, through the PATH-resolved CLI. No silent substitution.
-Use the canonical platform workspace (`C:\Project\magic-mirror` on Windows):
+Delegate only an independent substantial task that saves time. Root keeps the
+session's selected model/effort; workers use the PATH-resolved CLI, exact
+`nova-auto` / `gpt-6.1-sol` / `max`, without substitution:
 
 ```zsh
 codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
 ```
 
-Give a short task, owned paths, relevant constraints and expected checks.
-Workers preserve others' edits, stay in scope, use `apply_patch` for source
-writes, and do not delegate. Root integrates their result without creating a
-separate review stage. Successful output needs only commands, exits and key
-results; retain complete failures. Surveyors remain read-only; testers run the
-named checks. Use metadata-only evidence: no transcripts, audio, private context,
-memory values, credentials, images, embeddings or secrets. External findings
-cite primary sources and distinguish verified facts from inference.
+Use the canonical Windows path there. Assign owned paths, applicable invariant
+IDs and checks. Workers preserve others' edits, use `apply_patch` for source,
+and never delegate. Surveyors stay read-only; testers run assigned checks.
+Root integrates without another review stage. Return commands, exits, key
+results and checked IDs; retain failures. Evidence is metadata-only: no
+transcripts, audio, private context, memory values, credentials, images or
+embeddings. Cite primary external sources and distinguish inference.
 
 ## Canonical product invariants
 
-Preserve all 12 IDs; worker prompts name applicable IDs and reports identify those checked.
+Preserve all 12 IDs.
 
 1. Transcripts, conversation audio and injected private context are RAM-only;
-   diagnostics are metadata-only. Main's private local database may keep
-   selected facts and validated distilled summaries, scoped by avatar and
-   confirmed person under that scope's learning policy. Imported history stays
-   transient, persona edits stay separate, and no raw conversation is archived.
+   diagnostics are metadata-only. Main's private local database may persist
+   selected facts/validated summaries by avatar and confirmed person under that
+   scope's learning policy.
+   Imported history stays transient, persona edits separate; no raw archive.
 2. Face recognition proposes; private memory loads only after verbal confirm.
-3. Guest/candidate profile IDs stay in Electron Main and never cross
-   renderer/model boundaries.
+3. Guest/candidate profile IDs stay in Main, never renderer/model boundaries.
 4. Profile change closes old history, confirms in a clean Persona+Master-only
    session, then updates the agent.
 5. Extraction writes to the owner snapshot captured at turn start.
 6. Identity/naming/switch/group/sleep and spoken-command (spell, stop,
-   media-wake) control turns skip extraction.
-7. A spoken command (scene spell, stop phrase, media wake) triggers only when
-   the whole final transcript equals it after deterministic normalization,
-   including shared-lexicon sound-alike folding; never substring, edit distance
-   or model judgment. The application authorizes once per turn; approved presets
-   alone control hardware.
-8. Exactly one microphone owner, with explicit release then acquire.
+   media-wake) turns skip extraction.
+7. Commands require whole final-transcript equality after deterministic
+   normalization, including approved shared-lexicon sound-alike folding. No
+   substring, edit-distance or model authorization. Execute once per turn;
+   approved presets alone control hardware. DECISIONS owns accepted folds.
+8. Exactly one microphone owner; explicit release before acquire.
 9. Every ignore/drop/fallback/degrade is visitor-visible or a metadata-only
    Console event with a reason.
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Runtime model IDs come only from versioned config; no silent substitution.
-12. Electron Main alone loads `OPENAI_API_KEY` from the ignored root `.env`,
-    the sole master-key source. No Console provisioning, `safeStorage`,
-    Keychain, DPAPI, process-env or other fallback. Agents/workers never inspect
-    or output its value; missing/empty/read failures are metadata-only reasons.
+12. Main alone loads `OPENAI_API_KEY` from ignored root `.env`, the sole source.
+    No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env or
+    fallback. Agents never inspect/output its value; failures are metadata-only.
 
 ## Platform and protected boundaries
 
-- This Mac (`/Users/novalien0424/magic-mirror`) is Raven's final deployment
-  target (2026-10-03); scoped deployment work here is authorized. Mac TCC,
-  signing, entitlements, packaged workers, LaunchAgent, power/performance and
-  wake quality need actual Mac evidence; Windows results never establish them.
-- Launch Electron only from the canonical checkout (Windows:
-  `C:\Project\magic-mirror`). Worktrees may run Node-only tests, typecheck,
-  build and package, never Electron runtime, demos or live smoke. An explicit
-  no-launch boundary stays binding.
-- Windows only: before the first Electron run, verify persistent Private rules
+- Final Raven target: `/Users/novalien0424/magic-mirror` (2026-10-03). Scoped
+  deployment is authorized. Mac TCC/signing/entitlements, packaged workers,
+  LaunchAgent, power/performance and wake need actual Mac evidence.
+- Electron runs only from canonical checkout (Windows:
+  `C:\Project\magic-mirror`). Worktrees may run Node tests/typecheck/build/package,
+  never Electron demos/smoke. Explicit no-launch boundaries remain binding.
+- Before first Windows Electron run, verify persistent Private firewall rules
   `MagicMirror.Development.Electron.TCP`/`.UDP` target canonical
-  `node_modules\electron\dist\electron.exe`. If absent or mismatched, stop and
-  ask once for elevated `scripts\configure-windows-electron-firewall.ps1` from
-  the canonical checkout. Never create worktree rules or rely on a Defender
-  prompt; recheck only after a path/install change or a failed lookup.
-- User LaunchAgent `KeepAlive={SuccessfulExit=false}` is the sole Electron
-  restart owner. Recreate a failed renderer once; a failed or repeated recovery
-  exits with code 1 for LaunchAgent supervision. Never `app.relaunch()` or a
-  second Electron restart owner. Field services (board ADB daemon, audio
-  preference) never own or restart Electron; the board-HDMI watchdog is retired.
-- Do not modify `scripts/install-node-lts.ps1`, immutable historical inputs,
-  protected review/product docs, dependencies, runtime model config or phase
-  status unless the task explicitly requires and names it.
-- Official phases, runtime integration, demos, exits, regression, tags and
-  promotion remain sequential. Dated prep-only exceptions are not phase starts.
+  `node_modules\electron\dist\electron.exe`. If missing/mismatched, stop and ask
+  once for elevated canonical `scripts\configure-windows-electron-firewall.ps1`.
+  No worktree rules/Defender prompt; recheck after path/install change or failure.
+- User LaunchAgent `KeepAlive={SuccessfulExit=false}` alone restarts Electron.
+  Recreate a failed renderer once; failed/repeated recovery exits 1. Never
+  `app.relaunch()` or another restart owner. Board ADB/audio services do not
+  restart Electron; the board-HDMI watchdog is retired.
+- Do not modify `scripts/install-node-lts.ps1`, immutable history, protected
+  review/product docs, dependencies, runtime model config or phase status unless
+  explicitly required and named. Official phases/demos/exits/regression/tags/
+  promotion stay sequential; prep-only exceptions do not start phases.
 
 ## Handoff
 
-Lead with outcome, changed files, focused checks and material unresolved risk. At clock-out keep PROGRESS to current delivery/runtime, evidence, blockers and next action; archive superseded detail with resolvable links. Preserve failed evidence and runtime state unless shutdown is requested. Compaction does not change phase acceptance.
+Report outcome, changed files, checks and unresolved risk briefly. At clock-out,
+keep PROGRESS to current delivery/runtime, evidence, blockers and next action;
+archive superseded detail with working links. Preserve failures and runtime
+unless shutdown is requested. Compaction never changes phase acceptance.

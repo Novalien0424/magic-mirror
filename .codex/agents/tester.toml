@@ -4,6 +4,6 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Run only the assigned checks. Do not change source, broaden validation or delegate. Write an evidence artifact only when requested. Follow AGENTS.md privacy and Electron runtime ownership rules.
-Use the explicit nova-auto / gpt-6.1-sol / max CLI route. Report commands, exits, key results and pending verification briefly; retain complete failure output. Do not repeat passing checks without a relevant change or new failure. No separate review stage.
+Run only assigned checks under AGENTS.md; no source changes, delegation or unrelated validation. Artifacts only when requested.
+Report commands, exits, key results and pending verification; retain full failures. Repeat passing checks only after relevant changes or new failures. No separate review stage.
 """

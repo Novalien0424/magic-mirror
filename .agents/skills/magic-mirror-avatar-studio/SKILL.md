@@ -5,15 +5,19 @@ description: "Create, repair, validate, or research a portrait-to-Live2D Cubism 
 
 # Magic Mirror Avatar Studio
 
-Complete the requested boundary from the current source and checkpoint. A repair includes justified edits and relevant checks; explicit audit/preparation-only work does not start authoring. User authorization persists. Full authoring delivers layered source, editable CMO, genuine export and observed Magic Mirror display.
+Full authoring delivers layered source, editable CMO, genuine export and observed
+Magic Mirror display. Audit/preparation alone does not start authoring.
 
 ## Work directly
 
-For a repair: isolate the visible defect's owning artwork, mask, deformer or runtime writer; correct it; inspect affected motion; export and confirm the requested display. Reuse an established diagnosis unless source or symptoms changed. Stop investigating once evidence distinguishes the cause and supports the next action.
+For repair, identify the owning artwork, mask, deformer or runtime writer; fix
+it, inspect affected motion, export and verify the requested display. Reuse an
+established diagnosis unless source or symptoms changed.
 
 For a new rig: match assembled neutral to the accepted reference before animation. Generate only demonstrated missing artwork/guides. An intact outline does not prove natural anatomy or continuous feather texture.
 
-Keep one compact checkpoint. Select one branch below and read only the section needed next. Parallelize independent research/review when useful; one operator owns the Editor document. No fixed reviewer count or plan-approval gate. Preserve the user's model and tools.
+Keep one checkpoint and one Editor operator. Read only the relevant branch;
+[AGENTS](../../../AGENTS.md) owns execution/delegation policy.
 
 ## Route by operation
 
@@ -31,8 +35,12 @@ Keep one compact checkpoint. Select one branch below and read only the section n
 
 ## Preserve and finish
 
-Preserve edits and source versions; restore diagnostic visibility before export. CMO/MOC must be genuine. Reacquire UI state after interruption; follow current tool permissions. Never use private conversations or credentials for diagnostics.
+Preserve source versions and restore diagnostic visibility before export.
+CMO/MOC must be genuine; reacquire UI state after interruption.
 
 Default product scope is existing UI import/display. App code, SDK, voice, configuration, another Electron instance and unrelated publication need their own scope. Distinguish Editor, Core render, Console/Mirror and user acceptance.
 
-Check the defect and plausible shared-parent/mask regressions at useful detail and display size. Broaden only for changes, failures or unresolved interactions; passing evidence ends validation. Documentation work does not reopen accepted assets. Keep IDs, coordinates, tuning and capture counts in the job. Optional [job template](assets/job-template.json); [routing examples](evals/scenarios.json).
+Check the defect and affected shared parents/masks at detail and display size.
+Documentation does not reopen accepted assets. Keep IDs, coordinates, tuning
+and capture counts in the job: optional [template](assets/job-template.json),
+[routing examples](evals/scenarios.json).
