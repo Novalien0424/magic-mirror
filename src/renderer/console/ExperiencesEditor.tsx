@@ -3,9 +3,11 @@ import { useState } from 'react'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import {
-  defaultExperience, parseAvatarExperience, STUDIO_MAX_GUESTS, STUDIO_MAX_QUESTIONS, STUDIO_SLOTS, validGuestName,
-  type AvatarExperience, type GuestMatchMode, type StudioQuality, type StudioQuestion, type StudioSettings, type StudioSlot,
+  defaultExperience, parseAvatarExperience, STUDIO_MAX_GUESTS, STUDIO_MAX_QUESTIONS, STUDIO_PLACEHOLDER_INFO, STUDIO_PROMPT_INFO,
+  STUDIO_PROMPT_MAX, STUDIO_PROMPT_PLACEHOLDERS, STUDIO_PROMPT_STAGES, STUDIO_SLOTS, studioPromptIssue, validGuestName,
+  type AvatarExperience, type GuestMatchMode, type StudioPromptStage, type StudioQuality, type StudioQuestion, type StudioSettings, type StudioSlot,
 } from '../../shared/portrait-studio'
+import { STUDIO_PROMPT_DEFAULTS } from '../../shared/portrait-studio-config'
 import { HelpField } from './HelpField'
 import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
@@ -59,6 +61,20 @@ export function moveQuestion(experience: AvatarExperience, index: number, delta:
 
 export function updateQuestion(experience: AvatarExperience, index: number, patch: Partial<Omit<StudioQuestion, 'id'>>): AvatarExperience {
   return withQuestions(experience, experience.studio.questions.map((question, i) => i === index ? { ...question, ...patch } : question))
+}
+
+/** Text equal to the default stores no override, so later default improvements still apply. */
+export function setStagePrompt(experience: AvatarExperience, stage: StudioPromptStage, text: string): AvatarExperience {
+  const prompts = { ...experience.studio.prompts }
+  if (text === STUDIO_PROMPT_DEFAULTS[stage]) delete prompts[stage]
+  else prompts[stage] = text
+  return { ...experience, studio: { ...experience.studio, prompts } }
+}
+
+export function resetStagePrompts(experience: AvatarExperience, stage?: StudioPromptStage): AvatarExperience {
+  const prompts = { ...experience.studio.prompts }
+  if (stage) delete prompts[stage]
+  return { ...experience, studio: { ...experience.studio, prompts: stage ? prompts : {} } }
 }
 
 export interface GuestListParse { readonly names: string[]; readonly issues: string[] }
@@ -126,6 +142,10 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
       ...(guests.length > STUDIO_MAX_GUESTS ? [`The list has ${guests.length.toLocaleString('en-US')} names; the limit is ${STUDIO_MAX_GUESTS.toLocaleString('en-US')}.`] : []),
       ...guests.flatMap((name, index) => validGuestName(name) ? [] : [`Name ${index + 1} ${guestNameProblem(name)}`]),
     ]))
+  }
+  for (const stage of STUDIO_PROMPT_STAGES) {
+    const text = studio.prompts?.[stage]
+    if (text !== undefined) add(`prompts.${stage}`, studioPromptIssue(stage, text))
   }
   if (!Object.keys(issues).length && !parseAvatarExperience(experience)) issues.experience = 'These settings do not pass validation. Check every field in this section.'
   return issues
@@ -265,7 +285,64 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
           onNames={names => set({ ...experience, guests: { ...experience.guests, names } })} />
       </div>
     </fieldset>
+
+    <StagePrompts experience={experience} issues={issues} disabled={disabled} onChange={set} />
   </div>
+}
+
+const placeholder = (name: string): string => `{{${name}}}`
+
+/** What the avatar is told at each studio stage, in visit order; defaults stay until the operator edits one. */
+export function StagePrompts({ experience, issues, disabled, onChange }: {
+  experience: AvatarExperience
+  issues: Readonly<Record<string, string>>
+  disabled: boolean
+  onChange(experience: AvatarExperience): void
+}): React.JSX.Element {
+  const prompts = experience.studio.prompts ?? {}
+  const edited = STUDIO_PROMPT_STAGES.filter(stage => prompts[stage] !== undefined).length
+  return <fieldset disabled={disabled} aria-label="Avatar prompts at each stage">
+    <legend>Avatar prompts at each stage</legend>
+    <p className="console__muted">What the avatar is told at each step of a portrait visit, in order. Every stage starts with the tested
+      default. Edit a stage to change it for this avatar only; keep the placeholders it lists, which the mirror fills in during the visit.</p>
+    <div className="console__action-row">
+      <span className="console__muted" role="status">{edited ? `${edited} of ${STUDIO_PROMPT_STAGES.length} stages edited.` : 'All stages use the default.'}</span>
+      <button type="button" disabled={disabled || !edited} onClick={() => onChange(resetStagePrompts(experience))}>Reset all to default</button>
+    </div>
+    <ol className="experiences-editor__prompts">
+      {STUDIO_PROMPT_STAGES.map((stage, index) => {
+        const info = STUDIO_PROMPT_INFO[stage]
+        const override = prompts[stage]
+        const issue = issues[`prompts.${stage}`]
+        const { required, optional } = STUDIO_PROMPT_PLACEHOLDERS[stage]
+        const label = `${info.label} prompt`
+        return <li key={stage} className="experiences-editor__prompt">
+          <details open={override !== undefined || !!issue}>
+            <summary>
+              <span className="experiences-editor__prompt-step" aria-hidden="true">{index + 1}</span>
+              <strong>{info.label}</strong>
+              <span className={`experiences-editor__badge experiences-editor__badge--${issue ? 'issue' : override !== undefined ? 'edited' : 'default'}`}>
+                {issue ? 'Needs attention' : override !== undefined ? 'Edited' : 'Default'}</span>
+              <span className="console__muted experiences-editor__prompt-when">{info.when}</span>
+            </summary>
+            <HelpField help={`${info.when} ${FIELD_HELP.studioStagePrompt}`} helpLabel={label} error={issue}
+              className="experiences-editor__prompt-field">{info.label}<textarea aria-label={label} rows={stage === 'instructions' ? 8 : 3}
+                maxLength={stage === 'instructions' ? STUDIO_PROMPT_MAX.instructions : STUDIO_PROMPT_MAX.other}
+                value={override ?? STUDIO_PROMPT_DEFAULTS[stage]}
+                onChange={e => onChange(setStagePrompt(experience, stage, e.currentTarget.value))} /></HelpField>
+            <div className="experiences-editor__prompt-foot">
+              <span className="console__muted">{required.length + optional.length
+                ? <>Placeholders: {[...required.map(name => [name, 'required'] as const), ...optional.map(name => [name, 'optional'] as const)]
+                  .map(([name, need], i) => <React.Fragment key={name}>{i ? '; ' : ''}<code>{placeholder(name)}</code> {STUDIO_PLACEHOLDER_INFO[name]} ({need})</React.Fragment>)}</>
+                : 'No placeholders.'}</span>
+              <button type="button" aria-label={`Reset ${info.label} to default`} disabled={disabled || override === undefined}
+                onClick={() => onChange(resetStagePrompts(experience, stage))}>Reset to default</button>
+            </div>
+          </details>
+        </li>
+      })}
+    </ol>
+  </fieldset>
 }
 
 const sameNames = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((name, i) => name === b[i])

@@ -276,6 +276,20 @@ describe('Portrait Studio in the Realtime session', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('uses the avatar stage prompts for the studio instructions and the reveal', async () => {
+    const p = probe()
+    const settings = avatar()
+    const studio = { ...settings.experience!.studio, prompts: { instructions: 'Run a calm studio.', reveal: 'Describe one colour in {{language}}. Then {{followUp}}',
+      offerChange: 'ask about one change.' } }
+    const { handle } = session(p, () => accepted('studio_started'), { avatar: { ...settings, experience: { ...settings.experience!, studio } } })
+    expect(p.agents[1]!.instructions).toContain('Run a calm studio.')
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'en' }, ID)
+    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
+    const reveal = responses(p).find(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')!
+    expect(reveal.instructions).toContain('Describe one colour in English. Then ask about one change.')
+  })
+
   it('keeps the session when an agent swap races a tool call for the other agent', async () => {
     const p = probe()
     const { handle, reasons } = session(p, () => accepted('studio_started'))

@@ -4,8 +4,10 @@ import { mirrorConfigSchema } from '../../src/main/config-service'
 import { newAvatar } from '../../src/renderer/console/profile-workspace'
 import { registerStudioIpc } from '../../src/main/studio/studio-ipc'
 import { avatarProfileSessionSettings, parseAvatarSessionSettings } from '../../src/shared/avatar-prompt'
-import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, parseStudioView, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL } from '../../src/shared/portrait-studio'
-import { PORTRAIT_STUDIO } from '../../src/shared/portrait-studio-config'
+import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, parseStudioView, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL,
+  STUDIO_PROMPT_STAGES, studioPromptIssue } from '../../src/shared/portrait-studio'
+import { PORTRAIT_STUDIO, STUDIO_PROMPT_DEFAULTS, studioPrompt } from '../../src/shared/portrait-studio-config'
+import { inspectAvatarPrompts } from '../../src/shared/prompt-inspection'
 import type { MirrorConfig } from '../../src/shared/types'
 import type { ChatgptCredentialSource } from '../../src/main/chatgpt-auth/token-file'
 
@@ -45,6 +47,27 @@ describe('Portrait Studio configuration', () => {
     expect(parseAvatarExperience(experience)).not.toBeNull()
     expect(parseStudioSessionEvent({ event: 'enter', startScript: experience.studio.startScript })).not.toBeNull()
     expect(parseStudioSessionEvent({ event: 'enter', startScript: 'tab\tscript' })).toBeNull()
+  })
+
+  it('keeps settings saved before stage prompts valid and validates stage overrides', () => {
+    const legacy = defaultExperience() as unknown as { studio: Record<string, unknown> }
+    delete legacy.studio.prompts
+    expect(parseAvatarExperience(legacy)?.studio.prompts).toEqual({})
+    const withPrompt = (stage: string, text: string) => parseAvatarExperience({ ...defaultExperience(), studio: { ...defaultExperience().studio, prompts: { [stage]: text } } })
+    expect(withPrompt('confirmName', 'Say 「{{name}}」 back.')).not.toBeNull()
+    expect(withPrompt('confirmName', 'Say the name back.')).toBeNull()
+    expect(withPrompt('askName', '{{question}} {{secret}}')).toBeNull()
+    expect(withPrompt('unknownStage', 'x')).toBeNull()
+    for (const stage of STUDIO_PROMPT_STAGES) expect(studioPromptIssue(stage, STUDIO_PROMPT_DEFAULTS[stage])).toBe('')
+    expect(studioPrompt(undefined, 'painting')).toBe(STUDIO_PROMPT_DEFAULTS.painting)
+  })
+
+  it('shows each effective stage prompt and its source in the prompt inspector', () => {
+    const profile = { ...newAvatar('guide'), experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, prompts: { painting: '我要開始畫了。' } } } }
+    const sections = inspectAvatarPrompts(profile, []).pages.Session
+    const painting = sections.find(s => s.title === 'Portrait Studio stage · Painting starts')!
+    expect(painting).toMatchObject({ content: '我要開始畫了。', source: 'avatarCatalog.avatars[guide].experience.studio.prompts.painting' })
+    expect(sections.find(s => s.title === 'Portrait Studio stage · Goodbye')?.source).toMatch(/\(default\)$/)
   })
 
   it('pins the image model in versioned config and rejects unsafe view URLs', () => {

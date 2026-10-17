@@ -1036,6 +1036,24 @@ input[aria-invalid="true"] { border-color: #e8a394; }
 .experiences-editor__question-head .console__muted { margin: 0; }
 .experiences-editor__arrange { display: flex; flex-wrap: wrap; gap: .4rem; margin-left: auto; }
 .experiences-editor__guests { grid-column: 1 / -1; }
+/* Questions stack full width so whole questions stay readable while editing. */
+.profile-workspace .experiences-editor__question .console__form-grid, .experiences-editor__question .console__form-grid { grid-template-columns: minmax(0, 1fr); }
+.experiences-editor__prompts { list-style: none; margin: .75rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.experiences-editor__prompt { min-width: 0; }
+.experiences-editor__prompt > details { margin: 0; }
+.experiences-editor__prompt > details > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.experiences-editor__prompt > details > summary::before { content: '▸'; width: 1rem; color: #8fb4c6; }
+.experiences-editor__prompt > details[open] > summary::before { content: '▾'; }
+.experiences-editor__prompt > details[open] > summary { border-bottom: 1px solid #304957; }
+.experiences-editor__prompt-step { display: inline-grid; place-items: center; min-width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #1d3340; font-variant-numeric: tabular-nums; }
+.experiences-editor__prompt-when { flex-basis: 100%; margin: 0 0 0 3.2rem; font-weight: 400; }
+.experiences-editor__badge { padding: .05rem .5rem; border: 1px solid #3a5566; border-radius: 999px; font-size: .8em; }
+.experiences-editor__badge--edited { border-color: #8a7440; color: #f0d48a; }
+.experiences-editor__badge--issue { border-color: #6b514d; color: #ffb4a2; }
+.experiences-editor__prompt-field { display: grid; gap: .35rem; }
+.experiences-editor__prompt-field textarea { width: 100%; box-sizing: border-box; font-family: inherit; line-height: 1.45; }
+.experiences-editor__prompt-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.experiences-editor__prompt-foot code { padding: 0 .25rem; border-radius: .25rem; background: #1d3340; }
 .experiences-editor__guests textarea { width: 100%; box-sizing: border-box; font-family: inherit; }
 .studio-status { margin: 1rem 0; padding: 1rem; border: 1px solid #354951; border-radius: 10px; }
 .studio-status__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }

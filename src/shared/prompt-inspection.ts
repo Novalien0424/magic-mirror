@@ -1,7 +1,8 @@
 import type { AvatarProfile } from './avatar-profiles'
 import { buildAvatarPrompt, buildStudioPrompt, avatarProfileSessionSettings, avatarRealtimeTools, studioToolSpecs } from './avatar-prompt'
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, realtimeToolDefinition } from './realtime-tools'
-import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE } from './portrait-studio-config'
+import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, studioPrompt } from './portrait-studio-config'
+import { defaultExperience, STUDIO_PROMPT_INFO, STUDIO_PROMPT_STAGES } from './portrait-studio'
 import { DEFAULT_WAKE_PHRASE } from './avatar-commands'
 import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse, buildMemoryQuestion, buildMemoryState, buildMemoryAcknowledgment } from './realtime-prompts'
 import type { SceneActionDefinition } from './types'
@@ -25,7 +26,12 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
   return { name: avatar.name, pages: {
     Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
       section('Portrait Studio agent instructions · system (after updateAgent)', buildStudioPrompt(settings), `${PORTRAIT_STUDIO_SOURCE}#agent + ${REALTIME_PROMPT_SOURCE}#session + ${profileSource}.experience`),
-      section('Portrait Studio reveal · response.create', PORTRAIT_STUDIO.agent.reveal, `${PORTRAIT_STUDIO_SOURCE}#agent.reveal`),
+      ...STUDIO_PROMPT_STAGES.filter(stage => stage !== 'instructions').map(stage => {
+        const studio = (avatar.experience ?? defaultExperience()).studio
+        const edited = studio.prompts?.[stage] !== undefined
+        return section(`Portrait Studio stage · ${STUDIO_PROMPT_INFO[stage].label}`, studioPrompt(studio, stage),
+          edited ? `${profileSource}.experience.studio.prompts.${stage}` : `${PORTRAIT_STUDIO_SOURCE} (default)`)
+      }),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),

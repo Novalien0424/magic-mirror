@@ -30,6 +30,11 @@ owner-reviewed design page. Branch `feature/portrait-studio`.
 - **Limits.** No application generation limit; plan limits degrade visibly.
 - **Questions.** The proposed default questions are approved and remain
   editable in the Console, including how many.
+- **Stage prompts (owner follow-up).** What the avatar is told at every studio
+  stage is configurable per avatar in the Console (Experiences → Avatar prompts at
+  each stage), in visit order, with reset to the versioned default. Only edits are
+  stored; required placeholders such as `{{name}}` and `{{question}}` are enforced.
+  The Console UI must stay reasonable and easy to use.
 
 ## 2026-10-17 — Portrait Console mouse and remote desktop (owner confirmed)
 

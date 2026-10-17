@@ -10,6 +10,64 @@ export const STUDIO_MAX_QUESTIONS = 8
 export const STUDIO_MAX_GUESTS = 1000
 
 export interface StudioQuestion { id: string; zh: string; en: string; slot: StudioSlot }
+
+/** What the avatar is told at each studio stage, in visit order. Operators may override any of them per avatar. */
+export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'askName', 'confirmName', 'chooseGuest', 'guestOnly', 'askQuestion',
+  'painting', 'reveal', 'revealBlind', 'offerChange', 'repainting', 'noChangesLeft', 'finalVersion', 'finished', 'exited'] as const)
+export type StudioPromptStage = typeof STUDIO_PROMPT_STAGES[number]
+/** Placeholders each stage supports: required ones must stay in the text; any other placeholder is rejected. */
+export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
+  instructions: { required: [], optional: [] }, askName: { required: ['question'], optional: [] },
+  confirmName: { required: ['name'], optional: [] }, chooseGuest: { required: ['candidates'], optional: [] },
+  guestOnly: { required: [], optional: [] }, askQuestion: { required: ['question'], optional: ['index', 'count'] },
+  painting: { required: [], optional: [] }, reveal: { required: ['followUp'], optional: ['language'] },
+  revealBlind: { required: ['followUp'], optional: ['language'] }, offerChange: { required: [], optional: [] },
+  repainting: { required: [], optional: [] }, noChangesLeft: { required: [], optional: [] },
+  finalVersion: { required: [], optional: [] }, finished: { required: [], optional: [] }, exited: { required: [], optional: [] },
+})
+export const STUDIO_PROMPT_MAX = Object.freeze({ instructions: 4000, other: 1000 })
+/** Operator-facing name and moment of each stage prompt (Console editor and prompt inspector). */
+export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: string; when: string }>> = Object.freeze({
+  instructions: { label: 'Studio instructions', when: 'Always in effect while the studio is open: how the avatar runs the studio.' },
+  askName: { label: 'Ask the name', when: 'Right after the studio opens.' },
+  confirmName: { label: 'Read the name back', when: 'After the visitor says a name, before it is confirmed.' },
+  chooseGuest: { label: 'Guest list: close matches', when: 'When the guest list has names close to what the visitor said.' },
+  guestOnly: { label: 'Guest list: no match', when: 'When only listed guests may take part and no listed name matches.' },
+  askQuestion: { label: 'Each question', when: 'Before every portrait question, in order.' },
+  painting: { label: 'Painting starts', when: 'After the last answer, while the first portrait is painted.' },
+  reveal: { label: 'Reveal', when: 'When the portrait appears on the mirror and the avatar can see it.' },
+  revealBlind: { label: 'Reveal without the image', when: 'When the portrait appears but its image could not be shown to the avatar.' },
+  offerChange: { label: 'Offer a change', when: 'Added to the reveal while the visitor may still ask for a change.' },
+  repainting: { label: 'Repainting', when: 'After the visitor asks for a change.' },
+  noChangesLeft: { label: 'No changes left', when: 'When the visitor asks for another change after the last allowed one.' },
+  finalVersion: { label: 'Final version', when: 'Added to the reveal when no more changes are allowed.' },
+  finished: { label: 'Goodbye', when: 'When the visitor is happy; the portrait stays on the mirror for photos.' },
+  exited: { label: 'Studio closed', when: 'When the visitor stops the studio to keep chatting.' },
+})
+export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.freeze({
+  question: 'the question text', name: 'the name the avatar heard', candidates: 'up to three matching guest names',
+  index: 'the question number', count: 'the number of questions', followUp: 'the Offer a change or Final version prompt',
+  language: "the visitor's language",
+})
+/** Per-avatar overrides; a stage without one uses the versioned default. */
+export type StudioPrompts = Partial<Record<StudioPromptStage, string>>
+
+/** Operator-facing problem with a stage prompt, or '' when it is valid. */
+export function studioPromptIssue(stage: StudioPromptStage, text: unknown): string {
+  const max = stage === 'instructions' ? STUDIO_PROMPT_MAX.instructions : STUDIO_PROMPT_MAX.other
+  if (typeof text !== 'string' || !text.trim()) return 'Enter what the avatar is told at this stage, or reset it to the default.'
+  if (text.length > max) return `Use ${max} characters or fewer (now ${text.length}).`
+  if (/[\u0000-\u0009\u000b-\u001f\u007f]/u.test(text)) return 'Remove tabs and other control characters.'
+  const { required, optional } = STUDIO_PROMPT_PLACEHOLDERS[stage]
+  const used = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map(match => match[1]!))]
+  const unknown = used.filter(name => !required.includes(name) && !optional.includes(name))
+  if (unknown.length) return `Remove ${unknown.map(name => `{{${name}}}`).join(', ')}: this stage ${required.length + optional.length
+    ? `supports only ${[...required, ...optional].map(name => `{{${name}}}`).join(', ')}` : 'has no placeholders'}.`
+  const missing = required.filter(name => !used.includes(name))
+  if (missing.length) return `Keep ${missing.map(name => `{{${name}}}`).join(' and ')}; the avatar needs ${missing.length === 1 ? 'it' : 'them'} at this stage.`
+  return ''
+}
+
 export interface StudioSettings {
   startScript: string
   nameQuestion: { zh: string; en: string }
@@ -19,6 +77,7 @@ export interface StudioSettings {
   quality: StudioQuality
   revisionsAllowed: number
   holdSeconds: number
+  prompts: StudioPrompts
 }
 /** Operator-entered event guests. Stays in Main; never sent to renderers or the model as a list. */
 export interface GuestListSettings { names: string[]; match: GuestMatchMode }
@@ -56,6 +115,7 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
     quality: 'medium',
     revisionsAllowed: 1,
     holdSeconds: 45,
+    prompts: {},
   },
   guests: { names: [], match: 'prefer' },
 } satisfies AvatarExperience)
@@ -71,8 +131,19 @@ export function studioText(value: unknown, max: number, allowEmpty = false, mult
 }
 export function validGuestName(value: unknown): value is string { return studioText(value, 40) && value.trim() === value }
 
-function parseStudioSettings(value: unknown): StudioSettings | null {
-  if (!record(value) || !exact(value, ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds'])) return null
+function parseStudioPrompts(value: unknown): StudioPrompts | null {
+  if (!record(value)) return null
+  for (const [stage, text] of Object.entries(value)) {
+    if (!STUDIO_PROMPT_STAGES.includes(stage as StudioPromptStage) || studioPromptIssue(stage as StudioPromptStage, text)) return null
+  }
+  return structuredClone(value) as StudioPrompts
+}
+
+function parseStudioSettings(input: unknown): StudioSettings | null {
+  // Settings saved before stage prompts existed use every default.
+  const value = record(input) && !Object.hasOwn(input, 'prompts') ? { ...input, prompts: {} } : input
+  if (!record(value) || !exact(value, ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts'])
+    || !parseStudioPrompts(value.prompts)) return null
   const name = value.nameQuestion
   if (!studioText(value.startScript, 500, false, true) || !record(name) || !exact(name, ['zh', 'en']) || !studioText(name.zh, 200) || !studioText(name.en, 200)
     || !Array.isArray(value.questions) || value.questions.length < 1 || value.questions.length > STUDIO_MAX_QUESTIONS
@@ -92,11 +163,12 @@ function parseStudioSettings(value: unknown): StudioSettings | null {
 export function parseAvatarExperience(value: unknown): AvatarExperience | null {
   if (!record(value) || !exact(value, ['defaultMode', 'visitorMayRequest', 'afterPortrait', 'studio', 'guests'])) return null
   const guests = value.guests
+  const studio = parseStudioSettings(value.studio)
   if ((value.defaultMode !== 'conversation' && value.defaultMode !== 'portrait_studio') || typeof value.visitorMayRequest !== 'boolean'
-    || (value.afterPortrait !== 'continue' && value.afterPortrait !== 'farewell') || !parseStudioSettings(value.studio)
+    || (value.afterPortrait !== 'continue' && value.afterPortrait !== 'farewell') || !studio
     || !record(guests) || !exact(guests, ['names', 'match']) || !['off', 'prefer', 'only'].includes(guests.match as string)
     || !Array.isArray(guests.names) || guests.names.length > STUDIO_MAX_GUESTS || !guests.names.every(validGuestName)) return null
-  return structuredClone(value) as unknown as AvatarExperience
+  return { ...structuredClone(value), studio } as unknown as AvatarExperience
 }
 
 export function sessionExperience(experience: AvatarExperience): SessionExperience {

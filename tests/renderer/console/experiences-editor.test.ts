@@ -2,8 +2,10 @@ import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
-  ExperiencesEditor, GuestListField, addQuestion, experienceIssues, experienceOf, moveQuestion, parseGuestList, removeQuestion,
+  ExperiencesEditor, GuestListField, StagePrompts, addQuestion, experienceIssues, experienceOf, moveQuestion, parseGuestList, removeQuestion,
+  resetStagePrompts, setStagePrompt,
 } from '../../../src/renderer/console/ExperiencesEditor'
+import { STUDIO_PROMPT_DEFAULTS } from '../../../src/shared/portrait-studio-config'
 import {
   STUDIO_LOGIN_COMMAND, STUDIO_USAGE_URL, StudioLiveControls, StudioStatusPanel, safePreviewUrl, studioActionText, studioAuthText,
   studioFailureText, studioPhaseText,
@@ -251,5 +253,36 @@ describe('Portrait Studio status panel', () => {
     const live = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'active', visible: true }))
     expect(live).toMatch(/<button type="button" aria-describedby="studio-live-hint">Start Portrait Studio<\/button>/)
     expect(live).toContain('Back to conversation')
+  })
+
+  it('edits each stage prompt in visit order, stores only real overrides and resets them', () => {
+    let experience = defaultExperience()
+    const tree = () => elements(StagePrompts({ experience, issues: experienceIssues(experience), disabled: false, onChange(next) { experience = next } }))
+    const textarea = (label: string) => tree().find(item => item.props['aria-label'] === label)!
+    const html = () => renderToStaticMarkup(React.createElement(StagePrompts, { experience, issues: experienceIssues(experience), disabled: false, onChange() {} }))
+    expect(html().match(/experiences-editor__prompt-step/g)).toHaveLength(15)
+    expect(html()).toContain('All stages use the default.')
+    expect(textarea('Read the name back prompt').props.value).toBe(STUDIO_PROMPT_DEFAULTS.confirmName)
+    ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請慢慢念出「{{name}}」，再問對不對。' } })
+    expect(experience.studio.prompts).toEqual({ confirmName: '請慢慢念出「{{name}}」，再問對不對。' })
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    expect(html()).toContain('1 of 15 stages edited.')
+    expect(html()).toContain('Edited')
+    // Removing a required placeholder is flagged and blocks saving.
+    ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請確認名字。' } })
+    expect(experienceIssues(experience)['prompts.confirmName']).toMatch(/Keep \{\{name\}\}/)
+    expect(parseAvatarExperience(experience)).toBeNull()
+    expect(html()).toContain('Needs attention')
+    // Typing the default text back stores no override.
+    ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: STUDIO_PROMPT_DEFAULTS.confirmName } })
+    expect(experience.studio.prompts).toEqual({})
+    experience = setStagePrompt(setStagePrompt(experience, 'painting', '開始畫吧。'), 'finished', '這是你的畫。')
+    expect(resetStagePrompts(experience, 'painting').studio.prompts).toEqual({ finished: '這是你的畫。' })
+    expect(resetStagePrompts(experience).studio.prompts).toEqual({})
+    // Unknown placeholders are rejected with the supported list.
+    expect(experienceIssues(setStagePrompt(experience, 'askQuestion', '{{question}} {{name}}'))['prompts.askQuestion'])
+      .toMatch(/Remove \{\{name\}\}.*\{\{question\}\}, \{\{index\}\}, \{\{count\}\}/)
+    // Every prompt control is described for assistive technology.
+    for (const item of tree().filter(isControl)) expect(item.props['aria-label']).toBeTruthy()
   })
 })

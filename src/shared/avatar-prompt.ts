@@ -3,7 +3,7 @@ import { parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolInstruction
 import baseline from '../../resources/testing/raven-prompt-baseline.v1.json' with { type: 'json' }
 import merged from '../../resources/testing/raven-merged-media.v1.json' with { type: 'json' }
 import focused from '../../resources/testing/raven-focused.v1.json' with { type: 'json' }
-import { PORTRAIT_STUDIO } from './portrait-studio-config'
+import { studioPrompt } from './portrait-studio-config'
 import { DEFAULT_EXPERIENCE, defaultExperience } from './portrait-studio'
 import { avatarCatalogFor, type AvatarProfile } from './avatar-profiles'
 import { DEFAULT_PRESENTATION } from './presentation'
@@ -99,7 +99,7 @@ export function studioToolSpecs(avatar: AvatarSessionSettings): readonly Realtim
 /** Portrait Studio agent instructions: persona plus the studio script; no private memory or media tools. */
 export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
   const studio = avatar.experience?.studio ?? defaultExperience().studio
-  const script = [PORTRAIT_STUDIO.agent.studio,
+  const script = [studioPrompt(studio, 'instructions'),
     `Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
     `After the name there are ${studio.questions.length} portrait questions; the application gives each one in the tool guidance.`].join('\n')
   return renderPrompt('session', { name: avatar.name, personality: avatar.personality,

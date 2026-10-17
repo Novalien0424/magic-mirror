@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt } from '../../shared/portrait-studio-config'
 import type {
-  AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
+  AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
 } from '../../shared/portrait-studio'
 import type { PortraitImageProvider, PortraitImageResult } from './image-provider'
 import { matchGuestNames, guestTextKey } from './guest-names'
@@ -33,7 +33,9 @@ interface Run {
   activityHeld: boolean
 }
 
+// Technical guidance stays versioned; operator-editable stage prompts come from the run's avatar.
 const G = PORTRAIT_STUDIO.guidance
+const prompt = (r: { experience: AvatarExperience }, stage: StudioPromptStage) => studioPrompt(r.experience.studio, stage)
 const reply = (status: StudioReply['status'], code: string, next?: string, candidates?: string[]): StudioReply =>
   ({ status, code, ...(next ? { next } : {}), ...(candidates?.length ? { candidates } : {}) })
 
@@ -58,9 +60,9 @@ export function createStudioRuntime(input: {
   const questionText = (r: Run, index: number) => question(r, index)[r.language]
   const nameQuestion = (r: Run) => r.experience.studio.nameQuestion[r.language]
   const guests = (r: Run) => r.experience.guests.match === 'off' ? [] : r.experience.guests.names
-  const currentStep = (r: Run): string => r.phase === 'name' || r.phase === 'confirm' ? renderStudioText(G.askName, { question: nameQuestion(r) })
-    : r.phase === 'question' ? renderStudioText(G.askQuestion, { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: questionText(r, r.answers.length) })
-    : r.phase === 'reveal' ? PORTRAIT_STUDIO.agent.offerChange : r.phase === 'keepsake' ? G.finished : G.busy
+  const currentStep = (r: Run): string => r.phase === 'name' || r.phase === 'confirm' ? renderStudioText(prompt(r, 'askName'), { question: nameQuestion(r) })
+    : r.phase === 'question' ? renderStudioText(prompt(r, 'askQuestion'), { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: questionText(r, r.answers.length) })
+    : r.phase === 'reveal' ? prompt(r, 'offerChange') : r.phase === 'keepsake' ? prompt(r, 'finished') : G.busy
 
   function view(r: Run): StudioView {
     const count = r.experience.studio.questions.length
@@ -170,13 +172,13 @@ export function createStudioRuntime(input: {
     run = r
     input.report(`studio_started_${source}`)
     publish(r)
-    return reply('accepted', 'studio_started', renderStudioText(G.askName, { question: nameQuestion(r) }))
+    return reply('accepted', 'studio_started', renderStudioText(prompt(r, 'askName'), { question: nameQuestion(r) }))
   }
 
   function handle(request: Exclude<StudioRequest, { action: 'start' }>, identity: StudioIdentity): StudioReply {
     const r = run
     if (!r || !sameIdentity(r.identity, identity)) return reply('ignored', 'studio_not_active_stale')
-    if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', G.exited) }
+    if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', prompt(r, 'exited')) }
     if (request.action === 'set_name') {
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
@@ -186,9 +188,9 @@ export function createStudioRuntime(input: {
       const candidates = list.length ? matchGuestNames(name, list) : []
       const listed = list.some(guest => guest === name)
       if (r.experience.guests.match === 'only' && list.length && !listed) {
-        if (!candidates.length) { r.phase = 'name'; publish(r); return reply('rejected', 'studio_name_not_listed', G.guestOnly) }
+        if (!candidates.length) { r.phase = 'name'; publish(r); return reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')) }
         r.phase = 'confirm'; publish(r)
-        return reply('accepted', 'studio_name_candidates', renderStudioText(G.chooseGuest, { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
+        return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
       }
       r.nameAttempts += request.confirmed ? 0 : 1
       if (request.confirmed || r.nameAttempts > 3) {
@@ -202,9 +204,9 @@ export function createStudioRuntime(input: {
       r.phase = 'confirm'
       publish(r)
       if (candidates.length && !listed) {
-        return reply('accepted', 'studio_name_candidates', renderStudioText(G.chooseGuest, { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
+        return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
       }
-      return reply('accepted', 'studio_name_heard', renderStudioText(G.confirmName, { name }))
+      return reply('accepted', 'studio_name_heard', renderStudioText(prompt(r, 'confirmName'), { name }))
     }
     if (request.action === 'answer') {
       const expected = r.answers.length + 1
@@ -219,25 +221,25 @@ export function createStudioRuntime(input: {
       r.phase = 'painting'
       input.report('studio_painting_started')
       void paint(r, 'generate')
-      return reply('accepted', 'studio_painting', G.painting)
+      return reply('accepted', 'studio_painting', prompt(r, 'painting'))
     }
     if (request.action === 'revise') {
       if (r.phase === 'revising' || r.phase === 'painting') return reply('ignored', 'studio_revise_duplicate')
       if (r.phase !== 'reveal') return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
-      if (r.revisionsLeft <= 0) return reply('rejected', 'studio_no_changes_left', G.noChangesLeft)
+      if (r.revisionsLeft <= 0) return reply('rejected', 'studio_no_changes_left', prompt(r, 'noChangesLeft'))
       r.revisionsLeft -= 1
       r.change = request.change.trim()
       r.phase = 'revising'
       input.report('studio_revision_requested')
       void paint(r, 'edit')
-      return reply('accepted', 'studio_repainting', G.repainting)
+      return reply('accepted', 'studio_repainting', prompt(r, 'repainting'))
     }
     // finish
     if (r.phase === 'keepsake') return reply('ignored', 'studio_finish_duplicate')
     if (r.phase !== 'reveal') return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
     startKeepsake(r)
     input.report('studio_finished')
-    return reply('accepted', 'studio_finished', G.finished)
+    return reply('accepted', 'studio_finished', prompt(r, 'finished'))
   }
 
   /** Main's authoritative session identity changed (rollover, sleep, end): a run never outlives its session. */

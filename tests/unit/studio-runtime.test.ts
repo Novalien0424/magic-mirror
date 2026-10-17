@@ -180,4 +180,13 @@ describe('portrait studio runtime', () => {
     expect(reply.next).toContain('photograph')
     expect(reply.next).not.toContain('being painted')
   })
+
+  it("guides the avatar with this avatar's stage prompts where the operator edited them", () => {
+    const h = harness()
+    const experience = { ...h.experience, studio: { ...h.experience.studio, prompts: { askName: 'Open warmly, then ask: {{question}}', confirmName: 'Spell out 「{{name}}」.' } } }
+    expect(h.runtime.start(identity, experience, 'visitor').next).toBe(`Open warmly, then ask: ${experience.studio.nameQuestion.zh}`)
+    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: false, language: 'zh' }, identity).next).toBe('Spell out 「王曉明」.')
+    // Stages without an override keep the versioned default.
+    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity).next).toContain('1 of 4')
+  })
 })

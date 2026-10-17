@@ -6,7 +6,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
-import { PORTRAIT_STUDIO, renderStudioText } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioPrompt } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent } from '../../shared/portrait-studio'
 import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
@@ -669,7 +669,7 @@ export function createRealtimeSession(
         // A reply suppressed by a spoken command reached no Main; the studio stays open on both sides.
         if (studioActive && result.outcome === 'ignored') return result
         await exitStudio()
-        return result.outcome === 'ignored' ? { outcome: 'accepted' as const, studio: { status: 'accepted' as const, code: 'studio_exited', next: PORTRAIT_STUDIO.guidance.exited } } : result
+        return result.outcome === 'ignored' ? { outcome: 'accepted' as const, studio: { status: 'accepted' as const, code: 'studio_exited', next: studioPrompt(input.avatar?.experience?.studio, 'exited') } } : result
       },
       play: async args => {
         const generation = memoryTurnGeneration
@@ -2175,10 +2175,10 @@ export function createRealtimeSession(
   function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean): boolean {
     if (closed) return false
     if (!studioActive) { emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt); return false }
-    const agentText = PORTRAIT_STUDIO.agent
-    const instructions = `${studioInstructions}\n\n${renderStudioText(dataUrl ? agentText.reveal : agentText.revealBlind, {
+    const studio = input.avatar?.experience?.studio
+    const instructions = `${studioInstructions}\n\n${renderStudioText(studioPrompt(studio, dataUrl ? 'reveal' : 'revealBlind'), {
       language: event.language === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese',
-      followUp: event.revisionsLeft > 0 ? agentText.offerChange : agentText.finalVersion })}`
+      followUp: studioPrompt(studio, event.revisionsLeft > 0 ? 'offerChange' : 'finalVersion') })}`
     try {
       if (dataUrl) {
         if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem)

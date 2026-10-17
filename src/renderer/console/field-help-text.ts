@@ -132,6 +132,7 @@ export const FIELD_HELP = {
   studioRevisions: 'How many changes a visitor may request after seeing the portrait, from 0 to 3. Each change repaints the portrait, so the visitor waits again. 0 shows the first portrait as final.',
   studioHoldSeconds: 'How many seconds the final portrait stays on the mirror so visitors can take a photo, from 10 to 300. After this time the avatar continues according to After the portrait.',
   guestMatch: 'Off ignores the guest list. Prefer guest list suggests the closest listed names but accepts any name. Only guests on the list accepts listed names only and asks the visitor again when no listed name matches. Matching compares pronunciation as well as spelling.',
+  studioStagePrompt: 'Write it in English or Chinese; the avatar still replies in the visitor’s language. Keep every required placeholder: the mirror replaces it with the live value, such as the visitor’s name or the current question. Reset to default restores the tested wording. Save, check and publish to use it in the next visit.',
   guestNames: 'Event guest names, one per line, up to 1,000 names of 40 characters each. Blank lines are ignored. The list stays on this Mac; the model only ever sees up to three names that match what the visitor said.',
 } as const
 
