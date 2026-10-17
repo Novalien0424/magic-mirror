@@ -46,7 +46,7 @@ describe("matchExactSpell", () => {
     const positives = [
       "AX 7", " AX 7", "AX 7 ", "  AX 7  ", "ＡＸ ７",
       "AX, 7", "AX. 7", "AX 7!", "AX 7?", "AX: 7",
-      "AX; 7", "(AX 7)", "[AX 7]", "‘AX 7’", "“AX 7”",
+      "AX; 7", "(AX 7)", "[AX 7]", "AX 7。", "AX 7！",
       "ＡＸ，　７", "ＡＸ。　７", "ＡＸ：　７", "ＡＸ；　７", "！AX 7！",
     ];
 

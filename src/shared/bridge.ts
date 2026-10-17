@@ -252,7 +252,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeFailure(report: RealtimeFailureReport): void
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
-  requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./realtime-tools').ToolOutcome>
+  requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./media-skill').MediaSkillResult>
   findMedia?(request: import('./media-discovery').MediaDiscoveryRequest, identity: RealtimeSessionIdentity): Promise<import('./media-discovery').MediaDiscoveryReply>
   searchYoutube?(request: import('./youtube-search').YoutubeSearchRequest, identity: RealtimeSessionIdentity): Promise<import('./youtube-search').YoutubeSearchReply>
   captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>

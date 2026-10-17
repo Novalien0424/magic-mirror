@@ -20,6 +20,7 @@ interface TestRuntimeOptions {
     probeModelAvailability(request: { readonly modelId: string }): Promise<{ readonly status: ProbeStatus }>
   }
   readonly realtimeDialogue?: unknown
+  readonly openSqlite?: () => unknown
   readonly initialize?: () => Promise<unknown>
   readonly wake?: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
   readonly wakeMicrophoneHandoff?: {
@@ -45,7 +46,7 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
     isPackaged: options.isPackaged,
     createTelemetry: () => ({
       emit() {},
-      readPage: () => [],
+      readPage: () => ({ events: [], nextBeforeSequence: null }),
       flush: async () => {},
       close: async () => {},
     } as never),
@@ -67,7 +68,7 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
       },
     } as never),
     clientSecretBroker: options.clientSecretBroker as never,
-    openSqlite: () => ({ close() {} } as never),
+    openSqlite: (options.openSqlite ?? (() => ({ close() {} }))) as never,
     createMockModuleFactory: () => ({ create: () => ({}) } as never),
     createModuleRegistry: () => ({
       getStatus: () => 'not_implemented',
@@ -102,6 +103,72 @@ describe('Main lifecycle remediation', () => {
     await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
     return runtime
   }
+  it.each(['config', 'sqlite'] as const)('keeps persistent %s faults in stable Maintenance with Console available', async failure => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success)
+    const runtime = createTestRuntime({ onFatalFailure: fatal, rebuildWakeOwner: rebuild,
+      ...(failure === 'config' ? { initialize: async () => { throw Error('synthetic_invalid_config') } }
+        : { openSqlite: () => ({ ok: false, error: { code: 'sqlite_open_failed', reason: 'open_failed' } }) }) })
+    await runtime.ready
+    const original = runtime.snapshot()
+    expect(original.lifecycle).toBe('maintenance')
+    runtime.handleMirrorRendererGone()
+    await runtime.handleMirrorRendererReady()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'maintenance', lastError: original.lastError, maintenance: original.maintenance })
+    expect(runtime.console.getOverview().ok).toBe(true)
+    expect(fatal).not.toHaveBeenCalled()
+    expect(rebuild).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it('treats activation timeout as cloud failure only after renderer stop, without using the audio retry', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success), acquire = vi.fn(async () => success), commands: string[] = []
+    const runtime = createTestRuntime({ onFatalFailure: fatal, rebuildWakeOwner: rebuild,
+      wakeMicrophoneHandoff: { release: async () => success, acquire },
+      dispatchRealtimeRuntimeCommand: command => { commands.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' } } })
+    await startRuntime(runtime)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(commands).toEqual(['start', 'stop'])
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'activating', maintenance: null,
+      lastError: { module: 'openai', error_code: 'realtime_activation_timeout' } })
+    expect(acquire).not.toHaveBeenCalled()
+    expect(runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'late_connected' })).toMatchObject({ status: 'ignored' })
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'offlineLoop', maintenance: null,
+      lastError: { module: 'openai', error_code: 'realtime_activation_timeout' } })
+    expect(rebuild).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(commands).toEqual(['start', 'stop'])
+    // A subsequent real stop failure still has its one audio recovery attempt.
+    await runtime.handleSimulator({ type: 'cloud_recovery' })
+    await runtime.manualStart()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    await runtime.manualStop()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'stop_cleanup_failed' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(commands.slice(-2)).toEqual(['stop', 'stop'])
+    expect(fatal).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it.each(['audio', 'renderer'] as const)('lets a persistent core fault supersede pending %s recovery', async mode => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success)
+    const runtime = await active({ onFatalFailure: fatal, rebuildWakeOwner: rebuild })
+    if (mode === 'renderer') runtime.handleMirrorRendererGone()
+    else {
+      await runtime.manualStop()
+      await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'synthetic_stop_failure' })
+    }
+    await runtime.handleSimulator({ type: 'sqlite_failure' })
+    await runtime.handleMirrorRendererReady()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'maintenance', lastError: { error_code: 'sqlite_open_failed' } })
+    expect(fatal).not.toHaveBeenCalled()
+    expect(rebuild).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
   it.each(['failed', 'ignored'] as const)('closes the old renderer after %s rollover before wake acquires', async status => {
     const calls: string[] = []
     const runtime = await active({ wakeMicrophoneHandoff: {
@@ -563,7 +630,7 @@ describe('BootRuntime configured model availability probe', () => {
     expect(snapshot).toEqual(expect.objectContaining({
       configVersion: 1,
       fingerprint: 'a'.repeat(64),
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: 'configured-realtime-model',
       inputTranscription: 'configured-transcription-model',
       voice: 'marin',

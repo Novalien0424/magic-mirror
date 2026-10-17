@@ -6,7 +6,8 @@ server-acknowledged configuration and measured recognition quality.
 
 ## Packages and session creation
 
-- `@openai/agents` **0.16.1** and `@openai/agents-realtime` **0.16.1**;
+- `@openai/agents` **0.20.0** and `@openai/agents-realtime` **0.20.0**
+  ([release](https://github.com/openai/openai-agents-js/releases/tag/v0.20.0));
   realtime imports use the official subpath `@openai/agents/realtime`.
   The package graph uses `@openai/agents-core` and `@openai/agents-openai`.
   `openai ^7.2.0` is an umbrella-package dependency, not an
@@ -24,7 +25,7 @@ const session = new RealtimeSession(agent, {
   config: {
     audio: {
       input: {
-        transcription: cfg.transcription, // model, languages, keywords, delay from the current builder
+        transcription: cfg.transcription, // model and supported hints from the current builder
         turnDetection: cfg.turnDetection,
       },
       output: { voice: cfg.voice },
@@ -63,10 +64,10 @@ inspect keys or retain them in evidence.
   `conversation.item.input_audio_transcription.completed` with `item_id` and
   `transcript`; the SDK surfaces it via `history_updated` and `history_added`.
 - [Current adapter](../../../../src/renderer/realtime/realtime-session-adapter.ts)
-  takes the transcription model from the session snapshot and languages/delay
+  takes the transcription model from the session snapshot and language hints
   from the versioned prompt catalog. It supplies selected wake/sleep/enabled spell
-  phrases as `keywords`; it currently supplies no transcription `prompt`.
-- In installed SDK 0.16.1, `OpenAIRealtimeBase._getMergedSessionConfig` forwards
+  phrases as `keywords` and the catalog's `transcription.prompt`.
+- In installed SDK 0.20.0, `OpenAIRealtimeBase._getMergedSessionConfig` forwards
   the nested transcription object without stripping those fields. This proves
   serialization, not server acknowledgement or that a hint was recognized.
 - Transcription is separate from the dialogue model's audio understanding.
@@ -84,13 +85,13 @@ inspect keys or retain them in evidence.
   sessions; measure them before relying on them here.
 - **`keywords`** are soft hints. Any `<`, `>`, CR or LF rejects the whole
   update.
-- **`prompt`** (recording context) is supported. Use it to describe the
-  context, e.g. 「台灣華語與英語的魔鏡對話；咒語以「施放咒語」開頭；請用繁體中文。」,
-  never to force an expected phrase.
+- **`prompt`** (recording context) is supported. Describe the context
+  (`realtime.v1.json#transcription.prompt`), never force an expected phrase;
+  measure whether a primed prefix raises false spell-prefix turns.
 - **`languages`.** `zh-tw` is valid; unsupported codes are rejected.
-- **`delay`.** The API reference says it is gpt-realtime-whisper only, while
-  the guide example uses it with live-transcribe. Treat it as possibly ignored
-  and A/B it.
+- **`delay`.** Send it only for models in the catalog's `delayModels` allowlist
+  (`gpt-realtime-whisper`); the [API reference](https://developers.openai.com/api/reference/resources/realtime/client-events) does not support it for the
+  current live-transcribe model.
 - **Detected `languages`** in completed events come from `gpt-transcribe`,
   which needs WebSocket.
 - **Acknowledgement is not application.** The server acknowledgement echoes

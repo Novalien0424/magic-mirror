@@ -15,6 +15,7 @@ import { InvalidMotionQueueEntryHandleValue } from '../../vendor/live2d/Framewor
 import type { CubismIdHandle } from '../../vendor/live2d/Framework/dist/id/cubismid'
 import { CubismMatrix44 } from '../../vendor/live2d/Framework/dist/math/cubismmatrix44'
 import { CubismWebGLOffscreenManager } from '../../vendor/live2d/Framework/dist/rendering/cubismoffscreenmanager'
+import { CubismShaderManager_WebGL } from '../../vendor/live2d/Framework/dist/rendering/cubismshader_webgl'
 import {
   renExpressionForState,
   resolveAvatarModelSource,
@@ -40,6 +41,7 @@ const GAZE_STATES = new Set<AvatarState>(['Listening', 'Thinking', 'Speaking'])
 export type CubismAvatarFailureReason =
   | 'avatar_core_unavailable'
   | 'avatar_webgl_unavailable'
+  | 'avatar_webgl_context_lost'
   | 'avatar_software_renderer'
   | 'avatar_model_load_failed'
   | 'avatar_texture_load_failed'
@@ -580,6 +582,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
     // A rig owns this canvas/context. Its pooled mask targets must not survive
     // into the next rig: the renderer just destroyed the targets they reference.
     CubismWebGLOffscreenManager.getInstance().removeContext(this.#gl)
+    CubismShaderManager_WebGL.getInstance().removeContext(this.#gl)
   }
 }
 
@@ -602,6 +605,15 @@ export function createCubismAvatarRenderer(
   const fail = (reason: CubismAvatarFailureReason): void => {
     report(input.eventSink, { status: 'failed', reason })
   }
+  const contextLost = (event: Event): void => {
+    event.preventDefault()
+    if (disposed) return
+    paused = true
+    if (frameId !== null) cancelAnimationFrame(frameId)
+    frameId = null
+    fail('avatar_webgl_context_lost')
+  }
+  input.canvas.addEventListener('webglcontextlost', contextLost)
 
   const frame = (timestamp: number): void => {
     frameId = null
@@ -748,6 +760,10 @@ export function createCubismAvatarRenderer(
       frameId = null
       model?.release()
       model = null
+      input.canvas.removeEventListener('webglcontextlost', contextLost)
+      // React StrictMode may reuse a connected canvas. Removed canvases can
+      // relinquish their context immediately; all model GL objects are already freed.
+      if (!input.canvas.isConnected) gl?.getExtension('WEBGL_lose_context')?.loseContext()
       gl = null
     },
   })

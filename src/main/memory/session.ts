@@ -57,6 +57,8 @@ export class MemorySession {
         return reply('memory_clean_session_required')
       }
       if (this.name) return reply('memory_identity_confirmed', 'accepted')
+      // A repeated proposal must not re-mint the token the renderer is already asking with.
+      if (this.pending && this.question && normalize(this.pending) === normalize(request.name)) return reply('memory_confirmation_pending')
       this.pending = request.name.trim(); this.pendingAfter = this.sequence
       this.language = language
       this.question = { token: randomUUID(), text: buildMemoryQuestion(this.pending, language), delivered: false, expires: performance.now() + 60000 }

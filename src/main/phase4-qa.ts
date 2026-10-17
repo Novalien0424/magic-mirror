@@ -47,6 +47,7 @@ export interface Phase4QaInput {
   readonly cubismOnly?: boolean
   readonly lifecycleLive?: boolean
   readonly memoryPipeline?: (evidence: (step: string) => void) => Promise<void>
+  readonly memoryLearningSettled?: () => boolean
   readonly onEvidence: (evidence: Phase4QaEvidence) => void
 }
 

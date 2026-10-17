@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerMemoryIpc } from '../../src/main/memory/ipc'
 import type { MemoryRepository } from '../../src/main/memory/contracts'
 
-function setup() {
+function setup(controlPhrases?: () => Promise<string[]>) {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   let active = true
   const state = () => ({ active, avatarId: 'fixture-avatar', realtimeSessionId: 'session', sessionGeneration: 1 })
@@ -12,14 +12,25 @@ function setup() {
   registerMemoryIpc({ handle: (key, handler) => handlers.set(key, handler), authorize: (event, kind) => event === kind,
     interpret: async input => ({ confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', authorized: true,
       name: input.task === 'introduction' ? 'Synthetic Person' : input.request?.name ?? '', language: 'en' }),
-    store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() },
-    state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
+    store: () => store as unknown as MemoryRepository, learning: { observe: vi.fn(async () => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn(), carry: vi.fn() },
+    controlPhrases, state, canEdit: () => !active, knownAvatar: async id => id === 'fixture-avatar', resetConversation: reset, report })
   const identity = { realtimeSessionId: 'session', sessionGeneration: 1 }
   const call = async (key: string, event: string, value: unknown) => await handlers.get(key)!(event, value) as any
   const request = (action: string, extra = {}) => ({ request: { action, name: '', topic: '', text: '', query: '', ...extra }, identity })
   return { store, reset, report, call, request, identity, dormant: () => { active = false } }
 }
 describe('memory IPC authorization and lifecycle', () => {
+  it('reports a control-cache miss without misclassifying storage and allows the next input to retry', async () => {
+    const phrases = vi.fn().mockRejectedValueOnce(Error('memory_control_phrases_unavailable')).mockResolvedValue([])
+    const p = setup(phrases), input = { identity: p.identity, itemId: 'synthetic-turn', transcript: '' }
+    await p.call('mirror:memory-input', 'mirror', { ...input, phase: 'speech' })
+    expect(await p.call('mirror:memory-input', 'mirror', { ...input, phase: 'complete', transcript: 'Synthetic input.' }))
+      .toEqual({ status: 'failed', code: 'memory_control_phrases_unavailable' })
+    expect(p.report).toHaveBeenCalledWith('memory_control_phrases_unavailable')
+    expect(p.report).not.toHaveBeenCalledWith('memory_storage_unavailable')
+    expect((await p.call('mirror:memory-input', 'mirror', { ...input, phase: 'complete', transcript: 'Synthetic input.' })).status).not.toBe('failed')
+    expect(phrases).toHaveBeenCalledTimes(2)
+  })
   it('rejects cross-window requests, forged ownership and stale sessions before storage', async () => {
     const p = setup()
     expect((await p.call('mirror:memory', 'console', p.request('recall'))).status).toBe('rejected')

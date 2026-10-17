@@ -87,7 +87,7 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
   const disposedNodes = new WeakSet<StretchNode>()
   const disposeNode = (value: StretchNode): void => {
     if (disposedNodes.has(value)) return
-    disposedNodes.add(value); value.disconnect(); value.port.close(); value.onprocessorerror = null
+    value.disconnect(); value.port.close(); value.onprocessorerror = null; disposedNodes.add(value)
   }
   const initializeNode = async (): Promise<void> => {
     const url = new URL('../voice-effects/SignalsmithStretch.mjs', document.baseURI).href
@@ -145,8 +145,10 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
     setVolume(value) { volume = Math.max(0, Math.min(1, value)); applyGain() },
     setMuted(value) { muted = value; applyGain() },
     interrupt() {
-      if (disposed || interrupted) return
-      interrupted = true; ++generation; applyGain(); input.disconnect(); input.connect(drain)
+      if (disposed) return
+      ++generation
+      if (interrupted) { applyGain(); return }
+      interrupted = true; applyGain(); input.disconnect(); input.connect(drain)
       // Reconfigure invokes the upstream WASM reset; disconnect the input so no
       // cancelled remote samples can refill it. Recreate both spatial buffers.
       const roomBuffer = room.buffer, echoBuffer = echo.buffer
@@ -169,10 +171,13 @@ export async function createVoiceEffectGraph(context: AudioContext, initial: Voi
     },
     async begin() { const token = generation; await reset; if (disposed || token !== generation) return; interrupted = false; wire(); applyGain() },
     dispose() {
-      if (disposed) return
       disposed = true; ++generation; applyGain()
-      if (node) disposeNode(node)
-      for (const value of [input, output, direct, drain, warmth, brightness, grit, ceiling, compressor, dry, wet, echoWet, mix, mouth, room, echo, speechAnalyser, completionAnalyser]) value.disconnect()
+      let failed = false
+      if (node) { try { disposeNode(node); node = null } catch { failed = true } }
+      for (const value of [input, output, direct, drain, warmth, brightness, grit, ceiling, compressor, dry, wet, echoWet, mix, mouth, room, echo, speechAnalyser, completionAnalyser]) {
+        try { value.disconnect() } catch { failed = true }
+      }
+      if (failed) throw new Error('voice_effect_cleanup_failed')
     },
   }
 }

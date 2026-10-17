@@ -93,20 +93,17 @@ After a platform-tools update, rerun the installer to refresh the copied binary.
 
 ### Manual start/stop and TV standby
 
-The future Bluetooth button is not installed. These are the tested building
-blocks; **standby is not full Android shutdown**. Keep the ADB service running:
+The connected Stream Deck Neo has dedicated START/STOP controls:
+[setup, scripts and verification](stream-deck.md). STOP puts the TV in standby
+before closing Magic Mirror. START launches the saved active avatar's application
+and wakes the TV onto HDMI. The same controls can be invoked from the canonical
+checkout:
+
+**Standby is not full Android shutdown.** Keep the installed ADB service running:
 
 ```sh
-export ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0
-adb -P 5038 connect 192.168.77.2:5555
-adb -P 5038 -s 192.168.77.2:5555 shell input keyevent 224
-adb -P 5038 -s 192.168.77.2:5555 shell am start -W -n com.android.rockchip.camera2/.RockchipCamera2
-launchctl kickstart gui/$(id -u)/com.magicmirror.launchagent
-
-# Stop: wait for clean exit/no workers before putting the panel in standby.
-launchctl kill SIGTERM gui/$(id -u)/com.magicmirror.launchagent
-launchctl print gui/$(id -u)/com.magicmirror.launchagent
-adb -P 5038 -s 192.168.77.2:5555 shell input keyevent 223
+./deploy/macos/magic-mirror-start.sh
+./deploy/macos/magic-mirror-stop.sh
 ```
 
 Startup enters reflective Dormant: a black HDMI picture with ambience is
@@ -118,7 +115,7 @@ returning, or an uncertain probe, resets the countdown. The network check accept
 an open/refused TCP port or a ping response; an offline ADB session alone is not
 TV absence. `TV_PRESENCE` markers and Console metadata record state changes.
 Clean exit 0 stays stopped under the existing LaunchAgent. After a long TV
-power-off/reboot, start Raven again with the kickstart command above; turning
+power-off/reboot, start Magic Mirror again with the start script above; turning
 the TV on does not automatically restart a cleanly stopped app. Standby that
 retains Ethernet or HDMI intentionally does not trigger this shutdown.
 Wired standby/wake passed with the new server; full shutdown/power-removal wake
@@ -144,7 +141,8 @@ The field definition uses these exact paths and settings:
 | Checkout (second argument and working directory) | `/Users/novalien0424/magic-mirror` |
 | Built Main entry (`package.json` main) | `/Users/novalien0424/magic-mirror/out/main/index.js` |
 | Built preload and renderer directories | `/Users/novalien0424/magic-mirror/out/preload/` and `/Users/novalien0424/magic-mirror/out/renderer/` |
-| Configured environment | `MIRROR_DISPLAY=T749` only |
+| Configured environment | `MIRROR_DISPLAY=T749`, `MIRROR_TV_HOST=192.168.77.2` |
+| Stop cleanup allowance | `ExitTimeOut=20` seconds |
 | Required writable log directory | `/Users/novalien0424/Library/Logs/MagicMirror` |
 
 Before replacing a build, stop the app, then run from the checkout:

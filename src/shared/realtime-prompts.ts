@@ -1,4 +1,4 @@
-import source from '../../resources/config/prompts/realtime.v1.json'
+import source from '../../resources/config/prompts/realtime.v1.json' with { type: 'json' }
 import type { MemoryReply, MemoryLanguage } from './memory'
 
 export const REALTIME_PROMPT_SOURCE = 'resources/config/prompts/realtime.v1.json'
@@ -39,7 +39,7 @@ export function buildAuditionPrompt(speakingStyle: string): string {
 
 /** Response-scoped instructions cannot become a lingering imperative user turn. */
 export function buildSpeechResponse(text: string, speakingStyle: string) {
-  return { tool_choice: 'none' as const, input: [], instructions: renderPrompt('performance', {
+  return { conversation: 'none' as const, tool_choice: 'none' as const, input: [], instructions: renderPrompt('performance', {
     speakingStyle: speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle, text,
   }) }
 }

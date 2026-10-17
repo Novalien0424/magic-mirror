@@ -44,6 +44,7 @@ export interface AvatarProfile {
   mediaSkill?: AvatarMediaSkill
   wakePhrase?: string
   sleepPhrase?: string
+  cloudSearchPhrase?: string
   wakeTuning?: AvatarWakeTuning
 }
 export interface AvatarResourceLock {

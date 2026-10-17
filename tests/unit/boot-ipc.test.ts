@@ -665,7 +665,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
     // Even an earlier unavailable scene creates a cached executor with global stops.
     await registered.handlers.get(CONSOLE_IPC_CHANNELS.runScene)!({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, 'absent-scene')
-    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toBe('rejected')
+    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toEqual({ status: 'rejected', code: 'media_not_found' })
     const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
     const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
@@ -703,7 +703,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(await handler(event, { ...envelope, identity: { ...envelope.identity, sessionGeneration: 2 } })).toBe('ignored')
     expect(await handler(event, { ...envelope, request: { ...envelope.request, assetId: '../private' } })).toBe('rejected')
     config.avatarCatalog.locks.push({ kind: 'music', resourceId: 'music-test', avatarId: 'other' })
-    expect(await handler(event, envelope)).toBe('rejected')
+    expect(await handler(event, envelope)).toEqual({ status: 'rejected', code: 'media_not_found' })
     config.avatarCatalog.locks = []
     const started = handler(event, envelope)
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
@@ -1868,7 +1868,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: 'synthetic-realtime-model',
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -1897,7 +1897,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: 'synthetic-realtime-model',
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -1954,7 +1954,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
           snapshot: {
             configVersion: 7,
             fingerprint: 'synthetic-config-fingerprint',
-            sdkVersion: '0.16.1',
+            sdkVersion: '0.20.0',
             realtimeDialogue: 'synthetic-realtime-model',
             inputTranscription: 'synthetic-transcription-model',
             memoryExtractor: 'synthetic-memory-model',

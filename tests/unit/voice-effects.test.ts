@@ -20,7 +20,7 @@ const profile = {
 
 function snapshot(): SessionModelSnapshot {
   return {
-    configVersion: 1, fingerprint: 'fingerprint', sdkVersion: '0.16.1',
+    configVersion: 1, fingerprint: 'fingerprint', sdkVersion: '0.20.0',
     realtimeDialogue: 'realtime', inputTranscription: 'transcription', memoryExtractor: 'memory',
     voice: 'cedar', reasoningEffort: 'low', turnDetectionProfile: 'semantic-vad-interruptible',
     voiceSpeed: 0.9, voiceEffects: { ...VOICE_EFFECT_PRESETS.darkOracle }, takenAt: '2026-09-09T00:00:00.000Z',

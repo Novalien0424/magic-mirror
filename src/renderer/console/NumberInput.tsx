@@ -15,8 +15,10 @@ export function NumberInput({ value, onChange, onBlur, min, max, ...props }: Inp
     aria-describedby={[props['aria-describedby'], invalid ? id : ''].filter(Boolean).join(' ') || undefined}
     onChange={event => { setText(event.currentTarget.value); if (event.currentTarget.value.trim() && Number.isFinite(event.currentTarget.valueAsNumber)) onChange?.(event) }}
     onBlur={event => {
-      const next = clampNumber(text, Number(value) || 0, low, high)
+      const previous = Number(value) || 0
+      const next = clampNumber(text, previous, low, high)
       event.currentTarget.value = String(next); setText(String(next))
-      onChange?.(event); onBlur?.(event)
+      if (next !== previous) onChange?.(event)
+      onBlur?.(event)
     }} />{invalid && <span id={id} className="field-error">Enter a number{low === undefined ? '' : ` ≥ ${low}`}{high === undefined ? '' : ` ≤ ${high}`}.</span>}</>
 }

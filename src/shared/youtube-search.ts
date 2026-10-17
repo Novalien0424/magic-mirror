@@ -4,7 +4,7 @@ export interface YoutubeSearchRequest { query: string }
 export interface YoutubeSearchResult { url: string; title: string; channel: string }
 export interface YoutubeSearchReply {
   status: 'accepted' | 'rejected' | 'failed'
-  code: 'youtube_search_results' | 'youtube_search_not_configured' | 'youtube_search_unavailable' | 'youtube_search_access_denied' | 'youtube_search_quota_exceeded' | 'youtube_search_stale' | 'youtube_search_invalid' | 'youtube_search_source_restricted' | 'youtube_search_source_pending' | 'youtube_search_local_lookup_required'
+  code: 'youtube_search_results' | 'youtube_search_not_configured' | 'youtube_search_unavailable' | 'youtube_search_access_denied' | 'youtube_search_quota_exceeded' | 'youtube_search_stale' | 'youtube_search_invalid' | 'media_source_restricted' | 'media_source_unconfirmed'
   videos: YoutubeSearchResult[]
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -14,7 +14,7 @@ export function parseYoutubeSearchRequest(value: unknown): YoutubeSearchRequest 
 }
 export function parseYoutubeSearchReply(value: unknown): YoutubeSearchReply | null {
   if (!record(value) || Object.keys(value).length !== 3 || !['accepted', 'rejected', 'failed'].includes(value.status as string)
-    || !['youtube_search_results', 'youtube_search_not_configured', 'youtube_search_unavailable', 'youtube_search_access_denied', 'youtube_search_quota_exceeded', 'youtube_search_stale', 'youtube_search_invalid', 'youtube_search_source_restricted', 'youtube_search_source_pending', 'youtube_search_local_lookup_required'].includes(value.code as string)
+    || !['youtube_search_results', 'youtube_search_not_configured', 'youtube_search_unavailable', 'youtube_search_access_denied', 'youtube_search_quota_exceeded', 'youtube_search_stale', 'youtube_search_invalid', 'media_source_restricted', 'media_source_unconfirmed'].includes(value.code as string)
     || !Array.isArray(value.videos) || value.videos.length > 5 || !value.videos.every(item => record(item) && Object.keys(item).length === 3
       && youtubeVideoId(item.url) && label(item.title, 200) && label(item.channel, 200))) return null
   return structuredClone(value) as unknown as YoutubeSearchReply

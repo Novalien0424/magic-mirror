@@ -1,115 +1,110 @@
-# QA modes and current-build verification
+# QA modes and evidence
 
-Choose the evidence boundary needed for the task. Mode names such as `live`
-describe provider use, not necessarily a physical microphone. Read the selected
-runner/probe before claiming audio coverage.
+Start at [PROGRESS](../../../../PROGRESS.md) and the selected unresolved issue.
+Read the chosen runner/probe, not every historical run. Mode names such as
+`live` describe provider use, not necessarily physical input.
 
-## Audio evidence and permissions
+## Ownership and build
 
-| Input route | Coverage | Remaining evidence |
-|---|---|---|
-| Synthetic text (`--lifecycle-live`, `--spells-live`) | Prompt/tools, application controls and provider output sequencing | Input ASR, native capture, human/acoustic quality and physical effects |
-| Synthesized PCM -> virtual microphone -> WebRTC (Raven conversation QA) | Real provider ASR/VAD, dialogue/tools, IPC and processed playback on fixture audio | Native microphone/TCC, speaker-to-mic delivery and representative human acceptance |
-| Speaker -> native wake capture (Raven acoustic cases) | Acoustic wake route if fresh native input and a detection are observed | A playback callback or `signal`/`silent` wait alone does not prove the stimulus was heard; no-event results need delivery evidence |
-| Human -> selected production microphone | Actual route and representative recognition/interruption behavior | Acceptance covers only the tested conditions; mock adapters cannot prove physical hardware |
+Runners/full `npm test` acquire `scripts/electron-owner.mjs`. Agent start/stop/
+reload uses `node scripts/electron-owner.mjs <owner> <command> [args]` around the
+whole operation. Nested runners inherit the lease. On Mac, the `.lock` inode is
+kernel-owned: never unlink it; `.json` is diagnostic only. Legacy migration
+requires a dead PID and known contents. Other platforms need checked stale-PID
+cleanup. The lease cannot stop manually launched Electron; preserve operator
+edits and ensure normal Electron is stopped before QA.
 
-[Raven probe](../../../../src/main/raven-conversation-probe.ts) substitutes
-`getUserMedia` with `createMediaStreamDestination`; its acoustic playback option
-instead goes to an output device for native wake capture. A single run can mix
-these routes. [Raven runner](../../../../scripts/run-raven-conversation-qa.mjs)
-adds an isolated fixture spell/scene with mock hardware, so a fixture pass does
-not establish that the ordinary published avatar has enabled spells/scenes.
+Canonical checkout only; Raven QA is Mac-only. Runners verify input/output hashes
+from a completed build and retain `build.json`. Rebuild stale/interrupted/altered
+output, never bypass hashes. Choose one supported Phase 4 mode; unknown/combined
+flags fail. Prefer npm's named modes or direct Node flags to avoid forwarding loss.
 
-Acoustic or human-microphone QA must exercise the real permission/status path and
-report any bypass explicitly; neither a source fix nor silent PCM proves a TCC
-outcome. [Physical wake RCA](../../mm-wake-word/references/handoff-platform.md)
-owns permission eligibility, native freshness/energy, route, delivery, detector
-and lifecycle evidence.
+## Raven runner
 
-## Choose the evidence needed
+```sh
+node scripts/run-raven-conversation-qa.mjs --launch-agent --scenario <id>
+```
 
-- `npm run test:phase4:qa:lifecycle-live`: synthetic host/Raven greeting, follow-up
-  and sleep with the real provider. Checks native prompt windows, wire tool
-  definitions/structured results and processed output silence before farewell.
-  Retain failures; a tool-call pass does not prove pre-tool silence or mic ASR.
+The [fixture](../../../../src/main/raven-conversation-fixture.ts) owns cases and
+judge version; the [runner](../../../../scripts/run-raven-conversation-qa.mjs)
+owns flags. Isolated comparisons: `--prompt baseline|trimmed|merged|focused`,
+`--variant mini|full`, `--effort minimal|low`, `--persona published|sage|authoritative`.
+Default persona is published. Provenance records prompt/tools/rendered/judge hashes,
+model/effort and device route; comparisons never publish settings.
 
-- `node scripts/run-phase4-qa.mjs --spells-live`: synthetic text with real
-  provider speech; checks no-coaching behavior, one application cue without
-  extra speech, and one scene starting no later than cue completion (DECISIONS
-  2026-10-10). Stores comparison flags only. Does not prove microphone ASR or
-  sound-alike matching.
-- `node scripts/run-phase4-qa.mjs --video-fades`: focused Console import,
-  fade editing, Save/Publish and portrait playback with computed opacity and
-  embedded-video gain samples. Does not prove physical speaker output.
+| Scenario | Evidence / limit |
+| --- | --- |
+| `character_consistency` | Ten opt-in character stress turns; transcript grades do not prove vocal acting. |
+| `two_visit_memory`, `identity_denial` | Actual isolated learning/confirmation; failed prerequisites skip dependent judgments. |
+| `media_stop` | 90-second Active fixture, negation, exact configured ASR stop and follow-up. |
+| `additional_capabilities` | WebGL context recreation, folder playback, image grounding, interruption. |
+| `camera_native` | Native fresh snapshots, targeted USB reset, sustained recovery. |
+| `camera_delivery` | Same signed helper/LaunchAgent, image processing bypassed; 60 seconds of advancing-source-timestamp receipts, zero resets/restarts. Throttled receipts are not FPS. |
+| `judge_calibration` | Ten public good/bad/adversarial candidates against the existing grader; no Raven generation or physical-delivery acceptance. |
+| `memory_intent_calibration` | Six fixed request/biography/quote/negation controls through Main's configured interpreter; assessment only, no memory mutation. |
+| `wake_levels`, `wake_levels_asr` | Native level/near-negative controls; optional unhinted ASR. dBFS is not SPL/SNR; failed acoustic ASR control prevents localization. |
+| `camera --physical` | Real Jabra/native camera; zero camera children asleep, one awake, zero after sleep/no-restart interval. |
+| `wake_diagnostic` | Native playback/capture/detector, no Realtime. |
+| `wake_replay` | Same bounded RAM PCM live/replay, gain/bias/clean-source controls; exit success means completed diagnostic, inspect detections. |
+| `wake_capture` | Above plus authorized unhinted real transcription and native-format/stimulus comparisons. |
+| `wake_control` | Local package-default phrase, near negatives, stock/wider detector and independent conversion. |
+| `wake_aec` | Post-gain played background reference; no production AEC change. |
+| `wake_aec_alignment`, `wake_aec_alignment_native` | Jabra/Mac far-end playback, 16/32 kHz capture; native variant uses 48 kHz stereo post-conversion reference. Alignment is not wake acceptance. |
+| `wake_browser` | Chromium Jabra capture/background, native Mac visitor stimulus → same detector. QA only; release native first, close browser before restoration. |
 
-- `npm run test:phase4:qa:profiles`: new Avatar journey plus local Voice QA,
-  independent persona/rig/voice/scenes, draft retention, invalid Save, guarded
-  navigation/reload, saved scope after reload, Publish and Dormant activation.
-  Captures 1440x900 and 1024x768 Console states. Active-conversation switch
-  denial remains separate Main/unit evidence; this mode makes no provider call.
+`--physical` uses Main native Mac-speaker stimulus at its native rate/channel
+layout, outside Chromium's echo reference. Browser-injected speech can be cancelled.
+All stimuli remain synthetic, not human acceptance. TV-off exemption is isolated.
+`--launch-agent` uses a one-shot `KeepAlive:false` job without changing restart
+ownership. Permission results are launch-context-specific. Long-lived tmux shells
+have produced digital-zero native input; use the authorized LaunchAgent route or
+the owner's Terminal for acoustic evidence.
 
-- `npm run test:phase4:qa:cubism`: dedicated Live2D Cubism page, every motion
-  index/expression/actual MOC parameter, reset/cancellation and rig replacement.
-  Mirror stays hidden; no portrait, speech or scene-playback claim. Built-in
-  Ren and managed Ren with a second Scene clip are always covered. Set
-  `MIRROR_CUBISM_QA_MODEL` to an external manifest to cover that rig too; an
-  omitted value does **not** test Raven. Read the [Cubism rerun handoff](../../../../docs/testing/cubism-console-2026-09-08.md#independent-qa-handoff)
-  for the supplied Raven fixture, expected evidence and native checks.
-- `npm run test:phase4:qa:editor`: real Console import, authoring, validation,
-  Test/Publish and failure cases. Mirror stays hidden. No portrait or playback
-  evidence is claimed by this mode.
-- `npm run test:phase4:qa:console`: the editor journey plus actual finite-video
-  playback and Avatar return on the portrait monitor.
-- `npm run test:phase4:qa`: all exported Cubism motions/expressions, legacy
-  Scenes, still/finite/loop/embedded-audio/replacement/failure cases.
-- `npm run test:phase4:qa:live`: configured-provider/output integration.
-  [Its setup](../../../../src/main/phase4-qa.ts) substitutes a silent virtual
-  microphone; the mode name does not claim physical conversation or ASR quality.
-- `node scripts/run-raven-conversation-qa.mjs --launch-agent --scenario sleep_spells`: canonical-Mac
-  Raven fixture with synthesized visitor audio and real WebRTC ASR/tools.
-  Other scenarios include acoustic wake playback. Use only when that runtime
-  and provider work is authorized; inspect route-specific results and exclusions.
-  `--scenario wake_diagnostic` measures the native speaker/capture/detector route
-  without opening Realtime. `--scenario wake_replay` releases the worker, captures
-  bounded RAM-only PCM through the same implementation in Main, and compares live,
-  identical replay, gain, keyword bias and clean-source recognition. Its successful
-  exit means the diagnostic completed; inspect detection results separately.
-  `--scenario wake_capture` additionally sends bounded clean/captured audio to the
-  configured real transcription provider, with no phrase hints, and tests native
-  input format and alternate local stimulus voices. It requires real-provider
-  authorization; retained results contain comparison metadata only.
-  `--scenario wake_control` stays local: package-default phrase, near-phrase
-  negatives, stock engine, wider search and independent Apple conversion.
-  These diagnostics never publish experimental keywords/tuning or establish human
-  acceptance. `--launch-agent` uses a temporary one-shot job with
-  `KeepAlive: false`, matching the deployed launch context without another restart
-  owner. Direct-spawn QA remains available by omitting that flag; a permission
-  result in one launch context does not prove another's capture access.
-  Agent shells under a long-lived tmux server have no login audit session, so
-  macOS hands any microphone they open digital zeros (observed 2026-10-11).
-  Run acoustic probes through the `--launch-agent` Electron path, or from the
-  owner's own Terminal session.
+## Other Phase 4 modes
 
-Raven probe response counts based on `output_audio_buffer.started` describe
-provider output, not final processed speaker audibility. Distinguish generated
-dialogue, response ownership, processed output/tail completion and physical sound.
-Request fields and server-echoed transcription fields are separate evidence:
-missing echo alone does not prove a hint was ignored.
+[Runner](../../../../scripts/run-phase4-qa.mjs) owns the full accepted flag list.
+Select the relevant mode rather than copying all cases into a new harness:
 
-An observer spanning several Realtime sessions must clear response/tool counters
-on local peer `close()` and new connection. WebRTC local close changes connection
-state without emitting `connectionstatechange`; waiting for that event can leave
-stale counters and falsely fail the next greeting. Acoustic retries require
-Dormant. A detected wake followed by a QA greeting timeout is not permission to
-reacquire wake input during Active. Retain audible and muted comparisons as
-separate results; a muted success never upgrades audible-loop acceptance.
+| Mode | Boundary |
+| --- | --- |
+| `--lifecycle-live`, `--spells-live` | Synthetic text, actual provider/cue sequencing; no microphone/ASR acceptance. Spell cue/effect ordering follows current DECISIONS. |
+| `--live` | Configured provider with silent virtual mic; no physical conversation claim. |
+| `--profiles` | Real isolated authoring/Save/Publish/Dormant activation; no provider, Active-switch denial remains separate. |
+| `--cubism` | Motions/expressions/actual MOC parameters and replacement; hidden Mirror, no portrait. External Raven requires `MIRROR_CUBISM_QA_MODEL`; built-in Ren is insufficient. |
+| `--editor` | Console import/edit/validation/Test/Publish; hidden Mirror. |
+| `--console` | Editor plus finite-video playback and portrait Avatar return. |
+| `--video-fades` | UI Save/Publish, computed opacity/embedded gain; no physical sound claim. |
+| Default | Cubism and still/finite/loop/embedded-audio/replacement/failure scene cases. |
 
-The Phase 4 runner requires a completed `npm run build` stamp and verifies
-input/output content hashes before launching. Missing, interrupted, stale or
-altered builds must be rebuilt, not bypassed. Each run retains the hashes and
-build time in `build.json`; credentials/user data are never inputs. Both runners
-require the canonical checkout; Raven conversation QA is Mac-only. Prefer a named
-npm mode, or pass one supported flag directly to the Phase 4 Node runner; npm
-argument forwarding can consume flags.
-Unknown/combined modes are rejected. Fixture fields such as `windowsDecode`
-are schema/provenance labels, not proof of Mac decoding or physical acceptance.
+## Evidence rules that affect interpretation
+
+- [Probe](../../../../src/main/raven-conversation-probe.ts) normally replaces
+  `getUserMedia` with a virtual stream. Synthetic PCM/WebRTC proves provider
+  ASR/VAD/tools/IPC/playback integration, not native capture or human quality.
+  Fixture spells use mock effects and do not prove published presets exist.
+- Physical QA needs actual permission/status, route, fresh blocks, energy and
+  delivery evidence. An open stream, playback callback, `signal`/`silent` label
+  or assumed permission does not prove heard speech. See the
+  [physical wake reference](../../mm-wake-word/references/handoff-platform.md).
+- `output_audio_buffer.started` counts provider output, not processed speaker
+  audibility. Distinguish generation, response ownership, output tail and physical
+  sound. Missing server echo alone does not prove a requested hint was ignored.
+- Clear probe response/tool counters on local peer `close()` and new connection;
+  local close does not emit `connectionstatechange`. Acoustic retries require
+  Dormant; greeting failure never authorizes a second mic during Active.
+- Preambles are attributed within the same provider response/event order. An
+  allowed search bridge is not a later playback preamble; missing attribution is
+  unknown. Deduplicate transcript aliases only by shared response/item/index.
+- v8 accepts exact per-turn criteria/scores and derives pass flags. Missing,
+  duplicate, foreign or malformed evidence fails; diagnostics enter rates only
+  after full validation. Character is separate; cues/silent turns are exempt.
+- `raven-quality-rates.mjs RUN_DIRECTORY...` groups matching provenance and case
+  sets, excludes duplicate/unfinished/unversioned runs, treats unscored history
+  as unknown. Never pool judge versions; correlated-turn intervals are descriptive.
+- Tool-call names alone do not prove application ordering; include local discovery
+  inside the online guard. `recognition.exact` includes command folds;
+  `literalExact`/title-presence own literal media evidence.
+- Camera ASR `judged` booleans are diagnostic; actual tool/image/grounding checks
+  own visual acceptance. Unavailable ASR judgment must not gate those checks.
+- Muted success never upgrades audible-media acceptance. Fixture labels such as
+  `windowsDecode` do not prove a different platform. Retain failed attempts.

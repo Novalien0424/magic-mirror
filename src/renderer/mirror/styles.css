@@ -155,3 +155,21 @@ body * { cursor: none !important; }
 .scene-visual__media--cover {
   object-fit: cover;
 }
+
+.mirror-working {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  color: #d6dde7;
+  font-size: 2rem;
+  pointer-events: none;
+  animation: mirror-working-glow 1.8s ease-in-out infinite;
+}
+@keyframes mirror-working-glow {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.8; text-shadow: 0 0 14px #b5c6dc; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mirror-working { animation: none; opacity: 0.65; }
+}

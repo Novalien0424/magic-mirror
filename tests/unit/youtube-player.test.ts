@@ -9,7 +9,7 @@ vi.mock('electron', async () => {
   return {
     session: { fromPartition: vi.fn((partition, options) => {
       const value = Object.assign(new EventEmitter(), { partition, options, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(),
-        protocol: { handle: vi.fn() }, webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() }, fetch: vi.fn() })
+        protocol: { handle: vi.fn() }, webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() }, fetch: vi.fn(), clearStorageData: vi.fn(async () => {}) })
       f.partitions.push(value); return value
     }) },
     WebContentsView: class {
@@ -27,6 +27,24 @@ const parent = () => Object.assign(new EventEmitter(), { isDestroyed: () => fals
 afterEach(() => { vi.useRealTimers(); f.views.length = 0; f.partitions.length = 0; f.state = { state: -1, time: 0, error: false } })
 
 describe('isolated visible YouTube player', () => {
+  it('attenuates only Dormant loops by 12 dB and restores their selected volume', async () => {
+    vi.useFakeTimers()
+    const player = createYoutubePlayer(() => parent() as never), report = vi.fn()
+    player.play({ ...request, mode: 'loop' }, report)
+    const contents = f.views[0].webContents
+    player.setDormant?.(true)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(13)')
+    player.setDormant?.(false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(50)')
+    player.stop()
+    player.play(request, report)
+    player.setDormant?.(true)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(f.views[1].webContents.executeJavaScript).not.toHaveBeenCalledWith('void player?.setVolume(13)')
+    player.stop()
+  })
   it('uses elapsed playback progress across NTP jumps and still times out a stuck player', async () => {
     vi.useFakeTimers()
     const win = parent(), report = vi.fn(), player = createYoutubePlayer(() => win as never)

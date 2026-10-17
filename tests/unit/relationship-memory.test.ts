@@ -16,14 +16,14 @@ function setup(embedder?: MemoryEmbedder) {
     setPolicy: vi.fn(async (_a, _n, value) => { mode = value; return { mode, epoch: ++epoch, cleanupRequired: false } }),
     setCleanupRequired: vi.fn(async () => {}),
   }
-  const learning = { observe: vi.fn(async (_item: { observedAt: string }) => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn() }, report = vi.fn()
+  const learning = { observe: vi.fn(async (_item: { observedAt: string }) => {}), flush: vi.fn(async () => {}), invalidate: vi.fn(), exclude: vi.fn(), carry: vi.fn() }, report = vi.fn()
   // Stub semantic decisions; these tests prove application boundaries, not model accuracy.
   const interpret = vi.fn(async (input: MemoryIntentInput): Promise<MemoryIntentResult> => ({
     confirmation: input.task === 'confirmation' ? 'yes' : 'unclear', language: 'en',
     authorized: input.task === 'introduction' || input.request?.action === 'identify' || input.request?.action === 'forget' || input.request?.action === 'temporary',
     name: input.task === 'introduction' || input.request?.action === 'identify' ? 'Alice' : '',
   }))
-  const memory = new RelationshipMemory({ repository: repository as unknown as MemoryRepository, learning, report, interpret, embedder, controlPhrases: async () => ['exact spell'] })
+  const memory = new RelationshipMemory({ repository: repository as unknown as MemoryRepository, learning, report, interpret, embedder, controlPhrases: async () => ['exact spell', '有請渡鴉大人', '停止銀燈'] })
   const confirm = async () => {
     await memory.input(state, 'speech', 'intro', '')
     await memory.input(state, 'complete', 'intro', 'My name is Alice.')
@@ -35,6 +35,70 @@ function setup(embedder?: MemoryEmbedder) {
   return { repository, learning, memory, confirm, report, interpret }
 }
 describe('Realtime relationship memory integration', () => {
+  it.each([
+    ['identify', 'My name is Alice Smith.', 'Alice Smith', 'Alice Smith', 'equal', 'literal'],
+    ['identify', 'My name is AliceSmith.', 'AliceSmith', 'Alice Smith', 'formatted', 'literal'],
+    ['identify', 'My name is Alice Smith.', 'Alice Smith', 'Alyce Smith', 'different', 'literal'],
+    ['identify', 'My name is A L I C E S M I T H.', 'Alice Smith', 'Alice Smith', 'equal', 'formatted'],
+    ['recall', 'PRIVATE INTRODUCTION', 'Alice Smith', '', 'absent', 'absent'],
+  ])('reports only RAM-derived name comparison metadata %#', async (action, text, name, toolName, tool, asr) => {
+    const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith', 'PRIVATE OTHER PERSON'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', text)
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name, language: 'en' })
+    const proposal = await p.memory.request(state, request(action, { name: toolName }))
+    expect(proposal).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice Smith' })
+    expect(p.report).toHaveBeenCalledWith(`memory_identity_evidence_tool_${tool}_asr_${asr}_length_${name.length}`)
+    expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Alice|Alyce|PRIVATE|raven|session-a/)
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.policy).not.toHaveBeenCalled()
+    expect(p.repository.hybridRecall).not.toHaveBeenCalled()
+  })
+  it.each(['identify', 'recall'])('recovers an unmatched introduction through explicit spelling and %s before a fresh confirmation', async action => {
+    const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alyce Smith.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: 'Alyce Smith', language: 'en' })
+    const original = await p.memory.request(state, request('identify', { name: 'Alyce Smith' }))
+    // A different letter never selects a private stored profile.
+    expect(original).toMatchObject({ code: 'memory_confirmation_required', name: 'Alyce Smith' })
+    expect(p.report).toHaveBeenCalledWith('memory_identity_name_unmatched')
+    await p.memory.input(state, 'question_played', original.confirmation!.token, original.confirmation!.text)
+    await p.memory.input(state, 'speech', 'denial', '')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'no', authorized: false, name: '', language: 'en' })
+    expect((await p.memory.input(state, 'complete', 'denial', 'No, that is the wrong spelling.')).code).toBe('memory_confirmation_cancelled')
+    await p.memory.input(state, 'speech', 'correction', '')
+    await p.memory.input(state, 'complete', 'correction', 'My name is Alice Smith. It is spelled A L I C E S M I T H.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: 'A L I C E S M I T H', language: 'en' })
+    const corrected = await p.memory.request(state, request(action, { name: action === 'identify' ? 'Alyce Smith' : '' }))
+    expect(corrected).toMatchObject({ code: 'memory_confirmation_required', name: 'Alice Smith' })
+    expect(p.report).toHaveBeenCalledWith('memory_identity_name_formatted')
+    expect(corrected.confirmation!.token).not.toBe(original.confirmation!.token)
+    expect((await p.memory.input(state, 'question_played', original.confirmation!.token, original.confirmation!.text)).code).toBe('memory_question_stale')
+    expect(p.repository.policy).not.toHaveBeenCalled()
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.hybridRecall).not.toHaveBeenCalled()
+    expect(p.repository.save).not.toHaveBeenCalled()
+    await p.memory.input(state, 'question_played', corrected.confirmation!.token, corrected.confirmation!.text)
+    await p.memory.input(state, 'speech', 'corrected-answer', '')
+    expect((await p.memory.input(state, 'complete', 'corrected-answer', 'Yes, that is me.')).code).toBe('memory_identity_confirmed')
+    expect(p.repository.brief).toHaveBeenCalledExactlyOnceWith('raven', 'Alice Smith')
+    await p.memory.input(state, 'settled', 'correction', '')
+    await p.memory.input(state, 'settled', 'corrected-answer', '')
+    expect(p.learning.observe).not.toHaveBeenCalled()
+    expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Alice|Alyce|raven|session-a/)
+  })
+  it('does not turn a quoted spelling or a fabricated tool name into an introduction', async () => {
+    const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith'])
+    await p.memory.input(state, 'speech', 'story', '')
+    await p.memory.input(state, 'complete', 'story', 'My neighbor spells her name A L I C E S M I T H.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: false, name: '', language: 'en' })
+    expect((await p.memory.request(state, request('identify', { name: 'Alice Smith' }))).code).toBe('memory_action_not_requested')
+    expect(p.repository.names).not.toHaveBeenCalled()
+    expect(p.repository.brief).not.toHaveBeenCalled()
+    expect(p.repository.save).not.toHaveBeenCalled()
+    expect(p.learning.observe).not.toHaveBeenCalled()
+  })
   it.each(['identify', 'recall'])('proposes a unique stored spacing variant through %s without loading private facts', async action => {
     const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith', 'Unrelated Person'])
     await p.memory.input(state, 'speech', 'intro', '')
@@ -381,6 +445,14 @@ describe('Realtime relationship memory integration', () => {
     await p.memory.input(state, 'settled', 'control', '')
     expect(p.learning.observe).toHaveBeenCalledOnce()
   })
+  it.each(['是放咒语未知力量', '有請渡鴨大人', '庭止營登'])('excludes sound-alike controls from learning: %s', async text => {
+    const p = setup(); await p.confirm()
+    await p.memory.input(state, 'speech', 'control', '')
+    await p.memory.input(state, 'settled', 'control', '')
+    await p.memory.input(state, 'complete', 'control', text)
+    expect(p.learning.observe).not.toHaveBeenCalled()
+    expect(p.report).toHaveBeenCalledWith('memory_control_excluded')
+  })
   it('excludes only a control item and preserves earlier eligible learning before flush', async () => {
     const p = setup(); await p.confirm()
     await p.memory.input(state, 'speech', 'ordinary', '')
@@ -454,6 +526,16 @@ describe('Realtime relationship memory integration', () => {
     expect((await p.memory.request(state, request('forget', { topic: 'Tea' }))).code).toBe('memory_forgotten')
     expect(p.learning.invalidate).toHaveBeenCalledWith('raven', 'Alice')
     expect((await p.memory.request(state, request('recall'))).code).toBe('memory_clean_session_required')
+  })
+  it('excludes only the explicit save turn and keeps earlier automatic evidence', async () => {
+    const p = setup(); await p.confirm()
+    await p.memory.input(state, 'speech', 'save', '')
+    await p.memory.input(state, 'complete', 'save', 'Please remember my synthetic tea preference.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: '', language: 'en' })
+    expect((await p.memory.request(state, request('remember', { topic: 'Tea', text: 'Synthetic' }))).code).toBe('memory_saved')
+    expect(p.learning.exclude).toHaveBeenCalledWith('raven', 'Alice', 'save')
+    expect(p.learning.carry).toHaveBeenCalledWith('raven', 'Alice', 1, 2)
+    expect(p.learning.invalidate).not.toHaveBeenCalled()
   })
   it('clears private state and flushes the captured old owner on session end', async () => {
     const p = setup(); await p.confirm()

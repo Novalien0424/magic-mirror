@@ -125,12 +125,14 @@ describe('wake native build provenance', () => {
   it('invalidates QA stamps when the cross-platform launcher is added, changed or removed', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mm-native-qa-stamp-'))
     temporaryRoots.push(root)
-    for (const directory of ['src', 'resources/generated', 'resources/avatar', 'resources/config',
+    for (const directory of ['src', 'resources/generated', 'resources/avatar', 'resources/config', 'resources/testing',
       'resources/wake-native', 'resources/offline-loop', 'scripts/native']) await mkdir(join(root, directory), { recursive: true })
     for (const file of ['package.json', 'package-lock.json', 'electron.vite.config.ts', 'tsconfig.json',
       'tsconfig.node.json', 'tsconfig.web.json', 'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs',
       'scripts/generate-avatar-audio.mjs', 'scripts/build-wake-score-native.ps1', 'scripts/prepare-wake-score-native.mjs',
-      'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'scripts/memory-qa-speech.swift',
+      'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift',
+      'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h', 'scripts/memory-qa-speech.swift',
+      'scripts/raven-qa-transcription-comparison.swift', 'scripts/raven-qa-resample.swift',
       'out/main/index.js', 'out/preload/mirror.js', 'out/preload/console.js',
       'out/renderer/mirror/index.html', 'out/renderer/console/index.html']) {
       await mkdir(join(root, file, '..'), { recursive: true })

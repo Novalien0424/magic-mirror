@@ -5,6 +5,7 @@ import type { AvatarAudioActivity, AvatarAudioOutput } from './avatar-audio-coor
 import { createMusicDuckingController } from './music-ducking'
 import { getAudioDeviceRouter } from '../../audio-devices'
 import { DEFAULT_AUDIO_VOLUMES } from '../../../shared/audio-devices'
+import { DORMANT_MEDIA_GAIN } from '../../../shared/media-volume'
 
 export interface AvatarMediaSnapshot {
   readonly voiceGain: number
@@ -17,6 +18,7 @@ export interface AvatarMediaController {
   setSceneVideoAudio(element: HTMLVideoElement | null, gain?: number, durationMs?: number): void
   handleActivity(activity: AvatarAudioActivity): void
   setLifecycle(state: LifecycleState): void
+  setDormantMedia(active: boolean): void
   handleCommand(command: AvatarControlCommand): void
   snapshot(): AvatarMediaSnapshot
   dispose(): void
@@ -87,6 +89,7 @@ export function createAvatarMediaController(
   let voiceGain = 1
   let volumes = DEFAULT_AUDIO_VOLUMES
   let duckGain = 1
+  let dormantMediaGain = 1
   let musicGainSetting = 1
   let effectiveMusicGain = 1
   let audioUnderruns = 0
@@ -127,11 +130,11 @@ export function createAvatarMediaController(
 
   const stopVolumes = getAudioDeviceRouter().watchVolumes(next => {
     volumes = next
-    musicMasterGain.gain.value = volumes.bgm
-    effectsMasterGain.gain.value = volumes.effects
+    musicMasterGain.gain.value = volumes.bgm * dormantMediaGain
+    effectsMasterGain.gain.value = volumes.effects * dormantMediaGain
     recordedGain.gain.value = voiceGain * volumes.avatar
     realtimeOutput?.setVolume(voiceGain * volumes.avatar)
-    effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
+    effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm * dormantMediaGain
     changed()
   })
 
@@ -244,7 +247,7 @@ export function createAvatarMediaController(
     gain: {
       rampTo: (target, durationMs) => {
         duckGain = target
-        effectiveMusicGain = target * musicGainSetting * volumes.bgm
+        effectiveMusicGain = target * musicGainSetting * volumes.bgm * dormantMediaGain
         ramp(backgroundDuckGain, target, durationMs)
         changed()
       },
@@ -383,6 +386,16 @@ export function createAvatarMediaController(
       }
     },
     setSceneVideoAudio,
+    setDormantMedia: (active: boolean): void => {
+      const next = active ? DORMANT_MEDIA_GAIN : 1
+      if (disposed || next === dormantMediaGain) return
+      dormantMediaGain = next
+      ramp(musicMasterGain, volumes.bgm * next, 150)
+      ramp(effectsMasterGain, volumes.effects * next, 150)
+      effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm * next
+      input.eventSink(active ? 'dormant_media_attenuated' : 'dormant_media_volume_restored')
+      changed()
+    },
     handleActivity: (activity: AvatarAudioActivity): void => {
       if (activity === 'output_started') ducking.setSpeechActive(true)
       if (activity === 'output_stopped' || activity === 'interrupted') {
@@ -448,7 +461,7 @@ export function createAvatarMediaController(
           const actionContext = command.context ?? musicContext
           if (fadeCompletionTimer !== null) window.clearTimeout(fadeCompletionTimer)
           musicGainSetting = unit(command.targetGain)
-          effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
+          effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm * dormantMediaGain
           ramp(musicGainNode, musicGainSetting, command.durationMs)
           changed()
           const timer = window.setTimeout(() => {
@@ -465,7 +478,7 @@ export function createAvatarMediaController(
         music.pause()
         music.loop = command.loop
         musicGainSetting = unit(command.gain)
-        effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
+        effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm * dormantMediaGain
         ramp(musicGainNode, musicGainSetting, 0)
         void loadManagedMusic(command.assetId, command.preview === true, generation).then(async (loaded) => {
           if (!loaded || disposed || generation !== sceneMusicLoadGeneration) return false
@@ -495,7 +508,7 @@ export function createAvatarMediaController(
       }
       if (command.type === 'music_gain') {
         musicGainSetting = unit(command.value)
-        effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm
+        effectiveMusicGain = duckGain * musicGainSetting * volumes.bgm * dormantMediaGain
         musicGainNode.gain.value = musicGainSetting
         changed()
       }

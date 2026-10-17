@@ -21,8 +21,17 @@ describe('processed speech completion with long effects', () => {
     const notify = vi.fn()
     output.handleActivity!('output_started', notify)
     await Promise.resolve()
-    return { output, notify }
+    return { output, notify, context }
   }
+  it('retries a failed context release instead of caching its rejected promise', async () => {
+    const { output, context } = await setup()
+    vi.mocked(context.close).mockRejectedValueOnce(new Error('synthetic close failure'))
+    await expect(output.dispose()).rejects.toThrow('voice_audio_cleanup_failed')
+    await expect(output.dispose()).resolves.toBeUndefined()
+    expect(context.close).toHaveBeenCalledTimes(2)
+    await output.dispose()
+    expect(context.close).toHaveBeenCalledTimes(2)
+  })
   it('does not restore speech-dependent BGM at generation end while the effect tail remains', async () => {
     const { output, notify } = await setup()
     output.handleActivity!('output_stopped', notify)

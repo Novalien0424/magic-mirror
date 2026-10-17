@@ -48,6 +48,7 @@ export function AvatarCanvas({
   const pausedRef = useRef(paused); pausedRef.current = paused
   const [loadFailed, setLoadFailed] = useState(false)
   const [ready, setReady] = useState(false)
+  const [contextRecovery, setContextRecovery] = useState(0)
   const fallback = loadFailed || forceFallback
   const wasLandscape = useRef(false)
 
@@ -92,6 +93,7 @@ export function AvatarCanvas({
             if (!mounted) return
             onEvent(event)
             if (event.status === 'failed') setLoadFailed(true)
+            if (event.reason === 'avatar_webgl_context_lost') setContextRecovery(attempt => Math.min(1, attempt + 1))
           },
           metricsSink: (metrics) => {
             if (mounted) onMetrics(metrics)
@@ -130,7 +132,7 @@ export function AvatarCanvas({
     }
     // Changing a model disposes the old rig and its WebGL resources.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model?.id, model?.manifestFileName])
+  }, [model?.id, model?.manifestFileName, contextRecovery])
 
   useEffect(() => {
     rendererRef.current?.setState(state)
@@ -154,6 +156,7 @@ export function AvatarCanvas({
     <div className="avatar-stage" data-avatar-state={state} data-paused={paused} data-landscape={layout.offsetX > 0}
       data-renderer-state={fallback ? 'failed' : ready ? 'ready' : 'loading'}>
       <canvas
+        key={`${model?.id ?? 'builtin'}:${model?.manifestFileName ?? ''}:${contextRecovery}`}
         ref={canvasRef}
         className="avatar-stage__canvas"
         width={layout.pixelWidth}

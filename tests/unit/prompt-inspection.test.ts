@@ -21,7 +21,7 @@ describe('file-sourced prompt inspection', () => {
     const view = inspectAvatarPrompts(avatar, [{ id:'dialogue', name:'Scene', enabled:true, kind:'avatar_dialogue', text:'Rain.' }])
     expect(JSON.parse(view.pages.Speech[0].content)).toEqual(buildSpeechResponse('Welcome.', 'Slow.'))
     expect(JSON.parse(view.pages.Speech[1].content)).toEqual(buildSpeechResponse('Rest.', 'Slow.'))
-    expect(JSON.parse(view.pages.Speech[3].content)).toEqual(buildSpeechResponse('Rain.', 'Slow.'))
+    expect(JSON.parse(view.pages.Speech.find(section => section.title.startsWith('Scene dialogue'))!.content)).toEqual(buildSpeechResponse('Rain.', 'Slow.'))
     expect(view.pages.Sources[0].content).toContain(REALTIME_PROMPTS.defaults.personality)
     expect(JSON.parse(view.pages['Tools & input'][0].content)).toEqual(realtimeToolDefinition(resolveRealtimeTools(avatar.sleepPhrase!)[0]))
     expect(JSON.parse(view.pages['Tools & input'][1].content)).toEqual(REALTIME_TOOLS.tools[0].results)

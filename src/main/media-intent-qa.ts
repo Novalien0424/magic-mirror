@@ -7,6 +7,7 @@ import config from '../../resources/config/default.json'
 import { buildAvatarPrompt } from '../shared/avatar-prompt'
 import { resolveRealtimeTools } from '../shared/realtime-tools'
 import { rankMediaResources } from '../shared/media-discovery'
+import { mediaClueKey } from '../shared/media-clue'
 import { bindRealtimeTools } from '../renderer/realtime/realtime-tool-bindings'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import { createClientSecretBroker } from './realtime/client-secret-broker'
@@ -20,8 +21,9 @@ const resources: AvatarMediaResource[] = [
 ]
 const scenarios = [
   { name: 'local_default_once', text: 'Play Rain by Fixture Pianist.', route: ['find_media', 'play_media'], mode: 'once' },
-  { name: 'local_then_youtube', text: 'Play Moonlit Lake by Fixture Pianist.', route: ['find_media', 'search_youtube', 'play_youtube'], mode: 'once' },
-  { name: 'explicit_youtube_chinese', text: '在 YouTube 播放 Fixture Pianist 的 Moonlit Lake 音樂，不要循環。', route: ['search_youtube', 'play_youtube'], mode: 'once' },
+  { name: 'local_miss_stays_local', text: 'Play Moonlit Lake by Fixture Pianist.', route: ['find_media'] },
+  // The adapter unlocks online search only after this opening phrase (owner ruling 2026-10-14).
+  { name: 'cloud_phrase_chinese', text: '在雲上找找 Fixture Pianist 的 Moonlit Lake 音樂，不要循環。', cloud: true, route: ['find_media', 'search_youtube', 'play_youtube'], mode: 'once' },
   { name: 'local_only_english', text: 'Play Moonlit Lake from our vault.', route: ['find_media'] },
   { name: 'local_only_chinese', text: '只在我們的資料夾找月光湖這首歌，播放一次。', route: ['find_media'] },
   { name: 'explicit_local_loop_chinese', text: '循環播放我們寶庫的雨聲音樂。', route: ['find_media', 'play_media'], mode: 'loop' },
@@ -54,8 +56,8 @@ void app.whenReady().then(async () => {
     const tools = bindRealtimeTools(resolveRealtimeTools('Rest.'), {
       find_media: async args => {
         record('find_media')
-        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' })
-        return { outcome: media.status, media }
+        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' }, mediaClueKey)
+        return { outcome: media.status, media, ...('cloud' in scenario && media.code === 'media_discovery_no_match' ? { next: 'search_youtube' as const } : {}) }
       },
       search_youtube: async () => {
         record('search_youtube')

@@ -95,8 +95,8 @@ describe('Phase 3 deterministic avatar/audio preparation', () => {
     })).toEqual({
       state: 'maintenance',
       className: 'screen screen--maintenance',
-      title: 'Maintenance',
-      detail: 'avatar_model_manifest_invalid',
+      title: '魔鏡休息中',
+      detail: '請洽現場人員協助。',
     })
   })
 })

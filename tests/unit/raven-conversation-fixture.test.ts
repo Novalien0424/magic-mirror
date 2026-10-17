@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   RAVEN_CONVERSATION_FIXTURE, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT,
-  RAVEN_SYNTHETIC_MEDIA, parseRavenQualityVerdict, renderRavenVisitorText,
+  RAVEN_SYNTHETIC_MEDIA, RAVEN_SYNTHETIC_VISITORS, RAVEN_MEMORY_IDENTITY_REPAIR,
+  RavenMemoryQaIdentity, ravenMemoryQaComparisons, parseRavenQualityVerdict, parseRavenQualityAssessment, renderRavenVisitorText,
   type RavenScenarioId, type RavenQualityVerdict, type RavenFixtureTurn, type RavenSemanticCategory,
 } from '../../src/main/raven-conversation-fixture'
 import { createSpellTriggerGuard } from '../../src/main/scenes/spell-trigger'
@@ -32,7 +33,7 @@ describe('bounded synthetic Raven fixture', () => {
   it('has immutable independent scenarios, unique turn/category codes and bounded catalog routes', () => {
     expect(recursivelyFrozen(RAVEN_CONVERSATION_FIXTURE)).toBe(true)
     expect(new Set(RAVEN_CONVERSATION_SCENARIOS.map(s => s.id)).size).toBe(RAVEN_CONVERSATION_SCENARIOS.length)
-    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(10)
+    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(11)
     for (const s of RAVEN_CONVERSATION_SCENARIOS) {
       expect(s.turns.length).toBeGreaterThan(1)
       expect(s.turns.length).toBeLessThanOrEqual(12)
@@ -71,17 +72,41 @@ describe('bounded synthetic Raven fixture', () => {
     expect(fixtureTurn('local_loop', 'after_local_loop').before).toBe('operator_stop_loop')
   })
 
-  it('keeps English/Chinese folder and sticky scope local, and requires ordered default fallback', () => {
+  it('requires a separate character score while exempting exact application cues and silence', () => {
+    for (const s of RAVEN_CONVERSATION_SCENARIOS) for (const t of s.turns) {
+      expect(t.expected.qualityDimensions.includes('character')).toBe(t.expected.qualityDimensions.length > 0)
+    }
+    const passed = goodVerdict('character_consistency')
+    expect(parseRavenQualityVerdict(passed, 'character_consistency')?.passed).toBe(true)
+    const failed = structuredClone(passed)
+    failed.turns[1]!.scores.find(score => score.category === 'character')!.score = 1
+    // Correct helpfulness/facts cannot conceal a failed character score.
+    expect(parseRavenQualityVerdict(failed, 'character_consistency')).toBeNull()
+    failed.turns[1]!.passed = false; failed.passed = false
+    expect(parseRavenQualityVerdict(failed, 'character_consistency')?.passed).toBe(false)
+    const missing = structuredClone(passed)
+    missing.turns[0]!.scores = missing.turns[0]!.scores.filter(score => score.category !== 'character')
+    expect(parseRavenQualityVerdict(missing, 'character_consistency')).toBeNull()
+  })
+
+  it('keeps folder, sticky and phrase-less requests local, and goes online only after the opening phrase', () => {
     for (const turn of scenario('local_scope').turns) {
       expect(turn.expected.source).toBe('local_only')
       expect(turn.expected.toolRoutes.flat().some(tool => tool.includes('youtube'))).toBe(false)
     }
-    const fallback = fixtureTurn('default_fallback', 'local_then_external').expected
-    expect(scenario('default_fallback').turns[0]!.expected.source).toBe('local_only')
-    expect(fallback.toolRoutes).toEqual([['find_media', 'search_youtube', 'play_youtube']])
-    expect(fallback.criteria.some(c => c.category === 'local_first')).toBe(true)
-    expect(fallback.runtimeChecks).toContain('selection')
-    expect(fixtureTurn('youtube_modes', 'youtube_once').expected.toolRoutes.flat()).not.toContain('find_media')
+    for (const [id, turnId] of [['default_fallback', 'prior_local_request'], ['default_fallback', 'local_then_external'], ['youtube_modes', 'youtube_without_phrase']] as const) {
+      const turn = fixtureTurn(id, turnId)
+      expect(turn.visitorText).not.toContain('{{cloudSearchPhrase}}')
+      expect(turn.expected.source).toBe('local_only')
+      expect(turn.expected.toolRoutes.flat().some(tool => tool.includes('youtube'))).toBe(false)
+    }
+    for (const [id, turnId] of [['default_fallback', 'cloud_external'], ['default_fallback', 'chinese_fallback'], ['youtube_modes', 'youtube_once'], ['youtube_modes', 'youtube_loop']] as const) {
+      const turn = fixtureTurn(id, turnId)
+      expect(turn.visitorText.startsWith('{{cloudSearchPhrase}}')).toBe(true)
+      expect(turn.expected.toolRoutes.every(route => route.at(-1) === 'play_youtube')).toBe(true)
+      expect(turn.expected.runtimeChecks).toContain('selection')
+    }
+    expect(fixtureTurn('default_fallback', 'cloud_external').expected.criteria.some(c => c.category === 'local_first')).toBe(true)
   })
 
   it('requires separate delivered confirmation in both visits and locks denial/later unrelated yes', () => {
@@ -101,6 +126,23 @@ describe('bounded synthetic Raven fixture', () => {
       expect(t.expected.toolRoutes).toEqual([[]])
       expect(t.expected.runtimeChecks).toContain('private_memory_locked')
     }
+  })
+
+  it('bounds explicit identity repair to denial and a new spelled introduction without a bundled yes', () => {
+    const repair = RAVEN_MEMORY_IDENTITY_REPAIR
+    expect(recursivelyFrozen(repair)).toBe(true)
+    expect(repair.attemptsPerVisit).toBe(1)
+    expect(repair.denial.before).toBe('identity_question_played')
+    expect(repair.denial.expected.toolRoutes).toEqual([[]])
+    expect(repair.denial.visitorText.startsWith('No,')).toBe(true)
+    expect(repair.spelling.visitorText.startsWith('My name is ' + RAVEN_SYNTHETIC_VISITORS.mira.name)).toBe(true)
+    expect(repair.spelling.visitorText.includes('M, I, R, A')).toBe(true)
+    expect(repair.spelling.visitorText.includes('V, A, L, E')).toBe(true)
+    expect(/\b(?:yes|that is me|that's me)\b/iu.test(repair.spelling.visitorText)).toBe(false)
+    expect(repair.spelling.expected.toolRoutes).toEqual([['memory.identify']])
+    expect(repair.spelling.expected.runtimeChecks).toEqual(expect.arrayContaining(['question_played', 'private_memory_locked']))
+    expect(scenario('two_visit_memory').turns.filter(t => t.before === 'identity_question_played').map(t => t.id))
+      .toEqual(['first_confirm', 'return_confirm'])
   })
 
   it('binds synthetic spell controls without authorizing quoted/extended matches or duplicate effects', () => {
@@ -134,7 +176,151 @@ describe('bounded synthetic Raven fixture', () => {
   })
 })
 
+describe('RAM-only two-visit QA identity assertions', () => {
+  const intended = RAVEN_SYNTHETIC_VISITORS.mira.name
+  // Production strips confirmation tokens from this model-visible result.
+  const proposal = (name: unknown = intended) => ({
+    status: 'accepted', code: 'memory_confirmation_required', name,
+  })
+
+  it('rejects an unintended first proposal before confirmation or adoption as the recall scope', () => {
+    const identity = new RavenMemoryQaIdentity()
+    expect(() => identity.propose(1, proposal('Unintended Fixture'), 'question-1')).toThrow('raven_qa_first_identity_mismatch')
+    expect(identity.confirmedName).toBeUndefined()
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+    expect(() => identity.confirmed(1)).toThrow('raven_qa_question_not_delivered')
+    expect(identity.expectedName(1) === intended).toBe(true)
+    expect(() => identity.expectedName(2)).toThrow('raven_qa_first_identity_unconfirmed')
+  })
+
+  it('requires delivery and a separate confirmation before retaining the first label', () => {
+    const identity = new RavenMemoryQaIdentity()
+    const label = ' ' + intended.toUpperCase() + ' '
+    identity.propose(1, proposal(label), 'question-1')
+    expect(identity.confirmedName).toBeUndefined()
+    expect(() => identity.confirmed(1)).toThrow('raven_qa_question_not_delivered')
+    identity.delivered(1)
+    expect(() => identity.requireConfirmation(2)).toThrow('raven_qa_question_not_delivered')
+    identity.confirmed(1)
+    expect(identity.confirmedName === label).toBe(true)
+    expect(identity.expectedName(2) === label).toBe(true)
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+  })
+
+  it('requires a new question token after the one permitted first-visit correction', () => {
+    const identity = new RavenMemoryQaIdentity()
+    expect(() => identity.propose(1, proposal('Unintended Fixture'), 'question-1')).toThrow('raven_qa_first_identity_mismatch')
+    identity.beginRecovery(1)
+    expect(() => identity.propose(1, proposal(intended), 'question-1')).toThrow('raven_qa_identity_question_not_fresh')
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+    expect(() => identity.beginRecovery(1)).toThrow('raven_qa_identity_recovery_exhausted')
+  })
+
+  it('continues through separate confirmation and a return proposal after a valid correction', () => {
+    const identity = new RavenMemoryQaIdentity()
+    expect(() => identity.propose(1, proposal('Unintended Fixture'), 'question-1')).toThrow('raven_qa_first_identity_mismatch')
+    identity.beginRecovery(1)
+    identity.propose(1, proposal(intended), 'question-2')
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+    identity.delivered(1)
+    identity.confirmed(1)
+    identity.propose(2, proposal(intended), 'question-3')
+    identity.delivered(2)
+    identity.confirmed(2)
+    expect(identity.confirmedName === intended).toBe(true)
+  })
+
+  it('rejects a different return label and permits only one fresh-question correction on that visit', () => {
+    const identity = new RavenMemoryQaIdentity()
+    identity.propose(1, proposal(), 'question-1'); identity.delivered(1); identity.confirmed(1)
+    expect(() => identity.propose(2, proposal('Unintended Fixture'), 'question-2')).toThrow('raven_qa_return_identity_mismatch')
+    identity.beginRecovery(2)
+    identity.propose(2, proposal(intended), 'question-3')
+    identity.delivered(2); identity.confirmed(2)
+    expect(identity.confirmedName === intended).toBe(true)
+    expect(() => identity.beginRecovery(2)).toThrow('raven_qa_identity_recovery_exhausted')
+  })
+
+  it('fails closed when a corrected proposal still differs instead of rerolling or confirming it', () => {
+    const identity = new RavenMemoryQaIdentity()
+    expect(() => identity.propose(1, proposal('Unintended Fixture'), 'question-1')).toThrow('raven_qa_first_identity_mismatch')
+    identity.beginRecovery(1)
+    expect(() => identity.propose(1, proposal('Another Fixture'), 'question-2')).toThrow('raven_qa_first_identity_mismatch')
+    expect(() => identity.beginRecovery(1)).toThrow('raven_qa_identity_recovery_exhausted')
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+    expect(identity.confirmedName).toBeUndefined()
+  })
+
+  it.each([undefined, '', 'x'.repeat(81), '\u0000fixture'])('does not authorize a missing or invalid proposal', name => {
+    const identity = new RavenMemoryQaIdentity()
+    const raw = proposal(); raw.name = name
+    expect(() => identity.propose(1, raw, 'question-1')).toThrow('raven_qa_identity_name_missing')
+    expect(() => identity.requireConfirmation(1)).toThrow('raven_qa_question_not_delivered')
+    expect(() => identity.beginRecovery(1)).toThrow('raven_qa_identity_recovery_exhausted')
+  })
+
+  it('rejects incomplete/failed proposals and spaced letter guesses without fuzzy authorization', () => {
+    const identity = new RavenMemoryQaIdentity()
+    expect(() => identity.propose(1, { ...proposal(), status: 'failed' }, 'question-1')).toThrow('raven_qa_identity_proposal_missing')
+    expect(() => identity.propose(1, proposal(), undefined)).toThrow('raven_qa_identity_proposal_missing')
+    expect(() => identity.propose(1, proposal('M I R A V A L E'), 'question-1')).toThrow('raven_qa_first_identity_mismatch')
+    expect(identity.confirmedName).toBeUndefined()
+  })
+
+  it('emits only comparison and length categories for script, ASR, proposal and extraction', () => {
+    const script = fixtureTurn('two_visit_memory', 'first_identify').visitorText
+    const metadata = ravenMemoryQaComparisons({ script, asr: script.toUpperCase(), expected: intended,
+      proposed: intended, tool: 'Unintended Fixture', reasons: [
+        'memory_identity_evidence_tool_different_asr_literal_length_9',
+        'memory_identity_evidence_tool_equal_asr_absent_length_80',
+        'memory_identity_evidence_tool_equal_asr_literal_length_99',
+        'memory_identity_evidence_tool_private_asr_literal_length_9', script,
+      ] })
+    expect(metadata).toEqual({ scriptAsr: 'equal', expectedProposal: 'equal', toolProposal: 'different',
+      lengths: { script: '21_80', asr: '21_80', expected: '1_20', proposed: '1_20', tool: '1_20' },
+      extraction: [{ tool: 'different', asr: 'literal', length: '1_20' }, { tool: 'equal', asr: 'absent', length: '21_80' }] })
+    const encoded = JSON.stringify(metadata)
+    for (const value of [script, intended, 'Unintended Fixture', 'length_9', 'length_80']) expect(encoded.includes(value)).toBe(false)
+  })
+
+  it('categorizes absent/long evidence without content and bounds duplicate extraction metadata', () => {
+    const metadata = ravenMemoryQaComparisons({ script: '', asr: 'x'.repeat(4001), expected: intended, reasons:
+      Array.from({ length: 10 }, () => 'memory_identity_evidence_tool_absent_asr_formatted_length_0') })
+    expect(metadata.scriptAsr).toBe('different')
+    expect(metadata.expectedProposal).toBe('absent')
+    expect(metadata.toolProposal).toBe('absent')
+    expect(metadata.lengths).toEqual({ script: 'empty', asr: 'over_4000', expected: '1_20', proposed: 'empty', tool: 'empty' })
+    expect(metadata.extraction).toHaveLength(4)
+  })
+})
+
 describe('metadata-only quality verdict boundary', () => {
+  it('derives pass/fail from complete provider assessments without accepting missing, duplicate or extra evidence', () => {
+    for (const scenario of RAVEN_CONVERSATION_SCENARIOS) {
+      const { passed: _overall, turns, ...header } = goodVerdict(scenario.id)
+      expect(parseRavenQualityAssessment({ ...header, turns: turns.map(({ passed: _turn, ...grade }) => grade) }, scenario.id)?.passed).toBe(true)
+    }
+    const { passed: _passed, ...good } = goodVerdict('character_consistency')
+    const assessment = { ...good, turns: good.turns.map(({ passed: _turnPassed, ...turn }) => turn) }
+    expect(parseRavenQualityAssessment(assessment, 'character_consistency')?.passed).toBe(true)
+    const low = structuredClone(assessment)
+    low.turns[0]!.scores.find(s => s.category === 'character')!.score = 2
+    const failed = parseRavenQualityAssessment(low, 'character_consistency')
+    expect(failed?.passed).toBe(false)
+    expect(failed?.turns[0]?.passed).toBe(false)
+    const criterionFailure = structuredClone(assessment); criterionFailure.turns[0]!.criteria[0]!.passed = false
+    expect(parseRavenQualityAssessment(criterionFailure, 'character_consistency')?.passed).toBe(false)
+    for (const score of [NaN, Infinity, -1, 5, 3.5]) {
+      const invalidScore = structuredClone(assessment); invalidScore.turns[0]!.scores[0]!.score = score
+      expect(parseRavenQualityAssessment(invalidScore, 'character_consistency')).toBeNull()
+    }
+    const missing = structuredClone(assessment); missing.turns[0]!.scores.pop()
+    expect(parseRavenQualityAssessment(missing, 'character_consistency')).toBeNull()
+    const duplicate = structuredClone(assessment); duplicate.turns[1] = duplicate.turns[0]!
+    expect(parseRavenQualityAssessment(duplicate, 'character_consistency')).toBeNull()
+    expect(parseRavenQualityAssessment({ ...assessment, commentary: 'synthetic private text' }, 'character_consistency')).toBeNull()
+    expect(parseRavenQualityAssessment({ ...assessment, passed: true }, 'character_consistency')).toBeNull()
+  })
   it('accepts complete verdicts for every manifest and returns an immutable independent copy', () => {
     for (const s of RAVEN_CONVERSATION_SCENARIOS) {
       const input = goodVerdict(s.id)
@@ -196,7 +382,7 @@ describe('metadata-only quality verdict boundary', () => {
     ['local_media', 'alias_video', 'tool_silence'], // Correct tool route but "let me find/play" narration.
     ['local_media', 'ambiguous_rain', 'ambiguity'], // Arbitrary choice despite multiple plausible matches.
     ['local_scope', 'vault_miss', 'local_scope'], // External lookup despite a local-only request.
-    ['default_fallback', 'local_then_external', 'local_first'], // Same creator, wrong title accepted as a suitable match.
+    ['default_fallback', 'cloud_external', 'local_first'], // Same creator, wrong title accepted as a suitable match.
     ['identity_denial', 'unrelated_yes', 'consent_boundary'], // An unrelated yes treated as consent.
     ['sleep_spells', 'quoted_spell', 'spell_boundary'], // Substring/quoted phrase treated as authorization.
   ] as const)('retains a failing %s/%s result and rejects a forged pass', (id, turnId, category: RavenSemanticCategory) => {

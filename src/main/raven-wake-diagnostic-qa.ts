@@ -28,6 +28,7 @@ export async function runRavenWakeDiagnosticQa(input: Phase4QaInput): Promise<Ph
   const inputs = Microphone.devices(), outputs = Speaker.devices()
   const trials: Record<string, unknown>[] = []
   let sessionId: string | null = null
+  let failure: string | null = null
   const delay = (ms: number) => new Promise(done => setTimeout(done, ms))
   const command = async (value: WakeCalibrationCommand) => {
     const response = await input.console.webContents.executeJavaScript(`window.magicMirror.wakeCalibration(${JSON.stringify(value)})`) as { ok: boolean; value?: WakeCalibrationSnapshot }
@@ -35,7 +36,7 @@ export async function runRavenWakeDiagnosticQa(input: Phase4QaInput): Promise<Ph
     return response.value
   }
   const persist = (finished: boolean) => writeFile(join(input.outputDir, '../wake-diagnostic.json'), JSON.stringify({
-    finished, initialPermission, permission, settings: { threshold: settings.threshold, score: settings.score, numTrailingBlanks: settings.numTrailingBlanks },
+    finished, failure, initialPermission, permission, settings: { threshold: settings.threshold, score: settings.score, numTrailingBlanks: settings.numTrailingBlanks },
     inputs: inputs.map(({ name, isDefault, maxInputChannels, defaultSampleRate }) => ({ name, isDefault, maxInputChannels, defaultSampleRate })),
     outputs: outputs.map(({ name, isDefault, maxOutputChannels, defaultSampleRate }) => ({ name, isDefault, maxOutputChannels, defaultSampleRate })),
     trials, humanAcceptance: 'not_executed', audioRetention: 'none', operatorSettingsChanged: false,
@@ -57,6 +58,8 @@ export async function runRavenWakeDiagnosticQa(input: Phase4QaInput): Promise<Ph
     trials.push({ kind: 'ambience_before_diagnostic_pause', value: ambience })
     const routes = [{ name: 'system_default', id: '', label: '' }, ...inputs.map(d => ({ name: d.name, id: d.id, label: d.name }))]
     for (const route of routes) {
+      trials.push({ kind: 'route_setup', input: route.name, idAvailable: !!route.id })
+      await persist(false)
       saveAudioPreferences({ ...original, inputId: route.id, inputLabel: route.label })
       for (const output of outputs) {
         for (const index of [1, 0]) {
@@ -134,6 +137,15 @@ export async function runRavenWakeDiagnosticQa(input: Phase4QaInput): Promise<Ph
     if (!positives.some(t => t.result === 'wake_detected')) throw Error('raven_qa_physical_wake_not_detected')
     if (trials.some(t => t.result === 'false_wake')) throw Error('raven_qa_physical_false_wake')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: 0, musicAnalyser: 'not_executed', visualCount: 0 }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : ''
+    failure = /^raven_qa_[a-z_]+$/.test(message) ? message
+      : message === 'audio_preferences_save_failed' ? message
+        : ['DEVICE_FAILED', 'STREAM_OPEN_FAILED', 'STREAM_START_FAILED', 'PERMISSION_DENIED', 'MICROPHONE_NOT_FOUND'].includes(String(code)) ? String(code)
+          : 'raven_qa_native_operation_failed'
+    await persist(true)
+    throw Error(failure)
   } finally {
     saveAudioPreferences(original)
     if (sessionId) await command({ type: 'stop', sessionId }).catch(() => {})

@@ -1,7 +1,20 @@
 # Open work
 
+Current reproduced failures and deferred acceptance: [unresolved issues](docs/testing/open-issues-2026-10-13.md).
+The items below are additional open operator/maintenance checks.
+
 ## Remaining verification / maintenance
 
+- [ ] Owner wake check: say the wake phrase 10× with real loop media at the
+  production Dormant level and 10× about 10 dB lower. See the
+  [2026-10-14 review](docs/testing/review-fixes-2026-10-14.md).
+- [ ] Camera hardware: the Arducam stalls below the app (99% invalid UVC
+  payloads; minimal capture gets 0 frames). Try another cable/port or a powered
+  hub, then five minutes in Photo Booth, then a known-good UVC webcam (a
+  purchase needs owner approval).
+- [ ] Live QA of the online search phrase (DECISIONS 2026-10-14): run
+  `default_fallback`, `youtube_modes` and `local_scope` with mini, then say
+  「在雲上找找」 plus a title through the real microphone.
 - [ ] Operator test of the delivered Console Stop/Abort and automatic Save/check flow,
   including physical sound and live queued scene dialogue cancellation. See
   [delivery evidence](docs/testing/console-stop-save-check-2026-09-15.md).
@@ -11,8 +24,6 @@
 - [ ] Measure per-phrase wake accuracy with representative approved positives
   and negatives, then separate validation samples. Reproduce first-boot wake
   failure; detector activation alone is not accuracy evidence.
-- [ ] Resolve existing Node typecheck TS7016 for `scripts/qa-artifacts.mjs`
-  in `tests/unit/qa-artifacts.test.ts` when maintenance is in scope.
 - [ ] Complete remaining Phase 4 physical adapters, default/Raven sound/echo,
   operator media and long-run acceptance before phase exit. See the
   [Windows checklist](docs/testing/phase4-scene-media-windows-checklist.md).

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { mediaClueKey } from '../../src/shared/media-clue'
 import { parseMediaDiscoveryReply, parseMediaDiscoveryRequest, rankMediaResources,
   type MediaDiscoveryReply, type MediaDiscoveryRequest } from '../../src/shared/media-discovery'
 import type { AvatarMediaResource } from '../../src/shared/media-skill'
@@ -85,6 +86,12 @@ describe('public local media ranking', () => {
     expect(ids(rankMediaResources(resources, request('play rainbow')))).toEqual([])
     expect(ids(rankMediaResources([resource('cloud', '雲海')], request('請播放雲海')))).toEqual(['cloud'])
   })
+  it('keeps a contained title selectable but marks an alias found only inside a sentence as weak', () => {
+    const songs = [resource('qilixiang', '七里香', ['周杰倫']), resource('cloud', '雲海')]
+    expect(rankMediaResources(songs, request('請播放雲海'))).toMatchObject({ code: 'media_discovery_matches', total: 1 })
+    expect(rankMediaResources(songs, request('請播放周杰倫的晴天'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })
+    expect(rankMediaResources(songs, request('周杰倫'))).toMatchObject({ code: 'media_discovery_matches', total: 1 })
+  })
   it('marks equal best matches as ambiguous and retains all candidates', () => {
     const resources = [resource('piano', 'Rain — Piano'), resource('violin', 'Rain — Violin')]
     expect(rankMediaResources(resources, request('Rain'))).toMatchObject({ code: 'media_discovery_ambiguous', total: 2 })
@@ -127,6 +134,8 @@ describe('public local media ranking', () => {
     expect(ids(rankMediaResources(resources, request('雨夜')))).toEqual(['forest', 'piano'])
     expect(ids(rankMediaResources(resources, request('夜鋼琴')))).toEqual(['piano'])
     expect(ids(rankMediaResources(resources, request('鋼琴 雨夜')))).toEqual(['piano'])
+    expect(ids(rankMediaResources(resources, request('钢琴 雨夜'), mediaClueKey))).toEqual(['piano'])
+    expect(ids(rankMediaResources(resources, request('雨夜剛琴'), mediaClueKey))).toEqual([])
     expect(ids(rankMediaResources(resources, request('深夜')))).toEqual(['forest'])
     expect(ids(rankMediaResources(resources, request('明かり')))).toEqual(['japanese'])
     expect(ids(rankMediaResources(resources, request('밤')))).toEqual(['korean'])

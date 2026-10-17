@@ -1,69 +1,88 @@
-# Magic Mirror — clock-out, 2026-10-11
+# Magic Mirror — current handoff, 2026-10-17
 
-## Runtime
+Delivered: connected Stream Deck Neo has green START MIRROR and red STOP MIRROR
+on the first two top-row keys. Elgato 7.6.0 (23012) installed and verified current;
+Neo firmware updated to 1.00.017; Elgato login startup enabled; selected layout
+survives app relaunch. Executable scripts and quiet app wrappers use the existing
+queued LaunchAgent control. [Setup](deploy/macos/stream-deck.md) ·
+[implementation and fresh QA](docs/testing/stream-deck-controls-2026-10-17.md).
 
-Read-only launchd check at **11:46 Taipei**: Raven running, PID **34755**,
-`com.magicmirror.launchagent` run 4; independent root board-ADB running,
-PID **4320**. Clock-out leaves both running. This is process-state evidence,
-not fresh visual/audio or TV acceptance.
+Owner confirmed the physical Neo buttons work. Follow-up delivered: STOP now
+puts the reflective TV in standby before app shutdown; START loads the saved
+active avatar's application and wakes the TV onto HDMI. Standby is Android
+Asleep/display OFF, not shutdown or mains power-off. Mac and wired TV control
+remain powered; standby watts and full-shutdown wake are unmeasured/unproven.
 
-Mac en0 **192.168.77.1/24** → TV **192.168.77.2/24** is the control path.
-AnyLauncher 1.13 is the TV HOME/HDMI launcher; the old Mac HDMI watchdog is
-retired. Last accepted layout: Virtual 16:9 Main, T749 right, Mac rotation 90°
-and Android rotation 2. [TV evidence](docs/testing/tv-hdmi-boot-2026-10-10.md)
-and [operator runbook](deploy/macos/README.md).
+Checks: 65 focused tests pass; eight real combined TV/app cases pass, including
+duplicate presses, ordered STOP→START, portrait window/HDMI foreground and a
+30-second off interval. Initial duplicate-sleep and redundant-ADB-connect failures
+are retained; confirmed-state checks and reuse of the working transport resolved
+the tested failures. A later brief transport failure prompted a bounded 350 ms
+settling delay before reconnect verification/retry; the final eight-case run passed.
+Earlier frozen-Main app cleanup remains passing evidence:
+forced stop 46.2 s, zero app processes, then successful start/clean stop.
+USB reconnect and cold-login acceptance still need owner evidence.
 
-A person controls TV power. TV absence intentionally stops Raven; auto-resume
-is not required. Start with `launchctl kickstart gui/$(id -u)/com.magicmirror.launchagent`
-when wanted. LaunchAgent remains the sole restart owner.
+At automated QA completion Magic Mirror is stopped/job unloaded, TV is in
+standby, and Elgato is running with the two-key profile selected. START bootstraps
+the existing field plist. Production model/TV-presence policy and phase acceptance are unchanged. Preserve
+all prior uncommitted edits. Earlier model/camera work remains below.
 
-## Delivery and evidence
+Final direct check 2026-10-17 10:50:21 Taipei: job unloaded, zero canonical
+Electron/native app processes, TV Asleep/OFF
+([metadata](.artifacts/tv-controls-2026-10-17/final-state.json)).
 
-- Runtime remediation: **a5f7118** and preceding media/TV work. The
-  [ledger](docs/testing/review-remediation-2026-10-10.md) records lifecycle,
-  memory, rendering, Console, local-first YouTube, silent-video BGM and
-  15-second dual-absence shutdown checks, including failed provider runs.
-- **22e4565** adds the
-  [second audit](docs/testing/second-audit-remaining-failures-2026-10-11.md)
-  and [owner rulings](DECISIONS.md). It reports remaining defects and five
-  reproduced focused-test failures; earlier all-pass summaries do not establish
-  current acceptance. Operator config v17 corrects Raven's personality spelling.
-- This clock-out compacts AGENTS, Codex worker instructions and skill guidance,
-  aligns it with the accepted rulings and archives the old handoff. No runtime
-  code, model, operator settings or app restart is part of this change.
-  The pre-existing untracked `deploy/macos/owner-check/` is preserved.
-- Static checks pass: 10 skill schemas, five TOML files, 139 local links,
-  all 12 invariant IDs and whitespace. Python validation lacked PyYAML and the
-  initial Node fallback lacked `yaml`; equivalent checks passed with installed
-  `js-yaml`. No dependencies or runtime tests were needed.
+## Prior delivery — 2026-10-14 clock-out
 
-## Open work
+Start at [unresolved issues](docs/testing/open-issues-2026-10-13.md), then today's
+[review, fixes, QA and research](docs/testing/review-fixes-2026-10-14.md). The
+previous handoff is [archived](docs/archive/progress-before-review-fixes-2026-10-14.md).
 
-Use the second audit's **§1** for correctness fixes: failing fixtures/assertions,
-Maintenance restart loops, mic-loss classification, cue/dialogue queue,
-rejection handling, audio interruption and remaining Console/state defects.
-Startup while the TV is still booting needs separate grace; preserve normal
-15-second absence shutdown after detection.
+All QA finished at 00:18 Taipei 10-15; no Electron or ordinary Magic Mirror app
+is running. Production remains Raven v18,
+`gpt-realtime-2.1-mini`/low (the owner intends to keep mini as the default),
+cedar, configured transcription/memory models and the installed TV policy.
+Nothing is committed; preserve the extensive uncommitted work on
+`field/macmini-deploy`. No phase or human acceptance advances.
 
-Conversation routing/playback has passing provider evidence, but preambles,
-language consistency and extra spell speech remain imperfect. Shared sound-alike
-matching/control-turn exclusion, late reply suppression and the approved prompt
-changes are not yet implemented. QA-only full-model A/B is authorized; a
-production model switch is not. Use **§8–9** and DECISIONS for the accepted
-speech/persona policies; retain failed runs.
+Delivered today (unit-tested; stamped build current at clock-out):
 
-Audible-loop wake and representative human wake/spell acceptance remain open.
-Published Raven has no spells/scenes; QA's mock fixture is not production setup.
-The authorized audible test and quieter Dormant loops are still pending.
-[Wake RCA](docs/testing/wake-phrase-rca-2026-10-10.md) remains route-specific.
+1. Review fixes: barge-in cue release, pending identity question kept, explicit
+   save keeps learning evidence, every authored tool rule rendered, weak alias
+   asks, camera spawn failure degrades.
+2. Second round: guest memory guard (`memoryLocked`) with memory and correction
+   wording; button queue cannot loop; per-response preamble diagnostic and
+   `measured_tool_preamble` rate; five camera robustness fixes (stale watchdog,
+   helper exits on stdin EOF, Dormant status, USB reset spares an Arducam
+   microphone owner, fast capture failure while retiring).
+3. Tried and reverted: quick-tool preamble wording in the session prompt and
+   "call before speaking" in tool descriptions (no benefit; memory preambles rose).
 
-TV Wi-Fi RCA is closed as unnecessary; Mac Wi-Fi is the acceptance target.
-Power-on-at-connect and BetterDisplay update freeze were applied in the second
-audit. Screen-lock change still needs owner authentication; **§6 T1–T5**
-physical power-cut/cold-boot checks remain unaccepted.
+Checks: both typechecks exit 0; full `npm test` 187 files, 2,162 passed,
+1 skipped (before the final prompt-only edits; prompt suites rerun after);
+`npm run build` exit 0.
 
-Next implementation session: fix the bounded correctness findings first,
-then conversation controls/prompt evaluation, then authorized physical checks.
-This clock-out does not advance phase, package/signing or physical acceptance.
+Evidence: character turns mini 37/50 vs full 48/50 before fixes; mini 77/100
+pooled after. Mini still speaks before the local search in nearly every run.
+Memory application checks pass; first-identity failures track ASR mishearing
+the synthetic name. `camera_native` reproduces the 10-13 stall: the Arducam
+delivers invalid UVC payloads below the app; software recovery works but cannot
+keep it streaming.
 
-[Previous full handoff](docs/archive/progress-before-harness-clockout-2026-10-11.md).
+Owner ruling 2026-10-14 ([DECISIONS](DECISIONS.md)): one short in-character
+line is allowed before local search and non-identify memory calls; the session
+prompt, probe quick-tool set and judge criteria follow it (unit-tested; stamped
+build current). Mini re-measure: character 9, 9, 10 = 28/30, the first full mini
+pass; `local_media` 5/6; memory stopped at the first identity on inexact ASR
+([ledger](docs/testing/review-fixes-2026-10-14.md)). Owner decisions still open: production model switch
+(invariant 11); subscription path (invariant 12).
+
+Owner ruling 2026-10-14 (late): online media only after a hidden opening phrase
+(default 「在雲上找找」, Console Persona field); the keyword local-only policy is
+removed. Unit-tested; full `npm test` exit 0 (2,159 passed, 1 skipped); build
+current. Live mini QA: the gate held in all 11 media turns; `local_media` 6/6;
+remaining faults are mini wording/tool slips, not source decisions
+([index](.artifacts/qa-2026-10-14/cloud-phrase/chain-index.txt)).
+
+Next: owner camera hardware discriminators (another cable/port or powered hub,
+Photo Booth, second webcam) and the wake 10+10 check per [TODO](TODO.md).

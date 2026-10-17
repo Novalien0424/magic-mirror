@@ -70,7 +70,7 @@ export function resolveFieldErrors(fields: readonly ConsoleFieldError[], draft: 
       avatarId: avatar?.id, section: parts[1] === 'wakeGreeting' || parts[1] === 'sleepFarewell' ? 'Persona' : 'Appearance' }
     if (root === 'personaName') parts[0] = 'name'
     if (root === 'wake' && parts[1] === 'phrase') parts.splice(0, 2, 'wakePhrase')
-    if (avatar && ['name', 'personality', 'speakingStyle', 'idleSeconds', 'wakePhrase', 'sleepPhrase', 'wakeTuning', 'modelId', 'voice', 'voiceSpeed', 'voiceEffects'].includes(parts[0]!)) {
+    if (avatar && ['name', 'personality', 'speakingStyle', 'idleSeconds', 'wakePhrase', 'sleepPhrase', 'cloudSearchPhrase', 'wakeTuning', 'modelId', 'voice', 'voiceSpeed', 'voiceEffects'].includes(parts[0]!)) {
       if (parts.join('.') === 'wakeTuning.phrase') parts.splice(0, 2, 'wakePhrase')
       return { ...field, path: prefix + parts.join('.'), avatarId: avatar.id,
         section: root === 'modelId' ? 'Appearance' : root?.startsWith('voice') ? 'Voice' : 'Persona' }

@@ -2,6 +2,7 @@ const COPY: Readonly<Record<string, [string, string]>> = {
   console_config_invalid: ['Some settings are incomplete or invalid.', 'Review the highlighted fields, then save again.'],
   invalid_avatar_catalog: ['An avatar setting is incomplete.', 'Check the avatar name, rig and presentation settings.'],
   console_data_plane_unavailable: ['The Console cannot reach the app.', 'Reopen the Console; restart the app if this continues.'],
+  console_runtime_timeout: ['Live status is unavailable.', 'The app did not respond within two seconds. Status checks will retry automatically.'],
   config_service_unavailable: ['Saved settings are unavailable.', 'Retry loading settings before editing or publishing.'],
   wake_worker_unavailable: ['The wake listener is unavailable.', 'Check the microphone connection and restart the listener.'],
   wake_worker_stalled: ['The microphone stopped delivering audio.', 'Check its cable, mute button and selected input.'],
@@ -40,13 +41,13 @@ export function ReasonDetail({ code }: { code: string }) {
 export function OperatorMessage({ text }: { text: string }) {
   const code = text.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/)?.[0]
   if (!code) return <>{text}</>
-  const copy = reasonCopy(code)
-  return <><span>{copy.message} {copy.recovery}</span><details><summary>Technical detail</summary><span>{text}</span></details></>
+  return <><span>{operatorMessageText(text)}</span><details><summary>Technical detail</summary><span>{text}</span></details></>
 }
 
 export function operatorMessageText(text: string): string {
   const code = text.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/)?.[0]
   if (!code) return text
   const copy = reasonCopy(code)
-  return `${copy.message} ${copy.recovery}`
+  const message = text === code ? copy.message : text.replace(code, copy.message.replace(/\.$/, ''))
+  return `${message} ${copy.recovery}`
 }

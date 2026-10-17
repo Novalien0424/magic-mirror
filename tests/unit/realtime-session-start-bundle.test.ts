@@ -19,7 +19,7 @@ function mutableSnapshot(
   return {
     configVersion,
     fingerprint: `synthetic-fingerprint-${configVersion}`,
-    sdkVersion: '0.16.1',
+    sdkVersion: '0.20.0',
     realtimeDialogue,
     inputTranscription: `synthetic-transcription-${configVersion}`,
     memoryExtractor: `synthetic-memory-${configVersion}`,
@@ -109,7 +109,7 @@ describe('P1-U7C1 atomic Realtime session-start bundle issuer', () => {
     expect(bundle.snapshot).toEqual({
       configVersion: 7,
       fingerprint: 'synthetic-fingerprint-7',
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: CONFIGURED_REALTIME_MODEL,
       inputTranscription: 'synthetic-transcription-7',
       memoryExtractor: 'synthetic-memory-7',
@@ -133,7 +133,7 @@ describe('P1-U7C1 atomic Realtime session-start bundle issuer', () => {
       snapshot: {
         configVersion: 7,
         fingerprint: 'synthetic-fingerprint-7',
-        sdkVersion: '0.16.1',
+        sdkVersion: '0.20.0',
         realtimeDialogue: CONFIGURED_REALTIME_MODEL,
         inputTranscription: 'synthetic-transcription-7',
         memoryExtractor: 'synthetic-memory-7',

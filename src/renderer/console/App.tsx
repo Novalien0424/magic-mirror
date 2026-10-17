@@ -5,6 +5,7 @@ import { FIELD_HELP } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createConsoleRuntimeStore, type ConsoleRuntimeStore } from './runtime-store'
+import { getAvatarRuntimeWithTimeout } from './runtime-poll'
 import { RuntimeStatusStrip } from './RuntimeStatusStrip'
 import { NumberInput } from './NumberInput'
 import { FieldErrorsContext, focusInvalidField, normalizeFieldPath, resolveFieldErrors, type FieldErrorTarget } from './field-errors'
@@ -1015,7 +1016,7 @@ export function PhaseTestsPanel({
         <p className="console__request-state" aria-live="polite">Loading Phase Tests…</p>
       ) : null}
       {state.status === 'failure' ? (
-        <div className="console__fault"><ReasonDetail code={state.reason} /></div>
+        <div className="console__fault" role="alert"><OperatorMessage text={`Phase Tests failed: ${state.error}; ${state.reason}`} /></div>
       ) : null}
       {state.status === 'success' && latest === null ? (
         <p className="console__notice" role="status">No Phase {phase} records yet.</p>
@@ -1178,7 +1179,7 @@ export function ConfigPanel({
         <fieldset>
           <legend>Draft safe fields</legend>
           <HelpField fieldPath="personaName" help={FIELD_HELP.configPersona}>
-            <span>personaName</span>
+            <span>Legacy persona name</span>
             <input
               type="text"
               value={draft?.personaName ?? ''}
@@ -1187,7 +1188,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="voice" help={FIELD_HELP.configVoice}>
-            <span>voice</span>
+            <span>Base voice</span>
             <input
               type="text"
               value={draft?.voice ?? ''}
@@ -1205,7 +1206,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="wake.phrase" help={FIELD_HELP.wakePhrase}>
-            <span>wake.phrase</span>
+            <span>Wake phrase</span>
             <input
               type="text"
               value={draft?.wake.phrase ?? ''}
@@ -1215,7 +1216,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="wake.modelVersion" help={FIELD_HELP.wakeVersion}>
-            <span>wake.modelVersion</span>
+            <span>Wake model version</span>
             <input
               type="text"
               value={draft?.wake.modelVersion ?? ''}
@@ -1224,7 +1225,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="wake.packageId" help={FIELD_HELP.wakePackage}>
-            <span>wake.packageId</span>
+            <span>Wake keyword package</span>
             <input
               type="text"
               value={draft?.wake.packageId ?? ''}
@@ -1236,7 +1237,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="faceModel.detectorId" help={FIELD_HELP.faceDetector}>
-            <span>faceModel.detectorId</span>
+            <span>Face detector</span>
             <input
               type="text"
               value={draft?.faceModel.detectorId ?? ''}
@@ -1245,7 +1246,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="faceModel.recognizerId" help={FIELD_HELP.faceRecognizer}>
-            <span>faceModel.recognizerId</span>
+            <span>Face recognizer</span>
             <input
               type="text"
               value={draft?.faceModel.recognizerId ?? ''}
@@ -1254,7 +1255,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="assets.offlineLoopVideo" help={FIELD_HELP.offlineVideo}>
-            <span>assets.offlineLoopVideo</span>
+            <span>Offline loop video</span>
             <input
               type="text"
               value={draft?.assets.offlineLoopVideo ?? ''}
@@ -1263,7 +1264,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="assets.avatarDir" help={FIELD_HELP.avatarDirectory}>
-            <span>assets.avatarDir</span>
+            <span>Avatar asset folder</span>
             <input
               type="text"
               value={draft?.assets.avatarDir ?? ''}
@@ -1272,7 +1273,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="assets.musicDir" help={FIELD_HELP.musicDirectory}>
-            <span>assets.musicDir</span>
+            <span>Music asset folder</span>
             <input
               type="text"
               value={draft?.assets.musicDir ?? ''}
@@ -1281,7 +1282,7 @@ export function ConfigPanel({
             />
           </HelpField>
           <HelpField fieldPath="adapters.lighting" help={FIELD_HELP.lightingAdapter}>
-            <span>adapters.lighting</span>
+            <span>Lighting adapter</span>
             <select
               value={draft?.adapters.lighting ?? 'mock'}
               disabled={disabled}
@@ -1292,7 +1293,7 @@ export function ConfigPanel({
             </select>
           </HelpField>
           <HelpField fieldPath="adapters.fog" help={FIELD_HELP.fogAdapter}>
-            <span>adapters.fog</span>
+            <span>Fog adapter</span>
             <select
               value={draft?.adapters.fog ?? 'mock'}
               disabled={disabled}
@@ -1303,7 +1304,7 @@ export function ConfigPanel({
             </select>
           </HelpField>
           <HelpField fieldPath="adapters.music" help={FIELD_HELP.musicAdapter}>
-            <span>adapters.music</span>
+            <span>Music adapter</span>
             <select
               value={draft?.adapters.music ?? 'mock'}
               disabled={disabled}
@@ -1320,7 +1321,7 @@ export function ConfigPanel({
         <button type="button" disabled={disabled} onClick={() => {
           if (panel.current && focusInvalidField(panel.current)) { setResult('Correct the highlighted field before saving.'); return }
           if (bridge && draft) void run(() => bridge.saveDraft(draft))
-        }}>Save Draft</button>
+        }}>Save configuration draft</button>
         <button type="button" disabled={disabled || dirty} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
       </div>
       <p role="status">{result}{dirty ? ' · Unsaved edits — save changes first.' : ''}</p>
@@ -2311,13 +2312,14 @@ export function App(): React.JSX.Element {
       if (document.hidden || polling) return
       polling = true
       try {
-        const response = await bridge.getAvatarRuntime()
+        const response = await getAvatarRuntimeWithTimeout(bridge)
         if (stopped || !mountedRef.current) return
         const failure = requestFailure(response)
         if (failure !== null) setAvatarRuntimeState({ status: 'failure', ...failure })
         else if (response.ok) setAvatarRuntimeState({ status: 'success', value: response.value })
-      } catch {
-        if (!stopped && mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE })
+      } catch (error) {
+        if (!stopped && mountedRef.current) setAvatarRuntimeState({ status: 'failure', ...BRIDGE_FAILURE,
+          ...(error instanceof Error && error.message === 'console_runtime_timeout' ? { reason: 'console_runtime_timeout' } : {}) })
       } finally { polling = false }
     }
     void refresh()

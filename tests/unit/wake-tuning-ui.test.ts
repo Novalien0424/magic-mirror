@@ -31,4 +31,10 @@ describe('effective wake tuning values', () => {
     expect(html).toContain('0.18 (override)')
     expect(html).toContain('score unavailable (package)')
   })
+  it('shows the editable online search phrase with its default', () => {
+    expect(render(false)).toMatch(/aria-label="Avatar online search phrase"[^>]*value="在雲上找找"/)
+    const avatar = { ...newAvatar('a'), cloudSearchPhrase: '芝麻開門' }
+    expect(renderToStaticMarkup(createElement(AvatarCharacterEditor, { avatar, disabled: false, onChange: () => undefined })))
+      .toMatch(/aria-label="Avatar online search phrase"[^>]*value="芝麻開門"/)
+  })
 })

@@ -17,7 +17,7 @@ function sanitizeMarkerValue(value: string | number | boolean): string {
 
 export function formatMarker(name: string, fields: MarkerFields = {}): string {
   const pairs = Object.entries(fields).map(([key, value]) => `${key}=${sanitizeMarkerValue(value)}`)
-  return pairs.length === 0 ? `${name}\n` : `${name} ${pairs.join(' ')}\n`
+  return `${name}${pairs.length ? ' ' + pairs.join(' ') : ''} at=${new Date().toISOString()}\n`
 }
 
 export function marker(name: string, fields: MarkerFields = {}): void {

@@ -1,4 +1,4 @@
-import source from '../../resources/config/prompts/realtime-tools.v1.json'
+import source from '../../resources/config/prompts/realtime-tools.v1.json' with { type: 'json' }
 import type { fromJSONSchema } from 'zod'
 
 type ParameterSchema = Exclude<Parameters<typeof fromJSONSchema>[0], boolean>
@@ -86,7 +86,15 @@ export function realtimeToolDefinition(spec: RealtimeToolSpec) {
   return { type: 'function' as const, name: spec.name, description: spec.description, parameters: spec.parameters }
 }
 
-export function realtimeToolInstructions(specs: readonly RealtimeToolSpec[]): string {
-  return specs.map(spec => `### ${spec.name}\n` + [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen]
-    .map(rule => `- ${rule}`).join('\n')).join('\n\n')
+export function realtimeToolInstructions(specs: readonly RealtimeToolSpec[], compact = false): string {
+  const seen = new Set<string>()
+  // Compact only removes repeated wording; every authored rule still reaches the model.
+  return specs.map(spec => {
+    const rules = [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen]
+    return `### ${spec.name}\n` + rules.filter(rule => {
+      if (!compact) return true
+      if (seen.has(rule)) return false
+      seen.add(rule); return true
+    }).map(rule => `- ${rule}`).join('\n')
+  }).join('\n\n')
 }

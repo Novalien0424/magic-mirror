@@ -44,7 +44,7 @@ describe('ordered memory dialogue', () => {
   })
   it('uses the selected disclosure language for both question and policy acknowledgment', () => {
     expect(buildMemoryQuestion('小林', 'zh-TW')).toBe('你是小林嗎？')
-    expect(buildMemoryAcknowledgment({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'explicit', language: 'zh-TW' }, '').instructions).toContain('我只會記住你明確請我保存的內容。')
+    expect(buildMemoryAcknowledgment({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'explicit', language: 'zh-TW' }, '').instructions).toContain('你特別交代的事，我才會記下。')
   })
   it('projects all policy modes with no row identifiers, including empty and temporary contexts', () => {
     for (const mode of ['automatic', 'explicit', 'off'] as const) {

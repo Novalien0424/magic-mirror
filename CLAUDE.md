@@ -1,106 +1,49 @@
 # Magic Mirror
 
-Single-venue Electron prototype: Traditional Chinese realtime conversation,
-Cubism avatar (Raven), local wake word, proposed face identity with verbal
-confirmation, exact spoken scene spells, and avatar/person-scoped relationship
-memory. **This Mac mini (`/Users/novalien0424/magic-mirror`) is the final
-deployment target**; Windows (`C:\Project\magic-mirror`) results are historical
-Windows evidence only.
-
-AGENTS.md is the canonical execution policy and the 12 product invariants. It is
-imported below so it is always in context; when it and this file seem to
-disagree, AGENTS.md wins, with one exception: in Claude Code sessions, the
-model routing under "Claude Code specifics" below replaces the AGENTS.md
-"Optional delegation" section (user ruling, 2026-10-10).
+Single-venue Mac Electron/Cubism Raven: Traditional Chinese/English Realtime,
+local wake, verbally confirmed identity, spoken scenes and scoped memory.
 
 @AGENTS.md
 
-## Clock in / clock out
+AGENTS owns policy. In Claude Code only, the routing below replaces its Optional
+delegation section (user ruling, 2026-10-10); runtime model IDs are separate.
 
-- **Clock in:** read `PROGRESS.md` (current delivery, live runtime state,
-  blockers, next action) and only the evidence links relevant to the task. Check
-  `git status` and the current branch. Report briefly; do not resume or restart
-  historical work unless the user asks.
-- **Clock out:** follow the AGENTS.md Handoff section. PROGRESS keeps only
-  current state; move superseded detail to `docs/archive/` with a working link.
-  `TODO.md` holds open items only.
+## Session entry and routing
 
-## Claude Code specifics
+- Clock in: read PROGRESS, selected open issue/evidence, branch and `git status`.
+  Do not resume historical tasks unasked. Clock out: AGENTS Handoff; TODO is open-only.
+- Read project `.agents/skills/<name>/SKILL.md` directly, then only needed
+  references. Prompt/persona → `roleplay-control-prompts`; tools/ASR/playback →
+  `mm-realtime-voice`; wake → `mm-wake-word`; Cubism → `mm-live2d-avatar`;
+  rig authoring → `magic-mirror-avatar-studio`; QA → `mm-ui-qa`; Main/IPC →
+  `mm-electron-foundation`. Stale `.claude/skills/mm-*` copies are hidden; never invoke.
+- Global superpowers/gstack chains do not override the one-agent ruling; use only
+  when requested or needed. Root and every worker run Opus (`model: "opus"`).
+  Never route to Codex/GPT/OpenAI CLIs or codex-rescue/gstack `/codex`.
+  Delegate only independent substantial tasks with owned paths, invariant IDs
+  and checks; workers preserve edits, stay scoped, never delegate and return
+  metadata-only evidence.
+- Never read, print or grep `.env`.
 
-- **Project skills:** the Skill tool lists `mm-*` skills from `.claude/skills/`.
-  Those are stale August 2026 copies kept as protected history. Do not invoke
-  them. Read the current guidance directly with Read:
-  `.agents/skills/<name>/SKILL.md` and its `references/`. `mm-ui-qa`,
-  `magic-mirror-avatar-studio` and `roleplay-control-prompts` exist only there.
-- **Global process skills** (superpowers brainstorming/writing-plans/TDD/
-  subagent-driven-development/git-worktrees, gstack review/ship/qa chains) do not
-  override the AGENTS.md 2026-10-04 workflow ruling: one agent completes the fix
-  with focused checks, no mandatory plan, approval gate or reviewer chain. Use
-  such skills only when the user asks for them or the task genuinely needs one.
-- **Model routing:** Claude Code uses Opus only. The root session and every
-  delegated worker run on Opus. Use the Agent tool with `model: "opus"` for
-  delegated work. Do not route work to Codex, GPT or OpenAI CLIs: no `codex exec`,
-  no `codex:*` skills, no `codex-rescue` agent, no gstack `/codex`. The AGENTS.md
-  delegation rules still apply: delegate only independent substantial tasks;
-  give a short task, owned paths, applicable invariant IDs and expected checks;
-  workers stay in scope, preserve others' edits, do not delegate further, and
-  return metadata-only evidence.
-  (The product's runtime OpenAI Realtime/extractor model IDs are separate. They
-  come only from versioned config and stay unchanged; invariant 11.)
-- **Worktrees:** may run Node tests, typecheck and build only — never Electron
-  runtime, demos or live smoke. Run Electron only from the canonical checkout.
-- Never read, print or grep `.env`. Main alone loads `OPENAI_API_KEY` from it.
-
-## Commands
+## Commands and runtime
 
 ```sh
-npx vitest run tests/unit/<file>.test.ts   # focused check: the default
-npm run typecheck:node                     # main, preload, shared, tests
-npm run typecheck:web                      # renderer
-npm run build                              # prebuild regenerates assets and stamps the QA build
+npx vitest run tests/unit/<file>.test.ts
+npm run typecheck:node
+npm run typecheck:web
+npm run build
 ```
 
-- `npm test` includes a real Electron SQLite smoke. Never overlap it, `npm run
-  dev`, or any `scripts/run-*-qa.mjs` runner with another Electron instance.
-- The deployed app normally runs under the user LaunchAgent
-  `com.magicmirror.launchagent` and owns the Jabra mic. A second instance breaks
-  the single-mic-owner invariant (8). Stop the deployed app deliberately before
-  Electron QA; the LaunchAgent remains the only restart owner. The redeploy steps
-  and paths are in `deploy/macos/README.md`.
-- QA runners execute the stamped `out/` build. Rebuild after source changes
-  instead of bypassing hashes.
-- App logs are metadata-only: `~/Library/Logs/MagicMirror/app.{out,err}.log`.
+Use [Mac runbook](deploy/macos/README.md) for LaunchAgent deployment and
+[owner checks](deploy/macos/owner-check/) for field work. The running app owns
+Jabra; stop deliberately before Electron QA. Runners use stamped `out/`; rebuild
+changed source, never bypass hashes. Metadata logs: `~/Library/Logs/MagicMirror/`.
 
-## Map
-
-- `src/main` — Electron Main: lifecycle (xstate), config/migrations,
-  `node:sqlite`, telemetry, IPC, Realtime secret broker (`realtime/`),
-  sherpa-onnx wake worker (`wake/`), scenes/media (`scenes/`), memory
-  (`memory/`, SQLite in a worker thread plus local MLX embeddings), camera gaze
-  (`camera/`). Top-level `*-qa.ts` files are QA harness entry points driven by
-  `scripts/run-*.mjs`, not product code.
-- `src/renderer` — `mirror/` (portrait guest display), `console/` (operator
-  React UI), `avatar/` (Cubism and the Web Audio voice graph), `realtime/`
-  (OpenAI Agents SDK WebRTC session). `src/preload`, `src/shared` (contracts
-  and schemas).
-- `src/vendor/live2d` — vendored Cubism Framework/Core; do not edit.
-- `resources/avatar/Raven/vN/` — versioned avatar masters; new authoring gets a
-  new version (see its README). `deploy/macos/` — field tooling (display,
-  board ADB daemon (the HDMI watchdog is retired), Jabra audio preference,
-  LaunchAgent).
-- `tests/{unit,main,renderer,integration}` — Vitest (node environment,
-  serial files).
-
-## Documents
-
-- Status: `PROGRESS.md`. Durable rulings: `DECISIONS.md` (newest first).
-- Requirements and architecture: `docs/Magic_Mirror_PRD_v0.3.md`,
-  `docs/Magic_Mirror_Tech_Spec_v0.3.md`; phases:
-  `docs/Magic_Mirror_Implementation_Plan_v0.3.md`; Console UI:
-  `docs/Magic_Mirror_Phase4_UIUX_Design_v0.3.md`.
-- Dated evidence: `docs/testing/`. History: `docs/archive/`. Root handoff
-  notes (`RAVEN-*.md`, `AVATAR-FRAMING-FIX-HANDOFF.md`, `APPLY.md`,
-  `MODEL-ROUTING.md`) and `.artifacts/` are historical evidence, not
-  instructions.
-- Product docs and guest speech are Traditional Chinese. Code identifiers,
-  telemetry and harness instructions are English.
+Code: `src/main` lifecycle/IPC/devices/SQLite, `src/renderer` Mirror/Console/
+Cubism/Realtime, `src/preload` and `src/shared` contracts. QA drivers are Main
+`*-qa.ts` plus `scripts/run-*.mjs`. Tests use serial Vitest/Node.
+Vendored Cubism is not editable; versioned Raven CMO/PSD masters get new versions.
+Product docs: `docs/Magic_Mirror_{PRD,Tech_Spec,Implementation_Plan,Phase4_UIUX_Design}_v0.3.md`.
+`docs/testing`, `docs/archive`, root handoff files and `.artifacts` are evidence/
+history, not extra instructions. Product/guest text is Traditional Chinese;
+code/telemetry is English. Windows evidence does not establish Mac acceptance.

@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { isAbsolute, join } from 'node:path'
-import manifest from '../../../resources/config/memory-embedding.v1.json'
+import manifest from '../../../resources/config/memory-embedding.v1.json' with { type: 'json' }
 import type { MemoryEmbedder, MemoryEmbedding } from './contracts'
 import { MemoryWorkerRecovery } from './recovery'
 

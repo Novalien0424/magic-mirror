@@ -14,6 +14,7 @@ Load only the reference for the failing boundary:
 | Tool catalog, prompt inspector, spoken commands and spells | [prompt controls](references/prompt-controls.md) |
 | Session construction, transcription config, privacy flags | [SDK/session](references/sdk-session.md) |
 | Barge-in, output completion, mic handoff, rollover, profile change | [playback/lifecycle](references/playback-lifecycle.md) |
+| Voice Studio pitch/formant DSP, latency or processed-audio cleanup | [playback/lifecycle](references/playback-lifecycle.md#voice-dsp) |
 | Responses memory extractor | [memory extraction](references/memory-extraction.md) |
 
 Dialogue hears raw audio independently of ASR and may precede its final text.

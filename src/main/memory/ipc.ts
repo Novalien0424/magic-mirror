@@ -11,7 +11,7 @@ interface Options {
   authorize(event: unknown, kind: 'mirror' | 'console'): boolean
   state(): MemoryState
   store(): MemoryRepository
-  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude'>
+  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude' | 'carry'>
   embedder?: MemoryEmbedder
   interpret?: MemoryInterpreter
   controlPhrases?(): Promise<string[]>
@@ -55,7 +55,12 @@ export function registerMemoryIpc(options: Options): { observe(): void; close():
       const result = await session.input(state, envelope.phase as MemoryInputPhase, envelope.itemId, envelope.transcript)
       if (!['memory_no_pending_confirmation', 'memory_confirmation_stale'].includes(result.code)) options.report(result.code)
       return result
-    } catch { options.report('memory_storage_unavailable'); return { status: 'failed', code: 'memory_storage_unavailable' } }
+    } catch (error) {
+      const code = error instanceof Error && error.message === 'memory_control_phrases_unavailable'
+        ? 'memory_control_phrases_unavailable' : 'memory_storage_unavailable'
+      options.report(code)
+      return { status: 'failed', code }
+    }
   })
   options.handle('mirror:memory-reset', async (event, ...args) => {
     if (!options.authorize(event, 'mirror') || args.length !== 1 || !current(args[0])) return rejected()

@@ -52,13 +52,13 @@ export function parseMediaDiscoveryReply(value: unknown): MediaDiscoveryReply | 
   return { status: value.status, code: value.code, resources, total: value.total }
 }
 
-function normalize(value: string): string {
+function literalClueKey(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu, ' ').trim()
 }
 function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0 }
 
 /** Match literal public clues only; punctuation/spacing differences also work for unsegmented CJK titles. */
-function labelScore(label: string, query: string, compactQuery: string, clues: string[]): number {
+function labelScore(label: string, query: string, compactQuery: string, clues: string[], normalize: (value: string) => string): number {
   const normalized = normalize(label), compact = normalized.replace(/ /g, '')
   if (normalized === query || compact === compactQuery) return 4
   if (normalized.includes(query) || compact.includes(compactQuery)) return 3
@@ -71,7 +71,7 @@ function labelScore(label: string, query: string, compactQuery: string, clues: s
 }
 
 /** Pure discovery: retain ambiguous candidates and never select a resource or dispatch playback. */
-export function rankMediaResources(resources: readonly AvatarMediaResource[], request: MediaDiscoveryRequest): MediaDiscoveryReply {
+export function rankMediaResources(resources: readonly AvatarMediaResource[], request: MediaDiscoveryRequest, normalize = literalClueKey): MediaDiscoveryReply {
   const parsedRequest = parseMediaDiscoveryRequest(request)
   if (!parsedRequest) return { status: 'rejected', code: 'media_discovery_invalid_request', resources: [], total: 0 }
   if (!Array.isArray(resources) || resources.length > MAX_RESOURCES) {
@@ -89,9 +89,9 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
     .map(resource => {
       let score = 0
       if (!listing && query) {
-        const nameScore = labelScore(resource.name, query, compactQuery, clues)
+        const nameScore = labelScore(resource.name, query, compactQuery, clues, normalize)
         score = nameScore ? nameScore * 2 + 1 : 0
-        for (const alias of resource.aliases) score = Math.max(score, labelScore(alias, query, compactQuery, clues) * 2)
+        for (const alias of resource.aliases) score = Math.max(score, labelScore(alias, query, compactQuery, clues, normalize) * 2)
       }
       return { resource, score, name: normalize(resource.name) }
     })
@@ -100,7 +100,10 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
       || compare(a.resource.kind, b.resource.kind) || compare(a.resource.assetId, b.resource.assetId))
   const total = ranked.length
   const ambiguous = !listing && total > 1 && ranked[0]!.score === ranked[1]!.score
+  // An alias merely contained in a sentence (often an artist) is not the requested title.
+  const weak = !listing && total > 0 && ranked[0]!.score <= 2
   return { status: 'accepted', code: total > MAX_RESULTS ? 'media_discovery_truncated'
-    : listing ? 'media_discovery_listed' : ambiguous ? 'media_discovery_ambiguous' : total ? 'media_discovery_matches' : 'media_discovery_no_match',
+    : listing ? 'media_discovery_listed' : ambiguous ? 'media_discovery_ambiguous' : weak ? 'media_discovery_weak'
+      : total ? 'media_discovery_matches' : 'media_discovery_no_match',
   resources: ranked.slice(0, MAX_RESULTS).map(candidate => candidate.resource), total }
 }

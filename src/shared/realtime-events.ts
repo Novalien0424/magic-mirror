@@ -36,6 +36,10 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'tool_arguments_rejected',
   'tool_execution_failed',
   'media_source_restricted',
+  'media_source_unconfirmed',
+  'media_online_unlocked',
+  'media_discovery_visitor_clue',
+  'camera_result_stale',
   'memory_brief_oversized',
   'memory_brief_unacknowledged',
   'memory_brief_installed',
@@ -55,6 +59,18 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'microphone_recovery_ready',
   'microphone_recovery_waiting',
   'realtime_request_rejected',
+  'realtime_request_rejected_response_cancel_not_active',
+  'realtime_request_rejected_conversation_already_has_active_response',
+  'realtime_request_rejected_item_not_found',
+  'realtime_request_rejected_invalid_value',
+  'realtime_request_rejected_unknown_parameter',
+  'command_reply_suppressed',
+  'command_prefix_pending',
+  'command_prefix_revised',
+  'command_prefix_final_timeout',
+  'command_reply_resumed',
+  'command_reply_resume_failed',
+  'transcript_duplicate_ignored',
   'media_wake_matched',
   'media_wake_not_matched',
   'scene_dialogue_cancel_pending',
@@ -65,7 +81,10 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'cause=output_interrupted',
 ] as const)
 
+export const OBSERVED_TOOL_NAMES = ['return_to_dormant', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'play', 'capture_camera', 'memory', 'stop_media'] as const
 export type RealtimeMetadataReason = (typeof REALTIME_METADATA_REASONS)[number]
+  | `tool_${typeof OBSERVED_TOOL_NAMES[number]}_${'accepted' | 'ignored' | 'rejected' | 'failed'}_preamble_${'yes' | 'no'}`
+  | `reply_language_${'match' | 'mismatch' | 'unknown'}`
 
 export type RealtimeMetadataStatus = 'success' | 'degraded' | 'failed' | 'info'
 

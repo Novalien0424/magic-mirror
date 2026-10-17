@@ -18,6 +18,8 @@ export type AvatarAudioActivity =
   | 'output_started'
   | 'output_stopped'
   | 'interrupted'
+  | 'tool_started'
+  | 'tool_finished'
 
 export interface AvatarAudioOutput {
   readonly analyser: LipSyncAnalyser
@@ -147,6 +149,12 @@ export function createAvatarAudioCoordinator(
       if (disposed) return
       clearThinking()
       switch (activity) {
+        case 'tool_started':
+          if (!outputPlaying) project('thinking')
+          return
+        case 'tool_finished':
+          if (!outputPlaying) project('listening')
+          return
         case 'speech_started':
           if (outputPlaying) interrupt()
           else project('listening')

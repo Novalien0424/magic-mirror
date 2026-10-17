@@ -6,6 +6,21 @@ const evidence = [{ id: 'turn-a', text: 'Synthetic visitor chose a museum becaus
 const record = { topic: 'Saturday outing', text: 'Museum chosen because rain is expected; booking undecided.', kind: 'episode', state: 'active', eventAt: '', sources: [], expectedRevision: null, keepInMind: false, evidence: ['turn-a'] }
 const response = (records: unknown[]) => new Response(JSON.stringify({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ records }) }] }] }))
 describe('private background memory extraction', () => {
+  it('extracts only final-answer records when commentary contains a different proposal', async () => {
+    const extract = createMemoryExtractor({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl: async () => new Response(JSON.stringify({ status: 'completed', output: [
+      { type: 'message', phase: 'commentary', content: [{ type: 'output_text', text: JSON.stringify({ records: [{ ...record, text: 'Unconfirmed commentary proposal.' }] }) }] },
+      { type: 'message', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify({ records: [record] }) }] },
+    ] })) })
+    const values = await extract({ model: 'configured', evidence, existing: [] }, new AbortController().signal)
+    expect(values).toHaveLength(1)
+    expect(values[0]?.text).toBe(record.text)
+  })
+  it.each(['commentary', 'unknown'])('does not extract records from an explicit %s phase alone', async phase => {
+    const extract = createMemoryExtractor({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl: async () => new Response(JSON.stringify({ status: 'completed', output: [
+      { type: 'message', phase, content: [{ type: 'output_text', text: JSON.stringify({ records: [record] }) }] },
+    ] })) })
+    await expect(extract({ model: 'configured', evidence, existing: [] }, new AbortController().signal)).rejects.toThrow('memory_extraction_invalid')
+  })
   it('uses only the supplied frozen model, no provider storage, and strict validated proposals', async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => response([record]))
     const extract = createMemoryExtractor({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl })

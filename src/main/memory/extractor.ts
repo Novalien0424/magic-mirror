@@ -88,9 +88,9 @@ export function createMemoryExtractor(options: { credentialSource: { get(): Prom
     let validationReason = 'memory_extraction_shape_invalid'
     const invalid = (reason: string): never => { validationReason = reason; throw Error() }
     try {
-      const result = body as { status: string; output: { type: string; content?: { type: string; text?: string }[] }[] }
+      const result = body as { status: string; output: { type: string; phase?: unknown; content?: { type: string; text?: string }[] }[] }
       if (signal.aborted || result.status !== 'completed' || !Array.isArray(result.output)) throw Error()
-      const parts = result.output.filter(item => item.type === 'message').flatMap(item => item.content ?? [])
+      const parts = result.output.filter(item => item.type === 'message' && (item.phase == null || item.phase === 'final_answer')).flatMap(item => item.content ?? [])
       if (parts.length !== 1 || parts[0]?.type !== 'output_text') throw Error()
       const parsed = output.parse(JSON.parse(parts[0].text!))
       const evidence = new Map(input.evidence.map(e => [e.id, e])), existing = new Map(input.existing.map(e => [e.topic, e]))

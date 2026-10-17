@@ -48,7 +48,7 @@ function makeBundle(): Readonly<RealtimeSessionStartBundleValue> {
   const snapshot = Object.freeze({
     configVersion: 7,
     fingerprint: 'snapshot-fingerprint',
-    sdkVersion: '0.16.1',
+    sdkVersion: '0.20.0',
     realtimeDialogue: 'configured-realtime-model',
     inputTranscription: 'configured-transcription-model',
     memoryExtractor: 'configured-memory-model',

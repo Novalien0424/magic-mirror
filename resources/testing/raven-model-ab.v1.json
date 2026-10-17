@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "purpose": "Authorized isolated Raven dialogue-model comparison; never a production default",
+  "reasoningEfforts": ["minimal", "low"],
+  "variants": {
+    "mini": "gpt-realtime-2.1-mini",
+    "full": "gpt-realtime-2.1"
+  }
+}

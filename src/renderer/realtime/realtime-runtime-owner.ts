@@ -186,7 +186,8 @@ export interface RealtimeRuntimeOwner {
   readonly dispose: () => Promise<RealtimeRuntimeOutcome>
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
   readonly setMediaPlayback?: (active: boolean) => void
-  readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: () => void) => RealtimeSceneDialogueResult
+  readonly claimControlTurn?: (itemId: string) => void
+  readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
 
@@ -350,12 +351,12 @@ export function createRealtimeRuntimeOwner(
         return completionFactory(owned.playbackTransport, analyser)
           .waitForActualEnd(new AbortController().signal)
       }
-      runObserver(() => transcriptHandler({
+      return transcriptHandler({
           itemId: completed.itemId,
           transcript: completed.transcript,
           realtimeSessionId: owned.identity.realtimeSessionId,
           waitForActualEnd,
-        }))
+        })
     })
   }
 
@@ -784,7 +785,7 @@ export function createRealtimeRuntimeOwner(
     ...(current === undefined ? {} : { currentIdentity: freezeIdentity(current.identity) }),
   })
 
-  const speakVerbatim = (text: string, signal?: AbortSignal, onFinished?: () => void): RealtimeSceneDialogueResult => {
+  const speakVerbatim = (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void): RealtimeSceneDialogueResult => {
     if (state !== 'active' || current === undefined) {
       return Object.freeze({ status: 'ignored', reason: 'no_active_realtime_session' })
     }
@@ -804,6 +805,7 @@ export function createRealtimeRuntimeOwner(
     interrupt,
     setMediaPlayback,
     speakVerbatim,
+    claimControlTurn: (itemId: string) => current?.session.claimControlTurn?.(itemId),
     getSnapshot,
   })
 }

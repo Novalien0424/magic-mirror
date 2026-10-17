@@ -1,6 +1,7 @@
 import { session, WebContentsView, type BrowserWindow } from 'electron'
 import type { YoutubePlayback, YoutubePlayer } from '../../shared/youtube-media'
 import type { AudioPreferences } from '../../shared/audio-devices'
+import { DORMANT_MEDIA_GAIN } from '../../shared/media-volume'
 
 // The installed application's ID, used as YouTube's required desktop Referer.
 export const YOUTUBE_PLAYER_ORIGIN = 'https://com.magicmirror.app'
@@ -47,13 +48,21 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
     callback({ requestHeaders: { ...headers, Referer: `${YOUTUBE_PLAYER_ORIGIN}/` } })
   })
   let dispose: (() => void) | undefined
+  let storageCleanup = Promise.resolve()
+  let dormant = false
   return {
-    stop() { dispose?.(); dispose = undefined; html = '' },
+    stop() { dispose?.(); dispose = undefined; html = ''; dormant = false },
+    setDormant(value) {
+      if (dormant === value) return
+      dormant = value
+      options.report?.(value ? 'dormant_media_attenuated' : 'dormant_media_volume_restored')
+    },
     play(request, report) {
       this.stop()
       const parent = getWindow()
       if (!parent || parent.isDestroyed() || !parent.isVisible() || parent.isMinimized()) return false
-      const volume = () => Math.round(request.gain * (options.preferences?.().volumes?.[request.kind === 'music' ? 'bgm' : 'effects'] ?? 1) * 100)
+      const volume = () => Math.round(request.gain * (dormant && request.mode === 'loop' ? DORMANT_MEDIA_GAIN : 1)
+        * (options.preferences?.().volumes?.[request.kind === 'music' ? 'bgm' : 'effects'] ?? 1) * 100)
       let appliedVolume = volume(), outputId = options.preferences?.().outputId ?? ''
       if (outputId) options.report?.('youtube_system_audio_output')
       html = youtubePlayerHtml({ ...request, gain: appliedVolume / 100 })
@@ -79,6 +88,8 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
         parent.off('resize', layout); parent.off('closed', fail); parent.off('hide', fail); parent.off('minimize', fail)
         if (!parent.isDestroyed()) parent.contentView.removeChildView(view)
         if (!contents.isDestroyed()) contents.close()
+        storageCleanup = storageCleanup.then(() => isolated.clearStorageData())
+          .catch(() => { options.report?.('youtube_storage_cleanup_failed') })
       }
       const poll = async () => {
         if (stopped) return
@@ -119,7 +130,7 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
       parent.contentView.addChildView(view)
       layout()
       if (stopped) return false
-      void contents.loadURL(PLAYER_URL).catch(fail)
+      void storageCleanup.then(() => { if (!stopped) return contents.loadURL(PLAYER_URL) }).catch(fail)
       return true
     },
   }

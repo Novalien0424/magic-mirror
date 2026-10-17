@@ -4,13 +4,40 @@ import { invokeFunctionTool, RunContext } from '@openai/agents'
 import { isBackgroundResult, RealtimeAgent, RealtimeSession, OpenAIRealtimeWebSocket } from '@openai/agents/realtime'
 import { ScriptedRealtimeTransport } from '@openai/agents/realtime/testing'
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolDefinition, realtimeToolInstructions } from '../../src/shared/realtime-tools'
-import { bindRealtimeTools } from '../../src/renderer/realtime/realtime-tool-bindings'
+import { bindRealtimeTools, type RealtimeToolHandler } from '../../src/renderer/realtime/realtime-tool-bindings'
+import { REALTIME_PROMPTS } from '../../src/shared/realtime-prompts'
 
+const publicResult = (result: { status: string; code: string }) => ({ status: result.status, code: result.code })
 const fresh = () => structuredClone(REALTIME_TOOLS) as any
 const specs = () => resolveRealtimeTools('Rest.').filter(spec => spec.handler === 'return_to_dormant')
 const call = (tool: ReturnType<typeof bindRealtimeTools>[number], input: string) => invokeFunctionTool({tool, input, runContext:new RunContext({})})
 
 describe('structured Realtime tool catalog', () => {
+  it('fills only omitted memory strings, validates supplied types and keeps receipts out of model output', async () => {
+    const memory = vi.fn(async () => ({ outcome: 'accepted' as const, memory: { status: 'accepted' as const,
+      code: 'memory_confirmation_required', confirmation: { token: 'private-receipt', text: 'Synthetic question' } } }))
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'memory'), { memory }, vi.fn())
+    const reply = await call(tool, '{"action":"identify","name":"Fixture"}')
+    expect(memory).toHaveBeenCalledExactlyOnceWith({ action: 'identify', name: 'Fixture', topic: '', text: '', query: '' })
+    expect(JSON.stringify(reply)).not.toContain('private-receipt')
+    expect(JSON.stringify(reply)).not.toContain('Synthetic question')
+    expect(JSON.stringify(reply)).not.toContain('"speech"')
+    await call(tool, '{"action":"recall","query":42}')
+    expect(memory).toHaveBeenCalledOnce()
+  })
+  it('leaves a pending identity question to the application dialogue instead of requesting a reply', async () => {
+    const handler = vi.fn(async () => ({ outcome: 'rejected' as const, memory: { status: 'rejected' as const, code: 'memory_confirmation_pending' } }))
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'memory'), { memory: handler }, vi.fn())
+    const reply = await call(tool, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' }))
+    expect(isBackgroundResult(reply)).toBe(true)
+  })
+  it('tells the model to answer from the conversation when an unconfirmed visitor has no private memory', async () => {
+    const handler = vi.fn(async () => ({ outcome: 'rejected' as const, memory: { status: 'rejected' as const, code: 'memory_identity_required' } }))
+    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'memory'), { memory: handler }, vi.fn())
+    const reply = await call(tool, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: 'promise' }))
+    expect(isBackgroundResult(reply)).toBe(false)
+    expect(reply).toMatchObject({ memory: { code: 'memory_identity_required' }, next: REALTIME_PROMPTS.memoryLocked })
+  })
   it('returns bounded memory results but suppresses generation for a clean memory reset', async () => {
     const handler = vi.fn(async () => ({ outcome: 'accepted' as const, memory: { status: 'accepted' as const, code: 'memory_recalled', entries: [] } }))
     const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'memory'), { memory: handler }, vi.fn())
@@ -24,73 +51,21 @@ describe('structured Realtime tool catalog', () => {
     ['play_youtube', { kind: 'music', url: 'https://www.youtube.com/watch?v=abcdefghijk', mode: 'once' }],
   ] as const)('keeps %s silent after a clarification selection but lets playback failures respond', async (name, arguments_) => {
     const spec = resolveRealtimeTools('Rest.').filter(t => t.name === name)
-    expect(spec[0].rules.speech).toContain('clarification selection')
-    expect(spec[0].rules.speech).toContain('ask no extra confirmation')
-    expect(spec[0].rules.speech).toContain('stay silent')
     const media = vi.fn(async (): Promise<'accepted' | 'rejected' | 'failed'> => 'accepted')
     const [tool] = bindRealtimeTools(spec, { [name]: media }, vi.fn())
     const args = JSON.stringify(arguments_)
     const accepted = await call(tool, args)
     expect(isBackgroundResult(accepted)).toBe(true)
-    expect(accepted).toMatchObject({ content: { status: 'accepted', code: 'media_started', speech: 'none' } })
+    expect(accepted).toMatchObject({ content: { status: 'accepted', code: 'media_started' } })
     for (const outcome of ['rejected', 'failed'] as const) {
       media.mockResolvedValueOnce(outcome)
       const result = await call(tool, args)
       expect(isBackgroundResult(result)).toBe(false)
-      expect(result).toMatchObject({ status: outcome, speech: 'model' })
+      expect(result).toMatchObject({ status: outcome })
     }
   })
-  it('distinguishes an active stop from declined playback or a quoted mention', () => {
-    const stop = resolveRealtimeTools('Rest.').find(t => t.name === 'stop_media')!
-    expect(stop.rules.useWhen).toContain('end current playback')
-    expect(stop.rules.useWhen).toContain('不要再播了')
-    expect(stop.rules.avoidWhen).toContain('do-not-start requests')
-    expect(stop.rules.avoidWhen).toContain('不要播放影片，聊聊雨天 after playback ends')
-    expect(stop.rules.avoidWhen).toContain('quoted, negated, hypothetical or incidental stop mentions')
-    expect(stop.rules.speech).toContain('If accepted, stay silent')
-    expect(stop.rules.speech).toContain('If ignored, no media was playing: answer the actual request')
-    expect(stop.rules.speech).toContain('If rejected or failed')
-    expect(realtimeToolInstructions([stop])).toContain(stop.rules.avoidWhen)
-    expect(realtimeToolInstructions([stop])).toContain(stop.rules.speech)
-  })
-  it.each([
-    ['accepted', 'media_stopped', 'none'],
-    ['ignored', 'media_not_playing', 'model'],
-    ['rejected', 'media_request_rejected', 'model'],
-    ['failed', 'media_stop_failed', 'model'],
-  ] as const)('uses catalog speech ownership after an %s stop through the real SDK', async (outcome, code, speech) => {
-    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'stop_media')
-    const transport = new ScriptedRealtimeTransport(), errors = vi.fn(), onFailure = vi.fn()
-    const output = vi.spyOn(transport, 'sendFunctionCallOutput'), stop = vi.fn(async () => outcome)
-    const session = new RealtimeSession(new RealtimeAgent({ name: 'fixture', instructions: realtimeToolInstructions(spec),
-      tools: bindRealtimeTools(spec, { stop_media: stop }, onFailure) }),
-      { transport, tracingDisabled: true, historyStoreAudio: false, config: { tracing: null } })
-    session.on('error', errors)
-    try {
-      await session.connect({ apiKey: 'synthetic-unused-credential' })
-      transport.emit('function_call', { type: 'function_call', id: 'stop-item', callId: 'stop-call', name: 'stop_media', arguments: '{}', responseId: 'fixture-response' })
-      await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
-      expect(JSON.parse(output.mock.calls[0][1])).toEqual({ status: outcome, code, speech })
-      // Only an accepted stop suppresses the next model response.
-      expect(output.mock.calls[0][2]).toBe(outcome !== 'accepted')
-      expect(stop).toHaveBeenCalledExactlyOnceWith({})
-      expect(onFailure).not.toHaveBeenCalled()
-      expect(errors).not.toHaveBeenCalled()
-    } finally { session.close() }
-  })
-  it('allows stop validation and execution failures to respond without disclosing exception text', async () => {
-    const stop = vi.fn(async () => { throw new Error('private fixture') }), onFailure = vi.fn()
-    const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'stop_media'), { stop_media: stop }, onFailure)
-    const rejected = await call(tool, '{"unexpected":true}')
-    expect(isBackgroundResult(rejected)).toBe(false)
-    expect(rejected).toEqual({ status: 'rejected', code: 'media_request_rejected', speech: 'model' })
-    expect(stop).not.toHaveBeenCalled()
-    const failed = await call(tool, '{}')
-    expect(isBackgroundResult(failed)).toBe(false)
-    expect(failed).toEqual({ status: 'failed', code: 'media_stop_failed', speech: 'model' })
-    expect(JSON.stringify(failed)).not.toContain('private fixture')
-    expect(stop).toHaveBeenCalledExactlyOnceWith({})
-    expect(onFailure.mock.calls).toEqual([['tool_arguments_rejected'], ['tool_execution_failed']])
+  it('keeps media stopping in the application instead of advertising an unreachable tool', () => {
+    expect(resolveRealtimeTools('Rest.').some(tool => tool.name === 'stop_media')).toBe(false)
   })
   it('resumes the real SDK response after camera capture, with the image already in context', async () => {
     const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'capture_camera')
@@ -107,7 +82,7 @@ describe('structured Realtime tool catalog', () => {
       await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
       expect(addImage).toHaveBeenCalledWith('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false })
       expect(addImage.mock.invocationCallOrder[0]).toBeLessThan(output.mock.invocationCallOrder[0])
-      expect(JSON.parse(output.mock.calls[0][1])).toEqual(spec[0].results.accepted)
+      expect(JSON.parse(output.mock.calls[0][1])).toEqual(publicResult(spec[0].results.accepted))
       expect(output.mock.calls[0][2]).toBe(true)
       expect(errors).not.toHaveBeenCalled()
     } finally { session.close() }
@@ -116,7 +91,7 @@ describe('structured Realtime tool catalog', () => {
     expect(REALTIME_TOOLS).toEqual(JSON.parse(readFileSync(REALTIME_TOOL_SOURCE, 'utf8')))
     expect(Object.isFrozen(REALTIME_TOOLS.tools[0].parameters.properties)).toBe(true)
     const rendered = resolveRealtimeTools('{{sleepPhrase}}')[0]
-    expect(rendered.description).toContain('"{{sleepPhrase}}"')
+    expect(rendered.rules.useWhen).toContain('"{{sleepPhrase}}"')
   })
   it('omits disabled tools and their rules, and exposes no audition tools', () => {
     const catalog = fresh(); catalog.tools.forEach((tool: any) => { tool.enabled = false })
@@ -147,13 +122,13 @@ describe('structured Realtime tool catalog', () => {
     expect({type:tool.type,name:tool.name,description:tool.description,parameters:tool.parameters}).toEqual(realtimeToolDefinition(specs()[0]))
     const result=await call(tool,'{}')
     expect(isBackgroundResult(result)).toBe(true)
-    expect(result).toMatchObject({content:REALTIME_TOOLS.tools[0].results.accepted})
+    expect(result).toMatchObject({content:publicResult(REALTIME_TOOLS.tools[0].results.accepted)})
     expect(handler).toHaveBeenCalledExactlyOnceWith({}); expect(onFailure).not.toHaveBeenCalled()
   })
   it.each(['{','null','[]','{"unexpected":"private fixture"}'])('rejects invalid arguments before executing: %s', async input => {
     const handler=vi.fn(), onFailure=vi.fn()
     const [tool]=bindRealtimeTools(specs(),{return_to_dormant:handler},onFailure)
-    expect(await call(tool,input)).toMatchObject({content:REALTIME_TOOLS.tools[0].results.rejected})
+    expect(await call(tool,input)).toMatchObject({content:publicResult(REALTIME_TOOLS.tools[0].results.rejected)})
     expect(handler).not.toHaveBeenCalled(); expect(onFailure).toHaveBeenCalledExactlyOnceWith('tool_arguments_rejected')
   })
   it('validates structured enum arguments for future explicitly bound tools', async () => {
@@ -167,7 +142,7 @@ describe('structured Realtime tool catalog', () => {
     const onFailure=vi.fn()
     const [tool]=bindRealtimeTools(specs(),{return_to_dormant:async()=>{throw new Error('private fixture')}},onFailure)
     const result=await call(tool,'{}')
-    expect(result).toMatchObject({content:REALTIME_TOOLS.tools[0].results.failed})
+    expect(result).toMatchObject({content:publicResult(REALTIME_TOOLS.tools[0].results.failed)})
     expect(JSON.stringify(result)).not.toContain('private fixture')
     expect(onFailure).toHaveBeenCalledExactlyOnceWith('tool_execution_failed')
   })
@@ -185,7 +160,7 @@ describe('structured Realtime tool catalog', () => {
       await session.connect({apiKey:'synthetic-unused-credential'})
       transport.emit('function_call',{type:'function_call',id:'tool-item',callId:'tool-call',name:'return_to_dormant',arguments:'{}',responseId:'fixture-response'})
       await vi.waitFor(()=>expect(output).toHaveBeenCalledOnce())
-      expect(JSON.parse(output.mock.calls[0][1])).toEqual(REALTIME_TOOLS.tools[0].results.accepted)
+      expect(JSON.parse(output.mock.calls[0][1])).toEqual(publicResult(REALTIME_TOOLS.tools[0].results.accepted))
       expect(output.mock.calls[0][2]).toBe(false)
       expect(errors).not.toHaveBeenCalled()
     } finally {session.close()}
@@ -206,25 +181,20 @@ describe('structured Realtime tool catalog', () => {
       expect(new OpenAIRealtimeWebSocket().buildSessionPayload(await session.getInitialSessionConfig()).tools).toEqual(all.map(realtimeToolDefinition))
     } finally { session.close() }
   })
-  it('routes local-first lookup and explicit source restrictions through the shared catalog', () => {
-    const lookup = resolveRealtimeTools('Rest.').find(t => t.name === 'find_media')!
-    expect(lookup.rules.useWhen).toContain('call find_media first')
-    expect(lookup.rules.useWhen).toContain('unless the visitor explicitly requests YouTube')
-    expect(lookup.rules.useWhen).toContain('not every later media request')
-    expect(lookup.rules.speech).toContain('no suitable local match')
-    expect(resolveRealtimeTools('Rest.').find(t => t.name === 'play_youtube')!.rules.avoidWhen).toContain('Use once unless')
-  })
   it('returns discovery candidates to the model but suppresses stale discovery replies', async () => {
     const media = { status: 'accepted' as const, code: 'media_discovery_matches', resources: [{ kind: 'music' as const, assetId: 'rain', name: 'Rain', aliases: [] }], total: 1 }
-    const handler = vi.fn(async () => ({ outcome: 'accepted' as const, media }))
+    const handler = vi.fn<RealtimeToolHandler>(async () => ({ outcome: 'accepted' as const, media }))
     const [tool] = bindRealtimeTools(resolveRealtimeTools('Rest.').filter(t => t.name === 'find_media'), { find_media: handler }, vi.fn())
     expect(await call(tool, '{"query":"rain","kind":"music"}')).toMatchObject({ media })
-    expect(await call(tool, '{"query":"rain","kind":"music"}')).not.toHaveProperty('guidance')
+    expect(await call(tool, '{"query":"rain","kind":"music"}')).not.toHaveProperty('next')
     handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_no_match', resources: [], total: 0 } })
     expect(await call(tool, '{"query":"missing","kind":"music"}')).toMatchObject({
-      media: { code: 'media_discovery_no_match', resources: [], total: 0 },
-      guidance: expect.stringContaining('continue with search_youtube'),
+      media: { code: 'media_discovery_no_match', resources: [], total: 0 }, next: REALTIME_PROMPTS.mediaNoMatch,
     })
+    expect(REALTIME_PROMPTS.mediaNoMatch).not.toMatch(/search_youtube|YouTube|online/u)
+    handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_no_match', resources: [], total: 0 }, next: 'search_youtube' })
+    expect(await call(tool, '{"query":"missing","kind":"music"}')).toMatchObject({ next: REALTIME_PROMPTS.mediaOnlineSearch })
+    expect(REALTIME_PROMPTS.mediaOnlineSearch).toContain('search_youtube')
     handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_stale', resources: [], total: 0 } })
     expect(isBackgroundResult(await call(tool, '{"query":"rain","kind":"music"}'))).toBe(true)
   })

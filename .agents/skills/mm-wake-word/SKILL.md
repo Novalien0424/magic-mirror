@@ -5,6 +5,9 @@ description: "Implement, tune or diagnose Magic Mirror sherpa-onnx wake detectio
 
 # Wake word
 
+`npm run evaluate:wake` runs the versioned corpus/tuning evaluator. Inspect its
+selected positives, negatives and acoustic route before interpreting the rates.
+
 Main verifies the hashed sherpa-onnx model package, then compiles the active avatar's wake phrase with the bundled pronunciation lexicon and that model's tokens. Preserve the original phrase's verified pronunciation. Package defaults apply unless the selected avatar enables overrides bound to that exact phrase. Model/lockfile pins remain authoritative; another supported phrase needs encoding, not automatic neural retraining.
 
 - Encoding, worker config and false-wake tuning: [keyword package](references/keyword-package.md). Use model-owned tokens, 16 kHz / featureDim 80, and reset the spotter after detection. Keyword tuning is not neural training; configured thresholds are not measured per-event confidence.

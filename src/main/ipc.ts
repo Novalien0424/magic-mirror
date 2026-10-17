@@ -3,6 +3,7 @@ import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
 import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
 import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
+import { mediaClueKey } from '../shared/media-clue'
 import { parseYoutubeSearchRequest, type YoutubeSearchReply } from '../shared/youtube-search'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
@@ -1805,7 +1806,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
           options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? [])
         const resources = skill.enabled ? skill.resources.filter(resource => !catalog || canUseAvatarResource(catalog, catalog.activeAvatarId,
           resource.kind === 'video' ? 'visual' : 'music', resource.assetId)) : []
-        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest)
+        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest, mediaClueKey)
       }
     } catch { result = reply(`${prefix}_unavailable`, 'failed') as MediaDiscoveryReply | YoutubeSearchReply }
     if (!current()) return stale()
@@ -1814,6 +1815,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.mediaSkill, async (event, ...args) => {
+    let failureCode: import('../shared/media-skill').MediaFailureCode = 'media_playback_failed'
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return 'rejected' }
     const envelope = args[0]
@@ -1834,6 +1836,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       if (!current()) { emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' }); return 'ignored' }
       if (request.action === 'stop') return mediaSkill.stop()
       if (request.mode === 'loop' && !runtime.requestSleep) {
+        failureCode = 'media_loop_unavailable'
         emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_wake_handoff_unavailable' })
         return 'failed'
       }
@@ -1851,6 +1854,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
           ? config.visualAssets.some(a => a.id === request.assetId && a.kind === 'video') : config.musicAssets.some(a => a.id === request.assetId)))
         && (!catalog || canUseAvatarResource(catalog, catalog.activeAvatarId, request.kind === 'video' ? 'visual' : 'music', request.assetId))
       if (!skill.enabled || !available) {
+        failureCode = request.action === 'play_youtube' && !options.youtube ? 'media_youtube_not_configured' : 'media_not_found'
         emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })
         return 'rejected'
       }
@@ -1880,13 +1884,16 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       try {
         const sleep = await runtime.requestSleep()
         if (readProperty(sleep, 'status') !== 'success') throw new Error('media_wake_handoff_failed')
+        if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) options.youtube?.setDormant?.(true)
       } catch {
         sleepingMedia = false
         if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) mediaSkill.stop('media_wake_handoff_failed')
-        return 'failed'
+        return { status: 'failed', code: 'media_loop_unavailable' }
       }
     }
-    return result
+    const reason = typeof outcome !== 'string' ? mediaSkill.failureReason(outcome.runId) : undefined
+    if (reason?.includes('timeout')) failureCode = 'media_playback_timeout'
+    return result === 'failed' || result === 'rejected' ? { status: result, code: failureCode } : result
   })
 
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {

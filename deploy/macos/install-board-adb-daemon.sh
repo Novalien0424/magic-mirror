@@ -18,15 +18,15 @@ for pid in ${(f)listeners}; do
     print -u2 'ADB_PORT_HAS_UNEXPECTED_OWNER'; exit 1
   }
 done
+/usr/bin/install -d -o root -g wheel -m 755 "$dest" /Library/Logs/MagicMirror
+# Root executes only the installed copy, never Homebrew's user-writable path.
+/usr/bin/install -o root -g wheel -m 755 "$adb_source" "$dest/adb"
 /bin/launchctl disable system/com.magicmirror.board-hdmi
 /bin/launchctl bootout system/com.magicmirror.board-hdmi 2>/dev/null || true
 /bin/launchctl bootout system/com.magicmirror.board-adb 2>/dev/null || true
 if [[ -n "$listeners" ]]; then
-  ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0 "$adb_source" -P 5038 kill-server
+  ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0 "$dest/adb" -P 5038 kill-server
 fi
-/usr/bin/install -d -o root -g wheel -m 755 "$dest" /Library/Logs/MagicMirror
-# launchd must not execute the user-writable Homebrew binary as root.
-/usr/bin/install -o root -g wheel -m 755 "$adb_source" "$dest/adb"
 /usr/bin/install -o root -g wheel -m 644 "$src/com.magicmirror.board-adb.daemon.plist" "$plist"
 /bin/launchctl enable system/com.magicmirror.board-adb
 /bin/launchctl bootstrap system "$plist"

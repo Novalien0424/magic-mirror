@@ -9,5 +9,6 @@ Main owns lifecycle, config, SQLite and devices. Renderers remain sandboxed with
 
 - Lifecycle, IPC, SQLite or atomic config: [main-process](references/main-process.md).
 - Kiosk BrowserWindows, crash recovery, worker spawning or Mac TCC: [windows/workers/macOS](references/windows-workers-macos.md). Verify TCC on the actual signed launch chain and packaged workers.
+- USB camera stalls: [camera recovery](references/windows-workers-macos.md#usb-camera-recovery). The app owns targeted reset/re-enumeration and fresh-frame verification.
 
 Installed dependencies and code own current APIs; this skill does not authorize upgrades or fallback packages.

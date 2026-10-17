@@ -5,7 +5,7 @@ description: "Run, extend or audit Magic Mirror Electron QA runners and screensh
 
 # Electron QA and evidence boundaries
 
-Use current [PROGRESS](../../../PROGRESS.md) evidence/runbook links to choose cases. A previous pass is not fresh QA. For a static/no-launch audit, inspect source and existing metadata without starting QA.
+Use [PROGRESS](../../../PROGRESS.md) to select relevant cases/evidence; open an unresolved issue when applicable. Do not load completed ledgers by default. A previous pass is not fresh QA; a static/no-launch audit starts no QA.
 
 | Task | Read |
 |---|---|

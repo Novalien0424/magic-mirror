@@ -1,4 +1,5 @@
-import { createSpellTriggerGuard, normalizeTranscript, type SpellTriggerGuard } from '../../main/scenes/spell-trigger'
+import { createSpellTriggerGuard, type SpellTriggerGuard } from '../../main/scenes/spell-trigger'
+import { isSpellAttempt, spokenCommandKey } from '../../shared/spoken-command'
 import type { ScenePublicCatalog, SceneStartResult, SceneStatusEvent } from '../../shared/types'
 import type { SpellAnnouncementResult } from './spell-announcement'
 
@@ -29,6 +30,8 @@ export function createSceneTranscriptController(input: Readonly<{
   bridge: SceneTranscriptBridge
   interrupt: () => Promise<unknown>
   announceSpell?: () => Promise<SpellAnnouncementResult>
+  retrySpell?: () => Promise<SpellAnnouncementResult>
+  claimControlTurn?: (itemId: string) => void
   isCurrentSession?: (sessionId: string) => boolean
   metadataSink?: (reason: string, realtimeSessionId: string) => void
 }>): SceneTranscriptController {
@@ -49,7 +52,7 @@ export function createSceneTranscriptController(input: Readonly<{
     const catalog = await input.bridge.getSceneCatalog()
     if (catalog.configVersion === catalogVersion) return
     catalogVersion = catalog.configVersion
-    stopPhrase = normalizeTranscript(catalog.stopPhrase)
+    stopPhrase = spokenCommandKey(catalog.stopPhrase)
     spellGuard = createSpellTriggerGuard(catalog.spells.map((spell) => ({
       spellId: spell.id,
       phrase: spell.phrase,
@@ -94,8 +97,9 @@ export function createSceneTranscriptController(input: Readonly<{
       consumed.add(completed.itemId)
       try {
         await refreshCatalog()
-        const normalized = normalizeTranscript(completed.transcript)
+        const normalized = spokenCommandKey(completed.transcript)
         if (stopPhrase !== '' && normalized === stopPhrase) {
+          input.claimControlTurn?.(completed.itemId)
           if (boundary.runId === null) {
             report('stale_scene_stop', completed.realtimeSessionId)
             return { decision: 'ignored', reason: 'stale_scene_stop' }
@@ -111,15 +115,24 @@ export function createSceneTranscriptController(input: Readonly<{
           transcript: completed.transcript,
         })
         if (decision === undefined || decision.decision === 'ignore') {
-          const reason = decision?.reason === 'not_exact_match' && normalized.startsWith('施放咒語')
+          const reason = decision?.reason === 'not_exact_match' && isSpellAttempt(completed.transcript)
             ? 'spell_command_not_recognized' : decision?.reason ?? 'invalid_config'
           report(reason, completed.realtimeSessionId)
+          if (reason === 'spell_command_not_recognized' && input.isCurrentSession?.(completed.realtimeSessionId) !== false) {
+            input.claimControlTurn?.(completed.itemId)
+            await input.interrupt()
+            if (input.isCurrentSession?.(completed.realtimeSessionId) !== false && input.retrySpell) {
+              void input.retrySpell().then(result => report(result.status === 'completed' ? 'spell_retry_completed' : result.reason, completed.realtimeSessionId))
+                .catch(() => report('spell_retry_unavailable', completed.realtimeSessionId))
+            }
+          }
           return { decision: 'ignored', reason }
         }
         if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
           report('spell_session_stale', completed.realtimeSessionId)
           return { decision: 'ignored', reason: 'spell_session_stale' }
         }
+        input.claimControlTurn?.(completed.itemId)
         await input.interrupt()
         if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
           report('spell_session_stale', completed.realtimeSessionId)

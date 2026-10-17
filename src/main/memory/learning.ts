@@ -13,12 +13,14 @@ export class MemoryLearning {
   private tokens = new Map<string, number>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private running: Promise<void> | undefined
+  private observing = 0
   private active: { key: string; batch: Batch; abort: AbortController; excluded: boolean } | undefined
   private closed = false
   private readonly consolidate: MemoryConsolidator
   constructor(private readonly options: Options) {
     this.consolidate = options.consolidate ?? createMemoryConsolidator({ repository: options.repository, extract: options.extract, report: options.report })
   }
+  isSettled(): boolean { return this.observing === 0 && this.batches.size === 0 && !this.running && !this.active }
   private key(avatarId: string, name: string): string { return JSON.stringify([avatarId, name.normalize('NFKC').trim().toLowerCase()]) }
   private remember(unique: string): void {
     this.seen.add(unique)
@@ -28,6 +30,7 @@ export class MemoryLearning {
     if (this.closed) return
     const key = this.key(item.avatarId, item.name), unique = `${key}:${item.itemId}`, token = this.tokens.get(key) ?? 0
     if (this.seen.has(unique)) return
+    this.observing++
     try {
       const policy = await this.options.repository.policy(item.avatarId, item.name)
       if (this.closed || this.seen.has(unique) || token !== (this.tokens.get(key) ?? 0) || policy.mode !== 'automatic' || policy.cleanupRequired || item.epoch !== undefined && item.epoch !== policy.epoch) {
@@ -48,6 +51,7 @@ export class MemoryLearning {
       if (!this.timer) { this.timer = setTimeout(() => { this.timer = undefined; void this.flush() }, this.options.debounceMs ?? 20_000); this.timer.unref() }
       if (batch.evidence.length >= 6) void this.flush()
     } catch { this.options.report('memory_learning_unavailable') }
+    finally { this.observing-- }
   }
   invalidate(avatarId: string, name: string): void {
     const key = this.key(avatarId, name)
@@ -57,6 +61,12 @@ export class MemoryLearning {
     this.batches.delete(key)
     if (this.active?.key === key) this.active.abort.abort()
     this.options.report(`memory_learning_invalidated;count=${count}`)
+  }
+  /** A plain explicit save advances the epoch only. Queued raw evidence stays
+   * valid: consolidation re-reads the saved topic and commits re-check revisions. */
+  carry(avatarId: string, name: string, from: number, to: number): void {
+    const batch = this.batches.get(this.key(avatarId, name))
+    if (batch?.epoch === from) batch.epoch = to
   }
   exclude(avatarId: string, name: string, itemId: string): void {
     const key = this.key(avatarId, name)

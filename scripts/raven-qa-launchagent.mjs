@@ -11,6 +11,7 @@ export async function runRavenQaLaunchAgent({ repo, root, stamp, environment }) 
   const env = { PATH: '/usr/bin:/bin:/opt/homebrew/bin', HOME: process.env.HOME }
   for (const key of ['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_PHASE4_QA_LIVE',
     'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR',
+    'MIRROR_REVIEW_UI_QA', 'MIRROR_MEMORY_CALENDAR_QA', 'MIRROR_MEDIA_SKILL_QA', 'MIRROR_MEDIA_SKILL_QA_FUNCTIONAL', 'MIRROR_QA_PROMPT_VARIANT', 'MIRROR_QA_PHYSICAL_DEVICES',
     'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE']) {
     if (environment[key] !== undefined) env[key] = environment[key]
   }
@@ -25,7 +26,7 @@ export async function runRavenQaLaunchAgent({ repo, root, stamp, environment }) 
   process.on('SIGINT', stop); process.on('SIGTERM', stop)
   console.log(JSON.stringify({ event: 'raven_qa_launch', route: 'one_shot_launchagent', root }))
   try {
-    const deadline = Date.now() + 1800000
+    const deadline = Date.now() + 2400000
     while (!stopped && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 1000))
       const state = spawnSync('/bin/launchctl', ['print', job], { encoding: 'utf8' }).stdout ?? ''

@@ -20,6 +20,7 @@ import type { AppSnapshot, LifecycleState, SceneActionCommandContext, SceneRunRe
 import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-dependencies'
 import { createSceneTranscriptController, type SceneTranscriptDecision } from './scene-transcript-controller'
 import { createSpellAnnouncement } from './spell-announcement'
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import {
   createSceneVisualController,
   type SceneVisualController,
@@ -392,7 +393,7 @@ function createMirrorRealtimeRuntimeOwner(
   waitForWakePresentation?: (signal: AbortSignal) => Promise<void>,
 ): Readonly<{ owner: RealtimeRuntimeOwner; cancelAnnouncement: () => void; disposeSceneStatus: () => void }> {
   let owner: RealtimeRuntimeOwner
-  const announcement = createSpellAnnouncement({ speak: text => owner.speakVerbatim(text).status === 'dispatched' })
+  const announcement = createSpellAnnouncement({ speak: (text, signal, finished) => owner.speakVerbatim(text, signal, finished).status === 'dispatched' })
   const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
     // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
   }
@@ -419,6 +420,8 @@ function createMirrorRealtimeRuntimeOwner(
       return current.state === 'active' && current.currentIdentity?.realtimeSessionId === sessionId
         ? result : { status: 'failed' as const, reason: 'spell_announcement_cancelled' }
     },
+    retrySpell: () => announcement.run(REALTIME_PROMPTS.spellRetry),
+    claimControlTurn: itemId => owner.claimControlTurn?.(itemId),
     metadataSink: (reason, realtimeSessionId) => reportMirrorRealtimeMetadata(bridge, 'transcript', {
       status: reason === 'transcript_available' ? 'success' : 'info',
       reason: `cause=${reason}`,
@@ -795,6 +798,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [publishedVersion])
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
+  const [toolWorking, setToolWorking] = useState(false)
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
   const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
   const [localVideoHasAudio, setLocalVideoHasAudio] = useState<boolean | null>(null)
@@ -1000,11 +1004,14 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           if (avatarAudioOutputRef.current !== output) return
           avatarAudioOutputRef.current = null
           setAvatarSpeechActive(false)
+          setToolWorking(false)
           pendingSceneDialogueRef.current.clear()
           avatarMediaControllerRef.current?.setRealtimeOutput(null)
           coordinator?.setAudioOutput(null)
         },
         onActivity: (activity) => {
+          if (activity === 'tool_started') setToolWorking(true)
+          if (activity === 'tool_finished' || activity === 'speech_started') setToolWorking(false)
           updateBgmSpeechPriority(activity)
           if (activity === 'interrupted') {
             coordinator.handleActivity(activity)
@@ -1128,6 +1135,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
 
   useEffect(() => {
     avatarMediaControllerRef.current?.setLifecycle(mediaSkillState.active ? 'active' : view.state)
+    avatarMediaControllerRef.current?.setDormantMedia(mediaSkillState.active && view.state === 'dormant')
     if (view.state !== 'active' && !mediaSkillState.active) {
       sceneVisualControllerRef.current?.handleCommand({
         type: 'scene_visual', action: 'stop', runId: 'all', sceneId: 'all',
@@ -1231,6 +1239,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         realtimeRuntimeOwnerRef.current?.setMediaPlayback?.(command.active)
         if (command.active) {
           setAvatarSpeechActive(false)
+          ensureAvatarAudioCoordinator().handleActivity('interrupted')
           avatarMediaControllerRef.current?.handleActivity('interrupted')
         }
         setMediaSkillState({ active: command.active, hideAvatar: command.hideAvatar, fadeMs: command.fadeMs })
@@ -1352,6 +1361,7 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         {scenePlaying && view.state === 'active' && <div className="scene-conversation scene-conversation--spell" role="status" lang="zh-Hant">
           ◇ 施法中
         </div>}
+        {toolWorking && view.state === 'active' && <div className="mirror-working" role="status" aria-label="Working"><span aria-hidden="true">✧</span></div>}
       </div>
     )
   }

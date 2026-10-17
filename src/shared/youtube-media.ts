@@ -28,4 +28,5 @@ export interface YoutubePlayback {
 export interface YoutubePlayer {
   play(request: YoutubePlayback, report: (report: SceneActionRendererReport) => void): boolean
   stop(): void
+  setDormant?(dormant: boolean): void
 }

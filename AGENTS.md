@@ -1,65 +1,60 @@
 # Magic Mirror — Working contract
 
-Complete the requested outcome with the smallest correct change and relevant
-evidence. Prioritize correctness/privacy, scope, then time and token cost.
-Continue until done or concretely blocked; stop at the proven task boundary.
+Finish the requested outcome with the smallest correct change and relevant
+evidence. Prioritize correctness/privacy, scope, then time/token cost. Stop at
+the proven task boundary or concrete blocker; preserve others' edits.
 
 ## Authority and execution
 
-Project precedence: latest user request/routing → this file → newer DECISIONS
-rulings → product/spec/implementation/stack → PROGRESS → domain facts → history.
-`DECISIONS.md` owns durable rulings; `PROGRESS.md` owns current delivery, runtime,
-blockers and evidence. Read only what the task needs.
+Precedence: latest user request/routing → AGENTS → newer DECISIONS → product/
+spec/implementation/stack → PROGRESS → domain facts → history. DECISIONS owns
+rulings; PROGRESS routes current runtime/issues/evidence. Read only the selected
+issue and relevant skill references; completed ledgers are history, not a startup
+reading list. Keep harness instructions in English and domain facts in skills.
 
-- Explain/review/diagnose/plan: inspect and report. Fix/change/build: implement
-  and check. Bounded work needs no plan artifact or repeated approval.
-- Start at the named path/symbol/error with targeted `rg`. Preserve others'
-  edits; avoid adjacent cleanup, refactors, renames or formatting sweeps.
+- Explain/review/diagnose/plan: inspect/report. Fix/change/build: implement/check. Start
+  at the named path/symbol/error with targeted `rg`; no adjacent cleanup.
 - In-scope reads, reversible edits, isolated tests and task-caused repairs are
-  authorized. Ask only for unresolved destructive actions, external writes, purchases,
-  credential rotation, irreversible migration or material expansion. Existing
-  explicit authority persists.
-- External/flaky actions get at most one retry, then report the exact failure.
-  Stop/cancel/abort terminates active work; do not restart or substitute it.
-- Report meaningful findings and blockers. Status requests use current evidence
-  or the smallest direct capture.
+  authorized. Ask only for unresolved destructive actions, external writes,
+  purchases, credential rotation, irreversible migration or material expansion.
+  Existing authority persists; bounded work needs no plan or repeated approval.
+- External/flaky actions: at most one retry, then report the exact failure.
+  Stop/cancel/abort ends active work; do not restart or substitute it.
+- Report meaningful findings/blockers; status uses current evidence or the
+  smallest direct capture.
 
 ## Verification and skills
 
-One agent normally implements and checks (2026-10-04 ruling). No mandatory
-agent chain, plan, approval gate, independent review or full suite. Use focused
-regressions for behavior and static checks for docs/config; reuse unchanged
-passing evidence. Broaden only for affected integration, packaging, privacy,
-mic/restart ownership or release boundaries. Review the final diff once unless
-it reveals a problem. Retain full failures; summarize successful checks. Create
-evidence artifacts only for useful reproduction/handoff; never claim untested
-runtime acceptance.
+One agent normally implements/checks (2026-10-04). No mandatory chain, plan,
+approval gate, independent review or full suite. Use focused behavioral tests
+or docs/config static checks; reuse unchanged passes. Broaden for affected
+integration, packaging, privacy, mic/restart ownership or release boundaries.
+Review the final diff once unless it reveals a problem. Retain full failures,
+summarize passes; artifacts serve reproduction/handoff, not untested acceptance.
 
-Load relevant skills/references only. Keep harness instructions in English;
-skills hold domain facts, not duplicated policy. Realtime prompts/tools come
-from the versioned catalog; application code owns authorization and ordering.
-Use `roleplay-control-prompts` for model behavior, without regex speech filters.
-For QA, start at PROGRESS and `mm-ui-qa`; historical passes are not fresh QA.
-Never overlap normal Electron, Electron QA or full `npm test` (includes Electron
-smoke). Preserve unsaved operator edits before reload/restart.
+Realtime prompts/tools come from the versioned catalog; application code owns
+authorization/ordering. Use `roleplay-control-prompts` for behavior, without regex
+speech filters. QA starts at PROGRESS and `mm-ui-qa`. Historical passes are not
+fresh QA. Never overlap normal Electron, Electron QA or full `npm test` (includes
+Electron smoke). Preserve unsaved operator edits before reload/restart.
 
 ## Optional delegation
 
-Delegate only an independent substantial task that saves time. Root keeps the
-session's selected model/effort; workers use the PATH-resolved CLI, exact
-`nova-auto` / `gpt-6.1-sol` / `max`, without substitution:
+Only independent substantial work that saves time. Root retains the selected
+model/effort; workers use PATH-resolved CLI, exact `nova-auto` / `gpt-6.1-sol` /
+`max`, without substitution:
 
 ```zsh
 codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
 ```
 
-Use the canonical Windows path there. Assign owned paths, applicable invariant
-IDs and checks. Workers preserve others' edits, use `apply_patch` for source,
-and never delegate. Surveyors stay read-only; testers run assigned checks.
-Root integrates without another review stage. Return commands, exits, key
-results and checked IDs; retain failures. Evidence is metadata-only: no
-transcripts, audio, private context, memory values, credentials, images or
-embeddings. Cite primary external sources and distinguish inference.
+Windows: `--cd 'C:\Project\magic-mirror'`. Assign owned paths, invariant IDs and
+checks. Workers preserve others' edits, use `apply_patch` for source, and never
+delegate. Surveyors are read-only; testers run assigned checks. Root integrates
+without another review stage. Return commands, exits, results and checked IDs;
+retain failures. Evidence is metadata-only: no transcripts, audio, private
+context, memory values, credentials, images or embeddings. Cite primary external
+sources and distinguish inference.
 
 ## Canonical product invariants
 

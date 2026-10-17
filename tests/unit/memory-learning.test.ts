@@ -3,14 +3,106 @@ import { MemoryLearning } from '../../src/main/memory/learning'
 import type { ExtractionInput } from '../../src/main/memory/extractor'
 import type { MemoryRepository, LearningRecord } from '../../src/main/memory/contracts'
 const record: LearningRecord = { topic: 'Fixture', text: 'Distilled synthetic outcome.', kind: 'episode', state: 'active', eventAt: '', sources: [], expectedRevision: null, keepInMind: false }
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
 function setup() {
   let epoch = 1
   const repository = { policy: vi.fn(async () => ({ epoch, mode: 'automatic', cleanupRequired: false })), lookupTopics: vi.fn(async () => []), hybridRecall: vi.fn(async () => ({ entries: [], incomplete: false })), commitLearning: vi.fn(async (_a, _n, op) => op.epoch === epoch ? 'committed' : 'stale') }
-  const extract = vi.fn(async (_input: ExtractionInput, _signal: AbortSignal) => [record]), report = vi.fn()
-  const learning = new MemoryLearning({ repository: repository as unknown as MemoryRepository, extract, model: async () => 'configured', report, debounceMs: 60_000 })
-  return { learning, repository, extract, report, correct: () => epoch++ }
+  const extract = vi.fn(async (_input: ExtractionInput, _signal: AbortSignal) => [record]), report = vi.fn(), model = vi.fn(async () => 'configured')
+  const learning = new MemoryLearning({ repository: repository as unknown as MemoryRepository, extract, model, report, debounceMs: 60_000 })
+  return { learning, repository, extract, report, model, correct: () => epoch++ }
 }
 describe('summary learning lifecycle', () => {
+  it('is settled when idle without starting extraction or a commit', async () => {
+    const p = setup()
+    try {
+      expect(p.learning.isSettled()).toBe(true)
+      expect(p.extract).not.toHaveBeenCalled()
+      expect(p.repository.commitLearning).not.toHaveBeenCalled()
+      await p.learning.close()
+      expect(p.learning.isSettled()).toBe(true)
+    } finally { await p.learning.close() }
+  })
+  it('stays unsettled through observe policy/model awaits and queued evidence', async () => {
+    const p = setup(), policy = deferred<{ epoch: number; mode: string; cleanupRequired: boolean }>(), model = deferred<string>()
+    p.repository.policy.mockImplementationOnce(() => policy.promise)
+    p.model.mockImplementationOnce(() => model.promise)
+    const pending = p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'turn-a', text: 'synthetic', observedAt: '' })
+    try {
+      expect(p.learning.isSettled()).toBe(false)
+      policy.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false })
+      await vi.waitFor(() => expect(p.model).toHaveBeenCalledOnce())
+      expect(p.learning.isSettled()).toBe(false)
+      model.resolve('configured'); await pending
+      expect(p.learning.isSettled()).toBe(false)
+      expect(p.extract).not.toHaveBeenCalled()
+      expect(p.repository.commitLearning).not.toHaveBeenCalled()
+      p.learning.invalidate('raven', 'Alice')
+      expect(p.learning.isSettled()).toBe(true)
+    } finally {
+      policy.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false }); model.resolve('configured')
+      await pending; await p.learning.close()
+    }
+  })
+  it('stays unsettled until every invalidated observation finishes', async () => {
+    const p = setup(), first = deferred<{ epoch: number; mode: string; cleanupRequired: boolean }>(), second = deferred<{ epoch: number; mode: string; cleanupRequired: boolean }>()
+    p.repository.policy.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise)
+    const one = p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'first', text: 'synthetic', observedAt: '' })
+    const two = p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'second', text: 'synthetic', observedAt: '' })
+    try {
+      p.learning.invalidate('raven', 'Alice')
+      expect(p.learning.isSettled()).toBe(false)
+      first.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false }); await one
+      expect(p.learning.isSettled()).toBe(false)
+      second.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false }); await two
+      expect(p.learning.isSettled()).toBe(true)
+      expect(p.extract).not.toHaveBeenCalled()
+      expect(p.repository.commitLearning).not.toHaveBeenCalled()
+    } finally {
+      first.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false }); second.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false })
+      await Promise.all([one, two]); await p.learning.close()
+    }
+  })
+  it('stays unsettled during consolidation and until an active commit completes', async () => {
+    const p = setup(), extraction = deferred<LearningRecord[]>(), commit = deferred<'committed' | 'stale'>()
+    p.extract.mockImplementationOnce(() => extraction.promise)
+    p.repository.commitLearning.mockImplementationOnce(() => commit.promise)
+    await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'turn-a', text: 'synthetic', observedAt: '' })
+    const flush = p.learning.flush()
+    try {
+      expect(p.learning.isSettled()).toBe(false)
+      await vi.waitFor(() => expect(p.extract).toHaveBeenCalledOnce())
+      expect(p.learning.isSettled()).toBe(false)
+      extraction.resolve([record])
+      await vi.waitFor(() => expect(p.repository.commitLearning).toHaveBeenCalledOnce())
+      expect(p.learning.isSettled()).toBe(false)
+      p.learning.invalidate('raven', 'Alice')
+      expect(p.learning.isSettled()).toBe(false)
+      commit.resolve('committed'); await flush
+      expect(p.learning.isSettled()).toBe(true)
+    } finally {
+      extraction.resolve([]); commit.resolve('committed')
+      await flush; await p.learning.close()
+    }
+  })
+  it('keeps close nonblocking for observe while reporting its await as unsettled', async () => {
+    const p = setup(), policy = deferred<{ epoch: number; mode: string; cleanupRequired: boolean }>()
+    p.repository.policy.mockImplementationOnce(() => policy.promise)
+    const pending = p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'turn-a', text: 'synthetic', observedAt: '' })
+    try {
+      await p.learning.close()
+      expect(p.learning.isSettled()).toBe(false)
+      policy.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false }); await pending
+      expect(p.learning.isSettled()).toBe(true)
+      expect(p.repository.commitLearning).not.toHaveBeenCalled()
+    } finally {
+      policy.resolve({ epoch: 1, mode: 'automatic', cleanupRequired: false })
+      await pending; await p.learning.close()
+    }
+  })
   it('writes to the captured owner and only persists distilled records, not transcripts', async () => {
     const p = setup()
     await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'turn-a', text: 'RAW SYNTHETIC EVIDENCE', observedAt: '2026-10-05T00:00:00Z' })
@@ -43,6 +135,19 @@ describe('summary learning lifecycle', () => {
     expect(p.report).toHaveBeenCalledWith('memory_learning_invalidated;count=1')
     expect(JSON.stringify(p.report.mock.calls)).not.toMatch(/Alice|synthetic/)
     await p.learning.close()
+  })
+  it('carries pending evidence across a plain explicit save but not across another mutation', async () => {
+    const p = setup()
+    await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'story', text: 'synthetic', observedAt: '' })
+    try {
+      p.correct(); p.learning.carry('raven', 'Alice', 1, 2)
+      await p.learning.flush()
+      expect(p.repository.commitLearning).toHaveBeenCalledOnce()
+      await p.learning.observe({ avatarId: 'raven', name: 'Alice', itemId: 'later', text: 'synthetic', observedAt: '' })
+      p.correct(); p.correct(); p.learning.carry('raven', 'Alice', 2, 3)
+      await p.learning.flush()
+      expect(p.repository.commitLearning).toHaveBeenCalledOnce()
+    } finally { await p.learning.close() }
   })
   it('removes a pending control item while retaining other eligible evidence for flush', async () => {
     const p = setup()

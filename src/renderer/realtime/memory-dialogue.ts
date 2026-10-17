@@ -1,5 +1,6 @@
 import type { MemoryInputPhase, MemoryReply } from '../../shared/memory'
 import { buildMemoryAcknowledgment, buildMemoryState, buildSpeechResponse, REALTIME_PROMPTS, sameSpokenQuestion } from '../../shared/realtime-prompts'
+import { visitorSentenceLanguage } from '../../shared/visitor-language'
 
 interface Options {
   send(event: any): void
@@ -19,10 +20,21 @@ export class MemoryDialogue {
   private question?: Question
   private earlyAnswer?: { itemId: string; reply: MemoryReply }
   private revision = 0
+  private languageItem?: string
+  private languageRevision = 0
   private timer?: ReturnType<typeof setTimeout>
   private update?: { instructions: string; automatic: boolean; resolve(): void; reject(): void; timer: ReturnType<typeof setTimeout> }
   constructor(private readonly options: Options) {}
   get active(): boolean { return this.phase !== 'idle' && this.phase !== 'closed' }
+  observeVisitorSentence(text: string): void {
+    if (this.phase === 'closed') return
+    const language = visitorSentenceLanguage(text)
+    if (!language) return
+    if (this.languageItem) this.options.send({ type: 'conversation.item.delete', item_id: this.languageItem })
+    this.languageItem = `mirror_language_${++this.languageRevision}`
+    this.options.send({ type: 'conversation.item.create', item: { id: this.languageItem, type: 'message', role: 'system',
+      content: [{ type: 'input_text', text: REALTIME_PROMPTS.languageHints[language] }] } })
+  }
   private configure(automatic: boolean, state = ''): Promise<void> {
     const instructions = `${this.options.baseInstructions}\n\n${state}\n\n${REALTIME_PROMPTS.memoryRevision} ${++this.revision}`
     return new Promise((resolve, reject) => {
@@ -44,6 +56,10 @@ export class MemoryDialogue {
     } catch { this.fail() }
   }
   speech(itemId: string): void {
+    if (this.phase === 'closed') return
+    // Keep the last complete sentence's conditional hint through names and
+    // title selections. Its catalog wording yields to a new complete sentence;
+    // ordinary speech still starts immediately, without waiting for final ASR.
     if ((this.phase === 'awaiting' || this.phase === 'receipting') && !this.question?.answerItemId && /^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) {
       this.question!.answerItemId = itemId
       // This starts at speech onset, so allow the utterance and final ASR as

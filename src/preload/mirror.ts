@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
-import { parseMediaSkillRequest } from '../shared/media-skill'
+import { parseMediaSkillRequest, parseMediaSkillResult } from '../shared/media-skill'
 import { parseMediaDiscoveryRequest, parseMediaDiscoveryReply } from '../shared/media-discovery'
 import { parseYoutubeSearchRequest, parseYoutubeSearchReply } from '../shared/youtube-search'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
@@ -39,6 +39,11 @@ if (process.env['MIRROR_FORCE_RENDERER_FAIL'] === '1') {
 }
 
 const READY_CHANNEL = 'boot:renderer-ready' as const
+// Preload shares the renderer event loop, so a hung page cannot fake liveness.
+if (typeof window !== 'undefined') {
+  const heartbeat = setInterval(() => ipcRenderer.send('mirror:heartbeat'), 5000)
+  window.addEventListener('unload', () => clearInterval(heartbeat), { once: true })
+}
 const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
 const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
@@ -550,7 +555,7 @@ const bridge: MirrorBridge = {
       || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return 'rejected'
     const result: unknown = await ipcRenderer.invoke('mirror:media-skill', { request: parsed,
       identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })
-    return result === 'accepted' || result === 'ignored' || result === 'rejected' || result === 'failed' ? result : 'failed'
+    return parseMediaSkillResult(result) ?? { status: 'failed', code: 'media_playback_failed' }
   },
 
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void {

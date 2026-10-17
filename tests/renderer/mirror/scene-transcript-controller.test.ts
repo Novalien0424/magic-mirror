@@ -26,6 +26,17 @@ function harness() {
 }
 
 describe('Scene transcript control boundary', () => {
+  it('speaks one retry for a sound-alike unmatched prefix and never reveals or starts a scene', async () => {
+    const h = harness(), retrySpell = vi.fn(async () => ({ status: 'completed' as const })), claimControlTurn = vi.fn()
+    const controller = createSceneTranscriptController({ bridge: h.bridge, interrupt: h.interrupt, retrySpell, claimControlTurn })
+    controller.handleInputItemCreated('wrong')
+    const input = { itemId: 'wrong', transcript: '是放咒语未知', realtimeSessionId: 'test' }
+    expect(await controller.handleCompletedTranscript(input)).toMatchObject({ decision: 'ignored', reason: 'spell_command_not_recognized' })
+    await controller.handleCompletedTranscript(input)
+    expect(retrySpell).toHaveBeenCalledOnce()
+    expect(claimControlTurn).toHaveBeenCalledExactlyOnceWith('wrong')
+    expect(h.bridge.triggerScene).not.toHaveBeenCalled()
+  })
   it('starts an authorized scene without waiting for its spoken cue, even when later VAD interrupts the cue', async () => {
     for (const status of ['completed', 'failed'] as const) {
       const h = harness()
@@ -67,7 +78,7 @@ describe('Scene transcript control boundary', () => {
     }
   })
 
-  it('reports an unknown short command without interrupting ordinary conversation', async () => {
+  it('claims unknown spell-prefix attempts while leaving ordinary conversation alone', async () => {
     const h = harness()
     h.bridge.getSceneCatalog.mockResolvedValue({ configVersion: 8, stopPhrase: '魔鏡阿魔鏡',
       spells: [{ id: 'rain', phrase: '施放咒語，下雨' }] })
@@ -79,7 +90,7 @@ describe('Scene transcript control boundary', () => {
     }
     expect(h.metadata).toContain('spell_command_not_recognized')
     expect(h.bridge.triggerScene).not.toHaveBeenCalled()
-    expect(h.interrupt).not.toHaveBeenCalled()
+    expect(h.interrupt).toHaveBeenCalledTimes(2)
   })
 
   it('stops the run snapshotted at item creation and cannot also trigger a spell', async () => {

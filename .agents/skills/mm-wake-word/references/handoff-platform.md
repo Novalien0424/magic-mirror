@@ -44,6 +44,14 @@ an independent converter tests a different boundary. Unhinted cloud ASR is only
 an authorized diagnostic, never an implicit wake fallback or proof of correct
 capture when the same ASR also misrecognizes the clean source.
 
+For playback interference, distinguish source PCM headroom, OS speaker gain and
+captured digital levels. Compare quiet, output-open digital silence, fixed speech
+bed and quieter bed; restore any temporary device gain. RMS dBFS is neither SPL
+nor simultaneous near/far SNR. A second ASR must pass the quiet acoustic control,
+not only clean synthesized PCM, before its misses can localize a detector fault.
+Live/reset decoding may retain prior acoustic context unlike fresh-stream replay.
+Same-voice TTS over TTS is a stress condition, not human double-talk acceptance.
+
 Installed decibri 5.7.0 captures the device default format and resamples to the
 requested format. At Jabra's 32 kHz, `framesPerBuffer: 1600` requests 50 ms native
 buffers while reblocking delivered 16 kHz PCM into 100 ms chunks. Read native
@@ -130,6 +138,16 @@ change pins.
   is 32 on Mac. Inspect the loaded configuration before recommending threshold changes.
 - A speakerphone's documented echo cancellation and clean-PCM success do not
   establish human far-field accuracy.
+- Jabra's Easy Call Control can set a device call state without owning an audio
+  input. During a diagnostic, disable SDK tracking, record the call-state
+  transition and restore idle afterward. Measure speech and music beds
+  separately: a call-mode music pass does not establish speech-bed performance.
+  See the [2026-10-11 comparison](../../../../docs/testing/realtime-field-followup-2026-10-11.md).
+- While the Jabra plays a speech bed it cancels that bed but also captures the
+  near-end phrase about 6 dB lower; misses follow bed level (0/15 vs 8/9 at
+  −20 dB). Software AEC cannot restore suppressed near-end speech; test the
+  production Dormant media level with a human voice. See the
+  [2026-10-14 review](../../../../docs/testing/review-fixes-2026-10-14.md).
 
 Evidence: [2026-10-10 RCA](../../../../docs/testing/wake-spell-rca-2026-10-10.md),
 [follow-up](../../../../docs/testing/wake-phrase-rca-2026-10-10.md). These are

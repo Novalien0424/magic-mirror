@@ -462,6 +462,7 @@ interface OfflineLoopSample {
   readonly nonblack: boolean
   readonly rssBytes: number
   readonly workingSetBytes: number
+  readonly workingSetSource: 'resident_set' | 'macos_footprint'
   readonly heapUsedBytes: number
   readonly mediaCurrentTimeMs: number
   readonly loopCount: number
@@ -670,8 +671,11 @@ async function collectOfflineLoopSample(
 
   const rssBytes = positiveInteger(nodeMemory.rss)
   const heapUsedBytes = positiveInteger(nodeMemory.heapUsed)
+  // Chromium deliberately omits residentSet on macOS. Electron's private
+  // footprint is its documented platform metric; retain its distinct source.
+  const workingSetSource = process.platform === 'darwin' ? 'macos_footprint' : 'resident_set'
   const residentSet = isRecord(electronMemory)
-    ? positiveInteger(electronMemory['residentSet'])
+    ? positiveInteger(electronMemory[process.platform === 'darwin' ? 'private' : 'residentSet'])
     : null
   const workingSetBytes = residentSet === null ? null : residentSet * 1024
   if (
@@ -687,6 +691,7 @@ async function collectOfflineLoopSample(
     nonblack,
     rssBytes,
     workingSetBytes,
+    workingSetSource,
     heapUsedBytes,
     mediaCurrentTimeMs,
     loopCount: after.loopCount,
@@ -815,6 +820,7 @@ async function emitOfflineLoopSamples(context: DemoRuntimeContext): Promise<void
         elapsedMs: sample.elapsedMs,
         rssBytes: sample.rssBytes,
         workingSetBytes: sample.workingSetBytes,
+        workingSetSource: sample.workingSetSource,
         heapUsedBytes: sample.heapUsedBytes,
         mediaCurrentTimeMs: sample.mediaCurrentTimeMs,
         loopCount: sample.loopCount,

@@ -39,9 +39,13 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const ritualRef = useRef<HTMLVideoElement | null>(null)
   const avatarRef = useRef<HTMLDivElement | null>(null)
   const routeReady = useRef<Promise<unknown>>(Promise.resolve())
+  // Publication updates future transitions without resetting the current phase.
+  const configRef = useRef(config); configRef.current = config
   const lifecycleRef = useRef(lifecycle); lifecycleRef.current = lifecycle
   useLayoutEffect(() => {
-    const c = createPresentationController({ entranceMs: config.entranceMs, exitMs: config.exitMs,
+    const c = createPresentationController({
+      get entranceMs() { return configRef.current.entranceMs },
+      get exitMs() { return configRef.current.exitMs },
       initialPhase,
       changed: p => {
         if (p === 'exiting' && avatarRef.current) setExitOpacity(Number(getComputedStyle(avatarRef.current).opacity))
@@ -52,8 +56,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     setPhase(initialPhase)
     c.update(lifecycleRef.current)
     return () => { c.dispose(); controller.current = null }
-  }, [config.entranceMs, config.exitMs, config.mode, config.blackHoldMs, config.revealStartMs,
-    config.entranceVideoId, config.exitVideoId, config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase])
+  }, [initialPhase])
   useLayoutEffect(() => { controller.current?.update(lifecycle) }, [lifecycle])
   useLayoutEffect(() => { phaseListener.current?.(phase) }, [phase])
   useEffect(() => {

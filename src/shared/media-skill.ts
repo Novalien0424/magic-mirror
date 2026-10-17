@@ -1,4 +1,16 @@
 import { youtubeVideoId } from './youtube-media'
+import type { ToolOutcome } from './realtime-tools'
+
+export const MEDIA_FAILURE_CODES = ['media_request_rejected', 'media_not_found', 'media_youtube_not_configured', 'media_playback_timeout', 'media_loop_unavailable', 'media_playback_failed', 'media_source_restricted', 'media_source_unconfirmed'] as const
+export type MediaFailureCode = typeof MEDIA_FAILURE_CODES[number]
+export type MediaSkillResult = ToolOutcome | { status: 'failed' | 'rejected'; code: MediaFailureCode }
+export function parseMediaSkillResult(value: unknown): MediaSkillResult | null {
+  if (typeof value === 'string' && ['accepted', 'ignored', 'rejected', 'failed'].includes(value)) return value as ToolOutcome
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const v = value as Record<string, unknown>
+  return Object.keys(v).length === 2 && ['failed', 'rejected'].includes(v.status as string)
+    && MEDIA_FAILURE_CODES.includes(v.code as MediaFailureCode) ? v as Exclude<MediaSkillResult, string> : null
+}
 
 /** Operator-curated local resources available to an avatar's conversational media skill. */
 export interface AvatarMediaResource {

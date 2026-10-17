@@ -441,23 +441,41 @@ positives, 54 trials per cell, 0 false wakes in 168 s of beds):
     app was never running during the test.
 - **TV audio.** macOS accepts audio routed to the `T749-fHD720` HDMI output
   (no volume control). Whether the TV actually emits sound is unverified.
-- **To run it:**
-  - **Codex:** add the matrix to the existing `--launch-agent` Electron QA,
-    which has the microphone grant.
-  - **Owner:** run the ready scripts from your own Terminal. About 11 minutes
-    of audible time:
-    ```sh
-    S=/private/tmp/claude-501/-Users-novalien0424-magic-mirror/d7109fe0-c90b-4375-bb9a-bcdf02ee9fef/scratchpad/live-wake
-    cd $S/scripts && swiftc -O play.swift -o play && swiftc -O audiodev.swift -o audiodev
-    cp -R $S/../aec-probe/kw $S/kw && mkdir -p $S/audio
-    cd /Users/novalien0424/magic-mirror && node $S/scripts/gen.cjs
-    launchctl kill TERM gui/$(id -u)/com.magicmirror.launchagent; sleep 5
-    pgrep -f 'magic-mirror/node_modules/electron' || node $S/scripts/live.cjs C0 C1 C2 C3 C4 C5 C6 TVPROBE C7
-    rm -rf $S/audio $S/kw $S/scripts/play $S/scripts/audiodev
-    launchctl kickstart gui/$(id -u)/com.magicmirror.launchagent
-    ```
-    The scratchpad is session-temporary; copy the scripts if the run will be
-    later.
+- **To run it (owner, from a new Terminal window; about 12 minutes audible):**
+  ```sh
+  zsh ~/magic-mirror/deploy/macos/owner-check/owner-check.sh wake-media
+  ```
+  The script ([owner-check.sh](../../deploy/macos/owner-check/owner-check.sh)):
+  - builds its helpers;
+  - bundles the production wake loader against the published `wake` config;
+  - generates the stimuli silently and checks them offline (fails closed);
+  - requires the Jabra as the default input and output;
+  - stops Raven through launchd, then plays cells C0–C6, and TVPROBE/C7 when
+    the TV audio device exists;
+  - on any exit or Ctrl-C, deletes the audio and restarts Raven if it stopped it.
+
+  It never changes volumes or default devices. It aborts before playing if the
+  microphone delivers digital silence.
+
+  Results, metadata only: `~/Library/Logs/MagicMirror/owner-check/wake-media-<time>/`.
+
+  Cells:
+
+  | Cell | Bed |
+  |---|---|
+  | C0 | None |
+  | C1 | Jabra playing digital silence |
+  | C2 | QA 330 Hz tone ×0.14 |
+  | C3 | Shared-folder music ×0.14 |
+  | C4 | Spoken media ×0.7 |
+  | C5 | Spoken media ×0.175 (−12 dB cap) |
+  | C6 | C4's ratio mixed in the file, Mac speaker only |
+  | C7 | Spoken media on the TV |
+
+  Dry run 2026-10-11, with Raven left running:
+  - helpers built;
+  - offline sanity 2/2 positives, 0/5 negatives, 0 on the 60 s speech bed;
+  - the runner refused to open the microphone while Raven ran (exit 3).
 - **The gain-cap level, speaker routing and whether to build `tau` AEC** stay
   pending this result. The −12 dB Dormant-loop cap is approved regardless.
 
@@ -565,7 +583,7 @@ connectivity` when the TV returns):
 | 3 | BetterDisplay | **Applied 08:31:** staged update skipped. The waiting Sparkle installer was stopped and the staged package moved to the session scratchpad. `SUAutomaticallyUpdate`/`SUEnableAutomaticChecks` = 0. It stays on 5.0.6, still running, and the T749 portrait layout is intact. Start across a boot is still to be proven in T1. |
 | 4 | Local Network permission | **Verified:** Ethernet presence is detected under the LaunchAgent. |
 | 5 | After any boot, `adb -P 5038 connect 192.168.77.2:5555` (runbook step, or a small RunAtLoad agent) | Open (operator control only) |
-| 6 | Screen lock off | **Needs the owner's password:** run `sudo sysadminctl -screenLock off -password -` in Terminal. Latent while sleep is 0. |
+| 6 | Screen lock off | **Needs the owner's password:** `zsh deploy/macos/owner-check/owner-check.sh screenlock` runs `sysadminctl -screenLock off -password -`. Do not use sudo: the setting is per user. Latent while sleep is 0. |
 | 7 | TV Wi-Fi | **Closed** as not required (ruling). The Mac's Wi-Fi plus T4 is the Wi-Fi acceptance item. |
 | 8 | Optional: shorten the 73 s login wave (unrelated login items, window restore) | Open |
 
@@ -585,7 +603,9 @@ connectivity` when the TV returns):
 
 ### Acceptance procedure (owner performs the power cuts; ≥30 s each)
 
-**Capture after each test:**
+**Capture after each test:** `zsh deploy/macos/owner-check/owner-check.sh boot`
+saves a read-only snapshot to `~/Library/Logs/MagicMirror/owner-check/`. A
+TV-on baseline was saved on 2026-10-11 at 11:48. It covers:
 
 - `launchctl print gui/$(id -u)/com.magicmirror.launchagent`
 - `MAIN_READY` / `RENDERER_READY` / `MIRROR_DISPLAY` / `TV_PRESENCE` lines from
@@ -693,6 +713,17 @@ In short:
 
 **`CLAUDE.md`:** the Map line now names the board ADB daemon and marks the HDMI
 watchdog retired.
+
+**Claude-side cleanup (owner-authorized, 2026-10-11, after the commit):**
+
+- `.claude/settings.json` sets `skillOverrides` to `off` for the seven stale
+  `.claude/skills/mm-*` copies. They stay on disk as history but are no longer
+  listed to Claude ([docs](https://code.claude.com/docs/en/skills#override-skill-visibility-from-settings)).
+- `CLAUDE.md` drops restatements of AGENTS.md: worktrees, no-overlap, handoff
+  and the key source. CLAUDE.md plus the imported AGENTS.md is 195 lines, down
+  from 225, under Anthropic's 200-line guidance.
+- Moving the Windows firewall bullet out of AGENTS.md was **not done**, because
+  Codex is editing AGENTS.md concurrently. It stays a Codex option.
 
 **Code issues handed to Codex:**
 

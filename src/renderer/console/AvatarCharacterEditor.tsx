@@ -5,7 +5,7 @@ import { HelpField } from './HelpField'
 import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
 import type { AvatarProfile, AvatarWakeTuning } from '../../shared/avatar-profiles'
-import { DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
+import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { WakeCalibrationPanel } from './WakeCalibrationPanel'
 
@@ -25,6 +25,7 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled, focusName, o
   const settings = { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle,
     wakePhrase: avatar.wakePhrase ?? DEFAULT_WAKE_PHRASE,
     sleepPhrase: avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE,
+    cloudSearchPhrase: avatar.cloudSearchPhrase ?? DEFAULT_CLOUD_SEARCH_PHRASE,
     spellPhrases: avatar.spells.filter(s => s.enabled).map(s => s.phrase),
     wakeGreeting: avatar.presentation.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting!,
     sleepFarewell: avatar.presentation.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell! }
@@ -54,6 +55,7 @@ export function AvatarCharacterEditor({ avatar, onChange, disabled, focusName, o
       <HelpField fieldPath={fieldPath('name')} error={!avatar.name.trim() ? 'Enter an avatar name.' : undefined} help={FIELD_HELP.avatarName}>Avatar name<input required ref={nameInput} aria-label="Avatar name" aria-invalid={!avatar.name.trim() || undefined} maxLength={80} value={avatar.name} onChange={e => onChange({ ...avatar, name: e.currentTarget.value })} /></HelpField>
       <HelpField fieldPath={fieldPath('wakePhrase')} help={FIELD_HELP.avatarWakePhrase}>Wake phrase<input aria-label="Avatar wake phrase" maxLength={96} value={settings.wakePhrase} onChange={e => updateWakePhrase(e.currentTarget.value)} /></HelpField>
       <HelpField fieldPath={fieldPath('sleepPhrase')} help={FIELD_HELP.avatarSleepPhrase}>Sleep phrase<input aria-label="Avatar sleep phrase" maxLength={96} value={settings.sleepPhrase} onChange={e => onChange({ ...avatar, sleepPhrase: e.currentTarget.value })} /></HelpField>
+      <HelpField fieldPath={fieldPath('cloudSearchPhrase')} help={FIELD_HELP.avatarCloudSearchPhrase}>Online search phrase<input aria-label="Avatar online search phrase" maxLength={96} value={settings.cloudSearchPhrase} onChange={e => onChange({ ...avatar, cloudSearchPhrase: e.currentTarget.value })} /></HelpField>
       <HelpField fieldPath={fieldPath('personality')} help={FIELD_HELP.personality}>Personality<textarea rows={5} maxLength={12000} value={avatar.personality} onChange={e => onChange({ ...avatar, personality: e.currentTarget.value })} /></HelpField>
       <HelpField fieldPath={fieldPath('idleSeconds')} help={FIELD_HELP.idle}>Sleep after inactivity (seconds)<NumberInput type="number" min={1} max={86400} value={avatar.idleSeconds} onChange={e => onChange({ ...avatar, idleSeconds: Number(e.currentTarget.value) })} /></HelpField>
     </div>

@@ -1,10 +1,14 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { bootSequence } from '../../src/main/boot'
+import type { BootOptions } from '../../src/main/boot'
+import type { WakeWorkerChild } from '../../src/main/wake/supervisor'
+import type { WakeWorkerCommand, WakeWorkerPackage } from '../../src/main/wake/protocol'
 import {
   openSqlite,
   SQLITE_SCHEMA_VERSION,
@@ -724,10 +728,14 @@ function makeMainIndexHarness(options: {
   readonly smoke?: boolean
   readonly crashGiveUp?: boolean
   readonly userData?: string
+  readonly consoleLoadFailure?: boolean
+  readonly sceneCleanupFailure?: boolean
+  readonly wakeChild?: WakeWorkerChild
 } = {}) {
   const userData = options.userData ?? 'C:\\synthetic-user-data'
   const appHandlers = new Map<string, MainIndexHandler>()
   const bootCalls: unknown[] = []
+  const memoryReports: Array<(code: string) => void> = []
   const deferredShutdown = makeDeferredShutdown()
   const shutdown = vi.fn(() => deferredShutdown.promise)
   const windows: Array<{ readonly webContents: unknown }> = []
@@ -749,8 +757,12 @@ function makeMainIndexHarness(options: {
     }),
     subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
     handleSimulator: vi.fn(),
+    handleMirrorRendererGone: vi.fn(),
     setAvatarRuntimeStatus: vi.fn(() => Promise.resolve()),
     setMemoryRuntimeStatus: vi.fn(() => Promise.resolve()),
+    setWakeRuntimeStatus: vi.fn(() => Promise.resolve()),
+    manualStart: vi.fn(async () => ({ status: 'success', reason: 'synthetic_start' })),
+    ...(options.wakeChild ? { getPublishedWakeConfigForRuntime: async () => ({ phrase: 'synthetic-wake', modelVersion: 'v1', packageId: 'synthetic-package' }) } : {}),
     shutdown,
   }
 
@@ -765,14 +777,16 @@ function makeMainIndexHarness(options: {
     }
     private destroyed = false
     private visible = false
+    private readonly console: boolean
 
-    constructor(_windowOptions: unknown) {
+    constructor(windowOptions: unknown) {
+      this.console = (windowOptions as { title?: string }).title === 'Magic Mirror Console'
       windows.push(this)
     }
 
     once(_event: string, _listener: (...args: unknown[]) => unknown): void {}
-    loadURL(_url: string): Promise<void> { return Promise.resolve() }
-    loadFile(_file: string): Promise<void> { return Promise.resolve() }
+    loadURL(_url: string): Promise<void> { return this.console && options.consoleLoadFailure ? Promise.reject(Error('synthetic_load_failure')) : Promise.resolve() }
+    loadFile(_file: string): Promise<void> { return this.loadURL(_file) }
     isDestroyed(): boolean { return this.destroyed }
     isVisible(): boolean { return this.visible }
     show(): void { this.visible = true }
@@ -798,7 +812,7 @@ function makeMainIndexHarness(options: {
     quit: vi.fn(),
   }
   const globalShortcut = {
-    register: vi.fn(() => true),
+    register: vi.fn((_accelerator: string, _callback: () => void) => true),
     unregisterAll: vi.fn(),
   }
   const electron = {
@@ -825,8 +839,26 @@ function makeMainIndexHarness(options: {
       isStarted: vi.fn(() => true),
       stop: vi.fn(),
     },
+    systemPreferences: {
+      getMediaAccessStatus: vi.fn(() => 'granted'),
+      askForMediaAccess: vi.fn(async (kind: string) => kind === 'microphone'),
+    },
+    utilityProcess: { fork: vi.fn(() => options.wakeChild) },
   }
 
+  const loadWakeModelPackage = vi.fn(async () => ({ ok: false, reason: 'synthetic_model_unavailable' }))
+  const wakePackage: WakeWorkerPackage = { packageId: 'synthetic-package', engine: 'sherpa', engineVersion: 'synthetic',
+    modelVersion: 'v1', phrase: 'synthetic-wake', sampleRateHz: 16000, artifactPaths: { model: 'synthetic.onnx' },
+    tuning: { threshold: 0.2, score: 1.5, numTrailingBlanks: 1 } }
+  vi.doMock('../../src/main/wake/model-package', () => ({ loadWakeModelPackage }))
+  vi.doMock('../../src/main/wake/runtime-config', () => ({ createWakeWorkerPackage: () => wakePackage, wakeTuningIsActive: () => false }))
+  vi.doMock('../../src/main/memory/ipc', async importOriginal => {
+    const actual = await importOriginal<typeof import('../../src/main/memory/ipc')>()
+    return { registerMemoryIpc: (input: Parameters<typeof actual.registerMemoryIpc>[0]) => {
+      memoryReports.push(input.report)
+      return actual.registerMemoryIpc(input)
+    } }
+  })
   vi.doMock('electron', () => electron)
   vi.doMock('../../src/main/boot', () => ({
     bootSequence: vi.fn((bootOptions: unknown) => {
@@ -836,7 +868,9 @@ function makeMainIndexHarness(options: {
   }))
   vi.doMock('../../src/main/ipc', () => ({
     publishSnapshot: vi.fn(),
-    registerIpcHandlers: vi.fn(),
+    registerIpcHandlers: vi.fn(() => ({ stopAll: async () => {
+      if (options.sceneCleanupFailure) throw Error('synthetic_scene_cleanup_failure')
+    } })),
   }))
   vi.doMock('../../src/main/avatar/youtube-player', () => ({
     createYoutubePlayer: () => ({ stop: vi.fn(), play: vi.fn() }),
@@ -881,6 +915,8 @@ function makeMainIndexHarness(options: {
     runtime,
     shutdown,
     windows,
+    loadWakeModelPackage,
+    memoryReports,
   }
 }
 
@@ -899,6 +935,150 @@ afterEach(async () => {
   }
 
   vi.resetModules()
+})
+
+describe('second audit Main integration with mocked Electron only', () => {
+  async function prepare(options: Parameters<typeof makeMainIndexHarness>[0] = {}) {
+    const userData = await mkdtemp(join(tmpdir(), 'magic-mirror-second-audit-main-'))
+    temporaryDirectories.push(userData)
+    const harness = makeMainIndexHarness({ ...options, userData })
+    const restoreResourcesPath = defineSyntheticResourcesPath()
+    const processEvents: EventEmitter = process
+    const fatalListeners = new Map(['uncaughtException', 'unhandledRejection'].map(event => [event, new Set(processEvents.listeners(event))]))
+    const close = async () => {
+      harness.appHandlers.get('will-quit')?.({ preventDefault() {} })
+      harness.deferredShutdown.resolve()
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(10)
+      await flushMicrotasks()
+      for (const [event, original] of fatalListeners) {
+        for (const listener of processEvents.listeners(event)) {
+          if (!original.has(listener)) processEvents.removeListener(event, listener as (...args: unknown[]) => void)
+        }
+      }
+      restoreResourcesPath()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+    return { ...harness, close }
+  }
+
+  it.each(['file', 'url'] as const)('keeps the app running after Console %s page-load rejection', async from => {
+    vi.useFakeTimers()
+    if (from === 'url') vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:9999')
+    const h = await prepare({ consoleLoadFailure: true })
+    try {
+      await import('../../src/main/index')
+      await flushMicrotasks()
+      const toggle = h.globalShortcut.register.mock.calls[0]?.[1] as unknown as () => void
+      toggle()
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(h.runtime.telemetry.emit).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'console_window_load_failed', status: 'degraded', reason: 'console_page_load_failed' }))
+      expect(h.shutdown).not.toHaveBeenCalled()
+      expect(h.app.exit).not.toHaveBeenCalled()
+      expect(h.app.quit).not.toHaveBeenCalled()
+    } finally { await h.close(); vi.unstubAllEnvs() }
+  })
+
+  it.each(['null', 'reject'] as const)('evicts a %s wake-default result and caches a subsequent successful load', async failure => {
+    vi.useFakeTimers()
+    const h = await prepare()
+    try {
+      await import('../../src/main/index')
+      await flushMicrotasks()
+      const defaults = (h.bootCalls[0] as BootOptions).getWakeTuningDefaults!
+      const wake = { phrase: 'synthetic-wake', modelVersion: 'v1', packageId: 'synthetic-package' }
+      if (failure === 'reject') h.loadWakeModelPackage.mockRejectedValueOnce(Error('synthetic_load_rejection'))
+      if (failure === 'null') expect(await defaults(wake)).toBeNull()
+      else await expect(defaults(wake)).rejects.toThrow('synthetic_load_rejection')
+      h.loadWakeModelPackage.mockResolvedValue({ ok: true, manifest: { packageId: wake.packageId } } as never)
+      const expected = { packageId: wake.packageId, threshold: 0.2, score: 1.5, numTrailingBlanks: 1 }
+      expect(await defaults(wake)).toEqual(expected)
+      expect(await defaults(wake)).toEqual(expected)
+      expect(h.loadWakeModelPackage).toHaveBeenCalledTimes(2)
+      expect(h.app.exit).not.toHaveBeenCalled()
+    } finally { await h.close() }
+  })
+
+  class AsynchronousWakeChild extends EventEmitter implements WakeWorkerChild {
+    unplugged = true
+    readonly commands: WakeWorkerCommand[] = []
+    postMessage(command: WakeWorkerCommand): void {
+      this.commands.push(command)
+      void Promise.resolve().then(() => {
+        if (command.type === 'initialize' || command.type === 'update_config') this.emit('message', { type: 'ready', requestId: command.requestId, packageId: command.package.packageId })
+        else if (command.type === 'acquire_microphone') this.emit('message', this.unplugged
+          ? { type: 'failed', requestId: command.requestId, reason: 'wake_microphone_device_failed' }
+          : { type: 'microphone_acquired', requestId: command.requestId })
+        else if (command.type === 'release_microphone') this.emit('message', { type: 'microphone_released', requestId: command.requestId })
+        else if (command.type === 'shutdown') this.emit('message', { type: 'stopped', requestId: command.requestId })
+      })
+    }
+    kill(): void { setTimeout(() => this.emit('exit', 1), 10) }
+  }
+
+  it('degrades an actual supervisor device-loss result before worker exit, then cancels device retries on release', async () => {
+    vi.useFakeTimers()
+    const child = new AsynchronousWakeChild(), h = await prepare({ wakeChild: child })
+    h.loadWakeModelPackage.mockResolvedValue({ ok: true, manifest: { packageId: 'synthetic-package' } } as never)
+    try {
+      await import('../../src/main/index')
+      await flushMicrotasks()
+      const handoff = (h.bootCalls[0] as BootOptions).wakeMicrophoneHandoff!
+      const exit = vi.fn()
+      child.on('exit', exit)
+      expect(await handoff.acquire()).toEqual({ status: 'degraded', reason: 'wake_microphone_device_failed' })
+      expect(exit).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(exit).toHaveBeenCalledOnce()
+      await handoff.release()
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(child.commands.filter(command => command.type === 'initialize')).toHaveLength(1)
+      expect(h.app.exit).not.toHaveBeenCalled()
+    } finally { await h.close() }
+  })
+
+  it('continues wake activation after scene cleanup rejects and catches rejected wake configuration', async () => {
+    vi.useFakeTimers()
+    const child = new AsynchronousWakeChild(), h = await prepare({ wakeChild: child, sceneCleanupFailure: true })
+    child.unplugged = false
+    h.loadWakeModelPackage.mockResolvedValue({ ok: true, manifest: { packageId: 'synthetic-package' } } as never)
+    try {
+      await import('../../src/main/index')
+      await flushMicrotasks()
+      const options = h.bootCalls[0] as BootOptions
+      await options.wakeMicrophoneHandoff!.acquire()
+      vi.spyOn(h.runtime, 'snapshot').mockReturnValue({ ...h.runtime.snapshot(), lifecycle: 'dormant' })
+      child.emit('message', { type: 'wake_detected', packageId: 'synthetic-package', modelVersion: 'v1' })
+      await flushMicrotasks()
+      expect(h.runtime.telemetry.emit).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'scene_cleanup_failed', status: 'degraded', reason: 'scene_cleanup_rejected' }))
+      expect(h.runtime.manualStart).toHaveBeenCalledOnce()
+      h.loadWakeModelPackage.mockRejectedValueOnce(Error('synthetic_config_rejection'))
+      // Force a new configuration signature rather than the already installed key.
+      vi.spyOn(h.runtime, 'getPublishedWakeConfigForRuntime').mockResolvedValue({ phrase: 'synthetic-other-wake', modelVersion: 'v1', packageId: 'synthetic-package' })
+      await expect(options.onWakeConfigChanged!({ phrase: 'synthetic-other-wake', modelVersion: 'v1', packageId: 'synthetic-package' })).resolves.toBeUndefined()
+      expect(h.runtime.setWakeRuntimeStatus).toHaveBeenCalledWith('degraded', 'wake_config_refresh_failed')
+      expect(h.app.exit).not.toHaveBeenCalled()
+    } finally { await h.close() }
+  })
+
+  it('marks control-cache misses as degraded events without changing healthy memory storage status', async () => {
+    vi.useFakeTimers()
+    const h = await prepare()
+    try {
+      await import('../../src/main/index')
+      await flushMicrotasks()
+      h.runtime.setMemoryRuntimeStatus.mockClear()
+      h.memoryReports[0]!('memory_control_phrases_unavailable')
+      await flushMicrotasks()
+      expect(h.runtime.telemetry.emit).toHaveBeenCalledWith(expect.objectContaining({
+        module: 'memory', status: 'degraded', reason: 'memory_control_phrases_unavailable' }))
+      expect(h.runtime.setMemoryRuntimeStatus).not.toHaveBeenCalled()
+    } finally { await h.close() }
+  })
 })
 
 describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {

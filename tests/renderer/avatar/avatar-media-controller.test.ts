@@ -123,6 +123,18 @@ async function playSceneMusic(
 }
 
 describe('Avatar shared background audio bus', () => {
+  it('attenuates Dormant media and restores its gain without touching recorded voice', async () => {
+    const f = setupMusicController()
+    await playSceneMusic(f, sceneContext('loop'), true)
+    const before = f.controller.snapshot().musicGain
+    f.controller.setDormantMedia(true)
+    expect(f.controller.snapshot().musicGain).toBeCloseTo(before * 10 ** (-12 / 20))
+    expect(f.eventSink).toHaveBeenCalledWith('dormant_media_attenuated')
+    f.controller.setDormantMedia(false)
+    expect(f.controller.snapshot().musicGain).toBeCloseTo(before)
+    expect(f.eventSink).toHaveBeenCalledWith('dormant_media_volume_restored')
+    f.controller.dispose()
+  })
   it('suspends the idle media graph and resumes only for attached playback', async () => {
     const f = setupMusicController()
     await flushMusicTasks()

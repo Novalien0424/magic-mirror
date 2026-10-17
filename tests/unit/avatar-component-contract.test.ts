@@ -31,7 +31,8 @@ describe('portrait visitor avatar component', () => {
   it('keeps a visible static fallback when Cubism cannot load', () => {
     const component = read('src/renderer/avatar/AvatarCanvas.tsx')
 
-    expect(component).toContain('avatar_static_fallback')
+    expect(component).toContain('魔鏡休息中，請洽現場人員')
+    expect(component).toContain('role="status"')
     expect(component).toContain('avatar-stage__fallback')
     expect(component).toContain('forceFallback')
   })
@@ -73,7 +74,7 @@ describe('portrait visitor avatar component', () => {
     const media = read('src/renderer/avatar/audio/avatar-media-controller.ts')
 
     expect(media).toContain('musicSource.connect(musicAnalyser)')
-    expect(media).toContain("input.eventSink('avatar_music_analyser_active')")
-    expect(media).toContain("input.eventSink('avatar_music_analyser_inactive')")
+    expect(media).toContain("emitMusicEvent('avatar_music_analyser_active')")
+    expect(media).toContain("emitMusicEvent('avatar_music_analyser_inactive')")
   })
 })

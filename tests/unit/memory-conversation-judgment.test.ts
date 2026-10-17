@@ -1,10 +1,12 @@
 import { expect, it } from 'vitest'
 import { confirmationQuestionMatches, judgeMemoryConversation } from '../../src/main/memory-conversation-judgment'
+import { buildMemoryQuestion } from '../../src/shared/realtime-prompts'
 it('does not answer yes to a related but different question or a question followed by another one', () => {
   const r = (text: string) => ({ visit: 2, stage: 'return_identify', role: 'avatar', text })
   expect(confirmationQuestionMatches([r('Would you like to discuss the project?')], 2, 'Alex')).toBe(false)
-  expect(confirmationQuestionMatches([r('Are you Alex?'), r('Would you like some advice?')], 2, 'Alex')).toBe(false)
-  expect(confirmationQuestionMatches([r('Are you Alex?')], 2, 'Alex')).toBe(true)
+  expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex')), r('Would you like some advice?')], 2, 'Alex')).toBe(false)
+  expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex'))], 2, 'Alex')).toBe(true)
+  expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex', 'en'))], 2, 'Alex')).toBe(false)
 })
 it('rejects an old deadline even when material recall succeeds', () => {
   const result = judgeMemoryConversation([

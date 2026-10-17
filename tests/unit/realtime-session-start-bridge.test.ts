@@ -20,7 +20,7 @@ type TestRuntime = {
   handleSimulator(command: unknown): Promise<unknown>
 }
 
-function makeSessionBundle(sdkVersion = '0.16.1'): Record<string, unknown> {
+function makeSessionBundle(sdkVersion = '0.20.0'): Record<string, unknown> {
   return {
     snapshot: Object.freeze({
       configVersion: 7,
@@ -254,7 +254,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     expect(bundle.avatar?.mediaSkill?.resources).toEqual([{ kind: 'video', assetId: 'folder-mist', name: 'Mist', aliases: [] }])
     expect(JSON.stringify(bundle.avatar)).not.toMatch(/origin|path|avatarId/)
   })
-  it('captures the published snapshot and lifecycle identity before broker await', async () => {
+  it('captures the published model before broker await and rejects a result for a retired session', async () => {
     let brokerCalls = 0
     let requestedModel: string | null = null
     let resolveBroker!: (value: { value: string; expiresAt: number }) => void
@@ -279,28 +279,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     await runtime.handleSimulator({ type: 'cloud_failure' })
     resolveBroker({ value: CLIENT_SECRET, expiresAt: EXPIRY })
 
-    await expect(pending).resolves.toEqual({
-      snapshot: {
-        configVersion: 7,
-        fingerprint: 'synthetic-config-fingerprint',
-        sdkVersion: '0.16.1',
-        realtimeDialogue: MODEL_ID,
-        inputTranscription: 'synthetic-transcription-model',
-        memoryExtractor: 'synthetic-memory-model',
-        voice: 'synthetic-voice',
-        reasoningEffort: 'low',
-        turnDetectionProfile: 'semantic-vad',
-        takenAt: FIXED_TIME,
-      },
-      identity: {
-        realtimeSessionId: SESSION_ID,
-        sessionGeneration: 0,
-      },
-      clientSecret: {
-        value: CLIENT_SECRET,
-        expiresAt: EXPIRY,
-      },
-    })
+    await expect(pending).rejects.toMatchObject({ code: 'realtime_session_unavailable' })
   })
 
   it('does not call the broker when the current lifecycle has no realtime identity', async () => {
@@ -330,7 +309,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -406,7 +385,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -490,7 +469,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',

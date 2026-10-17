@@ -5,27 +5,67 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
+import { acquireElectronOwner } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
-import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS } from '../src/main/raven-conversation-fixture.ts'
+import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT } from '../src/main/raven-conversation-fixture.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const releaseOwner = acquireElectronOwner('raven-qa')
+process.once('exit', releaseOwner)
 if (process.platform !== 'darwin' || process.cwd() !== '/Users/novalien0424/magic-mirror') throw Error('raven_qa_canonical_mac_required')
 const args = process.argv.slice(2), launchAgent = args.includes('--launch-agent')
 if (launchAgent) args.splice(args.indexOf('--launch-agent'), 1)
+const physical = args.includes('--physical')
+if (physical) args.splice(args.indexOf('--physical'), 1)
+if (physical && !launchAgent) throw Error('raven_qa_physical_requires_launchagent')
+const personaIndex = args.indexOf('--persona')
+const personaVariant = personaIndex < 0 ? 'published' : args[personaIndex + 1]
+if (!['published', 'sage', 'authoritative'].includes(personaVariant)) throw Error('raven_qa_persona_invalid')
+if (personaIndex >= 0) args.splice(personaIndex, 2)
+const effortIndex = args.indexOf('--effort')
+const effort = effortIndex < 0 ? null : args[effortIndex + 1]
+if (effortIndex >= 0) {
+  if (!['minimal', 'low'].includes(effort)) throw Error('raven_qa_effort_invalid')
+  args.splice(effortIndex, 2)
+}
+const resolvedPromptIndex = args.indexOf('--prompt')
+const promptVariant = resolvedPromptIndex < 0 ? 'trimmed' : args[resolvedPromptIndex + 1]
+if (!['baseline', 'trimmed', 'merged', 'focused'].includes(promptVariant)) throw Error('raven_qa_prompt_invalid')
+if (resolvedPromptIndex >= 0) args.splice(resolvedPromptIndex, 2)
+const variantIndex = args.indexOf('--variant')
+const variant = variantIndex < 0 ? null : args[variantIndex + 1]
+if (variantIndex >= 0) {
+  if (!['mini', 'full'].includes(variant)) throw Error('raven_qa_variant_invalid')
+  args.splice(variantIndex, 2)
+}
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
 const mediaBgm = selected === 'media_bgm'
-const reviewUi = ['review_ui', 'memory_calendar'].includes(selected)
-if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'additional_capabilities', 'camera', 'wake_diagnostic', 'wake_replay', 'wake_capture', 'wake_control'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery'].includes(selected)
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)
 const operator = join(process.env.HOME, 'Library/Application Support/magic-mirror')
 const published = await readFile(join(operator, 'config/active.json'))
 const config = JSON.parse(published)
+const modelTrial = variant === null && effort === null ? null : JSON.parse(await readFile(join(repo, 'resources/testing/raven-model-ab.v1.json'), 'utf8'))
+if (modelTrial) {
+  if (modelTrial.version !== 1 || variant !== null && typeof modelTrial.variants?.[variant] !== 'string'
+    || effort !== null && !modelTrial.reasoningEfforts?.includes(effort)) throw Error('raven_qa_trial_config_invalid')
+  if (variant !== null) config.aiModels.realtimeDialogue.modelId = modelTrial.variants[variant]
+  if (effort !== null) config.reasoningEffort = effort
+  config.configVersion += 100000
+}
 const avatar = config.avatarCatalog?.avatars.find(a => a.id === config.avatarCatalog.activeAvatarId)
 const model = config.avatarCatalog?.models.find(m => m.id === avatar?.modelId)
 if (avatar?.name !== 'Raven' || !model || avatar.modelId === 'builtin-ren') throw Error('raven_qa_published_raven_required')
+if (personaVariant !== 'published') {
+  const persona = JSON.parse(await readFile(join(repo, `resources/testing/raven-${personaVariant}-persona.v1.json`), 'utf8'))
+  if (persona.version !== 1 || typeof persona.personality !== 'string' || typeof persona.speakingStyle !== 'string') throw Error('raven_qa_persona_invalid')
+  avatar.personality = persona.personality
+  avatar.speakingStyle = persona.speakingStyle
+}
 const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
 const root = await createQaArtifact(repo, stamp)
 const data = join(root, 'user-data'), output = join(root, 'screenshots')
@@ -33,6 +73,9 @@ for (const path of ['config', 'assets/music', 'assets/visual', 'assets/avatars',
 await mkdir(output)
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const fingerprint = digest(JSON.stringify(avatar))
+const promptPath = { baseline: 'resources/testing/raven-prompt-baseline.v1.json',
+  merged: 'resources/testing/raven-merged-media.v1.json', focused: 'resources/testing/raven-focused.v1.json',
+  trimmed: 'resources/config/prompts/realtime.v1.json' }[promptVariant]
 for (const file of model.files) {
   const target = join(data, 'assets/avatars', model.id, file)
   await mkdir(dirname(target), { recursive: true })
@@ -55,7 +98,7 @@ function tone(seconds) {
   for (let i = 0; i < count; i++) wav.writeInt16LE(Math.round(Math.sin(i / 48000 * Math.PI * 2 * 330) * 3500), 44 + 2 * i)
   return wav
 }
-const wav = tone(8)
+const wav = tone(selected === 'media_stop' ? 90 : 8)
 if (mediaBgm) await writeFile(join(data, 'assets/music/phase4-qa-tone.wav'), wav)
 // The real folder scanner supplies opaque IDs and enforces own/shared scope.
 for (const [folder, names] of [['own', ['Folder Beacon', '雨夜鋼琴']], ['shared', ['Shared Lantern']]]) {
@@ -83,14 +126,30 @@ for (const slot of ['active', 'draft', 'previous']) await writeFile(join(data, '
 await copyFile(join(operator, 'audio-devices.json'), join(data, 'audio-devices.json'))
 await writeFile(join(root, 'build.json'), JSON.stringify(build))
 await writeFile(join(root, 'raven-provenance.json'), JSON.stringify({ publishedConfigSha256: digest(published), avatarFingerprint: fingerprint,
+  promptVariant, personaVariant,
+  reasoningEffort: config.reasoningEffort,
+  promptCatalogSha256: digest(await readFile(join(repo, promptPath))),
+  toolCatalogSha256: promptVariant !== 'trimmed'
+    ? digest(JSON.stringify(JSON.parse(await readFile(join(repo, promptPath), 'utf8')).tools))
+    : digest(await readFile(join(repo, 'resources/config/prompts/realtime-tools.v1.json'))),
+  judgeVersion: RAVEN_QUALITY_JUDGE_CONTRACT.version,
+  probeSha256: digest(await readFile(join(repo, 'src/main/raven-conversation-probe.ts'))),
+  // Include the scenario criteria and supplemental runtime judge instructions.
+  judgeCriteriaSha256: digest(Buffer.concat(await Promise.all(['src/main/raven-conversation-fixture.ts', 'src/main/raven-conversation-qa.ts',
+    'src/main/raven-camera-input-qa.ts', 'src/main/raven-conversation-judge.ts'].map(path => readFile(join(repo, path)))))),
+  modelTrial: modelTrial ? { version: modelTrial.version, variant, configVersion: config.configVersion } : null,
   name: avatar.name, rig: model.name, modelId: model.id, voice: avatar.voice, models: config.aiModels,
-  substitutions: ['isolated identity database', 'synthetic media folders', 'synthetic camera frame', 'one fixture spell with mock hardware'],
+  substitutions: ['isolated identity database', 'synthetic media folders', ...(physical ? [] : ['synthetic camera frame']), 'one fixture spell with mock hardware'],
+  deviceRoute: physical ? 'mac_speaker_to_jabra_microphone_and_native_camera' : 'virtual_microphone_and_camera_fixture',
+  tvShutdown: 'session_scoped_qa_exemption',
   humanAcousticAcceptance: 'not_executed', portraitAcceptance: 'not_executed' }, null, 2))
 const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_QA: '1', MIRROR_PHASE4_QA_LIVE: '1',
   MIRROR_RAVEN_CONVERSATION_QA_SCENARIO: selected,
   MIRROR_PHASE4_QA_CONSOLE: '1', MIRROR_PHASE4_QA_OUTPUT_DIR: output, MIRROR_PHASE0_USER_DATA_ROOT: root,
-  MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
+  MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: ['wake_soak', 'wake_soak_mac'].includes(selected) ? '2400000' : '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
 for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_LIVE', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR', 'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE'].includes(key)) delete env[key]
+env.MIRROR_QA_PROMPT_VARIANT = promptVariant
+if (physical) env.MIRROR_QA_PHYSICAL_DEVICES = '1'
 if (mediaBgm) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0',
   MIRROR_MEDIA_SKILL_QA: '1', MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: '1' })
 if (reviewUi) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0', MIRROR_REVIEW_UI_QA: '1',

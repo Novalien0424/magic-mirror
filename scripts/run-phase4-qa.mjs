@@ -4,10 +4,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { MEMORY_CONVERSATION_FIXTURE } from '../src/main/memory-conversation-fixture.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const releaseOwner = acquireElectronOwner('phase4-qa')
+process.once('exit', releaseOwner)
+assertElectronStopped()
 const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
@@ -104,7 +108,7 @@ visualFixtures.push({
 })
 
 const config = JSON.parse(await readFile(join(repoRoot, 'resources', 'config', 'default.json'), 'utf8'))
-if (profileOnly && process.platform === 'darwin' && process.arch === 'arm64') {
+if (process.platform === 'darwin' && process.arch === 'arm64') {
   const packageId = 'sherpa-magic-mirror-mac-v1'
   const manifest = JSON.parse(await readFile(join(repoRoot, 'resources/wake-models', packageId, 'manifest.json'), 'utf8'))
   config.wake = { packageId, modelVersion: manifest.modelVersion, phrase: manifest.phrase }

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createHash } from 'node:crypto'
 import { access, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -455,6 +456,9 @@ export async function runPhase1LiveSmoke(options = {}) {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const releaseOwner = acquireElectronOwner('phase1-live')
+  process.once('exit', releaseOwner)
+  assertElectronStopped()
   const result = await runPhase1LiveSmoke()
   process.stdout.write(formatPhase1LiveResult(result))
   process.exitCode = result.exitCode

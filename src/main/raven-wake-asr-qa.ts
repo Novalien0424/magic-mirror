@@ -1,6 +1,7 @@
 import { File } from 'decibri'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import { normalizeTranscript } from './scenes/spell-trigger'
+import { spokenCommandKey } from '../shared/spoken-command'
 import { compileWakePhrase } from './wake/custom-keywords'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -41,7 +42,7 @@ function compare(actual: string, expected: string, tokens: string) {
     input: JSON.stringify([{ actual: a.join(''), expected: b.join('') }]), encoding: 'utf8', timeout: 15000, maxBuffer: 8192, stdio: ['pipe', 'pipe', 'ignore'],
   })
   try { if (converted.status === 0) traditionalScriptEquivalent = JSON.parse(converted.stdout)[0].traditionalScriptEquivalent === true } catch { /* metadata unavailable */ }
-  return { exact: a.join('') === b.join(''), containsExpected: a.join('').includes(b.join('')),
+  return { exact: spokenCommandKey(actual) === spokenCommandKey(expected), containsExpected: a.join('').includes(b.join('')),
     characters: a.length, expectedCharacters: b.length, editDistance: row[b.length], pronunciationEquivalent, traditionalScriptEquivalent }
 }
 
@@ -50,7 +51,7 @@ function compare(actual: string, expected: string, tokens: string) {
 export async function compareWakeQaAsr(pcm: Int16Array, inputRate: number, model: string, expected: string,
   comparison: { tokens: string; cleanTranscript?: string; receive?: (text: string) => void }): Promise<Record<string, unknown>> {
   if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] !== '1'
-    || process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] !== 'wake_capture'
+    || !['wake_capture', 'wake_levels_asr'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
     || pcm.length > inputRate * 15) throw Error('raven_qa_asr_scope_invalid')
   const converted = await convertWakeQaPcm(pcm, inputRate, 24000)
   let socket: WebSocket | undefined, stage = 'credential'

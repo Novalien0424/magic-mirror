@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildAvatarPrompt, SLEEP_TOOL_DESCRIPTION } from '../../src/shared/avatar-prompt';
 import { isBackgroundResult } from '@openai/agents/realtime';
-import { buildSpeechResponse } from '../../src/shared/realtime-prompts';
+import { buildSpeechResponse, REALTIME_PROMPTS } from '../../src/shared/realtime-prompts';
 
 import {
   createRealtimeSession,
@@ -85,7 +85,7 @@ function makeSnapshot(): SessionModelSnapshot {
   return Object.freeze({
     configVersion: 1,
     fingerprint: "snapshot-fingerprint",
-    sdkVersion: "0.16.1",
+    sdkVersion: "0.20.0",
     realtimeDialogue: "configured-realtime-model",
     inputTranscription: "configured-transcription-model",
     memoryExtractor: "configured-memory-model",
@@ -113,6 +113,118 @@ function makeSessionInput(
 }
 
 describe("RealtimeSession adapter", () => {
+  it.each([['停止播放', true], ['停止播放！', true], ['不要停止播放', false], ['「停止播放」', false], ['請停止播放然後聊天', false]])('owns only the whole media-stop command: %s', async (transcript, matched) => {
+    const probe = makeAdapterProbe(), onMediaRequest = vi.fn(async () => 'accepted' as const)
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMediaRequest })
+    handle.setMediaPlayback!(true)
+    const event = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'stop', transcript }
+    probe.emit('transport_event', event); probe.emit('transport_event', event)
+    await Promise.resolve()
+    expect(onMediaRequest).toHaveBeenCalledTimes(matched ? 1 : 0)
+    if (matched) expect(onMediaRequest).toHaveBeenCalledWith({ action: 'stop' }, expect.any(Object))
+    await handle.close('manual_stop')
+  })
+  it('classifies asynchronous scene controls before language and memory completion', async () => {
+    const probe = makeAdapterProbe(), onMemoryInput = vi.fn(async (_phase: string) => ({ status: 'accepted' as const, code: 'memory_control_excluded' }))
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemoryInput })
+    handle.onInputTranscriptCompleted!(async ({ itemId }) => { await Promise.resolve(); handle.claimControlTurn!(itemId) })
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'control' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'control', transcript: 'Please stop the scene.' })
+    await vi.waitFor(() => expect(onMemoryInput).toHaveBeenCalledWith('complete', 'control', 'Please stop the scene.', expect.any(Object)))
+    const phases = onMemoryInput.mock.calls.map(call => call[0])
+    expect(phases.indexOf('control')).toBeLessThan(phases.indexOf('complete'))
+    expect(probe.sendEvent.mock.calls.some(([event]) => event.item?.id?.startsWith('mirror_language'))).toBe(false)
+    await handle.close('manual_stop')
+  })
+  it('does not send an online query when the source constraint has no final transcript', async () => {
+    vi.useFakeTimers()
+    const probe = makeAdapterProbe(), search = vi.fn()
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 }))
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube: search, onFindMedia })
+    try {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'unfinished' })
+      const tool = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'search_youtube')
+      const pending = tool.invoke({}, '{"query":"synthetic song"}')
+      await vi.advanceTimersByTimeAsync(3002)
+      expect(await pending).toMatchObject({ code: 'media_source_unconfirmed', next: REALTIME_PROMPTS.mediaNoMatch })
+      expect(search).not.toHaveBeenCalled()
+    } finally { await handle.close('manual_stop'); vi.useRealTimers() }
+  })
+  it('shows working only for pending searches and ignores completion from an interrupted turn', async () => {
+    const probe = makeAdapterProbe(), activity = vi.fn()
+    let finish!: (value: any) => void
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity: activity,
+      onSearchYoutube: () => new Promise(resolve => { finish = resolve }) })
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'youtube', transcript: '在雲上找找雨聲' })
+    const search = tools.find(t => t.name === 'search_youtube')
+    const first = search.invoke({}, '{"query":"rain"}')
+    await Promise.resolve()
+    await vi.waitFor(() => expect(activity).toHaveBeenLastCalledWith('tool_started'))
+    finish({ status: 'accepted', code: 'youtube_search_results', videos: [] })
+    await first
+    expect(activity).toHaveBeenLastCalledWith('tool_finished')
+    const second = search.invoke({}, '{"query":"rain"}')
+    await vi.waitFor(() => expect(activity).toHaveBeenLastCalledWith('tool_started'))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' })
+    activity.mockClear()
+    finish({ status: 'accepted', code: 'youtube_search_results', videos: [] })
+    await second
+    expect(activity).not.toHaveBeenCalledWith('tool_finished')
+    await handle.close('manual_stop')
+  })
+  it('keeps a phrase-less search local, reuses the same turn query, and goes online only after the phrase', async () => {
+    const probe = makeAdapterProbe(), order: string[] = []
+    const onFindMedia = vi.fn(async () => { order.push('local'); return { status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 } })
+    const onSearchYoutube = vi.fn(async () => { order.push('youtube'); return { status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] } })
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFindMedia, onSearchYoutube })
+    try {
+      const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
+      const search = tools.find(t => t.name === 'search_youtube')
+      const restricted = await search.invoke({}, '{"query":"Rain"}')
+      expect(restricted).toMatchObject({ status: 'rejected', code: 'media_source_restricted', media: { code: 'media_discovery_no_match' }, next: REALTIME_PROMPTS.mediaNoMatch })
+      expect(restricted).not.toHaveProperty('youtube')
+      await search.invoke({}, '{"query":" rain "}')
+      expect(onFindMedia).toHaveBeenCalledOnce()
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' })
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'next', transcript: 'Play Rain again.' })
+      await search.invoke({}, '{"query":"Rain"}')
+      expect(onFindMedia).toHaveBeenCalledTimes(3)
+      expect(onFindMedia).toHaveBeenLastCalledWith({ query: 'Play Rain again.', kind: 'all' }, expect.any(Object))
+      expect(onSearchYoutube).not.toHaveBeenCalled()
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'cloud' })
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'cloud', transcript: '在雲上找找 Rain' })
+      expect(await search.invoke({}, '{"query":"Rain"}')).toMatchObject({ youtube: { status: 'accepted' } })
+      expect(order).toEqual(['local', 'local', 'local', 'youtube'])
+    } finally { await handle.close('manual_stop') }
+  })
+  it.each(['match', 'failure'])('keeps an implicit search local after a local %s', async outcome => {
+    const probe = makeAdapterProbe(), onSearchYoutube = vi.fn()
+    const media = outcome === 'match'
+      ? { status: 'accepted' as const, code: 'media_discovery_matches', resources: [{ kind: 'music' as const, assetId: 'fixture-rain', name: 'Rain', aliases: [] }], total: 1 }
+      : { status: 'failed' as const, code: 'media_discovery_unavailable', resources: [], total: 0 }
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFindMedia: async () => media, onSearchYoutube })
+    try {
+      const search = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'search_youtube')
+      expect(await search.invoke({}, '{"query":"Rain"}')).toMatchObject({ media,
+        code: outcome === 'match' ? 'media_discovery_results' : 'media_discovery_unavailable', next: outcome === 'match' ? 'play_media' : 'explain' })
+      expect(onSearchYoutube).not.toHaveBeenCalled()
+    } finally { await handle.close('manual_stop') }
+  })
+  it('does not continue a pending local fallback after the visitor starts another turn', async () => {
+    const probe = makeAdapterProbe(), onSearchYoutube = vi.fn()
+    let finish!: (value: any) => void
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFindMedia: () => new Promise(resolve => { finish = resolve }), onSearchYoutube })
+    try {
+      const search = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'search_youtube')
+      const pending = search.invoke({}, '{"query":"Rain"}')
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' })
+      finish({ status: 'accepted', code: 'media_discovery_no_match', resources: [], total: 0 })
+      await pending
+      expect(onSearchYoutube).not.toHaveBeenCalled()
+    } finally { await handle.close('manual_stop') }
+  })
   it('mutes local output synchronously before an application interrupt reaches WebRTC', async () => {
     const probe = makeAdapterProbe(), order: string[] = [];
     let complete!: () => void;
@@ -124,22 +236,124 @@ describe("RealtimeSession adapter", () => {
     complete(); await pending;
     await handle.close('manual_stop');
   });
-  it('does not carry a regex folder restriction into a new model-directed YouTube fallback or wait for final ASR', async () => {
+  it('allows online media only when a final transcript opens with the hidden phrase', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
-    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
+    const found = 'https://www.youtube.com/watch?v=M7lc1UVf-VE', other = 'https://youtu.be/abcdefghijk';
+    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const,
+      videos: [{ url: found, title: 'Moonlit Lake', channel: 'Fixture' }] }));
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 }));
     const onMediaRequest = vi.fn(async () => 'accepted' as const);
-    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onSearchYoutube, onMediaRequest });
+    const onMemoryInput = vi.fn(async (_phase: string, _itemId: string) => ({ status: 'accepted' as const, code: 'memory_input_recorded' as const }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onSearchYoutube, onFindMedia, onMediaRequest, onMemoryInput });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
-    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'local' });
-    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'local', transcript: 'Play Moonlit Lake from our vault.' });
-    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new-request' });
-    expect(await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}')).toMatchObject({ youtube: { code: 'youtube_search_results' } });
-    await tools.find(t => t.name === 'play_youtube').invoke({}, '{"url":"https://youtu.be/abcdefghijk","kind":"music","mode":"once"}');
-    expect(onSearchYoutube).toHaveBeenCalledOnce();
+    const turn = (id: string, transcript: string) => {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: id });
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript });
+    };
+    const search = () => tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Moonlit Lake"}');
+    const find = () => tools.find(t => t.name === 'find_media').invoke({}, '{"query":"Moonlit Lake","kind":"music"}');
+    const play = (url: string) => tools.find(t => t.name === 'play_youtube').invoke({}, JSON.stringify({ url, kind: 'music', mode: 'once' }));
+    for (const [id, transcript] of [['youtube', 'Play Moonlit Lake on YouTube.'], ['negated', '不要在雲上找找月光湖'],
+      ['quoted', '「在雲上找找」是什麼意思？'], ['inside', '幫我在雲上找找月光湖']]) {
+      turn(id, transcript);
+      expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaNoMatch });
+      expect(await search()).toMatchObject({ code: 'media_source_restricted', next: REALTIME_PROMPTS.mediaNoMatch });
+      expect(await play(other)).toMatchObject({ code: 'media_source_restricted' });
+    }
+    expect(onSearchYoutube).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
+    turn('cloud', '在雲上找找 Moonlit Lake');
+    expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaOnlineSearch });
+    expect(await search()).toMatchObject({ youtube: { code: 'youtube_search_results' } });
+    turn('selection', 'Play the first one.');
+    await play(found);
+    expect(await play(other)).toMatchObject({ code: 'media_source_restricted' });
+    expect(await search()).toMatchObject({ code: 'media_source_restricted' });
+    // The phrase alone (a homophone of 在) also covers the visitor's next turn.
+    turn('alone', '再雲上找找'); turn('title', 'Moonlit Lake');
+    expect(await search()).toMatchObject({ youtube: { code: 'youtube_search_results' } });
+    turn('later', 'Moonlit Lake again');
+    expect(await search()).toMatchObject({ code: 'media_source_restricted' });
+    expect(onSearchYoutube).toHaveBeenCalledTimes(2);
     expect(onMediaRequest).toHaveBeenCalledOnce();
-    expect(sink).not.toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_source_restricted' }));
-    expect(JSON.stringify(sink.mock.calls)).not.toContain('Moonlit');
+    await vi.waitFor(() => expect(onMemoryInput.mock.calls.filter(([phase]) => phase === 'control').map(call => call[1])).toEqual(['cloud', 'alone']));
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_source_restricted' }));
+    expect(sink.mock.calls.filter(([event]) => event.reason === 'media_online_unlocked')).toHaveLength(2);
+    expect(JSON.stringify(sink.mock.calls)).not.toMatch(/Moonlit|雲上/u);
     await handle.close('user_requested');
+  });
+  it('uses the avatar\'s configured online search phrase', async () => {
+    const probe = makeAdapterProbe(), onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
+    const avatar = { name: 'Ren', personality: 'Friendly guide.', speakingStyle: '', wakeGreeting: '', sleepFarewell: '晚安。', cloudSearchPhrase: '芝麻開門' };
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), avatar, onSearchYoutube,
+      onFindMedia: async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 }) });
+    const search = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'search_youtube');
+    for (const [id, transcript] of [['default', '在雲上找找月光湖'], ['custom', '芝麻開門，月光湖']]) {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: id });
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript });
+      await search.invoke({}, '{"query":"月光湖"}');
+    }
+    expect(onSearchYoutube).toHaveBeenCalledOnce();
+    await handle.close('user_requested');
+  });
+  it('recovers a literal visitor title after an empty model query without selecting playback or logging the transcript', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onMediaRequest = vi.fn();
+    const clue = '請播放我們資料夾的雨夜鋼琴。';
+    const onFindMedia = vi.fn(async ({ query }: { query: string }) => query === clue
+      ? { status: 'accepted' as const, code: 'media_discovery_ambiguous', total: 2, resources: [
+        { kind: 'music' as const, assetId: 'one', name: '雨夜鋼琴', aliases: [] },
+        { kind: 'music' as const, assetId: 'two', name: '雨夜鋼琴 live', aliases: [] }] }
+      : { status: 'accepted' as const, code: 'media_discovery_no_match', total: 0, resources: [] });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onFindMedia, onMediaRequest });
+    try {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'title' });
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'title', transcript: clue });
+      const find = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'find_media');
+      expect(await find.invoke({}, '{"query":"資料夾","kind":"music"}')).toMatchObject({ media: { code: 'media_discovery_ambiguous', total: 2 } });
+      expect(onFindMedia.mock.calls.map(([r]) => r.query)).toEqual(['資料夾', clue]);
+      expect(onMediaRequest).not.toHaveBeenCalled();
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'media_discovery_visitor_clue' }));
+      expect(JSON.stringify(sink.mock.calls)).not.toContain(clue);
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' });
+      await find.invoke({}, '{"query":"Unrelated","kind":"music"}');
+      expect(onFindMedia.mock.calls.map(([r]) => r.query)).toEqual(['資料夾', clue, 'Unrelated']);
+    } finally { await handle.close('manual_stop') }
+  });
+  it('allows a late final transcript to supply a missing local title during discovery only', async () => {
+    const probe = makeAdapterProbe();
+    const clue = '请播放我们资料夹的雨夜钢琴。';
+    const onFindMedia = vi.fn(async ({ query }: { query: string }) => query === clue
+      ? { status: 'accepted' as const, code: 'media_discovery_matches', total: 1,
+        resources: [{ kind: 'music' as const, assetId: 'one', name: '雨夜鋼琴', aliases: [] }] }
+      : { status: 'accepted' as const, code: 'media_discovery_no_match', total: 0, resources: [] });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFindMedia });
+    try {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'late' });
+      const find = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'find_media');
+      const pending = find.invoke({}, '{"query":"Night Rain Piano","kind":"music"}');
+      await vi.waitFor(() => expect(onFindMedia).toHaveBeenCalledOnce());
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'late', transcript: clue });
+      expect(await pending).toMatchObject({ media: { total: 1 } });
+      expect(onFindMedia.mock.calls.map(([r]) => r.query)).toEqual(['Night Rain Piano', clue]);
+    } finally { await handle.close('manual_stop') }
+  });
+  it.each(['failed', 'matched', 'interrupted', 'oversized'] as const)('does not retry local discovery after %s evidence', async mode => {
+    const probe = makeAdapterProbe();
+    const onFindMedia = vi.fn(async () => {
+      if (mode === 'interrupted') probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' });
+      return { status: mode === 'failed' ? 'failed' as const : 'accepted' as const,
+        code: mode === 'matched' ? 'media_discovery_matches' : 'media_discovery_no_match',
+        total: mode === 'matched' ? 1 : 0,
+        resources: mode === 'matched' ? [{ kind: 'music' as const, assetId: 'one', name: 'Rain', aliases: [] }] : [] };
+    });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFindMedia });
+    try {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'title' });
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'title',
+        transcript: mode === 'oversized' ? 'Play '.repeat(50) : '請播放我們資料夾的雨夜鋼琴。' });
+      const find = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'find_media');
+      await find.invoke({}, '{"query":"Rain","kind":"music"}');
+      expect(onFindMedia).toHaveBeenCalledOnce();
+    } finally { await handle.close('manual_stop') }
   });
   it('returns fresh media choices, drops interrupted searches, and marks media tool turns as controls', async () => {
     const probe = makeAdapterProbe(), onMemoryInput = vi.fn(async () => ({ status: 'accepted' as const, code: 'memory_input_recorded' as const }));
@@ -150,8 +364,10 @@ describe("RealtimeSession adapter", () => {
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube, onFindMedia, onMemoryInput });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
     expect(await tools.find(t => t.name === 'find_media').invoke({}, '{"query":"rain","kind":"music"}')).toMatchObject({ media: { total: 1 } });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'online', transcript: '在雲上找找雨聲' });
     const pending = tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"rain"}');
-    await Promise.resolve();
+    await vi.waitFor(() => expect(onSearchYoutube).toHaveBeenCalledOnce());
+    expect(onFindMedia).toHaveBeenCalledOnce();
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new-clue' });
     finish({ status: 'accepted', code: 'youtube_search_results', videos: [] });
     expect(isBackgroundResult(await pending)).toBe(true);
@@ -160,20 +376,51 @@ describe("RealtimeSession adapter", () => {
     await vi.waitFor(() => expect(onMemoryInput).toHaveBeenCalledWith('control', 'new-clue', '', expect.any(Object)));
     await handle.close('manual_stop');
   });
+  it('attributes a tool preamble to the calling response, not earlier speech in the same turn', async () => {
+    const probe = makeAdapterProbe(), events: RealtimeMetadataEvent[] = [];
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', total: 0, resources: [] }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), event => events.push(event), probe), onFindMedia });
+    const find = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'find_media');
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'turn' });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'answer' });
+    probe.emit('transport_event', { type: 'response.output_item.added', response_id: 'search', item: { type: 'function_call', name: 'find_media' } });
+    await find.invoke({}, '{"query":"rain","kind":"music"}');
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'spoken-search' });
+    probe.emit('transport_event', { type: 'response.output_item.added', response_id: 'spoken-search', item: { type: 'function_call', name: 'find_media' } });
+    await find.invoke({}, '{"query":"rain","kind":"music"}');
+    expect(events.map(e => e.reason).filter(r => r.startsWith('tool_find_media_'))).toEqual(['tool_find_media_accepted_preamble_no', 'tool_find_media_accepted_preamble_yes']);
+    await handle.close('manual_stop');
+  });
+  it('asks about a weak local candidate and keeps a phrase-less request local', async () => {
+    const probe = makeAdapterProbe();
+    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_weak', total: 1,
+      resources: [{ kind: 'music' as const, assetId: 'other-song', name: 'Other song', aliases: ['Fixture Artist'] }] }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube, onFindMedia });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    expect(await tools.find(t => t.name === 'find_media').invoke({}, '{"query":"Fixture Artist song","kind":"music"}')).toMatchObject({ next: 'ask' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'request', transcript: 'Play the Fixture Artist song.' });
+    expect(await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Fixture Artist new song"}')).toMatchObject({ code: 'media_discovery_results', next: 'ask' });
+    expect(onSearchYoutube).not.toHaveBeenCalled();
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'cloud', transcript: '在雲上找找 Fixture Artist new song' });
+    expect(await tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"Fixture Artist new song"}')).toMatchObject({ youtube: { code: 'youtube_search_results' } });
+    expect(onSearchYoutube).toHaveBeenCalledOnce();
+    await handle.close('manual_stop');
+  });
   it('explains an unrequested save without describing a storage failure', async () => {
     const probe = makeAdapterProbe();
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe),
       onMemory: async () => ({ status: 'ignored', code: 'memory_action_not_requested', mode: 'automatic' }) });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
     const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'remember', name: '', topic: 'Work', text: 'Designs exhibits', query: '' }));
-    expect(result).toMatchObject({ status: 'ignored', memory: { mode: 'automatic' }, guidance: expect.stringContaining('not a storage failure') });
+    expect(result).toMatchObject({ status: 'ignored', memory: { mode: 'automatic' }, next: expect.stringContaining('current policy still applies') });
     await handle.close('manual_stop');
   });
   it('distinguishes invalid memory arguments from a completed empty lookup', async () => {
     const probe = makeAdapterProbe(), onMemory = vi.fn();
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemory });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
-    const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'recall', query: 'project' }));
+    const result = await tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'recall', query: 42 }));
     expect(result).toMatchObject({ memory: { status: 'rejected', code: 'memory_tool_arguments_rejected' } });
     expect(onMemory).not.toHaveBeenCalled();
     await handle.close('manual_stop');
@@ -323,7 +570,7 @@ describe("RealtimeSession adapter", () => {
     expect(reset).not.toHaveBeenCalled();
     await handle.close('manual_stop');
   });
-  it('resets after a committed correction even when a new utterance makes its tool result stale', async () => {
+  it.each([false, true])('resets committed memory changes even when a newer turn owns the result (spell=%s)', async spell => {
     const probe = makeAdapterProbe(), sink = vi.fn(), order: string[] = [];
     let finish!: (value: any) => void;
     const onMemory = vi.fn(() => new Promise<any>(resolve => { finish = resolve }));
@@ -335,6 +582,7 @@ describe("RealtimeSession adapter", () => {
     try {
       await vi.waitFor(() => expect(onMemory).toHaveBeenCalledOnce());
       probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'replacement' });
+      if (spell) probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'replacement', delta: '施放咒語' });
       finish({ status: 'accepted', code: 'memory_corrected' });
       expect(isBackgroundResult(await pending)).toBe(true);
       expect(reset).not.toHaveBeenCalled();
@@ -391,6 +639,45 @@ describe("RealtimeSession adapter", () => {
     expect(probe.addImage).toHaveBeenCalledOnce();
     expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
   });
+  it.each(['new_turn', 'media_started'])('discards a camera result after %s without adding an image', async boundary => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    let deliver!: (frame: any) => void;
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe),
+      onCameraCapture: () => new Promise(resolve => { deliver = resolve }) });
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'old' });
+    const tool = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'capture_camera');
+    const pending = tool.invoke({}, '{}');
+    if (boundary === 'new_turn') probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new' });
+    else handle.setMediaPlayback!(true);
+    deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
+    expect(await pending).toMatchObject({ status: 'ignored' });
+    expect(probe.addImage).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'camera_result_stale' }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
+    await handle.close('manual_stop');
+  });
+  it.each(['memory_recalled', 'memory_source_pending'])('drops in-flight camera and memory results when a spell prefix claims the turn (%s)', async code => {
+    const probe = makeAdapterProbe()
+    let deliverFrame!: (value: any) => void, deliverMemory!: (value: any) => void
+    const memory = vi.fn(() => new Promise<any>(resolve => { deliverMemory = resolve }))
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemory: memory,
+      onCameraCapture: () => new Promise(resolve => { deliverFrame = resolve }) })
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'cast' })
+    const cameraResult = tools.find(t => t.name === 'capture_camera').invoke({}, '{}')
+    const memoryResult = tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' }))
+    await vi.waitFor(() => expect(memory).toHaveBeenCalledOnce())
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'cast', delta: '施放咒語' })
+    deliverFrame({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 })
+    deliverMemory({ status: code === 'memory_recalled' ? 'accepted' : 'rejected', code, entries: [{ text: 'Synthetic late fact' }] })
+    expect(await cameraResult).toMatchObject({ status: 'ignored' })
+    const result = await memoryResult
+    expect(isBackgroundResult(result)).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('Synthetic late fact')
+    expect(probe.addImage).not.toHaveBeenCalled()
+    expect(memory).toHaveBeenCalledOnce()
+    await handle.close('manual_stop')
+  })
   it('makes concurrent close callers wait for the same release', async () => {
     const probe = makeAdapterProbe();
     let release!: () => void;
@@ -426,7 +713,7 @@ describe("RealtimeSession adapter", () => {
     const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
     const result = await agent.tools[0].invoke({}, '{}');
     expect(isBackgroundResult(result)).toBe(true);
-    expect(result).toMatchObject({ content: { status: 'accepted', code: 'sleep_requested', speech: 'application' } });
+    expect(result).toMatchObject({ content: { status: 'accepted', code: 'sleep_requested' } });
     expect(probe.sendEvent).not.toHaveBeenCalled();
     // The SDK event arguments include context, agent, tool, result and details.
     const emitEnd = () => probe.emit('agent_tool_end', {}, agent, agent.tools[0], 'sleep_requested', {});
@@ -494,14 +781,16 @@ describe("RealtimeSession adapter", () => {
   it('uses selected avatar commands in tool instructions and transcription hints', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const avatar = { name: 'Ren', personality: 'Friendly guide.', speakingStyle: '', wakeGreeting: '',
-      sleepFarewell: '晚安。', wakePhrase: '你好小蓮', sleepPhrase: '小蓮休息吧', spellPhrases: ['天氣熱，能不能下雨呢?'] };
+      sleepFarewell: '晚安。', wakePhrase: '你好小蓮', sleepPhrase: '小蓮休息吧', cloudSearchPhrase: '芝麻開門', spellPhrases: ['天氣熱，能不能下雨呢?'] };
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), avatar });
     const agent = probe.agentConstructorCalls[0]?.[0] as { instructions: string; tools: { description: string }[] };
-    expect(agent.tools[0].description).toContain(avatar.sleepPhrase);
+    expect(agent.instructions).toContain(avatar.sleepPhrase);
     expect(agent.tools[0].description).not.toContain('恭送渡鴨大人');
     expect(probe.constructorCalls[0]?.[1]).toMatchObject({ config: { audio: { input: { transcription: {
-      keywords: [avatar.wakePhrase, avatar.sleepPhrase, ...avatar.spellPhrases],
+      keywords: [avatar.wakePhrase, avatar.sleepPhrase, avatar.cloudSearchPhrase, ...avatar.spellPhrases],
     } } } } });
+    // Like spells, the online phrase is an application route and ASR hint, never model-visible.
+    expect([agent.instructions, ...agent.tools.map(tool => tool.description)].join('\n')).not.toContain(avatar.cloudSearchPhrase);
     await handle.close('user_requested');
   });
   it('closes a transport that completes connecting after cancellation', async () => {
@@ -546,7 +835,7 @@ describe("RealtimeSession adapter", () => {
       type: 'error', error: { type: 'invalid_request_error', code: 'response_cancel_not_active', message: 'private provider text' },
     });
     expect(onFailure).not.toHaveBeenCalled();
-    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'realtime_request_rejected', status: 'degraded' }));
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'realtime_request_rejected_response_cancel_not_active', status: 'degraded' }));
     expect(JSON.stringify(sink.mock.calls)).not.toContain('private provider text');
     handle.speakVerbatim('Synthetic follow-up.');
     expect(probe.sendEvent).toHaveBeenCalled();
@@ -571,6 +860,288 @@ describe("RealtimeSession adapter", () => {
     expect(eventSink.mock.calls.some(([event]) => event.reason === 'cause=output_interrupted')).toBe(false);
   });
 
+  it('serializes application cues and releases only their matching response and processed tail', async () => {
+    const probe = makeAdapterProbe(), finished = vi.fn();
+    let release!: () => void;
+    const tail = new Promise<void>(resolve => { release = resolve; });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), waitForOutputTail: () => tail });
+    handle.speakVerbatim('First cue.', new AbortController().signal, finished);
+    handle.speakVerbatim('Second cue.', new AbortController().signal);
+    const requests = () => probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create');
+    expect(requests()).toHaveLength(1);
+    const response = { id: 'first', status: 'completed', metadata: (requests()[0][0] as any).response.metadata };
+    probe.emit('transport_event', { type: 'response.created', response });
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'unrelated' });
+    probe.emit('transport_event', { type: 'response.done', response });
+    expect(finished).not.toHaveBeenCalled(); expect(requests()).toHaveLength(1);
+    probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'first' });
+    await Promise.resolve(); expect(requests()).toHaveLength(1);
+    release(); for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(finished).toHaveBeenCalledExactlyOnceWith(true); expect(requests()).toHaveLength(2);
+    await handle.close('user_requested');
+  });
+
+  it('releases a completed cue as unfinished when visitor speech clears its playback', async () => {
+    const probe = makeAdapterProbe(), finished = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), waitForOutputTail: async () => {} });
+    handle.speakVerbatim('Greeting cue.', new AbortController().signal, finished);
+    handle.speakVerbatim('Later cue.', new AbortController().signal);
+    const requests = () => probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create');
+    const response = { id: 'greeting', status: 'completed', metadata: (requests()[0][0] as any).response.metadata };
+    probe.emit('transport_event', { type: 'response.created', response });
+    probe.emit('transport_event', { type: 'response.done', response });
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'greeting' });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(finished).toHaveBeenCalledExactlyOnceWith(false); expect(requests()).toHaveLength(2);
+    await handle.close('user_requested');
+  });
+
+  it('holds the speech queue until prior generated audio is stopped or cleared', async () => {
+    const probe = makeAdapterProbe()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe))
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'previous' } })
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'previous', status: 'completed', output: [
+      { type: 'message', content: [{ type: 'audio' }] },
+    ] } })
+    probe.sendEvent.mockClear()
+    handle.speakVerbatim('施放咒語')
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'previous' })
+    expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    await handle.close('manual_stop')
+  })
+  it.each([false, true])('keeps pre-ASR model output muted when playback starts after command classification (generation done=%s)', async done => {
+    const probe = makeAdapterProbe(), activity = vi.fn(), sink = vi.fn()
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onAudioActivity: activity })
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'cast' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'early-created' } })
+    if (done) probe.emit('transport_event', { type: 'response.done', response: { id: 'early-created', status: 'completed', output: [] } })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'cast', transcript: '施放咒語點亮銀燈' })
+    activity.mockClear()
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'early-created' })
+    expect(activity).not.toHaveBeenCalledWith('output_started')
+    expect(activity).toHaveBeenCalledWith('interrupted')
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'command_reply_suppressed' }))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' })
+    activity.mockClear()
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'early-created' })
+    expect(activity).not.toHaveBeenCalledWith('output_started')
+    await handle.close('manual_stop')
+  })
+  it('suppresses late model responses on sound-alike spell attempts and permits owned cues and the next visitor turn', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn(), onAudioActivity = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onAudioActivity });
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'spell' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'spell', transcript: '是放咒语未知力量' });
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'late-model' } });
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'late-model' });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'late-model' });
+    expect(onAudioActivity).not.toHaveBeenCalledWith('output_started');
+    handle.speakVerbatim('Owned cue.', new AbortController().signal);
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }));
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'late-model', status: 'cancelled', output: [] } });
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }));
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'late-model' });
+    const request = probe.sendEvent.mock.calls.find(([e]) => e.type === 'response.create')![0] as any;
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'owned', metadata: request.response.metadata } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'owned' });
+    expect(onAudioActivity).toHaveBeenCalledWith('output_started');
+    probe.sendEvent.mockClear();
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' });
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'next-model' } });
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }));
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('未知力量');
+    await handle.close('user_requested');
+  });
+
+  it('does not let delayed transcription claim a newer visitor turn', () => {
+    const probe = makeAdapterProbe();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe));
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new' });
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'old', transcript: '施放咒語未知' });
+    handle.claimControlTurn?.('old');
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'new-response' } });
+    expect(probe.interrupt).not.toHaveBeenCalled();
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }));
+  });
+
+  it('silences a streamed sound-alike spell prefix before final ASR without delivering a command', async () => {
+    const probe = makeAdapterProbe(), activity = vi.fn(), sink = vi.fn(), transcript = vi.fn(), memory = vi.fn()
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onAudioActivity: activity, onMemoryInput: memory })
+    handle.onInputTranscriptCompleted!(transcript)
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'spell' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'spell', delta: '是放' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'spell', delta: '咒语點亮銀登' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'premature' } })
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'premature' })
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'premature' })
+    expect(activity).not.toHaveBeenCalledWith('output_started')
+    expect(transcript).not.toHaveBeenCalled()
+    expect(memory.mock.calls.some(call => call[0] === 'complete' || call[0] === 'control')).toBe(false)
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('銀登')
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'spell', transcript: '施放咒語點亮銀燈' })
+    expect(transcript).toHaveBeenCalledTimes(1)
+    await handle.close('manual_stop')
+  })
+
+  it('leaves ordinary, quoted and stale partial speech on the automatic reply path', async () => {
+    for (const [item, delta] of [['current', '故事裡有人說施放咒語'], ['current', '「施放咒語」'], ['old', '施放咒語']]) {
+      const probe = makeAdapterProbe(), activity = vi.fn()
+      const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity: activity })
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'current' })
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: item, delta })
+      probe.emit('transport_event', { type: 'response.created', response: { id: 'ordinary' } })
+      probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'ordinary' })
+      expect(activity).toHaveBeenCalledWith('output_started')
+      expect(probe.interrupt).not.toHaveBeenCalled()
+      expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }))
+      await handle.close('manual_stop')
+    }
+  })
+
+  it('resumes exactly one ordinary reply after a revised prefix and confirmed cancellation', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), sink, probe))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'revised' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'revised', delta: '施放咒語' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'cancelled' } })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'revised', transcript: '是房租有點太貴了。' })
+    await Promise.resolve(); await Promise.resolve()
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'cancelled', status: 'cancelled', output: [] } })
+    await Promise.resolve(); await Promise.resolve()
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(1))
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'cancelled', status: 'cancelled', output: [] } })
+    expect(probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(1)
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'command_reply_resumed' }))
+    await handle.close('manual_stop')
+  })
+
+  it('does not add a replacement when a revised prefix never suppressed a response', async () => {
+    const probe = makeAdapterProbe()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'revised' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'revised', delta: '施放咒語' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'revised', transcript: '是房租有點太貴了。' })
+    await Promise.resolve(); await Promise.resolve()
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'automatic' } })
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }))
+    await handle.close('manual_stop')
+  })
+
+  it.each(['next_turn', 'close'])('abandons revised-prefix recovery on %s', async action => {
+    const probe = makeAdapterProbe()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'old' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'old', delta: '施放咒語' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'cancelled' } })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'old', transcript: '是房租有點太貴了。' })
+    if (action === 'close') await handle.close('manual_stop')
+    else probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new' })
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'cancelled', status: 'cancelled', output: [] } })
+    await Promise.resolve(); await Promise.resolve()
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    await handle.close('manual_stop')
+  })
+
+  it('ignores a partial arriving after that input already completed', async () => {
+    const probe = makeAdapterProbe(), activity = vi.fn()
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity: activity })
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'done' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'done', transcript: '我們聊展覽。' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'done', delta: '施放咒語' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'ordinary' } })
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'ordinary' })
+    expect(activity).toHaveBeenCalledWith('output_started')
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }))
+    await handle.close('manual_stop')
+  })
+
+  it.each([false, true])('reports missing final ASR and releases ownership at the timeout (late prefix=%s)', async late => {
+    vi.useFakeTimers()
+    const probe = makeAdapterProbe(), sink = vi.fn(), transcript = vi.fn()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), sink, probe))
+    try {
+      handle.onInputTranscriptCompleted!(transcript)
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'missing' })
+      const commit = () => probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'missing' })
+      if (late) commit()
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'missing', delta: '施放咒語' })
+      if (!late) commit()
+      await vi.advanceTimersByTimeAsync(8001)
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'command_prefix_final_timeout' }))
+      expect(transcript).not.toHaveBeenCalled()
+      // No new speech event may be needed to release the stale command owner.
+      probe.sendEvent.mockClear()
+      probe.emit('transport_event', { type: 'response.created', response: { id: 'after-timeout' } })
+      expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }))
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'next' })
+      probe.sendEvent.mockClear()
+      probe.emit('transport_event', { type: 'response.created', response: { id: 'ordinary' } })
+      expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.cancel' }))
+    } finally { await handle.close('manual_stop'); vi.useRealTimers() }
+  })
+
+  it('does not duplicate a new automatic reply arriving while revised-prefix cancellation is pending', async () => {
+    const probe = makeAdapterProbe()
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe))
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'revised' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'revised', delta: '施放咒語' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'cancelled' } })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'revised', transcript: '是房租有點太貴了。' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'automatic' } })
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'cancelled', status: 'cancelled', output: [] } })
+    await Promise.resolve(); await Promise.resolve()
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    await handle.close('manual_stop')
+  })
+
+  it.each([false, true])('recovers a revised prefix after completed generation still has buffered audio (audio started=%s)', async started => {
+    const probe = makeAdapterProbe(), activity = vi.fn()
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity: activity })
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'revised' })
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'buffered' } })
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'buffered', status: 'completed', output: [
+      { type: 'message', content: [{ type: 'audio' }] },
+    ] } })
+    if (started) probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'buffered' })
+    activity.mockClear()
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'revised', delta: '施放咒語' })
+    if (!started) probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'buffered' })
+    expect(activity).toHaveBeenCalledWith('interrupted')
+    expect(activity).not.toHaveBeenCalledWith('output_started')
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'revised', transcript: '是房租有點太貴了。' })
+    await Promise.resolve(); await Promise.resolve()
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create' }))
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'buffered' })
+    await Promise.resolve(); await Promise.resolve()
+    await vi.waitFor(() => expect(probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(1))
+    await handle.close('manual_stop')
+  })
+
+  it('cancels a late automatic response without clearing an application cue that is already playing', async () => {
+    const probe = makeAdapterProbe(), activity = vi.fn(), transcript = vi.fn()
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onAudioActivity: activity })
+    handle.onInputTranscriptCompleted!(transcript)
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'spell' })
+    const final = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'spell', transcript: '施放咒語點亮銀燈' }
+    probe.emit('transport_event', final)
+    handle.speakVerbatim('施放咒語')
+    const request = probe.sendEvent.mock.calls.find(([e]) => e.type === 'response.create')![0] as any
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'cue', metadata: request.response.metadata } })
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'cue' })
+    activity.mockClear(); probe.sendEvent.mockClear(); probe.interrupt.mockClear()
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'late-automatic' } })
+    probe.emit('transport_event', final)
+    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'late-automatic' })
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'output_audio_buffer.clear' }))
+    expect(activity).not.toHaveBeenCalledWith('interrupted')
+    expect(probe.interrupt).not.toHaveBeenCalled()
+    expect(transcript).toHaveBeenCalledTimes(1)
+    await handle.close('manual_stop')
+  })
+
   it("sends operator-authored scene dialogue as one best-effort verbatim Realtime message", () => {
     const probe = makeAdapterProbe();
     const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
@@ -579,9 +1150,9 @@ describe("RealtimeSession adapter", () => {
     handle.speakVerbatim("The mirror awakens.");
 
     expect(probe.sendMessage).not.toHaveBeenCalled();
-    expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.create', response: {
-      tool_choice: 'none', input: [], instructions: expect.stringContaining('\nThe mirror awakens.'),
-    } });
+    expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create', response: expect.objectContaining({
+      conversation: 'none', tool_choice: 'none', input: [], instructions: expect.stringContaining('\nThe mirror awakens.'),
+    }) }));
   });
 
   it.each([false, true])('cancels its own scene cue across unrelated output and generation completion (done=%s)', (done) => {
@@ -599,7 +1170,7 @@ describe("RealtimeSession adapter", () => {
     handle.speakVerbatim('Synthetic scene cue.', abort.signal, finished);
     expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({ response: expect.objectContaining({ tool_choice: 'none' }) }));
     const request = sendEvent.mock.calls[0][0] as unknown as { response: { metadata: { mirror_scene_cue: string } } };
-    const response = { id: 'cue-response', metadata: request.response.metadata };
+    const response = { id: 'cue-response', status: 'completed', metadata: request.response.metadata };
     probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'previous' });
     if (done) {
       probe.emit('transport_event', { type: 'response.created', response });
@@ -760,6 +1331,7 @@ describe("RealtimeSession adapter", () => {
 
     const agentOptions = probe.agentConstructorCalls[0]?.[0] as {
       readonly tools: readonly {
+        description: string;
         invoke(context: unknown, input: string): Promise<unknown>;
       }[];
     };
@@ -793,10 +1365,10 @@ describe("RealtimeSession adapter", () => {
     expect(probe.sendMessage).not.toHaveBeenCalled();
     await handle.connect(); await handle.connect();
     expect(probe.sendMessage).not.toHaveBeenCalled();
-    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith({ type: 'response.create', response: buildSpeechResponse('Welcome.', '') });
+    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'response.create', response: expect.objectContaining(buildSpeechResponse('Welcome.', '')) }));
     // Only the greeting response forbids tools; visitor sleep commands remain available.
     expect(probe.agentConstructorCalls[0]?.[0]).toMatchObject({ tools: expect.arrayContaining([
-      expect.objectContaining({ name: 'return_to_dormant' }), expect.objectContaining({ name: 'play_media' }), expect.objectContaining({ name: 'stop_media' })]) });
+      expect.objectContaining({ name: 'return_to_dormant' }), expect.objectContaining({ name: 'play_media' })]) });
     expect(JSON.stringify(eventSink.mock.calls)).not.toContain("Welcome.");
   });
   it('connects and processes visitor audio while only the greeting waits for presentation', async () => {
@@ -813,7 +1385,7 @@ describe("RealtimeSession adapter", () => {
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_stopped' });
     expect(onAudioActivity).toHaveBeenCalledWith('speech_stopped');
     reveal(); for (let i = 0; i < 4; i++) await Promise.resolve();
-    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith({ type: 'response.create', response: buildSpeechResponse('Synthetic greeting.', '') });
+    expect(probe.sendEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'response.create', response: expect.objectContaining(buildSpeechResponse('Synthetic greeting.', '')) }));
     await handle.connect();
     expect(probe.sendEvent).toHaveBeenCalledOnce();
     expect(JSON.stringify(sink.mock.calls)).not.toContain('Synthetic greeting.');
@@ -906,14 +1478,13 @@ describe("RealtimeSession adapter", () => {
     const agentOptions = probe.agentConstructorCalls[0]?.[0] as {
       readonly instructions: string;
       readonly tools: readonly {
+        readonly description: string;
         invoke(context: unknown, input: string): Promise<unknown>;
       }[];
     };
+    expect(agentOptions.tools[0]?.description).toContain('application supplies farewell audio');
     expect(agentOptions.instructions).toContain(
-      'Do not acknowledge, say goodbye or invite more conversation; the application supplies farewell audio.',
-    );
-    expect(agentOptions.instructions).toContain(
-      'call return_to_dormant silently',
+      'as a farewell',
     );
     expect(isBackgroundResult(await agentOptions.tools[0]?.invoke({}, "{}"))).toBe(true);
   });
@@ -937,8 +1508,7 @@ describe("RealtimeSession adapter", () => {
             transcription: {
               model: "configured-transcription-model",
               languages: ["zh-tw", "en"],
-              keywords: ["魔鏡阿魔鏡", "恭送渡鴉大人"],
-              delay: "medium",
+              keywords: ["魔鏡阿魔鏡", "恭送渡鴉大人", "在雲上找找"],
             },
             turnDetection: {
               type: "server_vad",
@@ -1164,6 +1734,8 @@ describe("RealtimeSession adapter", () => {
     const probe = makeAdapterProbe(), sink = vi.fn(), onMediaRequest = vi.fn(async () => 'accepted' as const);
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onMediaRequest,
       avatar: { name: 'QA', personality: '', speakingStyle: '', wakeGreeting: '', sleepFarewell: '', wakePhrase: 'Mirror wake' } });
+    handle.setMediaPlayback?.(true);
+    probe.interrupt.mockClear();
     const event = { type: 'conversation.item.input_audio_transcription.completed', realtimeSessionId: handle.realtimeSessionId, item_id: 'wake-media', transcript: 'Mirror wake!' };
     probe.emit('transport_event', { ...event, item_id: 'not-wake', transcript: 'Do not say Mirror wake' });
     expect(onMediaRequest).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 # Delivery and resume
 
-Continue in the user's job directory. Keep original/repainted art, import PSD, CMO/CAN, runtime and evidence distinct; never leave the only useful source in a temporary download. Do not copy source into the product repository unless requested.
+Continue in the user's job directory. Keep original/repainted art, import PSD, CMO/CAN, runtime and evidence distinct; never leave the only useful source in a temporary download. Magic Mirror's versioned Raven masters belong in the repository under its [storage contract](magic-mirror-contract.md#compatibility-and-bundle); preserve existing masters and use a new version for new work.
 
 ## Durable state
 

@@ -5,17 +5,20 @@ import type { MemoryLearning } from './learning'
 import { memoryInterpretationFailure, type MemoryInterpreter, type MemoryIntentInput, type MemoryIntentResult } from './intent'
 import { venueObservedAt } from './calendar'
 import { Converter } from 'opencc-js/t2cn'
+import { isSpellAttempt, spokenCommandKey } from '../../shared/spoken-command'
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 
 // Candidate lookup only: storage keys and existing owner scopes never change.
 // Traditional variants may collapse, so only a unique candidate can be proposed.
 let foldScript: ReturnType<typeof Converter> | undefined
+const canonicalName = (value: string): string => value.normalize('NFKC').trim().toLowerCase()
 const nameKey = (value: string): string => (foldScript ??= Converter({ from: 't', to: 'cn' }))(value)
   .normalize('NFKC').trim().toLowerCase().replace(/\s/gu, '')
 
 interface Turn { name: string; avatarId: string; epoch: number; text: string; settled: boolean; control: boolean; observedAt: string; submitted: boolean }
 interface Options {
   repository: MemoryRepository
-  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude'>
+  learning: Pick<MemoryLearning, 'observe' | 'flush' | 'invalidate' | 'exclude' | 'carry'>
   embedder?: MemoryEmbedder
   interpret?: MemoryInterpreter
   report(reason: string): void
@@ -23,7 +26,6 @@ interface Options {
   onChanged?(): void
 }
 const result = (code: string, status: MemoryReply['status'] = 'accepted'): MemoryReply => ({ code, status })
-const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase().replace(/[。.!！?？\s]+$/u, '')
 async function untilAborted<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   let onAbort!: () => void
   const cancelled = new Promise<never>((_resolve, reject) => {
@@ -57,17 +59,26 @@ export class RelationshipMemory {
     } catch (error) { this.options.report(abort.signal.aborted ? 'memory_interpretation_cancelled' : memoryInterpretationFailure(error)); return undefined }
     finally { this.recalls.delete(abort) }
   }
+  private reportNameEvidence(text: string, name: string, toolName: string): void {
+    // Comparisons stay in RAM and never authorize a candidate. The audio model,
+    // final ASR and introduction interpreter can each yield different spelling.
+    const tool = !toolName.trim() ? 'absent' : canonicalName(toolName) === canonicalName(name) ? 'equal'
+      : nameKey(toolName) === nameKey(name) ? 'formatted' : 'different'
+    const asr = canonicalName(text).includes(canonicalName(name)) ? 'literal'
+      : nameKey(text).includes(nameKey(name)) ? 'formatted' : 'absent'
+    this.options.report(`memory_identity_evidence_tool_${tool}_asr_${asr}_length_${Math.min(name.length, 80)}`)
+  }
   private async candidateName(avatarId: string, supplied: string): Promise<string | undefined> {
     // Spoken spacing is not stable across ASR turns. Resolve only a unique
     // formatting candidate in Main; never merge records or load its facts.
-    const canonical = (value: string) => value.normalize('NFKC').trim().toLowerCase()
-    const names = await this.options.repository.names(avatarId), name = canonical(supplied)
-    const exact = names.find(existing => canonical(existing) === name)
-    if (exact) return exact
+    const names = await this.options.repository.names(avatarId), name = canonicalName(supplied)
+    const exact = names.find(existing => canonicalName(existing) === name)
+    if (exact) { this.options.report('memory_identity_name_exact'); return exact }
     const folded = nameKey(supplied)
     const candidates = names.filter(existing => nameKey(existing) === folded)
     if (candidates.length > 1) { this.options.report('memory_identity_name_ambiguous'); return undefined }
-    if (names.length && !candidates.length) this.options.report('memory_identity_name_unmatched')
+    this.options.report(candidates.length ? 'memory_identity_name_formatted'
+      : names.length ? 'memory_identity_name_unmatched' : 'memory_identity_name_new')
     return candidates.length === 1 ? candidates[0]! : supplied
   }
   invalidateLoaded(state: MemoryState, avatarId: string, name: string): boolean {
@@ -164,8 +175,8 @@ export class RelationshipMemory {
       turn.text = text.slice(0, 4000)
       // Actual application controls are excluded here. The background extractor
       // interprets other control intent in context, without discarding word matches.
-      turn.control ||= phrases.some(p => normalize(p) === normalize(text))
-      if (turn.control) this.options.report('memory_control_excluded')
+      turn.control ||= isSpellAttempt(text) || [...phrases, ...REALTIME_PROMPTS.mediaStopPhrases].some(p => spokenCommandKey(p) === spokenCommandKey(text))
+      if (turn.control) this.options.report(turn.name ? 'memory_control_excluded' : 'memory_guest_excluded')
       if (text.length > 4000) { turn.control = true; this.options.report('memory_evidence_oversized') }
       await this.finish(itemId, turn)
     }
@@ -186,6 +197,7 @@ export class RelationshipMemory {
       if (generation !== this.generation) return result('memory_result_stale', 'rejected')
       if (!intent) return result('memory_interpretation_unavailable', 'failed')
       if (!intent.authorized || !intent.name.trim()) return result('memory_action_not_requested', 'ignored')
+      this.reportNameEvidence(source.text, intent.name, request.name)
       const candidate = await this.candidateName(state.avatarId, intent.name)
       if (generation !== this.generation) return result('memory_result_stale', 'rejected')
       source.control = true
@@ -214,6 +226,7 @@ export class RelationshipMemory {
           if (generation !== this.generation) return result('memory_result_stale', 'rejected')
           if (!intent) return result('memory_interpretation_unavailable', 'failed')
           if (intent.authorized && intent.name.trim()) {
+            this.reportNameEvidence(source.text, intent.name, '')
             const candidate = await this.candidateName(state.avatarId, intent.name)
             if (generation !== this.generation) return result('memory_result_stale', 'rejected')
             if (!candidate) return result('memory_identity_name_ambiguous', 'rejected')
@@ -264,21 +277,28 @@ export class RelationshipMemory {
     if (!intent) return result('memory_interpretation_unavailable', 'failed')
     if (!intent.authorized) return { ...result('memory_action_not_requested', 'ignored'), mode: policy.mode }
     turn.control = true
-    this.options.learning.invalidate(avatarId, name)
     if (request.action === 'remember') {
       if (policy.mode === 'off' || this.temporary) return result('memory_disabled', 'rejected')
+      // Only the save request itself leaves automatic learning; earlier stories stay queued.
+      this.options.learning.exclude(avatarId, name, this.latest)
       const saved = await this.options.repository.save(avatarId, name, request.topic, request.text)
       this.options.onChanged?.()
       // The atomic write knows whether this was a correction; a bounded UI
       // search can miss an old target and leave stale private context loaded.
-      if ((saved.revision ?? 1) === 1) return generation !== this.generation || this.identity.currentOwner(state) !== name
-        ? result('memory_result_stale', 'rejected') : result('memory_saved')
+      if ((saved.revision ?? 1) === 1) {
+        // Any other concurrent mutation makes this epoch mismatch, so the batch still goes stale.
+        this.options.learning.carry(avatarId, name, policy.epoch, policy.epoch + 1)
+        return generation !== this.generation || this.identity.currentOwner(state) !== name
+          ? result('memory_result_stale', 'rejected') : result('memory_saved')
+      }
       // A committed correction still obliges the renderer to close old context,
       // even when newer speech makes its conversational result stale.
+      this.options.learning.invalidate(avatarId, name)
       this.blocked = true; this.cleanup = { avatarId, name }
       await this.options.repository.setCleanupRequired(avatarId, name, true)
       return result('memory_corrected')
     }
+    this.options.learning.invalidate(avatarId, name)
     this.blocked = true; this.cleanup = { avatarId, name }
     await this.options.repository.setCleanupRequired(avatarId, name, true)
     if (request.action === 'forget') {

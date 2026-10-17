@@ -51,6 +51,7 @@ export const avatarCatalogSchema = z.object({
     mediaSkill: mediaSkillSchema.default(() => structuredClone(DEFAULT_MEDIA_SKILL)),
     wakePhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake phrase').optional(),
     sleepPhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid sleep phrase').optional(),
+    cloudSearchPhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid online search phrase').optional(),
     wakeTuning: z.object({
       phrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake tuning phrase'),
       enabled: z.boolean(),

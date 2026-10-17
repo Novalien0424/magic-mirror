@@ -28,6 +28,14 @@ describe('private memory session', () => {
     expect(session.request(state, request('remember', { topic: 'Fixture', text: 'Synthetic value' })).code).toBe('memory_saved')
     expect(store.save).toHaveBeenCalledWith('avatar-a', 'Fixture Person', 'Fixture', 'Synthetic value')
   })
+  it('keeps one question when the pending name is proposed again', () => {
+    const { session } = setup()
+    const first = session.request(state, request('identify', { name: 'Fixture Person' })).confirmation!
+    const repeated = session.request(state, request('identify', { name: 'fixture person' }))
+    expect(repeated).toEqual({ status: 'rejected', code: 'memory_confirmation_pending' })
+    expect(session.delivery(state, first.token, first.text, true).code).toBe('memory_question_delivered')
+    expect(session.request(state, request('identify', { name: 'Other Person' })).confirmation!.token).not.toBe(first.token)
+  })
   it('rejects stale confirmations and never silently switches a confirmed owner', () => {
     const { session, store } = setup()
     { const q = session.request(state, request('identify', { name: 'Fixture A' })).confirmation!; session.delivery(state, q.token, q.text, true) }

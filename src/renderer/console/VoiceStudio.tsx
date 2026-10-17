@@ -32,6 +32,10 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
     setPresetUndo({ voice: avatar.voice, voiceSpeed: avatar.voiceSpeed, speakingStyle: avatar.speakingStyle, voiceEffects: avatar.voiceEffects })
     onChange(next)
   }
+  const editVoice = (next: AvatarProfile): void => {
+    setPresetUndo(null)
+    onChange(next)
+  }
   useEffect(() => setPresetUndo(null), [avatar.id])
   const audition = useRef<VoiceAudition | null>(null), controller = useRef<AbortController | null>(null), generation = useRef(0)
   const pending = useRef<Promise<VoiceAudition> | null>(null)
@@ -96,7 +100,7 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
       if (generation.current !== current) await value.stop(); else { audition.current = value; await value.update(latestEffects.current) }
     } catch (error) { if (generation.current === current) { setRunning(false); setStatus(error instanceof Error ? error.message : 'Voice preview failed.') } }
   }
-  const edit = (patch: Partial<VoiceEffects>): void => onChange({ ...avatar, voiceEffects: { ...effects, ...patch } })
+  const edit = (patch: Partial<VoiceEffects>): void => editVoice({ ...avatar, voiceEffects: { ...effects, ...patch } })
   const presetKey = Object.entries(VOICE_EFFECT_PRESETS).find(([, value]) => JSON.stringify(value) === JSON.stringify(effects))?.[0]
   const preset = presetKey === 'ethereal' ? 'Ethereal' : presetKey === 'darkOracle' ? 'Dark oracle' : effects.enabled ? 'Custom' : 'Bypassed'
   const voiceProfile = matchingVoiceProfile(avatar)
@@ -113,9 +117,9 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
           setStatus(`${profile.name} profile applied to draft. Generate test voice to audition, then save and publish.`)
         }}><option value="" disabled>Custom settings</option>{VOICE_PROFILES.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></HelpField>
         <p className="console__muted">{voiceProfile?.description ?? 'Priestess and God are adjustable Talos-inspired profiles. Selecting one replaces voice, speed, delivery style and effects in this draft.'}</p>
-        <HelpField help={FIELD_HELP.baseVoice}>Base voice<select value={avatar.voice} onChange={e => onChange({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></HelpField>
-        <HelpField help={FIELD_HELP.speechSpeed}>Speech speed · {(avatar.voiceSpeed ?? 1).toFixed(2)}×<input type="range" min="0.5" max="1.5" step="0.05" value={avatar.voiceSpeed ?? 1} onChange={e => onChange({ ...avatar, voiceSpeed: Number(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.deliveryStyle}>Delivery style<textarea value={avatar.speakingStyle} maxLength={2000} rows={3} onChange={e => onChange({ ...avatar, speakingStyle: e.currentTarget.value })} /></HelpField>
+        <HelpField help={FIELD_HELP.baseVoice}>Base voice<select value={avatar.voice} onChange={e => editVoice({ ...avatar, voice: e.currentTarget.value })}>{AVATAR_VOICES.map(voice => <option key={voice}>{voice}</option>)}</select></HelpField>
+        <HelpField help={FIELD_HELP.speechSpeed}>Speech speed · {(avatar.voiceSpeed ?? 1).toFixed(2)}×<input type="range" min="0.5" max="1.5" step="0.05" value={avatar.voiceSpeed ?? 1} onChange={e => editVoice({ ...avatar, voiceSpeed: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField help={FIELD_HELP.deliveryStyle}>Delivery style<textarea value={avatar.speakingStyle} maxLength={2000} rows={3} onChange={e => editVoice({ ...avatar, speakingStyle: e.currentTarget.value })} /></HelpField>
       </div><div className="console__action-row">{REALTIME_PROMPTS.authoring.deliveryPresets.map(({name, instructions}) => <button key={name} onClick={() => applyPreset({ ...avatar, speakingStyle: instructions })}>{name}</button>)}</div></fieldset>
       <fieldset disabled={disabled}><legend>Local voice effects</legend><div className="console__action-row">
         <button onClick={() => applyPreset({ ...avatar, voiceEffects: { ...VOICE_EFFECT_PRESETS.ethereal }, voiceSpeed: 0.95 })}>Default · Ethereal</button>

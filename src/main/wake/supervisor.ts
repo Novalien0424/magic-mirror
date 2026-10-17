@@ -71,6 +71,14 @@ export interface WakeSupervisor {
   configuration(): WakeWorkerPackage | null
 }
 
+const deviceFailures = new Set(['wake_microphone_not_found', 'wake_microphone_device_failed',
+  'wake_microphone_open_failed', 'wake_microphone_start_failed', 'wake_microphone_stream_closed',
+  'wake_microphone_selection_unavailable', 'wake_microphone_waiting_for_device'])
+
+export function isWakeMicrophoneDeviceUnavailable(reason: string): boolean {
+  return deviceFailures.has(reason)
+}
+
 export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSupervisor {
   const now = options.now ?? (() => performance.now())
   let acquiredAt = 0
@@ -95,15 +103,13 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   let status: WakeSupervisorStatus = 'stopped'
   let reason: string | null = null
   let restartCount: 0 | 1 = 0
+  let healthySince: number | null = null
   let requestSequence = 0
   let shouldListen = false
   let shuttingDown = false
   let audioWatchdog: unknown = null
   let deviceRetry: unknown = null
   let deviceUnavailable = false
-  const deviceFailures = new Set(['wake_microphone_not_found', 'wake_microphone_device_failed',
-    'wake_microphone_open_failed', 'wake_microphone_start_failed', 'wake_microphone_stream_closed',
-    'wake_microphone_selection_unavailable'])
   const pending = new Map<string, PendingRequest>()
 
   function cancelDeviceRetry(reset = true): void {
@@ -148,6 +154,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
   }
 
   function publishStatus(nextStatus: WakeSupervisorStatus, nextReason: string | null = null): void {
+    if (nextStatus !== 'listening') healthySince = null
     if (nextStatus === 'failed') recovery = { state: 'failed', attempts: recovery?.attempts ?? 0,
       reason: nextReason === 'wake_worker_exit_repeated' && recovery ? recovery.reason : nextReason ?? 'wake_worker_failed' }
     status = nextStatus
@@ -248,6 +255,11 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     if (outcome.type === 'input_activity') {
       if (!shouldListen || (status !== 'listening' && status !== 'acquiring')) return
       if (outcome.blocks <= blocks) return
+      // Re-arm only after ten minutes of continuous fresh native input.
+      // A ready event, elapsed process uptime or silence in the pipe is insufficient.
+      if (lastBlockAt === null || now() - lastBlockAt > 3000) healthySince = null
+      healthySince ??= now()
+      if (now() - healthySince >= 10 * 60_000) restartCount = 0
       lastBlockAt = now()
       blocks = outcome.blocks
       peak = outcome.peak
@@ -284,7 +296,7 @@ export function createWakeSupervisor(options: WakeSupervisorOptions): WakeSuperv
     }
     if (outcome.type === 'failed') {
       cancelAudioWatchdog()
-      deviceUnavailable = deviceFailures.has(outcome.reason)
+      deviceUnavailable = isWakeMicrophoneDeviceUnavailable(outcome.reason)
       publishStatus('failed', outcome.reason)
       if (outcome.requestId !== undefined) settlePending(outcome.requestId, action('failed', outcome.reason))
       else failAllPending(outcome.reason)

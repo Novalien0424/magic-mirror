@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 
 export type TvPresence = 'present' | 'absent' | 'unknown'
 export const TV_ABSENCE_GRACE_MS = 15_000
+export const TV_STARTUP_GRACE_MS = 180_000
 
 /** A refused TCP connection still proves the host answered; ADB authentication
  * and transport state are deliberately irrelevant to Ethernet presence. */
@@ -59,10 +60,12 @@ export function monitorTvPresence(options: {
   now?: () => number
 }): { stop(): void } {
   const now = options.now ?? (() => performance.now())
+  const startedAt = now()
   const abort = new AbortController()
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let absentSince: number | undefined
+  let observedPresent = false
   let previous = ''
   const stop = () => {
     stopped = true
@@ -70,22 +73,32 @@ export function monitorTvPresence(options: {
     abort.abort()
   }
   const sample = async () => {
+    if (stopped) return
     let ethernet: TvPresence = 'unknown'
     let hdmi: TvPresence = 'unknown'
-    try { ethernet = await options.ethernet(abort.signal) } catch { /* Report unknown below. */ }
-    if (stopped) return
     try { hdmi = options.display() } catch { /* Never interpret a query error as absent. */ }
+    // HDMI already proves presence; avoid opening another adbd connection.
+    if (hdmi !== 'present') {
+      try { ethernet = await options.ethernet(abort.signal) } catch { /* Report unknown below. */ }
+      if (stopped) return
+      // The display can appear while a slow network probe is in flight.
+      try { hdmi = options.display() } catch { hdmi = 'unknown' }
+    }
+    if (stopped) return
+    observedPresent ||= hdmi === 'present' || ethernet === 'present'
     const bothAbsent = hdmi === 'absent' && ethernet === 'absent'
     if (bothAbsent) absentSince ??= now()
     else absentSince = undefined
     const state = `${hdmi}/${ethernet}`
     if (state !== previous) {
       previous = state
-      options.report({ hdmi, ethernet, reason: bothAbsent ? 'both_absent_countdown'
-        : hdmi === 'unknown' || ethernet === 'unknown' ? 'presence_query_unavailable' : 'presence_detected' })
+      options.report({ hdmi, ethernet, reason: bothAbsent
+        ? observedPresent ? 'both_absent_countdown' : 'startup_presence_grace'
+        : hdmi === 'present' || ethernet === 'present' ? 'presence_detected' : 'presence_query_unavailable' })
     }
-    if (absentSince !== undefined && now() - absentSince >= TV_ABSENCE_GRACE_MS) {
-      options.report({ hdmi, ethernet, reason: 'both_absent_15_seconds' })
+    if (absentSince !== undefined && now() - absentSince >= TV_ABSENCE_GRACE_MS
+      && (observedPresent || now() - startedAt >= TV_STARTUP_GRACE_MS)) {
+      options.report({ hdmi, ethernet, reason: observedPresent ? 'both_absent_15_seconds' : 'startup_presence_grace_expired' })
       stop()
       options.onAbsent()
       return

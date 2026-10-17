@@ -217,6 +217,7 @@ export interface WakeMicrophoneHandoff {
 }
 
 export interface BootOptions {
+  readonly qaPromptVariant?: 'baseline' | 'trimmed' | 'merged' | 'focused'
   readonly rebuildWakeOwner?: () => PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
   readonly onFatalFailure?: (reason: string) => void
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
@@ -888,11 +889,13 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     cacheAvatarModels(slots)
     const avatar = slots.active.avatarCatalog?.avatars.find(a => a.id === slots.active.avatarCatalog?.activeAvatarId)
     publishedControlPhrases = Array.isArray(slots.active.spells) && slots.active.wake
-      ? Object.freeze([...slots.active.spells.map(s => s.phrase), ...(avatar?.spells ?? []).map(s => s.phrase),
-        avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, avatar?.wakePhrase ?? slots.active.wake.phrase].filter(Boolean)) : null
+      ? Object.freeze([...new Set([...slots.active.spells.map(s => s.phrase), ...(avatar?.spells ?? []).map(s => s.phrase),
+        avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, avatar?.wakePhrase ?? slots.active.wake.phrase,
+        slots.active.wake.phrase].filter(Boolean))]) : null
   }
   let avatarSwitchInProgress = false
   let rolloverStopping = false
+  let activationStopping = false
   let wakeReacquire: Promise<boolean> | null = null
   let maintenanceMode: 'audio' | 'renderer' | 'core' | null = null
   let maintenanceDeadline: unknown = null
@@ -1196,7 +1199,9 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       if (recoveryProbeCycle !== null && lifecycleView.state !== 'offlineLoop') {
         cancelRecoveryProbeCycle()
       }
-      if (lifecycleView.state === 'maintenance' && event.type === 'LOCAL_CORE_FAILED') beginMaintenanceRecovery('core')
+      if (lifecycleView.state === 'maintenance' && event.type === 'LOCAL_CORE_FAILED') {
+        beginMaintenanceRecovery(event.errorCode === 'mirror_renderer_gone' ? 'renderer' : 'core')
+      }
       refreshSnapshot()
       return true
     } catch {
@@ -1485,6 +1490,23 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     dispatchStopForRecovery()
   }
 
+  function recordRealtimeActivationTimeout(): void {
+    cancelStartDeadline()
+    pendingRealtimeSessionIdentity = pendingRealtimeRolloverSessionIdentity = null
+    cancelRealtimeRolloverTimer()
+    activationStopping = true
+    lastRealtimeRuntimeOutcomeReason = 'realtime_activation_timeout'
+    lastError = { module: 'openai', error_code: 'realtime_activation_timeout', time: nowValue(now) }
+    maintenance = null
+    emitMetadata(telemetry, { module: 'openai', event: 'realtime_activation_timeout', status: 'degraded',
+      reason: 'cause=activation_deadline_expired;awaiting=renderer_stop_receipt', source: 'runtime' })
+    refreshSnapshot()
+    notifyListeners()
+    // Activation may still own renderer tracks. Keep wake closed until its
+    // stop receipt; only a failed stop is a microphone handoff failure.
+    dispatchStopForRecovery()
+  }
+
   function cancelStopDeadline(): void {
     if (stopDeadline !== null) cancelRealtimeTimer(stopDeadline)
     stopDeadline = null
@@ -1512,11 +1534,17 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     maintenanceMode = null
   }
   function beginMaintenanceRecovery(mode: 'audio' | 'renderer' | 'core'): void {
-    if (runtimeStopped || options.onFatalFailure === undefined) return
-    if (maintenanceMode !== null) return
+    if (runtimeStopped) return
+    if (maintenanceMode !== null) {
+      if (mode !== 'core' || maintenanceMode === 'core') return
+      cancelMaintenanceRecovery()
+    }
     maintenanceMode = mode
     emitMetadata(telemetry, { module: 'app', event: 'maintenance_recovery', status: 'degraded',
-      reason: `cause=${mode}_owner_failed`, source: 'runtime' })
+      reason: mode === 'core' ? 'cause=core_fault_requires_operator_repair' : `cause=${mode}_owner_failed`, source: 'runtime' })
+    // Invalid config/storage cannot be repaired by repeatedly restarting. Keep
+    // the Console available; renderer and audio ownership retain bounded recovery.
+    if (mode === 'core' || options.onFatalFailure === undefined) return
     try {
       maintenanceDeadline = scheduleRealtimeTimer(() => {
         maintenanceDeadline = null
@@ -1540,6 +1568,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       if (runtimeStopped || maintenanceMode !== mode) return
       cancelMaintenanceRecovery()
       rolloverStopping = false
+      activationStopping = false
       sendLifecycle({ type: 'RETRY_STARTUP' })
       sendLifecycle({ type: 'LOCAL_READY' })
       lastError = null
@@ -1555,11 +1584,17 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
   function handleMirrorRendererGone(): void {
     if (runtimeStopped) return
+    if (maintenanceMode === 'core') {
+      emitMetadata(telemetry, { module: 'app', event: 'renderer_recovery_deferred', status: 'degraded',
+        reason: 'cause=core_fault_requires_operator_repair', source: 'runtime' })
+      return
+    }
     cancelStopDeadline()
     cancelStartDeadline()
     for (const request of secretRequests) request.abort()
     pendingRealtimeSessionIdentity = pendingRealtimeRolloverSessionIdentity = null
     rolloverStopping = false
+    activationStopping = false
     sendLifecycle({ type: 'LOCAL_CORE_FAILED', errorCode: 'mirror_renderer_gone' })
     lastError = { module: 'app', error_code: 'mirror_renderer_gone', time: nowValue(now) }
     maintenance = { code: 'mirror_renderer_gone', detail: 'cause=renderer_process_gone' }
@@ -1831,7 +1866,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   })
   void ready.then(() => {
     readySettled = true
-    if (lifecycleState() === 'maintenance') beginMaintenanceRecovery('core')
+    if (lifecycleState() === 'maintenance' && maintenanceMode === null) beginMaintenanceRecovery('core')
   })
 
   const phaseTestsReader: PhaseTestRecordReader = {
@@ -1882,6 +1917,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     cancelMaintenanceRecovery()
     for (const request of secretRequests) request.abort()
     pendingRealtimeSessionIdentity = null
+    activationStopping = false
     lastRealtimeRuntimeOutcomeReason = null
     pendingRealtimeRolloverSessionIdentity = null
     realtimePlaybackSessionId = null
@@ -2118,7 +2154,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     const issuer = createRealtimeSessionStartBundleIssuer({
       getPublishedSessionModelSnapshot: () => snapshot,
       getRealtimeSessionIdentity: () => identity,
-      ...(avatarSettings ? { getAvatarSettings: () => avatarSettings } : {}),
+      ...(avatarSettings ? { getAvatarSettings: () => ({ ...avatarSettings,
+        ...(options.qaPromptVariant ? { qaPromptVariant: options.qaPromptVariant } : {}) }) } : {}),
       broker,
     })
     const request = new AbortController()
@@ -2490,7 +2527,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     } else if (options.onFatalFailure) {
       startDeadline = scheduleRealtimeTimer(() => {
         startDeadline = null
-        if (!runtimeStopped && lifecycleState() === 'activating') recordWakeHandoffFailure('realtime_activation_timeout')
+        if (!runtimeStopped && lifecycleState() === 'activating') recordRealtimeActivationTimeout()
       }, 30_000)
     }
     return emitRealtimeRuntimeResult('start', dispatchResult.status, dispatchResult.reason)
@@ -2580,7 +2617,17 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       recordWakeHandoffFailure('wake_microphone_acquire_failed')
       return emitRealtimeRuntimeResult('stop', 'failed', 'wake_microphone_acquire_failed')
     }
-    if (runtimeStopped || lifecycleState() !== 'suspending') return emitRealtimeRuntimeResult('stop', 'ignored', 'outcome_ignored_wrong_state')
+    if (runtimeStopped || (lifecycleState() !== 'suspending' && !(lifecycleState() === 'activating' && activationStopping))) {
+      return emitRealtimeRuntimeResult('stop', 'ignored', 'outcome_ignored_wrong_state')
+    }
+    if (activationStopping) {
+      activationStopping = false
+      sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_activation_timeout' })
+      refreshSnapshot()
+      notifyListeners()
+      startRecoveryProbeCycle()
+      return emitRealtimeRuntimeResult('stop', 'success', reason)
+    }
     if (rolloverStopping) {
       rolloverStopping = false
       sendLifecycle({ type: 'CLOUD_FAILED', errorCode: 'realtime_runtime_rollover_failed' })
@@ -2606,7 +2653,8 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     if (
       runtimeStopped || operation === 'unknown'
       || (operation === 'start' && (state !== 'activating' || pendingRealtimeSessionIdentity === null))
-      || (operation === 'stop' && (stopReceiptProcessing || (state !== 'suspending' && !(state === 'maintenance' && maintenanceMode === 'audio'))))
+      || (operation === 'stop' && (stopReceiptProcessing || (state !== 'suspending'
+        && !(state === 'activating' && activationStopping) && !(state === 'maintenance' && maintenanceMode === 'audio'))))
       || (operation === 'rollover' && (state !== 'active' || pendingRealtimeRolloverSessionIdentity === null))
     ) {
       return emitRealtimeRuntimeResult(operation, 'ignored', 'outcome_ignored_wrong_state')

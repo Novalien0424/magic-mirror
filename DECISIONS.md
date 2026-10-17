@@ -1,5 +1,168 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — Stream Deck Neo application controls (user request)
+
+The connected Neo has separate START and STOP buttons for Magic Mirror.
+The startup default is the last saved active avatar from the previous use
+(owner clarification, 2026-10-17), currently Raven. START/STOP must preserve that
+selection, not force a fixed avatar; selecting an editor profile alone is not
+the Console's persisted **Use on Mirror** selection.
+Use Elgato's built-in Open actions to launch small local application wrappers
+around the existing queued canonical start/stop scripts. Keep the existing user
+LaunchAgent as the sole Electron restart owner. Intentional STOP requests clean
+Main shutdown, then unloads and verifies the job/process release; the next START
+bootstraps that same job. It does not persistently disable login startup or
+change TV presence policy. No extra hotkey driver/plugin is needed.
+
+Owner follow-up: STOP must put the reflective TV in **standby**, so the macOS
+desktop does not remain visible on the glass. Sleep the TV before closing app
+windows; still clean up the app if TV control fails. START launches the saved
+active avatar's app, waits for current-Main renderer load/bridge markers, then
+wakes the TV and opens its HDMI activity. Use the installed trusted wired ADB
+server and explicit SLEEP/WAKEUP keys, never a power toggle or another daemon.
+Standby means Android sleep/display OFF, **not full shutdown or mains power-off**;
+the wired control path stays alive. Full-power-removal wake is not established.
+Physical Neo START/STOP presses were confirmed working by the owner before this
+TV integration. USB reconnect and cold-login acceptance remain separate.
+See [setup](deploy/macos/stream-deck.md) and
+[fresh evidence](docs/testing/stream-deck-controls-2026-10-17.md).
+
+## 2026-10-14 — Online media only after a hidden opening phrase (user ruling)
+
+Replaces the default local→YouTube fallback, explicit-YouTube requests and the
+keyword-based local-only source policy. The owner keeps mini as the default
+model; the application, not the model, decides when online search is allowed.
+
+- Media requests search local media only. Online (YouTube) search is allowed
+  only when the visitor's final transcript **opens with** the avatar's online
+  search phrase (default 「在雲上找找」, configurable per avatar in the Console
+  Persona section), for example 「在雲上找找晴天」, or is the phrase alone. The
+  phrase alone also covers the visitor's next turn. Results of an allowed search
+  stay playable for a later selection.
+- Matching uses the shared sound-alike key. Opening-phrase (prefix) matching is
+  an owner-approved exception to invariant 7's whole-utterance equality for this
+  phrase only. Quoted, negated, embedded or late mentions do not unlock it, and it
+  only permits a search, never playback or hardware by itself.
+- The phrase is hidden like the spells: never in persona text, prompts or model
+  tools; it is a transcription hint and Console field only. Raven never offers
+  or explains online search. A phrase turn skips memory extraction (invariant 6).
+- Saying "YouTube" without the phrase no longer goes online.
+- On a phrase turn Raven may search online without a local lookup first; the
+  application does not enforce local-first there (owner, 2026-10-15).
+
+## 2026-10-14 — Short line before local search and memory (user ruling)
+
+Refines the 2026-10-11 preamble ruling. The owner keeps `gpt-realtime-2.1-mini`
+as the default, and mini speaks before these tools despite prompt wording
+([evidence](docs/testing/review-fixes-2026-10-14.md)).
+
+- Before `search_youtube`, `find_media` or a memory lookup/save/change, Raven may
+  say one short in-character line in the reply language. It never names the tool
+  or the mechanism.
+- `memory` `identify` stays silent: the application's identity question speaks
+  next. Other tools (play, camera, sleep, stop) keep no spoken preamble.
+- Accepted playback stays silent; no claim of success before the result.
+
+## 2026-10-13 — Research the measurement as well as the failure (user ruling)
+
+The owner authorizes another focused research, repair and QA round, including
+camera/driver investigation and synthetic wake-volume comparisons. Prefer small
+recovery improvements over a new architecture. Challenge failed tests with
+positive/negative controls and adversarial cases; a grader diagnosis or one
+passing sample is not established causation or general acceptance. Record a
+proven research limit instead of repeating unchanged experiments. Existing
+TV-off device/provider authority and app-owned USB recovery remain in force.
+
+## 2026-10-13 — Audited remediation and Raven's authority (user ruling)
+
+The owner authorizes fixes and QA for the remaining-errors audit, superseding
+its application-code audit-only boundary. TV-off real-device/provider authority
+continues; production TV shutdown policy remains intact outside isolated QA.
+
+Raven is calm, authoritative and self-possessed, with dry, mildly disdainful wit
+about human fussing. It need not comply with every idle demand, empty praise,
+repetition or attempt to make it a generic assistant. It may decline briefly
+without performing the refused request. This replaces the earlier uniformly
+warm/accommodating sage direction. It remains non-aggressive: no humiliation,
+threats or contempt for the visitor's worth. Genuine distress receives restrained
+care. Clear requests for supported skills and application-owned cues still follow
+their existing authorization, ordering and exact-speech rules; character is not
+permission to obstruct media, camera, consented memory or sleep controls.
+
+The versioned authoritative candidate is tested in isolated configuration before
+scoped publication. Model IDs, tool count and unrelated operator settings remain
+unchanged. Automated character judgments do not establish owner listening
+acceptance or universal reliability.
+
+## 2026-10-13 — Camera monitoring follows the living avatar (user correction)
+
+Camera capture and stall monitoring run only while the visitor avatar is waking
+or in an active conversation, with a ready Mirror renderer. Dormant, suspending,
+offline, maintenance and renderer replacement release the camera and stop its
+watchdog. Wake activation reacquires it only after the prior worker has exited.
+The rapid missing-frame reset rule applies while this owner is active; it does
+not authorize continuous background camera polling while Raven sleeps.
+
+## 2026-10-13 — Prompt camera-stall recovery (user ruling)
+
+When an operating camera stops producing video/images, the application must
+detect missing fresh frames and initiate targeted USB recovery promptly. Do not
+wait for a visitor's capture request or treat a live worker heartbeat/delayed
+face-analysis result as proof of video delivery. Preserve bounded retries,
+permission/device-absence handling and unrelated audio/USB operation. Current
+timing and measured recovery belong in PROGRESS and its linked test evidence.
+
+Image requests arriving during camera-worker replacement join its existing
+bounded recovery. Once the USB budget is exhausted, pending/new image requests
+fail promptly rather than waiting for a recovery that is no longer scheduled.
+Fresh frames permit capture again but do not by themselves replenish the reset
+budget. A successful USB call alone must never be reported as restored video.
+
+## 2026-10-11 — TV-off real-device testing (user authorization)
+
+For this repair session the owner keeps the TV off, leaves Jabra and camera on,
+and authorizes Raven, real Realtime calls and a temporary bypass of TV-off
+shutdown. Use the existing isolated QA exemption or a temporary launch
+definition; restore the installed TV policy after testing. This does not change
+the normal human-controlled TV power policy below. Current evidence belongs in
+[the field follow-up](docs/testing/realtime-field-followup-2026-10-11.md).
+
+## 2026-10-11 — Third-audit remediation
+
+The owner requested systematic fixes in the [third audit](docs/testing/third-audit-prompts-skills-persistence-2026-10-11.md).
+The named Agents SDK upgrade to 0.20.0 and application liveness recovery are
+in scope. A repeated wake failure in Dormant exits 1; renderer hangs use the
+existing single-recreation budget, and Main hangs terminate for launchd recovery.
+An intentional stop remains exit 0 even after repeated signals or cleanup errors.
+No additional process restart owner is introduced.
+
+The owner confirmed 「停止播放」 as the application-owned media stop phrase.
+It uses whole-final-transcript sound-alike equality during Active
+media, once per turn, and skips memory extraction. Dormant loops still use the
+configured native wake phrase. `stop_media` is no longer advertised to the model.
+Prompt and merged-media comparisons stay isolated QA trials; production model
+and operator persona promotion retain their existing trial/approval boundaries.
+
+QA runners and agent start/stop operations share the Electron operation lease
+at `~/Library/Caches/MagicMirror/electron-owner`. Use
+`node scripts/electron-owner.mjs <owner> <command> [args]` before manipulating
+normal Raven. A busy lease is not permission to stop another agent's app.
+On the final Mac the `.lock` sibling is kernel-owned and released on process
+exit/crash/reboot; `.json` is diagnostic metadata. Never unlink that lock inode.
+A stale, valid legacy directory may migrate only after its PID is confirmed dead.
+
+## 2026-10-11 — The application owns USB camera recovery (user ruling)
+
+- A stalled USB camera must be reset and recovered by the application. Do not
+  make unplugging/replugging the camera an operator prerequisite or the normal
+  recovery instruction; the owner explicitly declines that manual workflow.
+- Recovery may release capture, reset/re-enumerate the selected camera's USB
+  device, rediscover it and verify fresh frames. Keep attempts bounded and
+  report precise metadata when macOS cannot complete the reset.
+- Scope resets to the camera, preserve unrelated USB/audio devices, and keep
+  Main responsible for worker ownership. This does not add an Electron restart
+  owner or permit camera frames/identifiers in diagnostics.
+
 ## 2026-10-11 — TV power, conversation behavior and kiosk settings (user rulings)
 
 Accepted from the [second audit](docs/testing/second-audit-remaining-failures-2026-10-11.md).
@@ -202,7 +365,7 @@ see [the remediation ledger](docs/testing/review-remediation-2026-10-10.md).
 - Config has separate schema/config versions, atomic migrations preserving operator values, and visible Maintenance for unsupported schemas. Active→Previous→packaged Default recovery is for corrupt/missing/unreadable data, never silent model substitution.
 - Main-only `node:sqlite`: `app_migrations`, foreign keys, WAL, integrity check, transactional migrations, defensive health, idempotent close. Online backup is exported `backup(sourceDb, path, options)`, not `db.backup`. DB failure does not block unrelated conversation/adapters.
 - Telemetry: RAM ring 2,000; JSONL 5 MB × 5; queue 1,000 with oldest-overflow `telemetryDroppedCount`. Only time/module/event/status and optional timing, bounded error/session/scene ID/reason/source; never raw content/errors, credentials, frames or embeddings. Overflow/delivery failures remain visible and nonblocking.
-- Transcript/audio, extracted memory values and injected private context stay RAM-only under canonical invariant 1. A future memory schema is not present persistence authority. Historical worker routes/H6 remain provenance; the 2026-10-03 dispatch contract in AGENTS owns current workers.
+- **Superseded in part by the 2026-10-04/05 memory rulings:** selected facts and validated summaries may persist in Main's private scoped database. Raw transcripts/audio and injected context remain RAM-only. Historical worker routes/H6 remain provenance; AGENTS owns current workers.
 
 ## Voice, identity and microphone
 
@@ -238,7 +401,7 @@ The operator relaxed added direct-speech p95 to <=180 ms and overhead above engi
 - **2026-09-09:** Console motion previews loop natively without repeated fade-in; expressions retain SDK indefinite pose hold. Active highlight persists until reset/replacement. This is `preview: true` only; normal Mirror playback stays one-shot.
 - **2026-09-08 framing:** preserve initial model canvas-height fit and explicit Layout. Draw/resize compose fresh projection/MVP without model-matrix mutation. PPU/horizontal padding must not shrink art. Console/Mirror share renderer, 9:16 viewport, aspect and DPR. No per-ID multiplier, dynamic alpha-fit or CSS zoom workaround. Artistic extreme-pose crop calibration is separate.
 - **2026-09-09 labels:** operator name/version lives in managed `avatar-label.json`; no filename/UUID guesses. Unknown stays unknown; invalid labels fail visibly without hiding valid rigs. Sidecars may travel with future exports. [Label contract](docs/testing/avatar-library-labels-2026-09-09.md).
-- **2026-09-09 Raven master:** `resources/avatar/Raven/v10/` separates runtime from editable CMO/PSD. Preserve masters; new authoring gets a new version. Managed userData copies stay distinct; no direct edits or automatic publication/synchronization. Build remains Ren-only. Runtime/checksum inventory is Git-eligible with byte-preserving `-text`; large editable/QA files remain ignored and need separate backup. [Storage policy](resources/avatar/Raven/README.md).
+- **2026-09-09 Raven master:** `resources/avatar/Raven/v10/` separates runtime from editable CMO/PSD. Preserve masters; new authoring gets a new version. Managed userData copies stay distinct; no direct edits or automatic publication/synchronization. Build remains Ren-only. **Superseded storage wording:** versioned CMO/PSD masters are tracked under the [current storage policy](resources/avatar/Raven/README.md); scratch QA and derived working files remain outside that master inventory. Preserve byte-safe Git attributes and separate backups.
 
 ## Evidence
 

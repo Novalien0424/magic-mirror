@@ -17,10 +17,15 @@ export function createMediaSkillRuntime(input: {
   let active: { context: SceneActionCommandContext; kind: 'music' | 'video'; youtube: boolean; mode: 'once' | 'loop'; fadeMs: number; position?: number; started: boolean; completeStart?: (outcome: ToolOutcome) => void } | null = null
   let launch: ReturnType<typeof setTimeout> | undefined
   let watchdog: ReturnType<typeof setTimeout> | undefined
+  const failures = new Map<string, string>()
   const clear = () => { clearTimeout(launch); clearTimeout(watchdog); launch = watchdog = undefined }
   const stop = (reason = 'media_stopped'): ToolOutcome => {
     if (!active) return 'ignored'
     const old = active
+    if (/failed|timeout|unavailable/.test(reason)) {
+      failures.set(old.context.runId, reason)
+      if (failures.size > 64) failures.delete(failures.keys().next().value!)
+    }
     active = null
     clear()
     old.completeStart?.(/failed|timeout|unavailable/.test(reason) ? 'failed' : 'ignored')
@@ -42,6 +47,7 @@ export function createMediaSkillRuntime(input: {
   return {
     isActive: () => active !== null,
     activeRunId: () => active?.context.runId,
+    failureReason: (runId: string | undefined) => runId ? failures.get(runId) : undefined,
     stop,
     playConfirmed(request: PlaybackRequest, skill: AvatarMediaSkill): Promise<ToolOutcome> {
       const outcome = this.play(request, skill)
