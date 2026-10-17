@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Install two quiet LaunchServices entry points for Stream Deck's built-in Open action.
+# Install four quiet LaunchServices entry points for Stream Deck's built-in Open action.
 set -eu
 umask 077
 
@@ -7,15 +7,20 @@ repo=/Users/novalien0424/magic-mirror
 controls="$HOME/Applications/Magic Mirror Controls"
 [[ "$(uname -s)" == Darwin ]] || { print -u2 'macOS is required'; exit 1; }
 [[ -x /opt/homebrew/bin/node ]] || { print -u2 'Node is missing'; exit 1; }
-for action in start stop; do
+for action in start stop loop console; do
   [[ -x "$repo/deploy/macos/magic-mirror-$action.sh" ]] || { print -u2 "Missing executable $action script"; exit 1; }
 done
 mkdir -p "$controls"
 stage=$(mktemp -d "$controls/.install.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
 
-for action in start stop; do
-  if [[ "$action" == start ]]; then label='Start Magic Mirror'; else label='Stop Magic Mirror'; fi
+for action in start stop loop console; do
+  case "$action" in
+    start) label='Start Magic Mirror' ;;
+    stop) label='Stop Magic Mirror' ;;
+    loop) label='Play Loop Magic Mirror' ;;
+    console) label='Console Magic Mirror' ;;
+  esac
   bundle="$stage/$label.app"
   destination="$controls/$label.app"
   identifier="com.magicmirror.control.$action"

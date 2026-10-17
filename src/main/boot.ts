@@ -217,6 +217,7 @@ export interface WakeMicrophoneHandoff {
 }
 
 export interface BootOptions {
+  readonly operatorLoopActive?: () => boolean
   readonly qaPromptVariant?: 'baseline' | 'trimmed' | 'merged' | 'focused'
   readonly rebuildWakeOwner?: () => PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
   readonly onFatalFailure?: (reason: string) => void
@@ -316,6 +317,7 @@ export interface BootRuntime {
   scheduleRecoveryProbes(): void
   manualStart(): Promise<Record<string, unknown>>
   manualStop(): Promise<Record<string, unknown>>
+  suspendForOperatorLoop?(): Promise<void>
   requestSleep(): Promise<Record<string, unknown>>
   noteSceneActivity(kind: 'started' | 'finished', runId: string): void
   noteRealtimeActivity(kind: 'user_turn' | 'assistant_playback' | 'assistant_playback_started', sessionId?: string): void
@@ -1165,6 +1167,10 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   function sendLifecycle(event: LifecycleEvent): boolean {
     if (runtimeStopped) return false
+    if (event.type === 'WAKE_DETECTED' && options.operatorLoopActive?.()) {
+      emitMetadata(telemetry, { module: 'app', event: 'wake_deferred', status: 'info', reason: 'operator_loop_active', source: 'runtime' })
+      return false
+    }
     if (event.type === 'WAKE_DETECTED' && avatarSwitchInProgress) {
       emitMetadata(telemetry, { module: 'avatar', event: 'wake_deferred', status: 'info', reason: 'avatar_switch_in_progress', source: 'runtime' })
       return false
@@ -1356,6 +1362,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   }
 
   function startRecoveryProbeCycle(): void {
+    if (options.operatorLoopActive?.()) { cancelRecoveryProbeCycle(); return }
     const state = lifecycleState()
     if (state !== 'offlineLoop') {
       emitRecoveryProbeMetadata('info', `state=${state};cause=not_offline_loop`)
@@ -2136,6 +2143,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>> {
     await ready
+    if (options.operatorLoopActive?.()) throw new RealtimeSessionUnavailableError()
     if (runtimeStopped) throw new RealtimeSessionUnavailableError()
 
     const identity = currentRealtimeSessionIdentity()
@@ -2438,6 +2446,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   async function manualStart(): Promise<Record<string, unknown>> {
     await ready
+    if (options.operatorLoopActive?.()) return emitRealtimeRuntimeResult('start', 'ignored', 'operator_loop_active')
     if (runtimeStopped) return emitRealtimeRuntimeResult('start', 'ignored', 'runtime_shutting_down')
     if (wakeReacquire !== null) await wakeReacquire
     if (runtimeStopped) return emitRealtimeRuntimeResult('start', 'ignored', 'runtime_shutting_down')
@@ -2580,6 +2589,19 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
   function manualStop(): Promise<Record<string, unknown>> {
     return stopRealtime('manual_stop')
+  }
+
+  async function suspendForOperatorLoop(): Promise<void> {
+    await ready
+    cancelRecoveryProbeCycle()
+    cancelRealtimeRolloverTimer()
+    if (lifecycleState() === 'active') { await manualStop(); return }
+    if (lifecycleState() === 'activating') {
+      cancelStartDeadline()
+      if (!sendLifecycle({ type: 'SLEEP_REQUESTED' })) throw Error('operator_loop_suspend_failed')
+      refreshSnapshot(); notifyListeners()
+      dispatchStopForRecovery()
+    }
   }
 
   async function requestSleep(): Promise<Record<string, unknown>> {
@@ -2915,6 +2937,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     scheduleRecoveryProbes,
     manualStart,
     manualStop,
+    suspendForOperatorLoop,
     requestSleep,
     noteRealtimeActivity,
     noteSceneActivity,

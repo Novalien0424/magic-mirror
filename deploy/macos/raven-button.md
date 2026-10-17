@@ -1,7 +1,7 @@
-# Raven start/stop button
+# Magic Mirror operator controls
 
 The helper operates the existing user LaunchAgent
-`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop requests,
+`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console requests,
 debounces successful repeated actions for three seconds, and holds the shared
 Electron operation lease. An active QA owner rejects the request with
 `electron_owner_busy`; it never takes over that owner's app. Launchd remains the
@@ -17,6 +17,8 @@ opened by Stream Deck:
 ```sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-start.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-stop.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-loop.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-console.sh
 ```
 
 Each fixes its action and calls the existing queue helper using canonical paths.
@@ -29,22 +31,54 @@ wrappers and configuring Stream Deck are separate integration steps.
 
 The scripts return after **queueing** the request; exit zero is queue acceptance,
 not proof that the app started/stopped. Completion is reported through the
-metadata-only log and `afplay` sounds: Glass for started, Pop for already on/off,
+metadata-only log and `afplay` sounds: Glass for started/loop playing, Pop for Console shown/already on/off,
 Tink for clean stop, Sosumi for a forced stop, and Basso for failure/busy.
 Requests are published atomically and processed in order. A stop followed by a
 start stays ordered. Requests older than 120 seconds are dropped with `expired`,
 leaving room for a forced app stop plus the bounded TV operation ahead of them.
 
-## Start/stop behavior and limits
+## Behavior and limits
 
 Start is idempotent when the job already has a PID. Otherwise it kickstarts a
 loaded job or bootstraps an unloaded job, then waits up to ten seconds for a PID.
 The combined control then waits up to ten seconds for this Main's existing
 `MAIN_READY`, Mirror `WINDOW_LOADED` and `RENDERER_READY` metadata, invalidated by
 logged mirror failure/recreation or app exit, and rechecks the Main PID. Only
-then does it wake the TV and start the HDMI activity. Missing/ambiguous readiness
-reports `start_not_ready` without waking the TV. The saved active avatar is never
-overwritten. An already-running app goes through the same TV wake path.
+then does it send Main `normal` for START, `play_loop` for LOOP, or `show_console`
+for CONSOLE. Only a successful
+acknowledgement permits TV wake and HDMI selection. Missing/ambiguous readiness
+reports `<action>_not_ready` without waking the TV; mode failure reports
+`<action>_mode_failed` plus a safe `modeReason`.
+The saved active avatar is never overwritten. An already-running app goes through
+the same acknowledgement path. Main owns idempotent loop playback and must only
+acknowledge `play_loop` success after playback actually starts (or is already
+playing). START switches back to normal mode. No control payload accepts a media path.
+CONSOLE reuses the current renderer and waits at most ten seconds for its
+load/bridge readiness, then places it in the mirror display's work area above
+the kiosk window. It preserves unsaved edits and current playback. Repeats
+show/focus rather than hide it. START/LOOP hide the Console; STOP closes the
+whole application, so all current and future owned program modes end together.
+
+### Main acknowledgement mailbox
+
+The import-safe [operator client](../../scripts/operator-command.mjs) uses only
+`~/Library/Application Support/magic-mirror/operator-control` on this Mac,
+matching `app.getPath('userData')/operator-control` in Main. It publishes an atomic
+request under `requests/<UUID>.json`:
+
+```json
+{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console","issuedAt":0,"expiresAt":45000}
+```
+
+`issuedAt` is `Date.now()` at creation; `expiresAt` is exactly 45,000 ms later.
+Main replies under `responses/<same UUID>.json` with exactly
+`{"version":1,"id":"<same UUID>","status":"success|failed","reason":"safe_snakecase"}`.
+The client validates version, ID, status and reason, polls every 100 ms for up to
+45 seconds using both expiry and a monotonic deadline, and removes its own request,
+temporary file and response after completion/failure/timeout. It enforces directory
+mode 0700 and file mode 0600. No root-path override, socket, service, credentials,
+media path or private configuration is used. Failures retain only fixed metadata.
+The protocol adds up to 45 seconds to the existing startup/readiness and TV budgets.
 
 These markers prove startup load/bridge receipt, not ongoing event-loop health,
 avatar first frame or microphone/camera/audio acceptance. They are historical
@@ -60,6 +94,7 @@ it is never mistaken for `already_off`. A restarted PID, failed TERM, or failed
 shutdown probe reaches the same unload path. Removing the job prevents KeepAlive
 from bringing it back before the next explicit start. A later login can still
 load the installed LaunchAgent normally; stop does not persistently disable it.
+STOP sends no mailbox mode request; deliberate TERM clears desired mode in Main.
 
 The stop operation has a 55-second monotonic budget, including command and child
 checks. Launchctl print is limited to one second, TERM to two seconds, and
@@ -85,9 +120,9 @@ Those failure results require inspection before another start.
 ## TV standby/wake
 
 STOP first confirms Android Asleep/display OFF, sending explicit key 223 only
-when needed, then always performs the app stop. START sends explicit wake key
-224 when needed, opens `com.android.rockchip.camera2/.RockchipCamera2`, and
-verifies Awake/display ON. Confirmed standby needs no repeated sleep injection.
+when needed, then always performs the app stop. START/LOOP/CONSOLE send explicit wake key
+224 when needed, open `com.android.rockchip.camera2/.RockchipCamera2`, and
+verify Awake/display ON. Confirmed standby needs no repeated sleep injection.
 This is **standby, not Android shutdown or mains power-off**. The board and wired
 control path retain power; actual standby wattage is unmeasured.
 
@@ -103,7 +138,7 @@ Completion logs contain separate app/TV outcomes; command failures log only the
 step and a fixed failure/timeout reason, never raw device output.
 
 TV failure leaves app cleanup enabled and produces Basso. Successful combined
-operations retain the usual sounds. START does not repair full power loss or a
+operations retain the usual sounds. START/LOOP/CONSOLE do not repair full power loss or a
 dead/untrusted ADB connection. A complete Mac login/boot screen blackout is outside
 these session controls.
 

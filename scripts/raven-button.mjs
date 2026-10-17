@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquireElectronOwner } from './electron-owner.mjs'
 import { createTvIo, operateMirrorControl, operateTv } from './mirror-tv-control.mjs'
+import { sendOperatorCommand } from './operator-command.mjs'
 
 /** Parse only process metadata; never collect command arguments or environments. */
 export function parseProcessSnapshot(text) {
@@ -153,7 +154,7 @@ export async function operateButton(action, io) {
 export function parseQueuedRequest(text) {
   try {
     const request = JSON.parse(text)
-    return request && ['start', 'stop'].includes(request.action) && Number.isFinite(request.at) ? request : null
+    return request && ['start', 'stop', 'loop', 'console'].includes(request.action) && Number.isFinite(request.at) ? request : null
   } catch { return null }
 }
 
@@ -161,7 +162,7 @@ const file = fileURLToPath(import.meta.url)
 if (process.argv[1] && resolve(process.argv[1]) === file) {
   if (process.platform !== 'darwin') throw Error('raven_button_macos_only')
   const action = process.argv[2]
-  if (!['start', 'stop', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
   const root = join(homedir(), 'Library/Caches/MagicMirror/button'), queue = join(root, 'queue')
   const log = join(homedir(), 'Library/Logs/MagicMirror/button.log')
   mkdirSync(queue, { recursive: true, mode: 0o700 }); mkdirSync(dirname(log), { recursive: true })
@@ -180,7 +181,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
   else if (action !== '--worker') {
     const path = join(queue, `${process.hrtime.bigint().toString().padStart(24, '0')}-${process.pid}.json`)
     // Another worker may already be draining the queue. Publish only a complete
-    // request, so it cannot consume a partially written start/stop press.
+    // request, so it cannot consume a partially written control press.
     writeFileSync(path + '.tmp', JSON.stringify({ action, at: Date.now() }), { flag: 'wx', mode: 0o600 })
     renameSync(path + '.tmp', path)
     detach()
@@ -203,7 +204,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
       wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
       readLog: async () => readFileSync(join(homedir(), 'Library/Logs/MagicMirror/app.out.log'), 'utf8'),
     }
-    const sounds = { started: 'Glass', already_on: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
+    const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', console_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
     const feedback = outcome => {
       const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${sounds[outcome] ?? 'Basso'}.aiff`], { stdio: 'ignore' })
       child.on('error', () => record('press', 'feedback_unavailable'))
@@ -219,7 +220,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
       let previous = { action: '', at: 0 }
       try {
         const saved = JSON.parse(readFileSync(lastPress, 'utf8'))
-        if (['start', 'stop'].includes(saved.action) && Number.isFinite(saved.at)) previous = saved
+        if (['start', 'stop', 'loop', 'console'].includes(saved.action) && Number.isFinite(saved.at)) previous = saved
       } catch (error) { if (error.code !== 'ENOENT') record('press', 'debounce_state_invalid') }
       while (release) {
         const name = readdirSync(queue).filter(n => /^\d+-\d+\.json$/.test(n)).sort()[0]
@@ -233,6 +234,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           app: action => operateButton(action, io),
           tv: action => operateTv(action, createTvIo((step, outcome) => record('tv', outcome, { step }))),
           ready: () => waitForMirrorReady(io),
+          mode: action => sendOperatorCommand(action),
         })
         const { outcome, ...details } = result
         record(request.action, outcome, details)

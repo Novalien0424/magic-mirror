@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -732,12 +733,14 @@ function makeMainIndexHarness(options: {
   readonly sceneCleanupFailure?: boolean
   readonly wakeChild?: WakeWorkerChild
 } = {}) {
-  const userData = options.userData ?? 'C:\\synthetic-user-data'
+  const userData = options.userData ?? mkdtempSync(join(tmpdir(), 'magic-mirror-main-index-'))
+  if (options.userData === undefined) temporaryDirectories.push(userData)
   const appHandlers = new Map<string, MainIndexHandler>()
   const bootCalls: unknown[] = []
   const memoryReports: Array<(code: string) => void> = []
   const deferredShutdown = makeDeferredShutdown()
   const shutdown = vi.fn(() => deferredShutdown.promise)
+  const stopOperatorControl = vi.fn()
   const windows: Array<{ readonly webContents: unknown }> = []
   const runtime = {
     ready: Promise.resolve(),
@@ -860,6 +863,9 @@ function makeMainIndexHarness(options: {
     } }
   })
   vi.doMock('electron', () => electron)
+  vi.doMock('../../src/main/operator-control', () => ({
+    startOperatorControl: vi.fn(async () => stopOperatorControl),
+  }))
   vi.doMock('../../src/main/boot', () => ({
     bootSequence: vi.fn((bootOptions: unknown) => {
       bootCalls.push(bootOptions)
@@ -914,6 +920,7 @@ function makeMainIndexHarness(options: {
     globalShortcut,
     runtime,
     shutdown,
+    stopOperatorControl,
     windows,
     loadWakeModelPackage,
     memoryReports,
@@ -1715,7 +1722,8 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
   })
 
   it('keeps Main SQLite at userData/mirror.sqlite and gates will-quit until idempotent shutdown settles', async () => {
-    const userData = 'C:\\synthetic-user-data'
+    const userData = await mkdtemp(join(tmpdir(), 'magic-mirror-main-sqlite-'))
+    temporaryDirectories.push(userData)
     const harness = makeMainIndexHarness({ userData })
     const restoreResourcesPath = defineSyntheticResourcesPath()
 
@@ -1750,6 +1758,7 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
 
       await flushMicrotasks()
       expect(harness.shutdown).toHaveBeenCalledTimes(1)
+      expect(harness.stopOperatorControl).toHaveBeenCalledTimes(1)
       expect(harness.app.quit).not.toHaveBeenCalled()
 
       harness.deferredShutdown.resolve()

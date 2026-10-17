@@ -53,7 +53,10 @@ describe('Raven launchd button', () => {
     expect(parseQueuedRequest('')).toBeNull()
     expect(parseQueuedRequest('null')).toBeNull()
     expect(parseQueuedRequest('{"action":"reboot","at":1}')).toBeNull()
+    expect(parseQueuedRequest('{"action":"show_console","at":1}')).toBeNull()
     expect(parseQueuedRequest('{"action":"stop","at":5}')).toEqual({ action: 'stop', at: 5 })
+    expect(parseQueuedRequest('{"action":"loop","at":6}')).toEqual({ action: 'loop', at: 6 })
+    expect(parseQueuedRequest('{"action":"console","at":7}')).toEqual({ action: 'console', at: 7 })
   })
   it.each(['kickstart', 'bootstrap'])('starts a stopped job through %s', async operation => {
     const state = vi.fn().mockResolvedValueOnce({ loaded: operation === 'kickstart', pid: null }).mockResolvedValue({ pid: 123 })
@@ -228,7 +231,7 @@ describe('Raven launchd button', () => {
     expect(processes[0].command).toBe('/fixture/Electron App')
     expect(() => parseProcessSnapshot('partial process row')).toThrow('process_snapshot_invalid')
   })
-  it.each(['start', 'stop'])('provides an executable canonical %s wrapper without launching it', action => {
+  it.each(['start', 'stop', 'loop'])('provides an executable canonical %s wrapper without launching it', action => {
     const path = new URL(`../../deploy/macos/magic-mirror-${action}.sh`, import.meta.url)
     expect(statSync(path).mode & 0o111).not.toBe(0)
     expect(readFileSync(path, 'utf8')).toBe(`#!/bin/zsh\nset -eu\nexec /bin/zsh /Users/novalien0424/magic-mirror/deploy/macos/raven-button.sh ${action}\n`)

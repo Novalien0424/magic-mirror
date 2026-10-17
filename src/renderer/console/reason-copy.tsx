@@ -1,4 +1,9 @@
 const COPY: Readonly<Record<string, [string, string]>> = {
+  operator_loop_media_unavailable: ['The selected loop media is unavailable.', 'Check the Common folder and select an available video and music track.'],
+  operator_loop_playback_stalled: ['Loop playback stopped advancing after its recovery attempt.', 'The Mirror stays black. Try Play on Mirror again or Return to Avatar.'],
+  operator_loop_output_unavailable: ['The loop audio output is unavailable.', 'Check the selected speaker in System audio settings, then retry.'],
+  operator_loop_release_failed: ['Playback could not finish stopping.', 'Voice stays off. Use STOP MIRROR, then START MIRROR to restore the app.'],
+  operator_loop_start_failed: ['Loop playback could not start.', 'Check the playback detail and Common media, then retry.'],
   console_config_invalid: ['Some settings are incomplete or invalid.', 'Review the highlighted fields, then save again.'],
   invalid_avatar_catalog: ['An avatar setting is incomplete.', 'Check the avatar name, rig and presentation settings.'],
   console_data_plane_unavailable: ['The Console cannot reach the app.', 'Reopen the Console; restart the app if this continues.'],

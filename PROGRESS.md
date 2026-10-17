@@ -1,110 +1,63 @@
 # Magic Mirror — current handoff, 2026-10-17
 
-Latest fix: reflective wake/sleep mist and gradual avatar reveal/retreat now
-play with macOS Reduce Motion enabled. Previously the JS playback gate and
-CSS suppressed mist/animation, with a selector conflict leaving the avatar
-invisible until it abruptly appeared at Awake. Ordinary motion reduction,
-saved Raven v18 and the system preference are preserved.
+Latest owner revision: Neo top row is **START / CONSOLE / PLAY LOOP**; **STOP**
+is bottom right `(3,1)`. PLAY LOOP has padded artwork and a two-line title.
+CONSOLE brings the existing editor above the mirror display without interrupting
+the current program or losing unsaved edits. START/PLAY LOOP hide Console.
+STOP is global to the whole Magic Mirror application and its owned processes,
+including loop/media and future modes; it also puts the TV in standby.
+[Latest changes and QA](docs/testing/operator-controls-2026-10-17.md).
 
-Fresh checks: 46 focused tests, both typechecks, stamped build and `--ritual`
-Electron QA pass (13 checks, 13 captures). Reduced-motion and normal-motion
-portrait cycles both show moving mist, increasing/decreasing partial opacity,
-four-second entrance, 2.4-second exit and exact-black sleep. Captures inspected.
-Initial obsolete Console import-check failure is retained; harness now follows
-the current Save & apply UI. This is shared-renderer Ren/simulated-lifecycle
-evidence, not Raven physical/ASR acceptance.
-[Fix and evidence](docs/testing/reflective-motion-2026-10-17.md).
+Delivered earlier today: separate operator **Loop Video** mode. Console has a
+separate tab for shared-folder video, embedded or separate music, fit, volume,
+muted preview, scoped Save, Play and Return to Avatar. Owner-selected preset:
+`3_worlds_loop.mp4` + `天使_intro.mp3`, contain, 70%.
 
-Current runtime at 11:09 Taipei: field LaunchAgent unloaded, zero canonical app
-processes; OS Reduce Motion remains enabled. The fresh build will load on next
-START. Prior work through Stream Deck/TV controls was committed and pushed as
-`b5fedaf9` on `field/macmini-deploy`; this motion fix follows that baseline.
+Loop releases Realtime, native wake microphone and camera; only operator
+controls end it. START returns to the saved active avatar's normal Dormant mode.
+STOP sleeps the TV and cleans up the app. Actual advancing video/music must
+acknowledge before HDMI wake. Duplicate LOOP does not reload. One stalled-player
+reload is allowed; repeated failure stays black with a Console reason. Existing
+LaunchAgent alone restores persisted loop intent after a crash.
 
-## Earlier delivery — Stream Deck and TV controls
+Latest checks: **202 focused tests across 5 files**, node typecheck, final stamped
+build and real Electron QA **14/14 cases, 10 captures**, all pass. Real installed
+Console/loop/START/STOP wrapper and TV checks all pass. Native window metadata
+confirms Console at layer 1001 above the portrait Mirror at 1000; START/LOOP leave
+only Mirror onscreen. Every field operation preserved the active avatar config.
 
-Delivered: connected Stream Deck Neo has green START MIRROR and red STOP MIRROR
-on the first two top-row keys. Elgato 7.6.0 (23012) installed and verified current;
-Neo firmware updated to 1.00.017; Elgato login startup enabled; selected layout
-survives app relaunch. Executable scripts and quiet app wrappers use the existing
-queued LaunchAgent control. [Setup](deploy/macos/stream-deck.md) ·
-[implementation and fresh QA](docs/testing/stream-deck-controls-2026-10-17.md).
+Earlier feature evidence: full suite **2,335 passed, 1 skipped**; both typechecks,
+25 renderer tests and 12-case Electron QA pass. Test-isolation cleanup passed
+64 Main/mailbox tests and node typecheck. Actual installed wrapper/TV
+checks passed cold loop, duplicate loop, 56-second continuity, crash restoration,
+saved-avatar return, loop from running app and STOP. Avatar configuration stayed
+unchanged. Initial failures and fixes are retained in the
+[QA ledger](docs/testing/operator-loop-2026-10-17.md).
 
-Owner confirmed the physical Neo buttons work. Follow-up delivered: STOP now
-puts the reflective TV in standby before app shutdown; START loads the saved
-active avatar's application and wakes the TV onto HDMI. Standby is Android
-Asleep/display OFF, not shutdown or mains power-off. Mac and wired TV control
-remain powered; standby watts and full-shutdown wake are unmeasured/unproven.
+Current runtime at **16:25 Taipei**: Magic Mirror stopped, LaunchAgent unloaded,
+zero canonical app processes, TV **Asleep / display OFF**, verified through a
+30-second no-restart interval. Loop settings remain saved; intent is
+normal avatar. Stream Deck is running, Neo connected, all four signed app
+assignments and layout persistence verified.
+[Final metadata](.artifacts/operator-controls-2026-10-17/final-state.json) ·
+[controls](deploy/macos/stream-deck.md).
 
-Checks: 65 focused tests pass; eight real combined TV/app cases pass, including
-duplicate presses, ordered STOP→START, portrait window/HDMI foreground and a
-30-second off interval. Initial duplicate-sleep and redundant-ADB-connect failures
-are retained; confirmed-state checks and reuse of the working transport resolved
-the tested failures. A later brief transport failure prompted a bounded 350 ms
-settling delay before reconnect verification/retry; the final eight-case run passed.
-Earlier frozen-Main app cleanup remains passing evidence:
-forced stop 46.2 s, zero app processes, then successful start/clean stop.
-USB reconnect and cold-login acceptance still need owner evidence.
+Evidence limits: new physical key presses, on-key label rendering and physical
+picture/music observation have not been confirmed. Assigned app launch paths, real renderer media progress,
+TV power and selected unmuted Jabra output are verified. A separate aggregate
+microphone meter returned all-zero samples before and during playback, so it cannot
+prove acoustic output. USB reconnect and cold-login acceptance remain manual.
+No provider dialogue was needed for this operator mode. No phase acceptance changes.
 
-At automated QA completion Magic Mirror is stopped/job unloaded, TV is in
-standby, and Elgato is running with the two-key profile selected. START bootstraps
-the existing field plist. Production model/TV-presence policy and phase acceptance are unchanged. Preserve
-the saved field configuration. Earlier model/camera work remains below.
+Delivery branch is `field/macmini-deploy`, following baseline `9197676`.
+Owner requested commit/push and is beginning physical testing; leave runtime
+and device state under the owner's control.
+The earlier mist/gradual-reveal fix is included in that baseline and preserved.
+[Earlier handoff](docs/archive/progress-before-operator-loop-2026-10-17.md) ·
+[reflective motion evidence](docs/testing/reflective-motion-2026-10-17.md).
 
-Final direct check 2026-10-17 10:50:21 Taipei: job unloaded, zero canonical
-Electron/native app processes, TV Asleep/OFF
-([metadata](.artifacts/tv-controls-2026-10-17/final-state.json)).
-
-## Prior delivery — 2026-10-14 clock-out
-
-Start at [unresolved issues](docs/testing/open-issues-2026-10-13.md), then today's
-[review, fixes, QA and research](docs/testing/review-fixes-2026-10-14.md). The
-previous handoff is [archived](docs/archive/progress-before-review-fixes-2026-10-14.md).
-
-All QA finished at 00:18 Taipei 10-15; no Electron or ordinary Magic Mirror app
-is running. Production remains Raven v18,
-`gpt-realtime-2.1-mini`/low (the owner intends to keep mini as the default),
-cedar, configured transcription/memory models and the installed TV policy.
-Nothing is committed; preserve the extensive uncommitted work on
-`field/macmini-deploy`. No phase or human acceptance advances.
-
-Delivered today (unit-tested; stamped build current at clock-out):
-
-1. Review fixes: barge-in cue release, pending identity question kept, explicit
-   save keeps learning evidence, every authored tool rule rendered, weak alias
-   asks, camera spawn failure degrades.
-2. Second round: guest memory guard (`memoryLocked`) with memory and correction
-   wording; button queue cannot loop; per-response preamble diagnostic and
-   `measured_tool_preamble` rate; five camera robustness fixes (stale watchdog,
-   helper exits on stdin EOF, Dormant status, USB reset spares an Arducam
-   microphone owner, fast capture failure while retiring).
-3. Tried and reverted: quick-tool preamble wording in the session prompt and
-   "call before speaking" in tool descriptions (no benefit; memory preambles rose).
-
-Checks: both typechecks exit 0; full `npm test` 187 files, 2,162 passed,
-1 skipped (before the final prompt-only edits; prompt suites rerun after);
-`npm run build` exit 0.
-
-Evidence: character turns mini 37/50 vs full 48/50 before fixes; mini 77/100
-pooled after. Mini still speaks before the local search in nearly every run.
-Memory application checks pass; first-identity failures track ASR mishearing
-the synthetic name. `camera_native` reproduces the 10-13 stall: the Arducam
-delivers invalid UVC payloads below the app; software recovery works but cannot
-keep it streaming.
-
-Owner ruling 2026-10-14 ([DECISIONS](DECISIONS.md)): one short in-character
-line is allowed before local search and non-identify memory calls; the session
-prompt, probe quick-tool set and judge criteria follow it (unit-tested; stamped
-build current). Mini re-measure: character 9, 9, 10 = 28/30, the first full mini
-pass; `local_media` 5/6; memory stopped at the first identity on inexact ASR
-([ledger](docs/testing/review-fixes-2026-10-14.md)). Owner decisions still open: production model switch
-(invariant 11); subscription path (invariant 12).
-
-Owner ruling 2026-10-14 (late): online media only after a hidden opening phrase
-(default 「在雲上找找」, Console Persona field); the keyword local-only policy is
-removed. Unit-tested; full `npm test` exit 0 (2,159 passed, 1 skipped); build
-current. Live mini QA: the gate held in all 11 media turns; `local_media` 6/6;
-remaining faults are mini wording/tool slips, not source decisions
-([index](.artifacts/qa-2026-10-14/cloud-phrase/chain-index.txt)).
-
-Next: owner camera hardware discriminators (another cable/port or powered hub,
-Photo Booth, second webcam) and the wake 10+10 check per [TODO](TODO.md).
+Earlier model/camera limitations remain outside this feature:
+[open issues](docs/testing/open-issues-2026-10-13.md) and
+[latest prior review](docs/testing/review-fixes-2026-10-14.md).
+Next acceptance: physical Neo layout/Console/STOP/PLAY LOOP confirmation; any
+field failure should start from the current operator-controls ledger.

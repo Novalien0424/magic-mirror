@@ -107,6 +107,15 @@
 .media-thumbnail__kind { position: absolute; left: .4rem; bottom: .4rem; padding: .1rem .4rem; border-radius: 4px; background: #101923; color: #fff; font-size: .875rem; }
 .media-card__audio { font-size: 2rem; color: #8ed8f0; }
 .media-import-results { margin: .8rem 0; padding: .8rem; border: 1px solid #64778a; border-radius: 8px; }
+.loop-video-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 40%); gap: 1.25rem; align-items: start; }
+.loop-video-layout > div, .loop-video-layout fieldset { min-width: 0; }
+.loop-video-layout label { display: grid; gap: .4rem; min-width: 0; }
+.loop-video-layout select { width: 100%; }
+.loop-video-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem; border: 1px solid #536d83; border-radius: 8px; background: #172331; }
+.loop-video-preview { min-width: 0; margin: 0; }
+.loop-video-preview video { display: block; width: calc(100% - 1.6rem); max-height: 420px; aspect-ratio: 9 / 16; background: #000; }
+.loop-video-actions { margin-top: 1rem; }
+@media (max-width: 800px) { .loop-video-layout { grid-template-columns: minmax(0, 1fr); } }
 
 /* Operator hierarchy: large controls, focused editing, optional technical detail. */
 * { box-sizing: border-box; }

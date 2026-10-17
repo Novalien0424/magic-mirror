@@ -1,4 +1,7 @@
 import { allowPromptWindow } from '../shared/prompt-window'
+import { createOperatorLoop } from './operator-loop'
+import { startOperatorControl } from './operator-control'
+import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { readFile, readdir, writeFile, open } from 'node:fs/promises'
 import {
@@ -190,6 +193,9 @@ let shutdownStarted = false
 let stopMainLiveness: (() => void) | undefined
 let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
+let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
+let stopOperatorControl: (() => void) | undefined
+let consoleOnMirror = false
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -275,6 +281,7 @@ function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
 }
 
 async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
+  if (operatorLoop?.isLoopMode()) { await wakeSupervisor?.release(); return }
   if (
     typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
     || typeof runtime.setWakeRuntimeStatus !== 'function'
@@ -335,7 +342,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
       : await wakeSupervisor.updateConfig({ package: workerPackage })
     if (updated.status !== 'success') return
     configuredWakeSignature = signature
-    if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+    if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
       await wakeSupervisor.acquire()
     }
     return
@@ -344,6 +351,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   const supervisor = createWakeSupervisor({
     spawn: spawnWakeWorker,
     onWake: () => {
+      if (operatorLoop?.isLoopMode()) { marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_ignored' }); return }
       void activation?.handleWake().catch(() => reportMainDegradation('wake', 'wake_activation_failed', 'wake_activation_rejected'))
     },
     onStatus: (snapshot) => {
@@ -366,13 +374,13 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
     getLifecycle: () => runtime.snapshot().lifecycle,
     beforeStart: () => stopScenes(),
     startConversation: () => runtime.manualStart(),
-    reacquireWake: () => supervisor.acquire(),
+    reacquireWake: () => operatorLoop?.isLoopMode() ? Promise.resolve({ status: 'success' as const, reason: 'operator_loop_no_microphone' }) : supervisor.acquire(),
   })
   wakeSupervisor = supervisor
   const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
   configuredWakeSignature = signature
-  if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+  if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
     await supervisor.acquire()
   }
 }
@@ -485,7 +493,10 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   })
 
   win.once('closed', () => {
-    if (windows.get(kind) === win) windows.delete(kind)
+    if (windows.get(kind) === win) {
+      windows.delete(kind)
+      if (kind === 'console') consoleOnMirror = false
+    }
     if (kind === 'mirror' && !shutdownStarted) stopScenes()
   })
 
@@ -573,8 +584,8 @@ function placeMirrorInitially(win: BrowserWindow): boolean {
  * simpleFullscreen hides the menu bar only while this app is frontmost; the operator's
  * apps (or any focus-stealing dialog) would draw their menu bar over the top of the glass.
  * The screen-saver level (1000) sits above the menu bar (24). Toggling simple fullscreen
- * can reset the level, so this is re-asserted after every show/move. Mirror only — the
- * console window is left alone.
+ * can reset the level, so this is re-asserted after every show/move. An explicitly
+ * requested operator Console sits one level above it until hidden or closed.
  */
 const MIRROR_WINDOW_LEVEL = 'screen-saver'
 function raiseMirrorAboveMenuBar(win: BrowserWindow): void {
@@ -608,6 +619,7 @@ function rehomeMirror(trigger: DisplayTrigger): void {
   emitDisplayMarker(decision.marker)
   switch (decision.action) {
     case 'none':
+      if (consoleOnMirror) placeConsoleOnMirror()
       return
     case 'hide':
       // Not destroyed: the renderer keeps running (backgroundThrottling is off) for the return.
@@ -624,6 +636,7 @@ function rehomeMirror(trigger: DisplayTrigger): void {
       break
   }
   mirrorPlacement = decision.placement
+  if (consoleOnMirror && decision.action !== 'hide') placeConsoleOnMirror()
 }
 
 function scheduleRehome(trigger: DisplayTrigger): void {
@@ -674,9 +687,10 @@ function onRendererReady(sender: WebContents): void {
   if (kind === 'mirror') {
     mirrorRendererReady = true
     boot.lifecycle = mainLifecycle
-    cameraTracking?.update(mainLifecycle, true)
+    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : mainLifecycle, true)
     cameraTracking?.republishTarget()
     void bootRuntime?.handleMirrorRendererReady().catch(() => fatalMainFailure('renderer_recovery_failed'))
+    operatorLoop?.rendererReady()
   }
 }
 
@@ -712,8 +726,58 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
   // The mirror re-shows itself from 'ready-to-show'; the console has no such handler
   // (it opens on the shortcut), so an open console must be restored explicitly rather
   // than silently disappearing from under the operator.
-  if (kind === 'console' && wasVisible) replacement.show()
+  if (kind === 'console' && wasVisible) {
+    if (consoleOnMirror) void showConsoleOnMirror()
+    else replacement.show()
+  }
   marker('WINDOW_RECREATED', { window: kind, attempt: decision.attempt, was_visible: wasVisible })
+}
+
+function hideConsoleWindow(): void {
+  consoleOnMirror = false
+  const win = windows.get('console')
+  if (win && !win.isDestroyed()) {
+    win.hide()
+  }
+}
+
+/** Reuse the existing renderer so bringing Console forward preserves unsaved edits. */
+function placeConsoleOnMirror(): boolean {
+  const win = windows.get('console'), mirror = windows.get('mirror')
+  if (!win || win.isDestroyed() || !mirror || mirror.isDestroyed()) return false
+  const display = screen.getDisplayMatching(mirror.getBounds()), area = display.workArea
+  const bounds = { x: area.x + 16, y: area.y + 16,
+    width: Math.max(1, area.width - 32), height: Math.max(1, area.height - 32) }
+  if (win.isMinimized()) win.restore()
+  if (win.isMaximized()) win.unmaximize()
+  win.setBounds(bounds)
+  if (isDarwin) win.setAlwaysOnTop(true, MIRROR_WINDOW_LEVEL, 1)
+  else win.setAlwaysOnTop(true)
+  win.show()
+  if (isDarwin) app.focus({ steal: true })
+  win.focus()
+  const actual = win.getBounds()
+  const onMirror = screen.getDisplayMatching(actual).id === display.id
+  marker('CONSOLE_ON_MIRROR', { display_id: display.id, x: actual.x, y: actual.y,
+    width: actual.width, height: actual.height, visible: win.isVisible(), focused: win.isFocused(),
+    on_mirror: onMirror })
+  return onMirror && win.isVisible()
+}
+
+async function showConsoleOnMirror(): Promise<boolean> {
+  if (shutdownStarted) return false
+  let win = windows.get('console')
+  if (!win || win.isDestroyed()) win = createWindow('console')
+  const deadline = performance.now() + 10000
+  while (!boot.loaded.console || !readyReported.has(win.webContents)) {
+    if (shutdownStarted || win.isDestroyed() || windows.get('console') !== win || performance.now() >= deadline) {
+      marker('CONSOLE_OPEN_FAILED', { reason: 'console_not_ready' })
+      return false
+    }
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  consoleOnMirror = true
+  return placeConsoleOnMirror()
 }
 
 function toggleConsoleWindow(): void {
@@ -724,7 +788,7 @@ function toggleConsoleWindow(): void {
   }
 
   if (win.isVisible()) {
-    win.hide()
+    hideConsoleWindow()
     marker('CONSOLE_TOGGLED', { visible: false })
     return
   }
@@ -798,6 +862,7 @@ process.on('unhandledRejection', () => fatalMainFailure('main_unhandled_rejectio
 // Keep the listener installed: a second TERM must not restore the OS default
 // signal exit, which launchd interprets as a request to restart.
 function handleOperatorStop(): void {
+  operatorLoop?.clearIntent()
   if (!shutdownStarted) exitWithMarker('APP_EXIT', { code: 0, reason: 'operator_stop' }, 0)
 }
 process.on('SIGTERM', handleOperatorStop)
@@ -1023,9 +1088,61 @@ void app.whenReady().then(async () => {
     credentialStore: credentialSource,
     events: deferredCredentialEvents.sink,
   })
+  const bounded = async <T>(operation: Promise<T>, ms: number): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('operator_loop_operation_timeout')), ms) })]) }
+    finally { clearTimeout(timer) }
+  }
+  operatorLoop = createOperatorLoop({
+    path: join(app.getPath('userData'), 'operator-loop.json'),
+    validate: async settings => {
+      await mediaFoldersReady
+      await bounded(mediaFolders.refresh(), 12000)
+      const shared = mediaFolders.resources()
+      const selected = [{ id: settings.videoId, kind: 'video' }, ...(settings.audioMode === 'separate' ? [{ id: settings.audioId, kind: 'music' }] : [])]
+      return (await Promise.all(selected.map(async file => shared.some(entry => entry.assetId === file.id && entry.kind === file.kind)
+        && !!await bounded(mediaFolders.resolve(file.id), 12000)))).every(Boolean)
+    },
+    suspendAvatar: async () => {
+      voicePreview?.preempt('operator_loop_active')
+      await wakeCalibration?.stop(false)
+      // In-flight configuration must also see the new intent before release.
+      await wakeConfigurationTask
+      cameraTracking?.update('dormant', mirrorRendererReady)
+      await bounded(cameraTracking?.released() ?? Promise.resolve(), 5000)
+      await stopScenes()
+      await runtime.suspendForOperatorLoop?.()
+      await bounded(new Promise<void>(resolve => {
+        const quiet = () => !['active', 'activating', 'suspending'].includes(runtime.snapshot().lifecycle)
+        if (quiet()) { resolve(); return }
+        const subscription = runtime.subscribe(() => { if (quiet()) { subscription.unsubscribe(); resolve() } })
+        setTimeout(() => subscription.unsubscribe(), 16000).unref()
+      }), 16000)
+      const result = await wakeSupervisor?.release()
+      // A released worker stays alive with no input stream. microphoneUnowned()
+      // means the entire child has exited, not that release failed.
+      if (result && result.status !== 'success') throw Error('operator_loop_microphone_release_failed')
+      marker('OPERATOR_LOOP', { reason: 'operator_loop_inputs_released', wake: wakeSupervisor?.snapshot().status ?? 'not_configured',
+        lifecycle: runtime.snapshot().lifecycle, camera: 'released' })
+    },
+    resumeAvatar: async () => {
+      await configureWakeRuntime(runtime)
+      if (!operatorLoop?.isLoopMode() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+        const result = await wakeSupervisor?.acquire()
+        if (result?.status === 'failed') marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_restore_failed' })
+      }
+      if (runtime.snapshot().lifecycle === 'offlineLoop') runtime.scheduleRecoveryProbes()
+    },
+    publish: snapshot => {
+      const win = windows.get('mirror')
+      if (win && !win.isDestroyed()) win.webContents.send('mirror:operator-loop', snapshot)
+    },
+    report: reason => marker('OPERATOR_LOOP', { reason }),
+  })
   const wakeDefaults = new Map<string, Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>>()
 
   const runtime: BootRuntime = bootSequence({
+    operatorLoopActive: () => operatorLoop?.isLoopMode() ?? false,
     ...(phase4QaEnabled && ['baseline', 'trimmed', 'merged', 'focused'].includes(process.env['MIRROR_QA_PROMPT_VARIANT'] ?? '')
       ? { qaPromptVariant: process.env['MIRROR_QA_PROMPT_VARIANT'] as 'baseline' | 'trimmed' | 'merged' | 'focused' } : {}),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
@@ -1045,6 +1162,7 @@ void app.whenReady().then(async () => {
     clientSecretBroker,
     onFatalFailure: fatalMainFailure,
     rebuildWakeOwner: () => {
+      if (operatorLoop?.isLoopMode()) return Promise.resolve({ status: 'success', reason: 'operator_loop_no_microphone' })
       if (wakeOwnerRebuild) return wakeOwnerRebuild
       const rebuilding = (async (): Promise<WakeSupervisorResult> => {
         await wakeCalibration?.stop(false)
@@ -1054,6 +1172,7 @@ void app.whenReady().then(async () => {
           platform: `${process.platform}-${process.arch}`, customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
           forceCustomKeywords: wakeTuningIsActive(wake) })
         if (!loaded.ok) return { status: 'failed', reason: loaded.reason }
+        if (operatorLoop?.isLoopMode()) return { status: 'success', reason: 'operator_loop_no_microphone' }
         return wakeSupervisor.restart({ package: createWakeWorkerPackage(loaded, wake) })
       })().finally(() => { wakeOwnerRebuild = null })
       wakeOwnerRebuild = rebuilding
@@ -1066,9 +1185,11 @@ void app.whenReady().then(async () => {
         return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
       },
       acquire: async () => {
+        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
         await wakeOwnerRebuild
         const calibration = await wakeCalibration?.stop(false)
         if (shutdownStarted || calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_microphone_acquire_cancelled' }
+        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
         if (!wakeSupervisor) return { status: 'degraded' as const, reason: 'wake_microphone_not_configured' }
         const result = await wakeSupervisor.acquire()
         return result.status === 'failed' && (wakeSupervisor.microphoneUnowned() || isWakeMicrophoneDeviceUnavailable(result.reason))
@@ -1202,6 +1323,45 @@ void app.whenReady().then(async () => {
 
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
 
+  ipcMain.handle('mirror:get-operator-loop', (event, ...args) => {
+    if (!authorizeSender(event, 'mirror', windows).ok || args.length) throw Error('operator_loop_request_rejected')
+    return operatorLoop!.view().snapshot
+  })
+  ipcMain.on('mirror:report-operator-loop', (event, ...args) => {
+    const report = args.length === 1 ? parseOperatorLoopReport(args[0]) : null
+    if (!authorizeSender(event, 'mirror', windows).ok || !report) {
+      marker('OPERATOR_LOOP', { reason: 'operator_loop_report_rejected' }); return
+    }
+    operatorLoop!.report(report)
+  })
+  ipcMain.handle('console:loop-video', async (event, ...args) => {
+    const command = args.length === 1 ? parseLoopVideoCommand(args[0]) : null
+    if (!authorizeSender(event, 'console', windows).ok || !command) {
+      return { ok: false, error: 'console_request_rejected', reason: 'operator_loop_request_rejected' }
+    }
+    try {
+      if (command.action === 'save') await operatorLoop!.save(command.settings)
+      if (command.action === 'play' && !await operatorLoop!.play()) throw Error('operator_loop_start_failed')
+      if (command.action === 'stop' && !await operatorLoop!.normal()) throw Error('operator_loop_stop_failed')
+      return { ok: true, value: operatorLoop!.view() }
+    } catch (error) {
+      const reason = error instanceof Error && /^operator_loop_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_operation_failed'
+      marker('OPERATOR_LOOP', { reason })
+      return { ok: false, error: 'console_request_rejected', reason }
+    }
+  })
+  void startOperatorControl({
+    directory: join(app.getPath('userData'), 'operator-control'),
+    execute: async action => {
+      if (action === 'show_console') return showConsoleOnMirror()
+      const success = await (action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      if (success) hideConsoleWindow()
+      return success
+    },
+    report: reason => marker('OPERATOR_CONTROL', { reason }),
+  }).then(stop => { if (shutdownStarted) stop(); else stopOperatorControl = stop })
+    .catch(() => { marker('OPERATOR_CONTROL', { reason: 'operator_control_unavailable' }) })
+
   createWindows()
   watchMirrorDisplay()
   const tvHost = parseTvHost(process.env['MIRROR_TV_HOST'])
@@ -1278,8 +1438,9 @@ void app.whenReady().then(async () => {
       }
       if (opaqueId.startsWith('folder-') && ['music', 'music-draft', 'visual', 'visual-draft'].includes(url.hostname)) {
         await mediaFoldersReady
-        const active = await runtime.getPublishedSceneConfigForRuntime()
-        const file = await mediaFolders.resolve(opaqueId, active.avatarCatalog?.activeAvatarId, url.hostname.endsWith('-draft'))
+        const loopRequest = url.searchParams.has('operatorLoop')
+        const active = loopRequest ? null : await runtime.getPublishedSceneConfigForRuntime()
+        const file = await mediaFolders.resolve(opaqueId, active?.avatarCatalog?.activeAvatarId, url.hostname.endsWith('-draft'))
         if (!file || url.hostname.startsWith('music') !== file.mimeType.startsWith('audio/')) return new Response(null, { status: 404 })
         return serveMediaFile(request, file.path, file.mimeType)
       }
@@ -1328,7 +1489,7 @@ void app.whenReady().then(async () => {
     }
   })
   voicePreview = createVoicePreviewLease({
-    isDormant: () => runtime.snapshot().lifecycle === 'dormant',
+    isDormant: () => !operatorLoop?.isLoopMode() && runtime.snapshot().lifecycle === 'dormant',
     snapshot: () => runtime.getPublishedSessionModelSnapshotForDiagnostics(),
     broker: clientSecretBroker,
     suppressOutput: () => windows.get('console')?.webContents.setAudioMuted(true),
@@ -1370,6 +1531,7 @@ void app.whenReady().then(async () => {
       return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
     },
     wakeCalibration: async command => {
+      if (operatorLoop?.isLoopMode() && (command.type === 'start' || command.type === 'update')) throw Error('operator_loop_active')
       if (command.type === 'start' || command.type === 'update') await wakeConfigurationTask
       return wakeCalibration!.command(command)
     },
@@ -1584,7 +1746,7 @@ void app.whenReady().then(async () => {
     memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
-    cameraTracking?.update(snapshot.lifecycle, mirrorRendererReady)
+    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
       stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {
@@ -1639,6 +1801,7 @@ void app.whenReady().then(async () => {
 
 function shutdownBootRuntime(): Promise<void> {
   shutdownStarted = true
+  stopOperatorControl?.(); operatorLoop?.dispose()
   if (shutdownPromise !== null) return shutdownPromise
   const runtime = bootRuntime
   if (runtime === null) {

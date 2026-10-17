@@ -54,6 +54,8 @@ import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { MediaSkillEditor } from './MediaSkillEditor'
 import { MediaFoldersPanel } from './MediaFoldersPanel'
+import { LoopVideoPanel } from './LoopVideoPanel'
+import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
 import { addAvatarMedia } from './media-selection'
 import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES, type AudioPreferences } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
@@ -69,7 +71,7 @@ import { MemoryPanel } from './MemoryPanel'
 import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
-const PAGES = ['Mirror', 'Avatars', 'System'] as const
+const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
 const SYSTEM_PAGES = ['Devices', 'Media folders', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 const MODULES = [
   'app',
@@ -2026,6 +2028,7 @@ export function ModelsPanel({
 }
 
 export function App(): React.JSX.Element {
+  const [operatorLoop, setOperatorLoop] = useState<OperatorLoopSnapshot | null>(null)
   const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Mirror')
   const [systemPage, setSystemPage] = useState<(typeof SYSTEM_PAGES)[number]>('Devices')
   const [avatarEditing, setAvatarEditing] = useState(false)
@@ -2438,10 +2441,11 @@ export function App(): React.JSX.Element {
         <div>
           <h1 className="console__title">Magic Mirror Console</h1>
         </div>
-        <span className="console__status">{overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
+        <span className="console__status">{operatorLoop?.mode === 'loop' ? 'Loop Video' : overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
       </header>
 
       <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
+        operatorLoop={operatorLoop}
         phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
 
       {bridgeError ? (
@@ -2488,6 +2492,9 @@ export function App(): React.JSX.Element {
             onChanged={refreshConfigAndModels}
             onSharedMedia={() => navigate('System', 'Media folders')}
           />
+        </div>
+        <div hidden={activePage !== 'Loop Video'}>
+          <LoopVideoPanel bridge={bridgeRef.current} visible={activePage === 'Loop Video'} onPlaybackChange={setOperatorLoop} onMediaFolders={() => navigate('System', 'Media folders')} />
         </div>
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { parseOperatorLoopSnapshot } from '../shared/operator-loop'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseMediaSkillRequest, parseMediaSkillResult } from '../shared/media-skill'
 import { parseMediaDiscoveryRequest, parseMediaDiscoveryReply } from '../shared/media-discovery'
@@ -435,6 +436,20 @@ function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretRe
 }
 
 const bridge: MirrorBridge = {
+  getOperatorLoop: async () => {
+    const value = parseOperatorLoopSnapshot(await ipcRenderer.invoke('mirror:get-operator-loop'))
+    if (!value) throw Error('operator_loop_snapshot_invalid')
+    return value
+  },
+  onOperatorLoop(listener) {
+    const handler = (_event: IpcRendererEvent, value: unknown) => {
+      const snapshot = parseOperatorLoopSnapshot(value)
+      if (snapshot) listener(snapshot)
+    }
+    ipcRenderer.on('mirror:operator-loop', handler)
+    return () => ipcRenderer.removeListener('mirror:operator-loop', handler)
+  },
+  reportOperatorLoop: report => ipcRenderer.send('mirror:report-operator-loop', report),
   onCameraTarget(listener): () => void {
     const receive = (_event: IpcRendererEvent, value: unknown): void => {
       if (value === null || isCameraTarget(value)) listener(value)

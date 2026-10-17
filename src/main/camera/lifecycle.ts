@@ -3,6 +3,7 @@ import type { CameraTrackingService } from './tracker'
 
 export interface CameraLifecycleService extends CameraTrackingService {
   update(lifecycle: LifecycleState, rendererReady: boolean): void
+  released(): Promise<void>
 }
 
 /** Console camera status for a lifecycle report; null keeps the report informational. */
@@ -39,6 +40,7 @@ export function createCameraLifecycle(input: {
     } catch { releaseFailed = true; input.report('camera_release_failed') }
   }
   return {
+    released: () => release.then(() => { if (releaseFailed) throw Error('camera_release_failed') }),
     update(lifecycle, rendererReady) {
       const next = rendererReady && (lifecycle === 'activating' || lifecycle === 'active')
       if (closed || next === active) return

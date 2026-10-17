@@ -70,6 +70,7 @@ export const LEGAL_TARGETS: Record<
     LOCAL_CORE_FAILED: 'maintenance',
   },
   activating: {
+    SLEEP_REQUESTED: 'suspending',
     REALTIME_READY: 'active',
     CLOUD_FAILED: 'offlineLoop',
     LOCAL_AUDIO_FAILED: 'maintenance',
@@ -191,6 +192,7 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
     },
     activating: {
       on: {
+        SLEEP_REQUESTED: 'suspending',
         REALTIME_READY: {
           target: 'active',
           actions: 'assignRealtimeSession',

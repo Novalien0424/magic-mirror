@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createAvatarRuntimeReporter } from './avatar-runtime-reporter'
 import { getAudioDeviceRouter } from '../audio-devices'
+import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
+import { OperatorLoopBlack, OperatorLoopPlayer } from './OperatorLoopPlayer'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
 import type { PresentationPhase } from '../avatar/presentation-controller'
@@ -766,7 +768,46 @@ function OfflineLoopScreen(): React.JSX.Element {
   )
 }
 
-export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
+export function App(props: AppProps = {}): React.JSX.Element {
+  const [loop, setLoop] = useState<OperatorLoopSnapshot | null>(null)
+  const [failure, setFailure] = useState('')
+  useEffect(() => {
+    const bridge = window.magicMirror
+    let disposed = false, receivedEvent = false
+    let unsubscribe = () => {}
+    const unavailable = () => {
+      if (disposed) return
+      setFailure('operator_loop_snapshot_unavailable')
+      try {
+        if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
+          kind: 'avatar', status: 'failed', reason: 'operator_loop_snapshot_unavailable',
+        })
+      } catch { /* The black surface remains the local failure state. */ }
+    }
+    if (!bridge || !('getOperatorLoop' in bridge) || !bridge.getOperatorLoop || !bridge.onOperatorLoop) {
+      unavailable(); return
+    }
+    try {
+      unsubscribe = bridge.onOperatorLoop(next => {
+        if (disposed) return
+        receivedEvent = true; setFailure('')
+        setLoop(current => current && current.generation > next.generation ? current : next)
+      })
+      bridge.notifyReady()
+      void bridge.getOperatorLoop().then(next => {
+        if (!disposed && !receivedEvent) { setLoop(next); setFailure('') }
+      }).catch(() => { if (!receivedEvent) unavailable() })
+    } catch { unavailable() }
+    return () => { disposed = true; unsubscribe() }
+  }, [])
+  if (failure || !loop) return <OperatorLoopBlack reason={failure || undefined} />
+  if (loop.mode === 'avatar') return <AvatarApp {...props} />
+  if (loop.generation === 0) return <OperatorLoopBlack reason={loop.reason} />
+  if (loop.status === 'failed' || loop.status === 'idle') return <OperatorLoopBlack reason="operator_loop_failed" />
+  return <OperatorLoopPlayer key={loop.generation} snapshot={loop} />
+}
+
+function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [presentation, setPresentation] = useState<PresentationPayload>({ config: { ...DEFAULT_PRESENTATION }, background: null })
   const [presentationLoaded, setPresentationLoaded] = useState(false)
@@ -917,7 +958,6 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       }
     }
 
-    bridge.notifyReady()
     void bridge.getSnapshot()
       .then((initialSnapshot) => {
         if (!mounted) return

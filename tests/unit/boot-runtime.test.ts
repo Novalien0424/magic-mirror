@@ -9,6 +9,7 @@ import type { ConsoleConfigDiff } from '../../src/shared/console-types'
 type ProbeStatus = 'available' | 'unavailable'
 
 interface TestRuntimeOptions {
+  readonly operatorLoopActive?: () => boolean
   readonly configService?: ConfigService
   readonly useRealResolution?: boolean
   readonly onFatalFailure?: (reason: string) => void
@@ -39,6 +40,7 @@ interface TestRuntimeOptions {
 function createTestRuntime(options: TestRuntimeOptions = {}) {
   let session = 0
   const runtime = bootSequence({
+    operatorLoopActive: options.operatorLoopActive,
     onFatalFailure: options.onFatalFailure,
     rebuildWakeOwner: options.rebuildWakeOwner,
     createRealtimeSessionId: () => `session-${++session}`,
@@ -94,6 +96,39 @@ async function startRuntime(runtime: ReturnType<typeof createTestRuntime>): Prom
 }
 
 afterEach(() => vi.useRealTimers())
+
+describe('operator loop lifecycle ownership', () => {
+  it('blocks manual and wake activation while operator playback owns the surface', async () => {
+    let loop = true
+    const dispatch = vi.fn(() => ({ status: 'success' as const, reason: 'runtime_command_delivered' as const }))
+    const runtime = createTestRuntime({ operatorLoopActive: () => loop, dispatchRealtimeRuntimeCommand: dispatch })
+    await runtime.ready
+    expect(await runtime.manualStart()).toMatchObject({ status: 'ignored', reason: 'operator_loop_active' })
+    await runtime.handleSimulator({ type: 'wake' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    expect(dispatch).not.toHaveBeenCalled()
+    loop = false
+    await startRuntime(runtime)
+    expect(runtime.snapshot().lifecycle).toBe('activating')
+    await runtime.shutdown()
+  })
+  it.each([false, true])('waits for renderer stop when replacing an active=%s session', async connected => {
+    let loop = false
+    const commands: string[] = []
+    const runtime = createTestRuntime({ operatorLoopActive: () => loop, dispatchRealtimeRuntimeCommand: command => {
+      commands.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' }
+    } })
+    await startRuntime(runtime)
+    if (connected) await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    loop = true
+    await runtime.suspendForOperatorLoop?.()
+    expect(runtime.snapshot().lifecycle).toBe('suspending')
+    expect(commands).toEqual(['start', 'stop'])
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    await runtime.shutdown()
+  })
+})
 
 describe('Main lifecycle remediation', () => {
   const success = { status: 'success' as const, reason: 'synthetic_ready' }

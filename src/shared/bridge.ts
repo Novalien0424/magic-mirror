@@ -241,6 +241,9 @@ interface SharedRendererBridge {
 }
 
 export interface MirrorBridge extends SharedRendererBridge {
+  getOperatorLoop?(): Promise<import('./operator-loop').OperatorLoopSnapshot>
+  onOperatorLoop?(listener: (snapshot: import('./operator-loop').OperatorLoopSnapshot) => void): () => void
+  reportOperatorLoop?(report: import('./operator-loop').OperatorLoopReport): void
   memory?(request: import('./memory').MemoryRequest, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   memoryInput?(phase: import('./memory').MemoryInputPhase, itemId: string, transcript: string, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   resetMemorySession?(identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
@@ -269,6 +272,7 @@ export interface MirrorBridge extends SharedRendererBridge {
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
+  loopVideo?(command: import('./operator-loop').LoopVideoCommand): Promise<ConsoleResponse<import('./operator-loop').LoopVideoView>>
   memory?(request: import('./memory').MemoryConsoleRequest): Promise<import('./memory').MemoryConsoleReply>
   memoryImport?(request: import('./memory').MemoryImportRequest): Promise<import('./memory').MemoryImportStatus>
   wakeCalibration?(command: import('./wake-calibration').WakeCalibrationCommand): Promise<ConsoleResponse<import('./wake-calibration').WakeCalibrationSnapshot>>

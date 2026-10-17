@@ -12,7 +12,7 @@ import type {
   PhaseTestRecord,
 } from '../../src/shared/console-types'
 
-const EXPECTED_TABS = ['Mirror', 'Avatars', 'System'] as const
+const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
 
 const EXPECTED_EVENT_COLUMNS = [
   'time',

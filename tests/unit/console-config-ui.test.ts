@@ -12,7 +12,7 @@ import {
 } from '../../src/renderer/console/App'
 import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 
-const EXPECTED_TABS = ['Mirror', 'Avatars', 'System'] as const
+const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
 
 it('renders a recoverable profile configuration failure and blocks publication', () => {
   const html = renderToStaticMarkup(createElement(ScenesPanel, {

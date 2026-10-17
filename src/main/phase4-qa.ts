@@ -10,8 +10,10 @@ import { runPhase4ConsoleQa } from './phase4-console-qa'
 import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
 import { runSpellLiveQa } from './spell-live-qa'
 import { runCubismConsoleQa } from './cubism-console-qa'
+import { runOperatorLoopQa } from './operator-loop-qa'
 
-type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'>
+type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'
+  | 'getBounds' | 'isVisible' | 'isFocused' | 'isAlwaysOnTop' | 'hide'>
 
 export interface Phase4QaEvidence {
   readonly step: string
@@ -201,6 +203,9 @@ async function injectFinalTranscriptStart(
 
 export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult> {
   await mkdir(input.outputDir, { recursive: true })
+  // This case authors a known return avatar through Console before waiting for
+  // its renderer; the isolated default may reference an unavailable model.
+  if (process.env['MIRROR_OPERATOR_LOOP_QA'] === '1') return runOperatorLoopQa(input)
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
   if (process.env['MIRROR_SPELL_QA'] === '1') return runSpellLiveQa(input)
   if (input.lifecycleLive) return runPhase4LifecycleQa(input)

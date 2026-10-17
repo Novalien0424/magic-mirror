@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
@@ -12,7 +12,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('phase4-qa')
 process.once('exit', releaseOwner)
 assertElectronStopped()
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--operator-loop', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -27,6 +27,7 @@ const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
 const ritualOnly = process.argv.includes('--ritual')
+const operatorLoopOnly = process.argv.includes('--operator-loop')
 const mediaSkillFunctional = process.argv.includes('--media-skill-functional')
 const mediaSkillOnly = process.argv.includes('--media-skill') || mediaSkillFunctional
 const memoryLive = process.argv.includes('--memory-live')
@@ -35,7 +36,7 @@ const memoryOnly = process.argv.includes('--memory') || memoryLive || memoryConv
 const fieldHelpOnly = process.argv.includes('--field-help')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || mediaSkillOnly || memoryOnly
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || operatorLoopOnly || mediaSkillOnly || memoryOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()
@@ -85,6 +86,18 @@ const musicFileName = 'phase4-qa-tone.wav'
 await writeFile(join(musicDir, musicFileName), music)
 
 const trialVisualDir = join(repoRoot, 'resources', 'phase4-trial-assets')
+if (operatorLoopOnly) {
+  // Seed only the isolated Common library. Loop settings and the return avatar
+  // are authored later through the real Console, never prewritten here.
+  const sharedDir = join(userDataDir, 'operator-loop-shared')
+  await mkdir(sharedDir, { recursive: true })
+  await writeFile(join(sharedDir, 'operator-loop-qa-video.webm'),
+    await readFile(join(trialVisualDir, 'phase4-finite-embedded-audio.webm')))
+  // Deliberately unlike the ~3.008 s video: independent wraps are observable.
+  await writeFile(join(sharedDir, 'operator-loop-qa-music.wav'), makeToneWav(1.25))
+  await writeFile(join(userDataDir, 'media-folders.json'),
+    JSON.stringify({ version: 1, links: { shared: await realpath(sharedDir) } }), { mode: 0o600 })
+}
 const visualFixtures = [
   { id: 'visual-qa-still', fileName: 'phase4-still.png', name: 'QA still', kind: 'image', mimeType: 'image/png', width: 360, height: 640, orientation: 'portrait', audioTrack: 'absent' },
   { id: 'visual-qa-finite', fileName: 'phase4-finite-silent.webm', name: 'QA finite silent', kind: 'video', mimeType: 'video/webm', width: 360, height: 640, orientation: 'portrait', durationMs: 3000, audioTrack: 'absent' },
@@ -275,6 +288,7 @@ const environment = {
   MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
   MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
+  MIRROR_OPERATOR_LOOP_QA: operatorLoopOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: mediaSkillFunctional ? '1' : '0',
   MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
@@ -291,7 +305,7 @@ const environment = {
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly ? '180000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -327,7 +341,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly ? 190_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)

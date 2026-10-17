@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
+import { safeOperatorReason } from './operator-command.mjs'
 
 const BOARD = '192.168.77.2:5555'
 const HDMI = 'com.android.rockchip.camera2/.RockchipCamera2'
@@ -91,7 +92,7 @@ export async function operateTv(action, io = createTvIo()) {
 
 /** The entire sequence runs inside the existing button queue/operation lease. */
 export async function operateMirrorControl(action, io) {
-  if (!['start', 'stop'].includes(action)) throw Error('mirror_control_action_invalid')
+  if (!['start', 'stop', 'loop', 'console'].includes(action)) throw Error('mirror_control_action_invalid')
   const attempt = async (fn, fallback) => { try { return await fn() } catch { return fallback } }
   if (action === 'stop') {
     // Hide the screen before app windows disappear. TV failure must not skip cleanup.
@@ -103,7 +104,13 @@ export async function operateMirrorControl(action, io) {
   const app = await attempt(() => io.app('start'), 'start_failed')
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
   const ready = await attempt(() => io.ready(), false)
-  if (!ready) return { app, tv: 'tv_wake_skipped', outcome: 'start_not_ready' }
+  if (!ready) return { app, tv: 'tv_wake_skipped', outcome: `${action}_not_ready` }
+  // Console is a separate window; showing it must preserve the current media mode.
+  const command = action === 'console' ? 'show_console' : action === 'loop' ? 'play_loop' : 'normal'
+  const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
+  const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
+  const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
+  if (mode !== 'success') return { app, mode, modeReason, tv: 'tv_wake_skipped', outcome: `${action}_mode_failed` }
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
-  return { app, tv, outcome: tv === 'tv_awake' ? app : tv }
+  return { app, mode, modeReason, tv, outcome: tv === 'tv_awake' ? action === 'console' ? 'console_shown' : action === 'loop' ? 'loop_playing' : app : tv }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a two-key Neo profile using Elgato's built-in System/Open action.
+"""Build a four-key Neo profile using Elgato's built-in System/Open action.
 
 The format is taken from Stream Deck 7.6's bundled Neo profile. Import through
 Stream Deck; never edit its live profile database or replace the default profile.
@@ -18,19 +18,23 @@ def build_profile(controls: Path) -> Path:
     base = f"{profile_id.upper()}.sdProfile"
     actions = {}
     images = {}
-    for column, action, color, symbol in [
-        (0, "Start", "#167248", '<path d="M58 29 L58 82 L99 55 Z" fill="white"/>'),
-        (1, "Stop", "#a3303c", '<rect x="49" y="29" width="49" height="49" rx="5" fill="white"/>'),
+    for column, row, action, title, color, symbol in [
+        (0, 0, "Start", "START\nMIRROR", "#167248", '<path d="M58 29 L58 82 L99 55 Z" fill="white"/>'),
+        (1, 0, "Console", "CONSOLE", "#6650a4", '<rect x="43" y="30" width="62" height="48" rx="5" fill="none" stroke="white" stroke-width="6"/><path d="M53 42 L64 53 L53 64 M73 64 H92" fill="none" stroke="white" stroke-width="5" stroke-linejoin="round"/>'),
+        (2, 0, "Play Loop", "PLAY\nLOOP", "#315ba8", '<path d="M47 42 A31 31 0 1 1 43 72" fill="none" stroke="white" stroke-width="9"/><path d="M35 33 L60 38 L41 57 Z" fill="white"/>'),
+        (3, 1, "Stop", "STOP", "#a3303c", '<rect x="49" y="29" width="49" height="49" rx="5" fill="white"/>'),
     ]:
         app = controls / f"{action} Magic Mirror.app"
         if not app.is_dir():
             raise FileNotFoundError(app)
-        icon = f"Images/{action.lower()}.svg"
+        icon = f"Images/{action.lower().replace(' ', '-')}.svg"
+        # Keep symbols in the upper half, clear of the two-line title area.
         images[icon] = (
             '<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">'
-            f'<rect width="144" height="144" rx="20" fill="{color}"/>{symbol}</svg>'
+            f'<rect width="144" height="144" rx="20" fill="{color}"/>'
+            f'<g transform="translate(18 -4) scale(0.75)">{symbol}</g></svg>'
         )
-        actions[f"{column},0"] = {
+        actions[f"{column},{row}"] = {
             "ActionID": str(uuid.uuid5(uuid.NAMESPACE_URL, f"magicmirror:{action}")),
             "LinkedTitle": True,
             "Name": "Open",
@@ -38,9 +42,9 @@ def build_profile(controls: Path) -> Path:
             "Settings": {"path": f'"{app}"'},
             "State": 0,
             "States": [{
-                "FontFamily": "", "FontSize": 14, "FontStyle": "Bold",
+                "FontFamily": "", "FontSize": 12 if action == "Console" else 14, "FontStyle": "Bold",
                 "FontUnderline": False, "Image": icon, "OutlineThickness": 0,
-                "ShowTitle": True, "Title": f"{action.upper()}\nMIRROR",
+                "ShowTitle": True, "Title": title,
                 "TitleAlignment": "bottom", "TitleColor": "#ffffff",
             }],
             "UUID": "com.elgato.streamdeck.system.open",

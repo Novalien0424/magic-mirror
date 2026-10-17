@@ -1,9 +1,13 @@
 import { useSyncExternalStore } from 'react'
 import type { ConsoleRuntimeStore } from './runtime-store'
 import { WakeRecoveryStatus } from './WakeRecoveryStatus'
+import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
 
-export function RuntimeStatusStrip({ store, lifecycle, phrase }: { store: ConsoleRuntimeStore; lifecycle?: string; phrase?: string }) {
+export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop }: { store: ConsoleRuntimeStore; lifecycle?: string; phrase?: string; operatorLoop?: OperatorLoopSnapshot | null }) {
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
+  if (operatorLoop?.mode === 'loop') return <section className={`runtime-status${operatorLoop.status === 'failed' ? ' runtime-status--attention' : ''}`} aria-label="Mirror listening status">
+    <div aria-live="polite"><strong>{operatorLoop.status === 'failed' ? 'Loop video needs attention' : 'Loop Video mode'}</strong> · Voice, wake listening and camera are off.</div>
+  </section>
   const wake = state.status === 'success' ? state.value.wakeInput : undefined
   const listening = wake?.state === 'signal' || wake?.state === 'silent'
   const needsWake = lifecycle === 'dormant' || lifecycle === 'offlineLoop'

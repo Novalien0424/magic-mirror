@@ -1,5 +1,45 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — Stream Deck global STOP and Console on mirror (owner revision)
+
+Keep START at top-left and PLAY LOOP third on the top row. Move STOP to the
+bottom-right Neo key `(3,1)` and label it exactly **STOP**. It is the universal
+Magic Mirror shutdown control: sleep the TV and stop the whole application and
+owned processes, including loop/media and future program modes. Future modes
+must participate in the existing Main shutdown; do not maintain a list of media
+types to stop or terminate unrelated Mac applications.
+
+Use the freed second key `(1,0)` for **CONSOLE**. Bring the existing Console
+renderer above the mirror display, preserving unsaved edits and the current
+program. Repeated presses show/focus it, never toggle it away. START/PLAY LOOP
+return to the mirror view. Console may start the application and wake HDMI when
+needed; it does not change the saved avatar or playback intent. Use the same
+bounded operator mailbox, queue and LaunchAgent. Keep icon artwork/text within
+the Neo key; PLAY LOOP uses two short lines.
+
+## 2026-10-17 — Operator Loop Video mode (owner approved)
+
+Stream Deck Neo retains START first and STOP second; PLAY LOOP is the third
+top-row button. Loop Video is a separate global Console tab and appliance mode,
+not an avatar skill, model tool or conversational media request. Only operator
+UI/Stream Deck controls end it; spoken wake/stop phrases do not interrupt it.
+Main releases Realtime, wake microphone and camera ownership before playback.
+No avatar, ambience, mist or spells run behind the loop.
+
+Select video and optional separate music from the existing shared/Common media
+folder. Embedded-video audio or muted video plus independent looping music are
+supported, with saved fit and volume. Save is scoped to these settings and does
+not publish an avatar draft. Initial owner selection: `3_worlds_loop.mp4` plus
+`天使_intro.mp3`. START returns to normal Dormant behavior for the saved active
+avatar; STOP puts the TV in standby and cleanly shuts down the app.
+
+PLAY LOOP waits for observed frame/time advancement and separate audio when
+selected before waking HDMI. Repeated PLAY is idempotent. One bounded playback
+reload is allowed; a second failure leaves the mirror black with a Console
+reason, never an unsolicited return to Raven. Persist desired loop mode for
+crash recovery under the existing LaunchAgent; explicit START/STOP supersedes
+it. No additional restart owner, driver or microphone listener is introduced.
+
 ## 2026-10-17 — Reflective wake/sleep performance and Reduce Motion
 
 The owner expects the configured mist and gradual avatar reveal/retreat on

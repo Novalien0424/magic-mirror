@@ -84,6 +84,7 @@ describe('combined Stream Deck sequence', () => {
     return { order,
       app: vi.fn(async (action: string) => { order.push(action); return appResult ?? (action === 'start' ? 'started' : 'stopped') }),
       ready: vi.fn(async () => { order.push('ready'); return true }),
+      mode: vi.fn(async (action: string) => { order.push(action); return { status: 'success', reason: action === 'show_console' ? 'console_shown' : action === 'normal' ? 'normal_ready' : 'loop_playing' } }),
       tv: vi.fn(async (action: string) => { order.push(action); return tvResult ?? `tv_${action}` }),
     }
   }
@@ -91,11 +92,25 @@ describe('combined Stream Deck sequence', () => {
     const io = control()
     expect(await operateMirrorControl('stop', io)).toEqual({ app: 'stopped', tv: 'tv_standby', outcome: 'stopped' })
     expect(io.order).toEqual(['standby', 'stop'])
+    expect(io.mode).not.toHaveBeenCalled()
   })
   it('still cleans up when TV control fails', async () => {
     const io = control(undefined, 'tv_unavailable')
     expect((await operateMirrorControl('stop', io)).outcome).toBe('tv_unavailable')
     expect(io.order).toEqual(['standby', 'stop'])
+  })
+  it('still cleans up when TV control throws, without issuing a mode command', async () => {
+    const io = control(); io.tv.mockRejectedValueOnce(Error('private driver output'))
+    expect(await operateMirrorControl('stop', io)).toEqual({ app: 'stopped', tv: 'tv_standby_failed', outcome: 'tv_standby_failed' })
+    expect(io.app).toHaveBeenCalledWith('stop')
+    expect(io.mode).not.toHaveBeenCalled()
+    expect(io.ready).not.toHaveBeenCalled()
+  })
+  it('reports shutdown failure when both TV and shutdown fail', async () => {
+    const io = control(undefined, 'tv_unavailable'); io.app.mockRejectedValueOnce(Error('private process output'))
+    expect(await operateMirrorControl('stop', io)).toEqual({ app: 'stop_failed', tv: 'tv_unavailable', outcome: 'stop_failed' })
+    expect(io.order).toEqual(['standby'])
+    expect(io.app).toHaveBeenCalledWith('stop')
   })
   it('preserves app shutdown failure even if the TV is asleep', async () => {
     const io = control('stop_processes_remaining')
@@ -106,24 +121,126 @@ describe('combined Stream Deck sequence', () => {
     expect((await operateMirrorControl('stop', io)).outcome).toBe('already_off')
     expect(io.order).toEqual(['standby', 'stop'])
   })
-  it.each(['started', 'already_on'])('waits for the %s app before waking HDMI', async result => {
+  it.each(['started', 'already_on'])('waits for the %s app and acknowledged normal mode before waking HDMI', async result => {
     const io = control(result)
     expect((await operateMirrorControl('start', io)).outcome).toBe(result)
-    expect(io.order).toEqual(['start', 'ready', 'awake'])
+    expect(io.order).toEqual(['start', 'ready', 'normal', 'awake'])
+  })
+  it.each(['started', 'already_on'])('shows Console in the %s app before waking HDMI', async app => {
+    const io = control(app)
+    expect(await operateMirrorControl('console', io)).toEqual({ app, mode: 'success', modeReason: 'console_shown', tv: 'tv_awake', outcome: 'console_shown' })
+    expect(io.order).toEqual(['start', 'ready', 'show_console', 'awake'])
+    expect(io.mode).toHaveBeenCalledExactlyOnceWith('show_console')
   })
   it('keeps standby on a launch failure', async () => {
     const io = control('start_failed')
     expect((await operateMirrorControl('start', io)).outcome).toBe('start_failed')
     expect(io.order).toEqual(['start'])
+    expect(io.mode).not.toHaveBeenCalled()
   })
   it('keeps standby when the renderer never becomes ready', async () => {
     const io = control(); io.ready.mockResolvedValue(false)
     expect((await operateMirrorControl('start', io)).outcome).toBe('start_not_ready')
     expect(io.tv).not.toHaveBeenCalled()
+    expect(io.mode).not.toHaveBeenCalled()
+  })
+  it.each([['start', 'normal'], ['loop', 'play_loop'], ['console', 'show_console']])('keeps the TV asleep on a failed %s acknowledgement', async (action, command) => {
+    const io = control(); io.mode.mockResolvedValue({ status: 'failed', reason: 'playback_failed' })
+    expect(await operateMirrorControl(action, io)).toEqual({ app: 'started', mode: 'failed', modeReason: 'playback_failed', tv: 'tv_wake_skipped', outcome: `${action}_mode_failed` })
+    expect(io.mode).toHaveBeenCalledWith(command)
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it.each(['start', 'loop', 'console'])('keeps the TV asleep on an unavailable %s mailbox', async action => {
+    const io = control(); io.mode.mockRejectedValueOnce(Error('private raw message'))
+    const result = await operateMirrorControl(action, io)
+    expect(result.outcome).toBe(`${action}_mode_failed`)
+    expect(result.modeReason).toBe('operator_command_failed')
+    expect(JSON.stringify(result)).not.toContain('private raw message')
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it('rejects a malformed success acknowledgement without retaining its reason', async () => {
+    const io = control(); io.mode.mockResolvedValue({ status: 'success', reason: 'private raw message' })
+    expect((await operateMirrorControl('loop', io)).modeReason).toBe('operator_response_invalid')
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it.each([
+    null, {}, { status: 'ok', reason: 'console_shown' }, { status: 'success', reason: 'private raw message' },
+  ])('rejects a malformed Console acknowledgement without retaining raw data: %j', async reply => {
+    const io = control(); io.mode.mockResolvedValue(reply as never)
+    expect(await operateMirrorControl('console', io)).toEqual({ app: 'started', mode: 'failed', modeReason: 'operator_response_invalid', tv: 'tv_wake_skipped', outcome: 'console_mode_failed' })
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it.each([['loop', 'play_loop', 'loop_playing'], ['console', 'show_console', 'console_shown']])('awaits the %s acknowledgement before waking HDMI', async (action, command, outcome) => {
+    const io = control()
+    let acknowledge!: (result: { status: string, reason: string }) => void
+    io.mode.mockImplementationOnce(async action => {
+      io.order.push(action)
+      return new Promise<{ status: string, reason: string }>(resolve => { acknowledge = resolve })
+    })
+    const result = operateMirrorControl(action, io)
+    await vi.waitFor(() => expect(io.mode).toHaveBeenCalledWith(command))
+    expect(io.tv).not.toHaveBeenCalled()
+    acknowledge({ status: 'success', reason: outcome })
+    expect((await result).outcome).toBe(outcome)
+    expect(io.order).toEqual(['start', 'ready', command, 'awake'])
+  })
+  it('sends repeated LOOP requests to Main for idempotent acknowledgement', async () => {
+    const io = control('already_on')
+    io.mode.mockImplementation(async action => { io.order.push(action); return { status: 'success', reason: 'loop_already_playing' } })
+    expect((await operateMirrorControl('loop', io)).outcome).toBe('loop_playing')
+    expect((await operateMirrorControl('loop', io)).outcome).toBe('loop_playing')
+    expect(io.order).toEqual(['start', 'ready', 'play_loop', 'awake', 'start', 'ready', 'play_loop', 'awake'])
+  })
+  it('returns from LOOP to acknowledged normal mode on START', async () => {
+    const io = control('already_on')
+    await operateMirrorControl('loop', io)
+    await operateMirrorControl('start', io)
+    expect(io.mode.mock.calls).toEqual([['play_loop'], ['normal']])
+  })
+  it.each([['start', 'normal'], ['loop', 'play_loop']])('accepts repeated Console requests while preserving the current %s mode', async (action, command) => {
+    const io = control('already_on')
+    await operateMirrorControl(action, io)
+    expect((await operateMirrorControl('console', io)).outcome).toBe('console_shown')
+    expect((await operateMirrorControl('console', io)).outcome).toBe('console_shown')
+    expect(io.mode.mock.calls).toEqual([[command], ['show_console'], ['show_console']])
+    expect(io.order.slice(4)).toEqual(['start', 'ready', 'show_console', 'awake', 'start', 'ready', 'show_console', 'awake'])
+    await operateMirrorControl('stop', io)
+    expect(io.order.slice(-2)).toEqual(['standby', 'stop'])
+    expect(io.mode).toHaveBeenCalledTimes(3)
+  })
+  it.each(['start_failed', 'start_timeout'])('skips Console and HDMI after %s', async app => {
+    const io = control(app)
+    expect(await operateMirrorControl('console', io)).toEqual({ app, tv: 'tv_wake_skipped', outcome: app })
+    expect(io.order).toEqual(['start'])
+    expect(io.ready).not.toHaveBeenCalled()
+    expect(io.mode).not.toHaveBeenCalled()
+  })
+  it('skips Console and HDMI if readiness fails', async () => {
+    const io = control(); io.ready.mockResolvedValue(false)
+    expect(await operateMirrorControl('console', io)).toEqual({ app: 'started', tv: 'tv_wake_skipped', outcome: 'console_not_ready' })
+    expect(io.mode).not.toHaveBeenCalled()
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it('reports a Console acknowledgement timeout without waking HDMI', async () => {
+    const io = control(); io.mode.mockResolvedValue({ status: 'failed', reason: 'operator_command_timeout' })
+    expect(await operateMirrorControl('console', io)).toEqual({ app: 'started', mode: 'failed', modeReason: 'operator_command_timeout', tv: 'tv_wake_skipped', outcome: 'console_mode_failed' })
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it('reports HDMI failure after showing Console without stopping the app or changing mode', async () => {
+    const io = control('already_on', 'tv_awake_failed')
+    expect(await operateMirrorControl('console', io)).toEqual({ app: 'already_on', mode: 'success', modeReason: 'console_shown', tv: 'tv_awake_failed', outcome: 'tv_awake_failed' })
+    expect(io.order).toEqual(['start', 'ready', 'show_console', 'awake'])
+    expect(io.app).toHaveBeenCalledExactlyOnceWith('start')
+  })
+  it('keeps standby when LOOP cannot establish renderer readiness', async () => {
+    const io = control(); io.ready.mockResolvedValue(false)
+    expect((await operateMirrorControl('loop', io)).outcome).toBe('loop_not_ready')
+    expect(io.mode).not.toHaveBeenCalled()
+    expect(io.tv).not.toHaveBeenCalled()
   })
   it('reports TV wake failure separately without stopping a running app', async () => {
     const io = control(undefined, 'tv_awake_failed')
-    expect(await operateMirrorControl('start', io)).toEqual({ app: 'started', tv: 'tv_awake_failed', outcome: 'tv_awake_failed' })
+    expect(await operateMirrorControl('start', io)).toEqual({ app: 'started', mode: 'success', modeReason: 'normal_ready', tv: 'tv_awake_failed', outcome: 'tv_awake_failed' })
     expect(io.app).toHaveBeenCalledTimes(1)
   })
 })
