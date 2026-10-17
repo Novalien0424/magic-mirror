@@ -1,0 +1,255 @@
+import * as React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import {
+  ExperiencesEditor, GuestListField, addQuestion, experienceIssues, experienceOf, moveQuestion, parseGuestList, removeQuestion,
+} from '../../../src/renderer/console/ExperiencesEditor'
+import {
+  STUDIO_LOGIN_COMMAND, STUDIO_USAGE_URL, StudioLiveControls, StudioStatusPanel, safePreviewUrl, studioActionText, studioAuthText,
+  studioFailureText, studioPhaseText,
+} from '../../../src/renderer/console/StudioStatusPanel'
+import { FIELD_HELP } from '../../../src/renderer/console/field-help-text'
+import { NumberInput } from '../../../src/renderer/console/NumberInput'
+import { newAvatar } from '../../../src/renderer/console/profile-workspace'
+import type { AvatarProfile } from '../../../src/shared/avatar-profiles'
+import {
+  DEFAULT_EXPERIENCE, STUDIO_MAX_QUESTIONS, defaultExperience, parseAvatarExperience, type StudioAuthStatus, type StudioConsoleStatus,
+} from '../../../src/shared/portrait-studio'
+
+type Props = React.ComponentProps<typeof ExperiencesEditor>
+type Element = React.ReactElement<Record<string, unknown>>
+function elements(node: React.ReactNode): Element[] {
+  return React.Children.toArray(node).flatMap(child => React.isValidElement<Record<string, unknown>>(child)
+    ? [child, ...elements(child.props.children as React.ReactNode)] : [])
+}
+const isControl = (element: Element): boolean => ['input', 'select', 'textarea'].includes(element.type as string) || element.type === NumberInput
+
+function editor(options: { avatar?: AvatarProfile; disabled?: boolean } = {}) {
+  let avatar = options.avatar ?? (({ experience: _omit, ...rest }) => rest as AvatarProfile)(newAvatar('guide'))
+  const changes: AvatarProfile[] = []
+  const props = (): Props => ({ avatar, disabled: options.disabled ?? false, onChange(next) { avatar = next; changes.push(next) } })
+  const tree = (): Element[] => elements(ExperiencesEditor(props()))
+  const byLabel = (label: string): Element => {
+    const element = tree().find(item => item.props['aria-label'] === label)
+    expect(element, `Missing element: ${label}`).toBeDefined()
+    return element!
+  }
+  /** The first control inside the HelpField that carries this help text. */
+  const field = (help: string): Element => {
+    const wrapper = tree().find(item => item.props.help === help)
+    expect(wrapper, `Missing field: ${help.slice(0, 40)}`).toBeDefined()
+    const control = elements(wrapper!.props.children as React.ReactNode).find(isControl)
+    expect(control).toBeDefined()
+    return control!
+  }
+  const fire = (element: Element, value: string, checked = false): void =>
+    (element.props.onChange as (event: unknown) => void)({ currentTarget: { value, checked } })
+  return {
+    get avatar() { return avatar }, changes, tree, byLabel, field, fire,
+    click: (label: string) => (byLabel(label).props.onClick as () => void)(),
+    disabledButton: (label: string) => byLabel(label).props.disabled === true,
+    guestNames: (names: string[]) => {
+      const guests = tree().find(item => item.type === GuestListField)!
+      ;(guests.props.onNames as (names: string[]) => void)(names)
+    },
+    render: () => renderToStaticMarkup(React.createElement(ExperiencesEditor, props())),
+  }
+}
+
+describe('ExperiencesEditor', () => {
+  it('renders defaults when the avatar has no experience yet', () => {
+    const ui = editor()
+    expect(ui.avatar.experience).toBeUndefined()
+    const html = ui.render()
+    expect(html).toContain('<option value="conversation" selected="">Conversation</option>')
+    expect(html).toContain('<option value="continue" selected="">Keep chatting</option>')
+    expect(html.match(/aria-label="Question \d"/g)).toHaveLength(4)
+    expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.zh)
+    expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.en)
+    expect(html).toContain('Name question · always first')
+    expect(html).toContain('4 of 8 questions')
+    expect(html).toMatch(/aria-label="Guest names, one per line"[^>]*><\/textarea>/)
+    expect(html).toContain('Guest names · 0 of 1,000')
+    expect(html).toContain('stays on this Mac')
+    expect(html).toContain('Experience settings are ready to save.')
+    expect(html).not.toMatch(/daily|per day|limit per/i)
+    expect(experienceIssues(experienceOf(ui.avatar))).toEqual({})
+  })
+
+  it('edits the existing wake greeting as the conversation start script', () => {
+    const ui = editor()
+    ui.fire(ui.field(FIELD_HELP.experienceConversationScript), '你好，旅人。')
+    expect(ui.avatar.presentation.wakeGreeting).toBe('你好，旅人。')
+    expect(ui.avatar.experience).toBeUndefined()
+    ui.fire(ui.field(FIELD_HELP.experienceStudioScript), '來畫一幅畫吧。')
+    expect(ui.avatar.experience?.studio.startScript).toBe('來畫一幅畫吧。')
+    expect(Object.keys(ui.avatar.experience!)).not.toContain('startScripts')
+  })
+
+  it('keeps 1 to 8 questions with stable ids and keyboard-operable arrange buttons', () => {
+    const ui = editor()
+    expect(ui.disabledButton('Move question 1 up')).toBe(true)
+    expect(ui.disabledButton('Move question 4 down')).toBe(true)
+    ui.click('Move question 1 down')
+    expect(ui.avatar.experience!.studio.questions.map(q => q.id)).toEqual(['q2', 'q1', 'q3', 'q4'])
+    const add = () => (ui.tree().find(item => item.type === 'button' && item.props.children === 'Add question')!.props.onClick as () => void)()
+    for (let i = 0; i < 6; i++) add()
+    const questions = ui.avatar.experience!.studio.questions
+    expect(questions).toHaveLength(STUDIO_MAX_QUESTIONS)
+    expect(new Set(questions.map(q => q.id)).size).toBe(STUDIO_MAX_QUESTIONS)
+    expect(questions.slice(4).map(q => q.id)).toEqual(['q5', 'q6', 'q7', 'q8'])
+    expect(ui.tree().find(item => item.type === 'button' && item.props.children === 'Add question')!.props.disabled).toBe(true)
+    expect(addQuestion(ui.avatar.experience!)).toBe(ui.avatar.experience)
+    expect(ui.render()).toContain('8 questions is the maximum')
+    // New questions start empty and are flagged inline until filled.
+    expect(experienceIssues(ui.avatar.experience!)['questions.4.zh']).toMatch(/Traditional Chinese/)
+    expect(ui.render()).toContain('aria-invalid="true"')
+    for (let n = STUDIO_MAX_QUESTIONS; n > 1; n--) ui.click(`Remove question ${n}`)
+    expect(ui.avatar.experience!.studio.questions.map(q => q.id)).toEqual(['q2'])
+    expect(ui.disabledButton('Remove question 1')).toBe(true)
+    expect(removeQuestion(ui.avatar.experience!, 0)).toBe(ui.avatar.experience)
+    expect(moveQuestion(ui.avatar.experience!, 0, -1)).toBe(ui.avatar.experience)
+    expect(parseAvatarExperience(ui.avatar.experience)).not.toBeNull()
+  })
+
+  it('parses the guest list one name per line and flags invalid names', () => {
+    const long = '名'.repeat(41)
+    const parsed = parseGuestList('  王小明  \r\n\n\nAmy Chen\n\t\n' + long + '\nA\tB\n')
+    expect(parsed.names).toEqual(['王小明', 'Amy Chen', long, 'A\tB'])
+    expect(parsed.issues).toEqual(['Line 6 is longer than 40 characters (41).', 'Line 7 contains a tab or another control character.'])
+    expect(parseGuestList('\n \n').names).toEqual([])
+    const many = parseGuestList(Array.from({ length: 1001 }, (_, i) => `Guest ${i}`).join('\n'))
+    expect(many.issues[0]).toBe('The list has 1,001 names; the limit is 1,000.')
+
+    const ui = editor()
+    ui.guestNames(parsed.names)
+    expect(ui.avatar.experience!.guests.names).toEqual(parsed.names)
+    expect(experienceIssues(ui.avatar.experience!)['guests.names']).toMatch(/Name 3 is longer than 40/)
+    expect(parseAvatarExperience(ui.avatar.experience)).toBeNull()
+    const html = ui.render()
+    expect(html).toContain('field needs attention before saving')
+    expect(html).toContain('Line 3 is longer than 40 characters (41).')
+    ui.guestNames(['王小明', 'Amy Chen'])
+    expect(experienceIssues(ui.avatar.experience!)).toEqual({})
+    expect(ui.render()).toContain('王小明\nAmy Chen</textarea>')
+  })
+
+  it('produces an experience that passes parseAvatarExperience', () => {
+    const ui = editor()
+    ui.fire(ui.field(FIELD_HELP.experienceDefaultMode), 'portrait_studio')
+    ui.fire(ui.field(FIELD_HELP.experienceAfterPortrait), 'farewell')
+    ui.fire(ui.field(FIELD_HELP.experienceVisitorMayRequest), '', false)
+    ui.fire(ui.byLabel('Name question in English'), 'What name goes on your portrait?')
+    ;(ui.tree().find(item => item.type === 'button' && item.props.children === 'Add question')!.props.onClick as () => void)()
+    ui.fire(ui.byLabel('Question 5 in Traditional Chinese'), '誰陪在你身邊？')
+    ui.fire(ui.byLabel('Question 5 in English'), 'Who is beside you?')
+    ui.fire(ui.byLabel('Question 5 answer shapes'), 'companion')
+    ui.fire(ui.field(FIELD_HELP.studioArtStyle), 'Moonlit gouache.')
+    ui.fire(ui.field(FIELD_HELP.studioNameLettering), 'painted')
+    ui.fire(ui.field(FIELD_HELP.studioQuality), 'high')
+    ui.fire(ui.field(FIELD_HELP.studioRevisions), '3')
+    ui.fire(ui.field(FIELD_HELP.studioHoldSeconds), '120')
+    ui.fire(ui.field(FIELD_HELP.guestMatch), 'only')
+    ui.guestNames(['王小明'])
+    const experience = ui.avatar.experience!
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    expect(experience).toMatchObject({ defaultMode: 'portrait_studio', afterPortrait: 'farewell', visitorMayRequest: false,
+      guests: { names: ['王小明'], match: 'only' } })
+    expect(experience.studio).toMatchObject({ nameLettering: 'painted', quality: 'high', revisionsAllowed: 3, holdSeconds: 120 })
+    expect(experience.studio.questions[4]).toEqual({ id: 'q5', zh: '誰陪在你身邊？', en: 'Who is beside you?', slot: 'companion' })
+    expect(ui.render()).toContain('<option value="high" selected="">Best</option>')
+
+    ui.fire(ui.field(FIELD_HELP.studioHoldSeconds), '5')
+    // Line breaks are allowed in the start script; tabs and other control characters are not.
+    ui.fire(ui.field(FIELD_HELP.experienceStudioScript), 'line one\tline two')
+    const issues = experienceIssues(ui.avatar.experience!)
+    expect(Object.keys(issues).sort()).toEqual(['holdSeconds', 'startScript'])
+    expect(ui.render()).toContain('2 fields need attention before saving.')
+    // An empty list cannot restrict names in "only" mode.
+    expect(experienceIssues({ ...experience, guests: { names: [], match: 'only' } })['guests.names']).toMatch(/at least one name/)
+  })
+
+  it('does not edit while disabled and describes every control', () => {
+    const ui = editor({ disabled: true })
+    ui.fire(ui.field(FIELD_HELP.experienceDefaultMode), 'portrait_studio')
+    ui.click('Move question 1 down')
+    expect(ui.changes).toHaveLength(0)
+    const html = ui.render()
+    expect(html).toContain('<fieldset disabled=""')
+    for (const [control] of html.matchAll(/<(?:input|select|textarea)\b[^>]*>/g)) {
+      const ids = control.match(/aria-describedby="([^"]+)"/)?.[1].split(' ')
+      expect(ids, control).toBeDefined()
+      for (const id of ids ?? []) {
+        const description = html.slice(html.indexOf(`id="${id}"`)).match(/^[^>]*>([^<]+)/)?.[1]
+        expect(description?.length ?? 0, control).toBeGreaterThan(40)
+      }
+    }
+  })
+
+  it('keeps a valid default for new avatars', () => {
+    expect(parseAvatarExperience(defaultExperience())).not.toBeNull()
+    expect(experienceIssues(newAvatar('x').experience!)).toEqual({})
+  })
+})
+
+describe('Portrait Studio status panel', () => {
+  const statuses: StudioAuthStatus[] = ['signed_in', 'missing', 'invalid', 'expired', 'refresh_failed']
+  it('turns each sign-in status into operator text', () => {
+    expect(studioAuthText('signed_in')).toMatchObject({ label: 'Using ChatGPT plan', action: '', needsLogin: false })
+    expect(studioAuthText('missing')).toMatchObject({ label: 'Not signed in', needsLogin: true })
+    expect(studioAuthText('missing').action).toContain(STUDIO_LOGIN_COMMAND)
+    for (const auth of ['invalid', 'expired', 'refresh_failed'] as const) {
+      const copy = studioAuthText(auth)
+      expect(copy.label).not.toBe('Using ChatGPT plan')
+      expect(copy.action).toContain(STUDIO_LOGIN_COMMAND)
+    }
+    expect(studioAuthText('expired').needsLogin).toBe(false)
+    expect(new Set(statuses.map(auth => studioAuthText(auth).label)).size).toBe(statuses.length)
+  })
+
+  it('renders status without any credential value and shows the sign-in command when needed', () => {
+    const base: StudioConsoleStatus = { auth: 'signed_in', lastRefresh: '2026-10-17T01:02:03.000Z', modelId: 'gpt-image-test', active: false }
+    const signedIn = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: base }))
+    expect(signedIn).toContain('Using ChatGPT plan')
+    expect(signedIn).toContain('gpt-image-test')
+    expect(signedIn).toContain(STUDIO_USAGE_URL)
+    expect(signedIn).toContain('Generate test portrait')
+    expect(signedIn).not.toContain(STUDIO_LOGIN_COMMAND)
+    expect(signedIn).not.toMatch(/token|bearer/i)
+    const missing = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: { ...base, auth: 'missing', lastRefresh: undefined } }))
+    expect(missing).toContain('Not signed in')
+    expect(missing).toContain(`<code class="studio-status__selectable">${STUDIO_LOGIN_COMMAND}</code>`)
+    expect(missing).toContain('Not recorded')
+  })
+
+  it('translates every image failure code and live action', () => {
+    const codes = ['studio_auth_required', 'studio_quota_exhausted', 'studio_image_refused', 'studio_model_rejected',
+      'studio_provider_contract', 'studio_image_timeout', 'studio_image_unavailable']
+    const texts = codes.map(studioFailureText)
+    expect(new Set(texts).size).toBe(codes.length)
+    for (const text of texts) expect(text).not.toMatch(/studio_/)
+    expect(studioFailureText('studio_unknown_thing')).toContain('studio_unknown_thing')
+    expect(studioActionText('studio_requires_active_session')).toMatch(/Start a conversation first/)
+    expect(studioActionText('studio_operator_exit')).toMatch(/Back to conversation/)
+    expect(studioPhaseText({ active: true, phase: 'painting' })).toBe('Painting')
+    expect(studioPhaseText({ active: false })).toBe('Not running')
+    expect(studioPhaseText(null)).toBe('Status unknown')
+  })
+
+  it('accepts only inline raster previews', () => {
+    expect(safePreviewUrl('data:image/png;base64,iVBORw0KGgo=')).toBe('data:image/png;base64,iVBORw0KGgo=')
+    expect(safePreviewUrl('https://example.com/a.png')).toBeNull()
+    expect(safePreviewUrl('data:image/svg+xml;base64,PHN2Zz4=')).toBeNull()
+    expect(safePreviewUrl(undefined)).toBeNull()
+  })
+
+  it('disables live start until a conversation is active', () => {
+    const studio = async () => ({ ok: true as const, value: { status: { auth: 'signed_in' as const, modelId: 'm', active: false } } })
+    const idle = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'dormant', visible: true }))
+    expect(idle).toMatch(/<button type="button" disabled=""[^>]*>Start Portrait Studio<\/button>/)
+    expect(idle).toContain('Start a conversation first')
+    const live = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'active', visible: true }))
+    expect(live).toMatch(/<button type="button" aria-describedby="studio-live-hint">Start Portrait Studio<\/button>/)
+    expect(live).toContain('Back to conversation')
+  })
+})

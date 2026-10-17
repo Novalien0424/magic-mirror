@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { parseStudioConsoleCommand, STUDIO_CONSOLE_CHANNEL } from '../shared/portrait-studio'
 import type { AppSnapshot, ManagedMusicAsset, ManagedVisualAsset, PendingVisualAsset, SceneStartResult, SceneStatusEvent, SimulatorCommand, SimulatorResult, VisualAssetProbe } from '../shared/types'
 import type {
   ConsoleConfigDraftInput,
@@ -203,4 +204,7 @@ const bridge: ConsoleBridge = {
 
 bridge.checkCamera = () => ipcRenderer.invoke('console:check-camera')
 bridge.memoryImport = request => ipcRenderer.invoke('console:memory-import', request)
+bridge.studio = command => parseStudioConsoleCommand(command)
+  ? ipcRenderer.invoke(STUDIO_CONSOLE_CHANNEL, command)
+  : Promise.resolve({ ok: false, error: 'console_request_invalid', reason: 'cause=payload_schema_invalid' } as never)
 contextBridge.exposeInMainWorld('magicMirror', bridge)

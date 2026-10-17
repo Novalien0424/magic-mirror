@@ -4,10 +4,11 @@ import type { ConsoleConfigDraftInput, ConsoleConfigPayload } from '../../shared
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
 import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
+import { defaultExperience } from '../../shared/portrait-studio'
 import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
 import { draftFingerprint } from './scene-editor-model'
 
-export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Memories', 'Spells & scenes'] as const
+export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Experiences', 'Memories', 'Spells & scenes'] as const
 export const LIBRARY_SECTIONS = ['Rig library', 'Media library', 'Action library'] as const
 export type ProfileSection = typeof PROFILE_SECTIONS[number] | typeof LIBRARY_SECTIONS[number]
 
@@ -31,6 +32,7 @@ export function newAvatar(id: string): AvatarProfile {
     presentation: { ...DEFAULT_PRESENTATION }, scenes: [], spells: [],
     voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
     mediaSkill: structuredClone(DEFAULT_MEDIA_SKILL),
+    experience: defaultExperience(),
     wakePhrase: DEFAULT_WAKE_PHRASE, sleepPhrase: DEFAULT_SLEEP_PHRASE, cloudSearchPhrase: DEFAULT_CLOUD_SEARCH_PHRASE }
 }
 

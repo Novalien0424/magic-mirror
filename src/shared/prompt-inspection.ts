@@ -1,6 +1,7 @@
 import type { AvatarProfile } from './avatar-profiles'
-import { buildAvatarPrompt, avatarProfileSessionSettings } from './avatar-prompt'
-import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, resolveRealtimeTools, realtimeToolDefinition } from './realtime-tools'
+import { buildAvatarPrompt, buildStudioPrompt, avatarProfileSessionSettings, avatarRealtimeTools, studioToolSpecs } from './avatar-prompt'
+import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, realtimeToolDefinition } from './realtime-tools'
+import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE } from './portrait-studio-config'
 import { DEFAULT_WAKE_PHRASE } from './avatar-commands'
 import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse, buildMemoryQuestion, buildMemoryState, buildMemoryAcknowledgment } from './realtime-prompts'
 import type { SceneActionDefinition } from './types'
@@ -17,12 +18,14 @@ const json = (value: unknown): string => JSON.stringify(value, null, 2)
 export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly SceneActionDefinition[], wakePhrase = DEFAULT_WAKE_PHRASE): PromptInspection {
   const settings = avatarProfileSessionSettings(avatar, wakePhrase)
   const profileSource = `avatarCatalog.avatars[${avatar.id}]`
-  const tools = resolveRealtimeTools(settings.sleepPhrase!)
+  const tools = [...avatarRealtimeTools(settings), ...studioToolSpecs(settings).filter(spec => spec.availability === 'studio')]
   const section = (title: string, content: string, source = REALTIME_PROMPT_SOURCE): PromptSection => ({ title, source, content })
   const speech = (title: string, text: string, source: string): PromptSection => section(title,
     text ? json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
   return { name: avatar.name, pages: {
     Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
+      section('Portrait Studio agent instructions · system (after updateAgent)', buildStudioPrompt(settings), `${PORTRAIT_STUDIO_SOURCE}#agent + ${REALTIME_PROMPT_SOURCE}#session + ${profileSource}.experience`),
+      section('Portrait Studio reveal · response.create', PORTRAIT_STUDIO.agent.reveal, `${PORTRAIT_STUDIO_SOURCE}#agent.reveal`),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),
@@ -47,6 +50,7 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
       section('Audition tools and input', json({ tools: [], input: { turnDetection: null, transcription: null } }), 'src/renderer/realtime/realtime-session-adapter.ts')],
     Sources: [section(`Loaded catalog · ${prompts.version}`, json(prompts)),
       section(`Loaded tool catalog · ${REALTIME_TOOLS.version}`, json(REALTIME_TOOLS), REALTIME_TOOL_SOURCE),
+      section(`Loaded Portrait Studio config · ${PORTRAIT_STUDIO.version}`, json(PORTRAIT_STUDIO), PORTRAIT_STUDIO_SOURCE),
       section('Avatar variables', json(settings), profileSource)],
   } }
 }

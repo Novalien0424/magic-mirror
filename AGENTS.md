@@ -84,6 +84,9 @@ Preserve all 12 IDs.
 12. Main alone loads `OPENAI_API_KEY` from ignored root `.env`, the sole source.
     No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env or
     fallback. Agents never inspect/output its value; failures are metadata-only.
+    Portrait Studio images alone use the owner's ChatGPT sign-in in ignored root
+    `.env.chatgpt` (owner-run `npm run chatgpt:login`, refreshed by Main; ruling
+    2026-10-17), under the same rules.
 
 ## Platform and protected boundaries
 

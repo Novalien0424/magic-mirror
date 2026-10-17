@@ -40,6 +40,9 @@ import type {
   RealtimeRuntimeSession,
 } from '../realtime/realtime-runtime-owner'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
+import type { StudioView } from '../../shared/portrait-studio'
+import { PortraitStudioLayer, studioCoversAvatar } from './portrait-studio-layer'
+import { downscaleStudioImage } from './studio-image'
 import {
   projectAvatarState,
   type AvatarConversationState,
@@ -72,6 +75,7 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'requestMedia'
   | 'findMedia'
   | 'searchYoutube'
+  | 'studio'
   | 'captureCamera'
   | 'memory'
   | 'memoryInput'
@@ -478,6 +482,8 @@ function createMirrorRealtimeRuntimeOwner(
     onFindMedia: bridge.findMedia,
     onSearchYoutube: bridge.searchYoutube,
     onCameraCapture: identity => bridge.captureCamera(identity),
+    onStudioRequest: bridge.studio,
+    prepareStudioImage: url => downscaleStudioImage(url),
     onMemory: bridge.memory,
     onMemoryInput: bridge.memoryInput,
     onMemoryReset: bridge.resetMemorySession,
@@ -842,6 +848,11 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [toolWorking, setToolWorking] = useState(false)
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
   const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
+  const [studioView, setStudioView] = useState<StudioView | null>(null)
+  // Keeps the avatar's fade-in after the portrait frame closes (the media fade variable may be 0).
+  const [studioFade, setStudioFade] = useState(false)
+  const studioCoverRef = useRef(false)
+  const studioFadeTimerRef = useRef<number | undefined>(undefined)
   const [localVideoHasAudio, setLocalVideoHasAudio] = useState<boolean | null>(null)
   const [coverVisual, setCoverVisual] = useState(false)
   const [scenePlaying, setScenePlaying] = useState(false)
@@ -1275,6 +1286,24 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
         sceneVisualControllerRef.current?.handleCommand(command)
         return
       }
+      if (command.type === 'studio_view') {
+        const covered = studioCoversAvatar(command.view)
+        if (studioCoverRef.current && !covered) {
+          setStudioFade(true)
+          window.clearTimeout(studioFadeTimerRef.current)
+          studioFadeTimerRef.current = window.setTimeout(() => setStudioFade(false), 1000)
+        }
+        studioCoverRef.current = covered
+        setStudioView(command.view)
+        return
+      }
+      if (command.type === 'studio_event') {
+        // A session that is starting or rolling over takes no studio event; report the drop (invariant 9).
+        if (realtimeRuntimeOwnerRef.current?.studioEvent?.(command.event, command.identity) !== true && bridge && 'reportRealtimeMetadata' in bridge) {
+          bridge.reportRealtimeMetadata({ kind: 'session', status: 'info', reason: 'studio_event_dropped' })
+        }
+        return
+      }
       if (command.type === 'media_skill_state') {
         realtimeRuntimeOwnerRef.current?.setMediaPlayback?.(command.active)
         if (command.active) {
@@ -1324,10 +1353,13 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
 
   if (view.state === 'offlineLoop') return <OfflineLoopScreen />
 
+  // The studio appears after the wake entrance, never over the entering ritual.
+  const studioShown = view.state === 'active' && presentationPhase === 'awake'
   if (avatarState !== null) {
     return (
       <div className="mirror-presentation" data-mode={presentation.config.mode} data-phase={presentationPhase} data-loading={!presentationLoaded}
-        data-media-video={mediaSkillState.hideAvatar} style={{ '--media-fade-ms': `${mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
+        data-media-video={mediaSkillState.hideAvatar} data-studio-cover={studioShown && studioCoversAvatar(studioView)}
+        style={{ '--media-fade-ms': `${studioFade ? 900 : mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
         <PresentationStage payload={presentation}
           lifecycle={mediaSkillState.active && !mediaSkillState.hideAvatar ? 'active' : view.state} onPhase={phase => {
           presentationPhaseRef.current = phase
@@ -1342,7 +1374,7 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
             if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
           }}>
         <AvatarCanvas
-          paused={mediaSkillState.hideAvatar || coverVisual || presentationPhase === 'inactive'
+          paused={mediaSkillState.hideAvatar || coverVisual || presentationPhase === 'inactive' || (studioShown && studioCoversAvatar(studioView))
             || presentation.config.mode === 'reflective' && presentationPhase === 'asleep' && !mediaSkillState.active}
           model={presentation.model}
           state={presentationPhase === 'entering' ? 'Waking' : presentationPhase === 'exiting' ? 'Suspending' : avatarState}
@@ -1402,6 +1434,7 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
           ◇ 施法中
         </div>}
         {toolWorking && view.state === 'active' && <div className="mirror-working" role="status" aria-label="Working"><span aria-hidden="true">✧</span></div>}
+        {studioShown && <PortraitStudioLayer view={studioView} />}
       </div>
     )
   }

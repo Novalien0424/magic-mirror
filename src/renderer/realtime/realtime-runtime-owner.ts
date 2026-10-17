@@ -187,6 +187,9 @@ export interface RealtimeRuntimeOwner {
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
   readonly setMediaPlayback?: (active: boolean) => void
   readonly claimControlTurn?: (itemId: string) => void
+  /** Forwards Portrait Studio events to the current session, which ignores events for another session. False when no session took it. */
+  readonly studioEvent?: (event: import('../../shared/portrait-studio').StudioSessionEvent,
+    identity: import('../../shared/portrait-studio').StudioEventIdentity) => boolean
   readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
@@ -804,6 +807,11 @@ export function createRealtimeRuntimeOwner(
     dispose,
     interrupt,
     setMediaPlayback,
+    studioEvent: (event: import('../../shared/portrait-studio').StudioSessionEvent, identity: import('../../shared/portrait-studio').StudioEventIdentity) => {
+      if (state !== 'active' || !current?.session.studioEvent) return false
+      current.session.studioEvent(event, identity)
+      return true
+    },
     speakVerbatim,
     claimControlTurn: (itemId: string) => current?.session.claimControlTurn?.(itemId),
     getSnapshot,

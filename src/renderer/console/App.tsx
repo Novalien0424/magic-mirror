@@ -53,6 +53,8 @@ import { HelpButton } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { MediaSkillEditor } from './MediaSkillEditor'
+import { ExperiencesEditor } from './ExperiencesEditor'
+import { StudioLiveControls, StudioStatusPanel } from './StudioStatusPanel'
 import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { LoopVideoPanel } from './LoopVideoPanel'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
@@ -72,6 +74,9 @@ import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
 const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
+/** Avatar settings sections, including Portrait Studio's Experiences. */
+type AvatarSection = ProfileSection
+const AVATAR_SECTIONS: readonly AvatarSection[] = PROFILE_SECTIONS
 const SYSTEM_PAGES = ['Devices', 'Media folders', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 const MODULES = [
   'app',
@@ -1454,7 +1459,7 @@ export function ScenesPanel({
   const [result, setResult] = useState('Edits stay in draft until you publish.')
   const [busy, setBusy] = useState(false)
   const [mediaTestFailed, setMediaTestFailed] = useState(false)
-  const [section, setSection] = useState<ProfileSection>('Persona')
+  const [section, setSection] = useState<AvatarSection>('Persona')
   const showFieldErrors = (fields: readonly ConsoleFieldError[] | undefined, submitted: ConsoleConfigDraftInput): void => {
     const errors = resolveFieldErrors(fields ?? [], submitted, editingId)
     setFieldErrors(errors)
@@ -1779,17 +1784,19 @@ export function ScenesPanel({
         </select></HelpField>
       </header>}
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
-        {PROFILE_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        {AVATAR_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
       </nav>
       {section !== 'Music & video' && section !== 'Memories' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
       <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
-        <p>{section === 'Memories' ? 'What this avatar remembers between conversations.' : section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : 'Changes here can affect every avatar using the resource.'}</p>
+        <p>{section === 'Memories' ? 'What this avatar remembers between conversations.' : section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : section === 'Experiences' ? 'What happens after wake: conversation or Portrait Studio, with its questions and guest list.' : 'Changes here can affect every avatar using the resource.'}</p>
       </div>
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
       {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
+      {visible && section === 'Experiences' && <StudioStatusPanel bridge={bridge} visible={visible} />}
+      {visible && section === 'Experiences' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
@@ -2459,7 +2466,8 @@ export function App(): React.JSX.Element {
         onStartConversation={startConversation}
         onInterrupt={interrupt}
         onDisconnect={disconnect}
-      /></div>
+      /><StudioLiveControls bridge={bridgeRef.current} bridgeAvailable={bridgeAvailable} visible={activePage === 'Mirror'}
+        lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} /></div>
 
       <nav className="console__tabs" aria-label="Console pages">
         {PAGES.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}

@@ -1423,6 +1423,14 @@ void app.whenReady().then(async () => {
       await visualAssetReady
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
       const url = new URL(request.url)
+      if (url.hostname === 'studio') {
+        // Portrait Studio images exist only in Main RAM for the current studio run.
+        const id = decodeURIComponent(url.pathname.slice(1))
+        const image = /^[a-z0-9-]{8,64}$/.test(id) ? sceneRuntimeControl?.studioImage?.(id) : undefined
+        if (!image) return new Response(null, { status: 404 })
+        // CORS like other media responses: the Mirror fetches it to attach the reveal image.
+        return new Response(new Uint8Array(image.bytes), { headers: { 'Content-Type': image.mimeType, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } })
+      }
       if (url.hostname === 'avatar') {
         const [id, ...segments] = decodeURIComponent(url.pathname.slice(1)).split('/')
         if (!/^model-[a-z0-9-]{1,80}$/.test(id)) return new Response(null, { status: 404 })

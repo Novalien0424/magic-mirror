@@ -1,13 +1,16 @@
-import { REALTIME_PROMPTS } from './realtime-prompts'
-import { parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolInstructions, REALTIME_TOOLS } from './realtime-tools'
+import { REALTIME_PROMPTS, renderPrompt } from './realtime-prompts'
+import { parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolInstructions, REALTIME_TOOLS, type RealtimeToolSpec } from './realtime-tools'
 import baseline from '../../resources/testing/raven-prompt-baseline.v1.json' with { type: 'json' }
 import merged from '../../resources/testing/raven-merged-media.v1.json' with { type: 'json' }
 import focused from '../../resources/testing/raven-focused.v1.json' with { type: 'json' }
+import { PORTRAIT_STUDIO } from './portrait-studio-config'
+import { DEFAULT_EXPERIENCE, defaultExperience } from './portrait-studio'
 import { avatarCatalogFor, type AvatarProfile } from './avatar-profiles'
 import { DEFAULT_PRESENTATION } from './presentation'
 import type { MirrorConfig } from './types'
 import { DEFAULT_CLOUD_SEARCH_PHRASE, LEGACY_SLEEP_PHRASE, validSpokenPhrase } from './avatar-commands'
 import { parseMediaSkill, type AvatarMediaSkill } from './media-skill'
+import { parseSessionExperience, sessionExperience, type SessionExperience } from './portrait-studio'
 
 /** Public, operator-authored character configuration, never visitor context. */
 export interface AvatarSessionSettings {
@@ -22,6 +25,8 @@ export interface AvatarSessionSettings {
   readonly cloudSearchPhrase?: string
   readonly spellPhrases?: readonly string[]
   readonly mediaSkill?: AvatarMediaSkill
+  /** Experience modes without the guest list, which stays in Main. */
+  readonly experience?: SessionExperience
 }
 
 export function avatarSessionSettings(config: MirrorConfig): Readonly<AvatarSessionSettings> {
@@ -38,16 +43,18 @@ export function avatarProfileSessionSettings(avatar: AvatarProfile, wakePhrase: 
     sleepPhrase: avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE,
     cloudSearchPhrase: avatar.cloudSearchPhrase ?? DEFAULT_CLOUD_SEARCH_PHRASE,
     spellPhrases: Object.freeze(avatar.spells.filter(s => s.enabled).map(s => s.phrase)),
-    ...(avatar.mediaSkill ? { mediaSkill: structuredClone(avatar.mediaSkill) } : {}) })
+    ...(avatar.mediaSkill ? { mediaSkill: structuredClone(avatar.mediaSkill) } : {}),
+    ...(avatar.experience ? { experience: sessionExperience(avatar.experience) } : {}) })
 }
 
 export function parseAvatarSessionSettings(value: unknown): AvatarSessionSettings | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
   const limits = { name: 80, personality: 12000, speakingStyle: 2000, wakeGreeting: 500, sleepFarewell: 500 }
-  const optional = ['wakePhrase', 'sleepPhrase', 'cloudSearchPhrase', 'spellPhrases', 'mediaSkill', 'qaPromptVariant'].filter(key => key in record)
+  const optional = ['wakePhrase', 'sleepPhrase', 'cloudSearchPhrase', 'spellPhrases', 'mediaSkill', 'qaPromptVariant', 'experience'].filter(key => key in record)
   if ('qaPromptVariant' in record && !['baseline', 'trimmed', 'merged', 'focused'].includes(record.qaPromptVariant as string)) return null
   if ('mediaSkill' in record && !parseMediaSkill(record.mediaSkill)) return null
+  if ('experience' in record && !parseSessionExperience(record.experience)) return null
   if (Object.keys(record).length !== Object.keys(limits).length + optional.length) return null
   for (const key of ['wakePhrase', 'sleepPhrase', 'cloudSearchPhrase']) if (key in record && !validSpokenPhrase(record[key])) return null
   if ('spellPhrases' in record && (!Array.isArray(record.spellPhrases) || record.spellPhrases.length > 128
@@ -65,6 +72,7 @@ export function parseAvatarSessionSettings(value: unknown): AvatarSessionSetting
     ...('spellPhrases' in record ? { spellPhrases: Object.freeze([...(record.spellPhrases as string[])]) } : {}),
     ...('mediaSkill' in record ? { mediaSkill: parseMediaSkill(record.mediaSkill)! } : {}),
     ...('qaPromptVariant' in record ? { qaPromptVariant: record.qaPromptVariant } : {}),
+    ...('experience' in record ? { experience: parseSessionExperience(record.experience)! } : {}),
   }) as AvatarSessionSettings
 }
 
@@ -75,10 +83,28 @@ export const SLEEP_TOOL_DESCRIPTION = buildSleepToolDescription(LEGACY_SLEEP_PHR
 const baselineTools = parseRealtimeToolCatalog(baseline.tools)
 const mergedTools = parseRealtimeToolCatalog(merged.tools)
 const focusedTools = parseRealtimeToolCatalog(focused.tools)
-export function avatarRealtimeTools(avatar?: AvatarSessionSettings, preview = false) {
+/** Conversation-agent tools; the studio entry tool exists only when visitors may ask for a portrait. */
+export function avatarRealtimeTools(avatar?: AvatarSessionSettings, preview = false): readonly RealtimeToolSpec[] {
+  // Main treats a profile without saved experiences as the defaults; so does the prompt.
+  const visitorMayRequest = (avatar?.experience ?? DEFAULT_EXPERIENCE).visitorMayRequest
   return resolveRealtimeTools(avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, preview,
     avatar?.qaPromptVariant === 'baseline' ? baselineTools : avatar?.qaPromptVariant === 'merged' ? mergedTools
       : avatar?.qaPromptVariant === 'focused' ? focusedTools : REALTIME_TOOLS)
+    .filter(spec => spec.handler !== 'start_portrait_studio' || visitorMayRequest)
+}
+export function studioToolSpecs(avatar: AvatarSessionSettings): readonly RealtimeToolSpec[] {
+  return resolveRealtimeTools(avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE, false, REALTIME_TOOLS, 'studio')
+}
+
+/** Portrait Studio agent instructions: persona plus the studio script; no private memory or media tools. */
+export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
+  const studio = avatar.experience?.studio ?? defaultExperience().studio
+  const script = [PORTRAIT_STUDIO.agent.studio,
+    `Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
+    `After the name there are ${studio.questions.length} portrait questions; the application gives each one in the tool guidance.`].join('\n')
+  return renderPrompt('session', { name: avatar.name, personality: avatar.personality,
+    speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,
+    toolInstructions: `${realtimeToolInstructions(studioToolSpecs(avatar))}\n\n${script}` })
 }
 
 /** The exact application-controlled system instructions used by Realtime. */

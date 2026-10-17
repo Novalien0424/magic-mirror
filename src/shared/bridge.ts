@@ -106,6 +106,8 @@ export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
   | Readonly<{ type: 'media_skill_state'; active: boolean; hideAvatar: boolean; fadeMs: number }>
+  | Readonly<{ type: 'studio_view'; view: import('./portrait-studio').StudioView | null }>
+  | Readonly<{ type: 'studio_event'; event: import('./portrait-studio').StudioSessionEvent; identity: import('./portrait-studio').StudioEventIdentity }>
   | Readonly<{ type: 'stop_avatar_test' }>
   | Readonly<{ type: 'audio_devices'; preferences: import('./audio-devices').AudioPreferences }>
   | Readonly<{ type: 'refresh_audio_devices' }>
@@ -256,6 +258,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
   requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./media-skill').MediaSkillResult>
+  studio?(request: import('./portrait-studio').StudioRequest, identity: RealtimeSessionIdentity): Promise<import('./portrait-studio').StudioReply>
   findMedia?(request: import('./media-discovery').MediaDiscoveryRequest, identity: RealtimeSessionIdentity): Promise<import('./media-discovery').MediaDiscoveryReply>
   searchYoutube?(request: import('./youtube-search').YoutubeSearchRequest, identity: RealtimeSessionIdentity): Promise<import('./youtube-search').YoutubeSearchReply>
   captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>
@@ -312,6 +315,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>>
   finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>>
   cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>
+  studio?(command: import('./portrait-studio').StudioConsoleCommand): Promise<ConsoleResponse<import('./portrait-studio').StudioConsoleResult>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

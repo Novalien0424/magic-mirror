@@ -168,7 +168,7 @@ describe('structured Realtime tool catalog', () => {
   it('validates media arguments and serializes all native tools through the SDK', async () => {
     const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
     const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted', memory: async () => 'rejected',
-      find_media: async () => 'accepted', search_youtube: async () => 'accepted', play_youtube: async () => 'accepted' }, vi.fn())
+      find_media: async () => 'accepted', search_youtube: async () => 'accepted', play_youtube: async () => 'accepted', start_portrait_studio: async () => 'accepted' }, vi.fn())
     const play = tools.find(t => t.name === 'play_media')!
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))

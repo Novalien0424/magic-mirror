@@ -92,6 +92,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit'; output: string; backgroundMediaMuted: boolean; maxActivePaths: number; phraseMatches: boolean; cleanSourceDetections?: number; sourceDurationMs?: number }[] = []
   const spellRecognition: Record<string, unknown>[] = []
   const controlSpeech: Record<string, unknown>[] = []
+  // Portrait Studio metadata: phases, event names, Main reasons and timings; never names or answers.
+  const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number }
+    = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
   const evaluate = <T>(source: string) => input.mirror.webContents.executeJavaScript(`(async()=>{${source}})()`, true) as Promise<T>
@@ -115,7 +118,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const metadata = async () => {
       const observation = installed ? await observe().catch(() => null) : null
       const calls = observation?.tools.filter(c => c.stage === name && c.direction === 'call').map(c =>
-        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'capture_camera', 'return_to_dormant'].includes(c.name ?? '') ? c.name!
+        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'capture_camera', 'return_to_dormant',
+          'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit'].includes(c.name ?? '') ? c.name!
           : c.name === 'memory' && ['identify', 'remember', 'recall', 'forget', 'policy', 'temporary'].includes(String(c.args?.action)) ? 'memory.' + String(c.args?.action) : 'unknown_tool') ?? []
       const records = observation?.records.filter(r => r.stage === name) ?? []
       const heard = records.filter(r => r.role === 'visitor').map(r => r.text).join(' '), spoken = spokenTexts.get(name)
@@ -332,9 +336,10 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const selection = process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? ''
   const persist = (running: boolean) => writeFile(join(input.outputDir, '..', 'raven-results.json'), JSON.stringify({ selection: selection || 'all', running, passed: !running && accepted,
     elapsedMs: Date.now() - started, results, quality, qualityDiagnostics, capabilityQuality, acousticEvidence, spellRecognition, controlSpeech, protocol, toolTimingEvidence, screenshots,
+    ...(selection === 'portrait_studio' ? { studioEvidence } : {}),
     route: physical ? 'mac_speaker_jabra_microphone_real_webrtc_and_native_camera' : 'synthetic_audio_real_webrtc_asr_tools_ipc_playback',
     transcriptRetention: 'none', humanAcousticAcceptance: 'not_executed' }, null, 2))
-  if (selection && !['additional_capabilities', 'camera', 'media_stop'].includes(selection) && !RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)) throw Error('raven_qa_scenario_invalid')
+  if (selection && !['additional_capabilities', 'camera', 'media_stop', 'portrait_studio'].includes(selection) && !RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)) throw Error('raven_qa_scenario_invalid')
   // Character stress has its own selected run; retain the full suite's bounded
   // budget and case mix instead of silently adding another ten spoken turns.
   const scenarios = [...RAVEN_CONVERSATION_SCENARIOS.filter(s => s.id !== 'identity_denial'
@@ -357,7 +362,19 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       : 'Look through the camera. What two colored shapes can you see, and which one is on the left?') - 1,
     bargePrompt: texts.push('Tell me three different ways to prepare for a small exhibition, and explain the advantages of each.') - 1,
     bargeInterrupt: texts.push('Stop there. I changed my mind. Please give me just one small step I can finish in ten minutes.') - 1,
-  }
+    ...(selection === 'portrait_studio' ? {
+      studioRequest: texts.push('可以幫我畫一張畫像嗎？') - 1,
+      studioName: texts.push('我叫王曉明。') - 1,
+      studioConfirm: texts.push('對，就是這個名字。') - 1,
+      studioAnswer1: texts.push('我想變成一隻貓頭鷹。') - 1,
+      studioAnswer2: texts.push('夜晚的海邊。') - 1,
+      studioAnswer3: texts.push('像起霧的早晨，很安靜。') - 1,
+      studioAnswer4: texts.push('深藍色。') - 1,
+      studioChange: texts.push('可以把海邊換成下雪的森林嗎？') - 1,
+      studioThanks: texts.push('很好，我很喜歡，謝謝你。') - 1,
+      studioAfter: texts.push('今天好像有點冷，你喜歡冬天嗎？') - 1,
+    } : {}),
+  } as Record<string, number>
   const model = (await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
   const identity = new RavenMemoryQaIdentity()
   let memoryName: string = RAVEN_SYNTHETIC_VISITORS.mira.name
@@ -661,6 +678,90 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         })
       }
       await check('media_stop_release', stop)
+    }
+    if (selection === 'portrait_studio') {
+      // Visitor-started studio with real provider dialogue, real Main painting on the
+      // owner's ChatGPT plan, reveal, one change, keepsake and return to conversation.
+      await evaluate(`const q=window.__ravenQa;q.studio=[];q.unsubscribeStudio=window.magicMirror.onAvatarControl(c=>{
+        if(c.type==='studio_view')q.studio.push({stage:q.stage,at:Date.now(),phase:c.view?.phase??null});
+        if(c.type==='studio_event')q.studio.push({stage:q.stage,at:Date.now(),event:c.event.event})})`)
+      const studio = () => evaluate<{ stage: string; at: number; phase?: string | null; event?: string }[]>('return window.__ravenQa.studio')
+      const phase = async () => (await studio()).filter(s => 'phase' in s).at(-1)?.phase ?? null
+      const readyEvents = async () => (await studio()).filter(s => s.event === 'ready').length
+      const calls = async (stage: string) => (await observe()).tools.filter(c => c.stage === stage && c.direction === 'call').map(c => c.name)
+      const settled = async () => { const s = await state(); return !s.active && !s.audio && Date.now() - s.last > 1800 }
+      const reveals = () => evaluate<number>('return window.__ravenQa.studioReveals')
+      const shot = async (name: string) => { await capture(input.mirror, input.outputDir, `studio-${name}.png`); screenshots++ }
+      const studioStarted = Date.now()
+      const turn = async (index: number, stage: string, tool: string) => {
+        await speak(index, stage)
+        if (!(await calls(stage)).includes(tool)) throw Error('raven_qa_studio_' + tool + '_missing')
+      }
+      const ready = await check('studio_start', start)
+      const entered = ready && await check('studio_request', async () => {
+        await turn(extra.studioRequest!, 'studio_request', 'start_portrait_studio')
+        await wait(async () => await phase() === 'name', 'studio_name_phase', 10000)
+        await shot('name')
+      })
+      const named = entered && await check('studio_name', async () => {
+        await turn(extra.studioName!, 'studio_name', 'studio_set_name')
+        // The avatar reads the name back first; it may also accept a clear name at once.
+        if (await phase() !== 'question') await turn(extra.studioConfirm!, 'studio_confirm', 'studio_set_name')
+        await wait(async () => await phase() === 'question', 'studio_question_phase', 10000)
+        await shot('question')
+      })
+      let answered = named
+      for (const [i, key] of (['studioAnswer1', 'studioAnswer2', 'studioAnswer3', 'studioAnswer4'] as const).entries()) {
+        if (!answered) break
+        answered = await check(`studio_answer_${i + 1}`, async () => turn(extra[key]!, `studio_answer_${i + 1}`, 'studio_answer'))
+      }
+      const painting = answered && await check('studio_painting', async () => {
+        await evaluate(`window.__ravenQa.stage='studio_painting'`)
+        await wait(async () => ['painting', 'reveal'].includes(await phase() ?? ''), 'studio_painting_phase', 10000)
+        if (await phase() === 'painting') await shot('painting')
+      })
+      const revealed = painting && await check('studio_reveal', async () => {
+        await evaluate(`window.__ravenQa.stage='studio_reveal'`)
+        await wait(async () => await readyEvents() >= 1, 'studio_image_ready', 240000)
+        await wait(async () => await reveals() >= 1, 'studio_reveal_response', 60000)
+        await wait(settled, 'studio_reveal_settled', 60000)
+        const observation = await observe()
+        if (!observation.records.some(r => r.stage === 'studio_reveal' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_reveal_silent')
+        await shot('reveal')
+      })
+      const revised = revealed && await check('studio_change', async () => {
+        await turn(extra.studioChange!, 'studio_change', 'studio_revise')
+        await wait(async () => await readyEvents() >= 2, 'studio_revision_ready', 240000)
+        await wait(async () => await reveals() >= 2, 'studio_second_reveal', 60000)
+        await wait(settled, 'studio_second_reveal_settled', 60000)
+        await shot('revision')
+      })
+      const finished = revised && await check('studio_finish', async () => {
+        // The final reveal asks the avatar to finish; a thank-you finishes it otherwise.
+        if (await phase() !== 'keepsake') await turn(extra.studioThanks!, 'studio_finish', 'studio_finish')
+        await wait(async () => await phase() === 'keepsake', 'studio_keepsake', 15000)
+        await shot('keepsake')
+        await wait(async () => (await studio()).some(s => s.event === 'keepsake_done'), 'studio_keepsake_done', 330000)
+        await wait(async () => await phase() === null, 'studio_closed', 10000)
+      })
+      if (finished) await check('studio_after', async () => {
+        await speak(extra.studioAfter!, 'studio_after')
+        const observation = await observe()
+        if (observation.tools.some(c => c.stage === 'studio_after' && c.direction === 'call' && String(c.name).startsWith('studio_'))) throw Error('raven_qa_studio_tools_after_exit')
+        if (!observation.records.some(r => r.stage === 'studio_after' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_no_followup')
+        if (!(await evaluate<number>('return window.__ravenQa.deletes.length'))) throw Error('raven_qa_studio_history_kept')
+        if (events(studioStarted).some(e => e.reason === 'memory_saved')) throw Error('raven_qa_studio_memory_saved')
+      })
+      const timeline = await studio()
+      studioEvidence.phases = timeline.filter(s => 'phase' in s).map(s => s.phase ?? null)
+      studioEvidence.events = timeline.flatMap(s => s.event ? [s.event] : [])
+      studioEvidence.main = events(studioStarted).filter(e => e.event === 'portrait_studio' && typeof e.reason === 'string')
+        .map(e => ({ reason: e.reason as string, status: e.status, ...(typeof e.duration_ms === 'number' ? { durationMs: e.duration_ms } : {}) }))
+      studioEvidence.reveals = await reveals()
+      studioEvidence.deletedItems = await evaluate<number>('return window.__ravenQa.deletes.length')
+      studioEvidence.imagesAttached = await evaluate<number>(`return window.__ravenQa.images.filter(i=>i.stage.startsWith('studio_')).length`)
+      await evaluate('window.__ravenQa.unsubscribeStudio?.()')
+      await check('studio_release', stop)
     }
     if (!selection || ['additional_capabilities', 'camera'].includes(selection)) {
     if (physical && selection === 'camera') await check('camera_asleep_released', async () => {

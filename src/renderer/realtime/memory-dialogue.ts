@@ -24,6 +24,8 @@ export class MemoryDialogue {
   private languageRevision = 0
   private timer?: ReturnType<typeof setTimeout>
   private update?: { instructions: string; automatic: boolean; resolve(): void; reject(): void; timer: ReturnType<typeof setTimeout> }
+  /** Last successfully installed brief; an agent swap (Portrait Studio) resends base instructions. */
+  private installed?: string
   constructor(private readonly options: Options) {}
   get active(): boolean { return this.phase !== 'idle' && this.phase !== 'closed' }
   observeVisitorSentence(text: string): void {
@@ -35,11 +37,11 @@ export class MemoryDialogue {
     this.options.send({ type: 'conversation.item.create', item: { id: this.languageItem, type: 'message', role: 'system',
       content: [{ type: 'input_text', text: REALTIME_PROMPTS.languageHints[language] }] } })
   }
-  private configure(automatic: boolean, state = ''): Promise<void> {
+  private configure(automatic: boolean, state = ''): Promise<string> {
     const instructions = `${this.options.baseInstructions}\n\n${state}\n\n${REALTIME_PROMPTS.memoryRevision} ${++this.revision}`
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.update = undefined; reject(new Error('memory_state_unacknowledged')) }, 3000)
-      this.update = { instructions, automatic, resolve, reject: () => reject(new Error('memory_state_cancelled')), timer }
+      this.update = { instructions, automatic, resolve: () => resolve(instructions), reject: () => reject(new Error('memory_state_cancelled')), timer }
       this.options.send({ type: 'session.update', session: { type: 'realtime', instructions,
         audio: { input: { turn_detection: { ...this.options.turnDetection, create_response: automatic } } } } })
     })
@@ -70,6 +72,12 @@ export class MemoryDialogue {
     else if (this.active) this.fail()
   }
   cancel(): void { if (this.active) this.fail() }
+  /** Re-send the installed brief after another owner replaced the session instructions. */
+  reapply(): void {
+    if (this.phase === 'closed' || this.active || !this.installed) return
+    this.options.send({ type: 'session.update', session: { type: 'realtime', instructions: this.installed,
+      audio: { input: { turn_detection: { ...this.options.turnDetection, create_response: true } } } } })
+  }
   async answer(itemId: string, reply: MemoryReply): Promise<void> {
     if (this.phase === 'receipting') {
       if (itemId === this.question?.answerItemId && !this.earlyAnswer) this.earlyAnswer = { itemId, reply }
@@ -83,8 +91,9 @@ export class MemoryDialogue {
       const confirmed = reply.code === 'memory_identity_confirmed'
       const state = confirmed ? buildMemoryState(reply) : REALTIME_PROMPTS.memoryUnconfirmed
       if (new TextEncoder().encode(state).length > 6000) throw new Error('memory_state_oversized')
-      await this.configure(true, state)
+      const installed = await this.configure(true, state)
       if (this.phase !== 'applying') return
+      this.installed = installed
       clearTimeout(this.timer); this.phase = 'idle'; this.question = undefined
       if (confirmed) this.options.report('memory_brief_installed')
       this.options.send({ type: 'response.create', response: confirmed ? buildMemoryAcknowledgment(reply, this.options.speakingStyle)

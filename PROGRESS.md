@@ -62,6 +62,11 @@ microphone meter returned all-zero samples before and during playback, so it can
 prove acoustic output. USB reconnect and cold-login acceptance remain manual.
 No provider dialogue was needed for this operator mode. No phase acceptance changes.
 
+**Portrait Studio (branch `feature/portrait-studio`, 2026-10-17):** rebased onto
+`field/macmini-deploy`; typecheck, build and Node suites checked; live image
+probe passed with `gpt-image-2.5-flare`. Electron QA and a spoken visit remain.
+[Plan and evidence](docs/superpowers/plans/2026-10-17-portrait-studio.md).
+
 Delivery branch is `field/macmini-deploy`, following baseline `9197676`.
 Operator controls were committed/pushed as `46e005d`; the mouse change and its
 saved setup/evidence are included in this delivery. Leave runtime and device

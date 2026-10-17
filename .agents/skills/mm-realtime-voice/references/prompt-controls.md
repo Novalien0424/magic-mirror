@@ -48,6 +48,13 @@ behavior to the current wiring.
   audition are out-of-band responses (`conversation: 'none'`, `input: []`,
   `tool_choice: 'none'`, `src/shared/realtime-prompts.ts`), never persistent
   user messages.
+- **Portrait Studio (2026-10-17).** Catalog `availability` is `conversation`,
+  `studio` or `all`. `start_portrait_studio` swaps the live session to a studio
+  agent (`session.updateAgent`) with only `studio_*` tools plus sleep; Main
+  (`src/main/studio/`) owns steps, answers, images, generation and the
+  studio-default start. Studio turns are control turns; studio items are deleted
+  on exit. Reveal/failure speech waits for an idle session. Image model and
+  studio text: `resources/config/portrait-studio.v1.json`.
 - Catalog edits need rebuild/restart. Console **Effective realtime prompt &
   tool** uses the same draft/published builders; every model-visible path belongs
   in that inspector.

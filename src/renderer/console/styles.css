@@ -1024,3 +1024,37 @@ th {
 .console__publish-bar[hidden] { display: none; }
 .scene-undo { position: sticky; top: .5rem; z-index: 5; padding: .7rem; border: 1px solid #7791aa; border-radius: .5rem; background: #1d2938; }
 input[aria-invalid="true"] { border-color: #e8a394; }
+/* ---- Portrait Studio: Experiences editor, ChatGPT status panel, live controls ---- */
+.experiences-editor { display: grid; gap: .25rem; }
+.experiences-editor .field-error::before { content: '⚠ '; }
+.experiences-editor__status { margin: .5rem 0; padding: .6rem .8rem; border: 1px solid #3a6b61; border-radius: 6px; color: #9ce2c8; }
+.experiences-editor__status--attention { border-color: #6b514d; color: #ffb4a2; }
+.experiences-editor__questions { list-style: none; margin: .75rem 0; padding: 0; display: grid; gap: .75rem; }
+.experiences-editor__question { min-width: 0; padding: .75rem; border: 1px solid #304957; border-radius: .6rem; }
+.experiences-editor__question--name { border-style: dashed; margin-top: .75rem; }
+.experiences-editor__question-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .5rem; }
+.experiences-editor__question-head .console__muted { margin: 0; }
+.experiences-editor__arrange { display: flex; flex-wrap: wrap; gap: .4rem; margin-left: auto; }
+.experiences-editor__guests { grid-column: 1 / -1; }
+.experiences-editor__guests textarea { width: 100%; box-sizing: border-box; font-family: inherit; }
+.studio-status { margin: 1rem 0; padding: 1rem; border: 1px solid #354951; border-radius: 10px; }
+.studio-status__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.studio-status__heading h4 { margin: 0; font-size: 1rem; }
+.studio-status__auth { margin: .75rem 0 .25rem; }
+.studio-status__action { margin: .25rem 0; color: #d9e6f2; }
+.studio-status__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .35rem 1rem; margin: .75rem 0; }
+.studio-status__facts dt { color: #bbc9d7; }
+.studio-status__facts dd { margin: 0; overflow-wrap: anywhere; }
+.studio-status__selectable { user-select: text; -webkit-user-select: text; overflow-wrap: anywhere; font-family: ui-monospace, monospace; }
+.studio-status__test { margin-top: .75rem; }
+.studio-status__result { margin: .5rem 0 0; }
+.studio-status__result--failed { color: #ffb4a2; }
+.studio-status__preview { margin: .75rem 0 0; }
+.studio-status__preview img { display: block; max-width: min(100%, 360px); height: auto; border: 1px solid #354951; border-radius: 8px; }
+.studio-status__preview figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .5rem; color: #bbc9d7; }
+.studio-live__result:empty { padding: 0; border: 0; }
+@media (max-width: 700px) {
+  .studio-status__facts { grid-template-columns: minmax(0, 1fr); }
+  .experiences-editor__arrange { margin-left: 0; }
+}
+/* ---- end Portrait Studio ---- */

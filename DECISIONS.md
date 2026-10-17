@@ -1,5 +1,36 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — Portrait Studio mode (user rulings)
+
+Design: [plan](docs/superpowers/plans/2026-10-17-portrait-studio.md) and the
+owner-reviewed design page. Branch `feature/portrait-studio`.
+
+- **Mode.** A second interactive mode: Raven asks the visitor's name, then a
+  configurable number of questions (1–8), paints one portrait, reveals it on the
+  glass with the name, and offers a bounded number of changes.
+- **Default mode and start script.** Each avatar's default mode after wake
+  (Conversation or Portrait Studio) is set in the Console. Each mode has its own
+  start script; Conversation's is the existing wake greeting.
+- **Image route.** Images use the owner's ChatGPT plan through the Codex backend
+  image endpoints (the route OpenClaw and Hermes use), not an API-key call. The
+  owner signs in on this Mac; the session is saved like `.env` in ignored root
+  `.env.chatgpt` (invariant 12 amended). The route is unpublished by OpenAI and
+  may change; failures degrade visibly.
+- **Model.** Test candidates live and prefer `gpt-image-2.5-flare`. The chosen ID
+  lives only in `resources/config/portrait-studio.v1.json` (invariant 11).
+  Live probe the same day: flare, sunburst and `gpt-image-2` all work on the
+  owner's plan; flare medium took 21.7 s and its edit 26.1 s. Flare is selected.
+- **Name and memory.** The visitor's name is always asked first, is only a
+  caption, and is never added to memory. Studio turns are control turns.
+- **Guest list.** Operators may enter guest names; Main shortlists up to three by
+  pronunciation and the model chooses and confirms with the visitor. The list
+  stays in Main.
+- **Keepsake.** No QR or download. A printer skill may come later; keep the
+  output seam flexible. Images stay in RAM.
+- **Limits.** No application generation limit; plan limits degrade visibly.
+- **Questions.** The proposed default questions are approved and remain
+  editable in the Console, including how many.
+
 ## 2026-10-17 — Portrait Console mouse and remote desktop (owner confirmed)
 
 The Xiaomi Wireless Mouse Lite 3 receiver must remain in the TV board. Forward

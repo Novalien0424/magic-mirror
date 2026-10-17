@@ -1,5 +1,7 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
+import { registerStudioIpc } from './studio/studio-ipc'
+import { defaultExperience } from '../shared/portrait-studio'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
 import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
 import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
@@ -188,6 +190,7 @@ export interface RegisterIpcHandlersOptions {
     readonly noteSceneActivity?: BootRuntime['noteSceneActivity']
     readonly noteRealtimeActivity?: BootRuntime['noteRealtimeActivity']
     readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
+    readonly subscribe?: BootRuntime['subscribe']
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -202,6 +205,8 @@ export interface RegisterIpcHandlersOptions {
 
 export interface SceneRuntimeControl {
   stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void>
+  /** RAM-only Portrait Studio image for the media protocol; undefined when unknown or closed. */
+  studioImage?(id: string): { readonly bytes: Buffer; readonly mimeType: string } | undefined
 }
 
 export type SenderAuthResult =
@@ -1302,6 +1307,27 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason })
     },
   })
+  const studio = registerStudioIpc({
+    ipcMain,
+    authorize: (event, kind) => {
+      const auth = authorizeSender(event, kind, windows)
+      if (!auth.ok) senderRejected(telemetry, auth.reason)
+      return auth.ok
+    },
+    payloadRejected: () => payloadRejected(telemetry),
+    snapshot: () => runtime.snapshot(),
+    subscribe: listener => runtime.subscribe?.(listener),
+    experience: async () => {
+      const config = await runtime.getPublishedSceneConfigForRuntime?.()
+      const catalog = config?.avatarCatalog
+      return config ? catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience() : null
+    },
+    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
+    stopMedia: () => { sleepingMedia = false; mediaSkill.stop('media_stopped_for_studio') },
+    report: (reason, status, durationMs) => emit(telemetry, { module: 'avatar', event: 'portrait_studio', source: 'runtime', status, reason,
+      ...(durationMs === undefined ? {} : { duration_ms: Math.round(durationMs) }) }),
+  })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0
   let sceneOperations: Promise<unknown> = Promise.resolve()
@@ -1936,6 +1962,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return enqueueSceneOperation(async () => {
       const loaded = await loadSceneRuntime()
       if (loaded === null) return unavailableSceneResult()
+      // A spell replaces the studio as it replaces media; nothing plays under the portrait overlay.
+      studio.close('studio_replaced_by_scene')
       mediaSkill.stop('media_replaced_by_scene')
       return loaded.value.triggerSpell({
         spellId: readProperty(request, 'spellId') as string,
@@ -2151,6 +2179,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const loaded = await loadSceneRuntime(isDraft ? 'draft' : 'published')
       if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+      studio.close('studio_replaced_by_scene')
       mediaSkill.stop('media_replaced_by_scene')
       const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
       return { ok: true, value: result }
@@ -2566,7 +2595,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
 
   return Object.freeze({
+    studioImage: (id: string) => studio.image(id),
     async stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void> {
+      studio.close('studio_session_ended')
       await enqueueSceneOperation(async () => {
         if (!options?.preserveSleepingMedia || !sleepingMedia) {
           sleepingMedia = false

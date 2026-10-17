@@ -10,7 +10,7 @@ export type RealtimeToolHandler = (arguments_: Readonly<Record<string, unknown>>
   code?: ToolResultCode;
   next?: 'ask' | 'explain' | 'play_media' | 'search_youtube'; playback?: import('../../shared/media-skill').MediaSkillRequest;
   memory?: import('../../shared/memory').MemoryReply; media?: import('../../shared/media-discovery').MediaDiscoveryReply;
-  youtube?: import('../../shared/youtube-search').YoutubeSearchReply }>
+  youtube?: import('../../shared/youtube-search').YoutubeSearchReply; studio?: import('../../shared/portrait-studio').StudioReply }>
 export type ToolFailureReason = 'tool_arguments_rejected' | 'tool_execution_failed'
 
 /** Bind only code-authorized handlers. Raw JSON schemas alone do not validate SDK input. */
@@ -23,20 +23,25 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     const validator = z.fromJSONSchema(spec.parameters)
     const result = (outcome: ToolOutcome, memory?: import('../../shared/memory').MemoryReply,
       media?: import('../../shared/media-discovery').MediaDiscoveryReply, youtube?: import('../../shared/youtube-search').YoutubeSearchReply,
-      failureCode?: ToolResultCode, next?: 'ask' | 'explain' | 'play_media' | 'search_youtube', playback?: import('../../shared/media-skill').MediaSkillRequest) => {
+      failureCode?: ToolResultCode, next?: 'ask' | 'explain' | 'play_media' | 'search_youtube', playback?: import('../../shared/media-skill').MediaSkillRequest,
+      studio?: import('../../shared/portrait-studio').StudioReply) => {
       // Speech routing stays in application code, not in model-visible results.
       // The confirmation receipt belongs to the application-owned dialogue.
       const { confirmation: _confirmation, ...modelMemory } = memory ?? {}
       const { status, code } = spec.results[outcome]
       const payload = { status, code: failureCode ?? code, ...(memory ? { memory: modelMemory } : {}), ...(media ? { media } : {}), ...(youtube ? { youtube } : {}), ...(next ? { next } : {}), ...(playback ? { playback } : {}),
+        // Studio guidance is application/operator text; the guest list only ever appears as ≤3 matched candidates.
+        ...(studio ? { studio: { code: studio.code, ...(studio.candidates ? { candidates: studio.candidates } : {}) }, ...(studio.next ? { next: studio.next } : {}) } : {}),
         ...(spec.handler === 'find_media' && media?.code === 'media_discovery_no_match'
           ? { next: next === 'search_youtube' ? REALTIME_PROMPTS.mediaOnlineSearch : REALTIME_PROMPTS.mediaNoMatch } : {}),
         ...(failureCode === 'media_source_restricted' || failureCode === 'media_source_unconfirmed' ? { next: REALTIME_PROMPTS.mediaNoMatch } : {}),
         ...(memory?.code === 'memory_action_not_requested' ? { next: REALTIME_PROMPTS.memoryActionNotRequested } : {}),
         ...(memory?.code === 'memory_identity_required' ? { next: REALTIME_PROMPTS.memoryLocked } : {}) }
       // A pending identity question speaks next; a model reply would cancel it.
+      // Duplicate or stale studio replies stay silent.
       const responds = !media?.code.endsWith('_stale') && !youtube?.code.endsWith('_stale') && memory?.code !== 'memory_result_stale'
-        && memory?.code !== 'memory_confirmation_required' && memory?.code !== 'memory_confirmation_pending' && (spec.completion === 'response'
+        && memory?.code !== 'memory_confirmation_required' && memory?.code !== 'memory_confirmation_pending'
+        && !(studio && /_(?:duplicate|stale)$/.test(studio.code)) && (spec.completion === 'response'
         || spec.completion === 'background_on_success' && (next || outcome === 'failed' || outcome === 'rejected'
           || outcome === 'ignored' && spec.results.ignored.speech === 'model')
         || spec.completion === 'background_on_reset' && !memoryNeedsReset(memory?.code ?? ''))
@@ -68,7 +73,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
           const outcome = typeof value === 'string' ? value : value.outcome
           if (!Object.hasOwn(spec.results, outcome)) throw new Error('invalid_tool_outcome')
           finish(outcome)
-          return typeof value === 'string' ? result(outcome) : result(outcome, value.memory, value.media, value.youtube, value.code, value.next, value.playback)
+          return typeof value === 'string' ? result(outcome) : result(outcome, value.memory, value.media, value.youtube, value.code, value.next, value.playback, value.studio)
         } catch { onFailure('tool_execution_failed'); finish('failed'); return result('failed') }
       },
     }

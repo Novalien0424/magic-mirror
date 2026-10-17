@@ -10,7 +10,8 @@ export interface RealtimeToolSpec {
   readonly name: string
   readonly handler: string
   readonly enabled: boolean
-  readonly availability: 'conversation'
+  /** Which agent offers the tool: the conversation agent, the Portrait Studio agent, or both. */
+  readonly availability: 'conversation' | 'studio' | 'all'
   readonly routing: 'model_intent'
   readonly description: string
   readonly parameters: ParameterSchema & { type: 'object'; properties: Record<string, ParameterSchema>; required: string[]; additionalProperties: false }
@@ -56,7 +57,7 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
   for (const spec of value.tools) {
     if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
       || !text(spec.name) || !/^[a-z][a-z0-9_]{0,63}$/.test(spec.name) || names.has(spec.name)
-      || !text(spec.handler) || typeof spec.enabled !== 'boolean' || spec.availability !== 'conversation'
+      || !text(spec.handler) || typeof spec.enabled !== 'boolean' || !['conversation', 'studio', 'all'].includes(spec.availability as string)
       || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success', 'background_on_reset'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
     names.add(spec.name)
     const parameters = spec.parameters, rules = spec.rules, results = spec.results
@@ -75,10 +76,11 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
 export const REALTIME_TOOLS = parseRealtimeToolCatalog(source)
 
 /** Templates are rendered once; inserted operator values are never reinterpreted. */
-export function resolveRealtimeTools(sleepPhrase: string, preview = false, catalog = REALTIME_TOOLS): readonly RealtimeToolSpec[] {
+export function resolveRealtimeTools(sleepPhrase: string, preview = false, catalog = REALTIME_TOOLS,
+  agent: 'conversation' | 'studio' = 'conversation'): readonly RealtimeToolSpec[] {
   if (preview) return []
   const render = (value: string) => value.replace(/\{\{sleepPhrase\}\}/g, () => JSON.stringify(sleepPhrase))
-  return catalog.tools.filter(spec => spec.enabled).map(spec => freeze({ ...spec, description: render(spec.description),
+  return catalog.tools.filter(spec => spec.enabled && (spec.availability === 'all' || spec.availability === agent)).map(spec => freeze({ ...spec, description: render(spec.description),
     rules: { useWhen: render(spec.rules.useWhen), avoidWhen: render(spec.rules.avoidWhen), speech: render(spec.rules.speech) } }))
 }
 
