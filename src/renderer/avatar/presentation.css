@@ -36,7 +36,7 @@
 @keyframes avatar-retreat { 0% { opacity: 1; } 70%, 100% { opacity: 0; transform: translateY(3%); } }
 @media (prefers-reduced-motion: reduce) { .presentation__mist i { animation: none; } .presentation__avatar { transform: none !important; } }
 @media (prefers-reduced-motion: reduce) {
-  .presentation__ritual-video { display: none; }
-  .presentation[data-phase="entering"] .presentation__avatar { animation: none !important; opacity: 1; transition: opacity 150ms linear; }
-  .presentation[data-phase="exiting"] .presentation__avatar { animation: none !important; opacity: 0; transition: opacity 150ms linear; }
+  /* Keep explicitly authored reflective media and fades on their shared clock. */
+  .presentation:not([data-mode="reflective"])[data-phase="entering"] .presentation__avatar { animation: none !important; opacity: 1; transition: opacity 150ms linear; }
+  .presentation:not([data-mode="reflective"])[data-phase="exiting"] .presentation__avatar { animation: none !important; opacity: 0; transition: opacity 150ms linear; }
 }

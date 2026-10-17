@@ -23,13 +23,6 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const [ritualVisible, setRitualVisible] = useState(false)
   const [readyId, setReadyId] = useState<string | null>(null)
   const [bgmVolume, setBgmVolume] = useState(0)
-  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const changed = () => setReducedMotion(query.matches)
-    query.addEventListener('change', changed)
-    return () => query.removeEventListener('change', changed)
-  }, [])
   useEffect(() => getAudioDeviceRouter().watchVolumes(volumes => setBgmVolume(volumes.bgm)), [])
   const failure = useRef(onFailure); failure.current = onFailure
   const phaseListener = useRef(onPhase); phaseListener.current = onPhase
@@ -86,7 +79,9 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const ritualVideo = ritualKind === 'entrance' ? payload.entranceVideo : ritualKind === 'exit' ? payload.exitVideo : null
   useLayoutEffect(() => {
     setRitualVisible(false)
-    if (config.mode !== 'reflective' || !ritualKind || reducedMotion) return
+    // Reflective mode is an explicitly authored performance, including its mist
+    // and reveal timing. The OS motion preference still applies to ordinary UI.
+    if (config.mode !== 'reflective' || !ritualKind) return
     const video = ritualRef.current
     if (!ritualVideo || !video) { failure.current?.('presentation_ritual_video_missing'); return }
     return playRitualVideo({ video,
@@ -95,7 +90,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
       durationMs: ritualKind === 'entrance' ? config.entranceMs : config.exitMs,
       onVisible: setRitualVisible, onFailure: reason => failure.current?.(reason) })
   }, [config.mode, ritualKind, ritualVideo?.id, config.blackHoldMs, config.revealStartMs, config.entranceMs, config.exitMs,
-    config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase, draft, reducedMotion])
+    config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase, draft])
 
   useLayoutEffect(() => {
     if (!config.ambienceId || silent) return

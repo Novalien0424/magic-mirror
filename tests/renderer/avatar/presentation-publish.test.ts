@@ -6,7 +6,9 @@ type Slot = { value?: any; dependencies?: readonly unknown[]; cleanup?: () => vo
 const hooks = vi.hoisted(() => ({ cursor: 0, slots: [] as Slot[], dirty: false,
   effects: [] as { layout: boolean; run(): void }[] }))
 const audio = vi.hoisted(() => ({ cue: vi.fn(() => () => undefined) }))
+const ritual = vi.hoisted(() => ({ play: vi.fn(() => () => undefined) }))
 vi.mock('../../../src/renderer/avatar/wake-cue', () => ({ playWakeCue: audio.cue }))
+vi.mock('../../../src/renderer/avatar/ritual-video-controller', () => ({ playRitualVideo: ritual.play }))
 vi.mock('../../../src/renderer/audio-devices', () => ({ getAudioDeviceRouter: () => ({
   watchVolumes: () => () => undefined,
 }) }))
@@ -43,10 +45,14 @@ vi.mock('react', async () => {
 })
 import { PresentationStage } from '../../../src/renderer/avatar/PresentationStage'
 
-function render(props: Parameters<typeof PresentationStage>[0]) {
+function render(props: Parameters<typeof PresentationStage>[0], video?: HTMLVideoElement) {
   for (let pass = 0; pass < 10; pass++) {
     hooks.cursor = 0; hooks.dirty = false
     const tree = PresentationStage(props)
+    // Mount the ritual ref before layout effects, as React does in the browser.
+    const overlay = React.Children.toArray(tree.props.children).find(child => React.isValidElement(child)
+      && (child.props as Record<string, unknown>)['data-ritual-video']) as React.ReactElement<{ ref: { current: HTMLVideoElement | null } }> | undefined
+    if (overlay && video) overlay.props.ref.current = video
     const effects = hooks.effects.splice(0)
     for (const entry of effects.filter(entry => entry.layout)) entry.run()
     for (const entry of effects.filter(entry => !entry.layout)) entry.run()
@@ -100,5 +106,28 @@ describe('published presentation keeps the current lifecycle', () => {
     expect(render({ ...props, payload, lifecycle: 'active' }).props['data-phase']).toBe('awake')
     expect(audio.cue).toHaveBeenCalledOnce()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('authored reflective performance', () => {
+  it.each([true, false])('plays both ritual videos with reduced motion %s', reducedMotion => {
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: reducedMotion, addEventListener: vi.fn(), removeEventListener: vi.fn() }) })
+    const video = {} as HTMLVideoElement
+    const onFailure = vi.fn()
+    const props = { payload: { config: { ...DEFAULT_PRESENTATION, mode: 'reflective' as const,
+      blackHoldMs: 400, revealStartMs: 1500, entranceMs: 4000, exitMs: 2400 }, background: null,
+      entranceVideo: { id: 'mist', kind: 'video' as const }, exitVideo: { id: 'mist', kind: 'video' as const } },
+      lifecycle: 'dormant' as const, children: null, onFailure }
+    render(props, video)
+    render({ ...props, lifecycle: 'activating' }, video)
+    expect(ritual.play).toHaveBeenCalledTimes(1)
+    expect(ritual.play).toHaveBeenLastCalledWith(expect.objectContaining({ video,
+      src: 'magic-mirror-media://visual/mist', delayMs: 400, durationMs: 4000 }))
+    vi.advanceTimersByTime(4000)
+    expect(render({ ...props, lifecycle: 'active' }, video).props['data-phase']).toBe('awake')
+    render(props, video)
+    expect(ritual.play).toHaveBeenCalledTimes(2)
+    expect(ritual.play).toHaveBeenLastCalledWith(expect.objectContaining({ video, delayMs: 0, durationMs: 2400 }))
+    expect(onFailure).not.toHaveBeenCalled()
   })
 })

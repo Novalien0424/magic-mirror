@@ -46,7 +46,7 @@ const DOM = `
     Object.getOwnPropertyDescriptor(prototype, 'value').set.call(el, value);
     el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {bubbles:true}));
   };
-  const status = () => document.querySelector('.console__publish-bar [role=status]');
+  const status = () => document.querySelector('.console__publish-bar .console__scene-result');
 `
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
@@ -61,6 +61,7 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
   let step = 'ritual_ready', checks = 0, screenshots = 0
   const originalSize = input.console.getSize()
   const picker = dialog.showOpenDialog
+  const ownedDebuggers = new Map<QaWindow['webContents']['debugger'], () => void>()
   let selection: string[] = []
   dialog.showOpenDialog = (async () => ({ canceled: selection.length === 0, filePaths: [...selection] })) as typeof dialog.showOpenDialog
   const evaluate = <T>(source: string): Promise<T> => input.console.webContents.executeJavaScript(
@@ -74,6 +75,25 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
   }
   const pass = (): void => { checks++; input.onEvidence({ step, status: 'passed' }) }
   const measured = (item: unknown): void => { input.onEvidence({ step, status: 'measured', item: JSON.stringify(item) }) }
+  const setMotion = async (win: QaWindow, preference: 'reduce' | 'no-preference'): Promise<void> => {
+    const debuggerApi = win.webContents.debugger
+    if (!ownedDebuggers.has(debuggerApi)) {
+      if (debuggerApi.isAttached()) fail('debugger_already_attached')
+      debuggerApi.attach('1.3')
+      const detached = (): void => { ownedDebuggers.delete(debuggerApi) }
+      ownedDebuggers.set(debuggerApi, detached)
+      debuggerApi.once('detach', detached)
+    }
+    await debuggerApi.sendCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: preference }],
+    })
+    const actual = await win.webContents.executeJavaScript(`({
+      reduce:window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      noPreference:window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+    })`, true) as { reduce: boolean; noPreference: boolean }
+    measured({ surface: win === input.console ? 'preview' : 'mirror', preference, ...actual })
+    if (actual.reduce !== (preference === 'reduce') || actual.noPreference !== (preference === 'no-preference')) fail('motion_preference_mismatch')
+  }
   const getConfig = async () => {
     const response = await input.runtime.console.getConfig()
     if (!response.ok) fail('config_unavailable')
@@ -190,6 +210,19 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     measured({ revealStartMs: Math.round(start!.elapsedMs), firstOpacity: start!.avatarOpacity, nextOpacity: end.avatarOpacity })
     if (end.phase !== 'entering' || end.avatarOpacity <= start!.avatarOpacity) fail('reveal_not_increasing')
   }
+  const conceal = async (win: QaWindow): Promise<void> => {
+    let start: RitualState | undefined
+    await wait(async () => {
+      start = await state(win)
+      return start.phase === 'exiting' && start.elapsedMs >= 600 && start.elapsedMs <= EXIT_MS - 500
+        && start.avatarOpacity > 0 && start.avatarOpacity < 1
+    }, 1500)
+    await delay(250)
+    const end = await state(win)
+    measured({ exitStartMs: Math.round(start!.elapsedMs), exitEndMs: Math.round(end.elapsedMs),
+      firstOpacity: start!.avatarOpacity, nextOpacity: end.avatarOpacity })
+    if (end.phase !== 'exiting' || end.avatarOpacity <= 0 || end.avatarOpacity >= start!.avatarOpacity) fail('exit_not_decreasing')
+  }
   const awake = async (win: QaWindow): Promise<void> => {
     await phase(win, 'awake')
     await wait(async () => {
@@ -219,9 +252,9 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     }, 2000)
   }
   const save = async (): Promise<void> => {
-    await wait(() => evaluate("return !!button('Save all changes') && !button('Save all changes').matches(':disabled')"))
-    await edit("click('Save all changes')")
-    await wait(() => evaluate("return status()?.textContent === 'Saved and checked. Ready to publish.' && !button('Save all changes').matches(':disabled') && !button('Publish all changes').matches(':disabled')"))
+    await wait(() => evaluate("return !!button('Save & apply all changes') && !button('Save & apply all changes').matches(':disabled')"))
+    await edit("click('Save & apply all changes')")
+    await wait(() => evaluate("return status()?.textContent === 'Saved and applied. Ready for the next conversation.' && !button('Save & apply all changes').matches(':disabled')"))
   }
   const reload = async (): Promise<void> => {
     await new Promise<void>((resolve, reject) => {
@@ -235,8 +268,9 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     })
     await wait(() => evaluate("return !!button('Avatars')"))
     await edit("click('Avatars')")
-    await wait(() => evaluate("return !!button('Appearance') && !button('Save all changes').matches(':disabled')"))
+    await wait(() => evaluate("return !!button('Appearance') && !!control('Editing avatar') && !control('Editing avatar').matches(':disabled')"))
     await edit("click('Appearance')")
+    await wait(() => evaluate("return !!button('Save & apply all changes') && !button('Save & apply all changes').matches(':disabled')"))
   }
   try {
     const baseline = await getConfig(), activeHash = fingerprint(baseline.active), draftHash = fingerprint(baseline.draft)
@@ -312,7 +346,9 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
       await edit(`set(control('Reveal starts at seconds'),${JSON.stringify(invalid)})`)
       await wait(() => evaluate(`const alert=document.querySelector('.presentation-editor [role=alert]');
         return visible(alert) && /black hold|reveal/i.test(alert.textContent)
-          && ['Preview entrance','Preview exit','Preview full cycle','Save all changes','Publish all changes'].every(name=>button(name)?.matches(':disabled'));`))
+          && ['Preview entrance','Preview exit','Preview full cycle'].every(name=>button(name)?.matches(':disabled'));`))
+      await edit("click('Save & apply all changes')")
+      await wait(() => evaluate("return status()?.textContent === 'Correct the highlighted field before saving.' && document.activeElement?.getAttribute('aria-invalid') === 'true' && !button('Save & apply all changes').matches(':disabled')"))
       const rejected = await getConfig()
       if (fingerprint(rejected.active) !== activeHash || fingerprint(rejected.draft) !== draftHash) fail('invalid_save_persisted')
       if (!await evaluate<boolean>(`return control('Reveal starts at seconds').value===${JSON.stringify(invalid)}`)) fail('invalid_edit_lost')
@@ -322,6 +358,7 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     await edit("set(control('Reveal starts at seconds'),'1.5')"); pass()
 
     step = 'ritual_draft_full_cycle'
+    await setMotion(input.console, 'reduce')
     await observe(input.console, '.presentation-preview .presentation')
     await edit("control('Visibility mode').scrollIntoView({block:'start'});click('Preview full cycle')")
     await asleep(input.console)
@@ -331,6 +368,7 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     await reveal(input.console); await awake(input.console)
     await phase(input.console, 'exiting', 5000)
     await progressing(input.console, 'exit', videoId, 'visual-draft')
+    await conceal(input.console)
     await asleep(input.console)
     const cycle = await state(input.console), sequence = cycle.history.slice(-5).map(item => item.phase)
     const exitDuration = cycle.history.at(-1)!.at - cycle.history.at(-2)!.at
@@ -344,23 +382,23 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     await edit("click('Preview entrance')")
     await phase(input.console, 'entering'); await progressing(input.console, 'entrance', videoId, 'visual-draft'); await awake(input.console)
     await edit("click('Preview exit')")
-    await phase(input.console, 'exiting'); await progressing(input.console, 'exit', videoId, 'visual-draft'); await stopPreview()
+    await phase(input.console, 'exiting'); await progressing(input.console, 'exit', videoId, 'visual-draft'); await conceal(input.console); await stopPreview()
     if (input.runtime.snapshot().lifecycle !== lifecycle || fingerprint((await getConfig()).active) !== activeHash) fail('preview_changed_active_or_lifecycle')
     pass()
 
-    step = 'ritual_save_reload_publish_roundtrip'
+    step = 'ritual_save_apply_reload_roundtrip'
     await save()
-    const saved = await getConfig(); assertSlot(saved.draft)
-    if (fingerprint(saved.active) !== activeHash) fail('save_changed_active')
+    const saved = await getConfig(); assertSlot(saved.active); assertSlot(saved.draft)
+    if (saved.active.configVersion === baseline.active.configVersion) fail('apply_version_unchanged')
+    const appliedHash = fingerprint(saved.active)
     await reload(); await wait(() => evaluate(uiMatches))
-    if (fingerprint((await getConfig()).active) !== activeHash) fail('reload_changed_active')
-    await save(); await edit("click('Publish all changes')")
-    await wait(() => evaluate("return !!button('Confirm publish') && !button('Confirm publish').matches(':disabled')"))
-    await edit("click('Confirm publish')")
-    await wait(() => evaluate("return status()?.textContent==='Draft published.' && !button('Save all changes').matches(':disabled') && button('Publish all changes').matches(':disabled')"))
-    const published = await getConfig(); assertSlot(published.active); assertSlot(published.draft)
-    if (published.active.configVersion === baseline.active.configVersion) fail('publish_version_unchanged')
-    await reload(); await wait(() => evaluate(uiMatches)); assertSlot((await getConfig()).active)
+    if (fingerprint((await getConfig()).active) !== appliedHash) fail('reload_changed_active')
+    await save()
+    const reapplied = await getConfig(); assertSlot(reapplied.active); assertSlot(reapplied.draft)
+    if (fingerprint(reapplied.active) !== appliedHash) fail('unchanged_apply_republished')
+    await reload(); await wait(() => evaluate(uiMatches))
+    const reloaded = await getConfig(); assertSlot(reloaded.active); assertSlot(reloaded.draft)
+    if (fingerprint(reloaded.active) !== appliedHash) fail('reload_changed_active')
     for (const avatar of legacy) {
       await edit(`set(control('Editing avatar'),${JSON.stringify(avatar.id)})`)
       await wait(() => evaluate(`return control('Visibility mode')?.value===${JSON.stringify(avatar.presentation.mode)}`))
@@ -376,6 +414,7 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     pass()
     for (const cycleNumber of [1, 2]) {
       step = cycleNumber === 1 ? 'ritual_portrait_wake_black_hold' : 'ritual_portrait_entrance_restarts'
+      await setMotion(input.mirror, cycleNumber === 1 ? 'reduce' : 'no-preference')
       if ((await input.runtime.handleSimulator({ type: 'wake' })).op !== 'success') fail('wake_simulator_failed')
       const initial = await phase(input.mirror, 'entering', 2000)
       if (initial.avatarOpacity !== 0) fail('initial_avatar_visible')
@@ -394,6 +433,7 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
       await phase(input.mirror, 'exiting', 2000)
       await progressing(input.mirror, 'exit', videoId, 'visual')
       if ((await state(input.mirror)).video?.blend !== 'normal') fail('exit_blend')
+      await conceal(input.mirror)
       // Main may already be dormant during this bounded renderer exit. Black is
       // required only after the actual presentation reaches settled asleep.
       await asleep(input.mirror)
@@ -416,6 +456,21 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     throw Error(reason)
   } finally {
     dialog.showOpenDialog = picker
+    for (const [debuggerApi, detached] of ownedDebuggers) {
+      try {
+        if (debuggerApi.isAttached()) await debuggerApi.sendCommand('Emulation.setEmulatedMedia', { features: [] })
+      } catch {
+        input.onEvidence({ step: 'ritual_motion_cleanup', status: 'failed', item: 'media_emulation_reset_failed' })
+      } finally {
+        try {
+          if (ownedDebuggers.has(debuggerApi) && debuggerApi.isAttached()) debuggerApi.detach()
+        } catch {
+          input.onEvidence({ step: 'ritual_motion_cleanup', status: 'failed', item: 'qa_debugger_detach_failed' })
+        } finally {
+          debuggerApi.removeListener('detach', detached)
+        }
+      }
+    }
     input.console.setSize(originalSize[0]!, originalSize[1]!)
     for (const win of [input.console, input.mirror]) {
       await win.webContents.executeJavaScript('window.__reflectiveRitualQa?.observer.disconnect(); delete window.__reflectiveRitualQa').catch(() => undefined)

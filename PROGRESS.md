@@ -1,5 +1,27 @@
 # Magic Mirror — current handoff, 2026-10-17
 
+Latest fix: reflective wake/sleep mist and gradual avatar reveal/retreat now
+play with macOS Reduce Motion enabled. Previously the JS playback gate and
+CSS suppressed mist/animation, with a selector conflict leaving the avatar
+invisible until it abruptly appeared at Awake. Ordinary motion reduction,
+saved Raven v18 and the system preference are preserved.
+
+Fresh checks: 46 focused tests, both typechecks, stamped build and `--ritual`
+Electron QA pass (13 checks, 13 captures). Reduced-motion and normal-motion
+portrait cycles both show moving mist, increasing/decreasing partial opacity,
+four-second entrance, 2.4-second exit and exact-black sleep. Captures inspected.
+Initial obsolete Console import-check failure is retained; harness now follows
+the current Save & apply UI. This is shared-renderer Ren/simulated-lifecycle
+evidence, not Raven physical/ASR acceptance.
+[Fix and evidence](docs/testing/reflective-motion-2026-10-17.md).
+
+Current runtime at 11:09 Taipei: field LaunchAgent unloaded, zero canonical app
+processes; OS Reduce Motion remains enabled. The fresh build will load on next
+START. Prior work through Stream Deck/TV controls was committed and pushed as
+`b5fedaf9` on `field/macmini-deploy`; this motion fix follows that baseline.
+
+## Earlier delivery — Stream Deck and TV controls
+
 Delivered: connected Stream Deck Neo has green START MIRROR and red STOP MIRROR
 on the first two top-row keys. Elgato 7.6.0 (23012) installed and verified current;
 Neo firmware updated to 1.00.017; Elgato login startup enabled; selected layout
@@ -26,7 +48,7 @@ USB reconnect and cold-login acceptance still need owner evidence.
 At automated QA completion Magic Mirror is stopped/job unloaded, TV is in
 standby, and Elgato is running with the two-key profile selected. START bootstraps
 the existing field plist. Production model/TV-presence policy and phase acceptance are unchanged. Preserve
-all prior uncommitted edits. Earlier model/camera work remains below.
+the saved field configuration. Earlier model/camera work remains below.
 
 Final direct check 2026-10-17 10:50:21 Taipei: job unloaded, zero canonical
 Electron/native app processes, TV Asleep/OFF

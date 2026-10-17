@@ -1,5 +1,15 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — Reflective wake/sleep performance and Reduce Motion
+
+The owner expects the configured mist and gradual avatar reveal/retreat on
+wake/sleep. Reflective mode is an explicitly authored performance: play its
+selected video and opacity animation using the saved timings even when macOS
+Reduce Motion is enabled. Leave the system preference and ordinary UI/legacy
+presentation motion reduction intact. Do not silently hide the reflective
+video or replace its reveal with a sudden appearance. Validate moving video
+frames and intermediate computed opacity with both motion preferences.
+
 ## 2026-10-17 — Stream Deck Neo application controls (user request)
 
 The connected Neo has separate START and STOP buttons for Magic Mirror.
