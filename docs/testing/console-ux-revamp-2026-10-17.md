@@ -97,4 +97,46 @@ build fixtures and pinned scripts (18 full-suite failures).
 
 ## Results
 
-RESULTS_PLACEHOLDER
+Commit `1a5a435` on `field/macmini-deploy`, pushed; PR #2's branch
+fast-forwarded to it (clean, mergeable). The stamped build in the canonical
+checkout verifies against that commit; the app was left stopped as found, so the
+next START runs it. All sound-producing runs used the owner's minimum-output rule
+(captured, 1 %, restored on exit). Output read 75 % for every restore until it was
+69 % when the last batches began; nothing in these runs changes volume, so 69 %
+(unmuted) was captured and restored as found. Input gain unchanged.
+
+Post-deploy, on that build (artifacts under `.artifacts/phase4-qa/`):
+
+| Check | Result |
+| --- | --- |
+| `qa-build --verify` | pass |
+| `npm test` (includes Electron smoke) | 2,494 passed, 2 skipped, 205 files |
+| `--field-help` (with full Console tour) | pass, 21 checks — `14-17-44-900Z` |
+| `--profiles` | pass, 43 — `14-17-55-111Z` |
+| `--console` (incl. 1024/1440 readability) | pass, 45 — `14-18-32-700Z` |
+| `--media-skill` / `--media-skill-functional` | pass, 19 / 19 — `14-19-11-091Z`, `14-25-59-128Z` |
+| `--operator-loop` | pass, 16 — `14-19-57-092Z` |
+| `--editor`, `--cubism`, `--audio` | pass, 39 / 182 / 4 |
+| `--active-bgm`, `--ritual`, `--video-fades`, `--memory` | pass, 9 / 14 / 11 / 11 |
+| `review_ui` (isolated) | pass, 14 — `14-26-45-079Z` |
+
+Compact live API runs (mini, synthetic visitor audio → real WebRTC Realtime, real
+tools and playback; not human or physical-microphone acceptance):
+
+| Scenario | Result |
+| --- | --- |
+| `portrait_studio` | pass 15/15 (`14-26-59-604Z`); also 15/15 before commit (`13-34-18-122Z`). Studio history deleted after exit, mic released, 0 provider errors. |
+| `local_scope` | pass, 9 (`14-34-18-987Z`) |
+| `default_fallback` | run 1 (`14-31-18-280Z`): both phrase turns unlocked online search, but mini made no tool call; run 2 (`14-40-18-193Z`): every application turn passed (phrase turns searched and played; phrase-less turns stayed local); transcript judge failed (mechanism narration, language, ASR meaning). |
+| `youtube_modes` | `14-36-07-708Z`: phrase once-play passed; without the phrase mini called `search_youtube`, which the gate kept local (no unlock); the phrase loop turn searched but did not play; judge failed. |
+
+The online gate held in every turn: no online search without the phrase, unlock
+with it. Mini's tool choice on phrase turns was 4 of 6 (2/4 in `default_fallback`,
+2/2 in `youtube_modes`) versus 4/4 on 2026-10-15; the conversation tool list
+gained `start_portrait_studio` today. Two runs cannot separate a regression from
+provider variance; no prompt change was made. Saying 「在雲上找找」 at the mirror
+remains the owner check.
+
+Not covered: human Portrait Studio visit, owner look-through of the Console on
+the portrait display, physical sound and Stream Deck key presses. No phase
+acceptance changes.

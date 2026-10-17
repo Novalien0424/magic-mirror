@@ -20,9 +20,11 @@ The items below are additional open operator/maintenance checks.
   payloads; minimal capture gets 0 frames). Try another cable/port or a powered
   hub, then five minutes in Photo Booth, then a known-good UVC webcam (a
   purchase needs owner approval).
-- [ ] Live QA of the online search phrase (DECISIONS 2026-10-14): run
-  `default_fallback`, `youtube_modes` and `local_scope` with mini, then say
-  「在雲上找找」 plus a title through the real microphone.
+- [ ] Online search phrase (DECISIONS 2026-10-14): say 「在雲上找找」 plus a title
+  through the real microphone. Scripted mini runs on 2026-10-17 kept the gate in
+  every turn, but mini searched on only 4 of 6 phrase turns (4/4 on 10-15); repeat
+  `default_fallback` if field results look worse. See the
+  [revamp evidence](docs/testing/console-ux-revamp-2026-10-17.md).
 - [ ] Operator test of the delivered Console Stop/Abort and automatic Save/check flow,
   including physical sound and live queued scene dialogue cancellation. See
   [delivery evidence](docs/testing/console-stop-save-check-2026-09-15.md).

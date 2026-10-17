@@ -1,6 +1,23 @@
 # Magic Mirror — current handoff, 2026-10-17
 
-Latest delivery: fixed Loop Video Save failures on Google Drive placeholders.
+Latest delivery (`1a5a435`, pushed; PR #2 updated): compact **Console revamp**
+(one sticky control bar on every page, plain-language status, Portrait images in
+System, ~2,000 px Experiences, hover help), the four **Portrait Studio review
+fixes** (stale runs, late Studio turns and tool pairs, refresh vs. newer login)
+and Codex's **Drive media cache**, now with a size-scaled download deadline.
+Stale QA drivers and fixtures were repaired. Post-deploy on the stamped build:
+**full suite 2,494 passed / 2 skipped; all 13 offline Phase 4 modes plus
+`review_ui` pass; live `portrait_studio` 15/15 and `local_scope` pass.**
+Live `default_fallback`/`youtube_modes`: the online gate held in every turn;
+mini's tool choice and transcript quality vary (details in evidence).
+[Revamp, fixes and results](docs/testing/console-ux-revamp-2026-10-17.md).
+
+Runtime at **22:44 Taipei**: production app stopped as found; next START runs
+this build. QA output was captured/lowered/restored per the sound directive;
+system output now **69 %, unmuted** (it changed from 75 % between runs while no
+QA was running). TV, Stream Deck and device settings untouched.
+
+Earlier delivery: fixed Loop Video Save failures on Google Drive placeholders.
 Requested media is prepared through macOS coordinated access into one managed
 local cache; repeat playback survives Drive byte eviction and app restart.
 Library listing downloads nothing. Startup cleanup removes unfinished/old copies.
@@ -57,8 +74,8 @@ saved-avatar return, loop from running app and STOP. Avatar configuration stayed
 unchanged. Initial failures and fixes are retained in the
 [QA ledger](docs/testing/operator-loop-2026-10-17.md).
 
-Current runtime after **20:25 Taipei** loop QA: production app remains stopped
-as found; isolated QA exited. Next operator launch uses the repaired build.
+Runtime after the 20:25 Taipei loop QA (superseded above): production app stopped
+as found; isolated QA exited.
 TV power and installed Stream Deck assignments were not changed by this repair.
 System output is restored to its captured **75%, unmuted**; input gain unchanged.
 Earlier 17:24 mouse acceptance confirmed Mac IOHID ownership and zero remaining
@@ -95,6 +112,7 @@ The earlier mist/gradual-reveal fix is included in that baseline and preserved.
 Earlier model/camera limitations remain outside this feature:
 [open issues](docs/testing/open-issues-2026-10-13.md) and
 [latest prior review](docs/testing/review-fixes-2026-10-14.md).
-Next acceptance: remote pointer movement/click, then physical Neo
-layout/STOP/PLAY LOOP confirmation as needed. Mouse failures start from the mouse
+Next acceptance: owner look-through of the compact Console on the portrait
+display, a human Portrait Studio visit, 「在雲上找找」 through the real microphone,
+remote pointer movement/click, then physical Neo layout/STOP/PLAY LOOP as needed. Mouse failures start from the mouse
 ledger; other operator-mode failures start from the operator-controls ledger.
