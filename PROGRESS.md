@@ -62,10 +62,16 @@ microphone meter returned all-zero samples before and during playback, so it can
 prove acoustic output. USB reconnect and cold-login acceptance remain manual.
 No provider dialogue was needed for this operator mode. No phase acceptance changes.
 
-**Portrait Studio (branch `feature/portrait-studio`, 2026-10-17):** rebased onto
-`field/macmini-deploy`; typecheck, build and Node suites checked; live image
-probe passed with `gpt-image-2.5-flare`. Electron QA and a spoken visit remain.
-[Plan and evidence](docs/superpowers/plans/2026-10-17-portrait-studio.md).
+**Portrait Studio deployed (2026-10-17, evening):** this branch now carries the
+Portrait Studio mode (`feature/portrait-studio`, PR to `main`). Raven asks the
+name and configurable questions, paints with the owner's ChatGPT plan
+(`gpt-image-2.5-flare` via ignored root `.env.chatgpt`), reveals, offers one
+change and holds the portrait for photos. Every stage prompt is editable per
+avatar in Console → Experiences. Stamped build in place; live spoken QA passed
+twice (15/15, real paintings ~22–26 s) and the Electron smoke passed. The app was
+left stopped as found; the next START runs this build. A human spoken visit at the
+mirror remains. [QA](docs/testing/portrait-studio-2026-10-17.md) ·
+[plan and reviews](docs/superpowers/plans/2026-10-17-portrait-studio.md).
 
 Delivery branch is `field/macmini-deploy`, following baseline `9197676`.
 Operator controls were committed/pushed as `46e005d`; the mouse change and its

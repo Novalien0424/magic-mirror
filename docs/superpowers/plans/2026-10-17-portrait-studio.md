@@ -307,3 +307,24 @@ in 14 files were resolved by keeping both sides. Integration changes:
 Checks: typechecks exit 0; build succeeds; Node suites 2,450 passed, 1 failed, 1
 skipped. The failure (`youtube-search` root-path assertion) also fails on a clean
 `d5bb775` export outside the canonical path. Codex's adapter suite passes unchanged.
+
+## 12. Deploy, owner follow-ups and live QA (2026-10-17)
+
+- **Deploy QA caught a startup break.** Both preloads imported the studio
+  contracts, so Rollup emitted a shared chunk that sandboxed preloads cannot
+  require; the app could not start. The Console preload now inlines its check and
+  `preload-bundle-boundary` fails on any shared runtime module. Worktrees cannot
+  run Electron, so the canonical Electron smoke is a required deploy step.
+- **Stage prompts (owner follow-up).** Every avatar-facing stage prompt is
+  editable per avatar (Console → Experiences → Avatar prompts at each stage):
+  15 stages in visit order, overrides only, required placeholders enforced, reset
+  per stage or all. Main guidance, the studio agent, the reveal and the prompt
+  inspector use the effective text.
+- **Console usability** was reviewed as rendered with the real stylesheet: whole
+  questions visible (fields stacked), single-bordered stage rows with an expand
+  cue, badges (Default, Edited, Needs attention), placeholders and reset.
+- **Live QA:** two consecutive passes of the spoken `portrait_studio` visit with
+  real paintings and an edited stage prompt followed live; painted lettering
+  checked with a real image. Details:
+  [portrait-studio-2026-10-17](../../testing/portrait-studio-2026-10-17.md).
+
