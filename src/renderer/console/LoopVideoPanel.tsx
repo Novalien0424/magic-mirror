@@ -4,6 +4,7 @@ import { isFolderMediaId, type FolderMediaEntry } from '../../shared/media-folde
 import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoCommand, type LoopVideoSettings,
   type LoopVideoView, type OperatorLoopSnapshot } from '../../shared/operator-loop'
 import { ReasonDetail } from './reason-copy'
+import { HelpButton, InfoTip } from './HelpButton'
 
 export function sameLoopVideoSettings(left: LoopVideoSettings, right: LoopVideoSettings): boolean {
   return left.videoId === right.videoId && left.audioMode === right.audioMode && left.audioId === right.audioId
@@ -52,8 +53,8 @@ function MutedLoopPreview({ videoId, visible, fit }: { videoId: string; visible:
 
 function playbackCopy(snapshot: OperatorLoopSnapshot | null): string {
   if (!snapshot) return 'Reading Mirror playback status…'
-  if (snapshot.mode === 'avatar') return 'Avatar mode'
-  if (snapshot.status === 'failed') return 'Loop video failed. Mirror stays black. Use Return to Avatar to exit.'
+  if (snapshot.mode === 'avatar') return 'Not playing'
+  if (snapshot.status === 'failed') return 'Loop video failed. Mirror stays black. Use Return to Avatar in the control bar to exit.'
   if (snapshot.status === 'recovering') return 'Recovering loop video… Voice and camera are off.'
   if (snapshot.status === 'preparing') return 'Preparing loop video… Voice and camera are off.'
   return 'Loop video playing. Voice and camera are off.'
@@ -166,14 +167,18 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
   const videos = entries.filter(entry => entry.kind === 'video')
   const music = entries.filter(entry => entry.kind === 'music')
   const configured = !!draft && !!saved && libraryLoaded && !libraryError && !validation
+  const playHelp = !available ? 'Loop Video is unavailable. Reopen the updated Console.'
+    : action !== null ? 'Wait for the current request to finish.'
+      : dirty ? 'Save settings first; Play uses the saved settings.'
+        : !libraryLoaded ? 'Reading Common media…' : libraryError || validation
+          || 'Plays the saved video and audio on the Mirror. Voice, wake listening and camera stay off until Return to Avatar.'
   return <section className="console__panel loop-video-panel" aria-labelledby="console-loop-video">
-    <div className="console__panel-heading"><div><h2 id="console-loop-video">Loop Video</h2>
-      <p>One video repeats on Mirror until you return to the avatar here or with Stream Deck.</p></div></div>
-    <div className="loop-video-status" role="status"><strong>{playbackCopy(snapshot)}</strong>
-      <button type="button" disabled={!available || action === 'stop'} onClick={() => void run({ action: 'stop' })}>Return to Avatar</button></div>
-    <p className="console__muted">Global settings, separate from avatar music, conversation and publishing. Video and separate music loop independently at the volume below.</p>
+    <div className="console__panel-heading"><h2 id="console-loop-video">Loop Video <InfoTip label="Loop Video"
+      help="One shared video repeats on the Mirror instead of the avatar until you choose Return to Avatar in the control bar. These settings are global, separate from avatar music, conversation and publishing." /></h2>
+      <p className={`loop-video-status loop-video-status--${snapshot?.mode === 'loop' ? snapshot.status : 'idle'}`} role="status"><strong>{playbackCopy(snapshot)}</strong></p></div>
     {!available && <p role="alert" className="console__fault">Loop Video is unavailable. Reopen the updated Console.</p>}
-    {(apiError || statusError) && <div role="alert" className="console__fault"><ReasonDetail code={apiError || statusError} /></div>}
+    {(apiError || statusError) && <div role="alert" className="console__fault"><ReasonDetail code={apiError || statusError} />
+      {apiError && dirty && <p>Changes were not saved. Stream Deck still uses the last saved settings. Keep this selection and retry Save settings.</p>}</div>}
     {snapshot?.mode === 'loop' && snapshot.reason && (snapshot.status === 'failed'
       ? <ReasonDetail code={safeReason(snapshot.reason, 'operator_loop_playback_failed')} />
       : <details className="console__technical"><summary>Playback detail</summary><code>{safeReason(snapshot.reason, 'operator_loop_playback_status')}</code></details>)}
@@ -202,16 +207,16 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
         <label>Loop volume · {Math.round(settings.volume * 100)}%<input aria-label="Loop volume" type="range" min="0" max="1" step="0.01"
           value={settings.volume} onChange={event => edit({ volume: Number(event.currentTarget.value) })} /></label>
       </fieldset>
-      <button type="button" onClick={onMediaFolders}>Manage Common media in System</button>
+      {videos.length > 0 && <button type="button" className="console__link" onClick={onMediaFolders}>Manage Common media in System</button>}
     </div>{settings.videoId && videos.some(entry => entry.assetId === settings.videoId)
       && <MutedLoopPreview videoId={settings.videoId} fit={settings.fit} visible={visible} />}</div>
-    {draft && libraryLoaded && validation && <p role="status">{validation}</p>}
     <div className="console__action-row loop-video-actions">
       <button type="button" disabled={!available || action !== null || !dirty || !configured}
-        onClick={() => void run({ action: 'save', settings })}>Save settings</button>
-      <button type="button" className="console__primary" disabled={!available || action !== null || dirty || !configured}
-        onClick={() => void run({ action: 'play' })}>Play on Mirror</button>
-      <span role="status">{dirty ? 'Unsaved changes. Save settings before playing.' : savedMessage ? 'Settings saved.' : saved ? 'Saved settings' : 'Loading saved settings…'}</span>
+        onClick={() => void run({ action: 'save', settings })}>{action === 'save' ? 'Preparing media and saving…' : 'Save settings'}</button>
+      <HelpButton className="console__primary" disabled={!available || action !== null || dirty || !configured} help={playHelp}
+        onClick={() => void run({ action: 'play' })}>Play on Mirror</HelpButton>
+      <span role="status">{draft && libraryLoaded && validation ? validation : dirty ? 'Unsaved changes. Save settings before playing.'
+        : savedMessage ? 'Settings saved.' : saved ? 'Saved settings' : 'Loading saved settings…'}</span>
     </div>
   </section>
 }

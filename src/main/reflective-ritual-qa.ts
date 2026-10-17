@@ -261,7 +261,11 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
       const loaded = (): void => { clearTimeout(timer); resolve() }
       const timer = setTimeout(() => {
         input.console.webContents.removeListener('did-finish-load', loaded)
-        reject(Error('phase4_qa_ritual_reload_timeout'))
+        // Name what kept the page: an unload guard means some editor still reports unsaved changes.
+        void evaluate<string>(`const e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return JSON.stringify({prevented:e.defaultPrevented,
+          publish:document.querySelector('.profile-publish-status > span')?.textContent,scope:document.querySelector('.profile-change-scope')?.textContent,
+          loop:document.querySelector('.loop-video-actions [role=status]')?.textContent})`).catch(() => 'unavailable')
+          .then(state => { measured({ reloadBlocked: state }); reject(Error('phase4_qa_ritual_reload_timeout')) })
       }, 15000)
       input.console.webContents.once('did-finish-load', loaded)
       input.console.webContents.reload()

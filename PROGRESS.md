@@ -1,6 +1,17 @@
 # Magic Mirror — current handoff, 2026-10-17
 
-Latest delivery: the TV-connected Xiaomi mouse now controls the portrait Mac
+Latest delivery: fixed Loop Video Save failures on Google Drive placeholders.
+Requested media is prepared through macOS coordinated access into one managed
+local cache; repeat playback survives Drive byte eviction and app restart.
+Library listing downloads nothing. Startup cleanup removes unfinished/old copies.
+The owner's saved video/audio selection is byte-for-byte unchanged.
+**166 focused tests, both typechecks, stamped build and 15/15 real Electron QA
+cases passed.** Real selected-file preparation and restart reuse also passed.
+[Repair, cache policy and evidence](docs/testing/loop-video-cloud-save-2026-10-17.md).
+Owner's new sound directive: minimum output for every sound-producing QA, then
+restore prior volume/mute even on failure. Recorded in DECISIONS and QA skill.
+
+Earlier delivery: the TV-connected Xiaomi mouse now controls the portrait Mac
 Console through native USB forwarding over the existing Ethernet cable. The
 receiver stays in the TV. Owner confirmed **one pointer, correct direction and
 working clicks**. CONSOLE connects it on demand; STOP releases it and stops its
@@ -46,12 +57,12 @@ saved-avatar return, loop from running app and STOP. Avatar configuration stayed
 unchanged. Initial failures and fixes are retained in the
 [QA ledger](docs/testing/operator-loop-2026-10-17.md).
 
-Current runtime at **17:24 Taipei**: Magic Mirror LaunchAgent running, app PID
-8488 unchanged, TV **Awake / display ON**, Console available for owner testing.
-Mac IOHID owns the Xiaomi mouse; Android has zero remaining Xiaomi input
-interfaces. Leave the app, TV and connection running. Unsaved Console edits were
-preserved. Stream Deck and Chrome Remote Desktop are running; the four installed
-app assignments remain unchanged.
+Current runtime after **20:25 Taipei** loop QA: production app remains stopped
+as found; isolated QA exited. Next operator launch uses the repaired build.
+TV power and installed Stream Deck assignments were not changed by this repair.
+System output is restored to its captured **75%, unmuted**; input gain unchanged.
+Earlier 17:24 mouse acceptance confirmed Mac IOHID ownership and zero remaining
+Xiaomi interfaces on Android. Device state remains under owner control.
 [Earlier controls metadata](.artifacts/operator-controls-2026-10-17/final-state.json) ·
 [controls](deploy/macos/stream-deck.md).
 

@@ -13,15 +13,54 @@ vi.mock('node:fs', async importOriginal => {
 })
 
 const roots: string[] = []
-async function fixture() {
+async function fixture(prepareCloudFile?: (path: string, size: number, mtime: number) => Promise<string>) {
   const root = await mkdtemp(join(tmpdir(), 'mm-folders-')); roots.push(root)
   for (const folder of ['shared', 'raven', 'other']) await mkdir(join(root, folder))
-  const store = new MediaFolders(join(root, 'links.json'))
+  const store = new MediaFolders(join(root, 'links.json'), prepareCloudFile)
   await store.load()
   return { root, store }
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 describe('linked media folders', () => {
+  it('uses a prepared local path on demand and rechecks source ownership afterwards', async () => {
+    let finish!: (path: string) => void
+    const prepare = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
+    const { root, store } = await fixture(prepare)
+    const path = join(root, 'shared', 'Cloud.mp4')
+    await writeFile(path, 'synthetic media'); await store.link('shared', join(root, 'shared'))
+    const canonicalPath = await realpath(path)
+    const id = store.resources()[0]!.assetId
+    expect(prepare).not.toHaveBeenCalled()
+    const first = store.resolve(id)
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledExactlyOnceWith(canonicalPath, 15, expect.any(Number)))
+    finish('/app/cache/local.media')
+    expect(await first).toEqual({ path: '/app/cache/local.media', mimeType: 'video/mp4' })
+
+    await writeFile(path, 'new synthetic media'); await store.refresh()
+    const revoked = store.resolve(id)
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2))
+    await store.unlink('shared'); finish('/app/cache/local.media')
+    expect(await revoked).toBeNull()
+    expect(await store.resolve(id)).toBeNull()
+  })
+  it('retries failed local preparation and rejects changed or removed sources even with a cached copy', async () => {
+    const prepare = vi.fn(async () => '/app/cache/local.media').mockRejectedValueOnce(Error('media_file_prepare_failed'))
+    const { root, store } = await fixture(prepare)
+    const path = join(root, 'shared', 'Cloud.mp4')
+    await writeFile(path, 'synthetic media'); await store.link('shared', join(root, 'shared'))
+    const id = store.resources()[0]!.assetId
+    expect(await store.resolve(id)).toBeNull()
+    expect(await store.resolve(id)).not.toBeNull()
+    await writeFile(path, 'changed bytes')
+    expect(await store.resolve(id)).toBeNull()
+    await store.refresh()
+    expect(await store.resolve(id)).not.toBeNull()
+    await unlink(path)
+    expect(await store.resolve(id)).toBeNull()
+    await symlink(join(root, 'other', 'escape.mp4'), path)
+    expect(await store.resolve(id)).toBeNull()
+    expect(prepare).toHaveBeenCalledTimes(3)
+  })
   it('finishes preparing a synced file before playback, retries failed reads, and rechecks changed files', async () => {
     const { root, store } = await fixture()
     const path = join(root, 'shared', 'Cloud.mp4')

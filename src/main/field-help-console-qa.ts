@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 
 /** Isolated Console QA: no provider calls, microphone capture or publication. */
@@ -35,13 +37,20 @@ export async function runFieldHelpConsoleQa(input: Phase4QaInput): Promise<Phase
     if (!await evaluate<boolean>(source)) throw Error(`field_help_qa_${reason}`)
   }
   const audit = async (page: string): Promise<void> => {
-    await assert(`const controls = [...document.querySelectorAll('input, select, textarea')].filter(el => visible(el) || el.type === 'file' && visible(el.closest('.field-help')));
-      return controls.length > 0 && controls.every(el => {
+    const gaps = await evaluate<string>(`const controls = [...document.querySelectorAll('input, select, textarea')].filter(el => visible(el) || el.type === 'file' && visible(el.closest('.field-help')));
+      const undescribed = controls.filter(el => {
         const ids = (el.getAttribute('aria-describedby') || '').split(' ').filter(Boolean);
-        return ids.length > 0 && ids.every(id => (document.getElementById(id)?.textContent.trim().length || 0) > 40);
-      }) && [...document.querySelectorAll('.field-help__trigger')].filter(visible).every(el => {
-        const r = el.getBoundingClientRect(); return r.width >= 44 && r.height >= 44;
-      }) && document.documentElement.scrollWidth <= innerWidth;`, `coverage_${page}`)
+        return !(ids.length > 0 && ids.every(id => (document.getElementById(id)?.textContent.trim().length || 0) > 40));
+      }).map(el => el.getAttribute('aria-label') || el.closest('label')?.firstChild?.textContent?.trim() || el.tagName);
+      const small = [...document.querySelectorAll('.field-help__trigger')].filter(visible).filter(el => {
+        const r = el.getBoundingClientRect(); return r.width < 24 || r.height < 24;
+      }).length;
+      return [!controls.length ? 'no_controls' : '', ...undescribed.map(name => 'undescribed:' + name), small ? 'small_triggers:' + small : '',
+        document.documentElement.scrollWidth > innerWidth ? 'horizontal_overflow' : ''].filter(Boolean).join(',');`)
+    if (gaps) {
+      input.onEvidence({ step: `field_help_coverage_${page}`, status: 'failed', item: gaps.replace(/[^\w:,·-]/g, '_').slice(0, 300) })
+      throw Error(`field_help_qa_coverage_${page}`)
+    }
     pass(`field_help_coverage_${page}`)
   }
   const key = async (keyCode: string): Promise<void> => {
@@ -53,7 +62,35 @@ export async function runFieldHelpConsoleQa(input: Phase4QaInput): Promise<Phase
   const move = async (p: { x: number; y: number }): Promise<void> => {
     input.console.webContents.sendInputEvent({ type: 'mouseMove', ...p }); await pause(40)
   }
+  const tour = async (): Promise<void> => {
+    // Full-page captures of every Console page for layout review.
+    const devtools = input.console.webContents.debugger
+    if (!devtools.isAttached()) devtools.attach('1.3')
+    const full = async (file: string): Promise<void> => {
+      const { cssContentSize: size } = await devtools.sendCommand('Page.getLayoutMetrics') as { cssContentSize: { width: number; height: number } }
+      const { data } = await devtools.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width: size.width, height: Math.min(6000, size.height), scale: 1 } }) as { data: string }
+      await writeFile(join(input.outputDir, file), Buffer.from(data, 'base64')); screenshots++
+      input.onEvidence({ step: 'console_tour_screenshot', status: 'captured', file })
+    }
+    await wait("return !!button('Avatars')", 'tour_ready'); await pause(800)
+    await full('tour-mirror.png')
+    await click('Avatars')
+    for (const page of ['Persona', 'Appearance', 'Voice', 'Music & video', 'Experiences', 'Memories', 'Spells & scenes']) {
+      await click(page); await pause(300); await full(`tour-avatars-${page.replace(/\W+/g, '-').toLowerCase()}.png`)
+    }
+    await click('Loop Video'); await pause(300); await full('tour-loop-video.png')
+    await click('System')
+    for (const page of ['Devices', 'Media folders', 'Portrait images', 'Models', 'Advanced config', 'Events', 'Simulator', 'Phase Tests']) {
+      // Simulator is listed only in developer mode.
+      if (page === 'Simulator' && !await evaluate<boolean>("return !!button('Simulator')")) continue
+      await click(page); await pause(300); await full(`tour-system-${page.replace(/\W+/g, '-').toLowerCase()}.png`)
+    }
+    await click('Mirror'); await pause(200)
+    pass('console_tour')
+  }
   try {
+    if (process.env['MIRROR_CONSOLE_TOUR'] === '1') await tour()
     await click('System')
     await wait("return !!help('BGM')", 'devices_ready')
     await audit('devices')
@@ -82,9 +119,11 @@ export async function runFieldHelpConsoleQa(input: Phase4QaInput): Promise<Phase
     await key('Escape')
     await edit("help('BGM').blur()")
     await pause(250)
-    await move(bgm)
-    input.console.webContents.sendInputEvent({ type: 'mouseDown', ...bgm, button: 'left', clickCount: 1 })
-    input.console.webContents.sendInputEvent({ type: 'mouseUp', ...bgm, button: 'left', clickCount: 1 })
+    // Keyboard focus may scroll the page below the sticky top bar; click where the trigger is now.
+    const pinAt = await point("help('BGM')")
+    await move(pinAt)
+    input.console.webContents.sendInputEvent({ type: 'mouseDown', ...pinAt, button: 'left', clickCount: 1 })
+    input.console.webContents.sendInputEvent({ type: 'mouseUp', ...pinAt, button: 'left', clickCount: 1 })
     await move({ x: 4, y: 4 }); await pause(500)
     await assert('return !!tooltip()', 'click_pin')
     input.console.webContents.sendInputEvent({ type: 'mouseDown', x: 4, y: 4, button: 'left', clickCount: 1 })

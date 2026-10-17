@@ -1,5 +1,26 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — QA sound level (owner directive)
+
+Before any QA that can produce sound, capture the affected output's volume and
+mute state, lower output to the minimum level, and restore the exact captured
+settings after success, failure or cancellation. Preserve an existing mute.
+On this Mac, the tested system-output route supports `osascript` volume capture
+and 1% output. Do not change microphone input gain. If a test changes output
+devices, protect and restore that device too. Record the reduced level in
+acoustic evidence; minimum-volume results cannot establish normal-volume wake
+or speaker performance. Do not silently raise volume for those tests.
+
+## 2026-10-17 — Google Drive media source (owner directive)
+
+Treat Google Drive as the normal source of linked media. Missing local content
+must be prepared by the app on demand. Listing the library must not download it;
+prepare only media requested for preview, Save or playback. Keep any playback
+copies in one app-managed location with automatic cleanup, never scattered
+folders or a copy of the whole Drive. A repair must not change the owner's saved
+video/audio selection. Implementation and evidence:
+[on-demand media cache](docs/testing/loop-video-cloud-save-2026-10-17.md).
+
 ## 2026-10-17 — Portrait Studio mode (user rulings)
 
 Design: [plan](docs/superpowers/plans/2026-10-17-portrait-studio.md) and the

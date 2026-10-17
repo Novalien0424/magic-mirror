@@ -85,7 +85,7 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     await edit("click('Avatars')"); await edit("click('Appearance')")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [resolve('resources/avatar/Raven/v10/runtime/raven-lord.model3.json')] })) as typeof dialog.showOpenDialog
     await edit("click('Browse & import Cubism…')")
-    await wait("return !button('Save all changes').disabled", 'raven_import')
+    await wait("return document.querySelector('.console__scenes').textContent.includes('Cubism bundle imported')", 'raven_import')
     await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='-3'", 'rig_keeps_effect')
     await edit("click('Save all changes')"); await wait("return !button('Save all changes').disabled", 'raven_save')

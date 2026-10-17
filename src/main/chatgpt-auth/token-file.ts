@@ -115,6 +115,9 @@ export function createChatgptTokenFile(options: {
           id: safeValue(body.id_token) ? body.id_token : current.id, accountId: '', lastRefresh: new Date(now()).toISOString() }
         next.accountId = accountIdFrom(next.id, next.access) || current.accountId
         failedRefresh = null
+        // A login that replaced or removed the file while the request was in flight wins: never overwrite it.
+        const latest = await load()
+        if (latest === null || latest !== 'invalid' && latest.refresh !== current.refresh) { report('chatgpt_refresh_superseded'); return latest }
         // Refresh tokens rotate: once the server answered, the old one is spent.
         // Keep the new tokens in RAM until a later save succeeds.
         try { await write(path, tokenFileText(next)) }

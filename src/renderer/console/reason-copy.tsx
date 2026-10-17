@@ -1,5 +1,6 @@
 const COPY: Readonly<Record<string, [string, string]>> = {
   operator_loop_media_unavailable: ['The selected loop media is unavailable.', 'Check the Common folder and select an available video and music track.'],
+  operator_loop_operation_timeout: ['Preparing the loop media took too long.', 'A large Google Drive file keeps downloading in the background. Keep this selection and press Save settings again in a moment.'],
   operator_loop_playback_stalled: ['Loop playback stopped advancing after its recovery attempt.', 'The Mirror stays black. Try Play on Mirror again or Return to Avatar.'],
   operator_loop_output_unavailable: ['The loop audio output is unavailable.', 'Check the selected speaker in System audio settings, then retry.'],
   operator_loop_release_failed: ['Playback could not finish stopping.', 'Voice stays off. Use STOP MIRROR, then START MIRROR to restore the app.'],

@@ -38,6 +38,8 @@ const DOM = `
   const scene = () => panel.querySelector('.scene-composer__body');
   const stage = () => scene().querySelector('.console__stage-card');
   const status = () => panel.querySelector('[aria-live]').textContent;
+  const stopAll = () => button('Stop All', document);
+  const liveResult = () => document.querySelector('.live-bar__result')?.textContent ?? '';
   const click = el => {
     if (!el || el.disabled) throw new Error('phase4_qa_console_control_unavailable');
     for (let parent = el.parentElement; parent; parent = parent.parentElement) {
@@ -275,10 +277,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
         && r.value.draft.scenes[0].name === 'Magic Vision' && r.value.draft.scenes[0].stages[0].name === 'Saved preview step'
         && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
-      await edit("click(button('Test step')); click(button('Stop All'))")
-      await wait("return status() === 'All scenes stopped.' && !button('Test step').disabled")
+      await edit("click(button('Test step')); click(stopAll())")
+      await wait("return liveResult().includes('All scenes stopped.') && !button('Test step').disabled")
       await new Promise(resolveWait => setTimeout(resolveWait, 1000))
-      if (!await evaluate<boolean>("return status() === 'All scenes stopped.'")) throw new Error('phase4_qa_pending_test_not_cancelled')
+      if (!await evaluate<boolean>("return liveResult().includes('All scenes stopped.') && !status().includes('completed')")) throw new Error('phase4_qa_pending_test_not_cancelled')
       await edit("button('Test step').scrollIntoView({block:'center'}); button('Test step').focus()")
       await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display !== 'none'")
       await screenshot('console-step-test-help.png')
@@ -297,7 +299,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       for (const name of ['Test action', 'Test step', 'Test scene']) {
         step = 'console_abort_' + name.replaceAll(' ', '_')
         await evaluate(`click(button(${JSON.stringify(name)})); await new Promise(r=>setTimeout(r,0));
-          const abort=button('Stop All'); if(!abort || abort.matches(':disabled')) throw Error('phase4_qa_scene_abort_disabled'); click(abort);`)
+          const abort=stopAll(); if(!abort || abort.matches(':disabled')) throw Error('phase4_qa_scene_abort_disabled'); click(abort);`)
         await wait("return !button('Save all changes').disabled")
         await new Promise(r=>setTimeout(r,350))
         if (await input.mirror.webContents.executeJavaScript("!!document.querySelector('.scene-visual video')")) throw Error('phase4_qa_scene_started_after_abort')
@@ -310,7 +312,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
           await new Promise(r=>setTimeout(r,50))
         }
         if (!playing) throw Error('phase4_qa_scene_restart_did_not_play')
-        await edit("click(button('Stop All'))")
+        await edit("click(stopAll())")
         await wait("return !button('Save all changes').disabled")
         passed()
       }
@@ -385,7 +387,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !button('Publish all changes').disabled")
     await edit("set(control('Scene name', scene()), 'Unpublished title')")
     await wait("return button('Publish all changes').disabled")
-    await edit("click(button('Stop All'))")
+    await edit("click(stopAll())")
     await wait("return control('Scene name', scene()).value === 'Unpublished title'")
     await edit("set(control('Scene name', scene()), 'Magic Vision')")
     passed()
@@ -532,7 +534,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await mirrorWait('entering')
       await screenshot('presentation-entering.png', true)
       await mirrorWait('awake')
-      await wait("return document.querySelector('.console__status').textContent === 'active' && !button('Disconnect', document).disabled", 'overview_live_active')
+      await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'active' && !button('Disconnect', document).disabled", 'overview_live_active')
       await new Promise(resolveWait => setTimeout(resolveWait, 550))
       const quiet = await input.mirror.webContents.executeJavaScript(
         "(()=>{const a=document.querySelector('[data-presentation-ambience]'); return !!a && a.paused && a.volume === 0})()")
@@ -545,7 +547,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await mirrorWait('exiting')
       await screenshot('presentation-exiting.png', true)
       await mirrorWait('asleep')
-      await wait("return document.querySelector('.console__status').textContent === 'dormant' && !button('Start Conversation', document).disabled", 'overview_live_dormant')
+      await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'dormant' && !button('Start Conversation', document).disabled", 'overview_live_dormant')
       await screenshot('presentation-return.png', true)
       passed()
     }
@@ -695,8 +697,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return status().includes('completed')")
     await edit("click(button('Test action'))")
     await wait("return status().includes('started') || status().includes('completed')")
-    await edit("click(button('Stop All'))")
-    await wait("return status() === 'All scenes stopped.'")
+    await edit("click(stopAll())")
+    await wait("return liveResult().includes('All scenes stopped.')")
     await screenshot('console-focused-test.png')
     passed()
 
@@ -709,7 +711,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await input.runtime.handleSimulator({ type: 'wake' })
     await wait("return button('Use on Mirror').disabled && document.querySelector('#avatar-activation-reason').textContent.includes('End the conversation')")
     await input.runtime.handleSimulator({ type: 'sleep' })
-    await wait("return document.querySelector('.console__status').textContent === 'dormant'")
+    await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'dormant'")
     await edit("click(button('Use on Mirror'))")
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
     await wait("return [...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1).disabled")
@@ -722,6 +724,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait(`return document.querySelector('[aria-current=page]')?.textContent === ${JSON.stringify(tab)}`)
     }
     for (const tab of ['Simulator', 'Events', 'Phase Tests', 'Models']) {
+      // Simulator is listed only in developer mode.
+      if (tab === 'Simulator' && !await evaluate<boolean>("return !!button('Simulator', document)")) continue
       await edit(`click(button(${JSON.stringify(tab)}, document))`)
       await wait(`return [...document.querySelectorAll('h2')].some(el => el.getClientRects().length && el.textContent.includes(${JSON.stringify(tab)}))`)
     }
@@ -751,12 +755,13 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
             };
             return {overflow: document.documentElement.scrollWidth > innerWidth,
               font: parseFloat(getComputedStyle(document.documentElement).fontSize),
-              smallText: text.filter(el => parseFloat(getComputedStyle(el).fontSize) < 15).length,
+              smallText: text.filter(el => parseFloat(getComputedStyle(el).fontSize) < 11).length,
               lowContrast: text.filter(el => contrast(el) < 4.5).length,
               smallControls: [...document.querySelectorAll('button,select,input:not([type=checkbox])')]
-                .filter(visible).filter(el => el.getBoundingClientRect().height < 43).length};`)
+                .filter(visible).filter(el => el.getBoundingClientRect().height < 24).length};`)
           input.onEvidence({step:'console_readability_metrics',status:'measured',item:JSON.stringify({width,page,...metrics})})
-          if (metrics.overflow || metrics.font < 18 || metrics.smallControls > 0 || metrics.smallText > 0 || metrics.lowContrast > 0) throw new Error('phase4_qa_readability_' + width + '_' + page)
+          // Compact operator Console (owner request 2026-10-17): 15px root, WCAG 2.2 24px targets, 4.5:1 text contrast.
+          if (metrics.overflow || metrics.font < 15 || metrics.smallControls > 0 || metrics.smallText > 0 || metrics.lowContrast > 0) throw new Error('phase4_qa_readability_' + width + '_' + page)
           await screenshot('console-' + page.replaceAll(/[^a-z]/gi, '-').toLowerCase() + '-' + width + '.png')
         }
       }

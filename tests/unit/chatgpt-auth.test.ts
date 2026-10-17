@@ -76,6 +76,28 @@ describe('ChatGPT token file', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it('keeps a login that replaced the file while a refresh was in flight', async () => {
+    const login = tokenFileText({ access: jwt({ exp: NOW / 1000 + 3600, ...auth('acct-2') }), refresh: 'refresh-login',
+      id: jwt(auth('acct-2')), accountId: 'acct-2', lastRefresh: '2026-10-17T00:00:00.000Z' })
+    let h!: ReturnType<typeof harness>
+    const fetchImpl = vi.fn(async () => { h.replace(login); return rotated()() })
+    h = harness(file(jwt({ exp: NOW / 1000 + 60 })), fetchImpl as unknown as typeof fetch)
+    const credential = await h.source.get()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(h.current()).toBe(login)
+    expect(h.writes).toHaveLength(0)
+    expect(credential?.accountId).toBe('acct-2')
+    expect(h.reports).toContain('chatgpt_refresh_superseded')
+    // A file removed during the request is a sign-out, not something to recreate.
+    let removed!: ReturnType<typeof harness>
+    removed = harness(file(jwt({ exp: NOW / 1000 + 60 })), vi.fn(async () => { removed.replace(null as unknown as string); return rotated()() }) as unknown as typeof fetch)
+    await removed.source.get()
+    expect(removed.writes).toHaveLength(0)
+    expect(removed.current()).toBeNull()
+    expect(removed.reports).toContain('chatgpt_refresh_superseded')
+    expect(await removed.source.get()).toBeNull()
+  })
+
   it('keeps a valid token usable after a failed scheduled refresh and clears the failure after a new login', async () => {
     const fetchImpl = vi.fn(async () => new Response('{}', { status: 503 }))
     const h = harness(file(jwt({ exp: NOW / 1000 + 3600 }), 'refresh-1', '2026-10-01T00:00:00.000Z'), fetchImpl as unknown as typeof fetch)

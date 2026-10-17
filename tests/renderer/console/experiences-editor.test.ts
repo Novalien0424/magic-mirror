@@ -69,20 +69,31 @@ describe('ExperiencesEditor', () => {
     expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.zh)
     expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.en)
     expect(html).toContain('Name question · always first')
-    expect(html).toContain('4 of 8 questions')
+    expect(html).toContain('<span class="experiences-editor__count">4 of 8</span>')
     expect(html).toMatch(/aria-label="Guest names, one per line"[^>]*><\/textarea>/)
     expect(html).toContain('Guest names · 0 of 1,000')
     expect(html).toContain('stays on this Mac')
-    expect(html).toContain('Experience settings are ready to save.')
+    expect(html).not.toContain('attention before saving')
     expect(html).not.toMatch(/daily|per day|limit per/i)
     expect(experienceIssues(experienceOf(ui.avatar))).toEqual({})
   })
 
-  it('edits the existing wake greeting as the conversation start script', () => {
+  it('shows the wake greeting as the conversation start and links to Persona to edit it', () => {
+    let opened = 0
+    const avatar = newAvatar('guide')
+    avatar.presentation = { ...avatar.presentation, wakeGreeting: '你好，旅人。' }
+    const html = renderToStaticMarkup(React.createElement(ExperiencesEditor, { avatar, disabled: false, onChange() {}, onEditGreeting() { opened++ } }))
+    expect(html).toContain('<q lang="zh-Hant">你好，旅人。</q>')
+    const link = elements(ExperiencesEditor({ avatar, disabled: false, onChange() {}, onEditGreeting() { opened++ } }))
+      .find(item => item.props['aria-label'] === 'Edit the wake greeting in Persona')!
+    ;(link.props.onClick as () => void)()
+    expect(opened).toBe(1)
+    // The greeting has one editor, in Persona; Experiences offers no second field for it.
+    expect(html).not.toMatch(/<textarea[^>]*>你好，旅人。<\/textarea>/)
+  })
+
+  it('edits the Portrait Studio start script', () => {
     const ui = editor()
-    ui.fire(ui.field(FIELD_HELP.experienceConversationScript), '你好，旅人。')
-    expect(ui.avatar.presentation.wakeGreeting).toBe('你好，旅人。')
-    expect(ui.avatar.experience).toBeUndefined()
     ui.fire(ui.field(FIELD_HELP.experienceStudioScript), '來畫一幅畫吧。')
     expect(ui.avatar.experience?.studio.startScript).toBe('來畫一幅畫吧。')
     expect(Object.keys(ui.avatar.experience!)).not.toContain('startScripts')
@@ -251,7 +262,7 @@ describe('Portrait Studio status panel', () => {
     expect(idle).toMatch(/<button type="button" disabled=""[^>]*>Start Portrait Studio<\/button>/)
     expect(idle).toContain('Start a conversation first')
     const live = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'active', visible: true }))
-    expect(live).toMatch(/<button type="button" aria-describedby="studio-live-hint">Start Portrait Studio<\/button>/)
+    expect(live).toMatch(/<button type="button" aria-describedby="[^"]+">Start Portrait Studio<\/button>/)
     expect(live).toContain('Back to conversation')
   })
 

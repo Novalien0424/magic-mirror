@@ -20,4 +20,11 @@ Require exit 0 plus expected executed cases for a pass; inspect the relevant scr
 
 Identify each audio route explicitly; each proves only its own boundary. Provider dialogue is probabilistic: one pass or failure is a sample, so report rates over repeated runs ([prompt evidence](../roleplay-control-prompts/SKILL.md)).
 
+Owner sound directive (2026-10-17): before sound-producing QA, capture output
+volume/mute, use the minimum output level (tested Mac system route: 1%), and
+restore the captured state on success, failure or cancellation. Preserve mute;
+never change input gain. Protect any alternate output selected by the test too.
+Use guaranteed cleanup, not a success-only restore. Mark acoustic evidence as
+minimum-volume; do not silently raise volume to satisfy an acoustic threshold.
+
 Fix observed failures and rerun the affected mode within scope. Preserve failed evidence and actual manual exclusions. Record command, exit, cases, build/artifact links, visual findings and remaining manual checks. QA does not advance phases.

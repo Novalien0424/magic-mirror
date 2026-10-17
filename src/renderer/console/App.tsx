@@ -49,12 +49,12 @@ import type { ImportedMedia, MediaImportRequest } from '../../shared/media-impor
 import { probeDraftVisualAsset } from './visual-asset-probe'
 import { SceneComposer } from './SceneComposer'
 import { buildSceneDraftSave, draftFingerprint, isSceneDraftSaved } from './scene-editor-model'
-import { HelpButton } from './HelpButton'
+import { HelpButton, InfoTip } from './HelpButton'
 import { SceneActionFields } from './SceneActionFields'
 import { PresentationEditor } from './PresentationEditor'
 import { MediaSkillEditor } from './MediaSkillEditor'
 import { ExperiencesEditor } from './ExperiencesEditor'
-import { StudioLiveControls, StudioStatusPanel } from './StudioStatusPanel'
+import { StudioLiveControls, StudioServiceSummary, StudioStatusPanel, type LiveMessage } from './StudioStatusPanel'
 import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { LoopVideoPanel } from './LoopVideoPanel'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
@@ -77,7 +77,11 @@ const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
 /** Avatar settings sections, including Portrait Studio's Experiences. */
 type AvatarSection = ProfileSection
 const AVATAR_SECTIONS: readonly AvatarSection[] = PROFILE_SECTIONS
-const SYSTEM_PAGES = ['Devices', 'Media folders', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
+const SYSTEM_PAGES = ['Devices', 'Media folders', 'Portrait images', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
+/** Everyday System pages; the rest sit after an Advanced divider. */
+const SYSTEM_EVERYDAY = 3
+type LiveLine = { readonly tone: 'success' | 'degraded' | 'failed' | 'loading'; readonly content: React.ReactNode }
+const LIVE_ICONS: Readonly<Record<LiveLine['tone'], string>> = { success: '✓', degraded: '⚠', failed: '✕', loading: '◷' }
 const MODULES = [
   'app',
   'openai',
@@ -463,47 +467,56 @@ function OverviewPanel({
   configState,
   bridge,
   editing,
+  visible,
+  operatorLoop,
   onChanged,
   onEdit,
+  onLoopVideo,
+  onPortraitImages,
 }: {
   readonly state: OverviewState
   readonly configState: ConfigState
   readonly bridge: ConsoleBridge | null
   readonly editing: boolean
+  readonly visible: boolean
+  readonly operatorLoop: OperatorLoopSnapshot | null
   readonly onChanged: () => void
   readonly onEdit: () => void
+  readonly onLoopVideo: () => void
+  readonly onPortraitImages: () => void
 }): React.JSX.Element {
   const overview = state.status === 'success' ? state.value : null
   const activeConfig = configState.status === 'success' ? configState.value.active : null
   const audioTcc = overview?.audioTcc ?? 'not_checked'
   const cameraTcc = overview?.cameraTcc ?? 'not_checked'
 
-  return (
-    <section className="console__panel" aria-labelledby="console-overview">
-      <div className="console__panel-heading">
-        <div>
-          <p className="console__eyebrow">Observation</p>
-          <h2 id="console-overview">Overview</h2>
-        </div>
-      </div>
+  const attention = overview ? MODULES.filter(module => ['failed', 'degraded'].includes(overview.modules[module].status)) : []
 
+  return (
+    <section className="console__panel mirror-overview" aria-labelledby="console-overview">
+      <h2 id="console-overview" className="console__sr-only">Overview</h2>
       <ActiveAvatarPanel payload={configState.status === 'success' ? configState.value : null}
         bridge={bridge} lifecycle={overview?.lifecycle} editing={editing} onChanged={onChanged} onEdit={onEdit} />
-      <div className="console__overview-grid console__overview-primary">
-        <OverviewField label="Mirror" value={displayValue(overview?.lifecycle)} />
-        <OverviewField label="Wake phrase" value={displayValue(activeConfig?.wake.phrase)} />
-        <OverviewField label="Published configuration" value={activeConfig ? `Version ${activeConfig.configVersion}` : 'Loading'} />
+      <p className="mirror-overview__summary">
+        <span>Published {activeConfig ? `version ${activeConfig.configVersion}` : 'configuration loading'} <InfoTip label="Published configuration" help="The settings visitors get now. Publish all changes in Avatars creates the next version." /></span>
+        <span className={overview && attention.length ? 'mirror-overview__attention' : undefined}>{overview ? attention.length
+          ? '⚠ Some modules need attention.' : '✓ All modules normal.' : 'Module status unavailable.'}</span>
+      </p>
+      <div className="mirror-modes">
+        <p className="studio-service-summary"><span>Loop video</span>
+          <span className={`loop-video-status loop-video-status--${operatorLoop?.mode === 'loop' ? operatorLoop.status : 'idle'}`}>{loopModeLabel(operatorLoop)}</span>
+          <HelpButton className="console__link" onClick={onLoopVideo}
+            help="Choose the shared video and music that play on the Mirror instead of the avatar, then play or check them.">Loop video settings</HelpButton></p>
+        <StudioServiceSummary bridge={bridge} visible={visible} onOpen={onPortraitImages} />
       </div>
       {state.status === 'failure' ? <ReasonDetail code={state.reason} /> : null}
-      <p>{overview ? MODULES.some(module => ['failed', 'degraded'].includes(overview.modules[module].status))
-        ? 'Some modules need attention.' : '✓ All modules normal.' : 'Module status unavailable.'}</p>
-      <ul className="console__modules" aria-label="Needs attention">
-        {MODULES.filter(module => overview && ['failed', 'degraded'].includes(overview.modules[module].status)).map(module =>
+      {attention.length > 0 && <ul className="console__modules" aria-label="Needs attention">
+        {attention.map(module =>
           <li key={module} className="console__module-card">
             <div className="console__module-heading"><strong>{module}</strong><span className={statusClass(overview!.modules[module].status)}>{overview!.modules[module].status}</span></div>
             <ModuleSummary label="Reason" summary={overview!.modules[module].lastError ?? overview!.modules[module].lastFallback} />
           </li>)}
-      </ul>
+      </ul>}
       <details className="console__technical"><summary>Technical health and runtime details</summary>
       <article className="console__module-card" aria-label="Wake lifecycle">
         <div className="console__module-heading">
@@ -564,6 +577,22 @@ function OverviewPanel({
   )
 }
 
+function loopModeLabel(snapshot: OperatorLoopSnapshot | null): string {
+  if (!snapshot) return 'Checking…'
+  if (snapshot.mode === 'avatar') return 'Not playing'
+  return { idle: 'Starting', preparing: 'Preparing', playing: 'Playing', recovering: 'Recovering', failed: 'Failed · Mirror black' }[snapshot.status]
+}
+
+/** The latest lifecycle action outcome for the control bar's result line. */
+function lifecycleLine(state: LifecycleActionState): LiveLine | null {
+  if (state.status === 'loading') return { tone: 'loading', content: `Running ${state.action}…` }
+  if (state.status === 'success') return { tone: state.result.status === 'failed' ? 'failed' : 'success', content: <>
+    <strong>Lifecycle action {state.result.action}: {state.result.status}</strong> <OperatorMessage text={state.result.reason} /></> }
+  if (state.status === 'failure') return { tone: 'failed', content: <ReasonDetail code={state.reason} /> }
+  return null
+}
+
+/** Conversation group of the control bar; disabled reasons are hover and focus help. */
 function LifecycleControls({
   lifecycle,
   bridgeAvailable,
@@ -580,46 +609,24 @@ function LifecycleControls({
   readonly onDisconnect: () => void
 }): React.JSX.Element {
   const controlsDisabled = !bridgeAvailable || state.status === 'loading'
+  const unavailable = !bridgeAvailable ? 'The Console is not connected to the app. Restart the app if this persists.' : 'Wait for the current action to finish.'
+  const startBlocked = lifecycle === 'active' || lifecycle === 'activating' || lifecycle === 'suspending'
+  const sleeping = lifecycle === 'dormant' || lifecycle === 'starting'
 
   return (
-    <section className="console__panel console__lifecycle" aria-labelledby="console-lifecycle">
-      <div className="console__panel-heading">
-        <div>
-          <h2 id="console-lifecycle">Conversation Controls</h2>
-        </div>
-        <span className={bridgeAvailable ? 'console__status console__status--success' : 'console__status console__status--disabled'}>
-          {bridgeAvailable ? 'Ready' : 'Unavailable'}
-        </span>
-      </div>
-
-      <div className="console__command-list" aria-label="Conversation lifecycle controls">
-        <button type="button" disabled={controlsDisabled || lifecycle === 'active' || lifecycle === 'activating' || lifecycle === 'suspending'} onClick={onStartConversation}>
-          Start Conversation
-        </button>
-        <button type="button" disabled={controlsDisabled || lifecycle !== 'active'} onClick={onInterrupt}>
-          Interrupt
-        </button>
-        <button type="button" disabled={controlsDisabled || lifecycle === 'dormant' || lifecycle === 'starting'} onClick={onDisconnect}>
-          Disconnect
-        </button>
-      </div>
-
-      {state.status === 'loading' ? (
-        <p className="console__result console__result--loading" role="status" aria-live="polite">
-          Running {state.action}…
-        </p>
-      ) : null}
-      {state.status === 'success' ? (
-        <div className="console__result console__result--success" role="status" aria-live="polite">
-          <strong>Lifecycle action: {state.result.action}</strong>
-          <span>Status: {state.result.status}</span>
-          <OperatorMessage text={state.result.reason} />
-        </div>
-      ) : null}
-      {state.status === 'failure' ? (
-        <div className="console__result console__result--failed"><ReasonDetail code={state.reason} /></div>
-      ) : null}
-    </section>
+    <div className="live-bar__group" role="group" aria-labelledby="console-lifecycle">
+      <h2 id="console-lifecycle" className="live-bar__label">Conversation</h2>
+      <HelpButton placement="below" className={lifecycle === 'dormant' ? 'console__primary' : undefined}
+        disabled={controlsDisabled || startBlocked} onClick={onStartConversation}
+        help={controlsDisabled ? unavailable : startBlocked ? 'A conversation is already running or changing state.'
+          : 'Wakes the avatar now and starts a conversation, as if the wake phrase was heard.'}>Start Conversation</HelpButton>
+      <HelpButton placement="below" disabled={controlsDisabled || lifecycle !== 'active'} onClick={onInterrupt}
+        help={controlsDisabled ? unavailable : lifecycle !== 'active' ? 'Available during a conversation.'
+          : 'Stops the avatar mid-sentence. The conversation stays open.'}>Interrupt</HelpButton>
+      <HelpButton placement="below" className="console__danger" disabled={controlsDisabled || sleeping} onClick={onDisconnect}
+        help={controlsDisabled ? unavailable : sleeping ? 'The Mirror is already asleep.'
+          : 'Ends the conversation now and puts the Mirror back to sleep.'}>Disconnect</HelpButton>
+    </div>
   )
 }
 
@@ -690,6 +697,9 @@ function SimulatorPanel({
   )
 }
 
+const DEVICE_STATUS_LABELS: Readonly<Record<string, string>> = { ready: 'OK', loading: 'Loading…', failure: 'Unavailable', degraded: 'Needs attention', failed: 'Failed' }
+const deviceStatusLabel = (status: string): string => DEVICE_STATUS_LABELS[status] ?? status.replaceAll('_', ' ')
+
 function AvatarAudioPanel({
   store,
   disabled,
@@ -740,15 +750,10 @@ function AvatarAudioPanel({
         <div>
           <h2 id="console-avatar-audio">Devices</h2>
         </div>
-        <span className={statusClass(value?.status ?? state.status)}>{value?.status ?? state.status}</span>
+        <span className={statusClass(value?.status ?? state.status)}>{deviceStatusLabel(value?.status ?? state.status)}</span>
       </div>
 
       {state.status === 'failure' ? <ReasonDetail code={state.reason} /> : null}
-      <div className="console__device-save console__action-row">
-        <button type="button" className="console__primary" disabled={disabled || saving || !audioDevices} onClick={() => void save()}>{saving ? 'Saving…' : 'Save device settings'}</button>
-        {draftPreferences && <button type="button" disabled={saving} onClick={() => { setDraftPreferences(null); setSaveResult('Changes discarded.') }}>Discard changes</button>}
-        <span role="status">{saveResult || (draftPreferences ? 'Unsaved device changes' : 'Device settings are saved')}</span>
-      </div>
       <fieldset className="console__volume-controls"><legend>Volume</legend>
         <div className="console__gain-controls">
           {([
@@ -791,7 +796,6 @@ function AvatarAudioPanel({
           </HelpField>
         })}
       </div>
-      <p className="console__detail">Microphone changes apply at the next conversation.</p>
       {audioDevices?.reason !== 'audio_devices_ready' && <p className="console__detail" role="status">{audioDevices?.reason?.replaceAll('_', ' ') ?? 'Loading sound devices…'}</p>}
       <button type="button" disabled={disabled} onClick={() => onCommand({ type: 'refresh_audio_devices' })}>Refresh sound devices</button>
       <section aria-label="Camera vision">
@@ -860,6 +864,11 @@ function AvatarAudioPanel({
       </details>
       </details>
 
+      <div className="console__device-save console__action-row">
+        <button type="button" className="console__primary" disabled={disabled || saving || !audioDevices} onClick={() => void save()}>{saving ? 'Saving…' : 'Save device settings'}</button>
+        {draftPreferences && <button type="button" disabled={saving} onClick={() => { setDraftPreferences(null); setSaveResult('Changes discarded.') }}>Discard changes</button>}
+        <span role="status">{saveResult || (draftPreferences ? 'Unsaved device changes' : 'Device settings are saved')}</span>
+      </div>
     </section>
   )
 }
@@ -1382,6 +1391,9 @@ interface ModelsPanelProps {
 
 interface ScenesPanelProps {
   readonly onSharedMedia?: () => void
+  /** Increments when the control bar's Stop All runs. */
+  readonly stopSignal?: number
+  readonly onPortraitImages?: () => void
   readonly lifecycle?: string
   readonly onEditingChange?: (editing: boolean) => void
   readonly voiceOnly?: boolean
@@ -1402,6 +1414,8 @@ export function ScenesPanel({
   lifecycle,
   onEditingChange,
   onSharedMedia,
+  stopSignal = 0,
+  onPortraitImages,
 }: ScenesPanelProps): React.JSX.Element {
   // Keep the editor mounted while Save/Test/Publish refresh their read model.
   const lastPayload = useRef<ConsoleConfigPayload | null>(null)
@@ -1716,17 +1730,20 @@ export function ScenesPanel({
     saveCheckController.current?.abort()
     if (bridge) void runResponse(() => bridge.stopScenes(), message, false)
   }
+  // The control bar stops the Mirror; this workspace drops its pending scene tests and checks.
+  const handledStop = useRef(stopSignal)
+  useEffect(() => {
+    if (stopSignal === handledStop.current) return
+    handledStop.current = stopSignal
+    ++sceneTestGeneration.current
+    saveCheckController.current?.abort()
+    setResult('')
+  }, [stopSignal])
 
   return (
     <FieldErrorsContext.Provider value={{ errors: fieldErrors, focus: fieldErrors[0] ?? null }}>
     <section ref={panel} className="console__panel console__scenes" aria-labelledby="console-scenes" onChangeCapture={() => setFieldErrors([])}>
-      <div className="console__panel-heading profile-workspace-heading">
-        <div>
-          <p className="console__eyebrow">Avatar workspace</p>
-          <h2 id="console-scenes">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared library' : 'Avatars'}</h2>
-        </div>
-        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => stopSceneTests('All scenes stopped.')}>Stop All</button>
-      </div>
+      <h2 id="console-scenes" className="console__sr-only">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared library' : 'Avatars'}</h2>
 
       {state.status === 'failure' ? <div className="console__fault"><ReasonDetail code={state.reason} /><button disabled={!bridgeAvailable} onClick={onChanged}>Retry loading saved configuration</button></div> : null}
       <p className="console__sr-only" aria-live="polite">{operatorMessageText(result)}</p>
@@ -1736,16 +1753,27 @@ export function ScenesPanel({
           : <button onClick={() => setConfirmDiscard(true)}>Discard my edits and reload saved changes</button>}
       </div> : null}
       <div className={`profile-workspace${section === 'Music & video' ? ' profile-workspace--media' : ''}`}>
-      {rawDraft?.avatarCatalog && editingAvatar ? <aside className="avatar-selector profile-rail" aria-label="Avatar profiles">
-        <p className="profile-rail__context"><small>EDITING NOW</small><strong>{editingAvatar.name || 'Unnamed avatar'}</strong><span>{editingId.slice(-8)}</span></p>
-        <p className="profile-rail__context"><small>ACTIVE ON MIRROR</small><strong>{activeAvatar?.name ?? 'Connecting…'}</strong></p>
-        <div className="console__action-row">
-        <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
+      <div className="profile-workspace__editor">
+      {rawDraft?.avatarCatalog && editingAvatar && <header className="avatar-header" aria-label="Current avatar being edited">
+        <HelpField className="avatar-header__picker" help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy || memoryEditing} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
+          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'}{rawDraft.avatarCatalog!.avatars.filter(b => b.name === a.name).length > 1 ? ` · ${a.id.slice(-8)}` : ''}{a.id === activeAvatar?.id ? ' · on Mirror' : ''}</option>)}
+        </select></HelpField>
+        {editingId === activeAvatar?.id
+          ? <span className="console__status console__status--success avatar-header__on-mirror">On Mirror <InfoTip label="On Mirror" placement="below"
+            help={applyOnSave ? 'Visitors see this avatar now. Save & apply all changes publishes your edits for the next conversation.' : 'Visitors see this avatar now. Edits reach the Mirror after you publish them.'} /></span>
+          : <HelpButton placement="below" helpId="avatar-activation-reason" disabled={disabled || !!activationReason}
+            help={activationReason || `Puts this avatar’s published settings on the Mirror instead of ${activeAvatar?.name ?? 'the current avatar'}. Editing alone does not switch the Mirror.`}
+            onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</HelpButton>}
+        {editingId !== activeAvatar?.id && activeAvatar && <span className="avatar-header__live">On Mirror: {activeAvatar.name || 'Unnamed avatar'}</span>}
+        <div className="avatar-header__actions">
+          <HelpButton placement="below" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32}
+            help="Creates an avatar with neutral defaults. Configure, save and publish it before using it on the Mirror." onClick={() => {
           const next = newAvatar(crypto.randomUUID())
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
           setNameFocusId(next.id); setSection('Persona'); setResult('New avatar created with neutral defaults. Configure its persona, appearance, voice and spells.')
-        }}>New avatar</button>
-        <button type="button" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32} onClick={() => {
+        }}>New avatar</HelpButton>
+          <HelpButton placement="below" disabled={disabled || rawDraft.avatarCatalog.avatars.length >= 32}
+            help="Copies this avatar with its scenes and links to shared media. Media locked to this avatar is not copied." onClick={() => {
           const next = { ...structuredClone(editingAvatar), id: crypto.randomUUID(), name: `${editingAvatar.name.slice(0, 70)} copy` }
           next.scenes = next.scenes.filter(s => s.stages.every(st => st.actionIds.every(id => {
             const action = rawDraft.sceneActions.find(a => a.id === id)
@@ -1762,42 +1790,33 @@ export function ScenesPanel({
             canUseAvatarResource(rawDraft.avatarCatalog!, next.id, resource.kind === 'video' ? 'visual' : 'music', resource.assetId))
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
           setNameFocusId(next.id); setSection('Persona'); setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
-        }}>Duplicate</button>
-        <button type="button" className="console__danger" disabled={disabled || !!deleteReason} aria-describedby="avatar-delete-reason"
-          onClick={() => { setDeleteError(''); setDeletingAvatarId(editingId) }}>Delete avatar</button>
-        {deleteReason && <p id="avatar-delete-reason" className="console__muted">{deleteReason}</p>}
+        }}>Duplicate</HelpButton>
+          <HelpButton placement="below" className="console__danger" helpId="avatar-delete-reason" disabled={disabled || !!deleteReason}
+            help={deleteReason || 'Deletes this avatar after a confirmation. Shared rigs and media are kept.'}
+            onClick={() => { setDeleteError(''); setDeletingAvatarId(editingId) }}>Delete avatar</HelpButton>
+          {payload && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
         </div>
-        <button type="button" disabled={disabled || !!activationReason} aria-describedby="avatar-activation-reason"
-          onClick={() => { setPreviewRevision(v => v + 1); if (bridge) void runResponse(() => bridge.loadAvatar(editingId), 'Avatar loaded. The next wake starts a fresh conversation.') }}>Use on Mirror</button>
-        <p id="avatar-activation-reason" className="console__muted">{activationReason || 'Switch the published character. Editing alone does not switch the Mirror.'}</p>
-        <nav aria-label="Shared library" className="profile-rail__library"><h3>Shared library</h3><p>Reusable across avatars</p>
-          {LIBRARY_SECTIONS.map(label => <button key={label} disabled={memoryEditing} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
-        </nav>
-      </aside> : null}
-      <div className="profile-workspace__editor">
-      {rawDraft?.avatarCatalog && editingAvatar && <header className="profile-editing-header" aria-label="Current avatar being edited">
-        <p className="console__eyebrow">Editing avatar settings</p>
-        <h2>{editingAvatar.name || 'Unnamed avatar'}</h2>
-        <p>{section === 'Memories' ? 'Memory changes save immediately.' : section === 'Music & video' ? 'Folder links save immediately. Playback settings apply after Save & apply.' : editingId === activeAvatar?.id ? (applyOnSave ? 'This avatar is active on Mirror. Use Save & apply all changes below.' : 'This avatar is active on Mirror. Edits apply after you publish.') : `Active on Mirror: ${activeAvatar?.name ?? 'Loading…'}. Editing this avatar does not switch Mirror.`}</p>
-        <HelpField help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy || memoryEditing} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
-          {rawDraft.avatarCatalog.avatars.map(a => <option key={a.id} value={a.id}>{a.name || 'Unnamed avatar'} · {a.id.slice(-8)}{a.id === activeAvatar?.id ? ' · Active on Mirror' : ''}</option>)}
-        </select></HelpField>
       </header>}
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
         {AVATAR_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        {rawDraft?.avatarCatalog && editingAvatar && <>
+          <span className="profile-sections__divider" aria-hidden="true">Shared</span>
+          {LIBRARY_SECTIONS.map(label => <button key={label} type="button" className="profile-sections__library" disabled={memoryEditing} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        </>}
       </nav>
-      {section !== 'Music & video' && section !== 'Memories' && rawDraft && payload && editingAvatar && <PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} />}
-      <div className="profile-section-heading"><p className="console__eyebrow">{LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number]) ? 'Shared resource · changes can affect multiple avatars' : `Editing ${editingAvatar?.name || 'Unnamed avatar'}`}</p><h3>{section}</h3>
-        <p>{section === 'Memories' ? 'What this avatar remembers between conversations.' : section === 'Persona' ? 'Who this character is, and how it greets visitors.' : section === 'Appearance' ? 'Its Cubism avatar, background and entrance.' : section === 'Voice' ? 'How this character sounds. Preview before publishing.' : section === 'Music & video' ? 'Media this avatar can play when visitors ask during conversation.' : section === 'Spells & scenes' ? 'Phrases that trigger this avatar’s scenes and actions.' : section === 'Experiences' ? 'What happens after wake: conversation or Portrait Studio, with its questions, guest list and the avatar’s prompt at each stage.' : 'Changes here can affect every avatar using the resource.'}</p>
-      </div>
+      <h3 className="console__sr-only">{section}</h3>
+      {LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number])
+        ? <p className="profile-save-note">Shared resource · changes can affect every avatar that uses it.</p>
+        : section === 'Memories' ? <p className="profile-save-note">Memory changes save immediately.</p>
+          : section === 'Music & video' ? <p className="profile-save-note">Folder links save immediately. Playback settings apply after Save &amp; apply.</p> : null}
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
       {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
-      {visible && section === 'Experiences' && <StudioStatusPanel bridge={bridge} visible={visible} />}
-      {visible && section === 'Experiences' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar} /> : null}
-      {section === 'Music & video' && rawDraft && payload && editingAvatar && <details><summary>Advanced: prompts and tools</summary><PromptInspector draft={rawDraft} published={payload.active} avatarId={editingId} /></details>}
+      {visible && section === 'Experiences' && <StudioServiceSummary bridge={bridge} visible={visible} onOpen={() => onPortraitImages?.()} />}
+      {visible && section === 'Experiences' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar}
+        onEditGreeting={() => setSection('Persona')} /> : null}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {dialogueOnly && !voiceOnly && avatarView === 'appearance' && editingAvatar && rawDraft?.avatarCatalog ? <fieldset disabled={disabled}><legend>Cubism model</legend>
@@ -1827,10 +1846,9 @@ export function ScenesPanel({
       </fieldset> : null}
       {visible && section === 'Appearance' ? <details key={`rig-${editingId}`}><summary>Advanced rig preview · local only</summary><CubismStudio key={editingAvatar?.modelId} bridge={bridge} visible={visible} assignedModel={editingModel ?? null} /></details> : null}
 
-      {personaOnly && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines</legend><div className="console__form-grid">
+      {personaOnly && draft ? <fieldset disabled={disabled} className="avatar-spoken-lines"><legend>Spoken lines <InfoTip label="Spoken lines" help="Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft." /></legend><div className="console__form-grid">
         <HelpField fieldPath={`${avatarFieldPath}.presentation.wakeGreeting`} help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
         <HelpField fieldPath={`${avatarFieldPath}.presentation.sleepFarewell`} error={!((draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell) ?? '').trim() ? 'Enter a sleep farewell.' : undefined} help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
-        <p className="console__muted">Leave the greeting empty for silent wake. The sleep farewell must contain text; the mirror waits for its playback to end before sleeping. Scene and dialogue edits share the same draft.</p>
       </div></fieldset> : null}
       {(!dialogueOnly || section === 'Music & video') && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
@@ -1841,7 +1859,7 @@ export function ScenesPanel({
         saveUnavailableReason={saveUnavailableReason} testUnavailableReason={testUnavailableReason} result={result}
         onImport={(kind, actionId) => void importMedia({ kind, multiple: false }, actionId)}
         onRun={(id, scope) => bridge && void runResponse(() => bridge.runScene(id, scope), 'Published playback requested.', false)} /> : null}
-      {visible && resourceDraft && section === 'Appearance' ? <PresentationEditor key={editingId} bridge={bridge} avatarId={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} /> : null}
+      {visible && resourceDraft && section === 'Appearance' ? <PresentationEditor key={editingId} bridge={bridge} avatarId={editingId} draft={resourceDraft} model={editingModel ? { id: editingModel.id, manifestFileName: editingModel.manifestFileName } : undefined} disabled={disabled} onChange={mergeResourceDraft} onEditSpokenLines={() => setSection('Persona')} /> : null}
       {!dialogueOnly && draft && editorView === 'library' ? <fieldset disabled={disabled}><legend>Reusable actions</legend>
         <p className="console__muted">Actions are created inside steps. Editing a shared action affects every linked step.</p>
         {draft.sceneActions.map(action => <details key={action.id}><summary>{action.name} · {action.kind}</summary>
@@ -2065,6 +2083,18 @@ export function App(): React.JSX.Element {
   const [selectedPhase, setSelectedPhase] = useState<PhaseTestPhase>('4')
   const [phaseTestsState, setPhaseTestsState] = useState<PhaseTestsViewState>({ status: 'loading' })
   const [lifecycleActionState, setLifecycleActionState] = useState<LifecycleActionState>({ status: 'idle' })
+  const [liveLine, setLiveLine] = useState<LiveLine | null>(null)
+  const topBar = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = topBar.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const update = (): void => document.documentElement.style.setProperty('--console-top-height', `${Math.ceil(element.getBoundingClientRect().height)}px`)
+    const observer = new ResizeObserver(update)
+    observer.observe(element); update()
+    return () => observer.disconnect()
+  }, [])
+  const [stopSignal, setStopSignal] = useState(0)
+  useEffect(() => { const line = lifecycleLine(lifecycleActionState); if (line) setLiveLine(line) }, [lifecycleActionState])
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
@@ -2434,6 +2464,30 @@ export function App(): React.JSX.Element {
     )
   }
 
+  const showLive = (message: LiveMessage): void => setLiveLine({ tone: message.tone, content: message.text })
+  /** Stops scenes and scene tests on the Mirror from any page; the avatar workspace drops its pending checks. */
+  const stopAll = (): void => {
+    const bridge = bridgeRef.current
+    setStopSignal(value => value + 1)
+    if (bridge === null || !bridgeAvailable) { setLiveLine({ tone: 'failed', content: <ReasonDetail code={`${BRIDGE_FAILURE.error}; ${BRIDGE_FAILURE.reason}`} /> }); return }
+    setLiveLine({ tone: 'loading', content: 'Stopping all scenes…' })
+    void bridge.stopScenes().then(
+      response => { if (mountedRef.current) setLiveLine(response.ok ? { tone: 'success', content: 'All scenes stopped.' } : { tone: 'failed', content: <ReasonDetail code={response.reason} /> }) },
+      () => { if (mountedRef.current) setLiveLine({ tone: 'failed', content: <ReasonDetail code={`${BRIDGE_FAILURE.error}; ${BRIDGE_FAILURE.reason}`} /> }) })
+  }
+  const returnToAvatar = (): void => {
+    const bridge = bridgeRef.current
+    if (!bridge?.loopVideo) { setLiveLine({ tone: 'failed', content: 'Loop Video is unavailable. Reopen the updated Console.' }); return }
+    setLiveLine({ tone: 'loading', content: 'Returning to the avatar…' })
+    void bridge.loopVideo({ action: 'stop' }).then(
+      response => {
+        if (!mountedRef.current) return
+        if (response.ok) { setOperatorLoop(response.value.snapshot); setLiveLine({ tone: 'success', content: 'Back to the avatar. Voice, wake listening and camera are on again.' }) }
+        else setLiveLine({ tone: 'failed', content: <ReasonDetail code={response.reason} /> })
+      },
+      () => { if (mountedRef.current) setLiveLine({ tone: 'failed', content: <ReasonDetail code="operator_loop_request_failed" /> }) })
+  }
+
   const loadOlderEvents = (): void => {
     const bridge = bridgeRef.current
     const beforeSequence = eventsState.nextBeforeSequence
@@ -2444,50 +2498,66 @@ export function App(): React.JSX.Element {
 
   return (
     <main className="console">
-      <header className="console__header">
-        <div>
-          <h1 className="console__title">Magic Mirror Console</h1>
-        </div>
-        <span className="console__status">{operatorLoop?.mode === 'loop' ? 'Loop Video' : overviewState.status === 'success' ? overviewState.value.lifecycle : 'Connecting'}</span>
-      </header>
+      <div className="console__top" ref={topBar}>
+        <header className="console__header">
+          <h1 className="console__title">Magic Mirror</h1>
+          <nav className="console__tabs" aria-label="Console pages">
+            {PAGES.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
+              aria-current={activePage === page ? 'page' : undefined} onClick={() => navigate(page, page === 'System' ? 'Devices' : systemPage)}>{page}</button>)}
+          </nav>
+          <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
+            operatorLoop={operatorLoop}
+            phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
+        </header>
 
-      <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
-        operatorLoop={operatorLoop}
-        phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
+        <section className="live-bar" aria-label="Live controls">
+          <div className="live-bar__groups">
+            {operatorLoop?.mode === 'loop' ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
+              <h2 id="live-loop-heading" className="live-bar__label">Loop video</h2>
+              <HelpButton placement="below" className="console__primary" disabled={!bridgeAvailable} onClick={returnToAvatar}
+                help="Stops the loop video and brings the avatar back, with voice, wake listening and camera.">Return to Avatar</HelpButton>
+            </div> : <>
+              <LifecycleControls
+                lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
+                bridgeAvailable={bridgeAvailable}
+                state={lifecycleActionState}
+                onStartConversation={startConversation}
+                onInterrupt={interrupt}
+                onDisconnect={disconnect}
+              />
+              <StudioLiveControls bridge={bridgeRef.current} bridgeAvailable={bridgeAvailable} visible
+                lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} onMessage={showLive} />
+            </>}
+            <div className="live-bar__group live-bar__group--end" role="group" aria-label="Scenes">
+              <HelpButton placement="below" className="console__danger" disabled={!bridgeAvailable} onClick={stopAll}
+                help="Stops every running scene and scene test on the Mirror now, including their sound, video, lights and fog.">Stop All</HelpButton>
+            </div>
+          </div>
+          <p className={`live-bar__result live-bar__result--${liveLine?.tone ?? 'idle'}`} role="status" aria-live="polite">
+            {liveLine && <><span aria-hidden="true">{LIVE_ICONS[liveLine.tone]}</span> {liveLine.content}</>}
+          </p>
+        </section>
+      </div>
 
       {bridgeError ? (
         <p className="console__fault" role="status">Console bridge unavailable: {bridgeError.error}; {bridgeError.reason}</p>
       ) : null}
-
-      <div hidden={activePage !== 'Mirror'}><LifecycleControls
-        lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
-        bridgeAvailable={bridgeAvailable}
-        state={lifecycleActionState}
-        onStartConversation={startConversation}
-        onInterrupt={interrupt}
-        onDisconnect={disconnect}
-      /><StudioLiveControls bridge={bridgeRef.current} bridgeAvailable={bridgeAvailable} visible={activePage === 'Mirror'}
-        lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} /></div>
-
-      <nav className="console__tabs" aria-label="Console pages">
-        {PAGES.map(page => <button key={page} type="button" className={activePage === page ? 'console__tab console__tab--active' : 'console__tab'}
-          aria-current={activePage === page ? 'page' : undefined} onClick={() => navigate(page, page === 'System' ? 'Devices' : systemPage)}>{page}</button>)}
-      </nav>
       {navigationMessage && <div className="console__fault" role="alert">{navigationMessage}<button onClick={() => {
         setActivePage(avatarEditing ? 'Avatars' : 'System'); setSystemPage(configEditing ? 'Config' : 'Models'); setNavigationMessage('')
       }}>Return to unfinished changes</button></div>}
-      {activePage === 'System' && <nav className="console__subnav profile-sections" aria-label="System settings">
-        {SYSTEM_PAGES.slice(0, 2).map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page}</button>)}
-        <details className="console__advanced-nav" open={!['Devices', 'Media folders'].includes(systemPage) || undefined}><summary>Advanced</summary>
-          <div>{SYSTEM_PAGES.slice(2).map(page => <button key={page} aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page === 'Config' ? 'Advanced config' : page}</button>)}</div>
-        </details>
+      {activePage === 'System' && <nav className="console__subnav system-sections" aria-label="System settings">
+        {SYSTEM_PAGES.slice(0, SYSTEM_EVERYDAY).map(page => <button key={page} type="button" aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page}</button>)}
+        <span className="system-sections__divider" aria-hidden="true">Advanced</span>
+        {SYSTEM_PAGES.slice(SYSTEM_EVERYDAY).filter(page => page !== 'Simulator' || overviewState.status !== 'success' || overviewState.value.developerMode)
+          .map(page => <button key={page} type="button" className="system-sections__advanced" aria-pressed={systemPage === page} onClick={() => navigate('System', page)}>{page === 'Config' ? 'Advanced config' : page}</button>)}
       </nav>}
 
       <div className="console__panels">
         <div hidden={activePage !== 'Mirror'}>
           <OverviewPanel state={overviewState} configState={configState} bridge={bridgeRef.current}
-            editing={avatarEditing || configEditing || modelsEditing}
-            onChanged={refreshConfigAndModels} onEdit={() => navigate('Avatars', systemPage)} />
+            editing={avatarEditing || configEditing || modelsEditing} visible={activePage === 'Mirror'} operatorLoop={operatorLoop}
+            onChanged={refreshConfigAndModels} onEdit={() => navigate('Avatars', systemPage)}
+            onLoopVideo={() => navigate('Loop Video', systemPage)} onPortraitImages={() => navigate('System', 'Portrait images')} />
         </div>
         <div hidden={activePage !== 'Avatars'}>
           <ScenesPanel
@@ -2499,12 +2569,15 @@ export function App(): React.JSX.Element {
             bridgeAvailable={bridgeAvailable}
             onChanged={refreshConfigAndModels}
             onSharedMedia={() => navigate('System', 'Media folders')}
+            stopSignal={stopSignal}
+            onPortraitImages={() => navigate('System', 'Portrait images')}
           />
         </div>
         <div hidden={activePage !== 'Loop Video'}>
           <LoopVideoPanel bridge={bridgeRef.current} visible={activePage === 'Loop Video'} onPlaybackChange={setOperatorLoop} onMediaFolders={() => navigate('System', 'Media folders')} />
         </div>
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
+        {activePage === 'System' && systemPage === 'Portrait images' && <div className="console__panel"><StudioStatusPanel bridge={bridgeRef.current} visible /></div>}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             store={runtimeStore}

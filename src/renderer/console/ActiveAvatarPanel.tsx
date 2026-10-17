@@ -3,6 +3,7 @@ import * as React from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { ConsoleConfigPayload } from '../../shared/console-types'
 import { avatarActivationReason } from './profile-workspace'
+import { HelpButton } from './HelpButton'
 
 export function ActiveAvatarPanel({ payload, bridge, lifecycle, editing, onChanged, onEdit }: {
   payload: ConsoleConfigPayload | null
@@ -39,21 +40,18 @@ export function ActiveAvatarPanel({ payload, bridge, lifecycle, editing, onChang
     finally { inFlight.current = false; setBusy(false) }
   }
   return <section className="console__active-avatar" aria-labelledby="active-avatar-heading">
-    <div className="console__active-avatar-heading">
-      <div><p className="console__eyebrow">Active avatar · one at a time</p><h3 id="active-avatar-heading">{active?.name ?? 'Loading avatars…'}</h3></div>
-      <span className="console__status console__status--success">On Mirror</span>
-    </div>
-    <p>Choose the published character visitors will see and hear.</p>
-    <div className="console__action-row">
-      <label>Choose active avatar<select aria-label="Choose active avatar" value={selectedId} disabled={!catalog || busy}
+    <div className="console__active-avatar-row">
+      <p className="console__active-avatar-name"><span className="console__status console__status--success">On Mirror</span>
+        <strong id="active-avatar-heading">{active?.name ?? 'Loading avatars…'}</strong></p>
+      <label className="console__inline-field">Choose active avatar<select aria-label="Choose active avatar" value={selectedId} disabled={!catalog || busy}
         onChange={event => { setSelected(event.currentTarget.value); setMessage('') }}>
         {!catalog && <option value="">Loading…</option>}
         {choices?.map(avatar => <option value={avatar.id} key={avatar.id}>{avatar.name}{avatar.id === active?.id ? ' · Active' : ''}</option>)}
       </select></label>
-      <button type="button" disabled={!bridge || busy || !!reason} aria-describedby="mirror-avatar-switch-reason" onClick={() => void activate()}>{busy ? 'Switching…' : 'Activate avatar'}</button>
-      <button type="button" onClick={onEdit}>Manage avatars</button>
+      <HelpButton disabled={!bridge || busy || !!reason} onClick={() => void activate()}
+        help={reason || 'Puts the chosen published avatar on the Mirror. Only one avatar is active at a time; the next wake starts a fresh conversation.'}>{busy ? 'Switching…' : 'Activate avatar'}</HelpButton>
+      <HelpButton className="console__link" onClick={onEdit} help="Edit each avatar’s persona, appearance, voice, Portrait Studio and scenes.">Manage avatars</HelpButton>
     </div>
-    <p id="mirror-avatar-switch-reason" className="console__muted">{reason || 'Activating replaces the current avatar. Only one avatar can be active.'}</p>
-    <p role="status" aria-live="polite">{message}</p>
+    <p className="console__active-avatar-message" role="status" aria-live="polite">{message}</p>
   </section>
 }

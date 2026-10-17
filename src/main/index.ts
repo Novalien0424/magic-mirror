@@ -1,5 +1,6 @@
 import { allowPromptWindow } from '../shared/prompt-window'
 import { createOperatorLoop } from './operator-loop'
+import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
@@ -1078,7 +1079,13 @@ void app.whenReady().then(async () => {
   }
 
   const deferredCredentialEvents = createDeferredCredentialEventSink()
-  const mediaFolders = new MediaFolders(join(app.getPath('userData'), 'media-folders.json'))
+  const mediaFolders = new MediaFolders(join(app.getPath('userData'), 'media-folders.json'),
+    process.platform === 'darwin' ? createMacMediaFilePreparer(app.isPackaged
+      ? join(process.resourcesPath, 'app.asar.unpacked/out/native/media-file-prepare')
+      : join(app.getAppPath(), 'out/native/media-file-prepare'), join(app.getPath('userData'), 'media-cache-v1'), reason => {
+        runtime.telemetry.emit({ module: 'avatar', event: 'media_file_preparation',
+          status: reason.endsWith('_failed') ? 'degraded' : 'info', reason, source: 'runtime' })
+      }) : undefined)
   const mediaFoldersReady = mediaFolders.load()
     .catch(() => reportMainDegradation('avatar', 'media_folders', 'media_folder_load_failed'))
   initializeAudioPreferences(join(app.getPath('userData'), 'audio-devices.json'))

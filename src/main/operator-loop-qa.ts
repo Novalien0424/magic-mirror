@@ -11,6 +11,7 @@ const CASES = [
   'operator_loop_avatar_return', 'operator_loop_separate_audio', 'operator_loop_independent_wraps',
   'operator_loop_single_reload', 'operator_loop_failed_black', 'operator_loop_start_normal_recovery',
   'operator_console_on_mirror', 'operator_console_preserves_loop_and_draft',
+  'operator_loop_saved_replacement_button',
 ] as const
 
 const DOM = `
@@ -239,7 +240,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
         && r.value.publishDiff.changed.length === 0;`)) fail('saved_avatar_not_restored')
     if (avatarFingerprint && await fingerprint() !== avatarFingerprint) fail('avatar_settings_changed')
   }
-  const operatorCommand = async (action: 'normal' | 'show_console'): Promise<void> => {
+  const operatorCommand = async (action: 'normal' | 'show_console' | 'play_loop'): Promise<void> => {
     // START's mode switch uses this same production mailbox. Stay inside this
     // process's isolated userData; never invoke the field launcher or TV control.
     const id = randomUUID(), directory = join(userData, 'operator-control')
@@ -299,7 +300,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     step = CASES[1]
     await click('Loop Video')
     await waitFor(() => evaluate(`const r = await bridge.mediaFolders({action:'get'});
-      return r.ok && r.value.shared?.status === 'ready' && r.value.entries.length === 2
+      return r.ok && r.value.shared?.status === 'ready' && r.value.entries.length === 3
         && ['operator-loop-qa-video','operator-loop-qa-music'].every(name => r.value.entries.some(e => e.origin === 'shared' && e.name === name))
         && !!control('Loop video') && !control('Loop video').matches(':disabled')
         && [...control('Loop video').options].some(o => o.textContent === 'operator-loop-qa-video');`))
@@ -365,6 +366,22 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
       fail('duplicate_play_restarted')
     }
     pass({ generation_unchanged: true, media_nodes_unchanged: true, source_loads: 0, duplicate_clicks: 2 })
+
+    step = CASES[14]
+    const replacementId = await evaluate<string>(`return [...control('Loop video').options].find(o => o.textContent === 'operator-loop-qa-replacement')?.value`)
+    if (!/^folder-[a-f0-9]{40}$/.test(replacementId) || replacementId === videoId) fail('replacement_fixture_missing')
+    await set('Loop video', replacementId)
+    const replacement = await save()
+    await persisted(replacement, 'loop')
+    if ((await snapshot()).settings.videoId !== videoId) fail('save_changed_playback_before_button')
+    await operatorCommand('play_loop')
+    const replaced = await playing()
+    if (replaced.settings.videoId !== replacementId || replaced.generation <= embeddedPlaying.generation) fail('button_used_old_selection')
+    await protocol('visual', replacementId, replaced.generation)
+    await shot('operator-loop-saved-replacement.png', true)
+    pass({ saved_selection_used: true, new_generation: true, route: 'production_isolated_mailbox' })
+    await operatorCommand('show_console')
+    await set('Loop video', videoId); await save()
 
     step = CASES[6]
     await click('Return to Avatar'); await returnedAvatar(); await persisted(embedded, 'avatar')
@@ -459,7 +476,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     step = CASES[11]
     await operatorCommand('normal'); await returnedAvatar(); await persisted(separate, 'avatar')
     if (input.console.isVisible()) fail('start_kept_console_overlay')
-    await waitFor(() => evaluate("return panel?.textContent.includes('Avatar mode') && !button('Play on Mirror').matches(':disabled')"))
+    await waitFor(() => evaluate("return panel?.textContent.includes('Not playing') && !button('Play on Mirror').matches(':disabled')"))
     await shot('operator-loop-start-normal-avatar.png', true)
     pass({ normal_acknowledged: true, saved_avatar_unchanged: true })
     if (passed.size !== CASES.length || !CASES.every(name => passed.has(name))) fail('cases_incomplete')

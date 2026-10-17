@@ -239,6 +239,18 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(html).not.toMatch(/Not implemented|reserved for later/i)
   })
 
+  it('summarizes Loop video and the Portrait image service on the Mirror page with links to their settings', () => {
+    const html = renderConsole()
+    const overview = html.slice(html.indexOf('class="console__panel mirror-overview"'), html.indexOf('Technical health and runtime details'))
+
+    expect(overview).toContain('class="mirror-modes"')
+    expect(overview).toContain('Loop video</span>')
+    expect(overview).toContain('Checking…')
+    expect(overview).toContain('>Loop video settings</button>')
+    expect(overview).toContain('ChatGPT image service')
+    expect(overview).toContain('>Sign-in and test portrait</button>')
+  })
+
   it('keeps the established Models panel present in the initial Console render', () => {
     const html = renderConsole()
 
@@ -343,6 +355,10 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(html).toContain('Start Conversation')
     expect(html).toContain('Interrupt')
     expect(html).toContain('Disconnect')
+    // One live control bar, outside the page panels, so every page can reach it.
+    const bar = html.slice(html.indexOf('aria-label="Live controls"'), html.indexOf('class="console__panels"'))
+    for (const label of ['Start Conversation', 'Interrupt', 'Disconnect', 'Start Portrait Studio', 'Back to conversation', 'Stop All']) expect(bar).toContain(`>${label}</button>`)
+    expect(html.indexOf('aria-label="Live controls"')).toBeLessThan(html.indexOf('class="console__panels"'))
     expect(startSource).toMatch(/ok|error|reason/i)
     expect(interruptSource).toMatch(/ok|error|reason/i)
     expect(disconnectSource).toMatch(/ok|error|reason/i)

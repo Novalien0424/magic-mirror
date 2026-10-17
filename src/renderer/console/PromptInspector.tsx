@@ -39,6 +39,17 @@ export function PromptInspector({ draft, published, avatarId }: {
   draft: ConsoleConfigDraftInput; published: ConsoleConfigSafeView; avatarId: string
 }): React.JSX.Element {
   const [opened, setOpened] = useState<OpenInspector[]>([])
+  const menu = useRef<HTMLDetailsElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!menuOpen) return
+    const dismiss = (event: PointerEvent | KeyboardEvent): void => {
+      const element = menu.current
+      if (element && (event instanceof KeyboardEvent ? event.key === 'Escape' : !element.contains(event.target as Node))) element.open = false
+    }
+    document.addEventListener('pointerdown', dismiss, true); document.addEventListener('keydown', dismiss, true)
+    return () => { document.removeEventListener('pointerdown', dismiss, true); document.removeEventListener('keydown', dismiss, true) }
+  }, [menuOpen])
   const [error, setError] = useState('')
   const owned = useRef(new Set<Window>())
   useEffect(() => () => { for (const win of owned.current) win.close(); owned.current.clear() }, [])
@@ -67,11 +78,13 @@ export function PromptInspector({ draft, published, avatarId }: {
       setError(''); win.focus()
     } catch { win.close(); setError('Prompt window could not render. Close and reopen it from Console.') }
   }
-  return <section className="prompt-launcher" aria-label="Effective realtime prompt & tool">
-    <h3>Effective realtime prompt & tool</h3>
-    <p>Inspect the exact instructions, requests and their source files. Each category opens a separate window with draft and published views.</p>
-    <nav aria-label="Open prompt windows">{PROMPT_TABS.map(tab => <button type="button" key={tab} onClick={() => open(tab)}>{tab} ↗</button>)}</nav>
-    {error && <p role="alert">{error}</p>}
+  return <details ref={menu} className="prompt-launcher prompt-menu" onToggle={event => setMenuOpen(event.currentTarget.open)}>
+    <summary>Inspect prompt</summary>
+    <section className="prompt-menu__panel" aria-label="Effective realtime prompt & tool">
+      <p>The exact instructions, requests and source files this avatar sends, in a separate window with draft and published views.</p>
+      <nav aria-label="Open prompt windows">{PROMPT_TABS.map(tab => <button type="button" key={tab} onClick={() => open(tab)}>{tab} ↗</button>)}</nav>
+      {error && <p role="alert">{error}</p>}
+    </section>
     {opened.filter(item => !item.win.closed).map(item => createPortal(<Inspector key={item.snapshot.at} opened={item} />, item.win.document.body, item.tab))}
-  </section>
+  </details>
 }

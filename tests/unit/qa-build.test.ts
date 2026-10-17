@@ -17,6 +17,7 @@ async function fixture(): Promise<string> {
   }
   for (const file of ['scripts/build-wake-score-native.ps1', 'scripts/build-wake-score-native.mjs', 'scripts/prepare-wake-score-native.mjs',
     'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift',
+    'scripts/prepare-media-file.mjs', 'deploy/macos/media-file-prepare.swift',
     'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h', 'scripts/memory-qa-speech.swift',
     'scripts/raven-qa-transcription-comparison.swift', 'scripts/raven-qa-resample.swift']) {
     await mkdir(join(root, file, '..'), { recursive: true })
@@ -59,7 +60,8 @@ describe('QA build provenance', () => {
     await expect(verifyBuild(root)).rejects.toThrow('qa_build_stale')
   })
   it.each(['scripts/memory-qa-speech.swift', 'scripts/raven-qa-transcription-comparison.swift', 'scripts/raven-qa-resample.swift',
-    'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h'])('rejects changed native/QA helper %s after a build', async file => {
+    'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h', 'scripts/prepare-media-file.mjs',
+    'deploy/macos/media-file-prepare.swift'])('rejects changed native/QA helper %s after a build', async file => {
     const root = await fixture()
     await beginBuild(root); await finishBuild(root)
     await writeFile(join(root, file), 'changed QA helper')

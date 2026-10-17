@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { WakeCalibrationCommand, WakeCalibrationSettings, WakeCalibrationSnapshot } from '../../shared/wake-calibration'
 import type { WakeScore } from '../../shared/wake-score'
@@ -28,6 +28,7 @@ export function WakeCalibrationPanel({ bridge, visible, avatarName, initial, onA
   onApply(settings: WakeCalibrationSettings): void
 }): React.JSX.Element {
   const [settings, setSettings] = useState(initial)
+  const hintId = useId()
   const [snapshot, setSnapshot] = useState<WakeCalibrationSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -150,12 +151,12 @@ export function WakeCalibrationPanel({ bridge, visible, avatarName, initial, onA
       <button type="button" disabled={busy} onClick={() => { onApply(settings); void stop(); setMessage('Values copied to this avatar’s draft. Save and publish to keep them after restart.') }}>Use in draft</button>
     </div>
     <div className="console__form-grid">
-      <label>Threshold · {settings.threshold.toFixed(2)}<input aria-label="Live wake threshold" type="range" min="0" max="1" step="0.01" value={settings.threshold}
-        onChange={event => setSettings({ ...settings, threshold: Number(event.currentTarget.value) })} /><small>Lower is easier to trigger; it can also increase false wakes.</small></label>
-      <label>Keyword score<input aria-label="Live wake score" type="number" min="0.01" max="100" step="0.1" value={settings.score}
-        onChange={event => { const score = Number(event.currentTarget.value); if (score > 0 && score <= 100) setSettings({ ...settings, score }) }} /><small>Higher gives the keyword more weight.</small></label>
-      <label>Trailing blanks<input aria-label="Live wake trailing blanks" type="number" min="1" max="100" step="1" value={settings.numTrailingBlanks}
-        onChange={event => { const numTrailingBlanks = Number(event.currentTarget.value); if (Number.isInteger(numTrailingBlanks) && numTrailingBlanks >= 1 && numTrailingBlanks <= 100) setSettings({ ...settings, numTrailingBlanks }) }} /></label>
+      <label>Threshold · {settings.threshold.toFixed(2)}<input aria-label="Live wake threshold" aria-describedby={`${hintId}-threshold`} type="range" min="0" max="1" step="0.01" value={settings.threshold}
+        onChange={event => setSettings({ ...settings, threshold: Number(event.currentTarget.value) })} /><small id={`${hintId}-threshold`}>Lower is easier to trigger; it can also increase false wakes.</small></label>
+      <label>Keyword score<input aria-label="Live wake score" aria-describedby={`${hintId}-score`} type="number" min="0.01" max="100" step="0.1" value={settings.score}
+        onChange={event => { const score = Number(event.currentTarget.value); if (score > 0 && score <= 100) setSettings({ ...settings, score }) }} /><small id={`${hintId}-score`}>Higher gives the wake keyword more weight in the detector.</small></label>
+      <label>Trailing blanks<input aria-label="Live wake trailing blanks" aria-describedby={`${hintId}-blanks`} type="number" min="1" max="100" step="1" value={settings.numTrailingBlanks}
+        onChange={event => { const numTrailingBlanks = Number(event.currentTarget.value); if (Number.isInteger(numTrailingBlanks) && numTrailingBlanks >= 1 && numTrailingBlanks <= 100) setSettings({ ...settings, numTrailingBlanks }) }} /><small id={`${hintId}-blanks`}>Silent detector steps needed after the phrase before it triggers.</small></label>
     </div>
     <div className="wake-calibration__meters">
       <label>Microphone level <meter aria-label="Calibration microphone level" min="0" max="60" value={Math.max(0, 60 + db)} /><small>{hasAudio ? `${Number.isFinite(db) ? db.toFixed(1) : '−∞'} dBFS` : 'No live audio measurement'}</small></label>

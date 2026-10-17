@@ -93,6 +93,8 @@ if (operatorLoopOnly) {
   await mkdir(sharedDir, { recursive: true })
   await writeFile(join(sharedDir, 'operator-loop-qa-video.webm'),
     await readFile(join(trialVisualDir, 'phase4-finite-embedded-audio.webm')))
+  await writeFile(join(sharedDir, 'operator-loop-qa-replacement.webm'),
+    await readFile(join(trialVisualDir, 'phase4-loop-silent.webm')))
   // Deliberately unlike the ~3.008 s video: independent wraps are observable.
   await writeFile(join(sharedDir, 'operator-loop-qa-music.wav'), makeToneWav(1.25))
   await writeFile(join(userDataDir, 'media-folders.json'),

@@ -13,7 +13,7 @@ export async function runProfileConsoleQa(input: Phase4QaInput): Promise<Phase4Q
     const control = name => [...document.querySelectorAll('label')].find(e=>visible(e) && [...e.childNodes].filter(n=>n.nodeType===3||n.nodeName==='SPAN').map(n=>n.textContent).join('').trim()===name)?.querySelector('input,textarea,select');
     const set = (e,value) => {if(!e)throw Error('profile_field_missing');const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(p,'value').set.call(e,value);e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}))};
-    const status = () => document.querySelector('.console__publish-bar [role=status]')?.textContent;
+    const status = () => document.querySelector('.console__publish-bar .console__scene-result')?.textContent;
     ${source}})()`, true) as Promise<T>
   const edit = async (source: string): Promise<void> => { await evaluate(source); await new Promise(r=>setTimeout(r,80)) }
   const wait = async (source: string, ms=15000): Promise<void> => {
@@ -72,7 +72,7 @@ export async function runProfileConsoleQa(input: Phase4QaInput): Promise<Phase4Q
     const duplicateId=await evaluate<string>("return control('Editing avatar').value")
     await wait("return document.activeElement===control('Avatar name') && control('Avatar name').selectionStart===0 && control('Avatar name').selectionEnd===control('Avatar name').value.length")
     for(const keyCode of 'Keyboard renamed copy') input.console.webContents.sendInputEvent({type:'char',keyCode})
-    await wait("return control('Avatar name').value==='Keyboard renamed copy' && document.querySelector('.profile-editing-header h2').textContent==='Keyboard renamed copy'")
+    await wait("return control('Avatar name').value==='Keyboard renamed copy' && control('Editing avatar').selectedOptions[0]?.textContent.startsWith('Keyboard renamed copy')")
     await edit(`set(control('Editing avatar'),${JSON.stringify(original)})`)
     await edit(`set(control('Editing avatar'),${JSON.stringify(duplicateId)})`)
     await wait("return control('Avatar name').value==='Keyboard renamed copy'")
@@ -139,7 +139,7 @@ export async function runProfileConsoleQa(input: Phase4QaInput): Promise<Phase4Q
     pass(step)
     step='profile_invalid_save'
     await edit("set(control('Avatar name'),'')"); await edit("click('Save all changes')")
-    await wait("return status()?.includes('avatarCatalog') && !button('Save all changes').disabled")
+    await wait("return status()?.includes('Correct the highlighted field') && document.querySelector('.field-error')?.textContent.includes('Enter an avatar name') && !button('Save all changes').disabled")
     if(!await evaluate<boolean>("return button('Publish all changes').disabled"))throw Error('profile_invalid_publish_enabled')
     await shot('profile-invalid-save.png', '.console__publish-bar')
     await edit("set(control('Avatar name'),'Orion · Museum Guide')"); await save(); pass(step)
@@ -251,8 +251,8 @@ export async function runProfileConsoleQa(input: Phase4QaInput): Promise<Phase4Q
     step='profile_editing_identity'
     await edit("click('Manage avatars')");await edit("click('Persona')")
     await edit(`set(control('Editing avatar'),${JSON.stringify(id)})`)
-    await wait("return document.querySelector('.profile-editing-header h2').textContent==='Orion · Museum Guide' && document.querySelector('.profile-editing-header').textContent.includes('Luna · Welcome Host')")
-    await shot('profile-editing-identity.png', '.profile-editing-header'); pass(step)
+    await wait("return control('Editing avatar').selectedOptions[0]?.textContent==='Orion · Museum Guide' && document.querySelector('.avatar-header__live')?.textContent==='On Mirror: Luna · Welcome Host'")
+    await shot('profile-editing-identity.png', '.avatar-header'); pass(step)
     step='profile_delete_active_guard'
     await edit(`set(control('Editing avatar'),${JSON.stringify(original)})`)
     if(!await evaluate<boolean>("return button('Delete avatar').disabled && document.querySelector('#avatar-delete-reason').textContent.includes('Switch')"))throw Error('active_avatar_delete_enabled')

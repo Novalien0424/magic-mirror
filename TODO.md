@@ -3,6 +3,14 @@
 Current reproduced failures and deferred acceptance: [unresolved issues](docs/testing/open-issues-2026-10-13.md).
 The items below are additional open operator/maintenance checks.
 
+## Owner acceptance (2026-10-17 delivery)
+
+- [ ] Look through the compact Console on the portrait display with the TV mouse
+  and note any placement or wording changes. See the
+  [Console revamp evidence](docs/testing/console-ux-revamp-2026-10-17.md).
+- [ ] Human Portrait Studio visit at the mirror (physical Jabra route). Scripted
+  live visits pass; no human acceptance is claimed.
+
 ## Remaining verification / maintenance
 
 - [ ] Owner wake check: say the wake phrase 10× with real loop media at the

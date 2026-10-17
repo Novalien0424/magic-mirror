@@ -11,6 +11,7 @@ import { avatarLibraryName } from '../../shared/avatar-library'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { CubismAvatarRenderer } from '../avatar/cubism-avatar'
 import { startVoiceAudition, type VoiceAudition } from './voice-preview'
+import { HelpButton } from './HelpButton'
 
 const sliders = [
   ['pitchSemitones', 'Pitch · semitones', -12, 12, 0.1], ['formantSemitones', 'Body / formant · semitones', -6, 6, 0.1],
@@ -139,9 +140,9 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
           <p className="console__muted" style={{overflowWrap:'anywhere'}}>{file?.name ?? 'No audio selected'}</p>
         </div>
         <HelpField help={FIELD_HELP.loopFixture}><input type="checkbox" checked={loop} onChange={e => { stop(); setLoop(e.currentTarget.checked) }} /> Loop local fixture</HelpField>
-        <div className="console__action-row"><button disabled={disabled || !file || running} onClick={() => void start(false)}>Play local fixture</button><button disabled={disabled || running} onClick={() => void start(true)}>Generate test voice</button><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
+        <div className="console__action-row"><button disabled={disabled || !file || running} onClick={() => void start(false)}>Play local fixture</button><HelpButton help="Sends this draft voice and style to the provider for one audition, up to 20 seconds. No microphone. Changing voice, speed or style needs Generate again." disabled={disabled || running} onClick={() => void start(true)}>Generate test voice</HelpButton><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
         <div className="console__action-row"><button aria-pressed={original} onClick={() => setOriginal(true)}>Original</button><button aria-pressed={!original} onClick={() => setOriginal(false)}>Processed</button></div>
-        <div role="status"><OperatorMessage text={status} /></div><p className="console__muted">Generate sends this draft voice/style to the provider for one audition, up to 20 seconds. No microphone. Voice, speed and style changes require Generate again.</p>
+        <div role="status"><OperatorMessage text={status} /></div>
       </div></div>
   </section>
 }

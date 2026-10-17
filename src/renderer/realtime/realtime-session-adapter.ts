@@ -550,6 +550,8 @@ export function createRealtimeSession(
   const studioInstructions = studioSpecs.length ? buildStudioPrompt(promptAvatar) : ''
   const studioToolNames = new Set([...studioSpecs.filter(spec => spec.availability === 'studio'), ...toolSpecs.filter(spec => spec.handler === 'start_portrait_studio')].map(spec => spec.name))
   let studioActive = false
+  /** Studio runs started in this session; work queued for one run never reaches a later run. */
+  let studioStarts = 0
   let studioEnter: Promise<boolean> | undefined
   let studioAgentSwap: Promise<unknown> = Promise.resolve()
   let studioRevealImageItem: string | undefined
@@ -1250,7 +1252,7 @@ export function createRealtimeSession(
               || studioToolNames.has(readProperty(item, 'name') as string)))
           // Studio turns (name and answers) never reach memory extraction (owner ruling R5, invariant 6).
           if (itemId && (hasControl || studioActive || studioTurnItems.has(itemId))) memoryInput('control', itemId)
-          if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item)
+          if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item, !!itemId && studioTurnItems.has(itemId))
           if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio') === 'reveal' && studioRevealImageItem) {
             // The downscaled image served one reveal; keep it out of later billed context.
             deleteConversationItem(studioRevealImageItem); studioRevealImageItem = undefined
@@ -1989,8 +1991,11 @@ export function createRealtimeSession(
     studioTurnItems.add(itemId)
     if (studioTurnItems.size > 256) studioTurnItems.delete(studioTurnItems.values().next().value!)
   }
-  /** Records studio history for removal on exit: visitor and avatar items, and studio calls with their outputs. */
-  function trackStudioItem(item: unknown): void {
+  /**
+   * Records studio history for removal on exit: visitor and avatar items, and studio calls with their outputs.
+   * A visitor turn that began in the studio, and the reply to it, stay studio history even when they arrive after exit.
+   */
+  function trackStudioItem(item: unknown, studioTurn = false): void {
     const itemId = readProperty(item, 'id'), kind = readProperty(item, 'type'), callId = readProperty(item, 'call_id')
     // Application system items (hints) hold no visitor content.
     if (typeof itemId !== 'string' || itemId === studioRevealImageItem || readProperty(item, 'role') === 'system') return
@@ -2000,9 +2005,16 @@ export function createRealtimeSession(
       if (kind === 'function_call' && (studioActive || studioToolNames.has(readProperty(item, 'name') as string))) studioCalls.set(callId, { ...known, call: itemId })
       else if (kind === 'function_call_output' && known) known.output = itemId
       if (studioCalls.size > 256) studioCalls.delete(studioCalls.keys().next().value!)
+      // A pair completed after the studio closed: the exit cleanup skipped it, so schedule another.
+      const pair = studioCalls.get(callId)
+      if (!studioActive && pair?.call && pair.output) whenIdle(() => { cleanupStudioItems(); return false }, 30000)
       return
     }
-    if (studioActive) rememberStudioItem(itemId)
+    if (!studioActive && !studioTurn && !studioTurnItems.has(itemId)) return
+    const late = !studioActive && !studioItems.has(itemId)
+    rememberStudioItem(itemId)
+    // The exit cleanup may already have run; a late arrival schedules its own.
+    if (late) whenIdle(() => { cleanupStudioItems(); return false }, 30000)
   }
   function cleanupStudioItems(): void {
     // A studio entered again keeps its history until it closes too.
@@ -2088,6 +2100,7 @@ export function createRealtimeSession(
           return false
         }
         studioActive = true
+        studioStarts++
         const swap = studioAgentSwap.then(() => updateAgent(studioAgent!))
         studioAgentSwap = swap.catch(() => undefined)
         try { await swap; if (mediaPlaybackActive) restoreSessionState(false); return !closed } catch {
@@ -2133,6 +2146,12 @@ export function createRealtimeSession(
     if (!started && !closed) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_default_unavailable', sessionGeneration, createdAt)
     settle(started)
   }
+  /** False, with a metadata reason, when work queued for an earlier studio run would reach a later one. */
+  function sameStudioRun(run: number, requireActive = true): boolean {
+    if (run === studioStarts && (!requireActive || studioActive)) return true
+    emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
+    return false
+  }
   function speakStudioLine(text: string): boolean {
     if (closed) return false
     try { speakVerbatim(text); return true } catch {
@@ -2166,15 +2185,14 @@ export function createRealtimeSession(
       return false
     }
   }
-  async function revealStudioImage(event: Extract<StudioSessionEvent, { event: 'ready' }>): Promise<void> {
+  async function revealStudioImage(event: Extract<StudioSessionEvent, { event: 'ready' }>, run: number): Promise<void> {
     let dataUrl: string | null = null
     try { dataUrl = await input.prepareStudioImage?.(event.imageUrl) ?? null } catch { dataUrl = null }
     if (!dataUrl) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_image_prepare_failed', sessionGeneration, createdAt)
-    whenIdle(() => sendStudioReveal(event, dataUrl, false))
+    whenIdle(() => sendStudioReveal(event, dataUrl, false, run))
   }
-  function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean): boolean {
-    if (closed) return false
-    if (!studioActive) { emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt); return false }
+  function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean, run: number): boolean {
+    if (closed || !sameStudioRun(run)) return false
     const studio = input.avatar?.experience?.studio
     const instructions = `${studioInstructions}\n\n${renderStudioText(studioPrompt(studio, dataUrl ? 'reveal' : 'revealBlind'), {
       language: event.language === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese',
@@ -2189,7 +2207,7 @@ export function createRealtimeSession(
       const eventId = `studio-${sessionGeneration}-${++studioSendSequence}`
       rememberStudioSend(eventId, () => {
         if (retried) emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_reveal_failed', sessionGeneration, createdAt)
-        else whenIdle(() => sendStudioReveal(event, dataUrl, true))
+        else whenIdle(() => sendStudioReveal(event, dataUrl, true, run))
       })
       transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions, metadata: { mirror_studio: 'reveal' } } })
       return true
@@ -2210,22 +2228,24 @@ export function createRealtimeSession(
       void enterStudio().then(entered => {
         if (!entered) void studioRequest({ action: 'exit' })
         if (greets) settleStudioDefault(entered)
-        else if (entered) whenIdle(() => speakStudioLine(event.startScript))
+        else if (entered) { const run = studioStarts; whenIdle(() => sameStudioRun(run) && speakStudioLine(event.startScript)) }
       })
       return
     }
     if (event.event === 'ready') {
-      if (studioActive) void revealStudioImage(event)
+      if (studioActive) void revealStudioImage(event, studioStarts)
       else emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
       return
     }
+    // A run's closing line and farewell still play after its own exit, never after a newer run starts.
+    const run = studioStarts
     if (event.event === 'failed') {
       if (!event.keepPortrait) void exitStudio()
-      whenIdle(() => speakStudioLine(event.line))
+      whenIdle(() => sameStudioRun(run, false) && speakStudioLine(event.line))
       return
     }
     if (event.event === 'keepsake_done') {
-      void exitStudio().then(() => { if (event.afterPortrait === 'farewell') whenIdle(() => requestStudioFarewell()) })
+      void exitStudio().then(() => { if (event.afterPortrait === 'farewell') whenIdle(() => sameStudioRun(run, false) && requestStudioFarewell()) })
       return
     }
     settleStudioDefault(false)

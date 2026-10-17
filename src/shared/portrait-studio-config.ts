@@ -1,4 +1,4 @@
-import source from '../../resources/config/portrait-studio.v1.json'
+import source from '../../resources/config/portrait-studio.v1.json' with { type: 'json' }
 import { STUDIO_PROMPT_STAGES, studioPromptIssue, type StudioLanguage, type StudioPromptStage, type StudioSettings } from './portrait-studio'
 
 export const PORTRAIT_STUDIO_SOURCE = 'resources/config/portrait-studio.v1.json'

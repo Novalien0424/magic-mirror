@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { mkdir, copyFile, unlink, writeFile } from 'node:fs/promises'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
-import type { MediaSkillRequest } from '../shared/media-skill'
+import type { MediaSkillRequest, MediaSkillResult } from '../shared/media-skill'
 import type { MediaDiscoveryReply, MediaDiscoveryRequest } from '../shared/media-discovery'
 import type { ToolOutcome } from '../shared/realtime-tools'
 
@@ -62,6 +62,11 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   }
   const request = (value: MediaSkillRequest) => input.mirror.webContents.executeJavaScript(
     `window.magicMirror.requestMedia(${JSON.stringify(value)},${JSON.stringify(session())})`, true) as Promise<ToolOutcome>
+  // Failures and rejections may carry a reason code: { status, code }.
+  const requestStatus = async (value: MediaSkillRequest): Promise<ToolOutcome> => {
+    const result = await request(value) as MediaSkillResult
+    return typeof result === 'string' ? result : result.status
+  }
   const find = (query: string, kind: MediaDiscoveryRequest['kind'] = 'all') => input.mirror.webContents.executeJavaScript(
     `window.magicMirror.findMedia(${JSON.stringify({ query, kind })},${JSON.stringify(session())})`, true) as Promise<MediaDiscoveryReply>
   const found = async (query: string, kind: MediaDiscoveryRequest['kind'], assetIds: string[]) => {
@@ -135,7 +140,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(() => evaluate("return !!button('Avatars')"))
     step = 'system_device_save_and_scroll'
     await edit("click('System')")
-    if (!await evaluate("return !document.querySelector('.console__advanced-nav').open && !button('Models') && ![...document.querySelectorAll('details')].find(e=>e.querySelector('summary')?.textContent==='Diagnostics')?.open")) throw Error('system_not_compact')
+    if (!await evaluate("return document.querySelector('.system-sections [aria-pressed=true]')?.textContent==='Devices' && ![...document.querySelectorAll('details')].find(e=>e.querySelector('summary')?.textContent==='Diagnostics')?.open")) throw Error('system_not_compact')
     await wait(() => evaluate("return !field('BGM volume')?.disabled"))
     const audioBefore = await evaluate<string>("return JSON.stringify((await window.magicMirror.getAvatarRuntime()).value.audioDevices.preferences)")
     await edit("set('BGM volume','37')")
@@ -342,14 +347,16 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await writeFile(join(ownFolder, 'Sky.webm'), 'synthetic invalid video')
     await edit("click('Refresh files')")
     await wait(() => evaluate("return !button('Refresh files').disabled"))
-    if (await request({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' }) !== 'failed') throw Error('media_failed_file_reported_success')
+    const invalidStatus = await requestStatus({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' })
+    if (invalidStatus !== 'failed') throw Error(`media_failed_file_reported_${invalidStatus}`)
     await wait(async () => { const s=await state(),b=await bgm();return s.opacity===1&&s.video===null&&!!b&&!b.paused&&b.volume>0 })
     pass()
     step = 'media_folder_removal_revokes_playback'
     await unlink(join(ownFolder, 'Sky.webm'))
     await edit("click('Refresh files')")
     await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===2 && !button('Refresh files').disabled"))
-    if (await request({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' }) !== 'rejected') throw Error('media_folder_removed_still_authorized')
+    const removedStatus = await requestStatus({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' })
+    if (removedStatus !== 'rejected') throw Error(`media_folder_removed_reported_${removedStatus}`)
     await found('Sky', 'video', [])
     await wait(returned); pass()
     step = 'folder_bgm_selection_and_black_dormant'
@@ -366,8 +373,26 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
       return config.ok && config.value.active.presentation?.ambienceId === bgmId
     })
     await wait(() => input.mirror.webContents.executeJavaScript("(()=>{const a=document.querySelector('audio[data-presentation-ambience]');return !!a&&!a.paused&&a.currentTime>.2&&a.loop})()"))
-    const pixels = (await input.mirror.webContents.capturePage()).toBitmap()
-    for (let i = 0; i < pixels.length; i += 4) if (pixels[i] || pixels[i+1] || pixels[i+2]) throw Error('folder_bgm_dormant_not_black')
+    // Switching to reflective while asleep plays the configured exit fade first; the Mirror must then be fully black.
+    const blackDeadline = Date.now() + 12000, blackStarted = Date.now()
+    let lit = { count: 0, max: 0, box: '' }
+    while (Date.now() < blackDeadline) {
+      const image = await input.mirror.webContents.capturePage(), pixels = image.toBitmap(), size = image.getSize()
+      const width = Math.round(size.width * Math.sqrt(pixels.length / 4 / (size.width * size.height)))
+      lit = { count: 0, max: 0, box: '' }
+      let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1
+      for (let i = 0; i < pixels.length; i += 4) {
+        const value = Math.max(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!)
+        if (!value) continue
+        const x = (i / 4) % width, y = Math.floor(i / 4 / width)
+        lit.count++; lit.max = Math.max(lit.max, value); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y)
+      }
+      if (!lit.count) break
+      lit.box = `${x0}_${y0}_${x1}_${y1}`
+      await new Promise(r => setTimeout(r, 250))
+    }
+    if (lit.count) throw Error(`folder_bgm_dormant_not_black_${lit.count}_max${lit.max}_box${lit.box}`)
+    input.onEvidence({ step: 'folder_bgm_black_dormant_ms', status: 'measured', item: String(Date.now() - blackStarted) })
     input.console.webContents.reload()
     await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Appearance')")
     await wait(() => evaluate(`return field('Dormant music')?.value===${JSON.stringify(bgmId)}`)); pass()

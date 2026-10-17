@@ -1,4 +1,5 @@
 import { HelpField } from './HelpField'
+import { InfoTip } from './HelpButton'
 import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
 import { useEffect, useState } from 'react'
@@ -12,10 +13,12 @@ import type { ConsoleBridge } from '../../shared/bridge'
 import type { FolderMediaEntry } from '../../shared/media-folders'
 
 const ignore = () => undefined
-export function PresentationEditor({ draft, onChange, disabled, model, bridge, avatarId }: {
+export function PresentationEditor({ draft, onChange, disabled, model, bridge, avatarId, onEditSpokenLines }: {
   draft: ConsoleConfigDraftInput; onChange(draft: ConsoleConfigDraftInput): void; disabled: boolean
   model?: import('../../shared/avatar-profiles').AvatarModelReference
   bridge?: ConsoleBridge | null; avatarId?: string
+  /** Persona owns the wake greeting and sleep farewell; Appearance links there. */
+  onEditSpokenLines?(): void
 }) {
   const config = draft.presentation ?? DEFAULT_PRESENTATION
   const fieldPath = (field: string): string => `${avatarId ? `avatar.${avatarId}.` : ''}presentation.${field}`
@@ -69,8 +72,7 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
     config.revealStartMs, config.entranceVideoId, config.exitVideoId, config.entranceBlend, config.exitBlend,
     config.ambienceId, config.ambienceGain, config.activeAmbienceGain, config.backgroundId, model?.id])
   return <fieldset className="presentation-editor">
-    <legend>Avatar presentation</legend>
-    <p>Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep.</p>
+    <legend>Avatar presentation <InfoTip label="Avatar presentation" help={`Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep. Videos are muted. Music mutes during avatar speech, then fades back in, through your selected speakers.${reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''} Music is listed from this avatar’s folder and the common folder; link folders in Music & video.`} /></legend>
     <div className="presentation-editor__layout">
       <fieldset className="console__form-grid" disabled={disabled}>
         <HelpField fieldPath={fieldPath('mode')} help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
@@ -109,12 +111,11 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
         </> : null}
         <HelpField fieldPath={fieldPath('entranceMs')} help={FIELD_HELP.entrance}>Entrance seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
         <HelpField fieldPath={fieldPath('exitMs')} help={FIELD_HELP.exit}>Exit seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <HelpField fieldPath={fieldPath('wakeGreeting')} help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={config.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => edit({ wakeGreeting: e.currentTarget.value })} /></HelpField>
-        <HelpField fieldPath={fieldPath('sleepFarewell')} error={!(config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell ?? '').trim() ? 'Enter a sleep farewell.' : undefined} help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => edit({ sleepFarewell: e.currentTarget.value })} /></HelpField>
+        <p className="presentation-editor__spoken">Spoken lines, set in Persona: <q lang="zh-Hant">{config.wakeGreeting || 'Silent wake'}</q> · <q lang="zh-Hant">{config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell}</q>
+          {onEditSpokenLines && <button type="button" className="console__link" onClick={onEditSpokenLines}>Edit in Persona</button>}</p>
+        {!(config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell ?? '').trim() && <p className="field-error">Enter a sleep farewell in Persona › Spoken lines.</p>}
         {error ? <p className="console__fault" role="alert">{error} Fix this before previewing, saving or publishing.</p> : null}
-        <p className="console__muted">Videos are muted. Music mutes during avatar speech, then fades back in. Uses your selected speakers.{reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''}</p>
         {reflective && (!entranceVideo || !exitVideo) ? <p className="console__muted">Missing video uses a soft fade. No mist is generated.</p> : null}
-        <p className="console__muted">Music is listed automatically from this avatar’s folder and the common folder. Link folders in Music & video. Save & apply all changes to use this presentation on the mirror.</p>
       </fieldset>
       <div className="presentation-editor__preview-panel">
         <div className="console__action-row">
@@ -133,10 +134,10 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
               onRenderer={ignore} onMetrics={ignore} onEvent={e => { if (e.status === 'failed') setReason(e.reason) }} />
           </PresentationStage> : <p>Preview stopped. Choose Entrance, Exit / sleep or Preview draft.</p>}
         </div>
-        <p role="status">Local draft preview · {previewKind ? phase : 'stopped'} · uses selected media and speakers</p>
+        <p className="presentation-editor__preview-status"><span role="status">Local draft preview · {previewKind ? phase : 'stopped'} · uses selected media and speakers</span>
+          <InfoTip label="Local draft preview" help="Full-cycle preview uses local video and music. No microphone or provider speech. The greeting is live only; a reflective greeting waits for the reveal to finish. Save, check and publish to apply live changes." /></p>
         {reason === 'presentation_ritual_video_missing' ? <p className="console__muted" role="status">Missing video uses a soft fade.</p>
           : reason ? <p className="console__fault" role="alert">Preview: {reason.startsWith('presentation_ritual_video_') ? 'Video unavailable. The avatar uses a soft fade.' : reason}</p> : null}
-        <p className="console__muted">Full-cycle preview uses local video and music. No microphone or provider speech. Greeting is live only; reflective greeting waits for the reveal to finish. Save, check and publish to apply live changes.</p>
       </div>
     </div>
   </fieldset>

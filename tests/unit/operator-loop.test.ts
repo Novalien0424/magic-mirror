@@ -135,6 +135,26 @@ describe('operator loop appliance controller', () => {
     expect(f.controller.view().snapshot).toMatchObject({ mode: 'loop', status: 'recovering', generation: f.generation + 1 })
   })
 
+  it('plays a newly saved selection on the next button request while the old loop is playing', async () => {
+    const f = await start()
+    advancePlayback(f.controller, f.generation)
+    expect(await f.playing).toBe(true)
+    const changed = { ...settings, videoId: `folder-${'3'.repeat(40)}` }
+    await f.controller.save(changed)
+    expect(f.controller.view().snapshot.settings).toEqual(settings)
+    expect(JSON.parse(readFileSync(f.path, 'utf8')).settings).toEqual(changed)
+    const next = f.controller.play(), settled = observed(next)
+    await vi.advanceTimersByTimeAsync(0)
+    const generation = f.controller.view().snapshot.generation
+    expect(generation).toBeGreaterThan(f.generation)
+    expect(f.controller.view().snapshot.settings).toEqual(changed)
+    advancePlayback(f.controller, f.generation)
+    expect(settled).not.toHaveBeenCalled()
+    advancePlayback(f.controller, generation)
+    expect(await next).toBe(true)
+    expect(f.resumeAvatar).not.toHaveBeenCalled()
+  })
+
   it.each(['stall', 'error'] as const)('reloads once on watchdog expiry, then stays failed after another %s', async failure => {
     const f = await start()
     await vi.advanceTimersByTimeAsync(8000)

@@ -141,7 +141,7 @@ export async function runReviewUiQa(input: Phase4QaInput): Promise<Phase4QaResul
     await edit("click('Save all changes')")
     await wait(() => evaluate("return field('Avatar name')?.getAttribute('aria-invalid')==='true' && document.activeElement===field('Avatar name')"))
     await evaluate("if(!field('Avatar name').getAttribute('aria-describedby')||!document.querySelector('.field-error'))throw Error('review_qa_inline_error_missing')")
-    await evaluate("const heading=document.querySelector('.profile-section-heading');if(heading.scrollWidth>heading.clientWidth+1)throw Error('review_qa_invalid_name_overflow')")
+    await evaluate("const header=document.querySelector('.avatar-header');if(header.scrollWidth>header.clientWidth+1||document.documentElement.scrollWidth>innerWidth+2)throw Error('review_qa_invalid_name_overflow')")
     await shot('console', 'review-server-field-error.png'); pass()
     await edit("set(field('Avatar name'),window.__reviewName)")
 

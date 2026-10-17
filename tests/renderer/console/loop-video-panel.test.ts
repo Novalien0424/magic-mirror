@@ -33,13 +33,14 @@ describe('global Loop Video Console settings', () => {
       expect(sameLoopVideoSettings(settings, { ...settings, ...patch })).toBe(false)
     }
   })
-  it('provides bounded unavailable/loading states and an explicit UI return action', () => {
+  it('provides bounded unavailable/loading states; Return to Avatar lives in the Console control bar', () => {
     const html = renderToStaticMarkup(createElement(LoopVideoPanel, { bridge: null, visible: true, onMediaFolders() {} }))
     expect(html).toContain('Loop Video is unavailable')
-    expect(html).toContain('Return to Avatar')
+    expect(html).not.toContain('>Return to Avatar</button>')
     expect(html).toContain('Loading saved settings')
-    expect(html).toContain('Manage Common media in System')
+    expect(html).toContain('Help: Loop Video')
     expect(html).toMatch(/disabled=""[^>]*>Play on Mirror/)
+    expect(html).toMatch(/>Play on Mirror<\/button><span role="tooltip"[^>]*>Loop Video is unavailable\. Reopen the updated Console\.</)
     expect(html).not.toContain('<audio'); expect(html).not.toContain('autoPlay')
   })
 })
