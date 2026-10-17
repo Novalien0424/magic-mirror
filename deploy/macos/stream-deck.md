@@ -75,6 +75,50 @@ built output, `/opt/homebrew/bin/node`, and the installed
 press. A TV failure produces Basso and a metadata reason, while STOP still cleans
 up the application. The helper never replaces/restarts the trusted ADB server.
 
+## TV-connected mouse and remote desktop
+
+The Xiaomi receiver stays plugged into the TV. **CONSOLE** also connects that
+receiver to macOS over the direct Ethernet cable. The owner confirmed one pointer,
+correct movement and working clicks on the portrait Console. **STOP** releases
+it back to Android and closes the dedicated USB client/server. START and PLAY LOOP
+leave an existing connection alone. No mouse-axis remapping is installed; keep
+the accepted Mac 90° / Android user_rotation 2 display settings.
+
+One-time installation or deliberate version update, from this checkout:
+
+```sh
+zsh deploy/macos/install-mirror-mouse.sh
+```
+
+Exit the dedicated VirtualHere client before reinstalling. The installer pins
+tested server 4.8.8 and Mac client 6.0.3 by SHA-256 and verifies the client's vendor
+signature/notarization. If a vendor download changes, it fails closed until the
+new version is checked and its pin deliberately updated. It uses the board's
+existing root access; no rooting, security-policy change or paid client service
+is needed. Allow VirtualHereUniversal's normal macOS **Local Network** prompt on
+first use. The existing installation has this permission. Only USB `2717:50d1`
+is shared; its IPv4 server accepts TCP 7575 only from the directly wired Mac
+`192.168.77.1`. No USB reports or mouse/keyboard events are recorded.
+
+The client/config/helper live at `/Applications/VirtualHereUniversal.app` and
+`~/Library/Application Support/MagicMirror/mouse/`; the board files are under
+`/data/local/tmp/mm-mouse/`. CONSOLE restarts a missing server/client on demand;
+it does not require a new login agent. Allow up to ten seconds for a failed
+attempt to produce a fixed reason in `~/Library/Logs/MagicMirror/button.log`.
+Console still opens if mouse forwarding fails, so remote input remains available.
+
+For **Chrome Remote Desktop**, connect to this Mac as usual and select the portrait
+T749 display (or all displays). Open
+`~/Applications/Magic Mirror Controls/Console Magic Mirror.app` remotely to show
+the same Console; the physical Neo button is not required. The existing virtual
+main display and remote desktop host remain unchanged. Both inputs control the
+same Mac pointer; take turns using the local and remote mice. After moving the
+physical mouse, leave it still for a few seconds before controlling remotely
+(Chrome Remote Desktop gives local input temporary priority). The helper only
+places an outside pointer on the portrait display when CONSOLE is invoked, then
+exits. STOP does not stop Chrome Remote Desktop. End-to-end remote acceptance and
+recovery limits are recorded in the [mouse QA ledger](../../docs/testing/portrait-console-mouse-2026-10-17.md).
+
 ## Verification
 
 The four-key profile survived Stream Deck relaunch and the connected Neo was

@@ -94,6 +94,37 @@ describe('combined Stream Deck sequence', () => {
     expect(io.order).toEqual(['standby', 'stop'])
     expect(io.mode).not.toHaveBeenCalled()
   })
+  it('connects the venue mouse only after Console and HDMI are ready', async () => {
+    const base = control('already_on')
+    const io = { ...base, mouse: vi.fn(async (action: string) => { base.order.push(`mouse_${action}`); return 'mouse_started' }) }
+    expect((await operateMirrorControl('console', io)).outcome).toBe('console_shown')
+    expect(base.order).toEqual(['start', 'ready', 'show_console', 'awake', 'mouse_start'])
+    await operateMirrorControl('loop', io)
+    await operateMirrorControl('start', io)
+    expect(io.mouse).toHaveBeenCalledExactlyOnceWith('start')
+  })
+  it('reports a mouse failure while leaving the opened Console usable by other input', async () => {
+    const io = { ...control(), mouse: vi.fn(async () => { throw Error('opaque driver text') }) }
+    const result = await operateMirrorControl('console', io)
+    expect(result).toMatchObject({ mode: 'success', tv: 'tv_awake', mouse: 'mouse_start_failed', outcome: 'mouse_start_failed' })
+    expect(io.app).toHaveBeenCalledExactlyOnceWith('start')
+    expect(JSON.stringify(result)).not.toContain('opaque')
+  })
+  it('still releases the mouse when both TV and application shutdown fail', async () => {
+    const io = { ...control('stop_failed', 'tv_standby_failed'), mouse: vi.fn(async () => 'mouse_stopped') }
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('stop_failed')
+    expect(io.mouse).toHaveBeenCalledExactlyOnceWith('stop')
+  })
+  it('reports incomplete mouse shutdown after the application has stopped', async () => {
+    const io = { ...control(), mouse: vi.fn(async () => 'mouse_stop_failed') }
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('mouse_stop_failed')
+    expect(io.app).toHaveBeenCalledWith('stop')
+  })
+  it('keeps controls available on deployments without the optional venue mouse', async () => {
+    const io = { ...control(), mouse: vi.fn(async () => 'mouse_not_installed') }
+    expect((await operateMirrorControl('console', io)).outcome).toBe('console_shown')
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('stopped')
+  })
   it('still cleans up when TV control fails', async () => {
     const io = control(undefined, 'tv_unavailable')
     expect((await operateMirrorControl('stop', io)).outcome).toBe('tv_unavailable')

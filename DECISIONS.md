@@ -1,5 +1,26 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-17 — Portrait Console mouse and remote desktop (owner confirmed)
+
+The Xiaomi Wireless Mouse Lite 3 receiver must remain in the TV board. Forward
+only that USB device (`2717:50d1`) over the existing direct Ethernet connection
+to the Mac, using the tested native VirtualHere server and normal Mac GUI client.
+CONSOLE ensures the connection after Console/HDMI readiness; STOP releases the
+receiver, closes the dedicated client and stops the board server even if other
+shutdown steps fail. START/PLAY LOOP leave mouse ownership alone. Keep failures
+bounded and metadata-only, without gating Console access from remote desktop.
+
+Preserve the physically accepted Mac rotation 90° / Android user_rotation 2.
+Do not add global mouse-axis remapping, continuous pointer warping, input capture,
+another Electron restart owner, or changes to remote desktop permissions/services.
+CONSOLE may place the pointer on the sole portrait display once if it is outside.
+Remote desktop uses ordinary Mac coordinates and must remain usable independently
+of the forwarded receiver. Existing Chrome Remote Desktop stays available after
+Magic Mirror STOP. The owner confirmed one working physical pointer with correct
+direction and clicks; remote end-to-end acceptance is tracked separately.
+See [setup](deploy/macos/stream-deck.md#tv-connected-mouse-and-remote-desktop) and
+[evidence](docs/testing/portrait-console-mouse-2026-10-17.md).
+
 ## 2026-10-17 — Stream Deck global STOP and Console on mirror (owner revision)
 
 Keep START at top-left and PLAY LOOP third on the top row. Move STOP to the

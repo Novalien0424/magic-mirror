@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { acquireElectronOwner } from './electron-owner.mjs'
 import { createTvIo, operateMirrorControl, operateTv } from './mirror-tv-control.mjs'
 import { sendOperatorCommand } from './operator-command.mjs'
+import { createMouseIo, operateMouse } from './mirror-mouse-control.mjs'
 
 /** Parse only process metadata; never collect command arguments or environments. */
 export function parseProcessSnapshot(text) {
@@ -235,6 +236,15 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           tv: action => operateTv(action, createTvIo((step, outcome) => record('tv', outcome, { step }))),
           ready: () => waitForMirrorReady(io),
           mode: action => sendOperatorCommand(action),
+          mouse: async action => {
+            const mouse = await operateMouse(action, createMouseIo((step, outcome) => record('mouse', outcome, { step })))
+            if (action === 'start' && mouse === 'mouse_started') {
+              const cursor = spawnSync(join(homedir(), 'Library/Application Support/MagicMirror/mouse/mirror-cursor'), [],
+                { stdio: 'ignore', timeout: 1000, killSignal: 'SIGKILL' })
+              if (cursor.status !== 0 || cursor.error || cursor.signal) record('mouse', 'mouse_pointer_placement_failed')
+            }
+            return mouse
+          },
         })
         const { outcome, ...details } = result
         record(request.action, outcome, details)

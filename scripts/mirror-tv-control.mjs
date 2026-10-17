@@ -98,8 +98,9 @@ export async function operateMirrorControl(action, io) {
     // Hide the screen before app windows disappear. TV failure must not skip cleanup.
     const tv = await attempt(() => io.tv('standby'), 'tv_standby_failed')
     const app = await attempt(() => io.app('stop'), 'stop_failed')
-    return { app, tv, outcome: !['stopped', 'already_off', 'stopped_forced'].includes(app)
-      ? app : tv === 'tv_standby' ? app : tv }
+    const mouse = io.mouse ? await attempt(() => io.mouse('stop'), 'mouse_stop_failed') : undefined
+    return { app, tv, ...(mouse === undefined ? {} : { mouse }), outcome: !['stopped', 'already_off', 'stopped_forced'].includes(app)
+      ? app : tv !== 'tv_standby' ? tv : mouse && !['mouse_stopped', 'mouse_not_installed'].includes(mouse) ? mouse : app }
   }
   const app = await attempt(() => io.app('start'), 'start_failed')
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
@@ -112,5 +113,9 @@ export async function operateMirrorControl(action, io) {
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
   if (mode !== 'success') return { app, mode, modeReason, tv: 'tv_wake_skipped', outcome: `${action}_mode_failed` }
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
-  return { app, mode, modeReason, tv, outcome: tv === 'tv_awake' ? action === 'console' ? 'console_shown' : action === 'loop' ? 'loop_playing' : app : tv }
+  const mouse = action === 'console' && tv === 'tv_awake' && io.mouse
+    ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
+  return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
+    ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
+      : action === 'console' ? 'console_shown' : action === 'loop' ? 'loop_playing' : app : tv }
 }
