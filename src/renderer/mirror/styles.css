@@ -218,7 +218,8 @@ body * { cursor: none !important; }
   letter-spacing: .08em; color: var(--ps-gold); text-shadow: 0 0 3cqw rgb(216 180 106 / 45%); overflow-wrap: anywhere;
   animation: portrait-studio-rise 700ms ease both; }
 .portrait-studio__nameplate[data-long="true"] { font-size: 8.4cqw; }
-.portrait-studio__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.6cqw; max-height: 18cqw; overflow: hidden; margin: 0; padding: 0; list-style: none; }
+/* Two chip rows (2 × 8.6cqw + 1.6cqw gap) fit; a third row is clipped. */
+.portrait-studio__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.6cqw; max-height: 19.2cqw; overflow: hidden; margin: 0; padding: 0; list-style: none; }
 .portrait-studio__chip { box-sizing: border-box; max-width: 100%; padding: .6cqw 3.6cqw; overflow: hidden; border: .2cqw solid rgb(166 139 208 / 60%);
   border-radius: 999px; background: rgb(94 69 148 / 24%); color: var(--ps-ink); font-family: var(--ps-text); font-size: 5cqw; line-height: 1.4;
   white-space: nowrap; text-overflow: ellipsis; animation: portrait-studio-rise 600ms ease both; }
