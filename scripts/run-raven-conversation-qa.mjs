@@ -9,6 +9,7 @@ import { acquireElectronOwner } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
 import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT } from '../src/main/raven-conversation-fixture.ts'
+import { defaultExperience } from '../src/shared/portrait-studio.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('raven-qa')
@@ -84,6 +85,12 @@ for (const file of model.files) {
 // Keep Raven's actual presentation, effects, voice, persona and model settings.
 // Only media/scene fixtures and external hardware adapters are substituted.
 config.avatarCatalog = { ...config.avatarCatalog, avatars: [avatar], models: [model], locks: [] }
+if (selected === 'portrait_studio') {
+  // One operator-edited stage prompt proves configurable stage prompts reach the live avatar.
+  const experience = avatar.experience ?? defaultExperience()
+  avatar.experience = { ...experience, studio: { ...experience.studio,
+    prompts: { ...experience.studio.prompts, painting: '用一句話告訴訪客：「顏料已經調好了，我開始畫囉。」不要描述畫面。' } } }
+}
 const presentationIds = new Set([avatar.presentation.backgroundId, avatar.presentation.entranceVideoId, avatar.presentation.exitVideoId])
 config.visualAssets = config.visualAssets.filter(a => presentationIds.has(a.id))
 config.musicAssets = config.musicAssets.filter(a => a.id === avatar.presentation.ambienceId)

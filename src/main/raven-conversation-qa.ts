@@ -93,7 +93,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const spellRecognition: Record<string, unknown>[] = []
   const controlSpeech: Record<string, unknown>[] = []
   // Portrait Studio metadata: phases, event names, Main reasons and timings; never names or answers.
-  const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number }
+  const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number
+    customPaintingPromptFollowed?: boolean }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
@@ -715,6 +716,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!answered) break
         answered = await check(`studio_answer_${i + 1}`, async () => turn(extra[key]!, `studio_answer_${i + 1}`, 'studio_answer'))
       }
+      // The runner gives this avatar an edited Painting starts prompt; record (boolean only) whether it was followed.
+      if (answered) studioEvidence.customPaintingPromptFollowed = (await observe()).records
+        .some(r => r.stage === 'studio_answer_4' && r.role === 'avatar' && r.text.includes('顏料'))
       const painting = answered && await check('studio_painting', async () => {
         await evaluate(`window.__ravenQa.stage='studio_painting'`)
         await wait(async () => ['painting', 'reveal'].includes(await phase() ?? ''), 'studio_painting_phase', 10000)
