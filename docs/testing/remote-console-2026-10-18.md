@@ -40,7 +40,26 @@ on the main display". Evidence is metadata only.
 | Focused unit tests (`operator-control`, `operator-command`, `raven-button`) | pass, 136 tests |
 | `npm run typecheck:node` | pass |
 | `zsh -n` both new scripts | pass |
-| `--operator-loop` on the stamped build | pending (see below) |
+| Desktop app installed by `install-remote-console.sh` | pass: bundle id, strict signature, applet script checked |
+| Remote Console script with Magic Mirror stopped | pass: "Magic Mirror is not running…" alert text, exit 1, nothing opened |
+| Live production app (stamped 21:49 build, includes this commit; `qa-build --verify` pass) | pass, see below |
+| `--operator-loop` with the new case | **not run**: another session was stopping and restarting the production app at the time |
+
+Live check, 22:43–22:44 Taipei, real displays (virtual main id 5, T749 id 3), no
+sound and no provider calls:
+
+1. Remote Console script → `CONSOLE_ON_MAIN display_id=5 … 1888×1048 on_main=true`.
+2. `operator-command.mjs show_console` (the CONSOLE key's app command, without its
+   TV wake and mouse steps) → `CONSOLE_ON_MIRROR display_id=3 … 1048×1888 on_mirror=true`.
+3. Remote Console again → `CONSOLE_ON_MAIN … on_main=true`.
+
+Screens were captured and viewed locally, then deleted. After step 2 the TV showed
+the Console over the mirror; after step 3 the TV showed only the (Dormant, black)
+mirror and the main display showed the Console. The capture triggered a macOS
+privacy prompt asking to let tmux record the screen; it was not granted. Avoid
+`screencapture` from agent shells. 22:44:04 the production app received SIGTERM
+(`APP_EXIT reason=operator_stop`, no button press) and restarted 22:45:04 from
+another session; the operator-loop run was deferred so as not to disrupt it.
 
 ## Not covered
 
