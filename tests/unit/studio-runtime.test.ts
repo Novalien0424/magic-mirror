@@ -214,5 +214,21 @@ describe('portrait studio runtime', () => {
     h.release()
     await vi.waitFor(() => expect(h.events().at(-1)).toMatchObject({ event: 'failed', line: '牌卡散了，我們聊聊吧。' }))
   })
+
+  it('ends a studio-mode run with the farewell and a visitor-asked run with conversation', async () => {
+    vi.useFakeTimers()
+    for (const [source, after] of [['session_default', 'farewell'], ['mode', 'farewell'], ['visitor', 'continue'], ['console', 'continue']] as const) {
+      const experience = { ...defaultExperience(), defaultMode: 'portrait_studio' as const }
+      const h = harness({ experience })
+      h.release()
+      expect(h.runtime.start(identity, experience, source).status).toBe('accepted')
+      h.runtime.handle({ action: 'set_name', name: 'Mira', confirmed: true, language: 'en' }, identity)
+      await answerAll(h)
+      await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+      h.runtime.handle({ action: 'finish' }, identity)
+      await vi.advanceTimersByTimeAsync(45_000)
+      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: after })
+    }
+  })
 })
 

@@ -67,7 +67,7 @@ describe('Portrait Studio configuration', () => {
     const sections = inspectAvatarPrompts(profile, []).pages.Session
     const painting = sections.find(s => s.title === 'Interactive Studio stage · Painting starts')!
     expect(painting).toMatchObject({ content: '我要開始畫了。', source: 'avatarCatalog.avatars[guide].experience.studio.prompts.painting' })
-    expect(sections.find(s => s.title === 'Interactive Studio stage · Goodbye')?.source).toMatch(/\(default\)$/)
+    expect(sections.find(s => s.title === 'Interactive Studio stage · Hand over the picture')?.source).toMatch(/\(default\)$/)
   })
 
   it('pins the image model in versioned config and rejects unsafe view URLs', () => {

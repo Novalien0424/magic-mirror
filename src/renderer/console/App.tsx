@@ -2058,6 +2058,7 @@ export function App(): React.JSX.Element {
   const [loopStarting, setLoopStarting] = useState(false)
   const [loopCancel, setLoopCancel] = useState(0)
   const [mirrorMode, setMirrorMode] = useState<MirrorMode | undefined>(undefined)
+  const [studioWakePhrase, setStudioWakePhrase] = useState<string | undefined>(undefined)
   const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Mirror')
   const [systemPage, setSystemPage] = useState<(typeof SYSTEM_PAGES)[number]>('Devices')
   const [avatarEditing, setAvatarEditing] = useState(false)
@@ -2512,7 +2513,7 @@ export function App(): React.JSX.Element {
           </nav>
           <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
             operatorLoop={operatorLoop} mirrorMode={mirrorMode}
-            phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
+            phrase={mirrorMode === 'studio' ? studioWakePhrase : configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
         </header>
 
         <section className="live-bar" aria-label="Live controls">
@@ -2532,7 +2533,7 @@ export function App(): React.JSX.Element {
               />
               <StudioLiveControls bridge={bridgeRef.current} bridgeAvailable={bridgeAvailable} visible
                 lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} onMessage={showLive}
-                onStatus={status => setMirrorMode(status.mirrorMode)} />
+                onStatus={status => { setMirrorMode(status.mirrorMode); setStudioWakePhrase(status.wakePhrase) }} />
             </>}
             <div className="live-bar__group live-bar__group--end" role="group" aria-label="Scenes">
               <HelpButton placement="below" className="console__danger" disabled={!bridgeAvailable} onClick={stopAll}

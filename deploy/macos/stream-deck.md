@@ -22,8 +22,10 @@ Elgato's Default Profile is preserved.
 
 START selects normal Conversation mode, including when the app was already
 playing the loop. INTERACTIVE STUDIO likewise returns from the loop to the avatar,
-then selects Interactive Studio mode. PLAY LOOP and CONSOLE leave the mirror mode
-alone; STOP is unchanged.
+then selects Interactive Studio mode: the mirror now wakes to the avatar's Studio
+wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
+studio farewell and Dormant. PLAY LOOP and CONSOLE leave the mirror mode alone;
+STOP is unchanged.
 An ordinary fresh start begins in reflective Dormant mode.
 It restores the last saved active avatar selection (the Console's **Use on
 Mirror** selection), currently Raven. The scripts do not hard-code an avatar or
@@ -74,10 +76,10 @@ because Stream Deck may create another copy of the profile. The generated file
 also serves as a recovery copy. The installed app and profile retained their
 configuration across a Stream Deck quit/relaunch test.
 
-**INTERACTIVE STUDIO (2026-10-18):** the owner must run the installer once more
-and import the regenerated profile once. Stream Deck may create a copy instead
-of updating the old profile; select the new five-key copy and delete the old
-**Magic Mirror** profile afterwards.
+**INTERACTIVE STUDIO (2026-10-18):** installer run and the regenerated profile
+imported on this Mac the same day. Stream Deck created **Magic Mirror copy** (five
+keys) and selected it for the Neo; the old four-key **Magic Mirror** profile is
+still listed and unused (delete or rename in Stream Deck when convenient).
 
 The queue and graceful/forced-stop behavior, result sounds, metadata log, and
 limits are documented in [raven-button.md](raven-button.md). Script exit zero
@@ -135,8 +137,9 @@ recovery limits are recorded in the [mouse QA ledger](../../docs/testing/portrai
 ## Verification
 
 The original four-key profile survived Stream Deck relaunch and the connected Neo
-was verified through IOHID. INTERACTIVE STUDIO has unit coverage only; its wrapper,
-profile import and physical press still need field acceptance. The assigned app
+was verified through IOHID. INTERACTIVE STUDIO: wrapper installed and profile
+imported (the Neo shows the five-key profile); a physical press still needs field
+acceptance. The assigned app
 wrappers were exercised on the actual Mac/TV, including playback acknowledgement,
 repeat PLAY, saved-mode return and crash restoration. Fresh unit, Electron
 playback/recovery and field evidence is

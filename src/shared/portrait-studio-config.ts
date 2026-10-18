@@ -1,6 +1,6 @@
 import source from '../../resources/config/portrait-studio.v1.json' with { type: 'json' }
 import {
-  STUDIO_FAILURE_KEYS, STUDIO_IMAGE_PROMPT_KEYS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_KEYS, studioFailureIssue, studioImageLineIssue,
+  studioFarewellIssue, studioWakePhraseIssue, STUDIO_FAILURE_KEYS, STUDIO_IMAGE_PROMPT_KEYS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_KEYS, studioFailureIssue, studioImageLineIssue,
   studioImagePromptIssue, studioPromptIssue, studioScreenIssue,
   type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage, type StudioQuestion, type StudioScreenKey,
   type StudioScreenView, type StudioSettings,
@@ -60,6 +60,21 @@ export function renderStudioText(template: string, values: Readonly<Record<strin
 type Settings = Partial<Pick<StudioSettings, 'imagePrompt' | 'screenText' | 'failureLines'>> | undefined
 const failed = config.lines.failed as Readonly<Record<StudioFailureKey, Readonly<Record<StudioLanguage, string>>>>
 for (const key of STUDIO_FAILURE_KEYS) if (studioFailureIssue(failed[key]?.zh) || studioFailureIssue(failed[key]?.en)) throw new Error('invalid_portrait_studio_config')
+
+/** Versioned studio defaults: wake phrase and farewell. */
+export const STUDIO_DEFAULT_WAKE_PHRASE: string = config.defaults.wakePhrase
+export const STUDIO_DEFAULT_FAREWELL: string = config.defaults.farewell
+if (studioWakePhraseIssue(STUDIO_DEFAULT_WAKE_PHRASE) || studioFarewellIssue(STUDIO_DEFAULT_FAREWELL)) throw new Error('invalid_portrait_studio_config')
+export function studioWakePhrase(settings: Pick<StudioSettings, 'wakePhrase'> | undefined): string {
+  return settings?.wakePhrase?.trim() || STUDIO_DEFAULT_WAKE_PHRASE
+}
+export function studioFarewellLines(settings: Pick<StudioSettings, 'farewell'> | undefined): string[] {
+  return (settings?.farewell ?? STUDIO_DEFAULT_FAREWELL).split('\n').map(line => line.trim()).filter(Boolean)
+}
+/** One verbatim cue: a sentence end and an ellipsis between lines make the voice pause (about a second). */
+export function studioFarewellSpeech(settings: Pick<StudioSettings, 'farewell'> | undefined): string {
+  return studioFarewellLines(settings).map(line => /[。！？.!?…]$/u.test(line) ? line : `${line}。`).join('……')
+}
 
 /** The spoken line for a failure: the avatar's edit, else the versioned default. */
 export function studioFailureLine(code: string, language: StudioLanguage, settings?: Settings): string {

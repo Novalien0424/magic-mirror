@@ -373,7 +373,6 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       studioAnswer4: texts.push('深藍色。') - 1,
       studioChange: texts.push('可以把海邊換成下雪的森林嗎？') - 1,
       studioThanks: texts.push('很好，我很喜歡，謝謝你。') - 1,
-      studioAfter: texts.push('今天好像有點冷，你喜歡冬天嗎？') - 1,
     } : {}),
   } as Record<string, number>
   const model = (await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
@@ -681,8 +680,10 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       await check('media_stop_release', stop)
     }
     if (selection === 'portrait_studio') {
-      // Visitor-started studio with real provider dialogue, real Main painting on the
-      // owner's ChatGPT plan, reveal, one change, keepsake and return to conversation.
+      // The owner's Interactive Studio flow with real provider dialogue and real Main painting
+      // on the owner's ChatGPT plan: Mirror mode Interactive Studio → wake starts the studio →
+      // name, questions, painting, reveal, one change, keepsake → studio farewell → Dormant.
+      // Then one Conversation-mode visit where the visitor asks for the studio.
       await evaluate(`const q=window.__ravenQa;q.studio=[];q.unsubscribeStudio=window.magicMirror.onAvatarControl(c=>{
         if(c.type==='studio_view')q.studio.push({stage:q.stage,at:Date.now(),phase:c.view?.phase??null});
         if(c.type==='studio_event')q.studio.push({stage:q.stage,at:Date.now(),event:c.event.event})})`)
@@ -698,10 +699,16 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await speak(index, stage)
         if (!(await calls(stage)).includes(tool)) throw Error('raven_qa_studio_' + tool + '_missing')
       }
-      const ready = await check('studio_start', start)
-      const entered = ready && await check('studio_request', async () => {
-        await turn(extra.studioRequest!, 'studio_request', 'start_portrait_studio')
-        await wait(async () => await phase() === 'name', 'studio_name_phase', 10000)
+      const mode = (label: string) => input.console.webContents.executeJavaScript(`(()=>{const b=[...document.querySelectorAll('.studio-live__switch button')]
+        .find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('raven_qa_mode_switch_missing');if(b.disabled)return false;b.click();return true})()`, true) as Promise<boolean>
+      const switched = await check('studio_mode_on', async () => {
+        await wait(async () => await mode('Interactive Studio'), 'studio_mode_switch_ready', 10000)
+        await wait(async () => (await input.runtime.getPublishedWakeConfigForRuntime()).phrase !== (await input.runtime.getPublishedSceneConfigForRuntime()).wake.phrase, 'studio_wake_phrase', 10000)
+      })
+      const ready = switched && await check('studio_start', start)
+      const entered = ready && await check('studio_wake_entry', async () => {
+        await wait(async () => await phase() === 'name', 'studio_name_phase', 15000)
+        if (!events(studioStarted).some(e => e.reason === 'studio_started_session_default')) throw Error('raven_qa_studio_wake_start_unreported')
         await shot('name')
       })
       const named = entered && await check('studio_name', async () => {
@@ -748,30 +755,22 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await wait(async () => (await studio()).some(s => s.event === 'keepsake_done'), 'studio_keepsake_done', 330000)
         await wait(async () => await phase() === null, 'studio_closed', 10000)
       })
-      if (finished) await check('studio_after', async () => {
-        await speak(extra.studioAfter!, 'studio_after')
-        const observation = await observe()
-        if (observation.tools.some(c => c.stage === 'studio_after' && c.direction === 'call' && String(c.name).startsWith('studio_'))) throw Error('raven_qa_studio_tools_after_exit')
-        if (!observation.records.some(r => r.stage === 'studio_after' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_no_followup')
+      // A studio-mode visit ends with the studio farewell, then Dormant for the next visitor.
+      if (finished) await check('studio_farewell_dormant', async () => {
+        await wait(async () => input.runtime.snapshot().lifecycle === 'dormant', 'studio_farewell_dormant', 60000)
+        // The farewell cue's own completion marker, so an earlier studio line cannot stand in for it.
+        if (!events(studioStarted).some(e => e.reason === 'sleep_farewell_completed')) throw Error('raven_qa_studio_farewell_silent')
         if (!(await evaluate<number>('return window.__ravenQa.deletes.length'))) throw Error('raven_qa_studio_history_kept')
         if (events(studioStarted).some(e => e.reason === 'memory_saved')) throw Error('raven_qa_studio_memory_saved')
       })
-      // The Console's Mirror mode switch through the real control-bar buttons: Interactive Studio
-      // starts it for this visitor now; the next wake greets with the start script and opens it;
-      // Conversation closes it. No painting, so one short extra session.
-      if (finished) await check('studio_mode_switch', async () => {
-        const mode = (label: string) => input.console.webContents.executeJavaScript(`(()=>{const b=[...document.querySelectorAll('.studio-live__switch button')]
-          .find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('raven_qa_mode_switch_missing');if(b.disabled)return false;b.click();return true})()`, true) as Promise<boolean>
-        await wait(async () => await mode('Interactive Studio'), 'studio_mode_switch_ready', 10000)
-        await wait(async () => await phase() === 'name', 'studio_mode_name_phase', 15000)
-        await wait(settled, 'studio_mode_settled', 30000)
-        if (!events(studioStarted).some(e => e.reason === 'studio_started_mode')) throw Error('raven_qa_studio_mode_start_unreported')
+      // Conversation mode: the normal wake, and a visitor who asks for the studio opens it.
+      if (finished) await check('studio_conversation_request', async () => {
         await stop()
-        await start()
-        await wait(async () => await phase() === 'name', 'studio_mode_wake_name_phase', 15000)
-        if (!events(studioStarted).some(e => e.reason === 'studio_started_session_default')) throw Error('raven_qa_studio_mode_wake_unreported')
         await wait(async () => await mode('Conversation'), 'studio_mode_conversation', 10000)
-        await wait(async () => await phase() === null, 'studio_mode_closed', 10000)
+        await start()
+        await turn(extra.studioRequest!, 'studio_request', 'start_portrait_studio')
+        await wait(async () => await phase() === 'name', 'studio_request_name_phase', 15000)
+        if (!events(studioStarted).some(e => e.reason === 'studio_started_visitor')) throw Error('raven_qa_studio_visitor_start_unreported')
       })
       const timeline = await studio()
       studioEvidence.phases = timeline.filter(s => 'phase' in s).map(s => s.phase ?? null)

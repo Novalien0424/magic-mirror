@@ -59,7 +59,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     step = 'journey_mirror_overview'
     await wait("return !!button('Avatars') && !!document.querySelector('.studio-live__switch')")
     await wait("return modeButton('Conversation')?.getAttribute('aria-pressed') === 'true' && !modeButton('Conversation').disabled")
-    await wait("const t = document.querySelector('.mirror-overview')?.textContent ?? ''; return t.includes('Interactive Studio · ChatGPT') && t.includes('INTERACTIVE STUDIO on the Stream Deck') && /Signed in|Not signed in|refresh|unknown/i.test(t)")
+    await wait("const t = document.querySelector('.mirror-overview')?.textContent ?? ''; return t.includes('Interactive Studio · ChatGPT') && t.includes('INTERACTIVE STUDIO on the Stream Deck') && t.includes('「招喚渡鴉使者」') && /Signed in|Not signed in|refresh|unknown/i.test(t)")
     if (await evaluate<boolean>("return !!document.querySelector('.runtime-status__mode')")) throw Error('studio_journey_qa_mode_badge_in_conversation')
     await shot('journey-01-mirror-conversation.png'); pass()
 
@@ -69,19 +69,31 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return (document.querySelector('.live-bar')?.closest('.console__top')?.textContent ?? document.body.textContent).includes('Mirror mode: Interactive Studio')")
     if ((await studioStatus()).mirrorMode !== 'studio') throw Error('studio_journey_qa_main_mode_not_studio')
     if (input.runtime.snapshot().lifecycle === 'active') throw Error('studio_journey_qa_switch_woke_mirror')
+    // The real wake listener reloads with the studio phrase (compiled from the package tokens).
+    if ((await input.runtime.getPublishedWakeConfigForRuntime()).phrase !== '招喚渡鴉使者') throw Error('studio_journey_qa_wake_phrase_not_studio')
+    await wait("return (document.querySelector('.runtime-status')?.textContent ?? '').includes('Listening for 「招喚渡鴉使者」')", 30000)
     await shot('journey-02-mirror-studio-mode.png')
     await edit("modeButton('Conversation').click()")
     await wait("return modeButton('Conversation').getAttribute('aria-pressed') === 'true' && !document.querySelector('.runtime-status__mode')")
     if ((await studioStatus()).mirrorMode !== 'conversation') throw Error('studio_journey_qa_main_mode_not_conversation')
+    await wait("return !(document.querySelector('.runtime-status')?.textContent ?? '').includes('招喚渡鴉使者')", 30000)
     pass()
 
     step = 'journey_studio_section'
     await edit("click('Avatars')")
     await wait("return !!section('Interactive Studio')")
     await edit("section('Interactive Studio').click()")
-    await wait("return !!studioSection() && !studioSection().textContent.includes('Default mode after wake') && studioSection().textContent.includes('The Mirror mode switch')")
+    await wait("const t = studioSection()?.textContent ?? ''; return t.includes('In Interactive Studio mode (control bar') && ['1 · Start', '2 · Character', '3 · Name and questions', '4 · Picture', '5 · Ending'].every(l => t.includes(l)) && !t.includes('Default mode after wake')")
     await wait("const box = [...document.querySelectorAll('label')].find(l => visible(l) && l.textContent.trim().startsWith('Ask for a name first'))?.querySelector('input'); return !!box && box.checked")
     await shot('journey-03-studio-section.png', '.experiences-editor'); pass()
+
+    step = 'journey_start_character_ending'
+    const field = (label: string) => `[...document.querySelectorAll('.experiences-editor label')].find(l => visible(l) && l.textContent.trim().startsWith(${JSON.stringify(label)}))?.querySelector('input, textarea')`
+    await wait(`return ${field('Studio wake phrase')}?.value === '招喚渡鴉使者' && ${field('Studio character (system prompt) · from Persona')}?.value.length > 0`)
+    await edit(`set(${field('Studio character')}, '你是渡鴉使者：神秘、簡短，帶著古老的口吻。')`)
+    await edit(`set(${field('Studio farewell')}, '願你找到你所追尋\\n再會\\n旅人')`)
+    await wait("const t = studioSection().textContent; return t.includes('Studio character (system prompt) · edited') && t.includes('Studio farewell · edited')")
+    await shot('journey-03b-character-ending.png', 'fieldset[aria-label="Character"]'); pass()
 
     step = 'journey_question_and_line'
     await edit("set(byLabel('Question 1 in Traditional Chinese'), '你最想成為哪一張塔羅牌上的角色？')")
@@ -116,6 +128,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     pass()
 
     step = 'journey_text_and_failure_lines'
+    await edit("open('More settings')")
     await edit("open('Text on the mirror')")
     await edit("set(byLabel('Question counter in Traditional Chinese'), '第 {{index}} 張牌')")
     await edit("open('Spoken failure lines')")
@@ -124,25 +137,29 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     pass()
 
     step = 'journey_offer_prompt'
-    await edit("open('Avatar prompts at each stage')")
-    await edit("open('What the studio offers')")
-    await edit("set(byLabel('What the studio offers prompt'), 'a tarot reading with one card painted on the mirror, for example when they say 幫我抽一張牌 or read my cards')")
-    await wait("return studioSection().textContent.includes('stages edited.')")
+    await edit("open('What the avatar says at each step')")
+    await edit("open('Conversation mode: what the studio offers')")
+    await edit("set(byLabel('Conversation mode: what the studio offers prompt'), 'a tarot reading with one card painted on the mirror, for example when they say 幫我抽一張牌 or read my cards')")
+    await wait("return studioSection().textContent.includes('steps edited.')")
     await audit()
-    await shot('journey-07-stage-prompts.png', '[aria-label="Avatar prompts at each stage"]'); pass()
+    await shot('journey-07-stage-prompts.png', '[aria-label="What the avatar says at each step"]'); pass()
 
     step = 'journey_inspector'
-    for (const [tab, expected] of [['Session', 'Create one tarot card illustration'], ['Tools & input', 'a tarot reading with one card painted on the mirror']] as const) {
+    // One window per tab; every expected text is checked in it (no reopening a closing window).
+    for (const [tab, expected] of [['Session', ['Create one tarot card illustration', '你是渡鴉使者：神秘、簡短']], ['Tools & input', ['a tarot reading with one card painted on the mirror']]] as const) {
+      const title = `Magic Mirror Prompts · ${tab}`
       await evaluate(`document.querySelectorAll('.prompt-launcher button').forEach(b => { if (b.textContent === ${JSON.stringify(`${tab} ↗`)}) b.click() })`)
       const deadline = Date.now() + 10000
       let win: BrowserWindow | undefined
-      while (Date.now() < deadline && !win) { win = BrowserWindow.getAllWindows().find(w => w.getTitle() === `Magic Mirror Prompts · ${tab}`); if (!win) await pause(100) }
+      while (Date.now() < deadline && !win) { win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w.getTitle() === title); if (!win) await pause(100) }
       if (!win) throw Error('studio_journey_qa_inspector_window')
-      const found = async () => win!.webContents.executeJavaScript(`document.body.textContent.includes(${JSON.stringify(expected)})`) as Promise<boolean>
+      const text = () => Promise.race([win!.webContents.executeJavaScript('document.body.textContent') as Promise<string>,
+        new Promise<string>(resolve => setTimeout(() => resolve(''), 2000))])
       const end = Date.now() + 10000
-      while (Date.now() < end && !await found()) await pause(100)
-      if (!await found()) throw Error(`studio_journey_qa_inspector_${tab === 'Session' ? 'image_prompt' : 'offer'}_missing`)
+      let found = false
+      while (Date.now() < end && !found) { const body = await text(); found = expected.every(item => body.includes(item)); if (!found) await pause(150) }
       win.close()
+      if (!found) throw Error(`studio_journey_qa_inspector_${tab === 'Session' ? 'studio_prompts' : 'offer'}_missing`)
     }
     pass()
 
@@ -158,6 +175,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
       const s = avatar?.experience?.studio;
       return !!s && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration') && s.screenText?.questionLabel?.zh === '第 {{index}} 張牌'
         && s.failureLines?.default?.zh === '牌陣散了，我們先聊聊吧。' && s.prompts?.offer?.startsWith('a tarot reading') && s.askName !== false
+        && s.character === '你是渡鴉使者：神秘、簡短，帶著古老的口吻。' && s.farewell === '願你找到你所追尋\\n再會\\n旅人' && !('wakePhrase' in s)
         && s.questions[0].zh === '你最想成為哪一張塔羅牌上的角色？'`, 30000)
     pass()
 
@@ -176,7 +194,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !!section('Interactive Studio')")
     await edit("section('Interactive Studio').click()")
     await wait("return !!studioSection()")
-    await edit("open('Image prompt'); open('Text on the mirror')")
+    await edit("open('Image prompt'); open('More settings'); open('Text on the mirror')")
     await audit()
     await shot('journey-10-narrow-studio.png', '.experiences-editor')
     await edit("click('Mirror')")

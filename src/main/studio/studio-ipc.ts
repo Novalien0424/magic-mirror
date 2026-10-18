@@ -1,6 +1,6 @@
 import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
 import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
-import { PORTRAIT_STUDIO, studioPrompt } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, studioPrompt, studioWakePhrase } from '../../shared/portrait-studio-config'
 import {
   parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL,
   type AvatarExperience, type MirrorMode, type StudioConsoleResult, type StudioConsoleStatus, type StudioOutcome, type StudioReply,
@@ -11,7 +11,7 @@ import type { MirrorModeStore } from '../mirror-mode'
 import type { ConsoleResponse } from '../../shared/console-types'
 import { createCodexImageProvider, type PortraitImageProvider } from './image-provider'
 import { buildPortraitPrompt } from './prompt-builder'
-import { createStudioRuntime, type StudioIdentity } from './studio-runtime'
+import { createStudioRuntime, type KeepsakeSink, type StudioIdentity } from './studio-runtime'
 
 interface Registrar { handle(channel: string, handler: (event: unknown, ...args: unknown[]) => unknown): void }
 interface SnapshotLike { readonly lifecycle: string; readonly realtimeSessionId: string | null; readonly sessionGeneration: number }
@@ -42,6 +42,8 @@ export function registerStudioIpc(deps: {
   keepSignedIn?: boolean
   /** The Mirror switch. Without it (tests), the saved per-avatar default mode applies. */
   mirrorMode?: Pick<MirrorModeStore, 'get' | 'set' | 'sessionMode' | 'subscribe'>
+  /** Where finished pictures go besides the Mirror. PRINTING (to be added): pass the printer skill's sink here. */
+  keepsakeSinks?: readonly KeepsakeSink[]
   fetchImpl?: typeof fetch
 }) {
   const credentials = deps.credentials ?? createChatgptTokenFile({ report: reason => deps.report(reason, /fail|invalid|missing|http_/.test(reason) ? 'degraded' : 'info') })
@@ -53,6 +55,7 @@ export function registerStudioIpc(deps: {
     activity: (kind, runId) => deps.activity(kind, runId),
     report: (reason, status, timingMs) => deps.report(reason, status ?? 'info', timingMs),
     stopMedia: () => deps.stopMedia(),
+    keepsakeSinks: deps.keepsakeSinks ?? [],
   })
   if (deps.keepSignedIn && credentials.keepAlive) {
     const keepAlive = () => void credentials.keepAlive!().catch(() => deps.report('chatgpt_keepalive_failed', 'degraded'))
@@ -144,9 +147,11 @@ export function registerStudioIpc(deps: {
 
   async function status(): Promise<StudioConsoleStatus> {
     const auth = await credentials.status()
+    const experience = await deps.experience().catch(() => null)
     const phase = runtime.phase()
     return { auth: auth.status, ...(auth.lastRefresh ? { lastRefresh: auth.lastRefresh } : {}), modelId: PORTRAIT_STUDIO.image.modelId,
-      active: runtime.isActive(), ...(phase ? { phase } : {}), mirrorMode: deps.mirrorMode?.get() ?? 'conversation' }
+      active: runtime.isActive(), ...(phase ? { phase } : {}), mirrorMode: deps.mirrorMode?.get() ?? 'conversation',
+      ...(experience ? { wakePhrase: studioWakePhrase(experience.studio) } : {}) }
   }
 
   deps.ipcMain.handle(STUDIO_CONSOLE_CHANNEL, async (event, ...args): Promise<ConsoleResponse<StudioConsoleResult>> => {

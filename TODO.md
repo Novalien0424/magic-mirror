@@ -51,12 +51,18 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
 
 ## Remaining acceptance
 
-- [ ] **Interactive Studio in the field.** Re-run the Stream Deck installer's
-  generated profile import (adds INTERACTIVE STUDIO at bottom-left; delete the
-  old profile copy), press it and START MIRROR once, then run one human studio
-  visit using Jabra in Interactive Studio mode and one visitor request in
-  Conversation mode. Walk the [user journeys](docs/testing/user-journeys-2026-10-18.md)
-  O3–O4 on the portrait TV. Physical key and human visit are unverified.
+- [ ] **Interactive Studio in the field.** The five-key profile is imported
+  (Neo shows "Magic Mirror copy"; delete the unused old profile). Press
+  INTERACTIVE STUDIO, say 「招喚渡鴉使者」 at the mirror (check detection; 招 is
+  zhāo, the usual 召喚 is zhào — change the phrase in 1 · Start if detection is
+  weak), complete one human visit to the farewell and Dormant, check the farewell
+  pauses, then START MIRROR. Walk the [user journeys](docs/testing/user-journeys-2026-10-18.md)
+  O2–O4 on the portrait TV.
+- [ ] **QA sound wrapper and output-device switches.** During Electron runs the
+  default output can flip between the TV output and the Jabra, so a restore can
+  land on the other device. Pin capture/restore to one device (CoreAudio device
+  ID) before the next long sound-producing batch; until then check both levels
+  after QA. [Evidence](docs/testing/interactive-studio-2026-10-18.md#owner-flow-follow-up-same-day).
 - [ ] Review the compact Console on the portrait TV with its mouse, including
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode

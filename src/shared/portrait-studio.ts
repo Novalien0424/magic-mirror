@@ -16,9 +16,9 @@ export interface StudioQuestion { id: string; zh: string; en: string; slot: Stud
 export interface StudioBilingual { zh: string; en: string }
 
 /** What the avatar is told at each studio stage, in visit order. Operators may override any of them per avatar. */
-export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'offer', 'unavailable', 'askName', 'confirmName',
+export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'unavailable', 'askName', 'confirmName',
   'chooseGuest', 'guestOnly', 'askQuestion', 'painting', 'busy', 'reveal', 'revealBlind', 'offerChange', 'repainting', 'noChangesLeft',
-  'finalVersion', 'finished', 'exited'] as const)
+  'finalVersion', 'finished', 'exited', 'offer'] as const)
 export type StudioPromptStage = typeof STUDIO_PROMPT_STAGES[number]
 /** Placeholders each stage supports: required ones must stay in the text; any other placeholder is rejected. */
 export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
@@ -34,8 +34,8 @@ export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { re
 export const STUDIO_PROMPT_MAX = Object.freeze({ instructions: 4000, other: 1000 })
 /** Operator-facing name and moment of each stage prompt (Console editor and prompt inspector). */
 export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: string; when: string }>> = Object.freeze({
-  instructions: { label: 'Studio instructions', when: 'Always in effect while the studio is open: how the avatar runs the studio (its system prompt, after the avatar’s Persona).' },
-  offer: { label: 'What the studio offers', when: 'In Conversation mode, when visitors may ask for the studio: completes “It offers …” so the avatar knows which requests open it. Include example requests.' },
+  instructions: { label: 'Studio rules', when: 'Part of the studio system prompt, after the Studio character: how the avatar runs the steps. Change the first lines if the story is not a portrait.' },
+  offer: { label: 'Conversation mode: what the studio offers', when: 'Only in Conversation mode, when visitors may ask for the studio: completes “It offers …” so the avatar knows which requests open it. Include example requests.' },
   unavailable: { label: 'Studio unavailable', when: 'When the studio cannot start (for example, no ChatGPT sign-in).' },
   askName: { label: 'Ask the name', when: 'Right after the studio opens.' },
   confirmName: { label: 'Read the name back', when: 'After the visitor says a name, before it is confirmed.' },
@@ -50,8 +50,8 @@ export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: str
   repainting: { label: 'Repainting', when: 'After the visitor asks for a change.' },
   noChangesLeft: { label: 'No changes left', when: 'When the visitor asks for another change after the last allowed one.' },
   finalVersion: { label: 'Final version', when: 'Added to the reveal when no more changes are allowed.' },
-  finished: { label: 'Goodbye', when: 'When the visitor is happy; the portrait stays on the mirror for photos.' },
-  exited: { label: 'Studio closed', when: 'When the visitor stops the studio to keep chatting.' },
+  finished: { label: 'Hand over the picture', when: 'When the visitor is happy, before the photo hold. In Interactive Studio mode the Studio farewell (5 · Ending) follows, word for word.' },
+  exited: { label: 'Visitor stops the studio', when: 'When the visitor stops the studio to keep chatting; the visit continues as a conversation.' },
 })
 export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.freeze({
   question: 'the question text', name: 'the name the avatar heard', candidates: 'up to three matching guest names',
@@ -143,7 +143,13 @@ export function studioFailureIssue(text: unknown): string {
 }
 
 export interface StudioSettings {
+  /** Wake phrase while the Mirror is in Interactive Studio mode (missing = versioned default). */
+  wakePhrase?: string
   startScript: string
+  /** The studio's character (system prompt persona); missing = the avatar's Persona personality. */
+  character?: string
+  /** Spoken when a studio-mode visit ends, one phrase per line with a pause between (missing = versioned default). */
+  farewell?: string
   /** Ask the visitor's name first (default true). Off: no name step, no lettering. */
   askName?: boolean
   nameQuestion: { zh: string; en: string }
@@ -220,7 +226,24 @@ function parseStudioPrompts(value: unknown): StudioPrompts | null {
 }
 
 const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts']
-const STUDIO_OPTIONAL_KEYS = ['askName', 'imagePrompt', 'screenText', 'failureLines']
+const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'askName', 'imagePrompt', 'screenText', 'failureLines']
+export const STUDIO_CHARACTER_MAX = 4000
+export const STUDIO_FAREWELL_LINES = 4
+/** Same rule as an avatar wake phrase; Main reports a phrase the wake model cannot encode. */
+export function studioWakePhraseIssue(value: unknown): string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= 96 && !/[\u0000-\u001f\u007f]/u.test(value)
+    ? '' : 'Enter a wake phrase of 1 to 96 characters on one line.'
+}
+export function studioFarewellIssue(value: unknown): string {
+  if (typeof value !== 'string' || /[\u0000-\u0009\u000b-\u001f\u007f]/u.test(value)) return 'Remove tabs and other control characters.'
+  const lines = value.split('\n').map(line => line.trim()).filter(Boolean)
+  if (lines.length < 1 || lines.length > STUDIO_FAREWELL_LINES) return `Enter 1 to ${STUDIO_FAREWELL_LINES} lines; the avatar pauses between lines.`
+  return lines.some(line => line.length > 80) ? 'Keep each line to 80 characters.' : ''
+}
+export function studioCharacterIssue(value: unknown): string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= STUDIO_CHARACTER_MAX && !/[\u0000-\u0009\u000b-\u001f\u007f]/u.test(value)
+    ? '' : `Describe the character in 1 to ${STUDIO_CHARACTER_MAX} characters, or reset it to the Persona.`
+}
 const bilingualMap = <K extends string>(value: unknown, keys: readonly K[], issue: (key: K, text: unknown) => string): boolean =>
   record(value) && Object.entries(value).every(([key, pair]) => keys.includes(key as K) && record(pair) && exact(pair, ['zh', 'en'])
     && !issue(key as K, pair.zh) && !issue(key as K, pair.en))
@@ -232,6 +255,9 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
     || !Object.keys(value).every(key => STUDIO_KEYS.includes(key) || STUDIO_OPTIONAL_KEYS.includes(key))
     || !parseStudioPrompts(value.prompts)) return null
   if ('askName' in value && typeof value.askName !== 'boolean') return null
+  if ('wakePhrase' in value && studioWakePhraseIssue(value.wakePhrase)) return null
+  if ('farewell' in value && studioFarewellIssue(value.farewell)) return null
+  if ('character' in value && studioCharacterIssue(value.character)) return null
   if ('imagePrompt' in value && !(record(value.imagePrompt) && Object.entries(value.imagePrompt)
     .every(([key, text]) => STUDIO_IMAGE_PROMPT_KEYS.includes(key as StudioImagePromptKey) && !studioImagePromptIssue(key as StudioImagePromptKey, text)))) return null
   if ('screenText' in value && !bilingualMap(value.screenText, STUDIO_SCREEN_KEYS, studioScreenIssue)) return null
@@ -429,6 +455,8 @@ export interface StudioConsoleStatus {
   phase?: StudioPhase
   /** The Mirror's explicit switch. */
   mirrorMode: MirrorMode
+  /** The active avatar's studio wake phrase (what visitors say in Interactive Studio mode). */
+  wakePhrase?: string
 }
 export interface StudioConsoleResult {
   status: StudioConsoleStatus

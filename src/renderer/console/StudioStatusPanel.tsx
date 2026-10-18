@@ -53,8 +53,8 @@ const ACTIONS: Readonly<Record<string, string>> = {
   studio_not_enabled: 'Interactive Studio is turned off for this avatar.',
   studio_operator_exit: 'Back to conversation. The studio closed and its picture was cleared.',
   studio_not_active: 'Interactive Studio is not running.',
-  mirror_mode_studio: 'Mirror mode: Interactive Studio. Every wake starts the studio; a visitor already in conversation enters it now.',
-  mirror_mode_conversation: 'Mirror mode: Conversation. Every wake starts a normal conversation; a running studio closes now.',
+  mirror_mode_studio: 'Mirror mode: Interactive Studio. The mirror now wakes to the studio wake phrase; a visitor already in conversation enters the studio now.',
+  mirror_mode_conversation: 'Mirror mode: Conversation. The mirror now wakes to the Persona wake phrase; a running studio closes now.',
   mirror_mode_save_failed: 'The Mirror mode could not be saved and was not changed. Check Events, then try again.',
 }
 
@@ -214,7 +214,8 @@ export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: Stud
     {auth ? <Badge tone={auth.tone}>{auth.label}</Badge> : <span className="console__status">{bridge?.studio ? 'Checking…' : 'Unavailable'}</span>}
     <HelpButton className="console__link" help="Sign-in status, image model, usage and a test picture for this Mac. Shared by every avatar."
       onClick={onOpen}>Sign-in and test picture</HelpButton>
-    <span className="studio-service-summary__hint">To start: set Mirror mode to Interactive Studio in the control bar, or press INTERACTIVE STUDIO on the Stream Deck.{status?.mirrorMode === 'studio' ? ' Interactive Studio mode is on.' : ''}</span>
+    <span className="studio-service-summary__hint">To start: set Mirror mode to Interactive Studio in the control bar, or press INTERACTIVE STUDIO on the Stream Deck; then visitors say{' '}
+      <span lang="zh-Hant">「{status?.wakePhrase ?? 'the studio wake phrase'}」</span>.{status?.mirrorMode === 'studio' ? ' Interactive Studio mode is on.' : ''}</span>
   </p>
 }
 
@@ -272,10 +273,10 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
   const auth = status ? studioAuthText(status.auth) : null
   const studioHelp = !available ? 'Interactive Studio controls are unavailable in this Console. Restart the app to load them.'
     : auth?.needsLogin ? `ChatGPT: ${auth.label}. Sign in from System → Studio service first; a wake then falls back to conversation.`
-      : active ? 'Switches the Mirror to Interactive Studio: the visitor in front of the mirror enters it now, and every later wake starts it.'
-        : 'Switches the Mirror to Interactive Studio: every wake starts the studio instead of a normal conversation.'
+      : active ? 'Switches the Mirror to Interactive Studio: the visitor in front of the mirror enters it now; afterwards the mirror wakes to the studio wake phrase.'
+        : `Switches the Mirror to Interactive Studio: the mirror wakes to 「${status?.wakePhrase ?? 'the studio wake phrase'}」 and runs the studio, then says farewell and sleeps.`
   const conversationHelp = active && status?.active ? 'Switches the Mirror to Conversation: the running studio closes now and the conversation continues.'
-    : 'Switches the Mirror to Conversation: every wake starts a normal conversation.'
+    : 'Switches the Mirror to Conversation: the mirror wakes to the Persona wake phrase and starts a normal conversation.'
   // A visitor may still open the studio from a conversation; only that run has a separate exit.
   const visitorRun = mode === 'conversation' && status?.active
   return <div className="live-bar__group studio-live" role="group" aria-labelledby="studio-live-heading">

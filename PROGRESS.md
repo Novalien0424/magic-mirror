@@ -1,21 +1,24 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**Interactive Studio, Mirror mode switch and Stream Deck
-key**; pushed to `field/macmini-deploy` and PR #2 `feature/portrait-studio` →
-`main`): Portrait Studio is now **Interactive Studio**; the Console control bar
-has an explicit **Mirror mode** switch (Conversation | Interactive Studio), and
-Stream Deck **INTERACTIVE STUDIO** launches the Mirror in it; the studio system
-prompt, questions, image prompt (with preview), on-glass text and spoken
-failure lines are tunable per avatar. On the stamped build: **full suite, the
-new 13-step `--studio-journey`, `--field-help`, `--console`, `--profiles`,
-`--editor`, `--operator-loop` and `review_ui` pass; live `portrait_studio`
-passed on its rerun** (run 1 found a real wording defect, fixed).
-[Changes, defects found, results](docs/testing/interactive-studio-2026-10-18.md) ·
+Latest delivery (**Interactive Studio visit flow**; pushed to
+`field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): in
+Interactive Studio mode the mirror wakes to its own **Studio wake phrase**
+(default 「招喚渡鴉使者」, set in the Console), runs name → questions → picture,
+says the **Studio farewell** (「願你找到你所追尋 / 再會 / 人類」, pauses between lines)
+and returns to Dormant; the studio character (system prompt), rules, questions,
+every step's reply, image prompt, on-glass text and failure lines are editable
+in an editor ordered by the visit; printing has a documented seam. Built on the
+same day's Interactive Studio, Mirror mode switch and Stream Deck key delivery.
+On the stamped build: **full suite, `--studio-journey` (incl. the real wake
+listener switching to the studio phrase), `--field-help`, `--console`,
+`--profiles`, `--editor`, `--operator-loop`, `review_ui` and one live
+`portrait_studio` run of the owner flow (17 steps, farewell → Dormant) pass.**
+[Evidence](docs/testing/interactive-studio-2026-10-18.md) ·
 [user journeys](docs/testing/user-journeys-2026-10-18.md).
 
-Previous deliveries today: memory extraction on `gpt-6.1-sol` and ChatGPT
-sign-in upkeep ([evidence](docs/testing/memory-model-signin-2026-10-18.md));
-the nine TODO code-audit fixes ([evidence](docs/testing/todo-audit-fixes-2026-10-18.md)).
+Earlier today: memory extraction on `gpt-6.1-sol` and ChatGPT sign-in upkeep
+([evidence](docs/testing/memory-model-signin-2026-10-18.md)); the nine TODO
+code-audit fixes ([evidence](docs/testing/todo-audit-fixes-2026-10-18.md)).
 Earlier: Console revamp ([evidence](docs/testing/console-ux-revamp-2026-10-17.md)),
 Portrait Studio ([QA](docs/testing/portrait-studio-2026-10-17.md)), Loop Video
 Drive save ([evidence](docs/testing/loop-video-cloud-save-2026-10-17.md)),
@@ -24,22 +27,22 @@ Neo operator controls ([QA](docs/testing/operator-controls-2026-10-17.md)) and
 Loop Video ([ledger](docs/testing/operator-loop-2026-10-17.md)). Prior handoff:
 [archive](docs/archive/progress-before-clockout-2026-10-18.md).
 
-Runtime (**13:35 Taipei, 2026-10-18**): production app restarted on the new
-build after QA (stopped with launchd TERM, TV untouched); Mirror mode
-Conversation; published config version 19. Stream Deck installer run: the new
-`Studio Magic Mirror.app` is installed and the profile regenerated, **not yet
-imported**. System output **69 %, unmuted**; input gain unchanged. The owner is
-away for two days.
+Runtime (**14:29 Taipei, 2026-10-18**): production app restarted on the new
+build after QA; Mirror mode Conversation; published config version 19. Stream
+Deck: the five-key profile is imported and selected for the Neo ("Magic Mirror
+copy"); the old four-key profile is still listed, unused. Output: Jabra (default
+device) **6 %, unmuted**; input gain 57 unchanged. The owner is away for two days.
 
-Open gaps (all in [TODO](TODO.md)): import the regenerated Stream Deck profile
-and press INTERACTIVE STUDIO / START MIRROR; a human studio visit; the stricter
-`gpt-6.1-sol` judge baseline; no real cold Drive download since the deadline
-change; Chrome Remote Desktop pointer; physical Neo checks; camera, wake and
-dialogue boundaries in the [open-issues ledger](docs/testing/open-issues-2026-10-13.md).
-No phase acceptance changes.
+Open gaps (all in [TODO](TODO.md)): saying 「招喚渡鴉使者」 at the mirror and a
+physical INTERACTIVE STUDIO press; a human studio visit; the QA sound wrapper
+under output-device switches; the stricter `gpt-6.1-sol` judge baseline; no real
+cold Drive download since the deadline change; Chrome Remote Desktop pointer;
+physical Neo checks; camera, wake and dialogue boundaries in the
+[open-issues ledger](docs/testing/open-issues-2026-10-13.md). No phase
+acceptance changes.
 
-Next: owner imports `~/Applications/Magic Mirror Controls/Magic Mirror.streamDeckProfile`
-(delete the old copy), walks user journeys O2–O4 on the portrait TV, sets
-**After the experience** to **Say farewell and sleep** if events should end in
-Dormant, and runs one human visit. Leave runtime and device state under the
+Next: owner presses INTERACTIVE STUDIO, says the studio wake phrase at the
+mirror (if detection is weak, try 召喚 instead of 招喚 in Interactive Studio ›
+1 · Start), runs one visit to the farewell, then START MIRROR; walks user
+journeys O2–O4 on the portrait TV. Leave runtime and device state under the
 owner's control.

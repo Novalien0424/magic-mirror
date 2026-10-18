@@ -6,7 +6,9 @@ import {
   parseGuestList, removeQuestion, resetImagePrompts, resetStagePrompts, resetTextMap, setFailureLine, setImagePrompt, setQuestionLine,
   setScreenText, setStagePrompt,
 } from '../../../src/renderer/console/ExperiencesEditor'
-import { STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioScreenView } from '../../../src/shared/portrait-studio-config'
+import {
+  STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFarewellSpeech, studioScreenView,
+} from '../../../src/shared/portrait-studio-config'
 import { buildPortraitPrompt } from '../../../src/shared/studio-image-prompt'
 import {
   STUDIO_LOGIN_COMMAND, STUDIO_USAGE_URL, StudioLiveControls, StudioStatusPanel, safePreviewUrl, studioActionText, studioAuthText,
@@ -67,8 +69,12 @@ describe('ExperiencesEditor', () => {
     expect(ui.avatar.experience).toBeUndefined()
     const html = ui.render()
     expect(html).not.toContain('Default mode after wake')
-    expect(html).toContain('The Mirror mode switch in the control bar')
-    expect(html).toContain('<option value="continue" selected="">Keep chatting</option>')
+    expect(html).toContain('In Interactive Studio mode (control bar › Mirror mode')
+    expect(html).not.toContain('After the experience')
+    for (const legend of ['1 · Start', '2 · Character', '3 · Name and questions', '4 · Picture', '5 · Ending']) expect(html).toContain(legend)
+    expect(html).toContain(`value="${STUDIO_DEFAULT_WAKE_PHRASE}"`)
+    expect(html).toContain(`>${STUDIO_DEFAULT_FAREWELL}</textarea>`)
+    expect(html).toContain('Studio character (system prompt) · from Persona')
     expect(html).toMatch(/<input type="checkbox"[^>]*checked=""\/> Ask for a name first/)
     expect(html.match(/aria-label="Question \d"/g)).toHaveLength(4)
     expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.zh)
@@ -85,18 +91,31 @@ describe('ExperiencesEditor', () => {
     expect(experienceIssues(experienceOf(ui.avatar))).toEqual({})
   })
 
-  it('shows the wake greeting as the conversation start and links to Persona to edit it', () => {
-    let opened = 0
+  it('edits the studio wake phrase, character and farewell, storing only real edits', () => {
     const avatar = newAvatar('guide')
-    avatar.presentation = { ...avatar.presentation, wakeGreeting: '你好，旅人。' }
-    const html = renderToStaticMarkup(React.createElement(ExperiencesEditor, { avatar, disabled: false, onChange() {}, onEditGreeting() { opened++ } }))
-    expect(html).toContain('<q lang="zh-Hant">你好，旅人。</q>')
-    const link = elements(ExperiencesEditor({ avatar, disabled: false, onChange() {}, onEditGreeting() { opened++ } }))
-      .find(item => item.props['aria-label'] === 'Edit the wake greeting in Persona')!
-    ;(link.props.onClick as () => void)()
-    expect(opened).toBe(1)
-    // The greeting has one editor, in Persona; Experiences offers no second field for it.
-    expect(html).not.toMatch(/<textarea[^>]*>你好，旅人。<\/textarea>/)
+    avatar.personality = '沉穩的渡鴉。'
+    let current = avatar
+    const tree = () => elements(ExperiencesEditor({ avatar: current, disabled: false, onChange(next) { current = next } }))
+    const field = (help: string) => (tree().find(item => item.props.help === help)!.props.children as React.ReactElement<Record<string, unknown>>[])
+      .flat().find(child => React.isValidElement(child) && ['input', 'textarea'].includes(child.type as string)) as React.ReactElement<Record<string, unknown>>
+    const type = (help: string, value: string) => (field(help).props.onChange as (e: unknown) => void)({ currentTarget: { value } })
+    expect(field(FIELD_HELP.studioCharacter).props.value).toBe('沉穩的渡鴉。')
+    type(FIELD_HELP.studioCharacter, '神秘的渡鴉使者，說話簡短。')
+    type(FIELD_HELP.studioWakePhrase, '召喚渡鴉使者')
+    type(FIELD_HELP.studioFarewell, '去吧\n人類')
+    const studio = current.experience!.studio
+    expect(studio).toMatchObject({ character: '神秘的渡鴉使者，說話簡短。', wakePhrase: '召喚渡鴉使者', farewell: '去吧\n人類' })
+    expect(parseAvatarExperience(current.experience)).toEqual(current.experience)
+    expect(studioFarewellSpeech(studio)).toBe('去吧。……人類。')
+    // Typing a default back (or the Persona text) removes the edit.
+    type(FIELD_HELP.studioCharacter, '沉穩的渡鴉。')
+    type(FIELD_HELP.studioWakePhrase, STUDIO_DEFAULT_WAKE_PHRASE)
+    type(FIELD_HELP.studioFarewell, STUDIO_DEFAULT_FAREWELL)
+    expect(current.experience!.studio).not.toHaveProperty('character')
+    expect(current.experience!.studio).not.toHaveProperty('wakePhrase')
+    expect(current.experience!.studio).not.toHaveProperty('farewell')
+    expect(experienceIssues({ ...current.experience!, studio: { ...current.experience!.studio, farewell: 'a\nb\nc\nd\ne' } }).farewell).toMatch(/1 to 4 lines/)
+    expect(experienceIssues({ ...current.experience!, studio: { ...current.experience!.studio, wakePhrase: ' ' } }).wakePhrase).toMatch(/wake phrase/)
   })
 
   it('edits the Interactive Studio start script', () => {
@@ -156,7 +175,6 @@ describe('ExperiencesEditor', () => {
 
   it('produces an experience that passes parseAvatarExperience', () => {
     const ui = editor()
-    ui.fire(ui.field(FIELD_HELP.experienceAfterPortrait), 'farewell')
     ui.fire(ui.field(FIELD_HELP.experienceVisitorMayRequest), '', false)
     ui.fire(ui.byLabel('Name question in English'), 'What name goes on your portrait?')
     ;(ui.tree().find(item => item.type === 'button' && item.props.children === 'Add question')!.props.onClick as () => void)()
@@ -173,7 +191,7 @@ describe('ExperiencesEditor', () => {
     ui.guestNames(['王小明'])
     const experience = ui.avatar.experience!
     expect(parseAvatarExperience(experience)).toEqual(experience)
-    expect(experience).toMatchObject({ defaultMode: 'conversation', afterPortrait: 'farewell', visitorMayRequest: false,
+    expect(experience).toMatchObject({ defaultMode: 'conversation', visitorMayRequest: false,
       guests: { names: ['王小明'], match: 'only' } })
     expect(experience.studio).toMatchObject({ nameLettering: 'painted', quality: 'high', revisionsAllowed: 3, holdSeconds: 120 })
     expect(experience.studio.questions[4]).toEqual({ id: 'q5', zh: '誰陪在你身邊？', en: 'Who is beside you?', slot: 'companion' })
@@ -192,7 +210,7 @@ describe('ExperiencesEditor', () => {
 
   it('does not edit while disabled and describes every control', () => {
     const ui = editor({ disabled: true })
-    ui.fire(ui.field(FIELD_HELP.experienceAfterPortrait), 'farewell')
+    ui.fire(ui.field(FIELD_HELP.studioArtStyle), 'Changed.')
     ui.click('Move question 1 down')
     expect(ui.changes).toHaveLength(0)
     const html = ui.render()
@@ -272,7 +290,7 @@ describe('Portrait Studio status panel', () => {
     expect(html).toContain('>Mirror mode</h2>')
     expect(html).toMatch(/<button type="button"[^>]*aria-pressed="false" disabled=""[^>]*>Conversation<\/button>/)
     expect(html).toMatch(/<button type="button"[^>]*disabled=""[^>]*>Interactive Studio<\/button>/)
-    expect(html).toContain('every wake starts the studio')
+    expect(html).toContain('wakes to 「the studio wake phrase」')
     expect(html).not.toContain('Back to conversation')
     expect(studioActionText('mirror_mode_studio')).toMatch(/Interactive Studio/)
     expect(studioActionText('mirror_mode_save_failed')).toMatch(/not changed/)
@@ -283,13 +301,14 @@ describe('Portrait Studio status panel', () => {
     const tree = () => elements(StagePrompts({ experience, issues: experienceIssues(experience), disabled: false, onChange(next) { experience = next } }))
     const textarea = (label: string) => tree().find(item => item.props['aria-label'] === label)!
     const html = () => renderToStaticMarkup(React.createElement(StagePrompts, { experience, issues: experienceIssues(experience), disabled: false, onChange() {} }))
-    expect(html().match(/experiences-editor__prompt-step/g)).toHaveLength(STUDIO_PROMPT_STAGES.length)
-    expect(html()).toContain('All stages use the default.')
+    // Studio rules (instructions) are edited under Character, not in this list.
+    expect(html().match(/experiences-editor__prompt-step/g)).toHaveLength(STUDIO_PROMPT_STAGES.length - 1)
+    expect(html()).toContain('All steps use the default.')
     expect(textarea('Read the name back prompt').props.value).toBe(STUDIO_PROMPT_DEFAULTS.confirmName)
     ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請慢慢念出「{{name}}」，再問對不對。' } })
     expect(experience.studio.prompts).toEqual({ confirmName: '請慢慢念出「{{name}}」，再問對不對。' })
     expect(parseAvatarExperience(experience)).toEqual(experience)
-    expect(html()).toContain(`1 of ${STUDIO_PROMPT_STAGES.length} stages edited.`)
+    expect(html()).toContain(`1 of ${STUDIO_PROMPT_STAGES.length - 1} steps edited.`)
     expect(html()).toContain('Edited')
     // Removing a required placeholder is flagged and blocks saving.
     ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請確認名字。' } })

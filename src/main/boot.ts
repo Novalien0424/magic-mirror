@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
-import { defaultExperience, sessionExperience, type MirrorMode } from '../shared/portrait-studio'
+import { defaultExperience, sessionExperience, type MirrorMode, type StudioSettings } from '../shared/portrait-studio'
+import { studioWakePhrase } from '../shared/portrait-studio-config'
 import { LEGACY_SLEEP_PHRASE } from '../shared/avatar-commands'
 import { folderMediaSkill, type FolderMediaEntry } from '../shared/media-folders'
 import { canUseAvatarAction, canUseAvatarResource, type AvatarModel, type WakeRuntimeConfig } from '../shared/avatar-profiles'
@@ -225,6 +226,8 @@ export interface BootOptions {
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   /** The Mirror switch as captured for a session; it decides whether the woken session greets with the studio. */
   readonly mirrorModeForSession?: (identity: Readonly<RealtimeSessionIdentity>) => MirrorMode
+  /** The Mirror switch now: Interactive Studio listens for the studio wake phrase instead. */
+  readonly currentMirrorMode?: () => MirrorMode
   readonly appVersion?: string
   readonly buildCommit?: string
   readonly isPackaged?: boolean
@@ -2210,6 +2213,11 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       ? avatars.find((avatar) => readProperty(avatar, 'id') === activeAvatarId)
       : undefined
     const tuning = readProperty(active, 'wakeTuning')
+    // Avatar wake tuning is bound to the conversation phrase, so the studio phrase uses package defaults.
+    if (options.currentMirrorMode?.() === 'studio') {
+      const studio = readProperty(readProperty(active, 'experience'), 'studio') as Pick<StudioSettings, 'wakePhrase'> | undefined
+      return Object.freeze({ phrase: studioWakePhrase(studio), modelVersion, packageId })
+    }
     return Object.freeze({
       phrase,
       modelVersion,

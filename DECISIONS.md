@@ -1,5 +1,25 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-18 — Interactive Studio visit flow (owner directive, later the same day)
+
+- **Own wake phrase.** In Interactive Studio mode the mirror listens for the
+  avatar's **Studio wake phrase** (Console, Interactive Studio › Start) instead
+  of the Persona wake phrase; each mode switch reloads the wake listener. Avatar
+  wake tuning stays bound to the conversation phrase. Default 「招喚渡鴉使者」
+  as the owner wrote it (招 is encoded zhāo; 召喚 would be zhào).
+- **Fixed ending.** A studio-mode visit (wake or switch) always ends: picture →
+  photo hold → **Studio farewell** → Dormant. Default
+  「願你找到你所追尋 / 再會 / 人類」, one phrase per line, spoken as one cue with
+  about a second's pause between lines. The per-avatar "After the experience"
+  choice is retired; a visitor-requested studio in Conversation mode returns to
+  conversation.
+- **Character.** The studio's character (system prompt) is editable in the
+  studio and replaces Persona › Personality there only; studio rules, every
+  step's reply and all questions stay editable as before.
+- **Printing later.** Finished pictures already pass through the
+  `KeepsakeSink` seam; a printer skill plugs in there (comments in
+  `studio-runtime.ts` and `studio-ipc.ts`).
+
 ## 2026-10-18 — Interactive Studio and the Mirror mode switch (owner directives)
 
 Supersedes the 2026-10-17 Portrait Studio "Default mode" ruling; the other

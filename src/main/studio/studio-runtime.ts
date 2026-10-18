@@ -11,7 +11,13 @@ export interface StudioIdentity { readonly realtimeSessionId: string; readonly s
 /** `mode` is the Mirror switch turned to Interactive Studio during a conversation. */
 export type StudioStartSource = 'visitor' | 'session_default' | 'console' | 'mode'
 
-/** Output seam for finished portraits. Display is the only sink today; a printer sink can be added later. */
+/**
+ * Output seam for the finished picture. Display is the only sink today.
+ * PRINTING (owner request 2026-10-18, to be added): a printer skill implements
+ * this interface and is passed in `keepsakeSinks` (see studio-ipc). Every final
+ * picture is handed to each sink when the keepsake starts; a failing sink only
+ * reports `studio_keepsake_<name>_failed` and never blocks the farewell.
+ */
 export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void }
 
 interface StoredImage { readonly bytes: Buffer; readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp' }
@@ -19,6 +25,8 @@ interface Run {
   readonly id: string
   readonly identity: StudioIdentity
   readonly experience: AvatarExperience
+  /** A studio-mode run (wake or Mirror switch) ends with the studio farewell and Dormant. */
+  readonly source: StudioStartSource
   language: StudioLanguage
   phase: StudioPhase
   name: string
@@ -123,7 +131,8 @@ export function createStudioRuntime(input: {
     publish(r)
     r.holdTimer = setTimeout(() => {
       if (run !== r) return
-      input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: r.experience.afterPortrait }, identity: r.identity })
+      const studioMode = r.source === 'session_default' || r.source === 'mode'
+      input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: studioMode ? 'farewell' : 'continue' }, identity: r.identity })
       close('studio_completed', false)
     }, r.experience.studio.holdSeconds * 1000)
   }
@@ -170,7 +179,7 @@ export function createStudioRuntime(input: {
     }
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
-    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), language: 'zh', phase: asksName(experience) ? 'name' : 'question',
+    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: 'zh', phase: asksName(experience) ? 'name' : 'question',
       name: '', nameAttempts: 0, answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
     run = r
     input.report(`studio_started_${source}`)

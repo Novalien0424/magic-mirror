@@ -106,7 +106,8 @@ export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
     ? [`There is no name step. There are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]
     : [`Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
       `After the name there are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]].join('\n')
-  return renderPrompt('session', { name: avatar.name, personality: avatar.personality,
+  // The studio's own character replaces the Persona personality when the operator set one.
+  return renderPrompt('session', { name: avatar.name, personality: studio.character?.trim() || avatar.personality,
     speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,
     toolInstructions: `${realtimeToolInstructions(studioToolSpecs(avatar))}\n\n${script}` })
 }

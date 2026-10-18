@@ -137,3 +137,26 @@ import the Stream Deck profile and press the key.
 - Kept against the audit's "phase 2" suggestion: on-glass text and failure lines
   ship now because the owner asked for tunable output.
 
+
+## Addendum — owner flow (2026-10-18, later the same day)
+
+The owner specified the studio visit: own wake phrase (UI-settable), name and
+questions, picture (printing later), studio farewell, Dormant. Changes on top of
+the design above:
+
+- `StudioSettings.wakePhrase` (default 「招喚渡鴉使者」): Main's wake config
+  returns it while the Mirror mode is Interactive Studio (avatar wake tuning is
+  not applied to it); a mode switch reloads the wake listener.
+- `StudioSettings.farewell` (default three lines): a studio-mode run (source
+  `session_default` or `mode`) always ends keepsake → farewell → Dormant; the
+  renderer speaks it as one verbatim cue with a sentence end and an ellipsis
+  between lines. `afterPortrait` is retired from the UI; visitor/Console runs
+  return to conversation.
+- `StudioSettings.character`: replaces Persona › Personality in the studio
+  system prompt only.
+- Editor reordered by visit (Start, Character, Questions, Picture, Ending, More
+  settings); Studio rules (the `instructions` stage) moved under Character.
+- Printing: `KeepsakeSink` documented as the printer seam and plumbed through
+  `registerStudioIpc({ keepsakeSinks })`.
+- Studio-mode bail-out (`studio_exit`) keeps the existing behaviour (conversation
+  for that visit) to avoid a second ending path.

@@ -6,7 +6,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
-import { PORTRAIT_STUDIO, renderStudioText, studioPrompt } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioPrompt } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent } from '../../shared/portrait-studio'
 import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
@@ -2186,8 +2186,9 @@ export function createRealtimeSession(
       else whenIdle(() => requestStudioFarewell(run, true))
     })
     try {
-      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { ...buildSpeechResponse(farewell, input.avatar?.speakingStyle ?? ''),
-        metadata: { mirror_sleep_cue: farewellCueId } } })
+      // A studio-mode visit ends with the studio's own farewell, not the avatar's sleep farewell.
+      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { ...buildSpeechResponse(studioFarewellSpeech(input.avatar?.experience?.studio),
+        input.avatar?.speakingStyle ?? ''), metadata: { mirror_sleep_cue: farewellCueId } } })
       return true
     } catch {
       studioSends.delete(eventId)

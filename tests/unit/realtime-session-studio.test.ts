@@ -161,6 +161,9 @@ describe('Portrait Studio in the Realtime session', () => {
     await call(tool(q.agents[0]!, 'start_portrait_studio'), {})
     second.handle.studioEvent!({ event: 'keepsake_done', afterPortrait: 'farewell' }, ID)
     await vi.waitFor(() => expect(responses(q).some(r => typeof (r.metadata as Record<string, unknown>)?.mirror_sleep_cue === 'string')).toBe(true))
+    // The studio's own farewell (pauses between lines), not the avatar's sleep farewell.
+    expect(responses(q).find(r => typeof (r.metadata as Record<string, unknown>)?.mirror_sleep_cue === 'string')!.instructions)
+      .toContain('願你找到你所追尋。……再會。……人類。')
   })
 
   it('deletes studio conversation items after the studio closes', async () => {

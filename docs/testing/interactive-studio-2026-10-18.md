@@ -79,3 +79,49 @@ Physical INTERACTIVE STUDIO key (after the profile import), a human visit
 through the Jabra microphone, a full event day in Interactive Studio mode, a
 test picture from the Studio service page (uses plan quota), and a story with
 the name step off on the real provider (offline and unit tested only).
+
+## Owner flow follow-up (same day)
+
+Owner request: a separate, UI-settable studio wake word; the visit runs name →
+questions → picture (printing later) → studio farewell → Dormant; defaults
+「招喚渡鴉使者」 and 「願你找到你所追尋 / 再會 / 人類」 with ~1 s pauses; the system
+prompt (character), all questions and replies fully editable; an audited, easy,
+robust UI without over-engineering. Ruling: DECISIONS 2026-10-18 "Interactive
+Studio visit flow".
+
+- **Wake phrase**: `studio.wakePhrase`; Main's wake config returns it in
+  Interactive Studio mode and each switch reloads the listener. 「招喚渡鴉使者」
+  compiles with the package tokens (招 → zh āo; 召喚 would be zh ào).
+- **Ending**: studio-mode runs end keepsake → studio farewell → Dormant; the
+  farewell is one verbatim cue with a sentence end and an ellipsis per line
+  break. Visitor-requested runs in Conversation mode return to conversation.
+- **Character**: `studio.character` replaces Persona › Personality in the studio
+  system prompt only. **Printing**: `KeepsakeSink` documented as the printer seam
+  and plumbed through `registerStudioIpc({ keepsakeSinks })`.
+- **Editor** reordered by visit (1 · Start, 2 · Character, 3 · Name and
+  questions, 4 · Picture, 5 · Ending, More settings); reset buttons for wake
+  phrase, character, rules and farewell.
+- **Fable UX audit** (screenshots + code): fixed two "system prompt" labels,
+  missing wake phrase/farewell resets, the "Goodbye" step that collided with the
+  farewell (now "Hand over the picture"), dead help text and stale journey copy;
+  moved the Conversation-mode offer to the end of the step list and renamed
+  section 3. A bug found by tests: clearing a field left an `undefined` key
+  that strict validation would reject; cleared fields now drop the key.
+
+| Check | Result |
+| --- | --- |
+| Typechecks, focused suites | pass |
+| `npm test` (includes Electron smoke) | pass, 91 s |
+| `--studio-journey` (14 steps; the real wake listener reloads to 「招喚渡鴉使者」 and back) | pass — after the audit fixes `06-27-15-088Z` |
+| `--field-help`, `--console` (after the audit fixes); `--profiles`, `--editor`, `--operator-loop`, `review_ui` | pass |
+| Live `portrait_studio`, owner flow (17 steps) | pass — `06-21-02-497Z`: mode on → wake entry (`studio_started_session_default`) → name → 4 answers → painting 23.5 s → reveal → change 23.6 s → keepsake → `sleep_farewell_completed` → Dormant → Conversation-mode visitor request opens the studio; 0 provider errors |
+
+One live run only (no repeats). Sound: the quiet wrapper captures and restores
+the default output device, but during Electron runs the default flips between the
+TV output and the Jabra, so one restore landed on the other device and left the
+Jabra at 1 %; it was set back to its pre-QA 6 % (input gain unchanged). TODO
+records pinning the wrapper to one device.
+
+Not covered: saying 「招喚渡鴉使者」 at the mirror (synthetic audio cannot reach
+the physical microphone; the listener reload is verified), a physical INTERACTIVE
+STUDIO press, a human visit and the exact pause length of the farewell.

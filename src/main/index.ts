@@ -1154,6 +1154,7 @@ void app.whenReady().then(async () => {
   const runtime: BootRuntime = bootSequence({
     operatorLoopActive: () => operatorLoop?.isLoopMode() ?? false,
     mirrorModeForSession: identity => mirrorMode.sessionMode(identity),
+    currentMirrorMode: () => mirrorMode.get(),
     ...(phase4QaEnabled && ['baseline', 'trimmed', 'merged', 'focused'].includes(process.env['MIRROR_QA_PROMPT_VARIANT'] ?? '')
       ? { qaPromptVariant: process.env['MIRROR_QA_PROMPT_VARIANT'] as 'baseline' | 'trimmed' | 'merged' | 'focused' } : {}),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
@@ -1319,6 +1320,8 @@ void app.whenReady().then(async () => {
     })
   })
   void configureWakeRuntime(runtime)
+  // Interactive Studio listens for its own wake phrase; each switch reloads the wake listener.
+  mirrorMode.subscribe(() => { void configureWakeRuntime(runtime) })
   void configureAvatarRuntime(runtime)
     .catch(() => reportMainDegradation('avatar', 'avatar_configuration_failed', 'avatar_config_refresh_failed'))
 

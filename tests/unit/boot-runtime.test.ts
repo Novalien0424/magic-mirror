@@ -10,6 +10,7 @@ type ProbeStatus = 'available' | 'unavailable'
 
 interface TestRuntimeOptions {
   readonly operatorLoopActive?: () => boolean
+  readonly currentMirrorMode?: () => 'conversation' | 'studio'
   readonly configService?: ConfigService
   readonly useRealResolution?: boolean
   readonly onFatalFailure?: (reason: string) => void
@@ -41,6 +42,7 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
   let session = 0
   const runtime = bootSequence({
     operatorLoopActive: options.operatorLoopActive,
+    currentMirrorMode: options.currentMirrorMode,
     onFatalFailure: options.onFatalFailure,
     rebuildWakeOwner: options.rebuildWakeOwner,
     createRealtimeSessionId: () => `session-${++session}`,
@@ -655,6 +657,15 @@ describe('BootRuntime configured model availability probe', () => {
     expect(Object.isFrozen(published)).toBe(true)
     expect(runtime.snapshot().modules.wake).toBe('degraded')
     expect(runtime.snapshot().lifecycle).not.toBe('maintenance')
+  })
+
+  it('gives the wake listener the studio wake phrase, without avatar tuning, in Interactive Studio mode', async () => {
+    const wake = { phrase: '魔鏡阿魔鏡', modelVersion: 'test-v1', packageId: 'magic-mirror-zh-test-v1' }
+    let mode: 'conversation' | 'studio' = 'studio'
+    const runtime = createTestRuntime({ wake, currentMirrorMode: () => mode })
+    expect(await runtime.getPublishedWakeConfigForRuntime()).toEqual({ ...wake, phrase: '招喚渡鴉使者' })
+    mode = 'conversation'
+    expect(await runtime.getPublishedWakeConfigForRuntime()).toEqual(wake)
   })
 
   it('publishes the validated Main-only session model snapshot after ready', async () => {
