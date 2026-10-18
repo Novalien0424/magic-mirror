@@ -5,6 +5,12 @@ Earlier failures remain in the [previous ledger](audit-remediation-2026-10-13.md
 Completed work belongs in PROGRESS; this file keeps unresolved boundaries.
 The [2026-10-14 review](review-fixes-2026-10-14.md) adds unit-tested fixes and re-reads; each affected issue notes it below.
 
+Status 2026-10-18: sections 1–6 and the deferred acceptance below remain open;
+[TODO](../../TODO.md) is the current checklist. Model IDs are unchanged, but the
+tool catalog has since grown (Portrait Studio, 2026-10-17), so "seven tools"
+below is historical. The Stream Deck Neo is now the installed operator control;
+the Flic/Karabiner route remains optional and unexecuted.
+
 Published Raven is v18: calm authority, independent judgment and restrained dry
 wit. Production remains `gpt-realtime-2.1-mini` / low, `gpt-live-transcribe`,
 `gpt-5.6-luna` for memory/judge, cedar and seven tools. Isolated model comparisons

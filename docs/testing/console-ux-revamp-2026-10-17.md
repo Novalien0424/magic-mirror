@@ -13,7 +13,8 @@ images or credentials.
   chip ("Asleep · Listening for 「…」"; a banner only when attention is needed)
   and the live controls — Conversation (Start / Interrupt / Disconnect),
   Portrait Studio (Start / Back to conversation) and Stop All. In loop mode the
-  groups are replaced by Loop video › Return to Avatar. One result line under it.
+  groups are replaced by Loop video › Return to Avatar (since 2026-10-18 also while
+  Play is starting; [TODO audit fixes](todo-audit-fixes-2026-10-18.md)). One result line under it.
   Disabled reasons are hover/focus tooltips.
 - Mirror page: active avatar row, published version, module health, a Loop video
   status row and the ChatGPT image service chip, each linking to its settings.
@@ -48,6 +49,9 @@ readiness label (a tested contract).
 
 ## Portrait Studio findings (TODO, PR #2 audit) — fixed
 
+The 2026-10-18 audit found remaining gaps in these fixes; they are closed in
+[TODO audit fixes](todo-audit-fixes-2026-10-18.md).
+
 All four regressions fail without their fix.
 
 1. Delayed reveal from an earlier run: every Studio entry increments a run
@@ -70,7 +74,8 @@ The deadline now scales with size (≥ 9 s, ~1 s per MiB, ≤ 10 min); Main allo
 one extra second. Loop Save keeps its 12-second bound: if a large file is still
 downloading, Save reports "Preparing the loop media took too long … press Save
 settings again in a moment" while preparation continues, and the retry uses the
-finished cache.
+finished cache. Superseded 2026-10-18: Save/Play now wait for the size-scaled
+deadline and conversation media is copied before playback ([TODO audit fixes](todo-audit-fixes-2026-10-18.md)).
 
 ## QA drivers repaired
 

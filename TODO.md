@@ -31,10 +31,18 @@ The 2026-10-18 code-audit findings and media deadline limitation are fixed:
   diagnostics if it recurs before claiming the cause is fixed.
   [QA driver evidence](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
 
+- [ ] **Cold Drive media on a real download.** The size-scaled wait and
+  copy-before-play are proven with synthetic delays only. Once, with a large
+  online-only Common video, check Loop Save/Play, Stream Deck PLAY LOOP and a
+  conversation request. Known limitation: during a long copy, a PLAY LOOP press
+  shows nothing until the loop starts, and a conversation request waits with the
+  avatar visible but silent. [Fixes](docs/testing/todo-audit-fixes-2026-10-18.md).
+
 ## Remaining acceptance
 
 - [ ] Review the compact Console on the portrait TV with its mouse, including
-  Save/check feedback and live queued-scene cancellation. Complete a human
+  Save/check feedback, live queued-scene cancellation and Return to Avatar while
+  Loop Play starts. Complete a human
   Portrait Studio visit using Jabra. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks

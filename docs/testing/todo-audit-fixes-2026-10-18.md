@@ -44,8 +44,9 @@ was restored.
 - **Media deadlines:** loop Save/Play validation waits for the size-scaled copy
   deadline (+3 s; 12 s for small files as before). Return to Avatar and shutdown
   abandon an in-flight validation. Conversation media from linked folders is
-  copied before the player starts, so the 15 s watchdog covers the player only;
-  Stop or replacement cancels a start during the copy, which stays cached.
+  copied before media takes over (the avatar stays visible meanwhile), so the
+  15 s watchdog covers the player only; Stop or replacement cancels a start during
+  the copy, which stays cached.
 
 ## Results
 
@@ -76,3 +77,26 @@ Not covered: a real cold Google Drive download over the network (the
 slow-preparation behavior is proven with synthetic delays), a real concurrent
 `npm run chatgpt:login` (the lock is proven with real files and the script's
 writer), and owner hardware/human checks. No phase acceptance changes.
+
+## Follow-up gap review (same day)
+
+- **Fixed:** the first version of copy-before-play hid the avatar for a video
+  request during the whole copy (a black mirror for a long download). Media now
+  takes over only after the copy; the regression asserts no media state change
+  while copying.
+- **Checked, not a gap:** a Studio call that reaches the conversation agent after
+  a swap gets the SDK's own "not found" output, so its pair is still deleted.
+- **Remaining (in TODO):** no real cold Drive download has been exercised; during
+  a long copy a Stream Deck PLAY LOOP shows nothing until the loop starts, and a
+  conversation request waits silently. Loop Save during a long copy cannot be
+  cancelled; it is bounded by the size-scaled deadline. A real concurrent
+  `npm run chatgpt:login` was not exercised.
+- **Documents:** superseded statements in the 2026-10-17 revamp and cloud-save
+  ledgers point here; the open-issues ledger has a current status note; the
+  Studio cleanup facts in `mm-realtime-voice` are current. Root handoff files are
+  history referenced by `SHA256SUMS.txt` and Raven manifests, so they stay.
+
+Follow-up results on the rebuilt stamped build (`qa-build --verify` pass): full
+suite 2,507 passed / 2 skipped, run at minimum output this time;
+`--media-skill` and `--media-skill-functional` pass, 18 / 18 (`02-25-27-097Z`,
+`02-26-13-373Z`). Volume restored to 69 % unmuted; input gain unchanged.

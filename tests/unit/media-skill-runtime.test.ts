@@ -37,12 +37,13 @@ describe('avatar media playback ownership', () => {
     let finish!: (ready: boolean) => void
     const copy = () => new Promise<boolean>(resolve => { finish = resolve })
     const pending = runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'once' }, skill, copy)
-    // A slow Drive download never trips the player watchdog.
+    // A slow Drive download never trips the player watchdog, and the avatar stays visible meanwhile.
     await vi.advanceTimersByTimeAsync(60000)
-    expect(commands.some(c => c.type === 'scene_music')).toBe(false)
+    expect(commands.some(c => c.type === 'scene_music' || c.type === 'media_skill_state')).toBe(false)
     expect(runtime.isActive()).toBe(true)
     finish(true); await vi.advanceTimersByTimeAsync(0)
     const music = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_music'; action: 'play' }>
+    expect(commands.at(-2)).toMatchObject({ type: 'media_skill_state', active: true })
     expect(music).toMatchObject({ type: 'scene_music', action: 'play', assetId: 'song' })
     runtime.reportAction({ ...music.context!, status: 'acknowledged' })
     expect(await pending).toBe('accepted')

@@ -53,7 +53,10 @@ behavior to the current wiring.
   agent (`session.updateAgent`) with only `studio_*` tools plus sleep; Main
   (`src/main/studio/`) owns steps, answers, images, generation and the
   studio-default start. Studio turns are control turns; studio items are deleted
-  on exit. Reveal/failure speech waits for an idle session. Image model and
+  on exit, including late replies to Studio turns and reveals (`mirror_studio`
+  metadata), interrupted (`incomplete`) calls and inputs whose transcription failed.
+  Queued reveal/farewell work carries its run; a reveal also needs Main's latest
+  revision. Reveal/failure speech waits for an idle session. Image model and
   studio text: `resources/config/portrait-studio.v1.json`.
 - Catalog edits need rebuild/restart. Console **Effective realtime prompt &
   tool** uses the same draft/published builders; every model-visible path belongs

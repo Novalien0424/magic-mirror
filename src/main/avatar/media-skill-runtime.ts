@@ -65,21 +65,9 @@ export function createMediaSkillRuntime(input: {
       const context = { runId: id, sceneId: 'media-skill', stageId: id, actionId: id }
       active = { context, kind: request.kind, youtube: request.action === 'play_youtube', mode: request.mode, fadeMs: skill.fadeMs, started: false }
       input.activity?.('started', id)
-      if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind === 'video', fadeMs: skill.fadeMs })) {
-        stop('media_renderer_unavailable'); return 'failed'
-      }
-      // Stop or replacement during preparation cancels the start; the copy stays cached.
-      const prepared = prepare?.().catch(() => false)
-      const start = () => {
+      const begin = () => {
         launch = undefined
         if (active?.context !== context) return
-        if (prepared) void prepared.then(ready => {
-          if (active?.context !== context) return
-          if (ready) begin(); else stop('media_file_unavailable')
-        })
-        else begin()
-      }
-      const begin = () => {
         try {
           const sent = request.action === 'play_youtube'
             ? input.youtube!.play({ videoId: videoId!, kind: request.kind, mode: request.mode, gain: skill.gain, context }, report => { this.reportAction(report) })
@@ -91,8 +79,21 @@ export function createMediaSkillRuntime(input: {
           else if (active?.context === context && !active.started) watch(request.action === 'play_youtube' ? 60000 : 15000)
         } catch { stop('media_playback_failed') }
       }
-      if (request.kind === 'video' && skill.fadeMs > 0) launch = setTimeout(start, skill.fadeMs)
-      else start()
+      const takeOver = (): boolean => {
+        if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind === 'video', fadeMs: skill.fadeMs })) {
+          stop('media_renderer_unavailable'); return false
+        }
+        if (request.kind === 'video' && skill.fadeMs > 0) launch = setTimeout(begin, skill.fadeMs)
+        else begin()
+        return true
+      }
+      if (!prepare) { if (!takeOver()) return 'failed' }
+      // The copy runs while the avatar stays visible; media takes over once it is
+      // ready. Stop or replacement meanwhile cancels the start; the copy stays cached.
+      else void prepare().catch(() => false).then(ready => {
+        if (active?.context !== context) return
+        if (ready) takeOver(); else stop('media_file_unavailable')
+      })
       input.report('media_requested')
       return active ? 'accepted' : 'failed'
     },

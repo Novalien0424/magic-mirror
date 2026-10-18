@@ -28,7 +28,9 @@ Listing/scanning a linked library does not download or copy its files.
 
 The small macOS helper coordinates access and streams the selected file into an
 exclusive private staging file, with bounded buffers and a nine-second deadline;
-Main kills it after ten seconds if necessary. Exact byte count is required before
+Main kills it after ten seconds if necessary (superseded: the deadline now scales
+with file size, see [revamp](console-ux-revamp-2026-10-17.md#codex-loop-video-work--folded-in)
+and [TODO audit fixes](todo-audit-fixes-2026-10-18.md)). Exact byte count is required before
 atomic publication. Cache names derive from canonical source path, size and
 mtime. Playback uses this local copy, not a provider path that can be evicted.
 Cache reuse survives an app restart. Changed source metadata produces a new,
@@ -38,7 +40,7 @@ sources cannot authorize stale cached media.
 
 Incomplete copies are removed after failure and at the next startup. Startup
 cleanup removes entries unused for 30 days and trims older entries to a 2 GiB
-soft budget. Cleanup runs before this process prepares playback; the active
+soft budget (only kept entries count since 2026-10-18). Cleanup runs before this process prepares playback; the active
 run's working set may exceed that budget rather than deleting files it uses.
 Missing/truncated cache entries are repaired on demand. Concurrent requests share
 one copy operation. No Drive settings, dependencies or restart ownership changed.
