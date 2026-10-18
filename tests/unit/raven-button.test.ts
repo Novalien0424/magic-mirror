@@ -249,6 +249,19 @@ describe('Raven launchd button', () => {
     }
     expect(profile).toContain('(0, 1, "Studio", "INTERACTIVE\\nSTUDIO", "#b26a00", ')
   })
+  it('keeps Remote Console off the button queue, the TV, the mouse and the Stream Deck', () => {
+    const path = new URL('../../deploy/macos/magic-mirror-remote-console.sh', import.meta.url)
+    const script = readFileSync(path, 'utf8')
+    const installer = readFileSync(new URL('../../deploy/macos/install-remote-console.sh', import.meta.url), 'utf8')
+    expect(statSync(path).mode & 0o111).not.toBe(0)
+    expect(statSync(new URL('../../deploy/macos/install-remote-console.sh', import.meta.url)).mode & 0o111).not.toBe(0)
+    expect(script).toContain('/Users/novalien0424/magic-mirror/scripts/operator-command.mjs show_console_main ')
+    expect(script).not.toMatch(/raven-button|mirror-tv-control|mirror-mouse|afplay|launchctl (kickstart|bootstrap|kill)/)
+    expect(installer).toContain('destination="$HOME/Desktop/$label.app"')
+    expect(installer).toContain('identifier=com.magicmirror.control.remote-console')
+    expect(installer).not.toMatch(/Magic Mirror Controls|prepare-stream-deck-profile/)
+    expect(readFileSync(new URL('../../deploy/macos/install-stream-deck-controls.sh', import.meta.url), 'utf8')).not.toContain('remote')
+  })
   it('requires the observed device address and consumes both keys only on that device', () => {
     expect(() => ravenButtonMapping(undefined)).toThrow('observed_bluetooth_device_address_required')
     const mapping = ravenButtonMapping('12:34:56:78:90:ab')

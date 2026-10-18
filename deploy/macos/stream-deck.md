@@ -122,10 +122,21 @@ it does not require a new login agent. Allow up to ten seconds for a failed
 attempt to produce a fixed reason in `~/Library/Logs/MagicMirror/button.log`.
 Console still opens if mouse forwarding fails, so remote input remains available.
 
-For **Chrome Remote Desktop**, connect to this Mac as usual and select the portrait
-T749 display (or all displays). Open
-`~/Applications/Magic Mirror Controls/Console Magic Mirror.app` remotely to show
-the same Console; the physical Neo button is not required. The existing virtual
+For **Chrome Remote Desktop**, connect to this Mac as usual. To check the Console
+without covering the avatar, stay on the main (virtual) display and double-click
+**Remote Console Magic Mirror** on the Desktop. The Console opens there at normal
+size while the avatar keeps running on the TV. It only shows the Console: it does
+not start Magic Mirror, wake the TV, connect the TV mouse, change the Mirror mode
+or play a sound, and if the app is not running it says so in an alert. The next
+CONSOLE press (Neo key or Console app) moves the Console back over the avatar;
+START, INTERACTIVE STUDIO and PLAY LOOP hide it as before. Install or reinstall it
+with `zsh deploy/macos/install-remote-console.sh` (it refuses to replace any other
+app of that name).
+
+To see the Console where a TV user would, select the portrait T749 display (or
+all displays) and open
+`~/Applications/Magic Mirror Controls/Console Magic Mirror.app` remotely; the
+physical Neo button is not required. The existing virtual
 main display and remote desktop host remain unchanged. Both inputs control the
 same Mac pointer; take turns using the local and remote mice. After moving the
 physical mouse, leave it still for a few seconds before controlling remotely

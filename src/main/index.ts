@@ -766,7 +766,40 @@ function placeConsoleOnMirror(): boolean {
   return onMirror && win.isVisible()
 }
 
-async function showConsoleOnMirror(): Promise<boolean> {
+/**
+ * Remote desktop route: the same Console on the main (virtual) display at the normal
+ * window level, so the avatar stays uncovered on the TV. The next CONSOLE press
+ * places it back over the mirror.
+ */
+function placeConsoleOnMain(): boolean {
+  const win = windows.get('console'), mirror = windows.get('mirror')
+  if (!win || win.isDestroyed()) return false
+  const mirrorId = mirror && !mirror.isDestroyed() ? screen.getDisplayMatching(mirror.getBounds()).id : undefined
+  const primary = screen.getPrimaryDisplay()
+  const display = primary.id !== mirrorId ? primary : screen.getAllDisplays().find(candidate => candidate.id !== mirrorId)
+  if (display === undefined) {
+    marker('CONSOLE_OPEN_FAILED', { reason: 'console_main_display_missing' })
+    return false
+  }
+  const area = display.workArea
+  const bounds = { x: area.x + 16, y: area.y + 16,
+    width: Math.max(1, area.width - 32), height: Math.max(1, area.height - 32) }
+  if (win.isMinimized()) win.restore()
+  if (win.isMaximized()) win.unmaximize()
+  win.setAlwaysOnTop(false)
+  win.setBounds(bounds)
+  win.show()
+  if (isDarwin) app.focus({ steal: true })
+  win.focus()
+  const actual = win.getBounds()
+  const onMain = screen.getDisplayMatching(actual).id === display.id
+  marker('CONSOLE_ON_MAIN', { display_id: display.id, x: actual.x, y: actual.y,
+    width: actual.width, height: actual.height, visible: win.isVisible(), focused: win.isFocused(),
+    on_main: onMain })
+  return onMain && win.isVisible()
+}
+
+async function consoleWhenReady(): Promise<boolean> {
   if (shutdownStarted) return false
   let win = windows.get('console')
   if (!win || win.isDestroyed()) win = createWindow('console')
@@ -778,8 +811,19 @@ async function showConsoleOnMirror(): Promise<boolean> {
     }
     await new Promise(resolve => setTimeout(resolve, 50))
   }
+  return true
+}
+
+async function showConsoleOnMirror(): Promise<boolean> {
+  if (!await consoleWhenReady()) return false
   consoleOnMirror = true
   return placeConsoleOnMirror()
+}
+
+async function showConsoleOnMain(): Promise<boolean> {
+  if (!await consoleWhenReady()) return false
+  consoleOnMirror = false
+  return placeConsoleOnMain()
 }
 
 function toggleConsoleWindow(): void {
@@ -1368,6 +1412,7 @@ void app.whenReady().then(async () => {
     directory: join(app.getPath('userData'), 'operator-control'),
     execute: async action => {
       if (action === 'show_console') return showConsoleOnMirror()
+      if (action === 'show_console_main') return showConsoleOnMain()
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
       if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false

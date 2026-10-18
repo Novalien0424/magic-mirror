@@ -12,6 +12,7 @@ const CASES = [
   'operator_loop_single_reload', 'operator_loop_failed_black', 'operator_loop_start_normal_recovery',
   'operator_console_on_mirror', 'operator_console_preserves_loop_and_draft',
   'operator_loop_saved_replacement_button', 'operator_loop_start_cancel',
+  'operator_console_remote_main_then_deck',
 ] as const
 
 const DOM = `
@@ -240,7 +241,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
         && r.value.publishDiff.changed.length === 0;`)) fail('saved_avatar_not_restored')
     if (avatarFingerprint && await fingerprint() !== avatarFingerprint) fail('avatar_settings_changed')
   }
-  const operatorCommand = async (action: 'normal' | 'show_console' | 'play_loop'): Promise<void> => {
+  const operatorCommand = async (action: 'normal' | 'show_console' | 'show_console_main' | 'play_loop'): Promise<void> => {
     // START's mode switch uses this same production mailbox. Stay inside this
     // process's isolated userData; never invoke the field launcher or TV control.
     const id = randomUUID(), directory = join(userData, 'operator-control')
@@ -459,6 +460,35 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     const overlayMotion = await sample()
     await edit("set(control('Loop volume'), '0.42')")
     pass({ generation_unchanged: true, unsaved_draft_preserved: true, decoded_frames: overlayMotion.decoded_frames })
+
+    step = CASES[16]
+    // Remote Console moves the same renderer beside the mirror at the normal level; the
+    // next CONSOLE press must put it back over the mirror exactly as before.
+    const beforeRemote = await snapshot()
+    await edit("set(control('Loop volume'), '0.44')")
+    await operatorCommand('show_console_main')
+    const mirrorNow = screen.getDisplayMatching(input.mirror.getBounds())
+    const remoteBounds = input.console.getBounds(), remoteDisplay = screen.getDisplayMatching(remoteBounds)
+    if (!input.console.isVisible() || input.console.isAlwaysOnTop() || remoteDisplay.id === mirrorNow.id
+      || !input.mirror.isVisible()) fail('remote_console_not_beside_mirror')
+    const mainArea = remoteDisplay.workArea
+    if (remoteBounds.x < mainArea.x || remoteBounds.y < mainArea.y
+      || remoteBounds.x + remoteBounds.width > mainArea.x + mainArea.width
+      || remoteBounds.y + remoteBounds.height > mainArea.y + mainArea.height) fail('remote_console_outside_main')
+    const remoteFocused = input.console.isFocused()
+    await shot('operator-console-remote-main.png')
+    await operatorCommand('show_console')
+    const deckBounds = input.console.getBounds()
+    if (!input.console.isVisible() || !input.console.isFocused() || !input.console.isAlwaysOnTop()
+      || screen.getDisplayMatching(deckBounds).id !== mirrorNow.id) fail('deck_console_not_over_mirror')
+    const afterRemote = await snapshot()
+    if (afterRemote.generation !== beforeRemote.generation || afterRemote.mode !== 'loop'
+      || afterRemote.status !== 'playing' || !await evaluate<boolean>("return control('Loop volume').value === '0.44'")) {
+      fail('remote_console_changed_program_or_draft')
+    }
+    await edit("set(control('Loop volume'), '0.42')")
+    pass({ remote_display_is_mirror: false, remote_always_on_top: false, remote_focused: remoteFocused,
+      deck_back_over_mirror: true, generation_unchanged: true, unsaved_draft_preserved: true })
 
     step = CASES[9]
     const beforePause = await snapshot()

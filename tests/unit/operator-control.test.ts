@@ -66,7 +66,7 @@ async function mailbox() {
 }
 
 describe('Main operator request parser', () => {
-  it.each(['normal', 'play_loop', 'show_console', 'studio'] as const)('accepts exactly the fixed %s payload and returns only command metadata', action => {
+  it.each(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio'] as const)('accepts exactly the fixed %s payload and returns only command metadata', action => {
     expect(parseOperatorRequest(request({ action }), now)).toEqual({ id, action, expiresAt: now + 45000 })
   })
 
@@ -74,7 +74,7 @@ describe('Main operator request parser', () => {
     null, [], 'play_loop', {},
     { ...request(), version: 2 }, { ...request(), version: '1' },
     { ...request(), action: 'stop' }, { ...request(), action: 'shutdown' },
-    { ...request(), action: 'PLAY_LOOP' }, { ...request(), action: 'play_loop ' },
+    { ...request(), action: 'PLAY_LOOP' }, { ...request(), action: 'play_loop ' }, { ...request(), action: 'show_console_remote' },
     { ...request(), action: { action: 'normal' } },
     { ...request(), extra: true }, { ...request(), issuedAt: undefined },
     { ...request(), id: '../request' }, { ...request(), id: '' }, { ...request(), id: 1 },

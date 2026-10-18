@@ -9,7 +9,7 @@ export const OPERATOR_COMMAND_TTL_MS = 45000
 export const OPERATOR_COMMAND_POLL_MS = 100
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Must equal Main's OperatorAction set in src/main/operator-control.ts.
-export const OPERATOR_ACTIONS = Object.freeze(['normal', 'play_loop', 'show_console', 'studio'])
+export const OPERATOR_ACTIONS = Object.freeze(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio'])
 const failed = reason => ({ status: 'failed', reason })
 const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))

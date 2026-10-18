@@ -70,6 +70,9 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).
+  Also open **Remote Console Magic Mirror** on the Desktop remotely: Console on
+  the main display, avatar uncovered on the TV; then press CONSOLE on the Neo and
+  check it returns over the avatar. [Remote Console](docs/testing/remote-console-2026-10-18.md).
 - [ ] Confirm the latest Neo key layout/labels and physical START, CONSOLE,
   PLAY LOOP and STOP behavior, picture/music, USB reconnect and cold login.
   [Operator controls](docs/testing/operator-controls-2026-10-17.md).

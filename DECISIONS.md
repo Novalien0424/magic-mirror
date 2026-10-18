@@ -1,5 +1,17 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-18 — Remote Console on the main display (owner directive, evening)
+
+- **Two routes, one Console.** The Neo CONSOLE key keeps opening the Console
+  over the avatar on the portrait TV (for the TV mouse). The Desktop app
+  **Remote Console Magic Mirror** opens the same Console window on the main
+  (virtual) display at the normal window level, so the avatar stays uncovered
+  for remote desktop checks. Whichever is used last decides where the Console
+  shows; unsaved edits move with it.
+- **Remote Console does nothing else.** It never starts the app or changes the
+  TV, the TV mouse, the Mirror mode or venue sound; failures show as an alert
+  on the remote screen. It is not a Stream Deck key.
+
 ## 2026-10-18 — Interactive Studio visit flow (owner directive, later the same day)
 
 - **Own wake phrase.** In Interactive Studio mode the mirror listens for the
