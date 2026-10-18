@@ -68,6 +68,8 @@ journeys: [user journeys](docs/testing/user-journeys-2026-10-18.md).
 Before any QA that can produce sound, capture the affected output's volume and
 mute state, lower output to the minimum level, and restore the exact captured
 settings after success, failure or cancellation. Preserve an existing mute.
+Normal use is the Jabra at 69 % unmuted (owner, 2026-10-18); 1 % is for tests
+only, so real people nearby are not disturbed.
 On this Mac, the tested system-output route supports `osascript` volume capture
 and 1% output. Do not change microphone input gain. If a test changes output
 devices, protect and restore that device too. Record the reduced level in

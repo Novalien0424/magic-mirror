@@ -61,8 +61,8 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
 - [ ] **QA sound wrapper and output-device switches.** During Electron runs the
   default output can flip between the TV output and the Jabra, so a restore can
   land on the other device. Pin capture/restore to one device (CoreAudio device
-  ID) before the next long sound-producing batch; until then check both levels
-  after QA. [Evidence](docs/testing/interactive-studio-2026-10-18.md#owner-flow-follow-up-same-day).
+  ID) before the next long sound-producing batch; until then set the Jabra back
+  to the normal 69 % after QA. [Evidence](docs/testing/interactive-studio-2026-10-18.md#owner-flow-follow-up-same-day).
 - [ ] Review the compact Console on the portrait TV with its mouse, including
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode

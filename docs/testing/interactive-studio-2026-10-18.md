@@ -119,7 +119,8 @@ Studio visit flow".
 One live run only (no repeats). Sound: the quiet wrapper captures and restores
 the default output device, but during Electron runs the default flips between the
 TV output and the Jabra, so one restore landed on the other device and left the
-Jabra at 1 %; it was set back to its pre-QA 6 % (input gain unchanged). TODO
+Jabra at 1 %; it was set to 6 % and then, on the owner's correction, to the normal
+69 % (input gain unchanged). TODO
 records pinning the wrapper to one device.
 
 Not covered: saying 「招喚渡鴉使者」 at the mirror (synthetic audio cannot reach

@@ -31,7 +31,7 @@ Runtime (**14:29 Taipei, 2026-10-18**): production app restarted on the new
 build after QA; Mirror mode Conversation; published config version 19. Stream
 Deck: the five-key profile is imported and selected for the Neo ("Magic Mirror
 copy"); the old four-key profile is still listed, unused. Output: Jabra (default
-device) **6 %, unmuted**; input gain 57 unchanged. The owner is away for two days.
+device) **69 %, unmuted** (the owner's normal level); input gain 57 unchanged. The owner is away for two days.
 
 Open gaps (all in [TODO](TODO.md)): saying 「招喚渡鴉使者」 at the mirror and a
 physical INTERACTIVE STUDIO press; a human studio visit; the QA sound wrapper
