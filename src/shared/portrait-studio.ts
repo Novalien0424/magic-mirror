@@ -1,6 +1,8 @@
-/** Portrait Studio contracts. Dependency-free: also used by the sandboxed preloads. */
+/** Interactive Studio contracts (internal name: portrait studio). Dependency-free: also used by the sandboxed preloads. */
 
 export type ExperienceMode = 'conversation' | 'portrait_studio'
+/** The Mirror's explicit switch (Main-owned, persisted); `studio` makes every wake start the Interactive Studio. */
+export type MirrorMode = 'conversation' | 'studio'
 export type StudioSlot = 'subject' | 'setting' | 'mood' | 'palette' | 'companion' | 'style' | 'detail'
 export type StudioQuality = 'low' | 'medium' | 'high'
 export type StudioLanguage = 'zh' | 'en'
@@ -9,15 +11,19 @@ export const STUDIO_SLOTS: readonly StudioSlot[] = Object.freeze(['subject', 'se
 export const STUDIO_MAX_QUESTIONS = 8
 export const STUDIO_MAX_GUESTS = 1000
 
-export interface StudioQuestion { id: string; zh: string; en: string; slot: StudioSlot }
+/** `imageLine` (optional) replaces the slot's default image-prompt line; it must contain `{{answer}}`. */
+export interface StudioQuestion { id: string; zh: string; en: string; slot: StudioSlot; imageLine?: string }
+export interface StudioBilingual { zh: string; en: string }
 
 /** What the avatar is told at each studio stage, in visit order. Operators may override any of them per avatar. */
-export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'askName', 'confirmName', 'chooseGuest', 'guestOnly', 'askQuestion',
-  'painting', 'reveal', 'revealBlind', 'offerChange', 'repainting', 'noChangesLeft', 'finalVersion', 'finished', 'exited'] as const)
+export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'offer', 'unavailable', 'askName', 'confirmName',
+  'chooseGuest', 'guestOnly', 'askQuestion', 'painting', 'busy', 'reveal', 'revealBlind', 'offerChange', 'repainting', 'noChangesLeft',
+  'finalVersion', 'finished', 'exited'] as const)
 export type StudioPromptStage = typeof STUDIO_PROMPT_STAGES[number]
 /** Placeholders each stage supports: required ones must stay in the text; any other placeholder is rejected. */
 export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
-  instructions: { required: [], optional: [] }, askName: { required: ['question'], optional: [] },
+  instructions: { required: [], optional: [] }, offer: { required: [], optional: [] },
+  unavailable: { required: [], optional: [] }, busy: { required: [], optional: [] }, askName: { required: ['question'], optional: [] },
   confirmName: { required: ['name'], optional: [] }, chooseGuest: { required: ['candidates'], optional: [] },
   guestOnly: { required: [], optional: [] }, askQuestion: { required: ['question'], optional: ['index', 'count'] },
   painting: { required: [], optional: [] }, reveal: { required: ['followUp'], optional: ['language'] },
@@ -28,13 +34,16 @@ export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { re
 export const STUDIO_PROMPT_MAX = Object.freeze({ instructions: 4000, other: 1000 })
 /** Operator-facing name and moment of each stage prompt (Console editor and prompt inspector). */
 export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: string; when: string }>> = Object.freeze({
-  instructions: { label: 'Studio instructions', when: 'Always in effect while the studio is open: how the avatar runs the studio.' },
+  instructions: { label: 'Studio instructions', when: 'Always in effect while the studio is open: how the avatar runs the studio (its system prompt, after the avatar’s Persona).' },
+  offer: { label: 'What the studio offers', when: 'In Conversation mode, when visitors may ask for the studio: completes “It offers …” so the avatar knows which requests open it. Include example requests.' },
+  unavailable: { label: 'Studio unavailable', when: 'When the studio cannot start (for example, no ChatGPT sign-in).' },
   askName: { label: 'Ask the name', when: 'Right after the studio opens.' },
   confirmName: { label: 'Read the name back', when: 'After the visitor says a name, before it is confirmed.' },
   chooseGuest: { label: 'Guest list: close matches', when: 'When the guest list has names close to what the visitor said.' },
   guestOnly: { label: 'Guest list: no match', when: 'When only listed guests may take part and no listed name matches.' },
   askQuestion: { label: 'Each question', when: 'Before every portrait question, in order.' },
-  painting: { label: 'Painting starts', when: 'After the last answer, while the first portrait is painted.' },
+  painting: { label: 'Painting starts', when: 'After the last answer, while the first picture is painted.' },
+  busy: { label: 'While painting', when: 'When the visitor talks or asks for something while a picture is still being painted.' },
   reveal: { label: 'Reveal', when: 'When the portrait appears on the mirror and the avatar can see it.' },
   revealBlind: { label: 'Reveal without the image', when: 'When the portrait appears but its image could not be shown to the avatar.' },
   offerChange: { label: 'Offer a change', when: 'Added to the reveal while the visitor may still ask for a change.' },
@@ -52,24 +61,91 @@ export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.
 /** Per-avatar overrides; a stage without one uses the versioned default. */
 export type StudioPrompts = Partial<Record<StudioPromptStage, string>>
 
-/** Operator-facing problem with a stage prompt, or '' when it is valid. */
-export function studioPromptIssue(stage: StudioPromptStage, text: unknown): string {
-  const max = stage === 'instructions' ? STUDIO_PROMPT_MAX.instructions : STUDIO_PROMPT_MAX.other
-  if (typeof text !== 'string' || !text.trim()) return 'Enter what the avatar is told at this stage, or reset it to the default.'
+/** Operator-facing problem with an editable template, or '' when it is valid. */
+export function templateIssue(text: unknown, max: number, placeholders: { readonly required: readonly string[]; readonly optional: readonly string[] },
+  empty: string, multiline = true): string {
+  if (typeof text !== 'string' || !text.trim()) return empty
   if (text.length > max) return `Use ${max} characters or fewer (now ${text.length}).`
-  if (/[\u0000-\u0009\u000b-\u001f\u007f]/u.test(text)) return 'Remove tabs and other control characters.'
-  const { required, optional } = STUDIO_PROMPT_PLACEHOLDERS[stage]
+  if ((multiline ? /[\u0000-\u0009\u000b-\u001f\u007f]/u : /[\u0000-\u001f\u007f]/u).test(text)) {
+    return multiline ? 'Remove tabs and other control characters.' : 'Remove line breaks, tabs and other control characters.'
+  }
+  const { required, optional } = placeholders
   const used = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map(match => match[1]!))]
   const unknown = used.filter(name => !required.includes(name) && !optional.includes(name))
-  if (unknown.length) return `Remove ${unknown.map(name => `{{${name}}}`).join(', ')}: this stage ${required.length + optional.length
+  if (unknown.length) return `Remove ${unknown.map(name => `{{${name}}}`).join(', ')}: this text ${required.length + optional.length
     ? `supports only ${[...required, ...optional].map(name => `{{${name}}}`).join(', ')}` : 'has no placeholders'}.`
   const missing = required.filter(name => !used.includes(name))
-  if (missing.length) return `Keep ${missing.map(name => `{{${name}}}`).join(' and ')}; the avatar needs ${missing.length === 1 ? 'it' : 'them'} at this stage.`
+  if (missing.length) return `Keep ${missing.map(name => `{{${name}}}`).join(' and ')}; the mirror needs ${missing.length === 1 ? 'it' : 'them'} here.`
   return ''
+}
+
+/** Operator-facing problem with a stage prompt, or '' when it is valid. */
+export function studioPromptIssue(stage: StudioPromptStage, text: unknown): string {
+  return templateIssue(text, stage === 'instructions' ? STUDIO_PROMPT_MAX.instructions : STUDIO_PROMPT_MAX.other, STUDIO_PROMPT_PLACEHOLDERS[stage],
+    'Enter what the avatar is told at this stage, or reset it to the default.')
+}
+
+/** Image-generation text around the visitor's answers. A fixed data-only guard is always added by the app. */
+export const STUDIO_IMAGE_PROMPT_KEYS = Object.freeze(['frame', 'nameplate', 'painted', 'untitled', 'revision'] as const)
+export type StudioImagePromptKey = typeof STUDIO_IMAGE_PROMPT_KEYS[number]
+export const STUDIO_IMAGE_PROMPT_INFO: Readonly<Record<StudioImagePromptKey, { label: string; when: string; max: number; required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
+  frame: { label: 'Opening instruction', when: 'Starts every image prompt. {{style}} inserts Art style.', max: 2000, required: [], optional: ['style'] },
+  nameplate: { label: 'Nameplate instruction', when: 'Ends the prompt when the app adds the name banner.', max: 600, required: [], optional: [] },
+  painted: { label: 'Painted name instruction', when: 'Ends the prompt when the image model letters the name; {{name}} is the confirmed name.', max: 600, required: ['name'], optional: [] },
+  untitled: { label: 'No-name instruction', when: 'Ends the prompt when Ask for a name first is off.', max: 600, required: [], optional: [] },
+  revision: { label: 'Change instruction', when: 'The whole prompt for a change; {{change}} is what the visitor asked to change.', max: 1000, required: ['change'], optional: [] },
+})
+export const STUDIO_IMAGE_LINE_MAX = 300
+export function studioImagePromptIssue(key: StudioImagePromptKey, text: unknown): string {
+  return templateIssue(text, STUDIO_IMAGE_PROMPT_INFO[key].max, STUDIO_IMAGE_PROMPT_INFO[key], 'Enter this image instruction, or reset it to the default.')
+}
+export function studioImageLineIssue(text: unknown): string {
+  return templateIssue(text, STUDIO_IMAGE_LINE_MAX, { required: ['answer'], optional: [] }, 'Enter this question’s image prompt line, or reset it to the default.', false)
+}
+
+/** Text shown on the glass during a visit, in both languages. */
+export const STUDIO_SCREEN_KEYS = Object.freeze(['nameLabel', 'confirmLabel', 'confirmQuestion', 'questionLabel', 'changePrefix', 'changeHint',
+  'doneHint', 'finalHint', 'photoHint', 'captions'] as const)
+export type StudioScreenKey = typeof STUDIO_SCREEN_KEYS[number]
+export const STUDIO_SCREEN_INFO: Readonly<Record<StudioScreenKey, { label: string; when: string }>> = Object.freeze({
+  nameLabel: { label: 'Name label', when: 'Above the name question.' },
+  confirmLabel: { label: 'Read-back label', when: 'Above the name while the avatar reads it back.' },
+  confirmQuestion: { label: 'Read-back question', when: 'Below the name while the avatar reads it back.' },
+  questionLabel: { label: 'Question counter', when: 'Above each question; {{index}} and {{count}} are optional.' },
+  changePrefix: { label: 'Change chip prefix', when: 'Before the requested change while it is painted.' },
+  changeHint: { label: 'Change hint', when: 'Under a revealed picture while changes remain.' },
+  doneHint: { label: 'Done hint', when: 'Under a revealed picture while changes remain.' },
+  finalHint: { label: 'Final hint', when: 'Under a revealed picture when no changes remain.' },
+  photoHint: { label: 'Photo hint', when: 'While the final picture stays up for photos.' },
+  captions: { label: 'Painting captions', when: 'Rotating lines while a picture is painted; one per line, up to 6.' },
+})
+export const STUDIO_SCREEN_MAX = 60
+export function studioScreenIssue(key: StudioScreenKey, text: unknown): string {
+  if (key === 'captions') {
+    if (typeof text !== 'string' || /[\u0000-\u0009\u000b-\u001f\u007f]/u.test(text)) return 'Remove tabs and other control characters.'
+    const lines = text.split('\n').map(line => line.trim()).filter(Boolean)
+    if (lines.length < 1 || lines.length > 6) return 'Enter 1 to 6 caption lines.'
+    if (lines.some(line => line.length > STUDIO_SCREEN_MAX)) return `Keep each line to ${STUDIO_SCREEN_MAX} characters.`
+    return /\{\{/.test(text) ? 'Captions have no placeholders.' : ''
+  }
+  return templateIssue(text, STUDIO_SCREEN_MAX, { required: [], optional: key === 'questionLabel' ? ['index', 'count'] : [] }, 'Enter this text, or reset it to the default.', false)
+}
+
+/** What the avatar says when a picture cannot be made, in both languages (spoken verbatim). */
+export const STUDIO_FAILURE_KEYS = Object.freeze(['studio_auth_required', 'studio_quota_exhausted', 'studio_image_refused', 'revision_failed', 'default'] as const)
+export type StudioFailureKey = typeof STUDIO_FAILURE_KEYS[number]
+export const STUDIO_FAILURE_INFO: Readonly<Record<StudioFailureKey, string>> = Object.freeze({
+  studio_auth_required: 'ChatGPT sign-in missing or rejected', studio_quota_exhausted: 'ChatGPT plan image limit reached',
+  studio_image_refused: 'Image refused by the safety system', revision_failed: 'A change failed (the earlier picture stays)', default: 'Any other failure',
+})
+export function studioFailureIssue(text: unknown): string {
+  return templateIssue(text, 200, { required: [], optional: [] }, 'Enter this line, or reset it to the default.', false)
 }
 
 export interface StudioSettings {
   startScript: string
+  /** Ask the visitor's name first (default true). Off: no name step, no lettering. */
+  askName?: boolean
   nameQuestion: { zh: string; en: string }
   questions: StudioQuestion[]
   artStyle: string
@@ -78,6 +154,10 @@ export interface StudioSettings {
   revisionsAllowed: number
   holdSeconds: number
   prompts: StudioPrompts
+  /** Operator edits only; a missing entry uses the versioned default. */
+  imagePrompt?: Partial<Record<StudioImagePromptKey, string>>
+  screenText?: Partial<Record<StudioScreenKey, StudioBilingual>>
+  failureLines?: Partial<Record<StudioFailureKey, StudioBilingual>>
 }
 /** Operator-entered event guests. Stays in Main; never sent to renderers or the model as a list. */
 export interface GuestListSettings { names: string[]; match: GuestMatchMode }
@@ -139,11 +219,23 @@ function parseStudioPrompts(value: unknown): StudioPrompts | null {
   return structuredClone(value) as StudioPrompts
 }
 
+const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts']
+const STUDIO_OPTIONAL_KEYS = ['askName', 'imagePrompt', 'screenText', 'failureLines']
+const bilingualMap = <K extends string>(value: unknown, keys: readonly K[], issue: (key: K, text: unknown) => string): boolean =>
+  record(value) && Object.entries(value).every(([key, pair]) => keys.includes(key as K) && record(pair) && exact(pair, ['zh', 'en'])
+    && !issue(key as K, pair.zh) && !issue(key as K, pair.en))
+
 function parseStudioSettings(input: unknown): StudioSettings | null {
   // Settings saved before stage prompts existed use every default.
   const value = record(input) && !Object.hasOwn(input, 'prompts') ? { ...input, prompts: {} } : input
-  if (!record(value) || !exact(value, ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts'])
+  if (!record(value) || !STUDIO_KEYS.every(key => Object.hasOwn(value, key))
+    || !Object.keys(value).every(key => STUDIO_KEYS.includes(key) || STUDIO_OPTIONAL_KEYS.includes(key))
     || !parseStudioPrompts(value.prompts)) return null
+  if ('askName' in value && typeof value.askName !== 'boolean') return null
+  if ('imagePrompt' in value && !(record(value.imagePrompt) && Object.entries(value.imagePrompt)
+    .every(([key, text]) => STUDIO_IMAGE_PROMPT_KEYS.includes(key as StudioImagePromptKey) && !studioImagePromptIssue(key as StudioImagePromptKey, text)))) return null
+  if ('screenText' in value && !bilingualMap(value.screenText, STUDIO_SCREEN_KEYS, studioScreenIssue)) return null
+  if ('failureLines' in value && !bilingualMap(value.failureLines, STUDIO_FAILURE_KEYS, (_key, text) => studioFailureIssue(text))) return null
   const name = value.nameQuestion
   if (!studioText(value.startScript, 500, false, true) || !record(name) || !exact(name, ['zh', 'en']) || !studioText(name.zh, 200) || !studioText(name.en, 200)
     || !Array.isArray(value.questions) || value.questions.length < 1 || value.questions.length > STUDIO_MAX_QUESTIONS
@@ -153,8 +245,10 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
     || !Number.isInteger(value.holdSeconds) || (value.holdSeconds as number) < 10 || (value.holdSeconds as number) > 300) return null
   const ids = new Set<string>()
   for (const question of value.questions) {
-    if (!record(question) || !exact(question, ['id', 'zh', 'en', 'slot']) || typeof question.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(question.id)
-      || ids.has(question.id) || !studioText(question.zh, 200) || !studioText(question.en, 200) || !STUDIO_SLOTS.includes(question.slot as StudioSlot)) return null
+    if (!record(question) || !(exact(question, ['id', 'zh', 'en', 'slot']) || exact(question, ['id', 'zh', 'en', 'slot', 'imageLine']))
+      || typeof question.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(question.id)
+      || ids.has(question.id) || !studioText(question.zh, 200) || !studioText(question.en, 200) || !STUDIO_SLOTS.includes(question.slot as StudioSlot)
+      || 'imageLine' in question && studioImageLineIssue(question.imageLine)) return null
     ids.add(question.id)
   }
   return structuredClone(value) as unknown as StudioSettings
@@ -171,9 +265,11 @@ export function parseAvatarExperience(value: unknown): AvatarExperience | null {
   return { ...structuredClone(value), studio } as unknown as AvatarExperience
 }
 
+/** Renderer subset: no guest names, and no image-prompt, on-glass or failure text (Main applies those). */
 export function sessionExperience(experience: AvatarExperience): SessionExperience {
+  const { imagePrompt: _image, screenText: _screen, failureLines: _failure, ...studio } = structuredClone(experience.studio)
   return { defaultMode: experience.defaultMode, visitorMayRequest: experience.visitorMayRequest, afterPortrait: experience.afterPortrait,
-    studio: structuredClone(experience.studio), guestMatch: experience.guests.names.length ? experience.guests.match : 'off' }
+    studio, guestMatch: experience.guests.names.length ? experience.guests.match : 'off' }
 }
 
 export function parseSessionExperience(value: unknown): SessionExperience | null {
@@ -253,6 +349,16 @@ export interface StudioView {
   lettering: 'nameplate' | 'painted'
   revisionsLeft: number
   holdEndsAt?: number
+  /** False when the experience skips the name step. */
+  askName: boolean
+  /** On-glass text resolved by Main for this language (operator edits or versioned defaults). */
+  text: StudioScreenView
+}
+export type StudioScreenView = Record<Exclude<StudioScreenKey, 'captions'>, string> & { captions: string[] }
+function parseScreenView(value: unknown): value is StudioScreenView {
+  return record(value) && exact(value, [...STUDIO_SCREEN_KEYS]) && STUDIO_SCREEN_KEYS.every(key => key === 'captions'
+    ? Array.isArray(value.captions) && value.captions.length >= 1 && value.captions.length <= 6 && value.captions.every(line => studioText(line, STUDIO_SCREEN_MAX))
+    : studioText(value[key], 80))
 }
 
 export function parseStudioView(value: unknown): StudioView | null {
@@ -262,8 +368,9 @@ export function parseStudioView(value: unknown): StudioView | null {
     || (value.answered as number) < 0 || (value.answered as number) > (value.questionCount as number)
     || !Array.isArray(value.chips) || value.chips.length > STUDIO_MAX_QUESTIONS || !value.chips.every(chip => studioText(chip, 80))
     || (value.lettering !== 'nameplate' && value.lettering !== 'painted')
-    || !Number.isInteger(value.revisionsLeft) || (value.revisionsLeft as number) < 0 || (value.revisionsLeft as number) > 3) return null
-  const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'revisionsLeft', 'holdEndsAt']
+    || !Number.isInteger(value.revisionsLeft) || (value.revisionsLeft as number) < 0 || (value.revisionsLeft as number) > 3
+    || typeof value.askName !== 'boolean' || !parseScreenView(value.text)) return null
+  const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'revisionsLeft', 'holdEndsAt', 'askName', 'text']
   if (!Object.keys(value).every(key => allowed.includes(key))) return null
   if ('prompt' in value && !studioText(value.prompt, 200)) return null
   if ('name' in value && !studioText(value.name, 40)) return null
@@ -313,13 +420,15 @@ export function parseStudioSessionEvent(value: unknown): StudioSessionEvent | nu
 export const STUDIO_MIRROR_CHANNEL = 'mirror:studio'
 export const STUDIO_CONSOLE_CHANNEL = 'console:studio'
 export type StudioAuthStatus = 'signed_in' | 'missing' | 'invalid' | 'expired' | 'refresh_failed'
-export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'test' }
+export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'test' } | { action: 'mode'; mode: MirrorMode }
 export interface StudioConsoleStatus {
   auth: StudioAuthStatus
   lastRefresh?: string
   modelId: string
   active: boolean
   phase?: StudioPhase
+  /** The Mirror's explicit switch. */
+  mirrorMode: MirrorMode
 }
 export interface StudioConsoleResult {
   status: StudioConsoleStatus
@@ -329,6 +438,8 @@ export interface StudioConsoleResult {
 }
 
 export function parseStudioConsoleCommand(value: unknown): StudioConsoleCommand | null {
+  if (record(value) && value.action === 'mode') return exact(value, ['action', 'mode']) && (value.mode === 'conversation' || value.mode === 'studio')
+    ? { action: 'mode', mode: value.mode } : null
   return record(value) && exact(value, ['action']) && ['status', 'start', 'exit', 'test'].includes(value.action as string)
-    ? { action: value.action as StudioConsoleCommand['action'] } : null
+    ? { action: value.action as Exclude<StudioConsoleCommand['action'], 'mode'> } : null
 }

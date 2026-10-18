@@ -76,12 +76,12 @@ export async function runFieldHelpConsoleQa(input: Phase4QaInput): Promise<Phase
     await wait("return !!button('Avatars')", 'tour_ready'); await pause(800)
     await full('tour-mirror.png')
     await click('Avatars')
-    for (const page of ['Persona', 'Appearance', 'Voice', 'Music & video', 'Experiences', 'Memories', 'Spells & scenes']) {
+    for (const page of ['Persona', 'Appearance', 'Voice', 'Music & video', 'Interactive Studio', 'Memories', 'Spells & scenes']) {
       await click(page); await pause(300); await full(`tour-avatars-${page.replace(/\W+/g, '-').toLowerCase()}.png`)
     }
     await click('Loop Video'); await pause(300); await full('tour-loop-video.png')
     await click('System')
-    for (const page of ['Devices', 'Media folders', 'Portrait images', 'Models', 'Advanced config', 'Events', 'Simulator', 'Phase Tests']) {
+    for (const page of ['Devices', 'Media folders', 'Studio service', 'Models', 'Advanced config', 'Events', 'Simulator', 'Phase Tests']) {
       // Simulator is listed only in developer mode.
       if (page === 'Simulator' && !await evaluate<boolean>("return !!button('Simulator')")) continue
       await click(page); await pause(300); await full(`tour-system-${page.replace(/\W+/g, '-').toLowerCase()}.png`)

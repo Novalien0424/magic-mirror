@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
+import { defaultExperience, sessionExperience, type MirrorMode } from '../shared/portrait-studio'
 import { LEGACY_SLEEP_PHRASE } from '../shared/avatar-commands'
 import { folderMediaSkill, type FolderMediaEntry } from '../shared/media-folders'
 import { canUseAvatarAction, canUseAvatarResource, type AvatarModel, type WakeRuntimeConfig } from '../shared/avatar-profiles'
@@ -222,6 +223,8 @@ export interface BootOptions {
   readonly rebuildWakeOwner?: () => PromiseLike<{ readonly status: 'success' | 'failed'; readonly reason: string }>
   readonly onFatalFailure?: (reason: string) => void
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
+  /** The Mirror switch as captured for a session; it decides whether the woken session greets with the studio. */
+  readonly mirrorModeForSession?: (identity: Readonly<RealtimeSessionIdentity>) => MirrorMode
   readonly appVersion?: string
   readonly buildCommit?: string
   readonly isPackaged?: boolean
@@ -2157,8 +2160,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
 
     const snapshot = createSessionModelSnapshot(activeModelSettings, nowValue(now))
     const media = options.getFolderMedia?.(publishedAvatarId) ?? []
-    const avatarSettings = publishedAvatarSettings && media.length ? { ...publishedAvatarSettings,
+    const withMedia = publishedAvatarSettings && media.length ? { ...publishedAvatarSettings,
       mediaSkill: folderMediaSkill(publishedAvatarSettings.mediaSkill, media) } : publishedAvatarSettings
+    // The saved per-avatar default mode is superseded by the Mirror switch.
+    const mode = options.mirrorModeForSession?.(identity)
+    const avatarSettings = withMedia && mode ? { ...withMedia, experience: { ...(withMedia.experience ?? sessionExperience(defaultExperience())),
+      defaultMode: mode === 'studio' ? 'portrait_studio' as const : 'conversation' as const } } : withMedia
     const issuer = createRealtimeSessionStartBundleIssuer({
       getPublishedSessionModelSnapshot: () => snapshot,
       getRealtimeSessionIdentity: () => identity,

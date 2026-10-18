@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConsoleBridge } from '../../shared/bridge'
-import type { StudioAuthStatus, StudioConsoleCommand, StudioConsoleResult, StudioConsoleStatus, StudioOutcome, StudioPhase } from '../../shared/portrait-studio'
+import type { MirrorMode, StudioAuthStatus, StudioConsoleCommand, StudioConsoleResult, StudioConsoleStatus, StudioOutcome, StudioPhase } from '../../shared/portrait-studio'
 import { HelpButton } from './HelpButton'
 import { ReasonDetail } from './reason-copy'
 
@@ -19,11 +19,11 @@ export interface StudioAuthCopy { readonly label: string; readonly action: strin
 export function studioAuthText(auth: StudioAuthStatus): StudioAuthCopy {
   const login = `Run ${STUDIO_LOGIN_COMMAND} in Terminal on this Mac, then press Refresh status.`
   switch (auth) {
-    case 'signed_in': return { label: 'Signed in', action: 'Portraits use this Mac’s ChatGPT plan. The app keeps the sign-in refreshed in the background.', tone: 'success', needsLogin: false }
-    case 'missing': return { label: 'Not signed in', action: `Sign in to paint portraits. ${login}`, tone: 'failed', needsLogin: true }
+    case 'signed_in': return { label: 'Signed in', action: 'Studio pictures use this Mac’s ChatGPT plan. The app keeps the sign-in refreshed in the background.', tone: 'success', needsLogin: false }
+    case 'missing': return { label: 'Not signed in', action: `Sign in so the Interactive Studio can paint pictures. ${login}`, tone: 'failed', needsLogin: true }
     case 'invalid': return { label: 'Not signed in · sign-in file unreadable', action: `Sign in again to replace it. ${login}`, tone: 'failed', needsLogin: true }
-    case 'expired': return { label: 'Signed in · refresh due', action: `The app refreshes it in the background and before the next portrait. If painting still fails, sign in again: ${login}`, tone: 'degraded', needsLogin: false }
-    case 'refresh_failed': return { label: 'Sign-in refresh failed', action: `The app retries every 30 minutes and before each portrait. If this stays, sign in again: ${login}`, tone: 'failed', needsLogin: true }
+    case 'expired': return { label: 'Signed in · refresh due', action: `The app refreshes it in the background and before the next picture. If painting still fails, sign in again: ${login}`, tone: 'degraded', needsLogin: false }
+    case 'refresh_failed': return { label: 'Sign-in refresh failed', action: `The app retries every 30 minutes and before each picture. If this stays, sign in again: ${login}`, tone: 'failed', needsLogin: true }
     default: return { label: 'Sign-in status unknown', action: `Press Refresh status. If it stays unknown, sign in again: ${login}`, tone: 'degraded', needsLogin: true }
   }
 }
@@ -36,32 +36,35 @@ const FAILURES: Readonly<Record<string, string>> = {
   studio_provider_contract: 'The image service returned an unexpected response. It may have changed; check for an app update.',
   studio_image_timeout: 'Painting took too long and was stopped. Try again, or choose a faster quality.',
   studio_image_unavailable: 'The image service could not be reached. Check the internet connection, then try again.',
-  studio_cancelled: 'The test portrait was cancelled.',
-  studio_config_unavailable: 'Published Portrait Studio settings are unavailable. Reload the Console settings, then try again.',
+  studio_cancelled: 'The test picture was cancelled.',
+  studio_config_unavailable: 'Published Interactive Studio settings are unavailable. Reload the Console settings, then try again.',
 }
 
 export function studioFailureText(code: string | undefined): string {
-  return (code && FAILURES[code]) || `The test portrait failed${code ? ` (${code})` : ''}. Try again; if it repeats, check Events for the reason.`
+  return (code && FAILURES[code]) || `The test picture failed${code ? ` (${code})` : ''}. Try again; if it repeats, check Events for the reason.`
 }
 
 const ACTIONS: Readonly<Record<string, string>> = {
-  studio_started: 'Portrait Studio started. The avatar asks the visitor’s name first.',
-  studio_start_duplicate: 'Portrait Studio is already running for this conversation.',
+  studio_started: 'Interactive Studio started for the visitor.',
+  studio_start_duplicate: 'Interactive Studio is already running for this conversation.',
   studio_session_replaced: 'The previous studio closed; a new one started.',
-  studio_requires_active_session: 'Start a conversation first. Portrait Studio runs inside the current conversation.',
-  studio_unavailable: 'Portrait Studio is unavailable. Check ChatGPT sign-in in Avatars → Experiences and that settings are published.',
-  studio_not_enabled: 'Portrait Studio is turned off for this avatar.',
-  studio_operator_exit: 'Back to conversation. The studio closed and its portrait was cleared.',
-  studio_not_active: 'Portrait Studio is not running.',
+  studio_requires_active_session: 'Start a conversation first. The studio runs inside the current conversation.',
+  studio_unavailable: 'Interactive Studio is unavailable. Check ChatGPT sign-in in System → Studio service and that settings are published.',
+  studio_not_enabled: 'Interactive Studio is turned off for this avatar.',
+  studio_operator_exit: 'Back to conversation. The studio closed and its picture was cleared.',
+  studio_not_active: 'Interactive Studio is not running.',
+  mirror_mode_studio: 'Mirror mode: Interactive Studio. Every wake starts the studio; a visitor already in conversation enters it now.',
+  mirror_mode_conversation: 'Mirror mode: Conversation. Every wake starts a normal conversation; a running studio closes now.',
+  mirror_mode_save_failed: 'The Mirror mode could not be saved and was not changed. Check Events, then try again.',
 }
 
 export function studioActionText(code: string): string {
-  return ACTIONS[code] ?? `Portrait Studio replied ${code}.`
+  return ACTIONS[code] ?? `Interactive Studio replied ${code}.`
 }
 
 const PHASES: Readonly<Record<StudioPhase, string>> = {
   name: 'Asking the visitor’s name', confirm: 'Confirming the name', question: 'Asking questions', painting: 'Painting',
-  reveal: 'Showing the portrait', revising: 'Painting a change', keepsake: 'Showing the final portrait',
+  reveal: 'Showing the picture', revising: 'Painting a change', keepsake: 'Showing the final picture',
 }
 
 export function studioPhaseText(status: Pick<StudioConsoleStatus, 'active' | 'phase'> | null): string {
@@ -101,7 +104,7 @@ type TestState =
   | { readonly kind: 'ready'; readonly dataUrl: string; readonly elapsedMs: number }
   | { readonly kind: 'failed'; readonly code?: string; readonly elapsedMs: number }
 
-/** Device-level ChatGPT image status and a Console-only test portrait (never saved). */
+/** Device-level ChatGPT image status and a Console-only test picture (never saved). */
 export function StudioStatusPanel({ bridge, visible = true, initialStatus = null }: {
   bridge: StudioBridge
   visible?: boolean
@@ -154,16 +157,16 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
 
   const auth = status ? studioAuthText(status.auth) : null
   const seconds = (ms: number): number => Math.max(0, Math.round(ms / 1000))
-  const testMessage = test.kind === 'busy' ? 'Painting test portrait. This can take a couple of minutes; keep this page open.'
-    : test.kind === 'ready' ? `Test portrait ready in ${seconds(test.elapsedMs)} s. Shown here only; it is not saved.`
+  const testMessage = test.kind === 'busy' ? 'Painting test picture. This can take a couple of minutes; keep this page open.'
+    : test.kind === 'ready' ? `Test picture ready in ${seconds(test.elapsedMs)} s. Shown here only; it is not saved.`
       : test.kind === 'failed' ? studioFailureText(test.code) : ''
 
   return <section className="studio-status" aria-labelledby="studio-status-heading" aria-busy={loading || busy || undefined}>
     <div className="studio-status__heading">
-      <h2 id="studio-status-heading">Portrait images · ChatGPT image service on this Mac</h2>
+      <h2 id="studio-status-heading">Studio service · ChatGPT image service on this Mac</h2>
       <button type="button" disabled={!available || loading} onClick={() => void refresh()}>{loading ? 'Refreshing…' : 'Refresh status'}</button>
     </div>
-    {!available && <p className="console__fault">Portrait Studio controls are unavailable in this Console. Restart the app to load them.</p>}
+    {!available && <p className="console__fault">Interactive Studio controls are unavailable in this Console. Restart the app to load them.</p>}
     {failure && <div className="console__fault"><ReasonDetail code={`${failure.error}; ${failure.reason}`} /></div>}
     {auth && status && <>
       <p className="studio-status__auth"><Badge tone={auth.tone}>{auth.label}</Badge></p>
@@ -179,8 +182,8 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
     </>}
     {!status && available && !failure && <p className="console__muted">{loading ? 'Checking sign-in…' : 'Sign-in status not loaded yet.'}</p>}
     <div className="studio-status__test">
-      <HelpButton help="Paints one portrait here with the published Experiences settings of the avatar on the Mirror, sample answers and the name “Raven”. Publish edits before testing. Nothing is shown on the Mirror or saved."
-        disabled={!available || busy} onClick={() => void runTest()}>{busy ? 'Painting…' : 'Generate test portrait'}</HelpButton>
+      <HelpButton help="Paints one picture here with the published Interactive Studio settings of the avatar on the Mirror, sample answers and the name “Raven”. Publish edits before testing. Nothing is shown on the Mirror or saved."
+        disabled={!available || busy} onClick={() => void runTest()}>{busy ? 'Painting…' : 'Generate test picture'}</HelpButton>
     </div>
     <p className={`studio-status__result${test.kind === 'failed' ? ' studio-status__result--failed' : ''}`} role="status" aria-live="polite">
       {testMessage && <><span aria-hidden="true">{test.kind === 'busy' ? '◷' : test.kind === 'ready' ? ICONS.success : ICONS.failed}</span> {testMessage}</>}
@@ -188,7 +191,7 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
     {test.kind === 'busy' && <p className="console__muted">Elapsed: {seconds(now - test.startedAt)} s</p>}
     {test.kind === 'failed' && test.code && <details><summary>Technical detail</summary><code>{test.code}</code></details>}
     {test.kind === 'ready' && <figure className="studio-status__preview">
-      <img src={test.dataUrl} alt="Test portrait generated with sample answers" />
+      <img src={test.dataUrl} alt="Test picture generated with sample answers" />
       <figcaption>Console preview only; not saved. <button type="button" onClick={() => setTest({ kind: 'idle' })}>Clear preview</button></figcaption>
     </figure>}
   </section>
@@ -196,7 +199,7 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
 
 export interface LiveMessage { readonly tone: Tone; readonly text: string }
 
-/** Sign-in chip for Mirror and Avatars › Experiences; sign-in and the test portrait live in System. */
+/** Sign-in chip for Mirror and Avatars › Interactive Studio; sign-in and the test picture live in System › Studio service. */
 export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: StudioBridge; visible: boolean; onOpen(): void }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
   useEffect(() => {
@@ -207,22 +210,24 @@ export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: Stud
   }, [bridge, visible])
   const auth = status ? studioAuthText(status.auth) : null
   return <p className="studio-service-summary">
-    <span>Portrait Studio · ChatGPT</span>
+    <span>Interactive Studio · ChatGPT</span>
     {auth ? <Badge tone={auth.tone}>{auth.label}</Badge> : <span className="console__status">{bridge?.studio ? 'Checking…' : 'Unavailable'}</span>}
-    <HelpButton className="console__link" help="Sign-in status, image model, usage and a test portrait for this Mac. Shared by every avatar."
-      onClick={onOpen}>Sign-in and test portrait</HelpButton>
-    <span className="studio-service-summary__hint">To start: during a conversation the visitor asks for a portrait, or press Start Portrait Studio in the control bar.</span>
+    <HelpButton className="console__link" help="Sign-in status, image model, usage and a test picture for this Mac. Shared by every avatar."
+      onClick={onOpen}>Sign-in and test picture</HelpButton>
+    <span className="studio-service-summary__hint">To start: set Mirror mode to Interactive Studio in the control bar, or press INTERACTIVE STUDIO on the Stream Deck.{status?.mirrorMode === 'studio' ? ' Interactive Studio mode is on.' : ''}</span>
   </p>
 }
 
-/** Live-session group in the Console control bar. Polls status only while a conversation is active. */
-export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible, onMessage }: {
+/** Mirror mode switch and studio status in the Console control bar. */
+export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible, onMessage, onStatus }: {
   bridge: StudioBridge
   bridgeAvailable: boolean
   lifecycle?: string
   visible: boolean
   /** Shared result line; without it the group shows its own. */
   onMessage?(message: LiveMessage): void
+  /** Latest status, for the header (mode label). */
+  onStatus?(status: StudioConsoleStatus): void
 }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
   const [busy, setBusy] = useState(false)
@@ -234,45 +239,56 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const available = bridgeAvailable && !!bridge?.studio
   const active = lifecycle === 'active'
+  const show = (next: StudioConsoleStatus): void => { setStatus(next); onStatus?.(next) }
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!bridge?.studio || polling.current) return
     polling.current = true
     const result = await call(bridge, { action: 'status' })
     polling.current = false
-    if (mounted.current && !failed(result)) setStatus(result.status)
+    if (mounted.current && !failed(result)) show(result.status)
   }, [bridge])
+  // Lifecycle changes refresh too: a Stream Deck switch happens while the Console is hidden.
   useEffect(() => {
     if (!visible || !available) return
     void refresh()
     if (!active) return
     const timer = setInterval(() => void refresh(), LIVE_POLL_MS)
     return () => clearInterval(timer)
-  }, [visible, available, active, refresh])
+  }, [visible, available, active, lifecycle, refresh])
 
-  const run = async (action: 'start' | 'exit'): Promise<void> => {
+  const run = async (command: StudioConsoleCommand): Promise<void> => {
     if (!bridge?.studio || busy) return
     setBusy(true)
-    const result = await call(bridge, { action })
+    const result = await call(bridge, command)
     if (!mounted.current) return
     setBusy(false)
-    if (failed(result)) { setMessage({ tone: 'failed', text: `Portrait Studio request failed (${result.error}).` }); return }
-    setStatus(result.status)
+    if (failed(result)) { setMessage({ tone: 'failed', text: `Interactive Studio request failed (${result.error}).` }); return }
+    show(result.status)
     if (result.action) setMessage({ tone: outcomeTone(result.action.status), text: studioActionText(result.action.code) })
   }
 
+  const mode: MirrorMode | undefined = status?.mirrorMode
   const auth = status ? studioAuthText(status.auth) : null
-  const startHelp = !available ? 'Portrait Studio controls are unavailable in this Console. Restart the app to load them.'
-    : !active ? 'Start a conversation first; Portrait Studio runs inside the current conversation.'
-      : auth?.needsLogin ? `ChatGPT: ${auth.label}. Sign in from System → Portrait images first.`
-        : 'Starts Portrait Studio for the visitor now, whatever the default mode. The avatar asks their name first.'
-  const exitHelp = status?.active ? 'Ends Portrait Studio now, clears its portrait from the Mirror and returns to conversation.'
-    : 'Available while Portrait Studio is running.'
+  const studioHelp = !available ? 'Interactive Studio controls are unavailable in this Console. Restart the app to load them.'
+    : auth?.needsLogin ? `ChatGPT: ${auth.label}. Sign in from System → Studio service first; a wake then falls back to conversation.`
+      : active ? 'Switches the Mirror to Interactive Studio: the visitor in front of the mirror enters it now, and every later wake starts it.'
+        : 'Switches the Mirror to Interactive Studio: every wake starts the studio instead of a normal conversation.'
+  const conversationHelp = active && status?.active ? 'Switches the Mirror to Conversation: the running studio closes now and the conversation continues.'
+    : 'Switches the Mirror to Conversation: every wake starts a normal conversation.'
+  // A visitor may still open the studio from a conversation; only that run has a separate exit.
+  const visitorRun = mode === 'conversation' && status?.active
   return <div className="live-bar__group studio-live" role="group" aria-labelledby="studio-live-heading">
-    <h2 id="studio-live-heading" className="live-bar__label">Portrait Studio</h2>
+    <h2 id="studio-live-heading" className="live-bar__label">Mirror mode</h2>
+    <div className="studio-live__switch" role="group" aria-label="Mirror mode">
+      <HelpButton placement="below" aria-pressed={mode === 'conversation'}
+        help={conversationHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'conversation') void run({ action: 'mode', mode: 'conversation' }) }}>Conversation</HelpButton>
+      <HelpButton placement="below" aria-pressed={mode === 'studio'}
+        help={studioHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'studio') void run({ action: 'mode', mode: 'studio' }) }}>Interactive Studio</HelpButton>
+    </div>
     {status?.active && <span className="console__status console__status--success" role="status">{studioPhaseText(status)}</span>}
-    <HelpButton placement="below" help={startHelp} disabled={!available || busy || !active} onClick={() => void run('start')}>Start Portrait Studio</HelpButton>
-    <HelpButton placement="below" help={exitHelp} disabled={!available || busy || !status?.active} onClick={() => void run('exit')}>Back to conversation</HelpButton>
+    {visitorRun && <HelpButton placement="below" help="Ends the studio the visitor asked for, clears its picture from the Mirror and returns to conversation."
+      disabled={!available || busy} onClick={() => void run({ action: 'exit' })}>Back to conversation</HelpButton>}
     {!onMessage && <p className="console__result studio-live__result" role="status" aria-live="polite">
       {message && <><span aria-hidden="true">{ICONS[message.tone]}</span> {message.text}</>}
     </p>}

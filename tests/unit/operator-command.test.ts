@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 // @ts-expect-error Plain JavaScript shared with the deployed CLI.
-import { createOperatorIo, createOperatorRequest, parseOperatorRequest, parseOperatorResponse, sendOperatorCommand } from '../../scripts/operator-command.mjs'
+import { OPERATOR_ACTIONS, createOperatorIo, createOperatorRequest, parseOperatorRequest, parseOperatorResponse, sendOperatorCommand } from '../../scripts/operator-command.mjs'
 
 const id = 'cb108b79-5dfe-4b6d-9802-272f41d300ff'
 const otherId = '8d55bcc1-eb91-4d1b-aabb-3e6cce83e2ed'
@@ -22,12 +23,18 @@ function mailbox() {
 }
 
 describe('operator mailbox payload validation', () => {
-  it.each(['normal', 'play_loop', 'show_console'])('creates exactly the approved %s payload', action => {
+  it('accepts exactly Main\'s operator action set', () => {
+    const main = readFileSync(new URL('../../src/main/operator-control.ts', import.meta.url), 'utf8').match(/^export type OperatorAction = (.+)$/m)?.[1]
+    expect([...main?.matchAll(/'([a-z_]+)'/g) ?? []].map(([, action]) => action)).toEqual(OPERATOR_ACTIONS)
+    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'studio'])
+    expect(Object.isFrozen(OPERATOR_ACTIONS)).toBe(true)
+  })
+  it.each(['normal', 'play_loop', 'show_console', 'studio'])('creates exactly the approved %s payload', action => {
     expect(createOperatorRequest(action, id, issuedAt)).toEqual(request({ action }))
     expect(parseOperatorRequest(JSON.stringify(request({ action })), issuedAt)).toEqual(request({ action }))
   })
   it.each([
-    { action: 'stop' }, { action: 'console' }, { action: '/private/media.mp4' }, { version: 2 }, { id: '../escape' },
+    { action: 'stop' }, { action: 'console' }, { action: 'Studio' }, { action: 'portrait_studio' }, { action: '/private/media.mp4' }, { version: 2 }, { id: '../escape' },
     { issuedAt: -1 }, { issuedAt: issuedAt + 1 }, { expiresAt: issuedAt + 45001 },
     { expiresAt: issuedAt + 44999 }, { mediaPath: '/private/media.mp4' }, { id: null },
   ])('rejects malformed payload %j', extra => {
@@ -55,7 +62,7 @@ describe('operator mailbox payload validation', () => {
 })
 
 describe('operator mailbox lifecycle', () => {
-  it.each([['play_loop', 'loop_playing'], ['show_console', 'console_shown']])('publishes %s once, polls at 100 ms, and cleans up its own request and response', async (action, reason) => {
+  it.each([['play_loop', 'loop_playing'], ['show_console', 'console_shown'], ['studio', 'studio_ready']])('publishes %s once, polls at 100 ms, and cleans up its own request and response', async (action, reason) => {
     const io = mailbox(); io.readResponse.mockResolvedValueOnce(null).mockResolvedValueOnce(response({ reason }))
     expect(await sendOperatorCommand(action, io)).toEqual({ status: 'success', reason })
     expect(io.publish).toHaveBeenCalledExactlyOnceWith(request({ action }))

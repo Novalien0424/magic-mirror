@@ -189,4 +189,30 @@ describe('portrait studio runtime', () => {
     // Stages without an override keep the versioned default.
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity).next).toContain('1 of 4')
   })
+
+  it('runs without a name step, with this avatar\'s question lines, on-glass text and failure lines', async () => {
+    const base = defaultExperience()
+    const experience: AvatarExperience = { ...base, studio: { ...base.studio, askName: false, nameLettering: 'painted',
+      questions: base.studio.questions.map((q, i) => i === 0 ? { ...q, imageLine: 'Card figure: {{answer}}.' } : q),
+      screenText: { questionLabel: { zh: '第 {{index}} 關', en: 'Step {{index}}' } },
+      failureLines: { default: { zh: '牌卡散了，我們聊聊吧。', en: 'The cards scattered. Let us talk.' } },
+      prompts: { busy: '還在洗牌，先聊聊。' } } }
+    const h = harness({ experience, results: [{ ok: false, code: 'studio_image_unavailable', elapsedMs: 5 }] })
+    const started = h.runtime.start(identity, experience, 'mode')
+    expect(started).toMatchObject({ status: 'accepted', code: 'studio_started' })
+    expect(started.next).toContain(base.studio.questions[0]!.zh)
+    const view = parseStudioView(h.views().at(-1))!
+    expect(view).toMatchObject({ phase: 'question', askName: false })
+    expect(view.text.questionLabel).toBe('第 1 關')
+    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
+    expect(h.reports).toContain('studio_started_mode')
+    await answerAll(h)
+    // While painting, a stray step gets this avatar's While painting guidance.
+    expect(h.runtime.handle({ action: 'answer', question: 5, answer: 'x', language: 'zh' }, identity).next).toContain('還在洗牌')
+    expect(h.calls[0]!.prompt).toContain('Card figure: "answer 1".')
+    expect(h.calls[0]!.prompt).not.toContain('王曉明')
+    h.release()
+    await vi.waitFor(() => expect(h.events().at(-1)).toMatchObject({ event: 'failed', line: '牌卡散了，我們聊聊吧。' }))
+  })
 })
+

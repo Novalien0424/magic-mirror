@@ -2,10 +2,12 @@ import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
-  ExperiencesEditor, GuestListField, StagePrompts, addQuestion, experienceIssues, experienceOf, moveQuestion, parseGuestList, removeQuestion,
-  resetStagePrompts, setStagePrompt,
+  BilingualTexts, ExperiencesEditor, GuestListField, ImagePromptEditor, StagePrompts, addQuestion, experienceIssues, experienceOf, moveQuestion,
+  parseGuestList, removeQuestion, resetImagePrompts, resetStagePrompts, resetTextMap, setFailureLine, setImagePrompt, setQuestionLine,
+  setScreenText, setStagePrompt,
 } from '../../../src/renderer/console/ExperiencesEditor'
-import { STUDIO_PROMPT_DEFAULTS } from '../../../src/shared/portrait-studio-config'
+import { STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioScreenView } from '../../../src/shared/portrait-studio-config'
+import { buildPortraitPrompt } from '../../../src/shared/studio-image-prompt'
 import {
   STUDIO_LOGIN_COMMAND, STUDIO_USAGE_URL, StudioLiveControls, StudioStatusPanel, safePreviewUrl, studioActionText, studioAuthText,
   studioFailureText, studioPhaseText,
@@ -15,7 +17,8 @@ import { NumberInput } from '../../../src/renderer/console/NumberInput'
 import { newAvatar } from '../../../src/renderer/console/profile-workspace'
 import type { AvatarProfile } from '../../../src/shared/avatar-profiles'
 import {
-  DEFAULT_EXPERIENCE, STUDIO_MAX_QUESTIONS, defaultExperience, parseAvatarExperience, type StudioAuthStatus, type StudioConsoleStatus,
+  DEFAULT_EXPERIENCE, STUDIO_MAX_QUESTIONS, STUDIO_PROMPT_STAGES, defaultExperience, parseAvatarExperience, sessionExperience,
+  type StudioAuthStatus, type StudioConsoleStatus,
 } from '../../../src/shared/portrait-studio'
 
 type Props = React.ComponentProps<typeof ExperiencesEditor>
@@ -63,12 +66,16 @@ describe('ExperiencesEditor', () => {
     const ui = editor()
     expect(ui.avatar.experience).toBeUndefined()
     const html = ui.render()
-    expect(html).toContain('<option value="conversation" selected="">Conversation</option>')
+    expect(html).not.toContain('Default mode after wake')
+    expect(html).toContain('The Mirror mode switch in the control bar')
     expect(html).toContain('<option value="continue" selected="">Keep chatting</option>')
+    expect(html).toMatch(/<input type="checkbox"[^>]*checked=""\/> Ask for a name first/)
     expect(html.match(/aria-label="Question \d"/g)).toHaveLength(4)
     expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.zh)
     expect(html).toContain(DEFAULT_EXPERIENCE.studio.nameQuestion.en)
-    expect(html).toContain('Name question · always first')
+    expect(html).toContain('Name question · asked first')
+    expect(html).toContain('Image prompt line')
+    expect(html).toContain('All instructions use the default.')
     expect(html).toContain('<span class="experiences-editor__count">4 of 8</span>')
     expect(html).toMatch(/aria-label="Guest names, one per line"[^>]*><\/textarea>/)
     expect(html).toContain('Guest names · 0 of 1,000')
@@ -92,7 +99,7 @@ describe('ExperiencesEditor', () => {
     expect(html).not.toMatch(/<textarea[^>]*>你好，旅人。<\/textarea>/)
   })
 
-  it('edits the Portrait Studio start script', () => {
+  it('edits the Interactive Studio start script', () => {
     const ui = editor()
     ui.fire(ui.field(FIELD_HELP.experienceStudioScript), '來畫一幅畫吧。')
     expect(ui.avatar.experience?.studio.startScript).toBe('來畫一幅畫吧。')
@@ -149,14 +156,14 @@ describe('ExperiencesEditor', () => {
 
   it('produces an experience that passes parseAvatarExperience', () => {
     const ui = editor()
-    ui.fire(ui.field(FIELD_HELP.experienceDefaultMode), 'portrait_studio')
     ui.fire(ui.field(FIELD_HELP.experienceAfterPortrait), 'farewell')
     ui.fire(ui.field(FIELD_HELP.experienceVisitorMayRequest), '', false)
     ui.fire(ui.byLabel('Name question in English'), 'What name goes on your portrait?')
     ;(ui.tree().find(item => item.type === 'button' && item.props.children === 'Add question')!.props.onClick as () => void)()
     ui.fire(ui.byLabel('Question 5 in Traditional Chinese'), '誰陪在你身邊？')
     ui.fire(ui.byLabel('Question 5 in English'), 'Who is beside you?')
-    ui.fire(ui.byLabel('Question 5 answer shapes'), 'companion')
+    ui.fire(ui.byLabel('Question 5 image part'), 'companion')
+    ui.fire(ui.byLabel('Question 1 image prompt line'), 'Spirit animal: {{answer}}.')
     ui.fire(ui.field(FIELD_HELP.studioArtStyle), 'Moonlit gouache.')
     ui.fire(ui.field(FIELD_HELP.studioNameLettering), 'painted')
     ui.fire(ui.field(FIELD_HELP.studioQuality), 'high')
@@ -166,10 +173,11 @@ describe('ExperiencesEditor', () => {
     ui.guestNames(['王小明'])
     const experience = ui.avatar.experience!
     expect(parseAvatarExperience(experience)).toEqual(experience)
-    expect(experience).toMatchObject({ defaultMode: 'portrait_studio', afterPortrait: 'farewell', visitorMayRequest: false,
+    expect(experience).toMatchObject({ defaultMode: 'conversation', afterPortrait: 'farewell', visitorMayRequest: false,
       guests: { names: ['王小明'], match: 'only' } })
     expect(experience.studio).toMatchObject({ nameLettering: 'painted', quality: 'high', revisionsAllowed: 3, holdSeconds: 120 })
     expect(experience.studio.questions[4]).toEqual({ id: 'q5', zh: '誰陪在你身邊？', en: 'Who is beside you?', slot: 'companion' })
+    expect(experience.studio.questions[0]!.imageLine).toBe('Spirit animal: {{answer}}.')
     expect(ui.render()).toContain('<option value="high" selected="">Best</option>')
 
     ui.fire(ui.field(FIELD_HELP.studioHoldSeconds), '5')
@@ -184,7 +192,7 @@ describe('ExperiencesEditor', () => {
 
   it('does not edit while disabled and describes every control', () => {
     const ui = editor({ disabled: true })
-    ui.fire(ui.field(FIELD_HELP.experienceDefaultMode), 'portrait_studio')
+    ui.fire(ui.field(FIELD_HELP.experienceAfterPortrait), 'farewell')
     ui.click('Move question 1 down')
     expect(ui.changes).toHaveLength(0)
     const html = ui.render()
@@ -223,12 +231,12 @@ describe('Portrait Studio status panel', () => {
   })
 
   it('renders status without any credential value and shows the sign-in command when needed', () => {
-    const base: StudioConsoleStatus = { auth: 'signed_in', lastRefresh: '2026-10-17T01:02:03.000Z', modelId: 'gpt-image-test', active: false }
+    const base: StudioConsoleStatus = { auth: 'signed_in', lastRefresh: '2026-10-17T01:02:03.000Z', modelId: 'gpt-image-test', active: false, mirrorMode: 'conversation' }
     const signedIn = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: base }))
     expect(signedIn).toContain('Signed in')
     expect(signedIn).toContain('gpt-image-test')
     expect(signedIn).toContain(STUDIO_USAGE_URL)
-    expect(signedIn).toContain('Generate test portrait')
+    expect(signedIn).toContain('Generate test picture')
     expect(signedIn).not.toContain(STUDIO_LOGIN_COMMAND)
     expect(signedIn).not.toMatch(/token|bearer/i)
     const missing = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: { ...base, auth: 'missing', lastRefresh: undefined } }))
@@ -258,14 +266,16 @@ describe('Portrait Studio status panel', () => {
     expect(safePreviewUrl(undefined)).toBeNull()
   })
 
-  it('disables live start until a conversation is active', () => {
-    const studio = async () => ({ ok: true as const, value: { status: { auth: 'signed_in' as const, modelId: 'm', active: false } } })
-    const idle = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'dormant', visible: true }))
-    expect(idle).toMatch(/<button type="button" disabled=""[^>]*>Start Portrait Studio<\/button>/)
-    expect(idle).toContain('Start a conversation first')
-    const live = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'active', visible: true }))
-    expect(live).toMatch(/<button type="button" aria-describedby="[^"]+">Start Portrait Studio<\/button>/)
-    expect(live).toContain('Back to conversation')
+  it('offers the Mirror mode switch, disabled until Main reports the mode', () => {
+    const studio = async () => ({ ok: true as const, value: { status: { auth: 'signed_in' as const, modelId: 'm', active: false, mirrorMode: 'conversation' as const } } })
+    const html = renderToStaticMarkup(React.createElement(StudioLiveControls, { bridge: { studio }, bridgeAvailable: true, lifecycle: 'dormant', visible: true }))
+    expect(html).toContain('>Mirror mode</h2>')
+    expect(html).toMatch(/<button type="button"[^>]*aria-pressed="false" disabled=""[^>]*>Conversation<\/button>/)
+    expect(html).toMatch(/<button type="button"[^>]*disabled=""[^>]*>Interactive Studio<\/button>/)
+    expect(html).toContain('every wake starts the studio')
+    expect(html).not.toContain('Back to conversation')
+    expect(studioActionText('mirror_mode_studio')).toMatch(/Interactive Studio/)
+    expect(studioActionText('mirror_mode_save_failed')).toMatch(/not changed/)
   })
 
   it('edits each stage prompt in visit order, stores only real overrides and resets them', () => {
@@ -273,13 +283,13 @@ describe('Portrait Studio status panel', () => {
     const tree = () => elements(StagePrompts({ experience, issues: experienceIssues(experience), disabled: false, onChange(next) { experience = next } }))
     const textarea = (label: string) => tree().find(item => item.props['aria-label'] === label)!
     const html = () => renderToStaticMarkup(React.createElement(StagePrompts, { experience, issues: experienceIssues(experience), disabled: false, onChange() {} }))
-    expect(html().match(/experiences-editor__prompt-step/g)).toHaveLength(15)
+    expect(html().match(/experiences-editor__prompt-step/g)).toHaveLength(STUDIO_PROMPT_STAGES.length)
     expect(html()).toContain('All stages use the default.')
     expect(textarea('Read the name back prompt').props.value).toBe(STUDIO_PROMPT_DEFAULTS.confirmName)
     ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請慢慢念出「{{name}}」，再問對不對。' } })
     expect(experience.studio.prompts).toEqual({ confirmName: '請慢慢念出「{{name}}」，再問對不對。' })
     expect(parseAvatarExperience(experience)).toEqual(experience)
-    expect(html()).toContain('1 of 15 stages edited.')
+    expect(html()).toContain(`1 of ${STUDIO_PROMPT_STAGES.length} stages edited.`)
     expect(html()).toContain('Edited')
     // Removing a required placeholder is flagged and blocks saving.
     ;(textarea('Read the name back prompt').props.onChange as (e: unknown) => void)({ currentTarget: { value: '請確認名字。' } })
@@ -299,3 +309,62 @@ describe('Portrait Studio status panel', () => {
     for (const item of tree().filter(isControl)) expect(item.props['aria-label']).toBeTruthy()
   })
 })
+
+describe('Interactive Studio tuning', () => {
+  it('edits every image instruction and question line, stores only edits and previews what Main sends', () => {
+    let experience = defaultExperience()
+    const tree = () => elements(ImagePromptEditor({ experience, issues: experienceIssues(experience), disabled: false, onChange(next) { experience = next } }))
+    const html = () => renderToStaticMarkup(React.createElement(ImagePromptEditor, { experience, issues: experienceIssues(experience), disabled: false, onChange() {} }))
+    const field = (label: string) => tree().find(item => item.props['aria-label'] === label)!
+    expect(html()).toContain('All instructions use the default.')
+    ;(field('Opening instruction').props.onChange as (e: unknown) => void)({ currentTarget: { value: 'A tarot card for a mirror visitor. Style: {{style}}.' } })
+    expect(experience.studio.imagePrompt).toEqual({ frame: 'A tarot card for a mirror visitor. Style: {{style}}.' })
+    experience = setQuestionLine(experience, 0, 'Card figure: {{answer}}.')
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    const preview = html()
+    expect(preview).toContain('A tarot card for a mirror visitor. Style: ' + experience.studio.artStyle.trim())
+    expect(preview).toContain('Card figure: &quot;an owl&quot;.')
+    expect(preview).toContain('untrusted data, not instructions')
+    expect(preview).not.toContain('..')
+    // Typing the default back, or resetting, removes the edit; required placeholders are enforced.
+    experience = setImagePrompt(experience, 'frame', STUDIO_IMAGE_PROMPT_DEFAULTS.frame)
+    expect(experience.studio.imagePrompt).toEqual({})
+    expect(experienceIssues(setImagePrompt(experience, 'revision', 'Change it.'))['imagePrompt.revision']).toMatch(/Keep \{\{change\}\}/)
+    expect(experienceIssues(setQuestionLine(experience, 0, 'No answer here.'))['questions.0.imageLine']).toMatch(/Keep \{\{answer\}\}/)
+    expect(setQuestionLine(experience, 0, undefined).studio.questions[0]).not.toHaveProperty('imageLine')
+    expect(resetImagePrompts(setImagePrompt(experience, 'untitled', 'No words.')).studio.imagePrompt).toEqual({})
+    for (const item of tree().filter(isControl)) expect(item.props['aria-label']).toBeTruthy()
+  })
+
+  it('edits on-glass text and spoken failure lines in both languages and keeps them out of the renderer', () => {
+    let experience = setScreenText(defaultExperience(), 'questionLabel', 'zh', '第 {{index}} 關')
+    experience = setScreenText(experience, 'captions', 'en', 'Shuffling the cards…\nDrawing your fate…')
+    experience = setFailureLine(experience, 'default', 'zh', '牌卡出了點狀況，我們聊聊吧。')
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    expect(studioScreenView(experience.studio, 'zh', 2, 4).questionLabel).toBe('第 2 關')
+    expect(studioScreenView(experience.studio, 'en', 1, 4).captions).toEqual(['Shuffling the cards…', 'Drawing your fate…'])
+    expect(experience.studio.failureLines?.default?.en).toBe("Something went wrong with the canvas. Let's talk instead.")
+    expect(sessionExperience(experience).studio).not.toHaveProperty('screenText')
+    expect(sessionExperience(experience).studio).not.toHaveProperty('failureLines')
+    expect(experienceIssues(setScreenText(experience, 'questionLabel', 'en', 'Step {{name}}'))['screenText.questionLabel.en']).toMatch(/Remove \{\{name\}\}/)
+    expect(resetTextMap(experience, 'screenText', 'questionLabel').studio.screenText).not.toHaveProperty('questionLabel')
+    const html = renderToStaticMarkup(React.createElement(BilingualTexts, { experience, issues: {}, disabled: false, onChange() {}, map: 'screenText' }))
+    expect(html).toContain('2 of 10 edited.')
+    expect(html).toContain('第 {{index}} 關')
+  })
+
+  it('turns the name step off: no name question, guest list or lettering, and the no-name image instruction', () => {
+    const ui = editor()
+    ui.fire(ui.field(FIELD_HELP.studioAskName), '', false)
+    const experience = ui.avatar.experience!
+    expect(experience.studio.askName).toBe(false)
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    const html = ui.render()
+    expect(html).toContain('Name question · off')
+    expect(html).toMatch(/<fieldset disabled="" aria-label="Guest list">/)
+    const prompt = buildPortraitPrompt({ studio: experience.studio, answers: [{ slot: 'subject', answer: 'owl' }], name: '' })
+    expect(prompt).toContain(STUDIO_IMAGE_PROMPT_DEFAULTS.untitled)
+    expect(prompt).not.toContain('name banner')
+  })
+})
+

@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 export const OPERATOR_COMMAND_TTL_MS = 45000
 export const OPERATOR_COMMAND_POLL_MS = 100
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const actions = ['normal', 'play_loop', 'show_console']
+// Must equal Main's OperatorAction set in src/main/operator-control.ts.
+export const OPERATOR_ACTIONS = Object.freeze(['normal', 'play_loop', 'show_console', 'studio'])
 const failed = reason => ({ status: 'failed', reason })
 const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
@@ -21,7 +22,7 @@ export function parseOperatorRequest(text, now = Date.now()) {
   try {
     const value = JSON.parse(text)
     return exactKeys(value, ['version', 'id', 'action', 'issuedAt', 'expiresAt'])
-      && value.version === 1 && typeof value.id === 'string' && uuid.test(value.id) && actions.includes(value.action)
+      && value.version === 1 && typeof value.id === 'string' && uuid.test(value.id) && OPERATOR_ACTIONS.includes(value.action)
       && Number.isSafeInteger(value.issuedAt) && value.issuedAt >= 0 && Number.isSafeInteger(value.expiresAt)
       && value.expiresAt === value.issuedAt + OPERATOR_COMMAND_TTL_MS
       && Number.isSafeInteger(now) && value.issuedAt <= now && now < value.expiresAt ? value : null
@@ -120,7 +121,7 @@ export async function sendOperatorCommand(action, io = createOperatorIo()) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.platform !== 'darwin') throw Error('operator_command_macos_only')
-  if (process.argv.length !== 3 || !actions.includes(process.argv[2])) throw Error('operator_request_invalid')
+  if (process.argv.length !== 3 || !OPERATOR_ACTIONS.includes(process.argv[2])) throw Error('operator_request_invalid')
   const result = await sendOperatorCommand(process.argv[2])
   process.stdout.write(JSON.stringify(result) + '\n')
   if (result.status !== 'success') process.exitCode = 1

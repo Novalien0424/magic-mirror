@@ -5,6 +5,9 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 The 2026-10-18 code-audit findings and media deadline limitation are fixed:
 [evidence](docs/testing/todo-audit-fixes-2026-10-18.md). Memory model and
 sign-in upkeep: [evidence](docs/testing/memory-model-signin-2026-10-18.md).
+Interactive Studio, Mirror mode switch and Stream Deck key:
+[evidence](docs/testing/interactive-studio-2026-10-18.md) ·
+[user journeys](docs/testing/user-journeys-2026-10-18.md).
 
 ## Earlier unresolved reliability
 
@@ -48,10 +51,16 @@ sign-in upkeep: [evidence](docs/testing/memory-model-signin-2026-10-18.md).
 
 ## Remaining acceptance
 
+- [ ] **Interactive Studio in the field.** Re-run the Stream Deck installer's
+  generated profile import (adds INTERACTIVE STUDIO at bottom-left; delete the
+  old profile copy), press it and START MIRROR once, then run one human studio
+  visit using Jabra in Interactive Studio mode and one visitor request in
+  Conversation mode. Walk the [user journeys](docs/testing/user-journeys-2026-10-18.md)
+  O3–O4 on the portrait TV. Physical key and human visit are unverified.
 - [ ] Review the compact Console on the portrait TV with its mouse, including
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
-  Loop Play starts and the Portrait Studio sign-in badge. Complete a human
-  Portrait Studio visit using Jabra. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
+  Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
+  switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).

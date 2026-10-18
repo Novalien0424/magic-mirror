@@ -3,6 +3,7 @@ import { buildAvatarPrompt, buildStudioPrompt, avatarProfileSessionSettings, ava
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, realtimeToolDefinition } from './realtime-tools'
 import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, studioPrompt } from './portrait-studio-config'
 import { defaultExperience, STUDIO_PROMPT_INFO, STUDIO_PROMPT_STAGES } from './portrait-studio'
+import { buildPortraitPrompt, buildRevisionPrompt, STUDIO_SAMPLE_ANSWERS } from './studio-image-prompt'
 import { DEFAULT_WAKE_PHRASE } from './avatar-commands'
 import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse, buildMemoryQuestion, buildMemoryState, buildMemoryAcknowledgment } from './realtime-prompts'
 import type { SceneActionDefinition } from './types'
@@ -25,13 +26,14 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
     text ? json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
   return { name: avatar.name, pages: {
     Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
-      section('Portrait Studio agent instructions · system (after updateAgent)', buildStudioPrompt(settings), `${PORTRAIT_STUDIO_SOURCE}#agent + ${REALTIME_PROMPT_SOURCE}#session + ${profileSource}.experience`),
+      section('Interactive Studio agent instructions · system (after updateAgent)', buildStudioPrompt(settings), `${PORTRAIT_STUDIO_SOURCE}#agent + ${REALTIME_PROMPT_SOURCE}#session + ${profileSource}.experience`),
       ...STUDIO_PROMPT_STAGES.filter(stage => stage !== 'instructions').map(stage => {
         const studio = (avatar.experience ?? defaultExperience()).studio
         const edited = studio.prompts?.[stage] !== undefined
-        return section(`Portrait Studio stage · ${STUDIO_PROMPT_INFO[stage].label}`, studioPrompt(studio, stage),
+        return section(`Interactive Studio stage · ${STUDIO_PROMPT_INFO[stage].label}`, studioPrompt(studio, stage),
           edited ? `${profileSource}.experience.studio.prompts.${stage}` : `${PORTRAIT_STUDIO_SOURCE} (default)`)
       }),
+      ...studioImagePrompts(avatar, profileSource),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),
@@ -56,7 +58,20 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
       section('Audition tools and input', json({ tools: [], input: { turnDetection: null, transcription: null } }), 'src/renderer/realtime/realtime-session-adapter.ts')],
     Sources: [section(`Loaded catalog · ${prompts.version}`, json(prompts)),
       section(`Loaded tool catalog · ${REALTIME_TOOLS.version}`, json(REALTIME_TOOLS), REALTIME_TOOL_SOURCE),
-      section(`Loaded Portrait Studio config · ${PORTRAIT_STUDIO.version}`, json(PORTRAIT_STUDIO), PORTRAIT_STUDIO_SOURCE),
+      section(`Loaded Interactive Studio config · ${PORTRAIT_STUDIO.version}`, json(PORTRAIT_STUDIO), PORTRAIT_STUDIO_SOURCE),
       section('Avatar variables', json(settings), profileSource)],
   } }
+}
+
+/** The image prompts Main would send, with sample answers instead of visitor data. */
+function studioImagePrompts(avatar: AvatarProfile, profileSource: string): PromptSection[] {
+  const studio = (avatar.experience ?? defaultExperience()).studio
+  const name = studio.askName === false ? '' : 'Raven'
+  const answers = studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
+    answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
+  const source = `${PORTRAIT_STUDIO_SOURCE}#imagePrompt + ${profileSource}.experience.studio`
+  return [
+    { title: 'Interactive Studio image prompt · first picture (sample answers)', source, content: buildPortraitPrompt({ studio, answers, name }) },
+    { title: 'Interactive Studio image prompt · change (sample request)', source, content: buildRevisionPrompt({ studio, change: 'make the sky snowy', name }) },
+  ]
 }

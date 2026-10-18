@@ -8,7 +8,7 @@ import { defaultExperience } from '../../shared/portrait-studio'
 import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
 import { draftFingerprint } from './scene-editor-model'
 
-export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Experiences', 'Memories', 'Spells & scenes'] as const
+export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Interactive Studio', 'Memories', 'Spells & scenes'] as const
 export const LIBRARY_SECTIONS = ['Rig library', 'Media library', 'Action library'] as const
 export type ProfileSection = typeof PROFILE_SECTIONS[number] | typeof LIBRARY_SECTIONS[number]
 

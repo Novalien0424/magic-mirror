@@ -12,27 +12,15 @@ export function studioCoversAvatar(view: StudioView | null): boolean {
   return !!view && COVER_PHASES.includes(view.phase)
 }
 
-const TEXT = {
-  zh: {
-    name: '名字', write: '我會寫上', right: '對嗎？', question: (n: number, total: number) => `問題 ${n} / ${total}`,
-    change: '修改：', changeHint: '想改：說出要改的地方', doneHint: '完成：說「很好」', yours: '這幅畫是你的了',
-    photo: '可以用手機拍下這幅畫', captions: ['羽毛筆沾墨中……', '正在調配夜色……', '一筆一筆畫上去……', '再等我一下……'],
-  },
-  en: {
-    name: 'Name', write: "I'll write", right: 'Is that right?', question: (n: number, total: number) => `Question ${n} of ${total}`,
-    change: 'Change: ', changeHint: 'Change it: say what to change', doneHint: "Done: say 'perfect'", yours: 'This portrait is yours',
-    photo: 'Take a photo of your portrait', captions: ['Dipping the quill in ink…', 'Mixing the colours of night…', 'Laying down each stroke…', 'Just a moment more…'],
-  },
-} as const
-type StudioText = (typeof TEXT)[keyof typeof TEXT]
+type StudioText = StudioView['text']
 
 const CAPTION_MS = 6000
 const glyphs = (value: string) => Array.from(value).length
 
-/** Portrait Studio overlay above the avatar. Absent whenever the studio is closed. */
+/** Interactive Studio overlay above the avatar; its words come from Main. Absent whenever the studio is closed. */
 export function PortraitStudioLayer({ view }: PortraitStudioLayerProps) {
   if (!view) return null
-  const text = TEXT[view.language === 'en' ? 'en' : 'zh']
+  const text = view.text
   const covered = studioCoversAvatar(view)
   return (
     <div className="portrait-studio" data-phase={view.phase} data-cover={covered} lang={view.language === 'en' ? 'en' : 'zh-Hant'}>
@@ -49,8 +37,9 @@ export function PortraitStudioLayer({ view }: PortraitStudioLayerProps) {
 }
 
 function Feathers({ view }: { view: StudioView }) {
-  const total = view.questionCount + 1
-  const done = Math.min(total, (view.phase === 'name' || view.phase === 'confirm' ? 0 : 1) + view.answered)
+  const named = view.askName ? 1 : 0
+  const total = view.questionCount + named
+  const done = Math.min(total, (view.phase === 'name' || view.phase === 'confirm' ? 0 : named) + view.answered)
   return (
     <div className="portrait-studio__feathers" aria-hidden="true">
       {Array.from({ length: total }, (_, index) => (
@@ -80,26 +69,26 @@ function PortraitFrame({ view }: { view: StudioView }) {
 function PhaseText({ view, text }: { view: StudioView; text: StudioText }) {
   switch (view.phase) {
     case 'name': return <>
-      <p className="portrait-studio__label">{text.name}</p>
+      <p className="portrait-studio__label">{text.nameLabel}</p>
       {view.prompt && <p className="portrait-studio__question">{view.prompt}</p>}
     </>
     case 'confirm': return <>
-      <p className="portrait-studio__label">{text.write}</p>
+      <p className="portrait-studio__label">{text.confirmLabel}</p>
       {view.name && <p className="portrait-studio__nameplate" data-long={glyphs(view.name) > 6}>{view.name}</p>}
-      <p className="portrait-studio__question portrait-studio__question--small">{text.right}</p>
+      <p className="portrait-studio__question portrait-studio__question--small">{text.confirmQuestion}</p>
     </>
     case 'question': return <>
       <Chips items={view.chips} />
-      <p className="portrait-studio__label">{text.question(Math.min(view.answered + 1, view.questionCount), view.questionCount)}</p>
+      <p className="portrait-studio__label">{text.questionLabel}</p>
       {view.prompt && <p className="portrait-studio__question">{view.prompt}</p>}
     </>
     case 'painting': return <Caption key={view.phase} lines={text.captions} />
     case 'revising': return <>
-      {view.change && <Chips items={[`${text.change}${view.change}`]} />}
+      {view.change && <Chips items={[`${text.changePrefix}${view.change}`]} />}
       <Caption key={view.phase} lines={text.captions} />
     </>
-    case 'reveal': return <Chips hint items={view.revisionsLeft > 0 ? [text.changeHint, text.doneHint] : [text.yours]} />
-    case 'keepsake': return <Chips hint items={[text.photo]} />
+    case 'reveal': return <Chips hint items={view.revisionsLeft > 0 ? [text.changeHint, text.doneHint] : [text.finalHint]} />
+    case 'keepsake': return <Chips hint items={[text.photoHint]} />
   }
 }
 

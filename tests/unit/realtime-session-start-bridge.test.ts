@@ -254,6 +254,18 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     expect(bundle.avatar?.mediaSkill?.resources).toEqual([{ kind: 'video', assetId: 'folder-mist', name: 'Mist', aliases: [] }])
     expect(JSON.stringify(bundle.avatar)).not.toMatch(/origin|path|avatarId/)
   })
+  it('greets a woken session from the Mirror switch captured for it, not the saved per-avatar default', async () => {
+    const config = { ...JSON.parse(readFileSync('resources/config/default.json', 'utf8')), avatarCatalog: undefined }
+    const sessions: unknown[] = []
+    const options = { ...makeBootOptions({ issue: async () => ({ value: CLIENT_SECRET, expiresAt: EXPIRY }) }) as object,
+      configService: { initialize: async () => ({ active: config, draft: config }), read: async () => ({ active: config, draft: config }) },
+      mirrorModeForSession: (identity: unknown) => { sessions.push(identity); return 'studio' as const } }
+    const runtime = bootSequence(options as never)
+    await runtime.ready; await runtime.handleSimulator({ type: 'wake' })
+    const bundle = await runtime.requestRealtimeClientSecret()
+    expect(bundle.avatar?.experience?.defaultMode).toBe('portrait_studio')
+    expect(sessions).toEqual([bundle.identity])
+  })
   it('captures the published model before broker await and rejects a result for a retired session', async () => {
     let brokerCalls = 0
     let requestedModel: string | null = null

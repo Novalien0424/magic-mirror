@@ -207,7 +207,9 @@ bridge.memoryImport = request => ipcRenderer.invoke('console:memory-import', req
 // Inlined on purpose: a runtime import shared with the Mirror preload becomes a
 // Rollup chunk that sandboxed preloads cannot require. Main validates again.
 const studioConsoleCommand = (value: unknown): value is StudioConsoleCommand => !!value && typeof value === 'object' && !Array.isArray(value)
-  && Object.keys(value).length === 1 && ['status', 'start', 'exit', 'test'].includes((value as { action?: unknown }).action as string)
+  && (Object.keys(value).length === 1 && ['status', 'start', 'exit', 'test'].includes((value as { action?: unknown }).action as string)
+    || Object.keys(value).length === 2 && (value as { action?: unknown }).action === 'mode'
+      && ['conversation', 'studio'].includes((value as { mode?: unknown }).mode as string))
 bridge.studio = command => studioConsoleCommand(command)
   ? ipcRenderer.invoke('console:studio', command)
   : Promise.resolve({ ok: false, error: 'console_request_invalid', reason: 'cause=payload_schema_invalid' } as never)

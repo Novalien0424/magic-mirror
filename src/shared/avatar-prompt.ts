@@ -83,25 +83,29 @@ export const SLEEP_TOOL_DESCRIPTION = buildSleepToolDescription(LEGACY_SLEEP_PHR
 const baselineTools = parseRealtimeToolCatalog(baseline.tools)
 const mergedTools = parseRealtimeToolCatalog(merged.tools)
 const focusedTools = parseRealtimeToolCatalog(focused.tools)
-/** Conversation-agent tools; the studio entry tool exists only when visitors may ask for a portrait. */
+/** Conversation-agent tools; the studio entry tool exists only when visitors may ask for the studio. */
 export function avatarRealtimeTools(avatar?: AvatarSessionSettings, preview = false): readonly RealtimeToolSpec[] {
   // Main treats a profile without saved experiences as the defaults; so does the prompt.
-  const visitorMayRequest = (avatar?.experience ?? DEFAULT_EXPERIENCE).visitorMayRequest
+  const experience = avatar?.experience ?? DEFAULT_EXPERIENCE
   return resolveRealtimeTools(avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE, preview,
     avatar?.qaPromptVariant === 'baseline' ? baselineTools : avatar?.qaPromptVariant === 'merged' ? mergedTools
-      : avatar?.qaPromptVariant === 'focused' ? focusedTools : REALTIME_TOOLS)
-    .filter(spec => spec.handler !== 'start_portrait_studio' || visitorMayRequest)
+      : avatar?.qaPromptVariant === 'focused' ? focusedTools : REALTIME_TOOLS, 'conversation', studioPrompt(experience.studio, 'offer'))
+    .filter(spec => spec.handler !== 'start_portrait_studio' || experience.visitorMayRequest)
 }
+/** Studio-agent tools; without the name step the name tool is not offered. */
 export function studioToolSpecs(avatar: AvatarSessionSettings): readonly RealtimeToolSpec[] {
+  const askName = (avatar.experience ?? DEFAULT_EXPERIENCE).studio.askName !== false
   return resolveRealtimeTools(avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE, false, REALTIME_TOOLS, 'studio')
+    .filter(spec => askName || spec.handler !== 'studio_set_name')
 }
 
-/** Portrait Studio agent instructions: persona plus the studio script; no private memory or media tools. */
+/** Interactive Studio agent instructions: persona plus the studio script; no private memory or media tools. */
 export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
   const studio = avatar.experience?.studio ?? defaultExperience().studio
-  const script = [studioPrompt(studio, 'instructions'),
-    `Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
-    `After the name there are ${studio.questions.length} portrait questions; the application gives each one in the tool guidance.`].join('\n')
+  const script = [studioPrompt(studio, 'instructions'), ...studio.askName === false
+    ? [`There is no name step. There are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]
+    : [`Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
+      `After the name there are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]].join('\n')
   return renderPrompt('session', { name: avatar.name, personality: avatar.personality,
     speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,
     toolInstructions: `${realtimeToolInstructions(studioToolSpecs(avatar))}\n\n${script}` })

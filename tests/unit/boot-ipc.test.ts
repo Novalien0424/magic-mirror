@@ -769,6 +769,26 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     } finally { vi.doUnmock('electron'); vi.resetModules() }
   })
 
+  it('passes only valid Interactive Studio Console commands, including the Mirror mode switch', async () => {
+    vi.resetModules()
+    let exposed: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
+    const invoke = vi.fn(async () => ({ ok: true }))
+    vi.doMock('electron', () => ({ contextBridge: { exposeInMainWorld: (_name: string, bridge: typeof exposed) => { exposed = bridge } },
+      ipcRenderer: { invoke, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() } }))
+    try {
+      await import('../../src/preload/console')
+      for (const command of [{ action: 'status' }, { action: 'mode', mode: 'studio' }, { action: 'mode', mode: 'conversation' }]) {
+        await exposed.studio(command)
+        expect(invoke).toHaveBeenLastCalledWith('console:studio', command)
+      }
+      invoke.mockClear()
+      for (const command of [{ action: 'mode' }, { action: 'mode', mode: 'party' }, { action: 'status', mode: 'studio' }, { action: 'delete' }]) {
+        await expect(exposed.studio(command)).resolves.toMatchObject({ ok: false, error: 'console_request_invalid' })
+      }
+      expect(invoke).not.toHaveBeenCalled()
+    } finally { vi.doUnmock('electron'); vi.resetModules() }
+  })
+
   it('limits media imports to valid Console picker requests and sanitizes failures', async () => {
     const fixtures = makeTrackedRendererWindows()
     const events: MetadataEvent[] = []

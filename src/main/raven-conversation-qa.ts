@@ -756,6 +756,23 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!(await evaluate<number>('return window.__ravenQa.deletes.length'))) throw Error('raven_qa_studio_history_kept')
         if (events(studioStarted).some(e => e.reason === 'memory_saved')) throw Error('raven_qa_studio_memory_saved')
       })
+      // The Console's Mirror mode switch through the real control-bar buttons: Interactive Studio
+      // starts it for this visitor now; the next wake greets with the start script and opens it;
+      // Conversation closes it. No painting, so one short extra session.
+      if (finished) await check('studio_mode_switch', async () => {
+        const mode = (label: string) => input.console.webContents.executeJavaScript(`(()=>{const b=[...document.querySelectorAll('.studio-live__switch button')]
+          .find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('raven_qa_mode_switch_missing');if(b.disabled)return false;b.click();return true})()`, true) as Promise<boolean>
+        await wait(async () => await mode('Interactive Studio'), 'studio_mode_switch_ready', 10000)
+        await wait(async () => await phase() === 'name', 'studio_mode_name_phase', 15000)
+        await wait(settled, 'studio_mode_settled', 30000)
+        if (!events(studioStarted).some(e => e.reason === 'studio_started_mode')) throw Error('raven_qa_studio_mode_start_unreported')
+        await stop()
+        await start()
+        await wait(async () => await phase() === 'name', 'studio_mode_wake_name_phase', 15000)
+        if (!events(studioStarted).some(e => e.reason === 'studio_started_session_default')) throw Error('raven_qa_studio_mode_wake_unreported')
+        await wait(async () => await mode('Conversation'), 'studio_mode_conversation', 10000)
+        await wait(async () => await phase() === null, 'studio_mode_closed', 10000)
+      })
       const timeline = await studio()
       studioEvidence.phases = timeline.filter(s => 'phase' in s).map(s => s.phase ?? null)
       studioEvidence.events = timeline.flatMap(s => s.event ? [s.event] : [])

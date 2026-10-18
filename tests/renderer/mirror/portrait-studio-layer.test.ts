@@ -3,11 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatHold, PortraitStudioLayer, studioCoversAvatar } from '../../../src/renderer/mirror/portrait-studio-layer'
 import type { StudioPhase, StudioView } from '../../../src/shared/portrait-studio'
+import { studioScreenView } from '../../../src/shared/portrait-studio-config'
 
 const IMAGE = 'magic-mirror-media://studio/abcd1234-ef56'
-const view = (patch: Partial<StudioView> = {}): StudioView => ({
-  phase: 'name', language: 'zh', questionCount: 4, answered: 0, chips: [], lettering: 'nameplate', revisionsLeft: 1, ...patch,
-})
+// Main resolves the on-glass text; the fixture does the same with the versioned defaults.
+const view = (patch: Partial<StudioView> = {}): StudioView => {
+  const base = { phase: 'name' as const, language: 'zh' as const, questionCount: 4, answered: 0, chips: [], lettering: 'nameplate' as const,
+    revisionsLeft: 1, askName: true, ...patch }
+  return { ...base, text: patch.text ?? studioScreenView(undefined, base.language, Math.min(base.answered + 1, base.questionCount), base.questionCount) }
+}
 const render = (value: StudioView | null) => renderToStaticMarkup(createElement(PortraitStudioLayer, { view: value }))
 const text = (html: string) => html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 const feathers = (html: string) => [...html.matchAll(/data-state="(lit|current|unlit)"/g)].map(match => match[1])
@@ -18,6 +22,13 @@ afterEach(() => { vi.useRealTimers() })
 describe('PortraitStudioLayer', () => {
   it('renders nothing without a studio view', () => {
     expect(render(null)).toBe('')
+  })
+
+  it('shows only question feathers without a name step and renders the operator text it is given', () => {
+    expect(feathers(render(view({ phase: 'question', askName: false })))).toEqual(['current', 'unlit', 'unlit', 'unlit'])
+    const custom = { ...studioScreenView(undefined, 'zh', 1, 4), questionLabel: '第一關', captions: ['施法中'] }
+    expect(text(render(view({ phase: 'question', askName: false, text: custom })))).toContain('第一關')
+    expect(text(render(view({ phase: 'painting', text: custom })))).toContain('施法中')
   })
 
   it('shows name + question feathers and lights completed steps', () => {

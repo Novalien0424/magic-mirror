@@ -84,7 +84,7 @@ describe('combined Stream Deck sequence', () => {
     return { order,
       app: vi.fn(async (action: string) => { order.push(action); return appResult ?? (action === 'start' ? 'started' : 'stopped') }),
       ready: vi.fn(async () => { order.push('ready'); return true }),
-      mode: vi.fn(async (action: string) => { order.push(action); return { status: 'success', reason: action === 'show_console' ? 'console_shown' : action === 'normal' ? 'normal_ready' : 'loop_playing' } }),
+      mode: vi.fn(async (action: string) => { order.push(action); return { status: 'success', reason: action === 'show_console' ? 'console_shown' : action === 'normal' ? 'normal_ready' : action === 'studio' ? 'studio_ready' : 'loop_playing' } }),
       tv: vi.fn(async (action: string) => { order.push(action); return tvResult ?? `tv_${action}` }),
     }
   }
@@ -101,6 +101,7 @@ describe('combined Stream Deck sequence', () => {
     expect(base.order).toEqual(['start', 'ready', 'show_console', 'awake', 'mouse_start'])
     await operateMirrorControl('loop', io)
     await operateMirrorControl('start', io)
+    await operateMirrorControl('studio', io)
     expect(io.mouse).toHaveBeenCalledExactlyOnceWith('start')
   })
   it('reports a mouse failure while leaving the opened Console usable by other input', async () => {
@@ -157,6 +158,17 @@ describe('combined Stream Deck sequence', () => {
     expect((await operateMirrorControl('start', io)).outcome).toBe(result)
     expect(io.order).toEqual(['start', 'ready', 'normal', 'awake'])
   })
+  it.each(['started', 'already_on'])('selects acknowledged Interactive Studio in the %s app before waking HDMI', async app => {
+    const io = control(app)
+    expect(await operateMirrorControl('studio', io)).toEqual({ app, mode: 'success', modeReason: 'studio_ready', tv: 'tv_awake', outcome: 'studio_ready' })
+    expect(io.order).toEqual(['start', 'ready', 'studio', 'awake'])
+    expect(io.mode).toHaveBeenCalledExactlyOnceWith('studio')
+  })
+  it('rejects an unknown control before touching the app, mailbox or TV', async () => {
+    const io = control()
+    await expect(operateMirrorControl('show_studio', io)).rejects.toThrow('mirror_control_action_invalid')
+    expect(io.order).toEqual([])
+  })
   it.each(['started', 'already_on'])('shows Console in the %s app before waking HDMI', async app => {
     const io = control(app)
     expect(await operateMirrorControl('console', io)).toEqual({ app, mode: 'success', modeReason: 'console_shown', tv: 'tv_awake', outcome: 'console_shown' })
@@ -175,13 +187,13 @@ describe('combined Stream Deck sequence', () => {
     expect(io.tv).not.toHaveBeenCalled()
     expect(io.mode).not.toHaveBeenCalled()
   })
-  it.each([['start', 'normal'], ['loop', 'play_loop'], ['console', 'show_console']])('keeps the TV asleep on a failed %s acknowledgement', async (action, command) => {
+  it.each([['start', 'normal'], ['loop', 'play_loop'], ['console', 'show_console'], ['studio', 'studio']])('keeps the TV asleep on a failed %s acknowledgement', async (action, command) => {
     const io = control(); io.mode.mockResolvedValue({ status: 'failed', reason: 'playback_failed' })
     expect(await operateMirrorControl(action, io)).toEqual({ app: 'started', mode: 'failed', modeReason: 'playback_failed', tv: 'tv_wake_skipped', outcome: `${action}_mode_failed` })
     expect(io.mode).toHaveBeenCalledWith(command)
     expect(io.tv).not.toHaveBeenCalled()
   })
-  it.each(['start', 'loop', 'console'])('keeps the TV asleep on an unavailable %s mailbox', async action => {
+  it.each(['start', 'loop', 'console', 'studio'])('keeps the TV asleep on an unavailable %s mailbox', async action => {
     const io = control(); io.mode.mockRejectedValueOnce(Error('private raw message'))
     const result = await operateMirrorControl(action, io)
     expect(result.outcome).toBe(`${action}_mode_failed`)
@@ -201,7 +213,7 @@ describe('combined Stream Deck sequence', () => {
     expect(await operateMirrorControl('console', io)).toEqual({ app: 'started', mode: 'failed', modeReason: 'operator_response_invalid', tv: 'tv_wake_skipped', outcome: 'console_mode_failed' })
     expect(io.tv).not.toHaveBeenCalled()
   })
-  it.each([['loop', 'play_loop', 'loop_playing'], ['console', 'show_console', 'console_shown']])('awaits the %s acknowledgement before waking HDMI', async (action, command, outcome) => {
+  it.each([['loop', 'play_loop', 'loop_playing'], ['console', 'show_console', 'console_shown'], ['studio', 'studio', 'studio_ready']])('awaits the %s acknowledgement before waking HDMI', async (action, command, outcome) => {
     const io = control()
     let acknowledge!: (result: { status: string, reason: string }) => void
     io.mode.mockImplementationOnce(async action => {
@@ -227,6 +239,13 @@ describe('combined Stream Deck sequence', () => {
     await operateMirrorControl('loop', io)
     await operateMirrorControl('start', io)
     expect(io.mode.mock.calls).toEqual([['play_loop'], ['normal']])
+  })
+  it('switches between Interactive Studio and Conversation through acknowledged STUDIO and START', async () => {
+    const io = control('already_on')
+    expect((await operateMirrorControl('loop', io)).outcome).toBe('loop_playing')
+    expect((await operateMirrorControl('studio', io)).outcome).toBe('studio_ready')
+    expect((await operateMirrorControl('start', io)).outcome).toBe('already_on')
+    expect(io.mode.mock.calls).toEqual([['play_loop'], ['studio'], ['normal']])
   })
   it.each([['start', 'normal'], ['loop', 'play_loop']])('accepts repeated Console requests while preserving the current %s mode', async (action, command) => {
     const io = control('already_on')
@@ -261,6 +280,23 @@ describe('combined Stream Deck sequence', () => {
     const io = control('already_on', 'tv_awake_failed')
     expect(await operateMirrorControl('console', io)).toEqual({ app: 'already_on', mode: 'success', modeReason: 'console_shown', tv: 'tv_awake_failed', outcome: 'tv_awake_failed' })
     expect(io.order).toEqual(['start', 'ready', 'show_console', 'awake'])
+    expect(io.app).toHaveBeenCalledExactlyOnceWith('start')
+  })
+  it('keeps standby when STUDIO cannot establish renderer readiness', async () => {
+    const io = control(); io.ready.mockResolvedValue(false)
+    expect(await operateMirrorControl('studio', io)).toEqual({ app: 'started', tv: 'tv_wake_skipped', outcome: 'studio_not_ready' })
+    expect(io.mode).not.toHaveBeenCalled()
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it('skips Interactive Studio and HDMI after a launch failure', async () => {
+    const io = control('start_timeout')
+    expect(await operateMirrorControl('studio', io)).toEqual({ app: 'start_timeout', tv: 'tv_wake_skipped', outcome: 'start_timeout' })
+    expect(io.ready).not.toHaveBeenCalled()
+    expect(io.mode).not.toHaveBeenCalled()
+  })
+  it('reports HDMI failure after selecting Interactive Studio without stopping the app', async () => {
+    const io = control('already_on', 'tv_awake_failed')
+    expect(await operateMirrorControl('studio', io)).toEqual({ app: 'already_on', mode: 'success', modeReason: 'studio_ready', tv: 'tv_awake_failed', outcome: 'tv_awake_failed' })
     expect(io.app).toHaveBeenCalledExactlyOnceWith('start')
   })
   it('keeps standby when LOOP cannot establish renderer readiness', async () => {

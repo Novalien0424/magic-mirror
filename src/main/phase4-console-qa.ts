@@ -7,6 +7,7 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { runVoiceConsoleQa } from './voice-console-qa'
 import { runProfileConsoleQa } from './profile-console-qa'
 import { runFieldHelpConsoleQa } from './field-help-console-qa'
+import { runStudioJourneyQa } from './studio-journey-qa'
 import { runActiveBgmQa } from './active-bgm-qa'
 import { runReflectiveRitualQa } from './reflective-ritual-qa'
 import { runMediaSkillQa } from './media-skill-qa'
@@ -75,6 +76,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
   if (process.env['MIRROR_REFLECTIVE_RITUAL_QA'] === '1') return runReflectiveRitualQa(input)
   if (process.env['MIRROR_MEDIA_SKILL_QA'] === '1') return runMediaSkillQa(input)
   if (process.env['MIRROR_ACTIVE_BGM_QA'] === '1') return runActiveBgmQa(input)
+  if (process.env['MIRROR_STUDIO_JOURNEY_QA'] === '1') return runStudioJourneyQa(input)
   if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
   if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
   if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)

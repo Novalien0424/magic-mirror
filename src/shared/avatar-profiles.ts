@@ -43,7 +43,7 @@ export interface AvatarProfile {
   voiceSpeed?: number
   voiceEffects?: VoiceEffects
   mediaSkill?: AvatarMediaSkill
-  /** Experience modes (conversation / Portrait Studio); Main normalizes a missing value. */
+  /** Interactive Studio content (the saved default mode is superseded by the Mirror switch); Main normalizes a missing value. */
   experience?: AvatarExperience
   wakePhrase?: string
   sleepPhrase?: string

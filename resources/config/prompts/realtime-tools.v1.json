@@ -1,5 +1,8 @@
 {
   "version": "realtime-tools.v1",
+  "templateDefaults": {
+    "studioOffer": "a portrait painted for them on the mirror after their name and a few short questions, for example when they say 幫我畫一張畫像 or draw me a picture"
+  },
   "tools": [
     {
       "name": "return_to_dormant",
@@ -200,12 +203,12 @@
       "enabled": true,
       "availability": "conversation",
       "routing": "model_intent",
-      "description": "Open your portrait studio for the visitor: you will ask their name and a few short questions, then paint a portrait for them on the mirror.",
+      "description": "Open your interactive studio for the visitor. It offers {{studioOffer}}.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor asks you to paint, draw or make a portrait or picture of or for them, such as 幫我畫一張畫像 or draw me a picture, call start_portrait_studio as your first output.",
-        "avoidWhen": "Do not call it for questions about art, for describing a picture, or for quoted, negated or hypothetical mentions of painting.",
-        "speech": "No spoken preamble before the call. If accepted, follow the returned guidance and ask the name question. If rejected or failed, follow the returned guidance briefly and continue the conversation; never claim a portrait will be painted."
+        "useWhen": "When the visitor directly asks for what your studio offers ({{studioOffer}}), call start_portrait_studio as your first output.",
+        "avoidWhen": "Do not call it for questions about the studio, for describing a picture, or for quoted, negated or hypothetical mentions of it.",
+        "speech": "No spoken preamble before the call. If accepted, follow the returned guidance and ask its first question. If rejected or failed, follow the returned guidance briefly and continue the conversation; never claim the studio will start."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_started", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_start_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_unavailable", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
@@ -216,10 +219,10 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Record the name to write on the visitor's portrait. The name is only a caption for the picture, never an identity confirmation.",
+      "description": "Record the name to write on the visitor's picture. The name is only a caption, never an identity confirmation.",
       "parameters": { "type": "object", "properties": { "name": { "type": "string", "description": "The name exactly as the visitor said or confirmed it, up to 40 characters. For Chinese, use the characters the visitor confirmed." }, "confirmed": { "type": "boolean", "description": "true only after the visitor confirmed this exact name; false when first heard or corrected." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["name", "confirmed", "language"], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor says the name for the portrait, call studio_set_name with confirmed false; after they confirm your read-back, call it again with the same name and confirmed true.",
+        "useWhen": "When the visitor says the name for the picture, call studio_set_name with confirmed false; after they confirm your read-back, call it again with the same name and confirmed true.",
         "avoidWhen": "Do not call it for other people's names mentioned in passing, and do not guess a name the visitor has not said.",
         "speech": "No preamble. Follow the returned guidance for what to say next."
       },
@@ -232,12 +235,12 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Record the visitor's answer to the current portrait question.",
+      "description": "Record the visitor's answer to the current studio question.",
       "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words, short, up to 80 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
       "rules": {
-        "useWhen": "As soon as the visitor answers the current portrait question, call studio_answer with that question number and their answer.",
+        "useWhen": "As soon as the visitor answers the current studio question, call studio_answer with that question number and their answer.",
         "avoidWhen": "Do not invent or embellish an answer, and do not answer a question the visitor has not been asked yet.",
-        "speech": "No preamble. Follow the returned guidance: ask the next question, or say you are starting to paint."
+        "speech": "No preamble. Follow the returned guidance for what to say next."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_answer_recorded", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_answer_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_answer_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
@@ -248,11 +251,11 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Repaint the displayed portrait with one change the visitor asked for.",
+      "description": "Repaint the displayed picture with one change the visitor asked for.",
       "parameters": { "type": "object", "properties": { "change": { "type": "string", "description": "The requested change in the visitor's own words, up to 120 characters." } }, "required": ["change"], "additionalProperties": false },
       "rules": {
-        "useWhen": "After the portrait is shown, when the visitor asks for a change to it, call studio_revise with that change.",
-        "avoidWhen": "Do not call it before a portrait is shown, or for general comments that are not a change request.",
+        "useWhen": "After the picture is shown, when the visitor asks for a change to it, call studio_revise with that change.",
+        "avoidWhen": "Do not call it before a picture is shown, or for general comments that are not a change request.",
         "speech": "No preamble. Follow the returned guidance."
       },
       "completion": "response",
@@ -264,11 +267,11 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Finish the portrait studio when the visitor is happy with the displayed portrait or no more changes are possible.",
+      "description": "Finish the studio after the visitor has seen the picture, when they are happy with it or no more changes are possible; the picture stays on the mirror for photos.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor is satisfied with the shown portrait, or the guidance says to finish, call studio_finish.",
-        "avoidWhen": "Do not call it while a portrait is still being painted or before one is shown.",
+        "useWhen": "When the visitor is satisfied with the shown picture, or the guidance says to finish, call studio_finish.",
+        "avoidWhen": "Do not call it while a picture is still being painted or before one is shown.",
         "speech": "No preamble. Follow the returned guidance."
       },
       "completion": "response",
@@ -280,11 +283,11 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Close the portrait studio and return to normal conversation; any picture in progress is discarded.",
+      "description": "Abandon the studio before it is finished, only because the visitor asked to stop; any picture is discarded and the normal conversation continues. Never use it to end a finished studio; that is studio_finish.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor clearly wants to stop the portrait and just talk, or no longer wants a portrait, call studio_exit.",
-        "avoidWhen": "Do not call it for hesitation, a pause or a request to change an answer; ask the current question again instead.",
+        "useWhen": "Only when the visitor clearly says they want to stop the studio and just talk, or no longer want it, call studio_exit.",
+        "avoidWhen": "Do not call it for hesitation, a pause or a request to change an answer; ask the current question again instead. Never call it on your own after showing the picture: offer a change or call studio_finish.",
         "speech": "No preamble. Then continue the conversation in character."
       },
       "completion": "response",

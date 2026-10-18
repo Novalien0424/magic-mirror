@@ -1,5 +1,32 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-18 — Interactive Studio and the Mirror mode switch (owner directives)
+
+Supersedes the 2026-10-17 Portrait Studio "Default mode" ruling; the other
+2026-10-17 studio rulings stand. Design and Fable audit:
+[design](docs/superpowers/specs/2026-10-18-interactive-studio-design.md);
+journeys: [user journeys](docs/testing/user-journeys-2026-10-18.md).
+
+- **Name.** Portrait Studio is called **Interactive Studio** everywhere an
+  operator sees it; the experience follows the story and situation. Internal
+  IDs (`portrait_studio`, `studio_*`) are unchanged.
+- **Explicit switch.** The Mirror has one Main-owned, persisted mode:
+  Conversation or Interactive Studio (Console control bar › Mirror mode). In
+  Interactive Studio every wake starts the studio; a live switch starts or
+  closes it for the current visitor. The mode is captured once per session so
+  the greeting and Main always agree. The saved per-avatar default mode is
+  ignored. Visitors may still ask for it in Conversation when the avatar allows.
+- **Stream Deck.** **INTERACTIVE STUDIO** (bottom-left) launches the Mirror in
+  Interactive Studio; **START MIRROR** now selects Conversation; PLAY LOOP keeps
+  the mode. The owner imports the regenerated profile.
+- **Tuning.** Per avatar, only edits stored, reset to the tested default:
+  the studio system prompt and every stage prompt (incl. **What the studio
+  offers**, rendered into the versioned tool catalog's `{{studioOffer}}`), an
+  optional name step, questions with per-question image prompt lines, every
+  image instruction with a preview, on-glass text and spoken failure lines.
+  One fixed guard line marking visitor text as data stays in the app. Image
+  model and size stay versioned (invariant 11).
+
 ## 2026-10-18 — Memory model and ChatGPT sign-in upkeep (owner directives)
 
 - **Memory model.** Memory extraction uses `gpt-6.1-sol`, the undated alias

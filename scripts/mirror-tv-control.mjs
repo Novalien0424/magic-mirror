@@ -92,7 +92,7 @@ export async function operateTv(action, io = createTvIo()) {
 
 /** The entire sequence runs inside the existing button queue/operation lease. */
 export async function operateMirrorControl(action, io) {
-  if (!['start', 'stop', 'loop', 'console'].includes(action)) throw Error('mirror_control_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', 'studio'].includes(action)) throw Error('mirror_control_action_invalid')
   const attempt = async (fn, fallback) => { try { return await fn() } catch { return fallback } }
   if (action === 'stop') {
     // Hide the screen before app windows disappear. TV failure must not skip cleanup.
@@ -107,7 +107,8 @@ export async function operateMirrorControl(action, io) {
   const ready = await attempt(() => io.ready(), false)
   if (!ready) return { app, tv: 'tv_wake_skipped', outcome: `${action}_not_ready` }
   // Console is a separate window; showing it must preserve the current media mode.
-  const command = action === 'console' ? 'show_console' : action === 'loop' ? 'play_loop' : 'normal'
+  // START selects Conversation and STUDIO Interactive Studio; LOOP leaves the mirror mode alone.
+  const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio' }[action]
   const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
@@ -117,5 +118,5 @@ export async function operateMirrorControl(action, io) {
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
   return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
     ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
-      : action === 'console' ? 'console_shown' : action === 'loop' ? 'loop_playing' : app : tv }
+      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready' }[action] ?? app : tv }
 }

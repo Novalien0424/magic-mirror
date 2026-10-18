@@ -10,7 +10,7 @@ export interface RealtimeToolSpec {
   readonly name: string
   readonly handler: string
   readonly enabled: boolean
-  /** Which agent offers the tool: the conversation agent, the Portrait Studio agent, or both. */
+  /** Which agent offers the tool: the conversation agent, the Interactive Studio agent, or both. */
   readonly availability: 'conversation' | 'studio' | 'all'
   readonly routing: 'model_intent'
   readonly description: string
@@ -19,7 +19,7 @@ export interface RealtimeToolSpec {
   readonly completion: 'background' | 'response' | 'background_on_success' | 'background_on_reset'
   readonly results: Readonly<Record<ToolOutcome, ToolResult>>
 }
-export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[] }
+export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[]; readonly templateDefaults?: { readonly studioOffer: string } }
 
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value) }
 function keys(value: Record<string, unknown>, expected: string[]): boolean {
@@ -31,7 +31,7 @@ function freeze<T>(value: T): T {
   return value
 }
 function validTemplate(value: unknown): value is string {
-  return text(value) && [...value.matchAll(/\{\{(\w+)\}\}/g)].every(match => match[1] === 'sleepPhrase')
+  return text(value) && [...value.matchAll(/\{\{(\w+)\}\}/g)].every(match => match[1] === 'sleepPhrase' || match[1] === 'studioOffer')
 }
 
 /** Deliberate schema subset: reject unsupported keywords instead of silently losing validation. */
@@ -52,7 +52,10 @@ function validSchema(value: unknown): boolean {
 /** Dependency-free: this module also reaches sandboxed preload imports. */
 export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
   const invalid = (): never => { throw new Error('invalid_realtime_tool_catalog') }
-  if (!record(value) || !keys(value, ['version', 'tools']) || !text(value.version) || !Array.isArray(value.tools)) return invalid()
+  const defaults = value && typeof value === 'object' && 'templateDefaults' in value ? (value as Record<string, unknown>).templateDefaults : undefined
+  if (!record(value) || !(keys(value, ['version', 'tools']) || keys(value, ['version', 'templateDefaults', 'tools']) && record(defaults)
+    && keys(defaults, ['studioOffer']) && text(defaults.studioOffer) && !/\{\{/.test(defaults.studioOffer))
+    || !text(value.version) || !Array.isArray(value.tools)) return invalid()
   const names = new Set<string>()
   for (const spec of value.tools) {
     if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
@@ -75,11 +78,15 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
 
 export const REALTIME_TOOLS = parseRealtimeToolCatalog(source)
 
+/** Versioned default for the operator's "what the studio offers" text (Interactive Studio stage `offer`). */
+export const DEFAULT_STUDIO_OFFER: string = REALTIME_TOOLS.templateDefaults?.studioOffer ?? (() => { throw new Error('invalid_realtime_tool_catalog') })()
+
 /** Templates are rendered once; inserted operator values are never reinterpreted. */
 export function resolveRealtimeTools(sleepPhrase: string, preview = false, catalog = REALTIME_TOOLS,
-  agent: 'conversation' | 'studio' = 'conversation'): readonly RealtimeToolSpec[] {
+  agent: 'conversation' | 'studio' = 'conversation', studioOffer = DEFAULT_STUDIO_OFFER): readonly RealtimeToolSpec[] {
   if (preview) return []
-  const render = (value: string) => value.replace(/\{\{sleepPhrase\}\}/g, () => JSON.stringify(sleepPhrase))
+  const render = (value: string) => value.replace(/\{\{(sleepPhrase|studioOffer)\}\}/g, (_match, name: string) =>
+    JSON.stringify(name === 'sleepPhrase' ? sleepPhrase : studioOffer))
   return catalog.tools.filter(spec => spec.enabled && (spec.availability === 'all' || spec.availability === agent)).map(spec => freeze({ ...spec, description: render(spec.description),
     rules: { useWhen: render(spec.rules.useWhen), avoidWhen: render(spec.rules.avoidWhen), speech: render(spec.rules.speech) } }))
 }

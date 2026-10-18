@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt, studioScreenView } from '../../shared/portrait-studio-config'
 import type {
   AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
 } from '../../shared/portrait-studio'
@@ -8,7 +8,8 @@ import { matchGuestNames, guestTextKey } from './guest-names'
 import { buildPortraitPrompt, buildRevisionPrompt } from './prompt-builder'
 
 export interface StudioIdentity { readonly realtimeSessionId: string; readonly sessionGeneration: number }
-export type StudioStartSource = 'visitor' | 'session_default' | 'console'
+/** `mode` is the Mirror switch turned to Interactive Studio during a conversation. */
+export type StudioStartSource = 'visitor' | 'session_default' | 'console' | 'mode'
 
 /** Output seam for finished portraits. Display is the only sink today; a printer sink can be added later. */
 export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void }
@@ -60,9 +61,10 @@ export function createStudioRuntime(input: {
   const questionText = (r: Run, index: number) => question(r, index)[r.language]
   const nameQuestion = (r: Run) => r.experience.studio.nameQuestion[r.language]
   const guests = (r: Run) => r.experience.guests.match === 'off' ? [] : r.experience.guests.names
+  const asksName = (experience: AvatarExperience) => experience.studio.askName !== false
   const currentStep = (r: Run): string => r.phase === 'name' || r.phase === 'confirm' ? renderStudioText(prompt(r, 'askName'), { question: nameQuestion(r) })
     : r.phase === 'question' ? renderStudioText(prompt(r, 'askQuestion'), { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: questionText(r, r.answers.length) })
-    : r.phase === 'reveal' ? prompt(r, 'offerChange') : r.phase === 'keepsake' ? prompt(r, 'finished') : G.busy
+    : r.phase === 'reveal' ? prompt(r, 'offerChange') : r.phase === 'keepsake' ? prompt(r, 'finished') : prompt(r, 'busy')
 
   function view(r: Run): StudioView {
     const count = r.experience.studio.questions.length
@@ -75,6 +77,7 @@ export function createStudioRuntime(input: {
       ...(r.imageId && ['reveal', 'revising', 'keepsake'].includes(r.phase) ? { imageUrl: `magic-mirror-media://studio/${r.imageId}` } : {}),
       lettering: r.experience.studio.nameLettering, revisionsLeft: r.revisionsLeft,
       ...(r.holdEndsAt ? { holdEndsAt: r.holdEndsAt } : {}),
+      askName: asksName(r.experience), text: studioScreenView(r.experience.studio, r.language, Math.min(r.answers.length + 1, count), count),
     }
   }
   const publish = (r: Run) => { if (run === r) input.dispatch({ type: 'studio_view', view: view(r) }) }
@@ -101,11 +104,11 @@ export function createStudioRuntime(input: {
     if (run !== r) return
     input.report(code, 'degraded')
     if (keepPortrait && r.imageId) {
-      input.dispatch({ type: 'studio_event', event: { event: 'failed', code, line: studioFailureLine('revision_failed', r.language), keepPortrait: true }, identity: r.identity })
+      input.dispatch({ type: 'studio_event', event: { event: 'failed', code, line: studioFailureLine('revision_failed', r.language, r.experience.studio), keepPortrait: true }, identity: r.identity })
       startKeepsake(r)
       return
     }
-    input.dispatch({ type: 'studio_event', event: { event: 'failed', code, line: studioFailureLine(code, r.language), keepPortrait: false }, identity: r.identity })
+    input.dispatch({ type: 'studio_event', event: { event: 'failed', code, line: studioFailureLine(code, r.language, r.experience.studio), keepPortrait: false }, identity: r.identity })
     close(`studio_failed_${code.replace(/^studio_/, '')}`, false)
   }
 
@@ -133,7 +136,7 @@ export function createStudioRuntime(input: {
     hold(r)
     publish(r)
     const quality = r.experience.studio.quality
-    const answers = r.answers.map((answer, index) => ({ slot: question(r, index).slot, answer }))
+    const answers = r.answers.map((answer, index) => ({ slot: question(r, index).slot, imageLine: question(r, index).imageLine, answer }))
     const previous = r.imageId ? images.get(r.imageId) : undefined
     let result: PortraitImageResult
     try {
@@ -163,16 +166,16 @@ export function createStudioRuntime(input: {
     // Application code owns authorization: a renderer cannot claim a default it was not given.
     if (source === 'visitor' && !experience.visitorMayRequest || source === 'session_default' && experience.defaultMode !== 'portrait_studio') {
       input.report('studio_start_not_enabled', 'degraded')
-      return reply('rejected', 'studio_not_enabled', G.unavailable)
+      return reply('rejected', 'studio_not_enabled', studioPrompt(experience.studio, 'unavailable'))
     }
-    if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', G.unavailable) }
+    if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
-    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), language: 'zh', phase: 'name',
+    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), language: 'zh', phase: asksName(experience) ? 'name' : 'question',
       name: '', nameAttempts: 0, answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
     run = r
     input.report(`studio_started_${source}`)
     publish(r)
-    return reply('accepted', 'studio_started', renderStudioText(prompt(r, 'askName'), { question: nameQuestion(r) }))
+    return reply('accepted', 'studio_started', currentStep(r))
   }
 
   function handle(request: Exclude<StudioRequest, { action: 'start' }>, identity: StudioIdentity): StudioReply {
@@ -180,6 +183,7 @@ export function createStudioRuntime(input: {
     if (!r || !sameIdentity(r.identity, identity)) return reply('ignored', 'studio_not_active_stale')
     if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', prompt(r, 'exited')) }
     if (request.action === 'set_name') {
+      if (!asksName(r.experience)) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       r.language = request.language

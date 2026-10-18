@@ -1,5 +1,11 @@
 import source from '../../resources/config/portrait-studio.v1.json' with { type: 'json' }
-import { STUDIO_PROMPT_STAGES, studioPromptIssue, type StudioLanguage, type StudioPromptStage, type StudioSettings } from './portrait-studio'
+import {
+  STUDIO_FAILURE_KEYS, STUDIO_IMAGE_PROMPT_KEYS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_KEYS, studioFailureIssue, studioImageLineIssue,
+  studioImagePromptIssue, studioPromptIssue, studioScreenIssue,
+  type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage, type StudioQuestion, type StudioScreenKey,
+  type StudioScreenView, type StudioSettings,
+} from './portrait-studio'
+import { DEFAULT_STUDIO_OFFER } from './realtime-tools'
 
 export const PORTRAIT_STUDIO_SOURCE = 'resources/config/portrait-studio.v1.json'
 
@@ -31,7 +37,8 @@ export const PORTRAIT_STUDIO = config
 
 /** Versioned default for each operator-editable stage prompt. */
 export const STUDIO_PROMPT_DEFAULTS: Readonly<Record<StudioPromptStage, string>> = Object.freeze({
-  instructions: config.agent.studio, askName: config.guidance.askName, confirmName: config.guidance.confirmName,
+  instructions: config.agent.studio, offer: DEFAULT_STUDIO_OFFER,
+  unavailable: config.guidance.unavailable, busy: config.guidance.busy, askName: config.guidance.askName, confirmName: config.guidance.confirmName,
   chooseGuest: config.guidance.chooseGuest, guestOnly: config.guidance.guestOnly, askQuestion: config.guidance.askQuestion,
   painting: config.guidance.painting, reveal: config.agent.reveal, revealBlind: config.agent.revealBlind,
   offerChange: config.agent.offerChange, repainting: config.guidance.repainting, noChangesLeft: config.guidance.noChangesLeft,
@@ -50,7 +57,46 @@ export function renderStudioText(template: string, values: Readonly<Record<strin
   return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => Object.hasOwn(values, name) ? values[name]! : match)
 }
 
-export function studioFailureLine(code: string, language: StudioLanguage): string {
-  const lines = PORTRAIT_STUDIO.lines.failed as Readonly<Record<string, Readonly<Record<StudioLanguage, string>>>>
-  return (lines[code] ?? lines.default!)[language]
+type Settings = Partial<Pick<StudioSettings, 'imagePrompt' | 'screenText' | 'failureLines'>> | undefined
+const failed = config.lines.failed as Readonly<Record<StudioFailureKey, Readonly<Record<StudioLanguage, string>>>>
+for (const key of STUDIO_FAILURE_KEYS) if (studioFailureIssue(failed[key]?.zh) || studioFailureIssue(failed[key]?.en)) throw new Error('invalid_portrait_studio_config')
+
+/** The spoken line for a failure: the avatar's edit, else the versioned default. */
+export function studioFailureLine(code: string, language: StudioLanguage, settings?: Settings): string {
+  const key: StudioFailureKey = (STUDIO_FAILURE_KEYS as readonly string[]).includes(code) ? code as StudioFailureKey : 'default'
+  return settings?.failureLines?.[key]?.[language] ?? failed[key][language]
+}
+
+/** Versioned image-prompt templates; the guard is fixed and never operator-editable. */
+export const STUDIO_IMAGE_PROMPT_DEFAULTS: Readonly<Record<StudioImagePromptKey, string>> = Object.freeze({
+  frame: config.imagePrompt.frame, nameplate: config.imagePrompt.nameplate, painted: config.imagePrompt.painted,
+  untitled: config.imagePrompt.untitled, revision: config.imagePrompt.revision,
+})
+for (const key of STUDIO_IMAGE_PROMPT_KEYS) if (studioImagePromptIssue(key, STUDIO_IMAGE_PROMPT_DEFAULTS[key])) throw new Error('invalid_portrait_studio_variables')
+for (const line of Object.values(config.imagePrompt.slots)) if (studioImageLineIssue(line)) throw new Error('invalid_portrait_studio_variables')
+export function studioImagePrompt(settings: Settings, key: StudioImagePromptKey): string {
+  return settings?.imagePrompt?.[key] ?? STUDIO_IMAGE_PROMPT_DEFAULTS[key]
+}
+/** A question's image-prompt line: its own edit, else its image part's default. */
+export function studioQuestionLine(question: Pick<StudioQuestion, 'slot' | 'imageLine'>): string {
+  return question.imageLine ?? config.imagePrompt.slots[question.slot]
+}
+
+/** Versioned on-glass text; captions are stored one per line. */
+export const STUDIO_SCREEN_DEFAULTS: Readonly<Record<StudioLanguage, Readonly<Record<StudioScreenKey, string>>>> = config.screen
+for (const language of ['zh', 'en'] as const) for (const key of STUDIO_SCREEN_KEYS) {
+  if (studioScreenIssue(key, config.screen[language][key])) throw new Error('invalid_portrait_studio_config')
+}
+export function studioScreenText(settings: Settings, key: StudioScreenKey, language: StudioLanguage): string {
+  return settings?.screenText?.[key]?.[language] ?? STUDIO_SCREEN_DEFAULTS[language][key]
+}
+/** Everything the glass shows for one language, with the question counter already filled in. */
+export function studioScreenView(settings: Settings, language: StudioLanguage, index: number, count: number): StudioScreenView {
+  const text = (key: StudioScreenKey) => studioScreenText(settings, key, language)
+  return {
+    nameLabel: text('nameLabel'), confirmLabel: text('confirmLabel'), confirmQuestion: text('confirmQuestion'),
+    questionLabel: renderStudioText(text('questionLabel'), { index: String(index), count: String(count) }),
+    changePrefix: text('changePrefix'), changeHint: text('changeHint'), doneHint: text('doneHint'), finalHint: text('finalHint'),
+    photoHint: text('photoHint'), captions: text('captions').split('\n').map(line => line.trim()).filter(Boolean),
+  }
 }

@@ -58,6 +58,7 @@ import { StudioLiveControls, StudioServiceSummary, StudioStatusPanel, type LiveM
 import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { LoopVideoPanel } from './LoopVideoPanel'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
+import type { MirrorMode } from '../../shared/portrait-studio'
 import { addAvatarMedia } from './media-selection'
 import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES, type AudioPreferences } from '../../shared/audio-devices'
 import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
@@ -74,10 +75,10 @@ import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
 const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
-/** Avatar settings sections, including Portrait Studio's Experiences. */
+/** Avatar settings sections, including the Interactive Studio content. */
 type AvatarSection = ProfileSection
 const AVATAR_SECTIONS: readonly AvatarSection[] = PROFILE_SECTIONS
-const SYSTEM_PAGES = ['Devices', 'Media folders', 'Portrait images', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
+const SYSTEM_PAGES = ['Devices', 'Media folders', 'Studio service', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 /** Everyday System pages; the rest sit after an Advanced divider. */
 const SYSTEM_EVERYDAY = 3
 type LiveLine = { readonly tone: 'success' | 'degraded' | 'failed' | 'loading'; readonly content: React.ReactNode }
@@ -1814,8 +1815,8 @@ export function ScenesPanel({
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
       {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
-      {visible && section === 'Experiences' && <StudioServiceSummary bridge={bridge} visible={visible} onOpen={() => onPortraitImages?.()} />}
-      {visible && section === 'Experiences' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar}
+      {visible && section === 'Interactive Studio' && <StudioServiceSummary bridge={bridge} visible={visible} onOpen={() => onPortraitImages?.()} />}
+      {visible && section === 'Interactive Studio' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar}
         onEditGreeting={() => setSection('Persona')} /> : null}
       {editorView === 'rigs' ? <CubismStudio bridge={bridge} visible={visible} /> : null}
       {personaOnly && editingAvatar ? <AvatarCharacterEditor calibrationBridge={bridge} visible={visible} wakeDefaults={payload?.wakeTuningDefaults?.packageId === rawDraft?.wake.packageId ? payload?.wakeTuningDefaults : null} avatar={editingAvatar} focusName={nameFocusId === editingId} onNameFocused={() => setNameFocusId(null)} disabled={editorDisabled} onChange={updateAvatar} /> : null}
@@ -2056,6 +2057,7 @@ export function App(): React.JSX.Element {
   const [operatorLoop, setOperatorLoop] = useState<OperatorLoopSnapshot | null>(null)
   const [loopStarting, setLoopStarting] = useState(false)
   const [loopCancel, setLoopCancel] = useState(0)
+  const [mirrorMode, setMirrorMode] = useState<MirrorMode | undefined>(undefined)
   const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Mirror')
   const [systemPage, setSystemPage] = useState<(typeof SYSTEM_PAGES)[number]>('Devices')
   const [avatarEditing, setAvatarEditing] = useState(false)
@@ -2509,7 +2511,7 @@ export function App(): React.JSX.Element {
               aria-current={activePage === page ? 'page' : undefined} onClick={() => navigate(page, page === 'System' ? 'Devices' : systemPage)}>{page}</button>)}
           </nav>
           <RuntimeStatusStrip store={runtimeStore} lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
-            operatorLoop={operatorLoop}
+            operatorLoop={operatorLoop} mirrorMode={mirrorMode}
             phrase={configState.status === 'success' ? configState.value.active.wake.phrase : undefined} />
         </header>
 
@@ -2529,7 +2531,8 @@ export function App(): React.JSX.Element {
                 onDisconnect={disconnect}
               />
               <StudioLiveControls bridge={bridgeRef.current} bridgeAvailable={bridgeAvailable} visible
-                lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} onMessage={showLive} />
+                lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined} onMessage={showLive}
+                onStatus={status => setMirrorMode(status.mirrorMode)} />
             </>}
             <div className="live-bar__group live-bar__group--end" role="group" aria-label="Scenes">
               <HelpButton placement="below" className="console__danger" disabled={!bridgeAvailable} onClick={stopAll}
@@ -2560,7 +2563,7 @@ export function App(): React.JSX.Element {
           <OverviewPanel state={overviewState} configState={configState} bridge={bridgeRef.current}
             editing={avatarEditing || configEditing || modelsEditing} visible={activePage === 'Mirror'} operatorLoop={operatorLoop}
             onChanged={refreshConfigAndModels} onEdit={() => navigate('Avatars', systemPage)}
-            onLoopVideo={() => navigate('Loop Video', systemPage)} onPortraitImages={() => navigate('System', 'Portrait images')} />
+            onLoopVideo={() => navigate('Loop Video', systemPage)} onPortraitImages={() => navigate('System', 'Studio service')} />
         </div>
         <div hidden={activePage !== 'Avatars'}>
           <ScenesPanel
@@ -2573,7 +2576,7 @@ export function App(): React.JSX.Element {
             onChanged={refreshConfigAndModels}
             onSharedMedia={() => navigate('System', 'Media folders')}
             stopSignal={stopSignal}
-            onPortraitImages={() => navigate('System', 'Portrait images')}
+            onPortraitImages={() => navigate('System', 'Studio service')}
           />
         </div>
         <div hidden={activePage !== 'Loop Video'}>
@@ -2581,7 +2584,7 @@ export function App(): React.JSX.Element {
             onStartingChange={setLoopStarting} cancelSignal={loopCancel} onMediaFolders={() => navigate('System', 'Media folders')} />
         </div>
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
-        {activePage === 'System' && systemPage === 'Portrait images' && <div className="console__panel"><StudioStatusPanel bridge={bridgeRef.current} visible /></div>}
+        {activePage === 'System' && systemPage === 'Studio service' && <div className="console__panel"><StudioStatusPanel bridge={bridgeRef.current} visible /></div>}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             store={runtimeStore}

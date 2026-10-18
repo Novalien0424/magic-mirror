@@ -2,6 +2,7 @@ import { allowPromptWindow } from '../shared/prompt-window'
 import { createOperatorLoop } from './operator-loop'
 import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
+import { createMirrorMode } from './mirror-mode'
 import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { readFile, readdir, writeFile, open } from 'node:fs/promises'
@@ -1100,6 +1101,7 @@ void app.whenReady().then(async () => {
     try { return await Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('operator_loop_operation_timeout')), ms) })]) }
     finally { clearTimeout(timer) }
   }
+  const mirrorMode = createMirrorMode({ path: join(app.getPath('userData'), 'mirror-mode.json'), report: reason => marker('MIRROR_MODE', { reason }) })
   operatorLoop = createOperatorLoop({
     path: join(app.getPath('userData'), 'operator-loop.json'),
     validate: async settings => {
@@ -1151,6 +1153,7 @@ void app.whenReady().then(async () => {
 
   const runtime: BootRuntime = bootSequence({
     operatorLoopActive: () => operatorLoop?.isLoopMode() ?? false,
+    mirrorModeForSession: identity => mirrorMode.sessionMode(identity),
     ...(phase4QaEnabled && ['baseline', 'trimmed', 'merged', 'focused'].includes(process.env['MIRROR_QA_PROMPT_VARIANT'] ?? '')
       ? { qaPromptVariant: process.env['MIRROR_QA_PROMPT_VARIANT'] as 'baseline' | 'trimmed' | 'merged' | 'focused' } : {}),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
@@ -1362,6 +1365,9 @@ void app.whenReady().then(async () => {
     directory: join(app.getPath('userData'), 'operator-control'),
     execute: async action => {
       if (action === 'show_console') return showConsoleOnMirror()
+      // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
+      // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
+      if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
       const success = await (action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       if (success) hideConsoleWindow()
       return success
@@ -1530,6 +1536,7 @@ void app.whenReady().then(async () => {
     prepareFolderMedia: (id, avatarId) => bounded(mediaFolders.resolve(id, avatarId), mediaFolders.preparationBudgetMs(id))
       .then(file => !!file, () => false),
     keepChatgptSignedIn: true,
+    mirrorMode,
     mediaFolders: async request => {
       await mediaFoldersReady
       const config = await runtime.console.getConfig()

@@ -658,7 +658,7 @@ export function createRealtimeSession(
           emitMetadata(input, 'realtime_observer_event', 'info', 'studio_identity_question_pending', sessionGeneration, createdAt)
           return { outcome: 'rejected', studio: { status: 'rejected', code: 'studio_identity_question_pending', next: PORTRAIT_STUDIO.guidance.identityPending } }
         }
-        const unavailable = { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable', next: PORTRAIT_STUDIO.guidance.unavailable } }
+        const unavailable = { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable', next: studioPrompt(input.avatar?.experience?.studio, 'unavailable') } }
         const reply = await studioRequest({ action: 'start', source: 'visitor' })
         if (!reply) return unavailable
         // The swap precedes the tool output, so the studio agent asks the name question.
@@ -870,7 +870,8 @@ export function createRealtimeSession(
 
   let closed = false
   let closePromise: Promise<void> | null = null
-  const studioDefaultMode = studioSpecs.length > 0 && input.avatar?.experience?.defaultMode === 'portrait_studio'
+  // Only a woken session (it carries the wake greeting) waits for Main's studio start; a rollover never does.
+  const studioDefaultMode = studioSpecs.length > 0 && input.avatar?.experience?.defaultMode === 'portrait_studio' && input.wakeGreeting !== undefined
   let greetingState: 'pending' | 'sent' | 'cancelled' | 'none' = input.wakeGreeting?.trim() || studioDefaultMode ? 'pending' : 'none'
   if (studioDefaultMode) studioDefaultStart = new Promise<boolean>(resolve => { studioDefaultSettle = resolve })
   const greetingAbort = new AbortController()

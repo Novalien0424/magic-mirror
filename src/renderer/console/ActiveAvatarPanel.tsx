@@ -50,7 +50,7 @@ export function ActiveAvatarPanel({ payload, bridge, lifecycle, editing, onChang
       </select></label>
       <HelpButton disabled={!bridge || busy || !!reason} onClick={() => void activate()}
         help={reason || 'Puts the chosen published avatar on the Mirror. Only one avatar is active at a time; the next wake starts a fresh conversation.'}>{busy ? 'Switching…' : 'Activate avatar'}</HelpButton>
-      <HelpButton className="console__link" onClick={onEdit} help="Edit each avatar’s persona, appearance, voice, Portrait Studio and scenes.">Manage avatars</HelpButton>
+      <HelpButton className="console__link" onClick={onEdit} help="Edit each avatar’s persona, appearance, voice, Interactive Studio and scenes.">Manage avatars</HelpButton>
     </div>
     <p className="console__active-avatar-message" role="status" aria-live="polite">{message}</p>
   </section>

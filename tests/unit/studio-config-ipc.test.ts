@@ -65,9 +65,9 @@ describe('Portrait Studio configuration', () => {
   it('shows each effective stage prompt and its source in the prompt inspector', () => {
     const profile = { ...newAvatar('guide'), experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, prompts: { painting: '我要開始畫了。' } } } }
     const sections = inspectAvatarPrompts(profile, []).pages.Session
-    const painting = sections.find(s => s.title === 'Portrait Studio stage · Painting starts')!
+    const painting = sections.find(s => s.title === 'Interactive Studio stage · Painting starts')!
     expect(painting).toMatchObject({ content: '我要開始畫了。', source: 'avatarCatalog.avatars[guide].experience.studio.prompts.painting' })
-    expect(sections.find(s => s.title === 'Portrait Studio stage · Goodbye')?.source).toMatch(/\(default\)$/)
+    expect(sections.find(s => s.title === 'Interactive Studio stage · Goodbye')?.source).toMatch(/\(default\)$/)
   })
 
   it('pins the image model in versioned config and rejects unsafe view URLs', () => {
@@ -79,7 +79,7 @@ describe('Portrait Studio configuration', () => {
 
 describe('Portrait Studio IPC', () => {
   type Snapshot = { lifecycle: string; realtimeSessionId: string | null; sessionGeneration: number }
-  function harness(options: { lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean } = {}) {
+  function harness(options: { lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode'] } = {}) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const dispatched: unknown[] = []
     const reports: string[] = []
@@ -96,6 +96,7 @@ describe('Portrait Studio IPC', () => {
       experience: options.experience ?? (async () => defaultExperience()),
       dispatch: command => { dispatched.push(command); return true },
       activity: vi.fn(), stopMedia: vi.fn(), report: reason => reports.push(reason), credentials, keepSignedIn: options.keepSignedIn,
+      ...(options.mirrorMode ? { mirrorMode: options.mirrorMode } : {}),
       fetchImpl: vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch,
     })
     const mirror = (request: unknown, identity: unknown = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }) =>
@@ -193,4 +194,76 @@ describe('Portrait Studio IPC', () => {
       event: { event: 'closed', reason: 'studio_default_unavailable' }, identity: RT1 }))
     expect(signedOut.reports).toContain('studio_auth_required')
   })
+
+  describe('Mirror mode switch', () => {
+    const store = (initial: 'conversation' | 'studio' = 'conversation', saveOk = true) => {
+      let mode = initial
+      type Mode = 'conversation' | 'studio'
+      const listeners: ((mode: Mode, previous: Mode, source: 'console' | 'operator') => void)[] = []
+      const sessions = new Map<string, 'conversation' | 'studio'>()
+      return {
+        get: () => mode,
+        set: (next: Mode) => { if (!saveOk) return false; if (next !== mode) { const previous = mode; mode = next; listeners.forEach(l => l(next, previous, 'console')) } return true },
+        sessionMode: (identity: { realtimeSessionId: string; sessionGeneration: number }) => {
+          const key = `${identity.realtimeSessionId}#${identity.sessionGeneration}`
+          if (!sessions.has(key)) sessions.set(key, mode)
+          return sessions.get(key)!
+        },
+        subscribe: (listener: (mode: Mode, previous: Mode, source: 'console' | 'operator') => void) => { listeners.push(listener); return () => undefined },
+      }
+    }
+    const events = (h: ReturnType<typeof harness>) => h.dispatched.filter(c => (c as { type: string }).type === 'studio_event').map(c => (c as { event: { event: string } }).event.event)
+
+    it('reports the mode in Console status and switches it with a result the operator sees', async () => {
+      const mirrorMode = store()
+      const h = harness({ lifecycle: 'dormant', mirrorMode })
+      const status = await h.console({ action: 'status' }) as { value: { status: { mirrorMode: string } } }
+      expect(status.value.status.mirrorMode).toBe('conversation')
+      const switched = await h.console({ action: 'mode', mode: 'studio' }) as { value: { status: { mirrorMode: string }; action: { status: string; code: string } } }
+      expect(switched.value).toMatchObject({ status: { mirrorMode: 'studio' }, action: { status: 'accepted', code: 'mirror_mode_studio' } })
+      // Dormant: nothing starts now; the next wake does.
+      expect(events(h)).toEqual([])
+      const failing = harness({ lifecycle: 'dormant', mirrorMode: store('conversation', false) })
+      const refused = await failing.console({ action: 'mode', mode: 'studio' }) as { value: { action: { status: string; code: string } } }
+      expect(refused.value.action).toEqual({ status: 'failed', code: 'mirror_mode_save_failed' })
+      expect(await h.console({ action: 'mode', mode: 'party' })).toMatchObject({ ok: false, error: 'console_request_invalid' })
+    })
+
+    it('starts the studio for the visitor now when switched on mid-conversation, and closes it when switched off', async () => {
+      const mirrorMode = store()
+      const h = harness({ mirrorMode })
+      await h.console({ action: 'mode', mode: 'studio' })
+      await vi.waitFor(() => expect(h.dispatched).toContainEqual({ type: 'studio_event',
+        event: { event: 'enter', startScript: defaultExperience().studio.startScript }, identity: RT1 }))
+      expect(h.reports).toContain('studio_started_mode')
+      await h.console({ action: 'mode', mode: 'conversation' })
+      expect(h.dispatched.at(-1)).toEqual({ type: 'studio_event', event: { event: 'closed', reason: 'studio_operator_exit' }, identity: RT1 })
+      // Signed out: the switch is saved, the start is refused with a metadata reason.
+      const signedOut = harness({ auth: 'missing', mirrorMode: store() })
+      await signedOut.console({ action: 'mode', mode: 'studio' })
+      await vi.waitFor(() => expect(signedOut.reports).toContain('studio_mode_start_unavailable'))
+      expect(events(signedOut)).toEqual([])
+    })
+
+    it('wakes into the studio from the mode captured for that session, whatever the saved per-avatar default', async () => {
+      const mirrorMode = store('studio')
+      const h = harness({ lifecycle: 'activating', mirrorMode })
+      h.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
+      await vi.waitFor(() => expect(events(h)).toEqual(['enter']))
+      // Switched on while the session was waking (after it captured Conversation): it starts like a live switch.
+      const late = store('conversation')
+      const l = harness({ lifecycle: 'activating', mirrorMode: late })
+      late.sessionMode(RT1)
+      late.set('studio')
+      l.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
+      await vi.waitFor(() => expect(events(l)).toEqual(['enter']))
+      expect(l.reports).toContain('studio_started_mode')
+      // Conversation mode wakes into a normal conversation.
+      const normal = harness({ lifecycle: 'activating', mirrorMode: store('conversation') })
+      normal.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(events(normal)).toEqual([])
+    })
+  })
 })
+

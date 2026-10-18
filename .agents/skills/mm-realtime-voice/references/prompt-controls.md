@@ -58,6 +58,15 @@ behavior to the current wiring.
   Queued reveal/farewell work carries its run; a reveal also needs Main's latest
   revision. Reveal/failure speech waits for an idle session. Image model and
   studio text: `resources/config/portrait-studio.v1.json`.
+- **Interactive Studio (2026-10-18; internal name portrait studio).** The Main
+  Mirror switch (`mirror-mode.json`; Console control bar, Stream Deck
+  INTERACTIVE STUDIO) decides whether a wake starts it; the mode is captured per
+  session for both the renderer greeting and Main's start. Per-avatar edits
+  (only edits stored): stage prompts incl. `offer` (fills the catalog's
+  `{{studioOffer}}`), `askName`, question `imageLine`, `imagePrompt`
+  (frame/nameplate/painted/untitled/revision), `screenText`, `failureLines`.
+  The image-prompt guard (`imagePrompt.guard`) is fixed; visitor text is always
+  quoted data. The renderer subset omits image/glass/failure text.
 - Catalog edits need rebuild/restart. Console **Effective realtime prompt &
   tool** uses the same draft/published builders; every model-visible path belongs
   in that inspector.

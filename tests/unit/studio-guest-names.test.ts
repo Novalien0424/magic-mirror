@@ -34,6 +34,9 @@ describe('portrait prompt builder', () => {
     expect(prompt).toContain(studio.artStyle)
     expect(prompt).not.toContain('王曉明')
     expect(prompt).toMatch(/Do not draw any text/)
+    // The style's own full stop is not doubled by the frame's.
+    expect(buildPortraitPrompt({ studio: { ...studio, artStyle: 'Moonlit gouache.' }, answers, name: '' })).toContain('Moonlit gouache. ')
+    expect(buildPortraitPrompt({ studio: { ...studio, artStyle: 'Moonlit gouache.' }, answers, name: '' })).not.toContain('gouache..')
   })
 
   it('letters the exact quoted name only in painted mode, and quotes change requests', () => {

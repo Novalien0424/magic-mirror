@@ -66,7 +66,7 @@ async function mailbox() {
 }
 
 describe('Main operator request parser', () => {
-  it.each(['normal', 'play_loop', 'show_console'] as const)('accepts exactly the fixed %s payload and returns only command metadata', action => {
+  it.each(['normal', 'play_loop', 'show_console', 'studio'] as const)('accepts exactly the fixed %s payload and returns only command metadata', action => {
     expect(parseOperatorRequest(request({ action }), now)).toEqual({ id, action, expiresAt: now + 45000 })
   })
 

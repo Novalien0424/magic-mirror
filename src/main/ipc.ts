@@ -172,8 +172,10 @@ export interface RegisterIpcHandlersOptions {
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   /** Copies linked-folder media for local playback; false when it cannot be read in time. */
   readonly prepareFolderMedia?: (assetId: string, avatarId: string) => Promise<boolean>
-  /** Keeps the Portrait Studio ChatGPT sign-in refreshed in the background. */
+  /** Keeps the Interactive Studio ChatGPT sign-in refreshed in the background. */
   readonly keepChatgptSignedIn?: boolean
+  /** The Mirror's Conversation / Interactive Studio switch. */
+  readonly mirrorMode?: import('./mirror-mode').MirrorModeStore
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
@@ -1332,6 +1334,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     report: (reason, status, durationMs) => emit(telemetry, { module: 'avatar', event: 'portrait_studio', source: 'runtime', status, reason,
       ...(durationMs === undefined ? {} : { duration_ms: Math.round(durationMs) }) }),
     keepSignedIn: options.keepChatgptSignedIn,
+    ...(options.mirrorMode ? { mirrorMode: options.mirrorMode } : {}),
   })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0

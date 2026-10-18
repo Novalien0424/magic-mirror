@@ -2,9 +2,10 @@ import { useSyncExternalStore } from 'react'
 import type { ConsoleRuntimeStore } from './runtime-store'
 import { WakeRecoveryStatus } from './WakeRecoveryStatus'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
+import type { MirrorMode } from '../../shared/portrait-studio'
 
 /** Header status chip; it widens into a banner only when the Mirror needs attention. */
-export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop }: { store: ConsoleRuntimeStore; lifecycle?: string; phrase?: string; operatorLoop?: OperatorLoopSnapshot | null }) {
+export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop, mirrorMode }: { store: ConsoleRuntimeStore; lifecycle?: string; phrase?: string; operatorLoop?: OperatorLoopSnapshot | null; mirrorMode?: MirrorMode }) {
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
   if (operatorLoop?.mode === 'loop') return <section className={`runtime-status${operatorLoop.status === 'failed' ? ' runtime-status--attention' : ''}`}
     aria-label="Mirror listening status" data-lifecycle="loop">
@@ -25,7 +26,7 @@ export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop }: {
       : state.status === 'failure' ? ' · Status unavailable. Check the app connection.'
         : needsWake ? listening ? <> · Listening for <span lang="zh-Hant">「{phrase || 'the wake phrase'}」</span></>
           : ` · Wake listener ${wake?.state ?? 'unavailable'}. Check the microphone connection and device selection.`
-          : ''}</div>
+          : ''}{mirrorMode === 'studio' && <span className="runtime-status__mode">Interactive Studio mode</span>}</div>
     {needsWake && wake?.recovery && wake.recovery.state !== 'recovered' && <WakeRecoveryStatus recovery={wake.recovery} />}
     {detail && <small className="console__sr-only">{`✓ ${detail}`}</small>}
   </section>
