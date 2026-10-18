@@ -561,12 +561,15 @@ export function createRealtimeSession(
   let studioDefaultTimer: ReturnType<typeof setTimeout> | undefined
   let studioImageSequence = 0
   let studioSendSequence = 0
+  // Main's latest portrait revision in the current run; an older one is never revealed after it.
+  let studioRevision = 0
   let visitorSpeaking = false
   let speechSettledAt = 0
   let idleRetryTimer: ReturnType<typeof setTimeout> | undefined
   const studioItems = new Set<string>()
   // Function calls by call_id: a call and its output are deleted together, or neither.
-  const studioCalls = new Map<string, { call?: string; output?: string }>()
+  // An interrupted (incomplete) call never runs, so it ends without an output.
+  const studioCalls = new Map<string, { call?: string; output?: string; ended?: boolean }>()
   // Visitor turns that began in the studio stay control turns even if it closes first.
   const studioTurnItems = new Set<string>()
   // Application responses the server rejected before they started: one retry when idle.
@@ -1172,12 +1175,15 @@ export function createRealtimeSession(
     }
     const type = readEventType(event)
     memoryDialogue.event(event)
-    if (type === 'conversation.item.retrieved') {
-      const itemId = readProperty(readProperty(event, 'item'), 'id')
+    // The SDK retrieves an input item only after a transcript, so a failed
+    // transcription is never requested and settles the item the same way.
+    const transcriptionFailed = type === 'conversation.item.input_audio_transcription.failed'
+    if (type === 'conversation.item.retrieved' || transcriptionFailed) {
+      const itemId = transcriptionFailed ? readProperty(event, 'item_id') : readProperty(readProperty(event, 'item'), 'id')
+      if (transcriptionFailed) emitMetadata(input, 'realtime_observer_event', 'degraded', 'transcript_unavailable', sessionGeneration, createdAt)
       if (typeof itemId === 'string') { retrievedItems.add(itemId); if (retrievedItems.size > 256) retrievedItems.delete(retrievedItems.values().next().value!) }
       if (typeof itemId === 'string' && mediaCleanupPending.delete(itemId)) {
-        // The SDK requests this item after transcription. Delete only after
-        // that retrieval, otherwise its request fails with item_not_found.
+        // Delete only after that retrieval, otherwise its request fails with item_not_found.
         transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId })
       }
       return
@@ -1252,7 +1258,9 @@ export function createRealtimeSession(
               || studioToolNames.has(readProperty(item, 'name') as string)))
           // Studio turns (name and answers) never reach memory extraction (owner ruling R5, invariant 6).
           if (itemId && (hasControl || studioActive || studioTurnItems.has(itemId))) memoryInput('control', itemId)
-          if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item, !!itemId && studioTurnItems.has(itemId))
+          // Application studio replies (the reveal) have no visitor turn; their metadata marks them.
+          const studioReply = typeof readProperty(metadata, 'mirror_studio') === 'string' || !!itemId && studioTurnItems.has(itemId)
+          if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item, studioReply)
           if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio') === 'reveal' && studioRevealImageItem) {
             // The downscaled image served one reveal; keep it out of later billed context.
             deleteConversationItem(studioRevealImageItem); studioRevealImageItem = undefined
@@ -2002,12 +2010,13 @@ export function createRealtimeSession(
     if (kind === 'function_call' || kind === 'function_call_output') {
       if (typeof callId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) return
       const known = studioCalls.get(callId)
-      if (kind === 'function_call' && (studioActive || studioToolNames.has(readProperty(item, 'name') as string))) studioCalls.set(callId, { ...known, call: itemId })
-      else if (kind === 'function_call_output' && known) known.output = itemId
+      if (kind === 'function_call' && (studioActive || known || studioToolNames.has(readProperty(item, 'name') as string))) {
+        studioCalls.set(callId, { ...known, call: itemId, ...(readProperty(item, 'status') === 'incomplete' ? { ended: true } : {}) })
+      } else if (kind === 'function_call_output' && known) known.output = itemId
       if (studioCalls.size > 256) studioCalls.delete(studioCalls.keys().next().value!)
-      // A pair completed after the studio closed: the exit cleanup skipped it, so schedule another.
+      // A pair completed or ended after the studio closed: the exit cleanup skipped it, so schedule another.
       const pair = studioCalls.get(callId)
-      if (!studioActive && pair?.call && pair.output) whenIdle(() => { cleanupStudioItems(); return false }, 30000)
+      if (!studioActive && pair?.call && (pair.output || pair.ended)) whenIdle(() => { cleanupStudioItems(); return false }, 30000)
       return
     }
     if (!studioActive && !studioTurn && !studioTurnItems.has(itemId)) return
@@ -2026,8 +2035,9 @@ export function createRealtimeSession(
     }
     studioItems.clear()
     for (const [callId, pair] of studioCalls) {
-      if (!pair.call || !pair.output) continue
-      deleteConversationItem(pair.call); deleteConversationItem(pair.output)
+      if (!pair.call || !pair.output && !pair.ended) continue
+      deleteConversationItem(pair.call)
+      if (pair.output) deleteConversationItem(pair.output)
       studioCalls.delete(callId)
     }
   }
@@ -2159,8 +2169,8 @@ export function createRealtimeSession(
       return false
     }
   }
-  function requestStudioFarewell(retried = false): boolean {
-    if (closed || returnToDormantPending || farewellRequested) return false
+  function requestStudioFarewell(run: number, retried = false): boolean {
+    if (closed || !sameStudioRun(run, false) || returnToDormantPending || farewellRequested) return false
     sleepAudioSuppressed = true
     returnToDormantPending = true
     farewellCueId = `sleep-${sessionGeneration}-${++farewellSequence}`
@@ -2172,7 +2182,7 @@ export function createRealtimeSession(
       // Rejected before it started (another response was active): release and retry once.
       returnToDormantPending = false; farewellRequested = false; sleepAudioSuppressed = false
       if (retried) emitMetadata(input, 'realtime_observer_event', 'failed', 'sleep_request_failed', sessionGeneration, createdAt)
-      else whenIdle(() => requestStudioFarewell(true))
+      else whenIdle(() => requestStudioFarewell(run, true))
     })
     try {
       transport.sendEvent({ type: 'response.create', event_id: eventId, response: { ...buildSpeechResponse(farewell, input.avatar?.speakingStyle ?? ''),
@@ -2185,14 +2195,22 @@ export function createRealtimeSession(
       return false
     }
   }
+  /** A reveal belongs to its run and to Main's latest revision in that run. */
+  function currentStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, run: number): boolean {
+    if (!sameStudioRun(run)) return false
+    if (event.revision === studioRevision) return true
+    emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
+    return false
+  }
   async function revealStudioImage(event: Extract<StudioSessionEvent, { event: 'ready' }>, run: number): Promise<void> {
     let dataUrl: string | null = null
     try { dataUrl = await input.prepareStudioImage?.(event.imageUrl) ?? null } catch { dataUrl = null }
+    if (closed || !currentStudioReveal(event, run)) return
     if (!dataUrl) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_image_prepare_failed', sessionGeneration, createdAt)
     whenIdle(() => sendStudioReveal(event, dataUrl, false, run))
   }
   function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean, run: number): boolean {
-    if (closed || !sameStudioRun(run)) return false
+    if (closed || !currentStudioReveal(event, run)) return false
     const studio = input.avatar?.experience?.studio
     const instructions = `${studioInstructions}\n\n${renderStudioText(studioPrompt(studio, dataUrl ? 'reveal' : 'revealBlind'), {
       language: event.language === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese',
@@ -2233,7 +2251,7 @@ export function createRealtimeSession(
       return
     }
     if (event.event === 'ready') {
-      if (studioActive) void revealStudioImage(event, studioStarts)
+      if (studioActive) { studioRevision = event.revision; void revealStudioImage(event, studioStarts) }
       else emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
       return
     }
@@ -2245,7 +2263,7 @@ export function createRealtimeSession(
       return
     }
     if (event.event === 'keepsake_done') {
-      void exitStudio().then(() => { if (event.afterPortrait === 'farewell') whenIdle(() => sameStudioRun(run, false) && requestStudioFarewell()) })
+      void exitStudio().then(() => { if (event.afterPortrait === 'farewell') whenIdle(() => requestStudioFarewell(run)) })
       return
     }
     settleStudioDefault(false)

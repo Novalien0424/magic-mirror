@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { open, readFile, rm, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseEnv } from 'node:util'
 import { CHATGPT_CLIENT_ID, CHATGPT_EXPIRY_MARGIN_MS, CHATGPT_ISSUER, CHATGPT_REFRESH_INTERVAL_MS, CHATGPT_TOKEN_FILE } from './constants'
@@ -40,6 +40,25 @@ export function tokenFileText(tokens: Tokens): string {
     `CHATGPT_LAST_REFRESH=${tokens.lastRefresh}`, ''].join('\n')
 }
 
+const LOCK_STALE_MS = 30_000
+/**
+ * Commit lock shared with `scripts/chatgpt-login.mjs`: `<file>.lock`, created
+ * exclusively. A writer that crashed leaves it behind; a stale one is reclaimed.
+ */
+export async function withTokenFileLock<T>(file: string, run: () => Promise<T>): Promise<T> {
+  const lock = `${file}.lock`
+  for (let attempt = 0; ; attempt++) {
+    try { await (await open(lock, 'wx', 0o600)).close(); break } catch (error) {
+      if ((error as { code?: unknown })?.code !== 'EEXIST') throw error
+      const age = await stat(lock).then(info => Date.now() - info.mtimeMs, () => 0)
+      if (age > LOCK_STALE_MS) { await rm(lock, { force: true }); continue }
+      if (attempt >= 100) throw Error('chatgpt_token_file_busy')
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+  }
+  try { return await run() } finally { await rm(lock, { force: true }) }
+}
+
 /**
  * Main-only ChatGPT session in the ignored root `.env.chatgpt` (owner ruling
  * 2026-10-17, invariant 12 amendment). Values stay in this module's RAM and the
@@ -49,24 +68,28 @@ export function createChatgptTokenFile(options: {
   path?: string
   readFile?: (path: string) => Promise<string>
   writeFile?: (path: string, text: string) => Promise<void>
+  /** Serializes a refresh save with a login's save; tests replace the file lock. */
+  lock?: <T>(run: () => Promise<T>) => Promise<T>
   fetchImpl?: typeof fetch
   now?: () => number
   report?: (reason: string) => void
 } = {}): ChatgptCredentialSource {
   const path = options.path ?? resolve(process.cwd(), CHATGPT_TOKEN_FILE)
-  const read = options.readFile ?? ((file: string) => readFile(file, 'utf8'))
+  const readText = options.readFile ?? ((file: string) => readFile(file, 'utf8'))
   const write = options.writeFile ?? ((file: string, text: string) => writeFileAtomic(file, text, { mode: 0o600 }))
+  const lock = options.lock ?? (<T>(run: () => Promise<T>) => withTokenFileLock(path, run))
   const now = options.now ?? Date.now
   const report = (reason: string) => { try { options.report?.(reason) } catch { /* diagnostics never change auth */ } }
-  let refreshing: Promise<Tokens | null> | null = null
+  // Tokens, 'removed' when the sign-in was deleted, or null when a refresh failed.
+  let refreshing: Promise<Tokens | 'removed' | null> | null = null
   // The refresh token whose refresh failed. A new login replaces it and clears the failure.
   let failedRefresh: string | null = null
   // Rotated tokens that could not be saved; the file still holds the used refresh token.
   let unsaved: { from: string; tokens: Tokens } | null = null
 
-  async function load(): Promise<Tokens | null | 'invalid'> {
+  async function read(): Promise<Tokens | null | 'invalid'> {
     let text: string
-    try { text = await read(path) } catch (error) {
+    try { text = await readText(path) } catch (error) {
       if ((error as { code?: unknown })?.code === 'ENOENT') return null
       return 'invalid'
     }
@@ -77,15 +100,36 @@ export function createChatgptTokenFile(options: {
     if (!safeValue(tokens.access) || !safeValue(tokens.refresh)) return 'invalid'
     const accountId = safeValue(tokens.accountId) ? tokens.accountId : accountIdFrom(tokens.id ?? '', tokens.access)
     if (!accountId) return 'invalid'
+    return { access: tokens.access, refresh: tokens.refresh, id: safeValue(tokens.id) ? tokens.id : '', accountId,
+      lastRefresh: tokens.lastRefresh && Number.isFinite(Date.parse(tokens.lastRefresh)) ? tokens.lastRefresh : new Date(0).toISOString() }
+  }
+  /**
+   * Saves rotated tokens only while the file still holds the refresh token they
+   * replace; otherwise returns the newer login (or null when signed out).
+   */
+  function commit(from: string, tokens: Tokens): Promise<'saved' | Tokens | null> {
+    return lock(async () => {
+      const latest = await read()
+      if (latest === null || latest !== 'invalid' && latest.refresh !== from) return latest
+      await write(path, tokenFileText(tokens))
+      return 'saved' as const
+    })
+  }
+  async function load(): Promise<Tokens | null | 'invalid'> {
+    const tokens = await read()
+    if (tokens === null || tokens === 'invalid') return tokens
     if (unsaved && unsaved.from !== tokens.refresh) unsaved = null
     if (unsaved) {
       const pending = unsaved
-      try { await write(path, tokenFileText(pending.tokens)); unsaved = null; report('chatgpt_refresh_persisted') } catch { /* keep RAM copy */ }
-      return pending.tokens
+      let result: 'saved' | Tokens | null
+      try { result = await commit(pending.from, pending.tokens) } catch { return pending.tokens /* keep RAM copy */ }
+      unsaved = null
+      if (result === 'saved') { report('chatgpt_refresh_persisted'); return pending.tokens }
+      report('chatgpt_refresh_superseded')
+      return result
     }
     if (failedRefresh !== null && failedRefresh !== tokens.refresh) failedRefresh = null
-    return { access: tokens.access, refresh: tokens.refresh, id: safeValue(tokens.id) ? tokens.id : '', accountId,
-      lastRefresh: tokens.lastRefresh && Number.isFinite(Date.parse(tokens.lastRefresh)) ? tokens.lastRefresh : new Date(0).toISOString() }
+    return tokens
   }
   const expiresAt = (tokens: Tokens) => {
     const exp = jwtClaims(tokens.access).exp
@@ -96,11 +140,11 @@ export function createChatgptTokenFile(options: {
     || now() - Date.parse(tokens.lastRefresh) >= CHATGPT_REFRESH_INTERVAL_MS
 
   /** One refresh at a time. Re-read first: a new login may already have replaced the session. */
-  function refresh(seenRefresh: string): Promise<Tokens | null> {
+  function refresh(seenRefresh: string): Promise<Tokens | 'removed' | null> {
     refreshing ??= (async () => {
       try {
         const current = await load()
-        if (current === null || current === 'invalid') return null
+        if (current === null || current === 'invalid') return 'removed'
         if (current.refresh !== seenRefresh) return current
         const response = await (options.fetchImpl ?? fetch)(`${CHATGPT_ISSUER}/oauth/token`, {
           method: 'POST', signal: AbortSignal.timeout(30_000), headers: { 'Content-Type': 'application/json' },
@@ -115,13 +159,13 @@ export function createChatgptTokenFile(options: {
           id: safeValue(body.id_token) ? body.id_token : current.id, accountId: '', lastRefresh: new Date(now()).toISOString() }
         next.accountId = accountIdFrom(next.id, next.access) || current.accountId
         failedRefresh = null
-        // A login that replaced or removed the file while the request was in flight wins: never overwrite it.
-        const latest = await load()
-        if (latest === null || latest !== 'invalid' && latest.refresh !== current.refresh) { report('chatgpt_refresh_superseded'); return latest }
         // Refresh tokens rotate: once the server answered, the old one is spent.
         // Keep the new tokens in RAM until a later save succeeds.
-        try { await write(path, tokenFileText(next)) }
+        let saved: 'saved' | Tokens | null
+        try { saved = await commit(current.refresh, next) }
         catch { unsaved = { from: current.refresh, tokens: next }; report('chatgpt_refresh_persist_failed'); return next }
+        // A login that replaced or removed the file while the request was in flight wins: never overwrite it.
+        if (saved !== 'saved') { report('chatgpt_refresh_superseded'); return saved ?? 'removed' }
         report('chatgpt_refreshed')
         return next
       } catch { report('chatgpt_refresh_failed'); failedRefresh = seenRefresh; return null }
@@ -137,6 +181,8 @@ export function createChatgptTokenFile(options: {
       if (tokens === null || tokens === 'invalid') { report(tokens === null ? 'chatgpt_signin_missing' : 'chatgpt_signin_invalid'); return null }
       if (!stale(tokens)) return credential(tokens)
       const next = await refresh(tokens.refresh)
+      // A sign-in removed meanwhile is never handed out again.
+      if (next === 'removed') return null
       if (next) return credential(next)
       // A failed scheduled refresh keeps a still-valid token usable.
       return expiresAt(tokens) > now() ? credential(tokens) : null
@@ -146,7 +192,7 @@ export function createChatgptTokenFile(options: {
       if (tokens === null || tokens === 'invalid') return null
       if (tokens.access !== rejected.accessToken) return credential(tokens)
       const next = await refresh(tokens.refresh)
-      return next ? credential(next) : null
+      return next && next !== 'removed' ? credential(next) : null
     },
     async status() {
       const tokens = await load()

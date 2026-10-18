@@ -49,12 +49,13 @@ export function createMediaSkillRuntime(input: {
     activeRunId: () => active?.context.runId,
     failureReason: (runId: string | undefined) => runId ? failures.get(runId) : undefined,
     stop,
-    playConfirmed(request: PlaybackRequest, skill: AvatarMediaSkill): Promise<ToolOutcome> {
-      const outcome = this.play(request, skill)
+    playConfirmed(request: PlaybackRequest, skill: AvatarMediaSkill, prepare?: () => Promise<boolean>): Promise<ToolOutcome> {
+      const outcome = this.play(request, skill, prepare)
       if (outcome !== 'accepted' || !active || active.started) return Promise.resolve(outcome)
       return new Promise(resolve => { active!.completeStart = resolve })
     },
-    play(request: PlaybackRequest, skill: AvatarMediaSkill): ToolOutcome {
+    /** `prepare` copies cloud media locally first, so the startup watchdog covers the player alone. */
+    play(request: PlaybackRequest, skill: AvatarMediaSkill, prepare?: () => Promise<boolean>): ToolOutcome {
       const videoId = request.action === 'play_youtube' ? youtubeVideoId(request.url) : null
       if (!skill.enabled || (request.action === 'play'
         ? !skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)
@@ -67,9 +68,18 @@ export function createMediaSkillRuntime(input: {
       if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind === 'video', fadeMs: skill.fadeMs })) {
         stop('media_renderer_unavailable'); return 'failed'
       }
+      // Stop or replacement during preparation cancels the start; the copy stays cached.
+      const prepared = prepare?.().catch(() => false)
       const start = () => {
         launch = undefined
         if (active?.context !== context) return
+        if (prepared) void prepared.then(ready => {
+          if (active?.context !== context) return
+          if (ready) begin(); else stop('media_file_unavailable')
+        })
+        else begin()
+      }
+      const begin = () => {
         try {
           const sent = request.action === 'play_youtube'
             ? input.youtube!.play({ videoId: videoId!, kind: request.kind, mode: request.mode, gain: skill.gain, context }, report => { this.reportAction(report) })

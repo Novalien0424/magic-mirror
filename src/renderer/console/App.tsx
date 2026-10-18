@@ -2054,6 +2054,8 @@ export function ModelsPanel({
 
 export function App(): React.JSX.Element {
   const [operatorLoop, setOperatorLoop] = useState<OperatorLoopSnapshot | null>(null)
+  const [loopStarting, setLoopStarting] = useState(false)
+  const [loopCancel, setLoopCancel] = useState(0)
   const [activePage, setActivePage] = useState<(typeof PAGES)[number]>('Mirror')
   const [systemPage, setSystemPage] = useState<(typeof SYSTEM_PAGES)[number]>('Devices')
   const [avatarEditing, setAvatarEditing] = useState(false)
@@ -2478,6 +2480,7 @@ export function App(): React.JSX.Element {
   const returnToAvatar = (): void => {
     const bridge = bridgeRef.current
     if (!bridge?.loopVideo) { setLiveLine({ tone: 'failed', content: 'Loop Video is unavailable. Reopen the updated Console.' }); return }
+    setLoopCancel(value => value + 1)
     setLiveLine({ tone: 'loading', content: 'Returning to the avatar…' })
     void bridge.loopVideo({ action: 'stop' }).then(
       response => {
@@ -2512,10 +2515,10 @@ export function App(): React.JSX.Element {
 
         <section className="live-bar" aria-label="Live controls">
           <div className="live-bar__groups">
-            {operatorLoop?.mode === 'loop' ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
-              <h2 id="live-loop-heading" className="live-bar__label">Loop video</h2>
+            {operatorLoop?.mode === 'loop' || loopStarting ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
+              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
               <HelpButton placement="below" className="console__primary" disabled={!bridgeAvailable} onClick={returnToAvatar}
-                help="Stops the loop video and brings the avatar back, with voice, wake listening and camera.">Return to Avatar</HelpButton>
+                help="Stops the loop video, or cancels its start, and brings the avatar back with voice, wake listening and camera.">Return to Avatar</HelpButton>
             </div> : <>
               <LifecycleControls
                 lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
@@ -2574,7 +2577,8 @@ export function App(): React.JSX.Element {
           />
         </div>
         <div hidden={activePage !== 'Loop Video'}>
-          <LoopVideoPanel bridge={bridgeRef.current} visible={activePage === 'Loop Video'} onPlaybackChange={setOperatorLoop} onMediaFolders={() => navigate('System', 'Media folders')} />
+          <LoopVideoPanel bridge={bridgeRef.current} visible={activePage === 'Loop Video'} onPlaybackChange={setOperatorLoop}
+            onStartingChange={setLoopStarting} cancelSignal={loopCancel} onMediaFolders={() => navigate('System', 'Media folders')} />
         </div>
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
         {activePage === 'System' && systemPage === 'Portrait images' && <div className="console__panel"><StudioStatusPanel bridge={bridgeRef.current} visible /></div>}

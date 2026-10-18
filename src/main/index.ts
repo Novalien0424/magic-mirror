@@ -1107,8 +1107,9 @@ void app.whenReady().then(async () => {
       await bounded(mediaFolders.refresh(), 12000)
       const shared = mediaFolders.resources()
       const selected = [{ id: settings.videoId, kind: 'video' }, ...(settings.audioMode === 'separate' ? [{ id: settings.audioId, kind: 'music' }] : [])]
+      // A cold cloud file may download for its size-scaled deadline; Return to Avatar abandons the wait.
       return (await Promise.all(selected.map(async file => shared.some(entry => entry.assetId === file.id && entry.kind === file.kind)
-        && !!await bounded(mediaFolders.resolve(file.id), 12000)))).every(Boolean)
+        && !!await bounded(mediaFolders.resolve(file.id), mediaFolders.preparationBudgetMs(file.id))))).every(Boolean)
     },
     suspendAvatar: async () => {
       voicePreview?.preempt('operator_loop_active')
@@ -1526,6 +1527,8 @@ void app.whenReady().then(async () => {
       ? windows.get('mirror')!.webContents.executeJavaScript(`(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
       : cameraTracking?.capture() ?? Promise.resolve(null),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
+    prepareFolderMedia: (id, avatarId) => bounded(mediaFolders.resolve(id, avatarId), mediaFolders.preparationBudgetMs(id))
+      .then(file => !!file, () => false),
     mediaFolders: async request => {
       await mediaFoldersReady
       const config = await runtime.console.getConfig()

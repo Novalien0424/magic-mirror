@@ -30,6 +30,9 @@ describe('linked media folders', () => {
     await writeFile(path, 'synthetic media'); await store.link('shared', join(root, 'shared'))
     const canonicalPath = await realpath(path)
     const id = store.resources()[0]!.assetId
+    // Callers wait for the size-scaled copy deadline (at least 9 s) plus local checks.
+    expect(store.preparationBudgetMs(id)).toBe(12000)
+    expect(store.preparationBudgetMs('folder-unknown')).toBe(12000)
     expect(prepare).not.toHaveBeenCalled()
     const first = store.resolve(id)
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledExactlyOnceWith(canonicalPath, 15, expect.any(Number)))

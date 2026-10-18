@@ -35,12 +35,12 @@ export function createMacMediaFilePreparer(executable: string, directory: string
           if (info.isFile()) files.push({ path, size: info.size, used: info.mtimeMs })
         }
       }
+      // Newest first; only kept files count, so one oversized entry never evicts the older ones that fit.
       let bytes = 0
       for (const file of files.sort((a, b) => b.used - a.used)) {
-        bytes += file.size
-        if (bytes > CACHE_BUDGET || Date.now() - file.used > CACHE_MAX_AGE) {
+        if (bytes + file.size > CACHE_BUDGET || Date.now() - file.used > CACHE_MAX_AGE) {
           await rm(file.path, { force: true }); removed = true
-        }
+        } else bytes += file.size
       }
       if (removed) report('media_file_cache_pruned')
     } catch { report('media_file_cache_cleanup_failed') }

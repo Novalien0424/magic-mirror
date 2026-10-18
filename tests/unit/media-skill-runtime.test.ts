@@ -32,6 +32,29 @@ describe('avatar media playback ownership', () => {
     runtime.stop()
     expect(youtube.stop).toHaveBeenCalledTimes(2)
   })
+  it('copies cloud media before the player starts, cancels on Stop and reports a failed copy', async () => {
+    const { runtime, commands, reasons, skill } = setup()
+    let finish!: (ready: boolean) => void
+    const copy = () => new Promise<boolean>(resolve => { finish = resolve })
+    const pending = runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'once' }, skill, copy)
+    // A slow Drive download never trips the player watchdog.
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(commands.some(c => c.type === 'scene_music')).toBe(false)
+    expect(runtime.isActive()).toBe(true)
+    finish(true); await vi.advanceTimersByTimeAsync(0)
+    const music = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_music'; action: 'play' }>
+    expect(music).toMatchObject({ type: 'scene_music', action: 'play', assetId: 'song' })
+    runtime.reportAction({ ...music.context!, status: 'acknowledged' })
+    expect(await pending).toBe('accepted')
+    const stopped = runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'once' }, skill, copy)
+    runtime.stop()
+    expect(await stopped).toBe('ignored')
+    finish(true); await vi.advanceTimersByTimeAsync(0)
+    expect(commands.filter(c => c.type === 'scene_music' && c.action === 'play')).toHaveLength(1)
+    expect(await runtime.playConfirmed({ action: 'play', kind: 'music', assetId: 'song', mode: 'once' }, skill, async () => false)).toBe('failed')
+    expect(reasons).toContain('media_file_unavailable')
+    expect(runtime.isActive()).toBe(false)
+  })
   it('fades the avatar before video and returns it after once playback', async () => {
     const { runtime, commands, skill } = setup()
     expect(runtime.play({ action: 'play', kind: 'video', assetId: 'fog', mode: 'once' }, skill)).toBe('accepted')

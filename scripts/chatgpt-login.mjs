@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
-import { renameSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { closeSync, openSync, renameSync, statSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 
 export const CHATGPT_ISSUER = 'https://auth.openai.com'
@@ -36,13 +36,31 @@ export function tokenFileText(tokens, now = new Date()) {
     `CHATGPT_LAST_REFRESH=${now.toISOString()}`, ''].join('\n')
 }
 
-function writePrivate(path, text) {
+const LOCK_STALE_MS = 30_000
+/**
+ * Saves under `<file>.lock`, the lock Main holds while it saves a refreshed
+ * session (src/main/chatgpt-auth/token-file.ts), so neither overwrites the other.
+ */
+export function writePrivate(path, text, { waitMs = 10_000 } = {}) {
+  const lock = `${path}.lock`
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    try { closeSync(openSync(lock, 'wx', 0o600)); break } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      let age = 0
+      try { age = Date.now() - statSync(lock).mtimeMs } catch { continue }
+      if (age > LOCK_STALE_MS) { rmSync(lock, { force: true }); continue }
+      if (Date.now() >= deadline) throw new Error('session_file_busy')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+  }
   const temporary = join(dirname(path), `.env.chatgpt.${process.pid}.tmp`)
   try {
     writeFileSync(temporary, text, { mode: 0o600, flag: 'wx' })
     chmodSync(temporary, 0o600)
     renameSync(temporary, path)
   } catch (error) { rmSync(temporary, { force: true }); throw error }
+  finally { rmSync(lock, { force: true }) }
 }
 
 /** Listen on the first free registered callback port; resolves the port actually bound. */

@@ -1,46 +1,58 @@
-# Open work
+# Open work — reconciled 2026-10-18
 
-Current reproduced failures and deferred acceptance: [unresolved issues](docs/testing/open-issues-2026-10-13.md).
-The items below are additional open operator/maintenance checks.
+Only unresolved defects, limitations and acceptance remain here. Current delivery
+and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
+The 2026-10-18 code-audit findings and media deadline limitation are fixed:
+[evidence](docs/testing/todo-audit-fixes-2026-10-18.md).
 
-## Owner acceptance (2026-10-17 delivery)
+## Earlier unresolved reliability
 
-- [ ] Look through the compact Console on the portrait display with the TV mouse
-  and note any placement or wording changes. See the
-  [Console revamp evidence](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] Human Portrait Studio visit at the mirror (physical Jabra route). Scripted
-  live visits pass; no human acceptance is claimed.
+- [ ] **Camera transport/driver stall.** Minimal capture received no frames and
+  macOS reported about 99% invalid UVC payloads. App-owned, awake-only reset
+  restores frames briefly but cannot sustain this Arducam. Obtain controlled
+  alternate cable/port, powered-hub, device or host evidence to isolate the
+  boundary; do not depend on manual unplug/replug recovery.
+  [Camera investigation](docs/testing/open-issues-2026-10-13.md#1-camera-cannot-sustain-fresh-frames).
+- [ ] **Wake robustness under media and cold start.** Validate representative
+  human positives, near negatives and startup behavior over Dormant media. The
+  Jabra speech-bed stress failures remain; synthetic detection rates are not
+  human accuracy. Consolidates the older duplicate wake checks.
+  [Wake investigation](docs/testing/open-issues-2026-10-13.md#2-wake-fails-over-the-tested-speech-playback).
+- [ ] **Realtime dialogue and media reliability.** Check the hidden online
+  phrase 「在雲上找找」 through the real microphone and repeat matched scenarios
+  if field results worsen. On 10-17 the gate held, but mini searched on 4/6
+  phrase turns and sometimes failed to play. Identity ASR, factual correction,
+  character/tool delivery and repeated Chinese-title clarification also retain
+  evidence gaps; do not reopen repaired memory-write bugs without reproduction.
+  [Latest live results](docs/testing/console-ux-revamp-2026-10-17.md#results) ·
+  [Earlier boundaries](docs/testing/open-issues-2026-10-13.md).
+- [ ] **Intermittent Console reload stall.** One of three ritual runs stalled;
+  later runs passed. Preserve the failure and use the new unload-blocker
+  diagnostics if it recurs before claiming the cause is fixed.
+  [QA driver evidence](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
 
-## Remaining verification / maintenance
+## Remaining acceptance
 
-- [ ] Owner wake check: say the wake phrase 10× with real loop media at the
-  production Dormant level and 10× about 10 dB lower. See the
-  [2026-10-14 review](docs/testing/review-fixes-2026-10-14.md).
-- [ ] Camera hardware: the Arducam stalls below the app (99% invalid UVC
-  payloads; minimal capture gets 0 frames). Try another cable/port or a powered
-  hub, then five minutes in Photo Booth, then a known-good UVC webcam (a
-  purchase needs owner approval).
-- [ ] Online search phrase (DECISIONS 2026-10-14): say 「在雲上找找」 plus a title
-  through the real microphone. Scripted mini runs on 2026-10-17 kept the gate in
-  every turn, but mini searched on only 4 of 6 phrase turns (4/4 on 10-15); repeat
-  `default_fallback` if field results look worse. See the
-  [revamp evidence](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] Operator test of the delivered Console Stop/Abort and automatic Save/check flow,
-  including physical sound and live queued scene dialogue cancellation. See
-  [delivery evidence](docs/testing/console-stop-save-check-2026-09-15.md).
+- [ ] Review the compact Console on the portrait TV with its mouse, including
+  Save/check feedback and live queued-scene cancellation. Complete a human
+  Portrait Studio visit using Jabra. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
+- [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
+  keyboard alongside the forwarded TV mouse. Physical local direction/clicks
+  are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).
+- [ ] Confirm the latest Neo key layout/labels and physical START, CONSOLE,
+  PLAY LOOP and STOP behavior, picture/music, USB reconnect and cold login.
+  [Operator controls](docs/testing/operator-controls-2026-10-17.md).
+- [ ] Complete outstanding Mac field acceptance: physical audio/echo and
+  interruption, configured spell/effect and fade behavior, power/cold boot,
+  packaging/signing, and a 24-hour TV-present soak with ten conversations.
+  Follow current command/preamble rulings; no phase acceptance is implied.
+  [Deferred acceptance](docs/testing/open-issues-2026-10-13.md#deferred-acceptance).
 
-- [ ] Operator retest: persona never teaches spells; `施放咒語，下雨` yields only
-  `施放咒語` before the skill. Check physical sound, interruption and video fades.
-- [ ] Measure per-phrase wake accuracy with representative approved positives
-  and negatives, then separate validation samples. Reproduce first-boot wake
-  failure; detector activation alone is not accuracy evidence.
-- [ ] Complete remaining Phase 4 physical adapters, default/Raven sound/echo,
-  operator media and long-run acceptance before phase exit. See the
-  [Windows checklist](docs/testing/phase4-scene-media-windows-checklist.md).
-- [ ] Revisit previously authorized profile QA artifact cleanup when requested
-  for execution; prior tool-policy denials and exact paths remain in the
-  [profile delivery record](docs/testing/profile-console-2026-09-09.md).
+Every sound-producing QA must capture output volume/mute, use minimum output,
+and restore the captured state on success, failure or cancellation. Such QA does
+not establish normal-volume acoustic acceptance. See the
+[sound directive](DECISIONS.md#2026-10-17--qa-sound-level-owner-directive).
 
-Keep only open items here; remove completed entries. Current runtime and evidence
-belong in [PROGRESS](PROGRESS.md), durable rules in [AGENTS](AGENTS.md) and
-[DECISIONS](DECISIONS.md).
+Remove entries when the relevant fix and evidence exist. Superseded delivery and
+optional historical artifact-cleanup requests stay in their evidence ledgers;
+they are not current repair tasks.

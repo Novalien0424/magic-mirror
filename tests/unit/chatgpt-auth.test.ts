@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import * as constants from '../../src/main/chatgpt-auth/constants'
 import { createChatgptTokenFile, jwtClaims, tokenFileText } from '../../src/main/chatgpt-auth/token-file'
@@ -8,15 +12,20 @@ const NOW = Date.parse('2026-10-17T00:00:00Z')
 const file = (access: string, refresh = 'refresh-1', lastRefresh = '2026-10-16T00:00:00.000Z') =>
   tokenFileText({ access, refresh, id: jwt(auth('acct-1')), accountId: 'acct-1', lastRefresh })
 
-function harness(initial: string | null, fetchImpl?: typeof fetch, options: { failWrites?: number } = {}) {
+function harness(initial: string | null, fetchImpl?: typeof fetch, options: { failWrites?: number; onRead?: (count: number) => void } = {}) {
   let text = initial
-  let failWrites = options.failWrites ?? 0
+  let failWrites = options.failWrites ?? 0, reads = 0
   const writes: string[] = []
   const reports: string[] = []
-  const source = createChatgptTokenFile({ path: '/x/.env.chatgpt', now: () => NOW, fetchImpl, report: r => reports.push(r),
-    readFile: async () => { if (text === null) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return text },
+  // Stands in for the shared lock file: one committing writer at a time.
+  let tail: Promise<unknown> = Promise.resolve()
+  const lock = <T>(run: () => Promise<T>): Promise<T> => { const next = tail.then(run); tail = next.catch(() => undefined); return next }
+  const source = createChatgptTokenFile({ path: '/x/.env.chatgpt', now: () => NOW, fetchImpl, report: r => reports.push(r), lock,
+    readFile: async () => { options.onRead?.(++reads); if (text === null) throw Object.assign(new Error('missing'), { code: 'ENOENT' }); return text },
     writeFile: async (_path, next) => { if (failWrites-- > 0) throw new Error('disk'); text = next; writes.push(next) } })
-  return { source, writes, reports, current: () => text, replace: (next: string) => { text = next } }
+  return { source, writes, reports, current: () => text, replace: (next: string) => { text = next },
+    /** `npm run chatgpt:login` saving under the same lock. */
+    login: (next: string) => lock(async () => { text = next }) }
 }
 const rotated = (refresh = 'refresh-2') => vi.fn(async () =>
   new Response(JSON.stringify({ access_token: jwt({ exp: NOW / 1000 + 7200, ...auth('acct-1') }), refresh_token: refresh })))
@@ -96,6 +105,63 @@ describe('ChatGPT token file', () => {
     expect(removed.current()).toBeNull()
     expect(removed.reports).toContain('chatgpt_refresh_superseded')
     expect(await removed.source.get()).toBeNull()
+  })
+
+  it('lets a login that arrives during the refresh save land after it, never under it', async () => {
+    const login = tokenFileText({ access: jwt({ exp: NOW / 1000 + 3600, ...auth('acct-2') }), refresh: 'refresh-login',
+      id: jwt(auth('acct-2')), accountId: 'acct-2', lastRefresh: '2026-10-17T00:00:00.000Z' })
+    let h!: ReturnType<typeof harness>
+    let loginSaved: Promise<void> | undefined
+    // Reads: get(), the refresh re-read, then the commit re-read. The login starts right after that last check.
+    h = harness(file(jwt({ exp: NOW / 1000 + 60 })), rotated() as unknown as typeof fetch, { onRead: count => { if (count === 3) loginSaved = h.login(login) } })
+    const credential = await h.source.get()
+    await loginSaved
+    expect(h.writes).toHaveLength(1)
+    expect(h.writes[0]).toContain('CHATGPT_REFRESH_TOKEN=refresh-2')
+    expect(h.current()).toBe(login)
+    // The caller gets the refreshed credential it saved; the next request uses the login.
+    expect(credential?.accessToken).toBe(h.writes[0]!.match(/CHATGPT_ACCESS_TOKEN=(\S+)/)![1])
+    expect((await h.source.get())?.accountId).toBe('acct-2')
+  })
+
+  it('never hands a removed sign-in to a request that was waiting for the refresh', async () => {
+    // Still valid but due for its scheduled refresh: a failed refresh alone would keep it usable.
+    let h!: ReturnType<typeof harness>
+    let release!: () => void
+    const fetchImpl = vi.fn(async () => { await new Promise<void>(resolve => { release = resolve }); h.replace(null as unknown as string); return rotated()() })
+    h = harness(file(jwt({ exp: NOW / 1000 + 3600 }), 'refresh-1', '2026-10-01T00:00:00.000Z'), fetchImpl as unknown as typeof fetch)
+    const first = h.source.get(), waiting = h.source.get()
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce())
+    release()
+    expect(await first).toBeNull()
+    expect(await waiting).toBeNull()
+    expect(h.writes).toHaveLength(0)
+    expect(h.reports).toContain('chatgpt_refresh_superseded')
+  })
+
+  it('shares a lock file with the login script', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mm-chatgpt-lock-'))
+    try {
+      const path = join(dir, '.env.chatgpt'), lock = `${path}.lock`
+      await writeFile(path, file(jwt({ exp: NOW / 1000 + 60 })))
+      // A login holding the lock delays the refresh save until it releases.
+      await writeFile(lock, '')
+      const pending = createChatgptTokenFile({ path, now: () => NOW, fetchImpl: rotated() as unknown as typeof fetch }).get()
+      await new Promise(resolve => setTimeout(resolve, 200))
+      expect(await readFile(path, 'utf8')).toContain('CHATGPT_REFRESH_TOKEN=refresh-1')
+      await rm(lock)
+      expect(await pending).not.toBeNull()
+      expect(await readFile(path, 'utf8')).toContain('CHATGPT_REFRESH_TOKEN=refresh-2')
+      expect(existsSync(lock)).toBe(false)
+      // The login script waits for Main's lock in the same way.
+      const script = await import('../../scripts/chatgpt-login.mjs')
+      await writeFile(lock, '')
+      expect(() => script.writePrivate(path, 'login\n', { waitMs: 100 })).toThrow('session_file_busy')
+      await rm(lock)
+      script.writePrivate(path, 'login\n')
+      expect(await readFile(path, 'utf8')).toBe('login\n')
+      expect(existsSync(lock)).toBe(false)
+    } finally { await rm(dir, { recursive: true, force: true }) }
   })
 
   it('keeps a valid token usable after a failed scheduled refresh and clears the failure after a new login', async () => {

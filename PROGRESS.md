@@ -1,25 +1,26 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (`1a5a435`, QA record `0f814b1`; pushed to
-`field/macmini-deploy`; PR #2 `feature/portrait-studio` → `main` at the same
-commit): compact **Console revamp** (one sticky control bar on every page,
-plain-language status, Portrait images in System, ~2,000 px Experiences, hover
-help), the four **Portrait Studio review fixes** (stale runs, late Studio turns
-and tool pairs, refresh vs. newer login) and Codex's **Drive media cache**, now
-with a size-scaled download deadline. Stale QA drivers and fixtures were
-repaired. Post-deploy on the stamped build: **full suite 2,494 passed / 2
-skipped; all 13 offline Phase 4 modes plus `review_ui` pass; live
-`portrait_studio` 15/15 and `local_scope` pass.** Live
-`default_fallback`/`youtube_modes`: the online gate held in every turn; mini
-searched on 4 of 6 phrase turns and its transcript quality varies.
-[Revamp, fixes and results](docs/testing/console-ux-revamp-2026-10-17.md).
+Latest delivery (**TODO audit fixes**, 2026-10-18; pushed to
+`field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): all nine
+P2 code-audit findings against `1a5a435` and the media deadline limitation were
+verified, reproduced by failing regressions and fixed — five Studio cleanup gaps
+in the Realtime adapter, a lock shared by Main and `npm run chatgpt:login` plus
+sign-in removal handling, Return to Avatar while Loop Play starts, cache budget
+accounting, size-scaled loop validation with cancellation, and copy-before-play
+for conversation media. On the stamped build: **full suite 2,507 passed / 2
+skipped; `--operator-loop` (new start-cancel case), `--console`, `--field-help`,
+both media-skill modes and `review_ui` pass; live `portrait_studio` 15/15;
+live `local_scope` passed on its one retry** (run 1 failed only the transcript
+judge). [Findings, fixes and results](docs/testing/todo-audit-fixes-2026-10-18.md).
 
-Runtime at clock-out (**08:32 Taipei, 2026-10-18**): production app stopped as
-found; the next START runs the verified stamped build. System output **69 %,
-unmuted** (it changed from 75 % between QA runs while nothing was running; each
-run restored what it captured). TV, Stream Deck and device settings untouched.
-The merged `console-ux` worktree and its local branch were removed; only the
-canonical checkout remains.
+Previous delivery (`1a5a435`, QA `0f814b1`): compact Console revamp, four
+Portrait Studio review fixes and the Drive media cache
+([evidence](docs/testing/console-ux-revamp-2026-10-17.md)).
+
+Runtime (**10:05 Taipei, 2026-10-18**): production app stopped as found; the
+next START runs the verified stamped build. System output **69 %, unmuted**;
+input gain unchanged. TV, Stream Deck and device settings untouched. Only the
+canonical checkout exists.
 
 Earlier deliveries in this branch (baseline `9197676`), each with its evidence:
 Portrait Studio mode ([QA](docs/testing/portrait-studio-2026-10-17.md)), Loop

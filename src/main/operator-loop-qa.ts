@@ -11,7 +11,7 @@ const CASES = [
   'operator_loop_avatar_return', 'operator_loop_separate_audio', 'operator_loop_independent_wraps',
   'operator_loop_single_reload', 'operator_loop_failed_black', 'operator_loop_start_normal_recovery',
   'operator_console_on_mirror', 'operator_console_preserves_loop_and_draft',
-  'operator_loop_saved_replacement_button',
+  'operator_loop_saved_replacement_button', 'operator_loop_start_cancel',
 ] as const
 
 const DOM = `
@@ -386,6 +386,29 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     step = CASES[6]
     await click('Return to Avatar'); await returnedAvatar(); await persisted(embedded, 'avatar')
     await shot('operator-loop-avatar-return.png', true); pass()
+
+    step = CASES[15]
+    // Hold the Mirror's media start: Main stays preparing while Play waits, and
+    // the control bar must still offer Return to Avatar (TODO P2, 2026-10-18).
+    await mirror(`window.__operatorLoopQa.play = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () { return new Promise(() => {}) };`)
+    try {
+      await click('Play on Mirror')
+      await waitFor(async () => {
+        const s = await snapshot()
+        return s.mode === 'loop' && s.status === 'preparing' && await evaluate<boolean>(`return !!button('Return to Avatar')
+          && !button('Return to Avatar').matches(':disabled') && !!panel?.textContent.includes('Preparing loop video')
+          && button('Play on Mirror').matches(':disabled')`)
+      }, 10000)
+      await shot('operator-loop-console-starting.png')
+    } finally {
+      await mirror(`if (window.__operatorLoopQa?.play) { HTMLMediaElement.prototype.play = window.__operatorLoopQa.play; delete window.__operatorLoopQa.play }`)
+    }
+    await click('Return to Avatar'); await returnedAvatar(); await persisted(embedded, 'avatar')
+    // The cancelled Play settles as stopped: no start-failure alert, controls ready again.
+    await waitFor(() => evaluate(`return !!panel?.textContent.includes('Not playing') && !button('Play on Mirror').matches(':disabled')
+      && !panel.querySelector('.console__fault') && !button('Return to Avatar')`))
+    pass({ return_offered_while_preparing: true, start_failure_shown: false })
 
     step = CASES[7]
     await set('Loop audio source', 'separate')

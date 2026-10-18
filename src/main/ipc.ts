@@ -170,6 +170,8 @@ export interface RegisterIpcHandlersOptions {
   readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
   readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
+  /** Copies linked-folder media for local playback; false when it cannot be read in time. */
+  readonly prepareFolderMedia?: (assetId: string, avatarId: string) => Promise<boolean>
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
@@ -1890,7 +1892,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       cachedSceneRuntime = null
       if (!current()) return 'ignored'
       // Release the command queue while awaiting the player, so Stop/replacement can cancel startup.
-      const pending = mediaSkill.playConfirmed(request, skill)
+      const folderFile = request.action === 'play' && folderEntries.some(entry => entry.assetId === request.assetId)
+      const pending = mediaSkill.playConfirmed(request, skill, folderFile && options.prepareFolderMedia
+        ? () => options.prepareFolderMedia!(request.assetId, catalog?.activeAvatarId ?? '') : undefined)
       return { pending, runId: mediaSkill.activeRunId() }
     }).catch(() => {
       mediaSkill.stop('media_playback_failed')

@@ -24,6 +24,8 @@ export function createOperatorLoop(input: {
   let revision = 0, disposed = false, retry = 0, timer: ReturnType<typeof setTimeout> | undefined
   let lastVideo: number | undefined, lastAudio: number | undefined, lastFrames: number | undefined
   let pending: { promise: Promise<boolean>; resolve(value: boolean): void } | null = null
+  // Return to Avatar and shutdown abandon a slow media check instead of queueing behind it.
+  let abandonValidation: (() => void) | undefined
   let setup: Promise<void> = Promise.resolve()
   let released: { generation: number; resolve(): void } | null = null
   let releasedGeneration = -1
@@ -77,7 +79,11 @@ export function createOperatorLoop(input: {
       pending = { promise, resolve }
       void queue(async () => {
         try {
-          if (!await input.validate(chosen)) throw Error('operator_loop_media_unavailable')
+          const valid = await new Promise<boolean>((resolve, reject) => {
+            abandonValidation = () => resolve(false)
+            input.validate(chosen).then(resolve, reject)
+          }).finally(() => { abandonValidation = undefined })
+          if (!valid) throw Error('operator_loop_media_unavailable')
           if (disposed || run !== revision) return
           intent = 'loop'; persist()
           // Inhibit wake before ending Realtime so sleep cannot reacquire a mic.
@@ -96,7 +102,7 @@ export function createOperatorLoop(input: {
     },
     async normal(): Promise<boolean> {
       const run = ++revision
-      clear(); settle(false)
+      clear(); settle(false); abandonValidation?.()
       return queue(async () => {
         if (disposed || run !== revision) return
         const wasLoop = intent === 'loop', visibleLoop = snapshot.mode === 'loop', oldGeneration = snapshot.generation
@@ -146,7 +152,7 @@ export function createOperatorLoop(input: {
       }
     },
     clearIntent() { intent = 'avatar'; try { persist() } catch { input.report('operator_loop_save_failed') } },
-    dispose() { disposed = true; ++revision; clear(); settle(false); released?.resolve() },
+    dispose() { disposed = true; ++revision; clear(); settle(false); abandonValidation?.(); released?.resolve() },
   }
   return controller
 }

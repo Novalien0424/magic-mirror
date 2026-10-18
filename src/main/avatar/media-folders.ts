@@ -4,6 +4,7 @@ import { lstat, mkdir, readFile, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 const writeFileAtomic = require('write-file-atomic') as (path: string, value: string, options: { mode: number }) => Promise<void>
 import type { FolderMediaEntry, MediaFolderStatus, MediaFoldersView } from '../../shared/media-folders'
+import { prepareDeadlineSeconds } from './prepare-media-file'
 
 const formats: Record<string, { kind: 'video' | 'music'; mimeType: string }> = {
   '.mp4': { kind: 'video', mimeType: 'video/mp4' }, '.webm': { kind: 'video', mimeType: 'video/webm' },
@@ -122,6 +123,11 @@ export class MediaFolders {
   health(): MediaFolderStatus['status'] {
     if (this.failure || [...this.sources.values()].some(source => source.status.status === 'unavailable')) return 'unavailable'
     return [...this.sources.values()].some(source => source.status.status === 'partial') ? 'partial' : 'ready'
+  }
+  /** Longest a resolve may take: the size-scaled cloud copy deadline plus local checks. */
+  preparationBudgetMs(id: string): number {
+    const size = [...this.sources.values()].flatMap(source => source.files).find(file => file.entry.assetId === id)?.size ?? 0
+    return (prepareDeadlineSeconds(size) + 3) * 1000
   }
   async resolve(id: string, avatarId?: string, preview = false): Promise<{ path: string; mimeType: string } | null> {
     for (const [owner, source] of this.sources) {

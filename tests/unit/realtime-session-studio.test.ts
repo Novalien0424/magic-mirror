@@ -244,6 +244,110 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(p.sent).toContainEqual({ type: 'conversation.item.delete', item_id: 'fo-answer' })
   })
 
+  it('deletes a reveal reply that the server delivers after the studio closed', async () => {
+    const p = probe()
+    const { handle } = session(p, () => accepted('studio_started'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
+    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
+    // The visitor leaves before the server starts the reveal reply.
+    handle.studioEvent!({ event: 'closed', reason: 'studio_operator_exit' }, ID)
+    await vi.waitFor(() => expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-realtime' })))
+    const reply = { id: 'reveal-reply', type: 'message', role: 'assistant' }
+    p.event({ type: 'response.created', response: { id: 'rev', metadata: { mirror_studio: 'reveal' } } })
+    p.event({ type: 'conversation.item.added', item: reply })
+    p.event({ type: 'response.done', response: { id: 'rev', status: 'completed', metadata: { mirror_studio: 'reveal' }, output: [reply] } })
+    await vi.waitFor(() => expect(p.sent).toContainEqual({ type: 'conversation.item.delete', item_id: 'reveal-reply' }))
+  })
+
+  it.each(['before', 'after'] as const)('deletes an interrupted studio call that never gets an output (interrupted %s exit)', async order => {
+    const p = probe()
+    const { handle } = session(p, () => accepted('studio_started'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    const cut = { id: 'fc-cut', type: 'function_call', name: 'studio_set_name', call_id: 'c9' }
+    p.event({ type: 'conversation.item.added', item: { ...cut, status: 'in_progress' } })
+    // An interrupted reply ends with its partial call incomplete; the SDK never runs it.
+    const interrupted = () => p.event({ type: 'response.done', response: { id: 'r-cut', status: 'cancelled', output: [{ ...cut, status: 'incomplete' }] } })
+    if (order === 'before') interrupted()
+    handle.studioEvent!({ event: 'closed', reason: 'studio_operator_exit' }, ID)
+    await vi.waitFor(() => expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-realtime' })))
+    if (order === 'after') {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(p.sent).not.toContainEqual({ type: 'conversation.item.delete', item_id: 'fc-cut' })
+      interrupted()
+    }
+    await vi.waitFor(() => expect(p.sent).toContainEqual({ type: 'conversation.item.delete', item_id: 'fc-cut' }))
+  })
+
+  it.each(['before', 'after'] as const)('deletes a studio turn whose transcription fails %s the exit cleanup', async order => {
+    vi.useFakeTimers()
+    try {
+      const p = probe()
+      const { handle, reasons } = session(p, () => accepted('studio_started'))
+      await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+      p.event({ type: 'input_audio_buffer.speech_started', item_id: 'item-fail' })
+      handle.studioEvent!({ event: 'closed', reason: 'studio_operator_exit' }, ID)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-realtime' }))
+      p.event({ type: 'input_audio_buffer.speech_stopped', item_id: 'item-fail' })
+      p.event({ type: 'input_audio_buffer.committed', item_id: 'item-fail' })
+      p.event({ type: 'conversation.item.added', item: { id: 'item-fail', type: 'message', role: 'user' } })
+      const failed = () => p.event({ type: 'conversation.item.input_audio_transcription.failed', item_id: 'item-fail', content_index: 0, error: { type: 'transcription_error' } })
+      if (order === 'before') failed()
+      await vi.advanceTimersByTimeAsync(2000)
+      if (order === 'after') {
+        // Cleanup already ran and is waiting for a retrieval that a failed transcript never triggers.
+        expect(p.sent).not.toContainEqual({ type: 'conversation.item.delete', item_id: 'item-fail' })
+        failed()
+      }
+      expect(p.sent).toContainEqual({ type: 'conversation.item.delete', item_id: 'item-fail' })
+      expect(reasons()).toContain('transcript_unavailable')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('keeps a rejected farewell retry inside the studio run that asked for it', async () => {
+    vi.useFakeTimers()
+    try {
+      const p = probe()
+      const { handle, reasons } = session(p, () => accepted('studio_started'))
+      await handle.connect()
+      await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+      handle.studioEvent!({ event: 'keepsake_done', afterPortrait: 'farewell' }, ID)
+      await vi.advanceTimersByTimeAsync(0)
+      const farewells = () => p.sent.filter(e => e.type === 'response.create' && typeof (e.response as { metadata?: Record<string, unknown> }).metadata?.mirror_sleep_cue === 'string')
+      expect(farewells()).toHaveLength(1)
+      // Run A's farewell is rejected while another response is active; run B starts before it finishes.
+      p.event({ type: 'response.created', response: { id: 'busy' } })
+      p.event({ type: 'error', error: { type: 'invalid_request_error', code: 'conversation_already_has_active_response', event_id: farewells()[0]!.event_id } })
+      await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+      expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-portrait-studio' }))
+      p.event({ type: 'response.done', response: { id: 'busy', status: 'completed', output: [] } })
+      await vi.advanceTimersByTimeAsync(20000)
+      expect(farewells()).toHaveLength(1)
+      expect(reasons()).toContain('studio_event_stale')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('never reveals an older portrait revision after a newer one in the same run', async () => {
+    const p = probe()
+    const prepared: ((url: string) => void)[] = []
+    const { handle, reasons } = session(p, () => accepted('studio_started'),
+      { prepareStudioImage: () => new Promise<string>(resolve => { prepared.push(resolve) }) })
+    const reveals = () => responses(p).filter(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/aaaa1111', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/bbbb2222', revision: 1, revisionsLeft: 0, language: 'zh' }, ID)
+    await vi.waitFor(() => expect(prepared).toHaveLength(2))
+    prepared[1]!('data:image/jpeg;base64,BBBB')
+    await vi.waitFor(() => expect(reveals()).toHaveLength(1))
+    // Revision 0 finishes preparing only after revision 1 was revealed.
+    prepared[0]!('data:image/jpeg;base64,AAAA')
+    await vi.waitFor(() => expect(reasons()).toContain('studio_event_stale'))
+    expect(reveals()).toHaveLength(1)
+    const images = p.sent.filter(e => e.type === 'conversation.item.create').map(e => (e.item as { content: { image_url: string }[] }).content[0]!.image_url)
+    expect(images).toEqual(['data:image/jpeg;base64,BBBB'])
+  })
+
   it('ignores studio events addressed to another session', async () => {
     const p = probe()
     const { handle, reasons } = session(p, () => accepted('studio_started'))

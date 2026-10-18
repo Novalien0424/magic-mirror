@@ -659,7 +659,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
     const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
     const requestSleep = vi.fn(async () => ({ status: 'success' }))
-    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia })
+    const prepareFolderMedia = vi.fn(async () => true)
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia, prepareFolderMedia })
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
@@ -669,6 +670,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
     const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
+    // Linked-folder media is copied locally for the active avatar before the player starts.
+    expect(prepareFolderMedia).toHaveBeenCalledExactlyOnceWith('folder-rain', 'raven')
     expect(requestSleep).not.toHaveBeenCalled()
     registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
     expect(await started).toBe('accepted')

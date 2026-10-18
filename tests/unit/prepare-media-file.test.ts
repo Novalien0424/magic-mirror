@@ -92,6 +92,18 @@ describe('Mac local media cache', () => {
     expect(await readFile(join(root, 'unrelated'), 'utf8')).toBe('keep')
   })
 
+  it('counts only kept entries against the budget, so an oversized newest file never evicts older ones that fit', async () => {
+    const { root, prepare } = await fixture()
+    const huge = `${'e'.repeat(64)}.media`, fits = `${'f'.repeat(64)}.media`
+    await writeFile(join(root, huge), ''); await truncate(join(root, huge), 3 * 1024 ** 3)
+    await writeFile(join(root, fits), ''); await truncate(join(root, fits), 100 * 1024 ** 2)
+    const now = Date.now() / 1000
+    await utimes(join(root, huge), now, now); await utimes(join(root, fits), now - 60, now - 60)
+    copy(); await prepare('/drive/selected.mp4', 15, 1)
+    expect(await readdir(root)).not.toContain(huge)
+    expect(await readdir(root)).toContain(fits)
+  })
+
   it('trims older cache entries to the startup disk budget without downloading the library', async () => {
     const { root, prepare } = await fixture()
     const recent = join(root, `${'c'.repeat(64)}.media`), older = join(root, `${'d'.repeat(64)}.media`)

@@ -51,7 +51,8 @@ function MutedLoopPreview({ videoId, visible, fit }: { videoId: string; visible:
   </details>
 }
 
-function playbackCopy(snapshot: OperatorLoopSnapshot | null): string {
+function playbackCopy(snapshot: OperatorLoopSnapshot | null, starting: boolean): string {
+  if (starting && snapshot?.mode !== 'loop') return 'Starting loop video… Checking the saved media. Return to Avatar in the control bar cancels.'
   if (!snapshot) return 'Reading Mirror playback status…'
   if (snapshot.mode === 'avatar') return 'Not playing'
   if (snapshot.status === 'failed') return 'Loop video failed. Mirror stays black. Use Return to Avatar in the control bar to exit.'
@@ -61,8 +62,12 @@ function playbackCopy(snapshot: OperatorLoopSnapshot | null): string {
 }
 
 /** Global operator settings; deliberately independent of avatar drafts/publishing. */
-export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChange }: {
+export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChange, onStartingChange, cancelSignal = 0 }: {
   bridge: ConsoleBridge | null; visible: boolean; onMediaFolders(): void; onPlaybackChange?(snapshot: OperatorLoopSnapshot): void
+  /** True while Play waits for Main, so the control bar can offer Return to Avatar. */
+  onStartingChange?(starting: boolean): void
+  /** Increments when the control bar's Return to Avatar cancels a pending Play. */
+  cancelSignal?: number
 }): React.JSX.Element {
   const [draft, setDraft] = useState<LoopVideoSettings | null>(null)
   const [saved, setSaved] = useState<LoopVideoSettings | null>(null)
@@ -78,6 +83,12 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
   const [action, setAction] = useState<LoopVideoCommand['action'] | null>(null)
   const epoch = useRef(0), pending = useRef<LoopVideoCommand['action'] | null>(null)
   const mounted = useRef(false)
+  useEffect(() => { onStartingChange?.(action === 'play') }, [action, onStartingChange])
+  // A Play cancelled by Return to Avatar settles as stopped, never as a start failure.
+  useEffect(() => {
+    if (!cancelSignal || pending.current !== 'play') return
+    epoch.current++; pending.current = null; setAction(null)
+  }, [cancelSignal])
   const settings = draft ?? DEFAULT_LOOP_VIDEO
   const dirty = !!draft && !!saved && !sameLoopVideoSettings(draft, saved)
   const validation = loopVideoValidation(settings, entries)
@@ -105,7 +116,8 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
     if (!bridge?.loopVideo) return
     let disposed = false, polling = false
     const refresh = async () => {
-      if (disposed || polling || pending.current) return
+      // A Save's reply replaces the settings. Play keeps polling: Main reports preparation while it waits.
+      if (disposed || polling || pending.current === 'save') return
       polling = true
       const requestEpoch = epoch.current
       try {
@@ -175,7 +187,7 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
   return <section className="console__panel loop-video-panel" aria-labelledby="console-loop-video">
     <div className="console__panel-heading"><h2 id="console-loop-video">Loop Video <InfoTip label="Loop Video"
       help="One shared video repeats on the Mirror instead of the avatar until you choose Return to Avatar in the control bar. These settings are global, separate from avatar music, conversation and publishing." /></h2>
-      <p className={`loop-video-status loop-video-status--${snapshot?.mode === 'loop' ? snapshot.status : 'idle'}`} role="status"><strong>{playbackCopy(snapshot)}</strong></p></div>
+      <p className={`loop-video-status loop-video-status--${snapshot?.mode === 'loop' ? snapshot.status : 'idle'}`} role="status"><strong>{playbackCopy(snapshot, action === 'play')}</strong></p></div>
     {!available && <p role="alert" className="console__fault">Loop Video is unavailable. Reopen the updated Console.</p>}
     {(apiError || statusError) && <div role="alert" className="console__fault"><ReasonDetail code={apiError || statusError} />
       {apiError && dirty && <p>Changes were not saved. Stream Deck still uses the last saved settings. Keep this selection and retry Save settings.</p>}</div>}

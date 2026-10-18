@@ -56,6 +56,24 @@ function advancePlayback(controller: Loop, generation: number) {
 }
 
 describe('operator loop appliance controller', () => {
+  it('abandons a slow media check when the operator returns to the avatar', async () => {
+    const f = fixture()
+    await f.controller.save(settings)
+    const check = deferred<boolean>()
+    f.validate.mockImplementationOnce(() => check.promise)
+    const playing = observed(f.controller.play())
+    await vi.advanceTimersByTimeAsync(0)
+    const stopped = observed(f.controller.normal())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playing).toHaveBeenCalledWith(false)
+    expect(stopped).toHaveBeenCalledWith(true)
+    // The download finishing later never starts the cancelled loop.
+    check.resolve(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.suspendAvatar).not.toHaveBeenCalled()
+    expect(f.controller.view().snapshot.mode).toBe('avatar')
+    expect(f.controller.isLoopMode()).toBe(false)
+  })
   it('persists settings independently, and restores active loop intent after a crash', async () => {
     const first = fixture()
     await first.controller.save(settings)
