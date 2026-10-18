@@ -208,22 +208,24 @@ describe('ExperiencesEditor', () => {
 describe('Portrait Studio status panel', () => {
   const statuses: StudioAuthStatus[] = ['signed_in', 'missing', 'invalid', 'expired', 'refresh_failed']
   it('turns each sign-in status into operator text', () => {
-    expect(studioAuthText('signed_in')).toMatchObject({ label: 'Using ChatGPT plan', action: '', needsLogin: false })
+    expect(studioAuthText('signed_in')).toMatchObject({ label: 'Signed in', tone: 'success', needsLogin: false })
+    expect(studioAuthText('signed_in').action).toContain('refreshed in the background')
     expect(studioAuthText('missing')).toMatchObject({ label: 'Not signed in', needsLogin: true })
     expect(studioAuthText('missing').action).toContain(STUDIO_LOGIN_COMMAND)
     for (const auth of ['invalid', 'expired', 'refresh_failed'] as const) {
       const copy = studioAuthText(auth)
-      expect(copy.label).not.toBe('Using ChatGPT plan')
+      expect(copy.label).not.toBe('Signed in')
       expect(copy.action).toContain(STUDIO_LOGIN_COMMAND)
     }
     expect(studioAuthText('expired').needsLogin).toBe(false)
+    expect(studioAuthText('invalid').label).toMatch(/^Not signed in/)
     expect(new Set(statuses.map(auth => studioAuthText(auth).label)).size).toBe(statuses.length)
   })
 
   it('renders status without any credential value and shows the sign-in command when needed', () => {
     const base: StudioConsoleStatus = { auth: 'signed_in', lastRefresh: '2026-10-17T01:02:03.000Z', modelId: 'gpt-image-test', active: false }
     const signedIn = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: base }))
-    expect(signedIn).toContain('Using ChatGPT plan')
+    expect(signedIn).toContain('Signed in')
     expect(signedIn).toContain('gpt-image-test')
     expect(signedIn).toContain(STUDIO_USAGE_URL)
     expect(signedIn).toContain('Generate test portrait')

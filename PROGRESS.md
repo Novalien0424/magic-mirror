@@ -1,23 +1,21 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**TODO audit fixes**, `ca6cf29` plus a same-day follow-up;
-pushed to `field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`):
-all nine P2 code-audit findings against `1a5a435` and the media deadline
-limitation were verified, reproduced by failing regressions and fixed — five
-Studio cleanup gaps, a commit lock shared by Main and `npm run chatgpt:login`
-plus sign-in removal handling, Return to Avatar while Loop Play starts, cache
-budget accounting, size-scaled loop validation with cancellation, and
-copy-before-play for conversation media (the follow-up keeps the avatar visible
-during the copy). On the stamped build: **full suite 2,507 passed / 2 skipped;
-`--operator-loop` (new start-cancel case), `--console`, `--field-help`, both
-media-skill modes and `review_ui` pass; live `portrait_studio` 15/15; live
-`local_scope` passed on its one retry** (run 1 failed only the transcript judge).
-[Findings, fixes, results and remaining gaps](docs/testing/todo-audit-fixes-2026-10-18.md).
+Latest delivery (**memory model and ChatGPT sign-in upkeep**; pushed to
+`field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): memory
+extraction uses the `gpt-6.1-sol` alias (field config **version 19**, packaged
+default version 8); Main keeps the Portrait Studio ChatGPT sign-in refreshed in
+the background; the Console says plainly **Signed in / Not signed in** and shows
+how to start Portrait Studio. On the stamped build: **full suite, `--field-help`,
+`--console`, `--memory` and live `memory_calendar` on `gpt-6.1-sol` pass; live
+`local_scope` failed twice on the transcript judge only** (now also
+`gpt-6.1-sol`, stricter; all application checks passed).
+[Changes, results and the judge finding](docs/testing/memory-model-signin-2026-10-18.md).
 
-Previous delivery (`1a5a435`, QA `0f814b1`): compact Console revamp, four
-Portrait Studio review fixes and the Drive media cache
-([evidence](docs/testing/console-ux-revamp-2026-10-17.md)). Earlier deliveries
-in this branch (baseline `9197676`): Portrait Studio
+Previous delivery (`ca6cf29` + `3f8724a`): the nine TODO code-audit fixes and
+the media deadline limitation
+([evidence](docs/testing/todo-audit-fixes-2026-10-18.md)). Earlier:
+Console revamp `1a5a435`
+([evidence](docs/testing/console-ux-revamp-2026-10-17.md)), Portrait Studio
 ([QA](docs/testing/portrait-studio-2026-10-17.md)), Loop Video Drive save
 ([evidence](docs/testing/loop-video-cloud-save-2026-10-17.md)), portrait Console
 mouse ([setup](docs/testing/portrait-console-mouse-2026-10-17.md)), Neo operator
@@ -25,23 +23,22 @@ controls ([QA](docs/testing/operator-controls-2026-10-17.md)) and Loop Video
 ([ledger](docs/testing/operator-loop-2026-10-17.md)). Prior handoff:
 [archive](docs/archive/progress-before-clockout-2026-10-18.md).
 
-Runtime (**10:30 Taipei, 2026-10-18**): production app stopped as found; the
-next START runs the verified stamped build. System output **69 %, unmuted**;
-input gain unchanged. TV, Stream Deck and device settings untouched. Only the
-canonical checkout exists.
+Runtime (**11:40 Taipei, 2026-10-18**): production app restarted on the new
+build after QA (it was running; stopped with launchd TERM, TV untouched).
+Published config version 19; rollback is the Console's Previous (18) or the
+backup in `config/backups/before-memory-model-sol-2026-10-18/`. System output
+**69 %, unmuted**; input gain unchanged.
 
-Open gaps (all in [TODO](TODO.md)): no real cold Google Drive download has been
-exercised since the deadline change, and during a long copy a PLAY LOOP press
-shows nothing until playback starts; no human Portrait Studio visit; Chrome
-Remote Desktop pointer movement/click unaccepted; physical Neo keys/labels,
-picture/music, USB reconnect and cold login unconfirmed; one past ritual reload
-stall (the driver now reports its blocker); camera, wake and dialogue boundaries
-in the [open-issues ledger](docs/testing/open-issues-2026-10-13.md). No phase
+Open gaps (all in [TODO](TODO.md)): the stricter `gpt-6.1-sol` judge baseline;
+no real cold Google Drive download since the deadline change; no human Portrait
+Studio visit; Chrome Remote Desktop pointer movement/click unaccepted; physical
+Neo keys/labels, picture/music, USB reconnect and cold login unconfirmed; one
+past ritual reload stall; camera, wake and dialogue boundaries in the
+[open-issues ledger](docs/testing/open-issues-2026-10-13.md). No phase
 acceptance changes.
 
-Next: owner look-through of the Console on the portrait display (including
-Return to Avatar while Loop Play starts), one cold large Drive video, a human
-Portrait Studio visit, 「在雲上找找」 through the real microphone, remote pointer
-movement/click, then physical Neo checks as needed. Mouse failures start from
-the mouse ledger; other operator-mode failures start from the operator-controls
-ledger. Leave runtime and device state under the owner's control.
+Next: owner decides how to re-baseline the live quality judge; owner look at the
+Console on the portrait display (sign-in badge, Return to Avatar while Loop Play
+starts); one cold large Drive video; a human Portrait Studio visit; 「在雲上找找」
+through the real microphone; remote pointer movement/click; physical Neo checks
+as needed. Leave runtime and device state under the owner's control.

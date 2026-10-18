@@ -3,7 +3,8 @@
 Only unresolved defects, limitations and acceptance remain here. Current delivery
 and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 The 2026-10-18 code-audit findings and media deadline limitation are fixed:
-[evidence](docs/testing/todo-audit-fixes-2026-10-18.md).
+[evidence](docs/testing/todo-audit-fixes-2026-10-18.md). Memory model and
+sign-in upkeep: [evidence](docs/testing/memory-model-signin-2026-10-18.md).
 
 ## Earlier unresolved reliability
 
@@ -31,6 +32,13 @@ The 2026-10-18 code-audit findings and media deadline limitation are fixed:
   diagnostics if it recurs before claiming the cause is fixed.
   [QA driver evidence](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
 
+- [ ] **Live quality judge baseline on `gpt-6.1-sol`.** Since config 19 the
+  judge reads the memory role, now `gpt-6.1-sol`. Live `local_scope` failed its
+  quality judge twice (tool silence, grounding, naturalness/character 2/3) while
+  every application check passed; the luna judge passed it on retry. Decide
+  whether to re-baseline thresholds or give the judge its own versioned model
+  role before treating live quality failures as regressions.
+  [Evidence](docs/testing/memory-model-signin-2026-10-18.md#results).
 - [ ] **Cold Drive media on a real download.** The size-scaled wait and
   copy-before-play are proven with synthetic delays only. Once, with a large
   online-only Common video, check Loop Save/Play, Stream Deck PLAY LOOP and a
@@ -41,8 +49,8 @@ The 2026-10-18 code-audit findings and media deadline limitation are fixed:
 ## Remaining acceptance
 
 - [ ] Review the compact Console on the portrait TV with its mouse, including
-  Save/check feedback, live queued-scene cancellation and Return to Avatar while
-  Loop Play starts. Complete a human
+  Save/check feedback, live queued-scene cancellation, Return to Avatar while
+  Loop Play starts and the Portrait Studio sign-in badge. Complete a human
   Portrait Studio visit using Jabra. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks

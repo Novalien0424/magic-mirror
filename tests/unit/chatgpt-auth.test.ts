@@ -164,6 +164,23 @@ describe('ChatGPT token file', () => {
     } finally { await rm(dir, { recursive: true, force: true }) }
   })
 
+  it('keeps the sign-in alive in the background: refreshes a token due before the next check, silently skips a missing one', async () => {
+    const fresh = harness(file(jwt({ exp: NOW / 1000 + 7200 })), rotated())
+    await fresh.source.keepAlive!()
+    expect(fresh.writes).toHaveLength(0)
+    const fetchImpl = rotated()
+    const due = harness(file(jwt({ exp: NOW / 1000 + 20 * 60 })), fetchImpl)
+    await due.source.keepAlive!()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(due.current()).toContain('CHATGPT_REFRESH_TOKEN=refresh-2')
+    expect(await due.source.status()).toMatchObject({ status: 'signed_in' })
+    const missingFetch = rotated()
+    const missing = harness(null, missingFetch)
+    await missing.source.keepAlive!()
+    expect(missingFetch).not.toHaveBeenCalled()
+    expect(missing.reports).toEqual([])
+  })
+
   it('keeps a valid token usable after a failed scheduled refresh and clears the failure after a new login', async () => {
     const fetchImpl = vi.fn(async () => new Response('{}', { status: 503 }))
     const h = harness(file(jwt({ exp: NOW / 1000 + 3600 }), 'refresh-1', '2026-10-01T00:00:00.000Z'), fetchImpl as unknown as typeof fetch)

@@ -1529,6 +1529,7 @@ void app.whenReady().then(async () => {
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     prepareFolderMedia: (id, avatarId) => bounded(mediaFolders.resolve(id, avatarId), mediaFolders.preparationBudgetMs(id))
       .then(file => !!file, () => false),
+    keepChatgptSignedIn: true,
     mediaFolders: async request => {
       await mediaFoldersReady
       const config = await runtime.console.getConfig()

@@ -172,6 +172,8 @@ export interface RegisterIpcHandlersOptions {
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   /** Copies linked-folder media for local playback; false when it cannot be read in time. */
   readonly prepareFolderMedia?: (assetId: string, avatarId: string) => Promise<boolean>
+  /** Keeps the Portrait Studio ChatGPT sign-in refreshed in the background. */
+  readonly keepChatgptSignedIn?: boolean
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
@@ -1329,6 +1331,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     stopMedia: () => { sleepingMedia = false; mediaSkill.stop('media_stopped_for_studio') },
     report: (reason, status, durationMs) => emit(telemetry, { module: 'avatar', event: 'portrait_studio', source: 'runtime', status, reason,
       ...(durationMs === undefined ? {} : { duration_ms: Math.round(durationMs) }) }),
+    keepSignedIn: options.keepChatgptSignedIn,
   })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0

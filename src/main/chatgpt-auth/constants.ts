@@ -5,3 +5,5 @@ export const CHATGPT_TOKEN_FILE = '.env.chatgpt'
 /** Codex refreshes after this many days even when the access token is still valid. */
 export const CHATGPT_REFRESH_INTERVAL_MS = 8 * 24 * 60 * 60 * 1000
 export const CHATGPT_EXPIRY_MARGIN_MS = 5 * 60 * 1000
+/** Main checks this often and refreshes any token that would expire before the next check. */
+export const CHATGPT_KEEPALIVE_INTERVAL_MS = 30 * 60 * 1000

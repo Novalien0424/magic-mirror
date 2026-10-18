@@ -1084,6 +1084,7 @@ input[aria-invalid="true"] { border-color: #e8a394; }
 .console .console__scenes .console__publish-bar { bottom: .4rem; padding: .45rem .7rem; }
 /* Portrait images (System) and the Experiences summary. */
 .studio-service-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .7rem; margin: 0 0 .6rem; padding: .45rem .7rem; border: 1px solid #304957; border-radius: 8px; font-size: .9rem; }
+.studio-service-summary__hint { flex-basis: 100%; color: #bbc9d7; font-size: .85rem; }
 /* Experiences editor. */
 .experiences-editor__status { margin: 0 0 .5rem; font-size: .9rem; }
 .experiences-editor__status:empty { display: none; }

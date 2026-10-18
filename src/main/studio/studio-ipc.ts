@@ -1,3 +1,4 @@
+import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
 import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
 import { PORTRAIT_STUDIO } from '../../shared/portrait-studio-config'
 import {
@@ -33,6 +34,8 @@ export function registerStudioIpc(deps: {
   stopMedia(): Promise<void> | void
   report(reason: string, status: 'info' | 'degraded' | 'failed', durationMs?: number): void
   credentials?: ChatgptCredentialSource
+  /** Production only: refresh the sign-in in the background so it never lapses while idle. */
+  keepSignedIn?: boolean
   fetchImpl?: typeof fetch
 }) {
   const credentials = deps.credentials ?? createChatgptTokenFile({ report: reason => deps.report(reason, /fail|invalid|missing|http_/.test(reason) ? 'degraded' : 'info') })
@@ -45,6 +48,11 @@ export function registerStudioIpc(deps: {
     report: (reason, status, timingMs) => deps.report(reason, status ?? 'info', timingMs),
     stopMedia: () => deps.stopMedia(),
   })
+  if (deps.keepSignedIn && credentials.keepAlive) {
+    const keepAlive = () => void credentials.keepAlive!().catch(() => deps.report('chatgpt_keepalive_failed', 'degraded'))
+    keepAlive()
+    setInterval(keepAlive, CHATGPT_KEEPALIVE_INTERVAL_MS).unref()
+  }
   // Usable means a credential is available now: a refresh runs if due, and a
   // failed scheduled refresh still allows a token that has not expired.
   const usable = async () => (await credentials.get().catch(() => null)) !== null

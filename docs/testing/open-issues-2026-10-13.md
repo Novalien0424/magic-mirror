@@ -6,9 +6,10 @@ Completed work belongs in PROGRESS; this file keeps unresolved boundaries.
 The [2026-10-14 review](review-fixes-2026-10-14.md) adds unit-tested fixes and re-reads; each affected issue notes it below.
 
 Status 2026-10-18: sections 1–6 and the deferred acceptance below remain open;
-[TODO](../../TODO.md) is the current checklist. Model IDs are unchanged, but the
-tool catalog has since grown (Portrait Studio, 2026-10-17), so "seven tools"
-below is historical. The Stream Deck Neo is now the installed operator control;
+[TODO](../../TODO.md) is the current checklist. The tool catalog has since grown
+(Portrait Studio, 2026-10-17), so "seven tools" below is historical, and since
+config version 19 (2026-10-18, see DECISIONS) memory extraction and the judge use
+`gpt-6.1-sol` instead of `gpt-5.6-luna`; results below were graded by luna. The Stream Deck Neo is now the installed operator control;
 the Flic/Karabiner route remains optional and unexecuted.
 
 Published Raven is v18: calm authority, independent judgment and restrained dry

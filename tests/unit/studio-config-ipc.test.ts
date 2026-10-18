@@ -79,14 +79,14 @@ describe('Portrait Studio configuration', () => {
 
 describe('Portrait Studio IPC', () => {
   type Snapshot = { lifecycle: string; realtimeSessionId: string | null; sessionGeneration: number }
-  function harness(options: { lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>> } = {}) {
+  function harness(options: { lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean } = {}) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const dispatched: unknown[] = []
     const reports: string[] = []
     let snapshot: Snapshot = { lifecycle: options.lifecycle ?? 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 }
     const listeners: ((value: Snapshot) => void)[] = []
     const credentials: ChatgptCredentialSource = { get: async () => options.auth === 'missing' ? null : ({ accessToken: 't', accountId: 'a' }),
-      refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }) }
+      refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }), keepAlive: options.keepAlive }
     registerStudioIpc({
       ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
       authorize: (event, kind) => event === kind,
@@ -95,7 +95,7 @@ describe('Portrait Studio IPC', () => {
       subscribe: listener => { listeners.push(listener); listener(snapshot) },
       experience: options.experience ?? (async () => defaultExperience()),
       dispatch: command => { dispatched.push(command); return true },
-      activity: vi.fn(), stopMedia: vi.fn(), report: reason => reports.push(reason), credentials,
+      activity: vi.fn(), stopMedia: vi.fn(), report: reason => reports.push(reason), credentials, keepSignedIn: options.keepSignedIn,
       fetchImpl: vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch,
     })
     const mirror = (request: unknown, identity: unknown = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }) =>
@@ -105,6 +105,21 @@ describe('Portrait Studio IPC', () => {
     return { mirror, console, dispatched, reports, move }
   }
   const RT1 = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
+
+  it('keeps the ChatGPT sign-in alive only when Main asks, at start and every 30 minutes', async () => {
+    vi.useFakeTimers()
+    try {
+      const idle = vi.fn(async () => undefined)
+      harness({ keepAlive: idle })
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+      expect(idle).not.toHaveBeenCalled()
+      const keepAlive = vi.fn(async () => undefined)
+      harness({ keepAlive, keepSignedIn: true })
+      expect(keepAlive).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+      expect(keepAlive).toHaveBeenCalledTimes(3)
+    } finally { vi.useRealTimers() }
+  })
 
   it('authorizes senders, validates payloads and rejects stale sessions', async () => {
     const h = harness()

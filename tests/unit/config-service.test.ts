@@ -473,7 +473,7 @@ describe('ConfigService contract', () => {
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      configVersion: 7,
+      configVersion: 8,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
@@ -485,7 +485,7 @@ describe('ConfigService contract', () => {
       aiModels: {
         realtimeDialogue: { modelId: 'gpt-realtime-2.1-mini' },
         inputTranscription: { modelId: 'gpt-live-transcribe' },
-        memoryExtractor: { modelId: 'gpt-5.6-luna' },
+        memoryExtractor: { modelId: 'gpt-6.1-sol' },
       },
       wake: {
         phrase: '魔鏡阿魔鏡',
@@ -536,7 +536,7 @@ describe('ConfigService contract', () => {
     const aiModels = resource.aiModels as Record<string, { modelId: string }>
     expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1-mini')
     expect(aiModels.inputTranscription.modelId).toBe('gpt-live-transcribe')
-    expect(aiModels.memoryExtractor.modelId).toBe('gpt-5.6-luna')
+    expect(aiModels.memoryExtractor.modelId).toBe('gpt-6.1-sol')
     expect(Object.values(aiModels).every(({ modelId }) => !modelId.startsWith('mock-'))).toBe(true)
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),

@@ -1,7 +1,7 @@
 import { open, readFile, rm, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseEnv } from 'node:util'
-import { CHATGPT_CLIENT_ID, CHATGPT_EXPIRY_MARGIN_MS, CHATGPT_ISSUER, CHATGPT_REFRESH_INTERVAL_MS, CHATGPT_TOKEN_FILE } from './constants'
+import { CHATGPT_CLIENT_ID, CHATGPT_EXPIRY_MARGIN_MS, CHATGPT_ISSUER, CHATGPT_KEEPALIVE_INTERVAL_MS, CHATGPT_REFRESH_INTERVAL_MS, CHATGPT_TOKEN_FILE } from './constants'
 
 const writeFileAtomic = require('write-file-atomic') as (file: string, data: string, options: { mode: number }) => Promise<void>
 
@@ -12,6 +12,8 @@ export interface ChatgptCredentialSource {
   /** After a provider 401: refresh once, even when the token looks valid. */
   refreshAfterRejection(rejected: ChatgptCredential): Promise<ChatgptCredential | null>
   status(): Promise<{ status: ChatgptAuthStatus; lastRefresh?: string }>
+  /** Background upkeep: refreshes a token due before the next check, so an idle Mac stays signed in. Silent when signed out. */
+  keepAlive?(): Promise<void>
 }
 
 interface Tokens { access: string; refresh: string; id: string; accountId: string; lastRefresh: string }
@@ -136,7 +138,7 @@ export function createChatgptTokenFile(options: {
     // Without an exp claim, only the scheduled interval triggers refresh.
     return typeof exp === 'number' ? exp * 1000 : Number.POSITIVE_INFINITY
   }
-  const stale = (tokens: Tokens) => expiresAt(tokens) - CHATGPT_EXPIRY_MARGIN_MS <= now()
+  const stale = (tokens: Tokens, leadMs = 0) => expiresAt(tokens) - CHATGPT_EXPIRY_MARGIN_MS - leadMs <= now()
     || now() - Date.parse(tokens.lastRefresh) >= CHATGPT_REFRESH_INTERVAL_MS
 
   /** One refresh at a time. Re-read first: a new login may already have replaced the session. */
@@ -193,6 +195,11 @@ export function createChatgptTokenFile(options: {
       if (tokens.access !== rejected.accessToken) return credential(tokens)
       const next = await refresh(tokens.refresh)
       return next && next !== 'removed' ? credential(next) : null
+    },
+    async keepAlive() {
+      const tokens = await load().catch(() => null)
+      if (tokens === null || tokens === 'invalid' || !stale(tokens, CHATGPT_KEEPALIVE_INTERVAL_MS)) return
+      await refresh(tokens.refresh)
     },
     async status() {
       const tokens = await load()

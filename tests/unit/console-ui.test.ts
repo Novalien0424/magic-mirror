@@ -247,7 +247,8 @@ describe('Phase 0 Task 9 Gate 9A.1 Console UI RED contract', () => {
     expect(overview).toContain('Loop video</span>')
     expect(overview).toContain('Checking…')
     expect(overview).toContain('>Loop video settings</button>')
-    expect(overview).toContain('ChatGPT image service')
+    expect(overview).toContain('Portrait Studio · ChatGPT')
+    expect(overview).toContain('press Start Portrait Studio in the control bar')
     expect(overview).toContain('>Sign-in and test portrait</button>')
   })
 

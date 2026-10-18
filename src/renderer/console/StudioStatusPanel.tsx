@@ -19,11 +19,11 @@ export interface StudioAuthCopy { readonly label: string; readonly action: strin
 export function studioAuthText(auth: StudioAuthStatus): StudioAuthCopy {
   const login = `Run ${STUDIO_LOGIN_COMMAND} in Terminal on this Mac, then press Refresh status.`
   switch (auth) {
-    case 'signed_in': return { label: 'Using ChatGPT plan', action: '', tone: 'success', needsLogin: false }
+    case 'signed_in': return { label: 'Signed in', action: 'Portraits use this Mac’s ChatGPT plan. The app keeps the sign-in refreshed in the background.', tone: 'success', needsLogin: false }
     case 'missing': return { label: 'Not signed in', action: `Sign in to paint portraits. ${login}`, tone: 'failed', needsLogin: true }
-    case 'invalid': return { label: 'Sign-in file unreadable', action: `Sign in again to replace it. ${login}`, tone: 'failed', needsLogin: true }
-    case 'expired': return { label: 'Sign-in needs a refresh', action: `The app refreshes it before the next portrait. If painting still fails, sign in again: ${login}`, tone: 'degraded', needsLogin: false }
-    case 'refresh_failed': return { label: 'Sign-in refresh failed', action: `Sign in again. ${login}`, tone: 'failed', needsLogin: true }
+    case 'invalid': return { label: 'Not signed in · sign-in file unreadable', action: `Sign in again to replace it. ${login}`, tone: 'failed', needsLogin: true }
+    case 'expired': return { label: 'Signed in · refresh due', action: `The app refreshes it in the background and before the next portrait. If painting still fails, sign in again: ${login}`, tone: 'degraded', needsLogin: false }
+    case 'refresh_failed': return { label: 'Sign-in refresh failed', action: `The app retries every 30 minutes and before each portrait. If this stays, sign in again: ${login}`, tone: 'failed', needsLogin: true }
     default: return { label: 'Sign-in status unknown', action: `Press Refresh status. If it stays unknown, sign in again: ${login}`, tone: 'degraded', needsLogin: true }
   }
 }
@@ -196,7 +196,7 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
 
 export interface LiveMessage { readonly tone: Tone; readonly text: string }
 
-/** One-line chip for Avatars › Experiences; sign-in and the test portrait live in System. */
+/** Sign-in chip for Mirror and Avatars › Experiences; sign-in and the test portrait live in System. */
 export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: StudioBridge; visible: boolean; onOpen(): void }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
   useEffect(() => {
@@ -207,10 +207,11 @@ export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: Stud
   }, [bridge, visible])
   const auth = status ? studioAuthText(status.auth) : null
   return <p className="studio-service-summary">
-    <span>ChatGPT image service</span>
+    <span>Portrait Studio · ChatGPT</span>
     {auth ? <Badge tone={auth.tone}>{auth.label}</Badge> : <span className="console__status">{bridge?.studio ? 'Checking…' : 'Unavailable'}</span>}
     <HelpButton className="console__link" help="Sign-in status, image model, usage and a test portrait for this Mac. Shared by every avatar."
       onClick={onOpen}>Sign-in and test portrait</HelpButton>
+    <span className="studio-service-summary__hint">To start: during a conversation the visitor asks for a portrait, or press Start Portrait Studio in the control bar.</span>
   </p>
 }
 

@@ -1,5 +1,21 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-18 — Memory model and ChatGPT sign-in upkeep (owner directives)
+
+- **Memory model.** Memory extraction uses `gpt-6.1-sol`, the undated alias
+  OpenAI documents for GPT-6.1 Sol, so newer snapshots of that model apply
+  without a config change. OpenAI lists no family-wide "latest" alias for Sol;
+  moving to a later Sol generation is a new versioned config change, never
+  automatic (invariant 11). The Raven QA transcript judge reads the same
+  published role, so it changes with it. Packaged default `configVersion` 8;
+  the field config is published as version 19 (backup
+  `config/backups/before-memory-model-sol-2026-10-18/`).
+- **ChatGPT sign-in.** Keep the owner's Portrait Studio sign-in alive: Main
+  refreshes it in the background (every 30 minutes it refreshes a token that
+  would expire before the next check, plus the 8-day refresh). The Console says
+  plainly whether it is signed in. Signing in stays owner-run
+  `npm run chatgpt:login`; agents never read `.env.chatgpt`.
+
 ## 2026-10-17 — QA sound level (owner directive)
 
 Before any QA that can produce sound, capture the affected output's volume and
