@@ -199,15 +199,32 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
 
 export interface LiveMessage { readonly tone: Tone; readonly text: string }
 
+/**
+ * Stream Deck keys change the Mirror mode while the Console is hidden; CONSOLE and
+ * Remote Console show and focus it again, so the status is read again then.
+ */
+function useOnConsoleShown(refresh: () => unknown, enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled) return
+    const shown = (): void => { if (!document.hidden) void refresh() }
+    window.addEventListener('focus', shown)
+    document.addEventListener('visibilitychange', shown)
+    return () => { window.removeEventListener('focus', shown); document.removeEventListener('visibilitychange', shown) }
+  }, [refresh, enabled])
+}
+
 /** Sign-in chip for Mirror and Avatars › Interactive Studio; sign-in and the test picture live in System › Studio service. */
 export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: StudioBridge; visible: boolean; onOpen(): void }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
-  useEffect(() => {
-    if (!visible || !bridge?.studio) return
-    let current = true
-    void call(bridge, { action: 'status' }).then(result => { if (current && !failed(result)) setStatus(result.status) })
-    return () => { current = false }
-  }, [bridge, visible])
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!bridge?.studio) return
+    const result = await call(bridge, { action: 'status' })
+    if (mounted.current && !failed(result)) setStatus(result.status)
+  }, [bridge])
+  useEffect(() => { if (visible) void refresh() }, [visible, refresh])
+  useOnConsoleShown(refresh, visible && !!bridge?.studio)
   const auth = status ? studioAuthText(status.auth) : null
   return <p className="studio-service-summary">
     <span>Interactive Studio · ChatGPT</span>
@@ -257,6 +274,7 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
     const timer = setInterval(() => void refresh(), LIVE_POLL_MS)
     return () => clearInterval(timer)
   }, [visible, available, active, lifecycle, refresh])
+  useOnConsoleShown(refresh, visible && available)
 
   const run = async (command: StudioConsoleCommand): Promise<void> => {
     if (!bridge?.studio || busy) return

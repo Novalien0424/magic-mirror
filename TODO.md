@@ -67,6 +67,11 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
   switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
+- [ ] The Console's result line under the control bar can describe an earlier
+  action after a Stream Deck key changed the state (seen: “Back to the avatar…”
+  while PLAY LOOP's loop plays). Clear it on outside state changes without
+  racing the Console's own Return to Avatar result.
+  [Remote Console QA](docs/testing/remote-console-2026-10-18.md#full-qa-and-user-journeys-2026-10-19).
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).

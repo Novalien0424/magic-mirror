@@ -1,6 +1,22 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**Interactive Studio visit flow**; pushed to
+Latest delivery (**Remote Console QA**, 2026-10-19; pushed to
+`field/macmini-deploy` and PR #2): the Desktop app **Remote Console Magic
+Mirror** (Console on the main display beside the avatar, for Chrome Remote
+Desktop) now has user journeys O8, five new `--operator-loop` cases and three
+live studio steps. QA found and fixed a Console defect: after INTERACTIVE
+STUDIO or START while asleep, the Console kept showing the old Mirror mode; it
+now re-reads it when shown. On the stamped build **`--operator-loop` (22
+cases), full suite, `--console` and `--studio-journey` pass**; three live
+`portrait_studio` visits: console steps 9/9, two runs fully green, one with an
+unidentified provider error event. The real Desktop, CONSOLE and START apps
+were checked on production at the macOS window level. Runtime 21:50 Taipei:
+production restarted on this build, Dormant and listening, Console hidden,
+Conversation, Jabra 69 %.
+[Evidence](docs/testing/remote-console-2026-10-18.md#full-qa-and-user-journeys-2026-10-19) ·
+[journeys](docs/testing/user-journeys-2026-10-18.md#o8-check-in-from-away-remote-console).
+
+Previous delivery (**Interactive Studio visit flow**; pushed to
 `field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): in
 Interactive Studio mode the mirror wakes to its own **Studio wake phrase**
 (default 「招喚渡鴉使者」, set in the Console), runs name → questions → picture,

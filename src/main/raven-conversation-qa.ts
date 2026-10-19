@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { app, webContents } from 'electron'
 import { Speaker } from 'decibri'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
+import { besideMirror, consolePlacement, overMirror, sendQaOperatorCommand, type ConsolePlacement } from './operator-command-qa'
 import { ravenConversationProbe } from './raven-conversation-probe'
 import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTHETIC_VISITORS, RAVEN_MEMORY_IDENTITY_REPAIR,
   RavenMemoryQaIdentity, ravenMemoryQaComparisons, ravenMemoryQuestionProbe, parseRavenQualityAssessment, renderRavenVisitorText,
@@ -87,7 +88,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const diagnosisCodes = ['asr_changed_meaning', 'missing_audible_output', 'tool_preamble', 'mechanism_narration', 'wrong_language', 'invented_fact', 'missed_correction', 'incomplete_answer', 'unnecessary_question', 'identity_question_conflict', 'private_context_leak', 'wrong_tool', 'playback_unproven', 'fixture_evidence_gap']
   const qualityDiagnostics: { scenario: string; turn: string; codes: string[] }[] = []
   const capabilityQuality: Record<string, Record<string, boolean>> = {}
-  let protocol: { inputText: number; asr: number; errors: string[]; duplicateTranscriptEvents: number } | undefined
+  let protocol: { inputText: number; asr: number; errors: string[]; errorStages: string[]; duplicateTranscriptEvents: number } | undefined
   const toolTimingEvidence: unknown[] = []
   const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit'; output: string; backgroundMediaMuted: boolean; maxActivePaths: number; phraseMatches: boolean; cleanSourceDetections?: number; sourceDurationMs?: number }[] = []
   const spellRecognition: Record<string, unknown>[] = []
@@ -718,7 +719,17 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await wait(async () => await phase() === 'question', 'studio_question_phase', 10000)
         await shot('question')
       })
-      let answered = named
+      // The owner checks in over Chrome Remote Desktop mid-visit: Remote Console opens beside
+      // the avatar and the visit carries on; a CONSOLE press while painting covers it as always.
+      const operator = async (action: 'show_console' | 'show_console_main', placed: (p: ConsolePlacement) => boolean, phases: string[]) => {
+        const session = input.runtime.snapshot().realtimeSessionId
+        if (await sendQaOperatorCommand(app.getPath('userData'), action) !== 'success') throw Error('raven_qa_operator_command_failed')
+        if (!placed(consolePlacement(input.console, input.mirror))) throw Error('raven_qa_console_placement')
+        if (input.runtime.snapshot().lifecycle !== 'active' || input.runtime.snapshot().realtimeSessionId !== session
+          || !phases.includes(await phase() ?? '') || (await wakeInput())?.state !== 'inactive') throw Error('raven_qa_console_disturbed_visit')
+      }
+      const remoteChecked = named && await check('studio_remote_console', () => operator('show_console_main', besideMirror, ['question']))
+      let answered = remoteChecked
       for (const [i, key] of (['studioAnswer1', 'studioAnswer2', 'studioAnswer3', 'studioAnswer4'] as const).entries()) {
         if (!answered) break
         answered = await check(`studio_answer_${i + 1}`, async () => turn(extra[key]!, `studio_answer_${i + 1}`, 'studio_answer'))
@@ -731,7 +742,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await wait(async () => ['painting', 'reveal'].includes(await phase() ?? ''), 'studio_painting_phase', 10000)
         if (await phase() === 'painting') await shot('painting')
       })
-      const revealed = painting && await check('studio_reveal', async () => {
+      const deckPainting = painting && await check('studio_deck_console_painting', () => operator('show_console', overMirror, ['painting', 'reveal']))
+      const revealed = deckPainting && await check('studio_reveal', async () => {
         await evaluate(`window.__ravenQa.stage='studio_reveal'`)
         await wait(async () => await readyEvents() >= 1, 'studio_image_ready', 240000)
         await wait(async () => await reveals() >= 1, 'studio_reveal_response', 60000)
@@ -740,7 +752,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!observation.records.some(r => r.stage === 'studio_reveal' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_reveal_silent')
         await shot('reveal')
       })
-      const revised = revealed && await check('studio_change', async () => {
+      const remoteReveal = revealed && await check('studio_remote_console_reveal', () => operator('show_console_main', besideMirror, ['reveal']))
+      const revised = remoteReveal && await check('studio_change', async () => {
         await turn(extra.studioChange!, 'studio_change', 'studio_revise')
         await wait(async () => await readyEvents() >= 2, 'studio_revision_ready', 240000)
         await wait(async () => await reveals() >= 2, 'studio_second_reveal', 60000)
@@ -886,8 +899,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     })
     }
     const observation = await observe()
+    // Provider error codes/types and the QA stage they arrived in: metadata only, never messages.
     protocol = { inputText: observation.inputText, asr: observation.records.filter(r => r.role === 'visitor').length, errors: observation.errors,
-      duplicateTranscriptEvents: await evaluate<number>('return window.__ravenQa.duplicateTranscriptEvents') }
+      errorStages: await evaluate<string[]>('return window.__ravenQa.errorStages'), duplicateTranscriptEvents: await evaluate<number>('return window.__ravenQa.duplicateTranscriptEvents') }
     // Skipped prerequisite-dependent turns are not missing ASR. Their own
     // not_executed results still prevent scenario acceptance.
     const expectedInputs = spokenTexts.size

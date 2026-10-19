@@ -1,9 +1,12 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { screen } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import type { LoopVideoSettings, LoopVideoView, OperatorLoopSnapshot } from '../shared/operator-loop'
+import type { OperatorAction } from './operator-control'
+import { besideMirror, consolePlacement, overMirror, sendQaOperatorCommand, type ConsolePlacement } from './operator-command-qa'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
+import { selectConsoleMainDisplay } from './portrait-display'
 
 const CASES = [
   'operator_loop_avatar_authored', 'operator_loop_settings_saved', 'operator_loop_settings_reloaded',
@@ -13,6 +16,9 @@ const CASES = [
   'operator_console_on_mirror', 'operator_console_preserves_loop_and_draft',
   'operator_loop_saved_replacement_button', 'operator_loop_start_cancel',
   'operator_console_remote_main_then_deck',
+  'operator_remote_console_beside_avatar', 'operator_remote_console_repeat_restores_window',
+  'operator_remote_console_display_change', 'operator_remote_console_no_main_display',
+  'operator_remote_console_venue_keys',
 ] as const
 
 const DOM = `
@@ -105,10 +111,11 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     passed.add(step)
     input.onEvidence({ step, status: 'passed', ...(metrics ? { item: JSON.stringify(metrics) } : {}) })
   }
-  const shot = async (name: string, onMirror = false): Promise<void> => {
+  const shot = async (name: string, onMirror = false, top = false): Promise<void> => {
     if (!onMirror) {
       input.console.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 })
-      await edit("(panel ?? document.querySelector('.console__publish-bar'))?.scrollIntoView({block:'end'})")
+      await edit(top ? "document.querySelector('.live-bar')?.scrollIntoView({block:'start'})"
+        : "(panel ?? document.querySelector('.console__publish-bar'))?.scrollIntoView({block:'end'})")
     }
     const result = await capture(onMirror ? input.mirror : input.console, input.outputDir, name)
     screenshots++
@@ -241,30 +248,31 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
         && r.value.publishDiff.changed.length === 0;`)) fail('saved_avatar_not_restored')
     if (avatarFingerprint && await fingerprint() !== avatarFingerprint) fail('avatar_settings_changed')
   }
-  const operatorCommand = async (action: 'normal' | 'show_console' | 'show_console_main' | 'play_loop'): Promise<void> => {
-    // START's mode switch uses this same production mailbox. Stay inside this
+  const operatorCommand = async (action: OperatorAction, expected: 'success' | 'failed' = 'success'): Promise<void> => {
+    // The Stream Deck apps' and Remote Console's production mailbox. Stay inside this
     // process's isolated userData; never invoke the field launcher or TV control.
-    const id = randomUUID(), directory = join(userData, 'operator-control')
-    const request = join(directory, 'requests', `${id}.json`), temporary = `${request}.tmp`
-    const response = join(directory, 'responses', `${id}.json`), issuedAt = Date.now()
-    try {
-      await writeFile(temporary, JSON.stringify({ version: 1, id, action, issuedAt, expiresAt: issuedAt + 45000 }),
-        { mode: 0o600, flag: 'wx' })
-      await rename(temporary, request)
-      await waitFor(async () => {
-        let raw = ''
-        try { raw = await readFile(response, 'utf8') }
-        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; fail('normal_response_unreadable') }
-        const reply = JSON.parse(raw)
-        if (reply.version !== 1 || reply.id !== id || reply.status !== 'success'
-          || reply.reason !== 'operator_control_complete') fail('normal_command_failed')
-        return true
-      })
-    } finally {
-      for (const path of [temporary, request, response]) {
-        await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') fail('normal_cleanup_failed') })
-      }
-    }
+    const status = await sendQaOperatorCommand(userData, action)
+    if (status === 'timeout' || status === 'invalid') fail(`operator_command_${status}`)
+    if (status !== expected) fail('normal_command_failed')
+  }
+  const placement = (): ConsolePlacement => consolePlacement(input.console, input.mirror)
+  const modeFile = (): Promise<string> => readFile(join(userData, 'mirror-mode.json'), 'utf8').catch(() => 'missing')
+  let mirrorBounds = '', remoteBounds = ''
+  // The avatar on the TV is untouched: same glass bounds, avatar idle and rendering, settings unchanged.
+  const avatarIntact = async (): Promise<boolean> => JSON.stringify(input.mirror.getBounds()) === mirrorBounds
+    && (await snapshot()).mode === 'avatar' && await fingerprint() === avatarFingerprint
+    && await mirror<boolean>(`return document.querySelector('.avatar-stage')?.dataset.rendererState === 'ready'
+      && !!document.querySelector('.avatar-stage canvas')`)
+  // Remote Console fills the main display's work area, inset 16 px like the Console over the mirror.
+  const remoteConsole = async (): Promise<ConsolePlacement> => {
+    await operatorCommand('show_console_main')
+    const p = placement(), mirrorId = screen.getDisplayMatching(input.mirror.getBounds()).id
+    const main = selectConsoleMainDisplay(screen.getAllDisplays(), screen.getPrimaryDisplay().id, mirrorId)
+    if (!besideMirror(p) || !main || screen.getDisplayMatching(p.bounds).id !== main.id) fail('remote_console_not_beside_avatar')
+    const area = main!.workArea
+    if (JSON.stringify(p.bounds) !== JSON.stringify({ x: area.x + 16, y: area.y + 16,
+      width: area.width - 32, height: area.height - 32 })) fail('remote_console_bounds_unexpected')
+    return p
   }
   try {
     input.onEvidence({ step: 'operator_loop_scope', status: 'metadata', item: JSON.stringify({
@@ -297,6 +305,83 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     await returnedAvatar()
     avatarFingerprint = await fingerprint()
     pass()
+
+    // Remote Console journeys (owner away, Chrome Remote Desktop on the main display).
+    step = CASES[17]
+    const qaConsoleBounds = input.console.getBounds(), windowCount = BrowserWindow.getAllWindows().length
+    mirrorBounds = JSON.stringify(input.mirror.getBounds())
+    const modeBefore = await modeFile()
+    const sentinel = await evaluate<string>('window.__remoteConsoleQa = crypto.randomUUID(); return window.__remoteConsoleQa')
+    const sameRenderer = async (): Promise<boolean> => BrowserWindow.getAllWindows().length === windowCount
+      && await evaluate<string>('return window.__remoteConsoleQa') === sentinel
+    input.console.hide()
+    await waitFor(async () => !input.console.isVisible(), 5000)
+    const remote = await remoteConsole()
+    remoteBounds = JSON.stringify(remote.bounds)
+    if (!await avatarIntact() || await modeFile() !== modeBefore) fail('remote_console_changed_mirror')
+    if (!await sameRenderer()) fail('remote_console_not_same_window')
+    await shot('operator-remote-console-avatar.png', false, true)
+    pass({ beside_mirror: true, always_on_top: false, focused: remote.focused, windows_over_mirror: remote.windowsOverMirror,
+      width: remote.bounds.width, height: remote.bounds.height, same_renderer: true, mirror_mode_unchanged: true })
+
+    step = CASES[18]
+    // Pressed again, minimized or maximized (a remote viewer may do either): the same window returns, inset on main.
+    await remoteConsole()
+    input.console.minimize()
+    await waitFor(async () => input.console.isMinimized(), 5000)
+    await remoteConsole()
+    input.console.maximize()
+    await waitFor(async () => input.console.isMaximized(), 5000)
+    const restored = await remoteConsole()
+    if (input.console.isMaximized() || JSON.stringify(restored.bounds) !== remoteBounds) fail('remote_console_window_not_restored')
+    if (!await avatarIntact() || !await sameRenderer()) fail('remote_console_changed_mirror')
+    pass({ repeat_same_bounds: true, minimized_restored: true, maximized_restored: true, same_renderer: true })
+
+    step = CASES[19]
+    // A display change (TV reconnect, a remote session resizing the virtual display) re-places
+    // the CONSOLE key's Console over the mirror as before, and leaves Remote Console beside it.
+    if (screen.listenerCount('display-metrics-changed') === 0) fail('display_watch_not_configured')
+    const realDisplays = screen.getAllDisplays
+    let displayQueries = 0
+    screen.getAllDisplays = () => { displayQueries++; return realDisplays() }
+    try {
+      const metricsChanged = async (): Promise<void> => {
+        const before = displayQueries
+        screen.emit('display-metrics-changed', {}, screen.getPrimaryDisplay(), ['workArea'])
+        await waitFor(async () => displayQueries > before, 5000)
+        await new Promise(done => setTimeout(done, 300))
+      }
+      await operatorCommand('show_console')
+      const deck = placement()
+      if (!overMirror(deck)) fail('deck_console_not_over_mirror')
+      input.console.setBounds(remote.bounds)
+      await metricsChanged()
+      const deckAfter = placement()
+      if (!overMirror(deckAfter) || JSON.stringify(deckAfter.bounds) !== JSON.stringify(deck.bounds)) fail('deck_console_not_replaced_over_mirror')
+      await remoteConsole()
+      await metricsChanged()
+      const remoteAfter = placement()
+      if (!besideMirror(remoteAfter) || JSON.stringify(remoteAfter.bounds) !== remoteBounds) fail('remote_console_pulled_over_mirror')
+    } finally { screen.getAllDisplays = realDisplays }
+    if (!await avatarIntact()) fail('remote_console_changed_mirror')
+    pass({ deck_replaced_over_mirror: true, remote_stayed_beside: true, rehomes_observed: 2 })
+
+    step = CASES[20]
+    // Fault injection: only the mirror's display is reported (virtual display missing).
+    // Remote Console reports failure, so the Desktop app alerts, and never covers the avatar.
+    const glassDisplay = screen.getDisplayMatching(input.mirror.getBounds())
+    const realPrimary = screen.getPrimaryDisplay
+    input.console.hide()
+    await waitFor(async () => !input.console.isVisible(), 5000)
+    screen.getAllDisplays = () => [glassDisplay]
+    screen.getPrimaryDisplay = () => glassDisplay
+    try { await operatorCommand('show_console_main', 'failed') }
+    finally { screen.getAllDisplays = realDisplays; screen.getPrimaryDisplay = realPrimary }
+    const refused = placement()
+    if (refused.visible || refused.alwaysOnTop || refused.windowsOverMirror !== 0 || !await avatarIntact()) fail('remote_console_covered_avatar_without_main')
+    await remoteConsole()
+    pass({ reply: 'failed', console_visible: false, windows_over_mirror: 0, recovered_when_main_returns: true })
+    input.console.setBounds(qaConsoleBounds)
 
     step = CASES[1]
     await click('Loop Video')
@@ -466,28 +551,19 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     // next CONSOLE press must put it back over the mirror exactly as before.
     const beforeRemote = await snapshot()
     await edit("set(control('Loop volume'), '0.44')")
-    await operatorCommand('show_console_main')
-    const mirrorNow = screen.getDisplayMatching(input.mirror.getBounds())
-    const remoteBounds = input.console.getBounds(), remoteDisplay = screen.getDisplayMatching(remoteBounds)
-    if (!input.console.isVisible() || input.console.isAlwaysOnTop() || remoteDisplay.id === mirrorNow.id
-      || !input.mirror.isVisible()) fail('remote_console_not_beside_mirror')
-    const mainArea = remoteDisplay.workArea
-    if (remoteBounds.x < mainArea.x || remoteBounds.y < mainArea.y
-      || remoteBounds.x + remoteBounds.width > mainArea.x + mainArea.width
-      || remoteBounds.y + remoteBounds.height > mainArea.y + mainArea.height) fail('remote_console_outside_main')
-    const remoteFocused = input.console.isFocused()
+    const remoteDuringLoop = await remoteConsole()
+    // The loop keeps decoding new frames while the Console sits beside it.
+    const besideMotion = await sample()
     await shot('operator-console-remote-main.png')
     await operatorCommand('show_console')
-    const deckBounds = input.console.getBounds()
-    if (!input.console.isVisible() || !input.console.isFocused() || !input.console.isAlwaysOnTop()
-      || screen.getDisplayMatching(deckBounds).id !== mirrorNow.id) fail('deck_console_not_over_mirror')
+    if (!overMirror(placement())) fail('deck_console_not_over_mirror')
     const afterRemote = await snapshot()
     if (afterRemote.generation !== beforeRemote.generation || afterRemote.mode !== 'loop'
       || afterRemote.status !== 'playing' || !await evaluate<boolean>("return control('Loop volume').value === '0.44'")) {
       fail('remote_console_changed_program_or_draft')
     }
     await edit("set(control('Loop volume'), '0.42')")
-    pass({ remote_display_is_mirror: false, remote_always_on_top: false, remote_focused: remoteFocused,
+    pass({ remote_beside_mirror: true, remote_focused: remoteDuringLoop.focused, decoded_frames_beside: besideMotion.decoded_frames,
       deck_back_over_mirror: true, generation_unchanged: true, unsaved_draft_preserved: true })
 
     step = CASES[9]
@@ -532,6 +608,32 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     await waitFor(() => evaluate("return panel?.textContent.includes('Not playing') && !button('Play on Mirror').matches(':disabled')"))
     await shot('operator-loop-start-normal-avatar.png', true)
     pass({ normal_acknowledged: true, saved_avatar_unchanged: true })
+
+    step = CASES[21]
+    // Venue keys keep their behavior while the Console is on the main display: INTERACTIVE
+    // STUDIO, PLAY LOOP and START hide it; Remote Console then shows the state they set.
+    await remoteConsole()
+    await operatorCommand('studio')
+    if (input.console.isVisible()) fail('studio_kept_remote_console')
+    if (JSON.parse(await modeFile()).mode !== 'studio') fail('studio_mode_not_saved')
+    await returnedAvatar()
+    await remoteConsole()
+    await waitFor(() => evaluate(`return [...document.querySelectorAll('.studio-live__switch button[aria-pressed="true"]')]
+      .map(b => b.textContent.trim()).join() === 'Interactive Studio'`))
+    await shot('operator-remote-console-studio-mode.png', false, true)
+    await operatorCommand('play_loop')
+    if (input.console.isVisible()) fail('play_loop_kept_remote_console')
+    await playing()
+    await remoteConsole()
+    await waitFor(() => evaluate("return !!panel?.textContent.includes('Loop video playing.') && !!button('Return to Avatar')"))
+    const venueMotion = await sample()
+    await shot('operator-remote-console-loop.png')
+    await operatorCommand('normal')
+    if (input.console.isVisible()) fail('start_kept_remote_console')
+    await returnedAvatar(); await persisted(separate, 'avatar')
+    if (JSON.parse(await modeFile()).mode !== 'conversation') fail('start_mode_not_conversation')
+    pass({ studio_hid_console: true, studio_mode_shown: true, play_loop_hid_console: true,
+      decoded_frames_beside: venueMotion.decoded_frames, start_hid_console: true, mode_after_start: 'conversation' })
     if (passed.size !== CASES.length || !CASES.every(name => passed.has(name))) fail('cases_incomplete')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 3,
       screenshotCount: screenshots, musicAnalyser: 'not_executed', consoleCheckCount: passed.size }

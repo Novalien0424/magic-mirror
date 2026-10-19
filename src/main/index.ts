@@ -87,7 +87,7 @@ import {
 } from './wake/supervisor'
 import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
-import { selectPortraitDisplay } from './portrait-display'
+import { selectConsoleMainDisplay, selectPortraitDisplay } from './portrait-display'
 import { validateCubismModelBundle } from './avatar/model-bundle'
 import { importAvatarModel, verifyAvatarModel, safeAvatarFile, listAvatarModels, saveAvatarModelLabel } from './avatar/model-import'
 import type { AvatarModel } from '../shared/avatar-profiles'
@@ -775,9 +775,8 @@ function placeConsoleOnMain(): boolean {
   const win = windows.get('console'), mirror = windows.get('mirror')
   if (!win || win.isDestroyed()) return false
   const mirrorId = mirror && !mirror.isDestroyed() ? screen.getDisplayMatching(mirror.getBounds()).id : undefined
-  const primary = screen.getPrimaryDisplay()
-  const display = primary.id !== mirrorId ? primary : screen.getAllDisplays().find(candidate => candidate.id !== mirrorId)
-  if (display === undefined) {
+  const display = selectConsoleMainDisplay(screen.getAllDisplays(), screen.getPrimaryDisplay().id, mirrorId)
+  if (display === null) {
     marker('CONSOLE_OPEN_FAILED', { reason: 'console_main_display_missing' })
     return false
   }

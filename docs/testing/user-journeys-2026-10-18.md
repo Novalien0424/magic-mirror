@@ -18,6 +18,7 @@ listener, synthetic data, no model calls); "live QA" is the real-API
 | ChatGPT sign-in, image model, test picture | **System** › **Studio service** (also the **Interactive Studio · ChatGPT** chip on **Mirror**) |
 | Everything the models are told | **Avatars** › **Inspect prompt** › **Session** / **Tools & input** |
 | Loop video | **Loop Video**, and **Return to Avatar** in the control bar while it plays |
+| The Console from away, avatar left on the TV | **Remote Console Magic Mirror** on the Mac's Desktop, over Chrome Remote Desktop (O8) |
 
 ## Operator journeys
 
@@ -130,6 +131,63 @@ Verified: offline QA `--operator-loop`; unit `mirror-tv-control`.
 
 **STOP**: TV standby, then the app stops. The mode is kept; START selects
 Conversation, INTERACTIVE STUDIO selects the studio.
+
+### O8. Check in from away (Remote Console)
+
+The owner is away and connects with Chrome Remote Desktop, which shows the
+Mac's main (virtual) display. The avatar stays on the portrait TV. Ruling and
+build: [Remote Console](remote-console-2026-10-18.md). "QA" below is
+`MIRROR_DISPLAY=T749 node scripts/run-phase4-qa.mjs --operator-loop` (real
+displays, production mailbox, isolated data); "live QA" is the real-API
+`portrait_studio` scenario.
+
+1. **Look in on a quiet mirror.** Double-click **Remote Console Magic Mirror**
+   on the Desktop. The Console opens in front, filling the main display. The
+   avatar on the TV is unchanged and nothing covers it. Nothing happens at the
+   venue: no sound, TV, TV mouse or Mirror mode change. The first press after a
+   restart creates the Console, so it takes a second or two.
+   Verified: QA `operator_remote_console_beside_avatar` (same window, Mirror mode
+   file unchanged, avatar rendering, no app window over the TV); production
+   check with the real Desktop app.
+2. **Open it again, or after minimizing or maximizing it.** The same Console
+   comes back in the same place with unsaved edits kept. Verified: QA
+   `operator_remote_console_repeat_restores_window`.
+3. **Check during a visit.** A visitor is in a conversation or a studio visit.
+   Remote Console opens beside the avatar and the visit carries on: same
+   session, the microphone stays with the visit, same studio step. Verified:
+   live QA `studio_remote_console` (questions) and
+   `studio_remote_console_reveal` (after the picture), each followed by the
+   visitor's next spoken turn.
+4. **Check while a loop video plays.** The loop keeps playing new frames and
+   unsaved Loop Video edits stay. Verified: QA
+   `operator_console_remote_main_then_deck`, `operator_remote_console_venue_keys`.
+5. **Staff press CONSOLE at the venue.** The Console moves over the avatar on
+   the TV for the TV mouse, as always, and leaves the remote view. Whichever is
+   pressed last decides where the one Console is. Remote Console takes it back
+   with edits kept. Verified: QA `operator_console_remote_main_then_deck`; live
+   QA `studio_deck_console_painting` (CONSOLE while the picture paints, then the
+   reveal); production check with the real CONSOLE key app.
+6. **Staff press START, INTERACTIVE STUDIO or PLAY LOOP.** The Console hides,
+   as before. Remote Console then shows what they set: the **Mirror mode**
+   switch on **Interactive Studio**, or **Loop video playing.** with **Return
+   to Avatar**. Verified: QA `operator_remote_console_venue_keys`.
+7. **The displays change** (the TV reconnects, or a remote session resizes the
+   virtual display). Remote Console stays where it is. A Console opened by
+   CONSOLE goes back over the mirror, as before. Verified: QA
+   `operator_remote_console_display_change`.
+8. **Something is wrong.**
+   - Magic Mirror is not running: the alert says "Magic Mirror is not running.
+     Start it with START or INTERACTIVE STUDIO, then try again." Nothing starts.
+   - Only the TV display exists (for example, the virtual display is missing):
+     the alert says the Console did not open, and the avatar is never covered.
+     Use the Console app or ⌘⇧D on the TV instead.
+
+   Verified: QA `operator_remote_console_no_main_display` (simulated
+   missing display); production check of the not-running alert; unit
+   `operator-command-qa`, `portrait-display`, `raven-button`.
+
+Not verified: the owner's own Chrome Remote Desktop session and a physical
+CONSOLE press after it (TODO); ⌘⇧D on the main display.
 
 ## Visitor journeys
 

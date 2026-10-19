@@ -13,7 +13,8 @@ import { runCubismConsoleQa } from './cubism-console-qa'
 import { runOperatorLoopQa } from './operator-loop-qa'
 
 type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'
-  | 'getBounds' | 'isVisible' | 'isFocused' | 'isAlwaysOnTop' | 'hide'>
+  | 'getBounds' | 'setBounds' | 'isVisible' | 'isFocused' | 'isAlwaysOnTop' | 'hide'
+  | 'minimize' | 'isMinimized' | 'maximize' | 'isMaximized'>
 
 export interface Phase4QaEvidence {
   readonly step: string

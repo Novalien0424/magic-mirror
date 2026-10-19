@@ -3,7 +3,7 @@
  * transcript, tool result, or model response request is injected. */
 export function ravenConversationProbe(speech: string[], physical = false): string {
   return `
-  const q=window.__ravenQa={stage:'greeting',visit:0,records:[],tools:[],usage:[],errors:[],connections:[],tracks:[],
+  const q=window.__ravenQa={stage:'greeting',visit:0,records:[],tools:[],usage:[],errors:[],errorStages:[],connections:[],tracks:[],
     active:0,audio:false,stops:0,interrupts:0,asr:0,inputText:0,last:Date.now(),media:false,mediaEvents:[],scenes:[],privateContexts:[],mic:[],speech:${JSON.stringify(speech)}};
   q.audibleResponses=new Set();q.continuedAudioResponses=new Set();q.applicationResponses=new Set();q.transcriptionConfigs=[];q.transcriptionRequests=[];
   q.calls=new Map();q.responses=new Map();q.inputs=new Map();q.openCalls=new Set();q.pendingResponses=0;q.inputTiming=[];q.audioTiming=[];q.promptHashes=[];q.promptHashJobs=[];q.images=[];q.phases=[];
@@ -57,7 +57,7 @@ export function ravenConversationProbe(speech: string[], physical = false): stri
         if(e.type==='output_audio_buffer.started'){q.audio=true;q.last=Date.now();q.audioTiming.push({stage:base.stage,at:Date.now(),order:base.order,responseId:e.response_id,applicationOwned:q.applicationResponses.has(e.response_id)});if(!q.media)q.audibleResponses.add(e.response_id)}
         if(e.type==='output_audio_buffer.stopped'||e.type==='output_audio_buffer.cleared'){q.audio=false;q.stops++;q.last=Date.now()}
         if(e.type==='output_audio_buffer.cleared')q.interrupts++;
-        if(e.type==='error'){q.pendingResponses=Math.max(0,q.pendingResponses-1);q.errors.push(['response_cancel_not_active','conversation_already_has_active_response','server_error','rate_limit_exceeded','invalid_request_error','session_expired','input_audio_buffer_commit_empty'].includes(e.error?.code)?e.error.code:'provider_error')}
+        if(e.type==='error'){q.pendingResponses=Math.max(0,q.pendingResponses-1);const c=e.error?.code,t=e.error?.type,id=v=>typeof v==='string'&&/^[a-z0-9_.]{1,64}$/.test(v);q.errors.push(['response_cancel_not_active','conversation_already_has_active_response','server_error','rate_limit_exceeded','invalid_request_error','session_expired','input_audio_buffer_commit_empty'].includes(c)?c:id(c)?'provider_error:'+c:id(t)?'provider_error_type:'+t:'provider_error');q.errorStages.push(q.stage)}
       });return c}
   };
   const getUserMedia=navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
