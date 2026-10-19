@@ -197,7 +197,9 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
   </section>
 }
 
-export interface LiveMessage { readonly tone: Tone; readonly text: string }
+export interface LiveMessage { readonly tone: Tone; readonly text: string
+  /** Set for a Mirror mode result, so the Console can clear it once the mode changes elsewhere. */
+  readonly mirrorMode?: MirrorMode }
 
 /**
  * Stream Deck keys change the Mirror mode while the Console is hidden; CONSOLE and
@@ -284,7 +286,8 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
     setBusy(false)
     if (failed(result)) { setMessage({ tone: 'failed', text: `Interactive Studio request failed (${result.error}).` }); return }
     show(result.status)
-    if (result.action) setMessage({ tone: outcomeTone(result.action.status), text: studioActionText(result.action.code) })
+    if (result.action) setMessage({ tone: outcomeTone(result.action.status), text: studioActionText(result.action.code),
+      ...(command.action === 'mode' && result.status.mirrorMode === command.mode ? { mirrorMode: command.mode } : {}) })
   }
 
   const mode: MirrorMode | undefined = status?.mirrorMode

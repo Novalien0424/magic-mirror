@@ -1,6 +1,21 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**Remote Console QA**, 2026-10-19; pushed to
+Latest delivery (**Interactive Studio stories and fixes**, 2026-10-19 late;
+pushed to `field/macmini-deploy` and PR #2): three spiritual studio stories
+(Past-Life Oracle, Cartographer of Unlived Lives in English, Dream Pawnshop)
+plus the published studio ran live end to end with pictures and transcripts
+([owner review page](https://claude.ai/artifact/W5DPaA7YxfsRaq1gDyFxhd)). QA found
+and fixed: Main-started studios never asked the first step; English stories
+started in Chinese; spelled/described name corrections were lost; the last
+picture was not described (the application now finishes after the final
+reveal); Console stale mode/result line and a false microphone warning. **Final
+build: all four stories pass, full suite, `--operator-loop`, `--console`,
+`--studio-journey` pass.** Name corrections remain probabilistic and one clean-up
+provider error is still being classified (TODO). Runtime 00:11 Taipei 10-20:
+production on this build, Dormant and listening, Conversation, Jabra 69 %; QA
+artifacts deleted. [Evidence](docs/testing/interactive-studio-stories-2026-10-19.md).
+
+Earlier tonight (**Remote Console QA**, 2026-10-19; pushed to
 `field/macmini-deploy` and PR #2): the Desktop app **Remote Console Magic
 Mirror** (Console on the main display beside the avatar, for Chrome Remote
 Desktop) now has user journeys O8, five new `--operator-loop` cases and three

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt, studioScreenView } from '../../shared/portrait-studio-config'
+import { studioStartLanguage } from '../../shared/portrait-studio'
 import type {
   AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
 } from '../../shared/portrait-studio'
@@ -179,7 +180,7 @@ export function createStudioRuntime(input: {
     }
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
-    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: 'zh', phase: asksName(experience) ? 'name' : 'question',
+    const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: studioStartLanguage(experience.studio.startScript), phase: asksName(experience) ? 'name' : 'question',
       name: '', nameAttempts: 0, answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
     run = r
     input.report(`studio_started_${source}`)
@@ -196,7 +197,7 @@ export function createStudioRuntime(input: {
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       r.language = request.language
-      const name = request.name.trim()
+      const name = spelledName(request.name.trim())
       const list = guests(r)
       const candidates = list.length ? matchGuestNames(name, list) : []
       const listed = list.some(guest => guest === name)
@@ -270,6 +271,13 @@ export function createStudioRuntime(input: {
     phase: (): StudioPhase | null => run?.phase ?? null,
     image(id: string): StoredImage | undefined { return run ? images.get(id) : undefined },
   }
+}
+
+/** A caption is a word: three or more spelled letters (M-I-A, M I A, M、I、A) become Mia. */
+export function spelledName(name: string): string {
+  if (!/^[A-Za-z](?:[\s\-、,，]+[A-Za-z]){2,}$/.test(name)) return name
+  const letters = name.replace(/[^A-Za-z]/g, '')
+  return letters[0]!.toUpperCase() + letters.slice(1).toLowerCase()
 }
 
 function sameIdentity(a: StudioIdentity, b: StudioIdentity): boolean {

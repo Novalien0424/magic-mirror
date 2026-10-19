@@ -67,11 +67,16 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
   switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] The Console's result line under the control bar can describe an earlier
-  action after a Stream Deck key changed the state (seen: “Back to the avatar…”
-  while PLAY LOOP's loop plays). Clear it on outside state changes without
-  racing the Console's own Return to Avatar result.
-  [Remote Console QA](docs/testing/remote-console-2026-10-18.md#full-qa-and-user-journeys-2026-10-19).
+- [ ] **Studio names by voice.** Live QA (2026-10-19) corrected same-sounding
+  Chinese characters (王小明 → 王曉明 by 「破曉的曉」) in 7 of 9 visits and passed all
+  3 name steps on the final build, but the Realtime model sometimes records a correction as a
+  confirmation or keeps the heard characters; the glass shows the name for a
+  further correction. Measure with human speakers before an event that depends
+  on exact names. [Studio stories](docs/testing/interactive-studio-stories-2026-10-19.md).
+- [ ] **Rejected studio clean-up delete.** Long visits occasionally get one
+  `item_delete_invalid_item_id` from the provider (no visitor impact). Deletes are
+  now once per item and labelled; the live probe classifies the next occurrence
+  by path. Fix the path it names, then drop this item.
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).

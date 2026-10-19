@@ -220,7 +220,7 @@
       "availability": "studio",
       "routing": "model_intent",
       "description": "Record the name to write on the visitor's picture. The name is only a caption, never an identity confirmation.",
-      "parameters": { "type": "object", "properties": { "name": { "type": "string", "description": "The name exactly as the visitor said or confirmed it, up to 40 characters. For Chinese, use the characters the visitor confirmed." }, "confirmed": { "type": "boolean", "description": "true only after the visitor confirmed this exact name; false when first heard or corrected." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["name", "confirmed", "language"], "additionalProperties": false },
+      "parameters": { "type": "object", "properties": { "name": { "type": "string", "description": "The name for the picture, up to 40 characters. A character the visitor describes (破曉的曉) replaces the same-sounding one you heard; spelled letters are passed exactly as spelled (M-I-A)." }, "confirmed": { "type": "boolean", "description": "true only when the visitor answered your read-back with a plain yes and nothing else; false when first heard, and false whenever the reply adds letters, a character or a different name, even if it also says yes." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["name", "confirmed", "language"], "additionalProperties": false },
       "rules": {
         "useWhen": "When the visitor says the name for the picture, call studio_set_name with confirmed false; after they confirm your read-back, call it again with the same name and confirmed true.",
         "avoidWhen": "Do not call it for other people's names mentioned in passing, and do not guess a name the visitor has not said.",
@@ -236,7 +236,7 @@
       "availability": "studio",
       "routing": "model_intent",
       "description": "Record the visitor's answer to the current studio question.",
-      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words, short, up to 80 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
+      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words and language, never translated, short, up to 80 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
       "rules": {
         "useWhen": "As soon as the visitor answers the current studio question, call studio_answer with that question number and their answer.",
         "avoidWhen": "Do not invent or embellish an answer, and do not answer a question the visitor has not been asked yet.",

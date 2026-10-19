@@ -131,9 +131,12 @@ of three visits had the unidentified provider error, which did not recur.
 
 Screenshots reviewed: the Console at the main display's full size on the
 Avatars page, with Loop Video playing and an unsaved edit, in Interactive Studio
-mode after the venue key, and with the loop playing after PLAY LOOP. Observation,
-not changed: the result line under the control bar can still show an earlier
-action's result (“Back to the avatar…”) after a venue key started a loop (TODO).
+mode after the venue key, and with the loop playing after PLAY LOOP. The result
+line could still show an earlier action's result (“Back to the avatar…”) after a
+venue key started a loop, and the header warned “Check the microphone” during a
+normal wake listener restart; both were fixed later the same evening and are
+asserted by `operator_remote_console_venue_keys`
+([studio stories](interactive-studio-stories-2026-10-19.md)).
 
 ### Final output on the real install (production app, 21:49–21:50 Taipei)
 

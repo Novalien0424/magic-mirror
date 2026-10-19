@@ -1,5 +1,24 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-19 — Studio opening and name read-back (owner directive: fix everything found in QA)
+
+- **The avatar asks the first step.** A studio started by Main (wake in
+  Interactive Studio mode, Mirror mode switch, Console) speaks the Studio start
+  script, then the avatar asks the name question (or question 1) in character
+  from the stage prompts. The step's guidance also joins the conversation, so a
+  visitor who answers first is still understood and the question is not repeated.
+- **Start language follows the start script.** A start script in Latin letters
+  only starts the studio in English (glass and questions); otherwise Chinese.
+  The visitor's replies set the language after that.
+- **Read-back corrections.** The read-back is one short in-character question.
+  Names in Latin letters are spelled back; spelled letters or a described
+  character are a correction, never a confirmation, and outrank the heard
+  characters. Main joins three or more spelled letters into one word (M-I-A → Mia).
+- **The application finishes after the last picture.** With no change left, the
+  reveal describes the picture and hands it over (Final version) without tools;
+  when that reply ends, the application finishes the studio. Hand over the
+  picture applies when the visitor is happy before every change is used.
+
 ## 2026-10-18 — Remote Console on the main display (owner directive, evening)
 
 - **Two routes, one Console.** The Neo CONSOLE key keeps opening the Console

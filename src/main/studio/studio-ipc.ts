@@ -2,7 +2,7 @@ import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
 import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
 import { PORTRAIT_STUDIO, studioPrompt, studioWakePhrase } from '../../shared/portrait-studio-config'
 import {
-  parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL,
+  parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL, studioStartLanguage,
   type AvatarExperience, type MirrorMode, type StudioConsoleResult, type StudioConsoleStatus, type StudioOutcome, type StudioReply,
   type StudioSessionEvent, type StudioView,
 } from '../../shared/portrait-studio'
@@ -87,7 +87,8 @@ export function registerStudioIpc(deps: {
     if (!sameIdentity(identity, currentIdentity())) return
     const result = ok ? runtime.start(identity, experience, 'session_default') : null
     if (experience && result?.status === 'accepted') {
-      deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript }, identity })
+      deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
+        language: studioStartLanguage(experience.studio.startScript) }, identity })
       return
     }
     // A Console or visitor start won the race; that start already entered the studio.
@@ -103,7 +104,8 @@ export function registerStudioIpc(deps: {
     // The session may have ended or rolled over while config and sign-in were checked.
     if (!sameIdentity(identity, currentIdentity())) return { status: 'rejected', code: 'studio_requires_active_session' }
     const result = runtime.start(identity, experience, source)
-    if (result.status === 'accepted') deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript }, identity })
+    if (result.status === 'accepted') deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
+        language: studioStartLanguage(experience.studio.startScript) }, identity })
     return { status: result.status, code: result.code }
   }
   /** A live switch applies to the visitor now: Interactive Studio starts, Conversation closes the studio. */

@@ -49,8 +49,8 @@ export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: str
   offerChange: { label: 'Offer a change', when: 'Added to the reveal while the visitor may still ask for a change.' },
   repainting: { label: 'Repainting', when: 'After the visitor asks for a change.' },
   noChangesLeft: { label: 'No changes left', when: 'When the visitor asks for another change after the last allowed one.' },
-  finalVersion: { label: 'Final version', when: 'Added to the reveal when no more changes are allowed.' },
-  finished: { label: 'Hand over the picture', when: 'When the visitor is happy, before the photo hold. In Interactive Studio mode the Studio farewell (5 · Ending) follows, word for word.' },
+  finalVersion: { label: 'Final version', when: 'Added to the reveal when no more changes are allowed: the avatar hands the picture over, then the studio finishes by itself and the picture stays up for photos.' },
+  finished: { label: 'Hand over the picture', when: 'When the visitor is happy before every change is used, before the photo hold (the last picture is handed over by Final version). In Interactive Studio mode the Studio farewell (5 · Ending) follows, word for word.' },
   exited: { label: 'Visitor stops the studio', when: 'When the visitor stops the studio to keep chatting; the visit continues as a conversation.' },
 })
 export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.freeze({
@@ -207,6 +207,11 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
 } satisfies AvatarExperience)
 
 export function defaultExperience(): AvatarExperience { return structuredClone(DEFAULT_EXPERIENCE) as AvatarExperience }
+
+/** A studio starts in its start script's language (Latin letters only: English); the visitor's replies set it after that. */
+export function studioStartLanguage(startScript: string): StudioLanguage {
+  return !/\p{Script=Han}/u.test(startScript) && /[A-Za-z]/.test(startScript) ? 'en' : 'zh'
+}
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const exact = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
@@ -407,7 +412,8 @@ export function parseStudioView(value: unknown): StudioView | null {
 }
 
 export type StudioSessionEvent =
-  | { event: 'enter'; startScript: string }
+  /** `firstStep`: Main's guidance for the first step (name question or question 1), asked after the start script. */
+  | { event: 'enter'; startScript: string; firstStep: string; language: StudioLanguage }
   | { event: 'ready'; imageUrl: string; revision: number; revisionsLeft: number; language: StudioLanguage }
   | { event: 'failed'; code: StudioImageFailure; line: string; keepPortrait: boolean }
   | { event: 'keepsake_done'; afterPortrait: 'continue' | 'farewell' }
@@ -425,7 +431,9 @@ export function parseStudioSessionEvent(value: unknown): StudioSessionEvent | nu
   if (!record(value)) return null
   switch (value.event) {
     // Same rule as the saved start script, which may span lines.
-    case 'enter': return exact(value, ['event', 'startScript']) && studioText(value.startScript, 500, false, true) ? { event: 'enter', startScript: value.startScript } : null
+    case 'enter': return exact(value, ['event', 'startScript', 'firstStep', 'language']) && studioText(value.startScript, 500, false, true)
+      && studioText(value.firstStep, 2000, true, true) && (value.language === 'zh' || value.language === 'en')
+      ? { event: 'enter', startScript: value.startScript, firstStep: value.firstStep, language: value.language } : null
     case 'ready': return exact(value, ['event', 'imageUrl', 'revision', 'revisionsLeft', 'language']) && typeof value.imageUrl === 'string'
       && /^magic-mirror-media:\/\/studio\/[a-z0-9-]{8,64}$/.test(value.imageUrl) && Number.isInteger(value.revision) && (value.revision as number) >= 0
       && Number.isInteger(value.revisionsLeft) && (value.revisionsLeft as number) >= 0 && (value.language === 'zh' || value.language === 'en')

@@ -14,7 +14,10 @@ export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop, mir
   const wake = state.status === 'success' ? state.value.wakeInput : undefined
   const listening = wake?.state === 'signal' || wake?.state === 'silent'
   const needsWake = lifecycle === 'dormant' || lifecycle === 'offlineLoop'
-  const failed = state.status === 'failure' || needsWake && !listening
+  // 'waiting' lasts under three seconds (Main reports 'stalled' after that): a normal
+  // (re)start, for example after a Mirror mode switch, not a microphone problem.
+  const starting = needsWake && wake?.state === 'waiting'
+  const failed = state.status === 'failure' || needsWake && !listening && !starting
   const title = lifecycle === 'active' ? 'In conversation' : lifecycle === 'activating' ? 'Waking up'
     : lifecycle === 'suspending' ? 'Returning to sleep' : lifecycle === 'dormant' ? 'Asleep'
       : lifecycle === 'offlineLoop' ? 'Cloud connection unavailable' : lifecycle === 'maintenance' ? 'Needs attention' : 'Starting'
@@ -25,6 +28,7 @@ export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop, mir
     <div aria-live="polite"><span className="runtime-status__dot" aria-hidden="true" /><strong>{title}</strong>{state.status === 'loading' ? ' · Loading status…'
       : state.status === 'failure' ? ' · Status unavailable. Check the app connection.'
         : needsWake ? listening ? <> · Listening for <span lang="zh-Hant">「{phrase || 'the wake phrase'}」</span></>
+          : starting ? ' · Starting the wake listener…'
           : ` · Wake listener ${wake?.state ?? 'unavailable'}. Check the microphone connection and device selection.`
           : ''}{mirrorMode === 'studio' && <span className="runtime-status__mode">Interactive Studio mode</span>}</div>
     {needsWake && wake?.recovery && wake.recovery.state !== 'recovered' && <WakeRecoveryStatus recovery={wake.recovery} />}

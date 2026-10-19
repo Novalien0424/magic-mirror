@@ -81,7 +81,9 @@ const AVATAR_SECTIONS: readonly AvatarSection[] = PROFILE_SECTIONS
 const SYSTEM_PAGES = ['Devices', 'Media folders', 'Studio service', 'Models', 'Config', 'Events', 'Simulator', 'Phase Tests'] as const
 /** Everyday System pages; the rest sit after an Advanced divider. */
 const SYSTEM_EVERYDAY = 3
-type LiveLine = { readonly tone: 'success' | 'degraded' | 'failed' | 'loading'; readonly content: React.ReactNode }
+type LiveLine = { readonly tone: 'success' | 'degraded' | 'failed' | 'loading'; readonly content: React.ReactNode
+  /** The state a result describes; the line clears when the Mirror leaves it (for example a Stream Deck key). */
+  readonly about?: { readonly loopMode?: OperatorLoopSnapshot['mode']; readonly mirrorMode?: MirrorMode } }
 const LIVE_ICONS: Readonly<Record<LiveLine['tone'], string>> = { success: '✓', degraded: '⚠', failed: '✕', loading: '◷' }
 const MODULES = [
   'app',
@@ -2100,6 +2102,14 @@ export function App(): React.JSX.Element {
   }, [])
   const [stopSignal, setStopSignal] = useState(0)
   useEffect(() => { const line = lifecycleLine(lifecycleActionState); if (line) setLiveLine(line) }, [lifecycleActionState])
+  // START, PLAY LOOP and INTERACTIVE STUDIO change the Mirror while the Console is hidden;
+  // a result about the earlier state would then read as the current one.
+  useEffect(() => setLiveLine(line => {
+    const about = line?.about
+    const stale = about !== undefined && (about.loopMode !== undefined && operatorLoop !== null && operatorLoop.mode !== about.loopMode
+      || about.mirrorMode !== undefined && mirrorMode !== undefined && mirrorMode !== about.mirrorMode)
+    return stale ? null : line
+  }), [operatorLoop?.mode, mirrorMode])
   const [simulatorState, setSimulatorState] = useState<SimulatorState>({ status: 'idle' })
   const [configState, setConfigState] = useState<ConfigState>({ status: 'loading' })
   const [modelsState, setModelsState] = useState<ModelsState>({ status: 'loading' })
@@ -2469,7 +2479,8 @@ export function App(): React.JSX.Element {
     )
   }
 
-  const showLive = (message: LiveMessage): void => setLiveLine({ tone: message.tone, content: message.text })
+  const showLive = (message: LiveMessage): void => setLiveLine({ tone: message.tone, content: message.text,
+    ...(message.mirrorMode ? { about: { mirrorMode: message.mirrorMode } } : {}) })
   /** Stops scenes and scene tests on the Mirror from any page; the avatar workspace drops its pending checks. */
   const stopAll = (): void => {
     const bridge = bridgeRef.current
@@ -2488,7 +2499,10 @@ export function App(): React.JSX.Element {
     void bridge.loopVideo({ action: 'stop' }).then(
       response => {
         if (!mountedRef.current) return
-        if (response.ok) { setOperatorLoop(response.value.snapshot); setLiveLine({ tone: 'success', content: 'Back to the avatar. Voice, wake listening and camera are on again.' }) }
+        if (response.ok) {
+          setOperatorLoop(response.value.snapshot)
+          setLiveLine({ tone: 'success', content: 'Back to the avatar. Voice, wake listening and camera are on again.', about: { loopMode: 'avatar' } })
+        }
         else setLiveLine({ tone: 'failed', content: <ReasonDetail code={response.reason} /> })
       },
       () => { if (mountedRef.current) setLiveLine({ tone: 'failed', content: <ReasonDetail code="operator_loop_request_failed" /> }) })

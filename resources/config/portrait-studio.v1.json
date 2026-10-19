@@ -35,17 +35,17 @@
     "reveal": "The finished portrait is now displayed on the mirror and attached above as an image. Speak in {{language}}. In character, describe one or two details you can actually see, in at most two short sentences. Then {{followUp}}",
     "revealBlind": "The finished portrait is now displayed on the mirror, but you cannot see it. Speak in {{language}}. In character, tell the visitor in one short sentence that their portrait is ready, without describing details. Then {{followUp}}",
     "offerChange": "ask whether they would like to change one thing; if they ask for a change, call studio_revise with it; if they are happy, call studio_finish.",
-    "finalVersion": "tell them warmly that this portrait is theirs and that they can take a photo of it now. Then call studio_finish."
+    "finalVersion": "tell them warmly that this portrait is theirs and that they can take a photo of it now."
   },
   "guidance": {
     "askName": "The studio is open. Ask this name question now: {{question}}",
-    "confirmName": "Read the name back exactly as 「{{name}}」 and ask the visitor to confirm it. For a Chinese name you may check a character by its meaning. When they confirm, call studio_set_name with the same name and confirmed true; when they correct it, call studio_set_name with the corrected name and confirmed false.",
+    "confirmName": "Read the name back exactly as 「{{name}}」 in one short, in-character question, without explaining how to answer; spell a name in Latin letters letter by letter, and for a Chinese name you may check a character by its meaning. A plain yes confirms it: call studio_set_name with the same name and confirmed true. Spelled letters or a described character is a correction, even with a yes, and it outranks the name you heard, because speech transcripts cannot tell same-sounding names apart. Call studio_set_name with confirmed false and the name rebuilt from the correction: spelled letters exactly as spelled (M-I-A; the app joins them into Mia), a described character put in its place (王小明 corrected with 破曉的曉 is 王曉明).",
     "chooseGuest": "The event guest list has these close matches: {{candidates}}. Choose the one that matches what you heard and read it back for confirmation; call studio_set_name with that exact spelling. If none fits, ask the visitor to say their full name again.",
     "guestOnly": "That name is not on the event guest list. Ask the visitor to say the full name they registered with.",
     "askQuestion": "Now ask question {{index}} of {{count}}: {{question}}",
-    "painting": "All answers are recorded and the portrait is being painted; it takes a little while. In one short sentence, tell the visitor you are starting to paint. You have not seen the picture yet, so do not describe it.",
+    "painting": "All answers are recorded and the portrait is being painted. In one short sentence, in character, tell the visitor you are starting to paint and that it takes about half a minute, then stop. Say nothing about how the picture looks.",
     "repainting": "The change is being painted. In one short sentence, tell the visitor you are repainting with that change. Do not describe the result yet.",
-    "finished": "The portrait stays on the mirror for a moment so the visitor can photograph it. In one short sentence, say goodbye to the studio and that it is theirs.",
+    "finished": "The portrait stays on the mirror for a moment so the visitor can photograph it. In one short sentence, in character, tell them it is theirs and that they can take a photo now.",
     "exited": "The studio is closed and the picture is gone. Continue the normal conversation briefly.",
     "wrongStep": "That is not the current studio step. Continue with the current step: {{current}}",
     "busy": "The portrait is still being painted. Keep chatting lightly; do not call studio tools until it is shown.",

@@ -39,6 +39,19 @@ describe('bounded Console status polling', () => {
     expect(bridge.getAvatarRuntime).toHaveBeenCalledTimes(2)
     expect(vi.getTimerCount()).toBe(0)
   })
+  it('shows a starting wake listener calmly and keeps the microphone warning for a stalled one', () => {
+    const strip = (state: WakeInputSnapshot['state']) => {
+      const wakeInput: WakeInputSnapshot = { state, blocks: 0, peak: 0, rms: 0, lastBlockAgeMs: null, detections: 0 }
+      const store = createConsoleRuntimeStore()
+      store.set({ status: 'success', value: { ...success.value, wakeInput } })
+      return renderToStaticMarkup(createElement(RuntimeStatusStrip, { store, lifecycle: 'dormant', phrase: '魔鏡阿魔鏡' }))
+    }
+    expect(strip('waiting')).toContain('Starting the wake listener…')
+    expect(strip('waiting')).not.toContain('runtime-status--attention')
+    expect(strip('stalled')).toContain('Check the microphone connection')
+    expect(strip('stalled')).toContain('runtime-status--attention')
+    expect(strip('signal')).toContain('Listening for')
+  })
   it('releases the timeout on success, rejection and synchronous bridge failure', async () => {
     vi.useFakeTimers()
     expect(await getAvatarRuntimeWithTimeout({ getAvatarRuntime: async () => success })).toBe(success)

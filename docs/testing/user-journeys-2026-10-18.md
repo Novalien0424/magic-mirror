@@ -196,7 +196,9 @@ Persona wake phrase → wake greeting → conversation → sleep phrase or idle 
 Dormant (black glass).
 
 ### V2. Interactive Studio mode
-1. 「招喚渡鴉使者」 → the avatar appears and speaks the Studio start script.
+1. 「招喚渡鴉使者」 → the avatar appears, speaks the Studio start script, then asks
+   the name question (or question 1 when the name step is off) in character. An
+   English start script starts the studio in English (2026-10-19 fix).
 2. Name card → the visitor answers → the avatar reads the name back → confirm or
    correct (skipped when the name step is off).
 3. Questions in order with a counter and earlier answers as chips.

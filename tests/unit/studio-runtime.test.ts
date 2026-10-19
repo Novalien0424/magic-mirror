@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
+import { createStudioRuntime, spelledName } from '../../src/main/studio/studio-runtime'
 import type { PortraitImageProvider, PortraitImageResult } from '../../src/main/studio/image-provider'
 import { defaultExperience, parseStudioSessionEvent, parseStudioView, type AvatarExperience } from '../../src/shared/portrait-studio'
 
@@ -36,6 +36,24 @@ async function answerAll(h: ReturnType<typeof harness>, count = 4) {
 afterEach(() => { vi.useRealTimers() })
 
 describe('portrait studio runtime', () => {
+  it('writes a spelled name as a word on the picture, and leaves other names alone', () => {
+    expect(['M-I-A', 'M I A', 'm、i、a', 'M, I, A'].map(spelledName)).toEqual(['Mia', 'Mia', 'Mia', 'Mia'])
+    expect(['Mia', 'A J', 'J.R.R.', '王曉明', 'Mary-Ann'].map(spelledName)).toEqual(['Mia', 'A J', 'J.R.R.', '王曉明', 'Mary-Ann'])
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    expect(h.runtime.handle({ action: 'set_name', name: 'M-I-A', confirmed: false, language: 'zh' }, identity).next).toContain('「Mia」')
+  })
+
+  it('starts in the start script language, so an English story asks and shows its first question in English', () => {
+    const english = harness({ experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, askName: false,
+      startScript: 'Welcome, traveller. Answer three questions.' } } })
+    expect(english.runtime.start(identity, english.experience, 'console').next).toContain('If you could become any animal or creature')
+    expect(english.views().at(-1)).toMatchObject({ language: 'en', prompt: 'If you could become any animal or creature, what would it be?' })
+    const chinese = harness()
+    expect(chinese.runtime.start(identity, chinese.experience, 'console').next).toContain('畫上要寫什麼名字')
+    expect(chinese.views().at(-1)).toMatchObject({ language: 'zh' })
+  })
+
   it('runs name → questions → painting → reveal → change → keepsake with valid views and events', async () => {
     vi.useFakeTimers()
     const h = harness()

@@ -32,7 +32,7 @@ export class MemoryDialogue {
     if (this.phase === 'closed') return
     const language = visitorSentenceLanguage(text)
     if (!language) return
-    if (this.languageItem) this.options.send({ type: 'conversation.item.delete', item_id: this.languageItem })
+    if (this.languageItem) this.options.send({ type: 'conversation.item.delete', event_id: `delete_language_${this.languageRevision}`, item_id: this.languageItem })
     this.languageItem = `mirror_language_${++this.languageRevision}`
     this.options.send({ type: 'conversation.item.create', item: { id: this.languageItem, type: 'message', role: 'system',
       content: [{ type: 'input_text', text: REALTIME_PROMPTS.languageHints[language] }] } })

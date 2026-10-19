@@ -45,8 +45,9 @@ describe('Portrait Studio configuration', () => {
     const experience = defaultExperience()
     experience.studio.startScript = '我在。\n今天想讓我為你畫一幅畫像嗎？'
     expect(parseAvatarExperience(experience)).not.toBeNull()
-    expect(parseStudioSessionEvent({ event: 'enter', startScript: experience.studio.startScript })).not.toBeNull()
-    expect(parseStudioSessionEvent({ event: 'enter', startScript: 'tab\tscript' })).toBeNull()
+    expect(parseStudioSessionEvent({ event: 'enter', startScript: experience.studio.startScript, firstStep: 'Ask this name question now: 名字？\n', language: 'en' })).not.toBeNull()
+    expect(parseStudioSessionEvent({ event: 'enter', startScript: 'tab\tscript', firstStep: '', language: 'zh' })).toBeNull()
+    expect(parseStudioSessionEvent({ event: 'enter', startScript: experience.studio.startScript })).toBeNull()
   })
 
   it('keeps settings saved before stage prompts valid and validates stage overrides', () => {
@@ -144,7 +145,7 @@ describe('Portrait Studio IPC', () => {
     const h = harness()
     const started = await h.console({ action: 'start' }) as { ok: true; value: { action: { code: string } } }
     expect(started.value.action.code).toBe('studio_started')
-    expect(h.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'enter', startScript: defaultExperience().studio.startScript }, identity: RT1 })
+    expect(h.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'enter', startScript: defaultExperience().studio.startScript, firstStep: expect.stringContaining('畫上要寫什麼名字'), language: 'zh' }, identity: RT1 })
     const ended = await h.console({ action: 'exit' }) as { ok: true; value: { action: { code: string } } }
     expect(ended.value.action.code).toBe('studio_operator_exit')
     expect(h.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'closed', reason: 'studio_operator_exit' }, identity: RT1 })
@@ -183,7 +184,7 @@ describe('Portrait Studio IPC', () => {
     const h = harness({ lifecycle: 'activating', experience: studioDefault })
     h.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
     await vi.waitFor(() => expect(h.dispatched).toContainEqual({ type: 'studio_event',
-      event: { event: 'enter', startScript: defaultExperience().studio.startScript }, identity: RT1 }))
+      event: { event: 'enter', startScript: defaultExperience().studio.startScript, firstStep: expect.stringContaining('畫上要寫什麼名字'), language: 'zh' }, identity: RT1 }))
     h.move({ lifecycle: 'active', realtimeSessionId: 'rt-2', sessionGeneration: 2 })
     expect(h.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'closed', reason: 'studio_session_replaced' }, identity: RT1 })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -234,7 +235,7 @@ describe('Portrait Studio IPC', () => {
       const h = harness({ mirrorMode })
       await h.console({ action: 'mode', mode: 'studio' })
       await vi.waitFor(() => expect(h.dispatched).toContainEqual({ type: 'studio_event',
-        event: { event: 'enter', startScript: defaultExperience().studio.startScript }, identity: RT1 }))
+        event: { event: 'enter', startScript: defaultExperience().studio.startScript, firstStep: expect.stringContaining('畫上要寫什麼名字'), language: 'zh' }, identity: RT1 }))
       expect(h.reports).toContain('studio_started_mode')
       await h.console({ action: 'mode', mode: 'conversation' })
       expect(h.dispatched.at(-1)).toEqual({ type: 'studio_event', event: { event: 'closed', reason: 'studio_operator_exit' }, identity: RT1 })

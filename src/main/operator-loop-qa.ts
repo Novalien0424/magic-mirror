@@ -626,6 +626,10 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     await playing()
     await remoteConsole()
     await waitFor(() => evaluate("return !!panel?.textContent.includes('Loop video playing.') && !!button('Return to Avatar')"))
+    // An earlier "Back to the avatar" result must not read as the current state.
+    if (await evaluate<boolean>("return (document.querySelector('.live-bar__result')?.textContent ?? '').includes('Back to the avatar')")) {
+      fail('stale_result_line')
+    }
     const venueMotion = await sample()
     await shot('operator-remote-console-loop.png')
     await operatorCommand('normal')

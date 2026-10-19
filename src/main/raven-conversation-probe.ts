@@ -3,7 +3,7 @@
  * transcript, tool result, or model response request is injected. */
 export function ravenConversationProbe(speech: string[], physical = false): string {
   return `
-  const q=window.__ravenQa={stage:'greeting',visit:0,records:[],tools:[],usage:[],errors:[],errorStages:[],connections:[],tracks:[],
+  const q=window.__ravenQa={stage:'greeting',visit:0,records:[],tools:[],usage:[],errors:[],errorStages:[],deleteKinds:new Map(),serverItems:new Set(),serverDeleted:new Set(),connections:[],tracks:[],
     active:0,audio:false,stops:0,interrupts:0,asr:0,inputText:0,last:Date.now(),media:false,mediaEvents:[],scenes:[],privateContexts:[],mic:[],speech:${JSON.stringify(speech)}};
   q.audibleResponses=new Set();q.continuedAudioResponses=new Set();q.applicationResponses=new Set();q.transcriptionConfigs=[];q.transcriptionRequests=[];
   q.calls=new Map();q.responses=new Map();q.inputs=new Map();q.openCalls=new Set();q.pendingResponses=0;q.inputTiming=[];q.audioTiming=[];q.promptHashes=[];q.promptHashJobs=[];q.images=[];q.phases=[];
@@ -30,7 +30,7 @@ export function ravenConversationProbe(speech: string[], physical = false): stri
         if(e.type==='session.update')q.transcriptionRequests.push(e.session?.audio?.input?.transcription??e.session?.input_audio_transcription??null);
         if(e.type==='response.create'){q.pendingResponses++;q.last=Date.now()}
         if(e.type==='conversation.item.create'&&e.item?.role==='user'&&e.item.content?.some(x=>x.type==='input_text'))q.inputText++;
-        if(e.type==='conversation.item.delete'&&typeof e.item_id==='string')q.deletes.push(e.item_id);
+        if(e.type==='conversation.item.delete'&&typeof e.item_id==='string'){q.deletes.push(e.item_id);q.deleteKinds.set(e.item_id,/^delete_([a-z_]+)_\\d+$/.exec(e.event_id??'')?.[1]??'unlabelled')}
         if(e.type==='conversation.item.create')for(const part of e.item?.content??[])if(part.type==='input_image'&&typeof part.image_url==='string'){q.images.push({stage:q.stage,image:part.image_url});if(q.images.length>2)q.images.shift()}
         if(e.type==='session.update'&&e.session?.instructions?.includes('Identity: verbally confirmed.'))q.privateContexts.push({stage:q.stage,visit:q.visit,at:Date.now()});
         if(e.type==='conversation.item.create'&&e.item?.type==='function_call_output'){
@@ -55,9 +55,9 @@ export function ravenConversationProbe(speech: string[], physical = false): stri
         if(e.type==='response.created'){q.pendingResponses=Math.max(0,q.pendingResponses-1);q.responses.set(e.response?.id,q.stage);if(['mirror_scene_cue','mirror_sleep_cue','mirror_memory_question','mirror_studio'].some(k=>typeof e.response?.metadata?.[k]==='string'))q.applicationResponses.add(e.response.id);if(e.response?.metadata?.mirror_studio==='reveal')q.studioReveals++;q.active++;q.last=Date.now()}
         if(e.type==='response.done'){q.active=Math.max(0,q.active-1);q.last=Date.now();q.usage.push({stage:q.stage,status:e.response?.status,tokens:e.response?.usage?.total_tokens??0})}
         if(e.type==='output_audio_buffer.started'){q.audio=true;q.last=Date.now();q.audioTiming.push({stage:base.stage,at:Date.now(),order:base.order,responseId:e.response_id,applicationOwned:q.applicationResponses.has(e.response_id)});if(!q.media)q.audibleResponses.add(e.response_id)}
-        if(e.type==='output_audio_buffer.stopped'||e.type==='output_audio_buffer.cleared'){q.audio=false;q.stops++;q.last=Date.now()}
+        if(e.type==='output_audio_buffer.stopped'||e.type==='output_audio_buffer.cleared'){q.audio=false;q.stops++;q.last=Date.now()}if((e.type==='conversation.item.added'||e.type==='conversation.item.created')&&typeof e.item?.id==='string')q.serverItems.add(e.item.id);if(e.type==='conversation.item.deleted'&&typeof e.item_id==='string')q.serverDeleted.add(e.item_id);
         if(e.type==='output_audio_buffer.cleared')q.interrupts++;
-        if(e.type==='error'){q.pendingResponses=Math.max(0,q.pendingResponses-1);const c=e.error?.code,t=e.error?.type,id=v=>typeof v==='string'&&/^[a-z0-9_.]{1,64}$/.test(v);q.errors.push(['response_cancel_not_active','conversation_already_has_active_response','server_error','rate_limit_exceeded','invalid_request_error','session_expired','input_audio_buffer_commit_empty'].includes(c)?c:id(c)?'provider_error:'+c:id(t)?'provider_error_type:'+t:'provider_error');q.errorStages.push(q.stage)}
+        if(e.type==='error'){q.pendingResponses=Math.max(0,q.pendingResponses-1);const c=e.error?.code,t=e.error?.type,id=v=>typeof v==='string'&&/^[a-z0-9_.]{1,64}$/.test(v);const msg=String(e.error?.message??''),gone=c==='item_delete_invalid_item_id'?[...q.deleteKinds.keys()].find(k=>msg.includes(k)):undefined;const path=/^delete_([a-z_]+)_\\d+$/.exec(e.error?.event_id??'')?.[1]??(gone?q.deleteKinds.get(gone)+(q.serverItems.has(gone)?'.listed':'.unlisted')+(q.serverDeleted.has(gone)?'.removed':''):undefined);q.errors.push((['response_cancel_not_active','conversation_already_has_active_response','server_error','rate_limit_exceeded','invalid_request_error','session_expired','input_audio_buffer_commit_empty'].includes(c)?c:id(c)?'provider_error:'+c:id(t)?'provider_error_type:'+t:'provider_error')+(path?'@'+path:''));q.errorStages.push(q.stage)}
       });return c}
   };
   const getUserMedia=navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);

@@ -555,6 +555,11 @@ export function createRealtimeSession(
   let studioEnter: Promise<boolean> | undefined
   let studioAgentSwap: Promise<unknown> = Promise.resolve()
   let studioRevealImageItem: string | undefined
+  // A studio started by Main (wake, Mirror mode switch, Console) gets its first step with `enter`;
+  // a visitor's own request gets it in the tool result instead.
+  let studioFirstStep = '', studioFirstStepPending = false, studioFirstLanguage: 'zh' | 'en' = 'zh'
+  // The run whose final reveal is speaking; the application finishes it when that reply ends.
+  let studioFinalReveal: number | undefined
   // Main starts a studio-default session once it is active; the greeting waits for its `enter`.
   let studioDefaultStart: Promise<boolean> | undefined
   let studioDefaultSettle: ((started: boolean) => void) | undefined
@@ -665,8 +670,8 @@ export function createRealtimeSession(
         if (reply.status === 'accepted' && !await enterStudio()) { void studioRequest({ action: 'exit' }); return unavailable }
         return { outcome: reply.status, studio: reply }
       },
-      studio_set_name: args => studioTool({ action: 'set_name', name: args.name as string, confirmed: args.confirmed as boolean, language: args.language as 'zh' | 'en' }),
-      studio_answer: args => studioTool({ action: 'answer', question: args.question as number, answer: args.answer as string, language: args.language as 'zh' | 'en' }),
+      studio_set_name: args => { studioFirstStepPending = false; return studioTool({ action: 'set_name', name: args.name as string, confirmed: args.confirmed as boolean, language: args.language as 'zh' | 'en' }) },
+      studio_answer: args => { studioFirstStepPending = false; return studioTool({ action: 'answer', question: args.question as number, answer: args.answer as string, language: args.language as 'zh' | 'en' }) },
       studio_revise: args => studioTool({ action: 'revise', change: args.change as string }),
       studio_finish: () => studioTool({ action: 'finish' }),
       studio_exit: async () => {
@@ -884,14 +889,16 @@ export function createRealtimeSession(
   const sendGreeting = () => {
     if (closed || failureReported || greetingState !== 'pending' || greetingAbort.signal.aborted) return
     greetingState = 'sent'
-    const speak = (text: string) => {
+    const speak = (text: string, onFinished?: (completed: boolean) => void) => {
       if (closed || !text.trim()) return
-      try { speakVerbatim(text) }
+      try { speakVerbatim(text, undefined, onFinished) }
       catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'wake_greeting_failed', sessionGeneration, createdAt) }
     }
     if (!studioDefaultStart) { speak(input.wakeGreeting ?? ''); return }
     // Studio-default sessions greet with the studio start script once Main started the studio.
-    void studioDefaultStart.then(started => speak(started ? input.avatar!.experience!.studio.startScript : input.wakeGreeting ?? ''))
+    void studioDefaultStart.then(started => started
+      ? speak(input.avatar!.experience!.studio.startScript, completed => { if (completed) askStudioFirstStep(studioStarts) })
+      : speak(input.wakeGreeting ?? ''))
   }
   const scheduleGreeting = () => {
     if (greetingState !== 'pending') return
@@ -1164,6 +1171,8 @@ export function createRealtimeSession(
   const mediaWakeItems = new Set<string>()
   const mediaInputItems = new Set<string>()
   const mediaCleanupPending = new Set<string>()
+  // Each item is deleted at most once: a repeated request fails with item_delete_invalid_item_id.
+  const deletedItemIds = new Set<string>()
   const rememberMediaInput = (itemId: string): void => {
     mediaInputItems.add(itemId)
     if (mediaInputItems.size > 256) mediaInputItems.delete(mediaInputItems.values().next().value!)
@@ -1185,7 +1194,7 @@ export function createRealtimeSession(
       if (typeof itemId === 'string') { retrievedItems.add(itemId); if (retrievedItems.size > 256) retrievedItems.delete(retrievedItems.values().next().value!) }
       if (typeof itemId === 'string' && mediaCleanupPending.delete(itemId)) {
         // Delete only after that retrieval, otherwise its request fails with item_not_found.
-        transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId })
+        deleteConversationItem(itemId, 'input')
       }
       return
     }
@@ -1262,9 +1271,15 @@ export function createRealtimeSession(
           // Application studio replies (the reveal) have no visitor turn; their metadata marks them.
           const studioReply = typeof readProperty(metadata, 'mirror_studio') === 'string' || !!itemId && studioTurnItems.has(itemId)
           if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item, studioReply)
+          if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio_final') === 'true' && studioFinalReveal !== undefined) {
+            // No change is left: the reveal handed the picture over, so the application finishes the studio
+            // (the model is not asked to call studio_finish, which it tended to do before describing).
+            const run = studioFinalReveal; studioFinalReveal = undefined
+            if (sameStudioRun(run)) void studioRequest({ action: 'finish' })
+          }
           if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio') === 'reveal' && studioRevealImageItem) {
             // The downscaled image served one reveal; keep it out of later billed context.
-            deleteConversationItem(studioRevealImageItem); studioRevealImageItem = undefined
+            deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined
           }
           if (itemId && readProperty(response, 'status') === 'completed') memoryInput('settled', itemId)
           askPendingQuestion()
@@ -2008,6 +2023,8 @@ export function createRealtimeSession(
     const itemId = readProperty(item, 'id'), kind = readProperty(item, 'type'), callId = readProperty(item, 'call_id')
     // Application system items (hints) hold no visitor content.
     if (typeof itemId !== 'string' || itemId === studioRevealImageItem || readProperty(item, 'role') === 'system') return
+    // A late item event for an item already removed must not queue a second delete.
+    if (deletedItemIds.has(itemId)) return
     if (kind === 'function_call' || kind === 'function_call_output') {
       if (typeof callId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) return
       const known = studioCalls.get(callId)
@@ -2029,22 +2046,25 @@ export function createRealtimeSession(
   function cleanupStudioItems(): void {
     // A studio entered again keeps its history until it closes too.
     if (closed || studioActive) return
-    if (studioRevealImageItem) { deleteConversationItem(studioRevealImageItem); studioRevealImageItem = undefined }
+    if (studioRevealImageItem) { deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined }
     for (const itemId of studioItems) {
       if (createdInputItemIds.has(itemId) && !retrievedItems.has(itemId)) mediaCleanupPending.add(itemId)
-      else deleteConversationItem(itemId)
+      else deleteConversationItem(itemId, 'turn')
     }
     studioItems.clear()
     for (const [callId, pair] of studioCalls) {
       if (!pair.call || !pair.output && !pair.ended) continue
-      deleteConversationItem(pair.call)
-      if (pair.output) deleteConversationItem(pair.output)
+      deleteConversationItem(pair.call, pair.ended && !pair.output ? 'ended_call' : 'call')
+      if (pair.output) deleteConversationItem(pair.output, 'output')
       studioCalls.delete(callId)
     }
   }
-  function deleteConversationItem(itemId: string): void {
-    if (closed) return
-    try { transport.sendEvent({ type: 'conversation.item.delete', item_id: itemId }) } catch { /* Cleanup is best effort; the session ends with the visit. */ }
+  /** `kind` names the cleanup path in the event ID, so a rejected delete identifies its path (never its content). */
+  function deleteConversationItem(itemId: string, kind: 'input' | 'image' | 'turn' | 'call' | 'ended_call' | 'output'): void {
+    if (closed || deletedItemIds.has(itemId)) return
+    deletedItemIds.add(itemId)
+    if (deletedItemIds.size > 1024) deletedItemIds.delete(deletedItemIds.values().next().value!)
+    try { transport.sendEvent({ type: 'conversation.item.delete', event_id: `delete_${kind}_${deletedItemIds.size}`, item_id: itemId }) } catch { /* Cleanup is best effort; the session ends with the visit. */ }
   }
   function rememberStudioSend(eventId: string, retry: () => void): void {
     studioSends.set(eventId, retry)
@@ -2163,10 +2183,46 @@ export function createRealtimeSession(
     emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
     return false
   }
-  function speakStudioLine(text: string): boolean {
+  function speakStudioLine(text: string, onFinished?: (completed: boolean) => void): boolean {
     if (closed) return false
-    try { speakVerbatim(text); return true } catch {
+    try { speakVerbatim(text, undefined, onFinished); return true } catch {
       emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_speech_failed', sessionGeneration, createdAt)
+      return false
+    }
+  }
+  /**
+   * The first step's guidance joins the conversation as a system message, so any reply (also
+   * one to a visitor who speaks first) knows the step; it leaves with the other studio items.
+   */
+  function noteStudioFirstStep(step: string): void {
+    studioFirstStep = step
+    studioFirstStepPending = !!step.trim()
+    if (closed || !studioFirstStepPending) return
+    const id = `studio_step_${sessionGeneration}_${++studioImageSequence}`.slice(0, 32)
+    try {
+      transport.sendEvent({ type: 'conversation.item.create', item: { id, type: 'message', role: 'system', content: [{ type: 'input_text', text: step }] } })
+      rememberStudioItem(id)
+    } catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_first_step_failed', sessionGeneration, createdAt) }
+  }
+  /** After the start script, the avatar asks the first step in character, unless the visitor already answered it. */
+  function askStudioFirstStep(run: number): void {
+    whenIdle(() => sendStudioFirstStep(run, false))
+  }
+  function sendStudioFirstStep(run: number, retried: boolean): boolean {
+    if (closed || !studioActive || !sameStudioRun(run) || !studioFirstStepPending) return false
+    const eventId = `studio-${sessionGeneration}-${++studioSendSequence}`
+    rememberStudioSend(eventId, () => {
+      if (retried) emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_first_step_failed', sessionGeneration, createdAt)
+      else whenIdle(() => sendStudioFirstStep(run, true))
+    })
+    try {
+      // Nobody has spoken yet, so the studio's own language decides, not the Persona default.
+      const language = studioFirstLanguage === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese'
+      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions: `${studioInstructions}\n\nSpeak in ${language}. ${studioFirstStep}`,
+        metadata: { mirror_studio: 'first_step' } } })
+      return true
+    } catch {
+      emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_first_step_failed', sessionGeneration, createdAt)
       return false
     }
   }
@@ -2219,7 +2275,7 @@ export function createRealtimeSession(
       followUp: studioPrompt(studio, event.revisionsLeft > 0 ? 'offerChange' : 'finalVersion') })}`
     try {
       if (dataUrl) {
-        if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem)
+        if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem, 'image')
         studioRevealImageItem = `studio_img_${sessionGeneration}_${++studioImageSequence}`.slice(0, 32)
         transport.sendEvent({ type: 'conversation.item.create', item: { id: studioRevealImageItem, type: 'message', role: 'user',
           content: [{ type: 'input_image', image_url: dataUrl }] } })
@@ -2229,7 +2285,10 @@ export function createRealtimeSession(
         if (retried) emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_reveal_failed', sessionGeneration, createdAt)
         else whenIdle(() => sendStudioReveal(event, dataUrl, true, run))
       })
-      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions, metadata: { mirror_studio: 'reveal' } } })
+      const final = event.revisionsLeft <= 0
+      if (final) studioFinalReveal = run
+      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions, ...(final ? { tool_choice: 'none' as const } : {}),
+        metadata: { mirror_studio: 'reveal', ...(final ? { mirror_studio_final: 'true' } : {}) } } })
       return true
     } catch {
       emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_reveal_failed', sessionGeneration, createdAt)
@@ -2247,8 +2306,12 @@ export function createRealtimeSession(
       const greets = studioDefaultSettle !== undefined
       void enterStudio().then(entered => {
         if (!entered) void studioRequest({ action: 'exit' })
+        if (entered) { studioFirstLanguage = event.language; noteStudioFirstStep(event.firstStep) }
         if (greets) settleStudioDefault(entered)
-        else if (entered) { const run = studioStarts; whenIdle(() => sameStudioRun(run) && speakStudioLine(event.startScript)) }
+        else if (entered) {
+          const run = studioStarts
+          whenIdle(() => sameStudioRun(run) && speakStudioLine(event.startScript, completed => { if (completed) askStudioFirstStep(run) }))
+        }
       })
       return
     }

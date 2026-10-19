@@ -10,6 +10,7 @@ import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
 import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT } from '../src/main/raven-conversation-fixture.ts'
 import { defaultExperience } from '../src/shared/portrait-studio.ts'
+import { studioQaStory } from '../src/main/studio-qa-stories.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('raven-qa')
@@ -40,7 +41,16 @@ if (variantIndex >= 0) {
   if (!['mini', 'full'].includes(variant)) throw Error('raven_qa_variant_invalid')
   args.splice(variantIndex, 2)
 }
+// Interactive Studio story (portrait_studio only); --keep-transcript keeps the synthetic visit's
+// transcript and pictures in the run folder for an owner review, never by default.
+const storyIndex = args.indexOf('--studio-story')
+const story = studioQaStory(storyIndex < 0 ? 'default' : args[storyIndex + 1])
+if (!story) throw Error('raven_qa_studio_story_invalid')
+if (storyIndex >= 0) args.splice(storyIndex, 2)
+const keepTranscript = args.includes('--keep-transcript')
+if (keepTranscript) args.splice(args.indexOf('--keep-transcript'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
+if ((storyIndex >= 0 || keepTranscript) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
 const mediaBgm = selected === 'media_bgm'
 const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery'].includes(selected)
 if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
@@ -72,6 +82,7 @@ const root = await createQaArtifact(repo, stamp)
 const data = join(root, 'user-data'), output = join(root, 'screenshots')
 for (const path of ['config', 'assets/music', 'assets/visual', 'assets/avatars', 'fixtures/own', 'fixtures/shared']) await mkdir(join(data, path), { recursive: true })
 await mkdir(output)
+if (selected === 'portrait_studio') await writeFile(join(data, 'studio-qa-story.json'), JSON.stringify({ version: 1, story: story.id, keepTranscript }))
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const fingerprint = digest(JSON.stringify(avatar))
 const promptPath = { baseline: 'resources/testing/raven-prompt-baseline.v1.json',
@@ -86,10 +97,12 @@ for (const file of model.files) {
 // Only media/scene fixtures and external hardware adapters are substituted.
 config.avatarCatalog = { ...config.avatarCatalog, avatars: [avatar], models: [model], locks: [] }
 if (selected === 'portrait_studio') {
-  // One operator-edited stage prompt proves configurable stage prompts reach the live avatar.
+  // The default story edits one stage prompt of the published studio, proving configurable
+  // stage prompts reach the live avatar; any other story replaces the whole studio.
   const experience = avatar.experience ?? defaultExperience()
-  avatar.experience = { ...experience, studio: { ...experience.studio,
-    prompts: { ...experience.studio.prompts, painting: '用一句話告訴訪客：「顏料已經調好了，我開始畫囉。」不要描述畫面。' } } }
+  avatar.experience = { ...experience, studio: story.id === 'default'
+    ? { ...experience.studio, prompts: { ...experience.studio.prompts, ...story.studio.prompts } }
+    : { ...defaultExperience().studio, ...story.studio } }
 }
 const presentationIds = new Set([avatar.presentation.backgroundId, avatar.presentation.entranceVideoId, avatar.presentation.exitVideoId])
 config.visualAssets = config.visualAssets.filter(a => presentationIds.has(a.id))
