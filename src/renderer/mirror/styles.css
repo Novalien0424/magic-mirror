@@ -234,6 +234,9 @@ body * { cursor: none !important; }
   box-shadow: inset 0 0 0 .3cqw rgb(216 180 106 / 35%), inset 0 0 5cqw rgb(0 0 0 / 50%); }
 .portrait-studio__image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover;
   animation: portrait-studio-develop 1600ms ease both; }
+/* A sticker is square and see-through: show all of it, floating on the frame. */
+.portrait-studio__frame[data-picture="sticker"] { aspect-ratio: 1 / 1; }
+.portrait-studio__frame[data-picture="sticker"] .portrait-studio__image { inset: 6%; width: 88%; height: 88%; object-fit: contain; }
 .portrait-studio__image[data-dim="true"] { opacity: .85; filter: blur(1.2cqw) saturate(.7) brightness(.55); scale: 1.06; animation: none; }
 .portrait-studio__ink { position: absolute; inset: 0; overflow: hidden; }
 .portrait-studio__ink i { position: absolute; display: block; }

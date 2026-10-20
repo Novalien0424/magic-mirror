@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { ChatgptCredential, ChatgptCredentialSource } from '../chatgpt-auth/token-file'
-import type { StudioImageFailure, StudioQuality } from '../../shared/portrait-studio'
+import type { StudioImageFailure, StudioPictureType, StudioQuality } from '../../shared/portrait-studio'
 
 export interface PortraitImageSettings {
   readonly baseUrl: string
   readonly modelId: string
   readonly size: string
+  readonly stickerSize: string
   readonly timeoutMs: number
   readonly originator: string
   readonly userAgent: string
@@ -14,8 +15,8 @@ export type PortraitImageResult =
   | { readonly ok: true; readonly image: Buffer; readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp'; readonly elapsedMs: number }
   | { readonly ok: false; readonly code: StudioImageFailure; readonly httpStatus?: number; readonly elapsedMs: number }
 export interface PortraitImageProvider {
-  generate(input: { prompt: string; quality: StudioQuality; signal?: AbortSignal }): Promise<PortraitImageResult>
-  edit(input: { prompt: string; image: Buffer; mimeType: string; quality: StudioQuality; signal?: AbortSignal }): Promise<PortraitImageResult>
+  generate(input: { prompt: string; quality: StudioQuality; picture: StudioPictureType; signal?: AbortSignal }): Promise<PortraitImageResult>
+  edit(input: { prompt: string; image: Buffer; mimeType: string; quality: StudioQuality; picture: StudioPictureType; signal?: AbortSignal }): Promise<PortraitImageResult>
 }
 
 type WithoutElapsed<T> = T extends unknown ? Omit<T, 'elapsedMs'> : never
@@ -127,10 +128,12 @@ export function createCodexImageProvider(input: {
     }
   }
 
-  const common = (quality: StudioQuality) => ({ model: input.settings.modelId, n: 1, quality, size: input.settings.size, background: 'opaque' })
+  // A sticker is a square PNG with a transparent background; a portrait is a tall opaque picture.
+  const common = (quality: StudioQuality, picture: StudioPictureType) => ({ model: input.settings.modelId, n: 1, quality,
+    ...picture === 'sticker' ? { size: input.settings.stickerSize, background: 'transparent', output_format: 'png' } : { size: input.settings.size, background: 'opaque' } })
   return {
-    generate: ({ prompt, quality, signal }) => post('images/generations', { prompt, ...common(quality) }, signal),
-    edit: ({ prompt, image, mimeType, quality, signal }) => post('images/edits',
-      { prompt, ...common(quality), images: [{ image_url: `data:${mimeType};base64,${image.toString('base64')}` }] }, signal),
+    generate: ({ prompt, quality, picture, signal }) => post('images/generations', { prompt, ...common(quality, picture) }, signal),
+    edit: ({ prompt, image, mimeType, quality, picture, signal }) => post('images/edits',
+      { prompt, ...common(quality, picture), images: [{ image_url: `data:${mimeType};base64,${image.toString('base64')}` }] }, signal),
   }
 }

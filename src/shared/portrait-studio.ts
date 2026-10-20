@@ -86,12 +86,21 @@ export function studioPromptIssue(stage: StudioPromptStage, text: unknown): stri
 }
 
 /** Image-generation text around the visitor's answers. A fixed data-only guard is always added by the app. */
+export type StudioPictureType = 'sticker' | 'portrait'
+export const STUDIO_PICTURE_TYPES: readonly StudioPictureType[] = Object.freeze(['sticker', 'portrait'])
+export function studioPictureType(studio: Pick<StudioSettings, 'pictureType'> | undefined): StudioPictureType {
+  return studio?.pictureType ?? 'sticker'
+}
+export const STUDIO_NAME_FONT_MAX = 80
+export function studioNameFontIssue(value: unknown): string {
+  return studioText(value, STUDIO_NAME_FONT_MAX) && value.trim().length > 0 ? '' : `Describe the lettering in 1 to ${STUDIO_NAME_FONT_MAX} characters on one line.`
+}
 export const STUDIO_IMAGE_PROMPT_KEYS = Object.freeze(['frame', 'nameplate', 'painted', 'untitled', 'revision'] as const)
 export type StudioImagePromptKey = typeof STUDIO_IMAGE_PROMPT_KEYS[number]
 export const STUDIO_IMAGE_PROMPT_INFO: Readonly<Record<StudioImagePromptKey, { label: string; when: string; max: number; required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
   frame: { label: 'Opening instruction', when: 'Starts every image prompt. {{style}} inserts Art style.', max: 2000, required: [], optional: ['style'] },
   nameplate: { label: 'Nameplate instruction', when: 'Ends the prompt when the app adds the name banner.', max: 600, required: [], optional: [] },
-  painted: { label: 'Painted name instruction', when: 'Ends the prompt when the image model letters the name; {{name}} is the confirmed name.', max: 600, required: ['name'], optional: [] },
+  painted: { label: 'Painted name instruction', when: 'Ends the prompt when the image model letters the name; {{name}} is the confirmed name, {{font}} the Name font.', max: 600, required: ['name'], optional: ['font'] },
   untitled: { label: 'No-name instruction', when: 'Ends the prompt when Ask for a name first is off.', max: 600, required: [], optional: [] },
   revision: { label: 'Change instruction', when: 'The whole prompt for a change; {{change}} is what the visitor asked to change.', max: 1000, required: ['change'], optional: [] },
 })
@@ -155,7 +164,11 @@ export interface StudioSettings {
   nameQuestion: { zh: string; en: string }
   questions: StudioQuestion[]
   artStyle: string
+  /** Sticker: square, transparent, die-cut (default). Portrait: a full tall picture. */
+  pictureType?: StudioPictureType
   nameLettering: 'nameplate' | 'painted'
+  /** Lettering for a painted name, e.g. "brush calligraphy" (missing = versioned default). */
+  nameFont?: string
   quality: StudioQuality
   revisionsAllowed: number
   holdSeconds: number
@@ -196,7 +209,8 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
       { id: 'q3', zh: '用一種天氣形容你現在的心情。', en: 'Describe your mood right now as a kind of weather.', slot: 'mood' },
       { id: 'q4', zh: '挑一個代表你的顏色。', en: 'Pick a colour that feels like you.', slot: 'palette' },
     ],
-    artStyle: 'Ink-and-watercolour storybook illustration, raven-feather motifs, moonlit night palette, soft painterly light.',
+    artStyle: 'Bold flat vector, thick dark outlines, four or five flat colours, iconic and symbolic, like a modern enamel pin.',
+    pictureType: 'sticker',
     nameLettering: 'nameplate',
     quality: 'medium',
     revisionsAllowed: 1,
@@ -231,7 +245,7 @@ function parseStudioPrompts(value: unknown): StudioPrompts | null {
 }
 
 const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts']
-const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'askName', 'imagePrompt', 'screenText', 'failureLines']
+const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'askName', 'pictureType', 'nameFont', 'imagePrompt', 'screenText', 'failureLines']
 export const STUDIO_CHARACTER_MAX = 4000
 export const STUDIO_FAREWELL_LINES = 4
 /** Same rule as an avatar wake phrase; Main reports a phrase the wake model cannot encode. */
@@ -263,6 +277,8 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
   if ('wakePhrase' in value && studioWakePhraseIssue(value.wakePhrase)) return null
   if ('farewell' in value && studioFarewellIssue(value.farewell)) return null
   if ('character' in value && studioCharacterIssue(value.character)) return null
+  if ('pictureType' in value && !STUDIO_PICTURE_TYPES.includes(value.pictureType as StudioPictureType)) return null
+  if ('nameFont' in value && studioNameFontIssue(value.nameFont)) return null
   if ('imagePrompt' in value && !(record(value.imagePrompt) && Object.entries(value.imagePrompt)
     .every(([key, text]) => STUDIO_IMAGE_PROMPT_KEYS.includes(key as StudioImagePromptKey) && !studioImagePromptIssue(key as StudioImagePromptKey, text)))) return null
   if ('screenText' in value && !bilingualMap(value.screenText, STUDIO_SCREEN_KEYS, studioScreenIssue)) return null
@@ -298,7 +314,7 @@ export function parseAvatarExperience(value: unknown): AvatarExperience | null {
 
 /** Renderer subset: no guest names, and no image-prompt, on-glass or failure text (Main applies those). */
 export function sessionExperience(experience: AvatarExperience): SessionExperience {
-  const { imagePrompt: _image, screenText: _screen, failureLines: _failure, ...studio } = structuredClone(experience.studio)
+  const { imagePrompt: _image, screenText: _screen, failureLines: _failure, pictureType: _picture, nameFont: _font, ...studio } = structuredClone(experience.studio)
   return { defaultMode: experience.defaultMode, visitorMayRequest: experience.visitorMayRequest, afterPortrait: experience.afterPortrait,
     studio, guestMatch: experience.guests.names.length ? experience.guests.match : 'off' }
 }
@@ -378,6 +394,7 @@ export interface StudioView {
   change?: string
   imageUrl?: string
   lettering: 'nameplate' | 'painted'
+  picture: StudioPictureType
   revisionsLeft: number
   holdEndsAt?: number
   /** False when the experience skips the name step. */
@@ -398,10 +415,10 @@ export function parseStudioView(value: unknown): StudioView | null {
     || (value.questionCount as number) < 1 || (value.questionCount as number) > STUDIO_MAX_QUESTIONS
     || (value.answered as number) < 0 || (value.answered as number) > (value.questionCount as number)
     || !Array.isArray(value.chips) || value.chips.length > STUDIO_MAX_QUESTIONS || !value.chips.every(chip => studioText(chip, 80))
-    || (value.lettering !== 'nameplate' && value.lettering !== 'painted')
+    || (value.lettering !== 'nameplate' && value.lettering !== 'painted') || !STUDIO_PICTURE_TYPES.includes(value.picture as StudioPictureType)
     || !Number.isInteger(value.revisionsLeft) || (value.revisionsLeft as number) < 0 || (value.revisionsLeft as number) > 3
     || typeof value.askName !== 'boolean' || !parseScreenView(value.text)) return null
-  const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'revisionsLeft', 'holdEndsAt', 'askName', 'text']
+  const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'picture', 'revisionsLeft', 'holdEndsAt', 'askName', 'text']
   if (!Object.keys(value).every(key => allowed.includes(key))) return null
   if ('prompt' in value && !studioText(value.prompt, 200)) return null
   if ('name' in value && !studioText(value.name, 40)) return null

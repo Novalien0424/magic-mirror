@@ -9,7 +9,7 @@ const IMAGE = 'magic-mirror-media://studio/abcd1234-ef56'
 // Main resolves the on-glass text; the fixture does the same with the versioned defaults.
 const view = (patch: Partial<StudioView> = {}): StudioView => {
   const base = { phase: 'name' as const, language: 'zh' as const, questionCount: 4, answered: 0, chips: [], lettering: 'nameplate' as const,
-    revisionsLeft: 1, askName: true, ...patch }
+    picture: 'portrait' as const, revisionsLeft: 1, askName: true, ...patch }
   return { ...base, text: patch.text ?? studioScreenView(undefined, base.language, Math.min(base.answered + 1, base.questionCount), base.questionCount) }
 }
 const render = (value: StudioView | null) => renderToStaticMarkup(createElement(PortraitStudioLayer, { view: value }))
@@ -83,7 +83,7 @@ describe('PortraitStudioLayer', () => {
     const html = render(view({ phase: 'painting', answered: 4, chips: ['貓頭鷹'], name: '王曉明', imageUrl: IMAGE }))
     expect(html).toContain('data-cover="true"')
     expect(html).toContain('portrait-studio__veil')
-    expect(html).toContain('<div class="portrait-studio__frame" data-state="painting">')
+    expect(html).toContain('<div class="portrait-studio__frame" data-state="painting" data-picture="portrait">')
     expect(html).toContain('portrait-studio__ink')
     expect(html).not.toContain('<img')
     expect(html).not.toContain('portrait-studio__banner')
@@ -105,7 +105,9 @@ describe('PortraitStudioLayer', () => {
 
   it('reveals the portrait with the exact name banner and change hints', () => {
     const html = render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, revisionsLeft: 1 }))
-    expect(html).toContain('<div class="portrait-studio__frame" data-state="done">')
+    expect(html).toContain('<div class="portrait-studio__frame" data-state="done" data-picture="portrait">')
+    // A sticker gets the square frame that shows the whole see-through picture.
+    expect(render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, picture: 'sticker' }))).toContain('data-picture="sticker"')
     expect(html).toMatch(/<img class="portrait-studio__image" src="magic-mirror-media:\/\/studio\/abcd1234-ef56" alt="" draggable="false" data-dim="false"\/>/)
     expect(html).toMatch(/<p class="portrait-studio__banner" data-long="false">王曉明<\/p>/)
     expect(html).not.toContain('portrait-studio__ink')

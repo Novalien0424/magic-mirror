@@ -1,4 +1,4 @@
-import { PORTRAIT_STUDIO, renderStudioText, studioImagePrompt, studioQuestionLine } from './portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, STUDIO_DEFAULT_NAME_FONT, studioImagePrompt, studioQuestionLine } from './portrait-studio-config'
 import type { StudioQuestion, StudioSettings } from './portrait-studio'
 
 /** Visitor text enters the image prompt only as quoted, bounded data. */
@@ -8,11 +8,11 @@ export function quoteVisitorText(value: string, max = 80): string {
 }
 
 export interface PortraitAnswers extends Pick<StudioQuestion, 'slot' | 'imageLine'> { readonly answer: string }
-type ImageSettings = Pick<StudioSettings, 'artStyle' | 'nameLettering' | 'imagePrompt'>
+type ImageSettings = Pick<StudioSettings, 'artStyle' | 'nameLettering' | 'imagePrompt' | 'pictureType' | 'nameFont'>
 
 // The guard is versioned and fixed: operators shape every other sentence.
 const nameLine = (studio: ImageSettings, name: string) => !name ? studioImagePrompt(studio, 'untitled')
-  : studio.nameLettering === 'painted' ? renderStudioText(studioImagePrompt(studio, 'painted'), { name: quoteVisitorText(name, 40) })
+  : studio.nameLettering === 'painted' ? renderStudioText(studioImagePrompt(studio, 'painted'), { name: quoteVisitorText(name, 40), font: studio.nameFont ?? STUDIO_DEFAULT_NAME_FONT })
     : studioImagePrompt(studio, 'nameplate')
 
 /**

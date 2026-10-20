@@ -67,11 +67,33 @@ copies deleted).
 
 ## Remaining observations
 
-- **Repaint preamble wording.** With fix 1, a vague preamble (「好的，讓我想一下，這個調整可以怎麼說出口。」, round 8) is the only line before a ~45 s repaint. The owner ruling allows no preamble before studio tools; the guide's answer is a sample preamble in the tool description (owner decision, TODO).
 - **Painting line twice.** The last answer's preamble and the painting reply both speak (cartographer, rounds 3, 4). Not suppressed: the reply carries the operator's custom painting line and the "about half a minute" wait.
 - Model wording: the read-back sometimes tells the visitor to answer "是"; one stored answer gained words (第一節課); one start script said 會 for 要; the published studio's repaint line said the change was already done; one oracle start script was replaced by an improvised Simplified-Chinese greeting (round 1, 1 of about 30 visits).
 - The avatar's transcript text sometimes uses Simplified characters (夜里, 畫里); it is never shown on the mirror and the speech is unaffected.
 - The Jabra takes its stored hardware step (0.0625) when the app opens it; QA now sets 69 % after production restarts (held at 69 % after each run).
+
+## Afternoon: repaint line, two more guards, stickers
+
+Owner choices: allow one short line before a change request (sample line in the
+studio_revise instructions; the app then asks for no second line); stickers for
+a colour printer, cut around the shape; Picture type and Name font in the
+Console; hidden prompts moved to versioned files, memory ones view only.
+
+| Round | Result | Found / fixed |
+| --- | --- | --- |
+| Repaint line (12:52) | oracle 23/23, pawnshop 23/23, published 22/22; second oracle **failed** | Every change got one clear line ("…等我半分鐘"). The oracle's reveal declared the picture finished without the visitor: finish now needs a visitor turn since the picture was shown |
+| Finish guard (13:23) | all four pass | The reveal re-requested the dragon as the second change, so the visitor's galaxy was refused (checks passed): a change now needs a visitor turn since the picture was shown, and QA checks the visitor's own change was accepted |
+| Change guard (13:51) | oracle (both own changes painted), pawnshop, published pass | Fourth run refused to start (`qa_build_stale`, source edited mid-round) |
+| Stickers (14:17) | full suite 2668, `--studio-journey`, `--console` pass; **oracle 24/24, pawnshop 24/24, published 23/23, cartographer 18/18** | — |
+
+Sticker checks (`studio_picture_format`): all seven sticker pictures were PNG,
+square (the backend returned 1254×1254 for the requested 1024×1024) with fully
+transparent corners; the cartographer, set to Full picture, stayed 1024×1536.
+Pictures reviewed: one emblem with a thick white border on a see-through
+background; the oracle's painted 「王曉明」 legible in the chosen brush
+calligraphy on a ribbon; changes kept the emblem and border; the galaxy change
+adds glow; the published studio (storybook style) has one tiny stray speck
+outside its border. The mirror shows a sticker whole in a square frame.
 
 ## Not covered
 

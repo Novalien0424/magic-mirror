@@ -73,12 +73,12 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
   decides how to rebuild a described character; measure with human speakers
   before an event that depends on exact names.
   [Studio stories](docs/testing/interactive-studio-stories-2026-10-20.md).
-- [ ] **Repaint preamble (owner decision).** A change asked with a spoken
-  preamble now gets no second line, but a vague preamble (「讓我想一下…」) can then
-  be the only line before a ~45 s repaint. Options: allow one short in-character
-  preamble for studio_revise with a sample phrase in its tool description (the
-  prompting guide's approach; extends the 2026-10-14 preamble ruling), or keep
-  as is. The painting line after the last answer is still sometimes spoken twice.
+- [ ] **Sticker print output.** Stickers are shown on the mirror only; the
+  keepsake has no file or printer output yet (`KeepsakeSink` is display-only).
+  Decide how a finished sticker reaches the colour printer.
+- [ ] **Published studio art style.** The owner's published studio keeps its
+  ink-and-watercolour storybook style, which fights the flat sticker look;
+  switch it in the Console if stickers are wanted there.
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).

@@ -2,7 +2,7 @@ import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
 import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
 import { PORTRAIT_STUDIO, studioPrompt, studioWakePhrase } from '../../shared/portrait-studio-config'
 import {
-  parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL, studioStartLanguage,
+  parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL, studioPictureType, studioStartLanguage,
   type AvatarExperience, type MirrorMode, type StudioConsoleResult, type StudioConsoleStatus, type StudioOutcome, type StudioReply,
   type StudioSessionEvent, type StudioView,
 } from '../../shared/portrait-studio'
@@ -181,7 +181,7 @@ export function registerStudioIpc(deps: {
     const answers = experience.studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
       answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
     const name = experience.studio.askName === false ? '' : 'Raven'
-    const result = await provider.generate({ prompt: buildPortraitPrompt({ studio: experience.studio, answers, name }), quality: experience.studio.quality })
+    const result = await provider.generate({ prompt: buildPortraitPrompt({ studio: experience.studio, answers, name }), quality: experience.studio.quality, picture: studioPictureType(experience.studio) })
     deps.report(result.ok ? 'studio_test_ready' : result.code, result.ok ? 'info' : 'degraded', result.elapsedMs)
     return { ok: true, value: { status: await status(), test: result.ok
       ? { ok: true, elapsedMs: result.elapsedMs, dataUrl: `data:${result.mimeType};base64,${result.image.toString('base64')}` }

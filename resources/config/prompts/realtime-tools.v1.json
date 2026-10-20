@@ -256,7 +256,7 @@
       "rules": {
         "useWhen": "After the picture is shown, when the visitor asks for a change to it, call studio_revise with that change.",
         "avoidWhen": "Do not call it before a picture is shown, or for general comments that are not a change request.",
-        "speech": "No preamble. Follow the returned guidance."
+        "speech": "Before the call, say one short in-character line in the reply language that you are painting the change in and it takes about half a minute (for example 「我這就把它重新畫進去，等我半分鐘」). Then follow the returned guidance."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_repainting", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_revise_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_revise_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }

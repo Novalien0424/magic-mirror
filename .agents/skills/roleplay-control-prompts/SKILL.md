@@ -39,8 +39,9 @@ an unavailable ASR judge is unknown. Keep diagnostic verdicts metadata-only.
 - Realtime-2 preambles are a model default, with no API switch. Make the desired
   policy explicit and align tool descriptions with it. Magic Mirror's current
   [owner rulings](../../../DECISIONS.md) allow one short in-character line before
-  YouTube search, local search and non-identify memory calls, none for other
-  tools, and an Active-only nonverbal cue.
+  YouTube search, local search, non-identify memory calls and a studio change
+  request (sample line in its tool instructions), none for other tools, and an
+  Active-only nonverbal cue.
 - Avoid quoting unwanted phrases; mark useful style examples as variable.
 - Language follows the owner's complete-sentence rule: default Taiwan Mandarin
   with Traditional characters; a complete English sentence switches to English.

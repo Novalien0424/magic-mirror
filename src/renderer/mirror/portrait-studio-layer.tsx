@@ -57,7 +57,7 @@ function PortraitFrame({ view }: { view: StudioView }) {
   const painting = view.phase === 'painting' || view.phase === 'revising'
   const showImage = !!view.imageUrl && (!painting || view.phase === 'revising')
   return (
-    <div className="portrait-studio__frame" data-state={painting ? 'painting' : 'done'}>
+    <div className="portrait-studio__frame" data-state={painting ? 'painting' : 'done'} data-picture={view.picture}>
       {showImage && <img className="portrait-studio__image" src={view.imageUrl} alt="" draggable={false} data-dim={painting} />}
       {painting && <div className="portrait-studio__ink" aria-hidden="true"><i /><i /><i /><i /></div>}
       {!painting && view.lettering === 'nameplate' && view.name

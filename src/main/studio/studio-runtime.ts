@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt, studioScreenView } from '../../shared/portrait-studio-config'
-import { studioStartLanguage } from '../../shared/portrait-studio'
+import { studioPictureType, studioStartLanguage } from '../../shared/portrait-studio'
 import type {
   AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
 } from '../../shared/portrait-studio'
@@ -84,7 +84,7 @@ export function createStudioRuntime(input: {
       chips: r.answers.map(answer => answer.slice(0, 24)),
       ...(r.change && r.phase === 'revising' ? { change: r.change.slice(0, 120) } : {}),
       ...(r.imageId && ['reveal', 'revising', 'keepsake'].includes(r.phase) ? { imageUrl: `magic-mirror-media://studio/${r.imageId}` } : {}),
-      lettering: r.experience.studio.nameLettering, revisionsLeft: r.revisionsLeft,
+      lettering: r.experience.studio.nameLettering, picture: studioPictureType(r.experience.studio), revisionsLeft: r.revisionsLeft,
       ...(r.holdEndsAt ? { holdEndsAt: r.holdEndsAt } : {}),
       askName: asksName(r.experience), text: studioScreenView(r.experience.studio, r.language, Math.min(r.answers.length + 1, count), count),
     }
@@ -145,14 +145,14 @@ export function createStudioRuntime(input: {
     r.abort = abort
     hold(r)
     publish(r)
-    const quality = r.experience.studio.quality
+    const quality = r.experience.studio.quality, picture = studioPictureType(r.experience.studio)
     const answers = r.answers.map((answer, index) => ({ slot: question(r, index).slot, imageLine: question(r, index).imageLine, answer }))
     const previous = r.imageId ? images.get(r.imageId) : undefined
     let result: PortraitImageResult
     try {
       result = kind === 'edit' && previous
-        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, signal: abort.signal })
-        : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, signal: abort.signal })
+        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
+        : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return
     if (!result.ok) { fail(r, result.code, kind === 'edit'); return }

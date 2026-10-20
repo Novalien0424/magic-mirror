@@ -6,7 +6,7 @@ import { Speaker } from 'decibri'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { besideMirror, consolePlacement, overMirror, sendQaOperatorCommand, type ConsolePlacement } from './operator-command-qa'
 import { sameStudioName, studioQaStory } from './studio-qa-stories'
-import { studioStartLanguage } from '../shared/portrait-studio'
+import { studioPictureType, studioStartLanguage } from '../shared/portrait-studio'
 import { ravenConversationProbe } from './raven-conversation-probe'
 import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTHETIC_VISITORS, RAVEN_MEMORY_IDENTITY_REPAIR,
   RavenMemoryQaIdentity, ravenMemoryQaComparisons, ravenMemoryQuestionProbe, parseRavenQualityAssessment, renderRavenVisitorText,
@@ -99,7 +99,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number
     customPaintingPromptFollowed?: boolean; story?: string; nameCorrections?: number; nameAsIntended?: boolean
     promptMarkersFollowed?: Partial<Record<'painting' | 'finished', boolean>>; farewellVerbatim?: boolean
-    repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number } }
+    repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number }
+    pictures?: { type: string; width: number; height: number; cornerAlpha: number }[] }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
@@ -713,6 +714,15 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!image) throw Error('raven_qa_studio_picture_missing')
         await writeFile(join(input.outputDir, `studio-picture-${name}.${image.type.includes('jpeg') ? 'jpg' : image.type.includes('webp') ? 'webp' : 'png'}`), Buffer.from(image.data, 'base64'))
       }
+      // Shape and corner transparency of each shown picture (metadata only): a sticker is a square see-through PNG.
+      const pictureFormat = async () => {
+        const format = await evaluate<{ type: string; width: number; height: number; cornerAlpha: number } | null>(`const img=document.querySelector('.portrait-studio__image');
+          if(!img?.src)return null;const blob=await (await fetch(img.src)).blob();const bmp=await createImageBitmap(blob);
+          const c=new OffscreenCanvas(bmp.width,bmp.height),g=c.getContext('2d');g.drawImage(bmp,0,0);
+          const a=(x,y)=>g.getImageData(x,y,1,1).data[3];
+          return {type:blob.type,width:bmp.width,height:bmp.height,cornerAlpha:Math.max(a(0,0),a(bmp.width-1,0),a(0,bmp.height-1),a(bmp.width-1,bmp.height-1))}`)
+        if (format) studioEvidence.pictures = [...studioEvidence.pictures ?? [], format]
+      }
       const studioStarted = Date.now()
       const turn = async (index: number, stage: string, tool: string) => {
         await speak(index, stage)
@@ -785,6 +795,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const observation = await observe()
         if (!observation.records.some(r => r.stage === 'studio_reveal' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_reveal_silent')
         await shot('reveal')
+        await pictureFormat()
         await picture('reveal')
       })
       let revised = revealed && await check('studio_remote_console_reveal', () => operator('show_console_main', besideMirror, ['reveal', 'keepsake']))
@@ -792,6 +803,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const stage = story.visitor.changes.length === 1 ? 'studio_change' : `studio_change_${i + 1}`
         revised = await check(stage, async () => {
           await turn(extra[`studioChange${i + 1}`]!, stage, 'studio_revise')
+          // The visitor's own change was painted, not refused because another took its place.
+          const results = (await observe()).tools.filter(c => c.stage === stage && c.direction === 'result')
+          if (!results.some(c => JSON.stringify(c.result ?? '').includes('studio_repainting'))) throw Error('raven_qa_studio_change_not_accepted')
           await wait(async () => await readyEvents() >= i + 2, 'studio_revision_ready', 240000)
           // Lines the visitor heard while the change was painted (checked after the visit).
           const readyAt = (await studio()).filter(s => s.event === 'ready')[i + 1]!.at
@@ -800,6 +814,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
           await wait(async () => await reveals() >= i + 2, 'studio_second_reveal', 60000)
           await wait(settled, 'studio_second_reveal_settled', 60000)
           await shot(`revision-${i + 1}`)
+          await pictureFormat()
           await picture(`revision-${i + 1}`)
         })
       }
@@ -835,6 +850,12 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const lines = (await observe()).records.filter(r => r.role === 'avatar' && r.at >= studioStarted).map(r => language(r.text)).filter(l => l !== null)
         studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l !== expected).length }
         if (studioEvidence.language.mismatched) throw Error('raven_qa_studio_language_mismatch')
+      })
+      // Every picture has the configured shape: a sticker is a square PNG with see-through corners.
+      if (studioEvidence.pictures?.length) await check('studio_picture_format', async () => {
+        const sticker = studioPictureType(studioSettings) === 'sticker'
+        if (!studioEvidence.pictures!.every(p => sticker ? p.type === 'image/png' && p.width === p.height && p.cornerAlpha === 0 : p.height > p.width))
+          throw Error('raven_qa_studio_picture_format')
       })
       // Each repaint is announced once: a spoken preamble, or else the change result's reply.
       if (studioEvidence.repaintLines) await check('studio_repaint_once', async () => {

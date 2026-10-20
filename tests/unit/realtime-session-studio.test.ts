@@ -430,6 +430,23 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(requests.at(-1)).toMatchObject({ action: 'set_name', name: '王曉明' })
   })
 
+  it('finishes or changes a revealed picture only after the visitor has spoken since it was shown', async () => {
+    const p = probe()
+    const { handle, requests } = session(p, () => accepted('studio_started'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
+    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
+    // The reveal itself declared the picture finished: ignored, the change offer stays open.
+    expect(await call(tool(p.agents[1]!, 'studio_finish'), {})).toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
+    expect(requests.some(r => r.action === 'finish')).toBe(false)
+    // Nor may it ask for a change the visitor never made.
+    expect(await call(tool(p.agents[1]!, 'studio_revise'), { change: 'a dragon' })).toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
+    expect(requests.some(r => r.action === 'revise')).toBe(false)
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'happy' })
+    await call(tool(p.agents[1]!, 'studio_finish'), {})
+    expect(requests.at(-1)).toEqual({ action: 'finish' })
+  })
+
   it('confirms a name only from a later visitor turn about the name that was read back', async () => {
     const p = probe()
     const { requests } = session(p, request => request.action === 'set_name' && !request.confirmed ? accepted('studio_name_heard', 'Read it back')

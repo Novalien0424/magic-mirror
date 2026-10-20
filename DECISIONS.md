@@ -1,5 +1,24 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-20 — Sticker pictures and visible prompts (owner directive, afternoon)
+
+- **Picture type, sticker by default.** The Console sets Picture type per
+  studio: Sticker (square transparent PNG, one symbolic emblem in bold flat
+  vector with a thick white die-cut border, for a colour sticker printer and
+  cutting around the shape) or Full picture (the tall opaque scene). A saved
+  studio without the field is a sticker. Image instruction defaults follow the
+  type; operator edits stay. Sticker wording follows the OpenAI image prompting
+  guide (isolated subject on a fully transparent background, flat design, no
+  gradients, simplicity) and sticker printers' border advice.
+- **Name font.** A painted name is lettered in the Console's Name font
+  (versioned default "bold rounded sans-serif letters"); the nameplate stays a
+  screen banner and is not part of a printed sticker.
+- **No prompt text hidden in code.** The memory helpers' instructions, the
+  studio agent's name/question lines and the reply-language line are versioned
+  prompt files; the Console Prompt Inspector shows them with the two requests
+  the application writes during a visit (first question, picture description).
+  Memory helper instructions are view only (privacy rules).
+
 ## 2026-10-20 — Studio prompts follow the realtime prompting guide (owner directive)
 
 - **Short prompts, no stacked rules.** Studio stage prompts and tool
@@ -10,15 +29,21 @@
   appear (spelled M-I-A is written Mia), replacing Main's 2026-10-19 letter join.
 - **The repaint is announced once.** When the avatar spoke a preamble while
   calling studio_revise, the change result is committed without another reply
-  (application ordering); otherwise the result's reply announces it.
+  (application ordering); otherwise the result's reply announces it. Owner
+  choice (2026-10-20, extends the 2026-10-14 preamble ruling): studio_revise may
+  have one short in-character line before the call, saying the change is being
+  painted and takes about half a minute; its tool instructions give a sample
+  line, as the prompting guide recommends.
 - **The reveal names its language last.** The application ends every reveal
   request with the reply language (Taiwan Mandarin with Traditional characters
   by default, English for an English studio or visitor), after the operator's
   English stage text.
 - **Order, not wording, guards the studio steps.** A name counts as confirmed
   only from a visitor turn after its read-back, for the name read back;
-  otherwise it is read back again. A different answer to the question just
-  recorded replaces it. Studio cleanup deletes only items the server listed in
+  otherwise it is read back again. Nothing is recorded as the visitor's name or
+  answer before the visitor has spoken in the studio, and a revealed picture is
+  changed or finished only after the visitor has spoken since it was shown. A
+  different answer to the question just recorded replaces it. Studio cleanup deletes only items the server listed in
   the conversation (out-of-band spoken lines never are).
 
 ## 2026-10-19 — Studio opening and name read-back (owner directive: fix everything found in QA)

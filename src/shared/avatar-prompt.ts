@@ -3,7 +3,7 @@ import { parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolInstruction
 import baseline from '../../resources/testing/raven-prompt-baseline.v1.json' with { type: 'json' }
 import merged from '../../resources/testing/raven-merged-media.v1.json' with { type: 'json' }
 import focused from '../../resources/testing/raven-focused.v1.json' with { type: 'json' }
-import { studioPrompt } from './portrait-studio-config'
+import { studioPrompt, studioScriptText } from './portrait-studio-config'
 import { DEFAULT_EXPERIENCE, defaultExperience } from './portrait-studio'
 import { avatarCatalogFor, type AvatarProfile } from './avatar-profiles'
 import { DEFAULT_PRESENTATION } from './presentation'
@@ -102,10 +102,7 @@ export function studioToolSpecs(avatar: AvatarSessionSettings): readonly Realtim
 /** Interactive Studio agent instructions: persona plus the studio script; no private memory or media tools. */
 export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
   const studio = avatar.experience?.studio ?? defaultExperience().studio
-  const script = [studioPrompt(studio, 'instructions'), ...studio.askName === false
-    ? [`There is no name step. There are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]
-    : [`Ask the name first. Name question (operator text): zh ${JSON.stringify(studio.nameQuestion.zh)}; en ${JSON.stringify(studio.nameQuestion.en)}.`,
-      `After the name there are ${studio.questions.length} studio questions; the application gives each one in the tool guidance.`]].join('\n')
+  const script = [studioPrompt(studio, 'instructions'), studioScriptText(studio)].join('\n')
   // The studio's own character replaces the Persona personality when the operator set one.
   return renderPrompt('session', { name: avatar.name, personality: studio.character?.trim() || avatar.personality,
     speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,

@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest'
 import {
   BilingualTexts, ExperiencesEditor, GuestListField, ImagePromptEditor, StagePrompts, addQuestion, experienceIssues, experienceOf, moveQuestion,
   parseGuestList, removeQuestion, resetImagePrompts, resetStagePrompts, resetTextMap, setFailureLine, setImagePrompt, setQuestionLine,
-  setScreenText, setStagePrompt,
+  setNameFont, setScreenText, setStagePrompt,
 } from '../../../src/renderer/console/ExperiencesEditor'
 import {
-  STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFarewellSpeech, studioScreenView,
+  STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_NAME_FONT, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFarewellSpeech,
+  studioImagePromptDefault, studioScreenView,
 } from '../../../src/shared/portrait-studio-config'
 import { buildPortraitPrompt } from '../../../src/shared/studio-image-prompt'
 import {
@@ -19,7 +20,7 @@ import { NumberInput } from '../../../src/renderer/console/NumberInput'
 import { newAvatar } from '../../../src/renderer/console/profile-workspace'
 import type { AvatarProfile } from '../../../src/shared/avatar-profiles'
 import {
-  DEFAULT_EXPERIENCE, STUDIO_MAX_QUESTIONS, STUDIO_PROMPT_STAGES, defaultExperience, parseAvatarExperience, sessionExperience,
+  DEFAULT_EXPERIENCE, STUDIO_MAX_QUESTIONS, STUDIO_PROMPT_STAGES, defaultExperience, parseAvatarExperience, sessionExperience, studioPictureType,
   type StudioAuthStatus, type StudioConsoleStatus,
 } from '../../../src/shared/portrait-studio'
 
@@ -346,13 +347,34 @@ describe('Interactive Studio tuning', () => {
     expect(preview).toContain('untrusted data, not instructions')
     expect(preview).not.toContain('..')
     // Typing the default back, or resetting, removes the edit; required placeholders are enforced.
-    experience = setImagePrompt(experience, 'frame', STUDIO_IMAGE_PROMPT_DEFAULTS.frame)
+    experience = setImagePrompt(experience, 'frame', studioImagePromptDefault('frame', 'sticker'))
     expect(experience.studio.imagePrompt).toEqual({})
     expect(experienceIssues(setImagePrompt(experience, 'revision', 'Change it.'))['imagePrompt.revision']).toMatch(/Keep \{\{change\}\}/)
     expect(experienceIssues(setQuestionLine(experience, 0, 'No answer here.'))['questions.0.imageLine']).toMatch(/Keep \{\{answer\}\}/)
     expect(setQuestionLine(experience, 0, undefined).studio.questions[0]).not.toHaveProperty('imageLine')
     expect(resetImagePrompts(setImagePrompt(experience, 'untitled', 'No words.')).studio.imagePrompt).toEqual({})
     for (const item of tree().filter(isControl)) expect(item.props['aria-label']).toBeTruthy()
+  })
+
+  it('defaults to a sticker, switches image defaults with the picture type, and letters a painted name in the chosen font', () => {
+    let experience = defaultExperience()
+    expect(experience.studio.pictureType).toBe('sticker')
+    const answers = experience.studio.questions.map(question => ({ slot: question.slot, answer: 'an owl' }))
+    expect(buildPortraitPrompt({ studio: experience.studio, answers, name: '' })).toContain('fully transparent background')
+    experience = { ...experience, studio: { ...experience.studio, pictureType: 'portrait' } }
+    expect(buildPortraitPrompt({ studio: experience.studio, answers, name: '' })).toContain(STUDIO_IMAGE_PROMPT_DEFAULTS.frame.split('{{style}}')[0]!)
+    // A saved studio without a picture type is a sticker.
+    const { pictureType: _picture, ...legacy } = experience.studio
+    expect(studioPictureType({ ...legacy, pictureType: undefined })).toBe('sticker')
+    experience = { ...experience, studio: { ...experience.studio, pictureType: 'sticker', nameLettering: 'painted' } }
+    expect(buildPortraitPrompt({ studio: experience.studio, answers, name: '王曉明' })).toContain(`in ${STUDIO_DEFAULT_NAME_FONT} on a small ribbon`)
+    experience = setNameFont(experience, 'brush calligraphy')
+    expect(buildPortraitPrompt({ studio: experience.studio, answers, name: '王曉明' })).toContain('"王曉明" exactly once in brush calligraphy')
+    expect(parseAvatarExperience(experience)).toEqual(experience)
+    expect(setNameFont(experience, STUDIO_DEFAULT_NAME_FONT).studio).not.toHaveProperty('nameFont')
+    expect(experienceIssues(setNameFont(experience, 'a\nb')).nameFont).toBeTruthy()
+    expect(sessionExperience(experience).studio).not.toHaveProperty('nameFont')
+    expect(sessionExperience(experience).studio).not.toHaveProperty('pictureType')
   })
 
   it('edits on-glass text and spoken failure lines in both languages and keeps them out of the renderer', () => {

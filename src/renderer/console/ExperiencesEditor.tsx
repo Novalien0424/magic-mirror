@@ -6,12 +6,13 @@ import {
   STUDIO_IMAGE_PROMPT_KEYS, STUDIO_MAX_GUESTS, STUDIO_MAX_QUESTIONS, STUDIO_CHARACTER_MAX, STUDIO_FAREWELL_LINES, studioCharacterIssue,
   studioFarewellIssue, studioWakePhraseIssue, STUDIO_PLACEHOLDER_INFO, STUDIO_PROMPT_INFO, STUDIO_PROMPT_MAX,
   STUDIO_PROMPT_PLACEHOLDERS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_INFO, STUDIO_SCREEN_KEYS, STUDIO_SLOTS, studioFailureIssue,
-  studioImageLineIssue, studioImagePromptIssue, studioPromptIssue, studioScreenIssue, validGuestName,
+  studioImageLineIssue, studioImagePromptIssue, studioNameFontIssue, studioPictureType, studioPromptIssue, studioScreenIssue, validGuestName,
+  STUDIO_NAME_FONT_MAX, type StudioPictureType,
   type AvatarExperience, type GuestMatchMode, type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage,
   type StudioQuality, type StudioQuestion, type StudioScreenKey, type StudioSettings, type StudioSlot,
 } from '../../shared/portrait-studio'
 import {
-  STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFailureLine, studioImagePrompt,
+  STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_NAME_FONT, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_PROMPT_DEFAULTS, studioFailureLine, studioImagePrompt, studioImagePromptDefault,
   studioPrompt, studioQuestionLine, studioScreenText, studioWakePhrase,
 } from '../../shared/portrait-studio-config'
 import { buildPortraitPrompt, buildRevisionPrompt, STUDIO_SAMPLE_ANSWERS } from '../../shared/studio-image-prompt'
@@ -87,12 +88,17 @@ export function resetStagePrompts(experience: AvatarExperience, stage?: StudioPr
 const withStudio = (experience: AvatarExperience, patch: Partial<StudioSettings>): AvatarExperience =>
   ({ ...experience, studio: { ...experience.studio, ...patch } })
 
-/** Same rule as stage prompts: text equal to the default stores no edit. */
+/** Same rule as stage prompts: text equal to the default (for this picture type) stores no edit. */
 export function setImagePrompt(experience: AvatarExperience, key: StudioImagePromptKey, text: string): AvatarExperience {
   const imagePrompt = { ...experience.studio.imagePrompt }
-  if (text === STUDIO_IMAGE_PROMPT_DEFAULTS[key]) delete imagePrompt[key]
+  if (text === studioImagePromptDefault(key, studioPictureType(experience.studio))) delete imagePrompt[key]
   else imagePrompt[key] = text
   return withStudio(experience, { imagePrompt })
+}
+/** The default lettering stores no edit. */
+export function setNameFont(experience: AvatarExperience, text: string): AvatarExperience {
+  const { nameFont: _font, ...studio } = experience.studio
+  return { ...experience, studio: text === STUDIO_DEFAULT_NAME_FONT ? studio : { ...studio, nameFont: text } }
 }
 export function resetImagePrompts(experience: AvatarExperience, key?: StudioImagePromptKey): AvatarExperience {
   const imagePrompt = { ...experience.studio.imagePrompt }
@@ -191,6 +197,7 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
     ids.add(question.id)
   })
   add('artStyle', textIssue(studio.artStyle, 600, 'Describe the painting style.', false, true))
+  if (studio.nameFont !== undefined) add('nameFont', studioNameFontIssue(studio.nameFont))
   add('revisionsAllowed', wholeIssue(studio.revisionsAllowed, 0, 3, 'changes'))
   add('holdSeconds', wholeIssue(studio.holdSeconds, 10, 300, 'seconds'))
   const guests = experience.guests.names
@@ -352,6 +359,16 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
       <legend>4 · Picture</legend>
       <HelpField help={FIELD_HELP.studioArtStyle} error={issues.artStyle}>Art style<textarea lang="en" rows={2} maxLength={600} value={studio.artStyle}
         onChange={e => setStudio({ artStyle: e.currentTarget.value })} /></HelpField>
+      <div className="experiences-editor__grid experiences-editor__grid--2">
+        <HelpField help={FIELD_HELP.studioPictureType}>Picture type<select value={studioPictureType(studio)}
+          onChange={e => setStudio({ pictureType: e.currentTarget.value as StudioPictureType })}>
+          <option value="sticker">Sticker (square, see-through, die-cut)</option>
+          <option value="portrait">Full picture (tall)</option>
+        </select></HelpField>
+        <HelpField help={FIELD_HELP.studioNameFont} error={issues.nameFont}>Name font<input type="text" lang="en" maxLength={STUDIO_NAME_FONT_MAX}
+          value={studio.nameFont ?? STUDIO_DEFAULT_NAME_FONT} disabled={!askName || studio.nameLettering !== 'painted'}
+          onChange={e => set(setNameFont(experience, e.currentTarget.value))} /></HelpField>
+      </div>
       <div className="experiences-editor__grid experiences-editor__grid--4">
         <HelpField help={FIELD_HELP.studioNameLettering}>Name lettering<select value={studio.nameLettering} disabled={!askName}
           onChange={e => setStudio({ nameLettering: e.currentTarget.value === 'painted' ? 'painted' : 'nameplate' })}>

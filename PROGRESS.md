@@ -1,20 +1,22 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**Interactive Studio follow-up**, 2026-10-20; pushed to
-`field/macmini-deploy` and PR #2): the owner's fixes (1) a repaint spoken twice
-and (2) the published studio's last description in English, studio prompts
-shortened to the OpenAI realtime prompting guide (no regex rewrite of the
-model's name), and application ordering guards (a name is confirmed only by the
-visitor's reply to its read-back; nothing is recorded before the visitor speaks;
-a newer answer replaces the old one). QA also fixed the long-open
-`item_delete_invalid_item_id` (clean-up deleted out-of-band spoken lines) and a
-multi-line guidance bug. **Final build: all four stories pass (Oracle twice
-more), full suite 2664 pass; 0 provider errors, language and single repaint in
-every visit.** Owner decision pending on a repaint preamble (TODO). Runtime
-12:05 Taipei: production on this build, Dormant and listening, Conversation,
-Jabra 69 % (set after restart); QA artifacts deleted.
-[Evidence](docs/testing/interactive-studio-stories-2026-10-20.md),
-[owner review page](https://claude.ai/artifact/W5DPaA7YxfsRaq1gDyFxhd).
+Latest delivery (**Sticker pictures and visible prompts**, 2026-10-20
+afternoon; pushed to `field/macmini-deploy` and PR #2): Interactive Studio
+pictures default to **stickers** (square transparent PNG, one emblem with a
+white die-cut border) with Console **Picture type** (Sticker / Full picture)
+and **Name font**; hidden prompt text moved to versioned files and shown in the
+Prompt Inspector (memory helpers view only); one short line before a change
+request (owner choice); order guards stop the model finishing or changing a
+picture, or recording a name or answer, without the visitor. **Live: Oracle
+24/24, Pawnshop 24/24, published 23/23 as stickers, Cartographer 18/18 as a
+full picture; full suite 2668, `--studio-journey`, `--console` pass.** No print
+output yet (TODO). Runtime 14:44 Taipei: production on this build, Dormant and
+listening, Jabra 69 % (set after restart); QA artifacts deleted.
+[Evidence](docs/testing/interactive-studio-stories-2026-10-20.md).
+
+Earlier (**Interactive Studio follow-up**, 2026-10-20 morning): fixes for a
+repaint spoken twice and an English last description, prompts shortened to the
+realtime prompting guide, name-confirmation and clean-up fixes.
 
 Earlier (**Interactive Studio stories**, 2026-10-19 late): three spiritual
 stories and the published studio ran live end to end; QA fixed the first step

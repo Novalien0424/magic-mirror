@@ -6,6 +6,7 @@ import { REALTIME_PROMPT_SOURCE, REALTIME_PROMPTS, buildSpeechResponse, renderPr
 import { allowPromptWindow, promptWindowName } from '../../src/shared/prompt-window'
 import { REALTIME_TOOLS, resolveRealtimeTools, realtimeToolDefinition } from '../../src/shared/realtime-tools'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MEMORY_PROMPTS, MEMORY_PROMPT_SOURCE } from '../../src/shared/memory-prompts'
 
 describe('file-sourced prompt inspection', () => {
   it('loads the complete versioned catalog without hidden fallback wording', () => {
@@ -29,6 +30,20 @@ describe('file-sourced prompt inspection', () => {
     expect(JSON.parse(view.pages.Audition[1].content)).toEqual(buildSpeechResponse(REALTIME_PROMPTS.auditionText, 'Slow.'))
     expect(inspectAvatarPrompts({...avatar, presentation:{...avatar.presentation,wakeGreeting:''}},[]).pages.Speech[0].content).toContain('no request sent')
   })
+  it('shows the memory helpers and the studio requests the application writes, from versioned files', () => {
+    expect(MEMORY_PROMPTS).toEqual(JSON.parse(readFileSync(MEMORY_PROMPT_SOURCE, 'utf8')))
+    const view = inspectAvatarPrompts(newAvatar('fixture'), [])
+    const tools = view.pages['Tools & input']
+    expect(tools.find(section => section.title.startsWith('Memory extraction'))).toMatchObject({ content: MEMORY_PROMPTS.extractor, source: `${MEMORY_PROMPT_SOURCE}#extractor` })
+    expect(tools.find(section => section.title.startsWith('Memory intent · confirmation'))!.content).toContain(MEMORY_PROMPTS.intent.tasks.confirmation)
+    const first = view.pages.Session.find(section => section.title.startsWith('Interactive Studio first question'))!
+    expect(first.content).toMatch(/Speak in Taiwan Mandarin with Traditional characters\. The studio is open\. Ask this name question now: /)
+    expect(view.pages.Session.find(section => section.title.startsWith('Interactive Studio picture description'))!.content)
+      .toMatch(/\n\nSpeak in Taiwan Mandarin with Traditional characters\.$/)
+    // No hidden wording remains in the studio agent instructions either.
+    expect(view.pages.Session[1].content).toContain('After the name there are 4 studio questions; the application gives each one in the tool guidance.')
+  })
+
   it('does not reinterpret template markers or markup inside operator values', () => {
     const value = '<script>alert(1)</script>{{text}}'
     expect(renderPrompt('performance', { speakingStyle:value, text:'Exact.' })).toContain(value)

@@ -6,7 +6,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
-import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioPrompt } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioRevealInstructions } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent } from '../../shared/portrait-studio'
 import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
@@ -558,7 +558,7 @@ export function createRealtimeSession(
   let studioRevealImageItem: string | undefined
   // A studio started by Main (wake, Mirror mode switch, Console) gets its first step with `enter`;
   // a visitor's own request gets it in the tool result instead.
-  let studioNameReadBack: { run: number; name: string; inputs: number } | undefined, visitorInputs = 0, studioEnteredInputs = -1
+  let studioNameReadBack: { run: number; name: string; inputs: number } | undefined, visitorInputs = 0, studioEnteredInputs = -1, studioRevealInputs = -1
   // Items the server added to the conversation; out-of-band replies never are (they may still get item.done).
   const listedItems = new Set<string>()
   let studioFirstStep = '', studioFirstStepPending = false, studioFirstLanguage: 'zh' | 'en' = 'zh'
@@ -693,12 +693,15 @@ export function createRealtimeSession(
         if (visitorInputs === studioEnteredInputs) return awaitingVisitor()
         studioFirstStepPending = false; return studioTool({ action: 'answer', question: args.question as number, answer: args.answer as string, language: args.language as 'zh' | 'en' }) },
       studio_revise: async args => {
+        // A change is the visitor's request after seeing the picture, never the reveal's own idea.
+        if (visitorInputs === studioRevealInputs) return awaitingVisitor()
         // A preamble already told the visitor about the repaint; the result's own reply would repeat it.
         const preamble = spokenResponses.has(toolCallResponse)
         const result = await studioTool({ action: 'revise', change: args.change as string })
         return result.outcome === 'accepted' && preamble ? { ...result, spoken: true } : result
       },
-      studio_finish: () => studioTool({ action: 'finish' }),
+      // The visitor is happy only if they said so after the picture was shown.
+      studio_finish: () => visitorInputs === studioRevealInputs ? awaitingVisitor() : studioTool({ action: 'finish' }),
       studio_exit: async () => {
         const result = await studioTool({ action: 'exit' })
         // A reply suppressed by a spoken command reached no Main; the studio stays open on both sides.
@@ -2250,8 +2253,7 @@ export function createRealtimeSession(
     })
     try {
       // Nobody has spoken yet, so the studio's own language decides, not the Persona default.
-      const language = studioLanguageName(studioFirstLanguage)
-      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions: `${studioInstructions}\n\nSpeak in ${language}. ${studioFirstStep}`,
+      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions: studioFirstStepInstructions(studioInstructions, studioFirstLanguage, studioFirstStep),
         metadata: { mirror_studio: 'first_step' } } })
       return true
     } catch {
@@ -2300,16 +2302,10 @@ export function createRealtimeSession(
     if (!dataUrl) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_image_prepare_failed', sessionGeneration, createdAt)
     whenIdle(() => sendStudioReveal(event, dataUrl, false, run))
   }
-  function studioLanguageName(language: 'zh' | 'en'): string {
-    return language === 'en' ? 'English' : 'Taiwan Mandarin with Traditional characters'
-  }
   function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean, run: number): boolean {
     if (closed || !currentStudioReveal(event, run)) return false
     const studio = input.avatar?.experience?.studio
-    // The reply language comes last, after the operator's English stage text.
-    const language = studioLanguageName(event.language)
-    const instructions = `${studioInstructions}\n\n${renderStudioText(studioPrompt(studio, dataUrl ? 'reveal' : 'revealBlind'), {
-      language, followUp: studioPrompt(studio, event.revisionsLeft > 0 ? 'offerChange' : 'finalVersion') })}\n\nSpeak in ${language}.`
+    const instructions = studioRevealInstructions(studioInstructions, studio, { seen: !!dataUrl, language: event.language, final: event.revisionsLeft <= 0 })
     try {
       if (dataUrl) {
         if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem, 'image')
@@ -2324,6 +2320,7 @@ export function createRealtimeSession(
       })
       const final = event.revisionsLeft <= 0
       if (final) studioFinalReveal = run
+      studioRevealInputs = visitorInputs
       transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions, ...(final ? { tool_choice: 'none' as const } : {}),
         metadata: { mirror_studio: 'reveal', ...(final ? { mirror_studio_final: 'true' } : {}) } } })
       return true
