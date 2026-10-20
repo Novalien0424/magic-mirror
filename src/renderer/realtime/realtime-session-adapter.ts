@@ -487,6 +487,7 @@ export function createRealtimeSession(
   let replyLanguage: 'chinese' | 'english' = 'chinese'
   // Preamble diagnostics belong to the response that called the tool.
   const modelAudioResponses = new Set<string>()
+  const spokenResponses = new Set<string>()
   let toolCallResponse = ''
   let memoryTransportClosed = false
   const memoryResponses = new Map<string, string>()
@@ -557,6 +558,9 @@ export function createRealtimeSession(
   let studioRevealImageItem: string | undefined
   // A studio started by Main (wake, Mirror mode switch, Console) gets its first step with `enter`;
   // a visitor's own request gets it in the tool result instead.
+  let studioNameReadBack: { run: number; name: string; inputs: number } | undefined, visitorInputs = 0, studioEnteredInputs = -1
+  // Items the server added to the conversation; out-of-band replies never are (they may still get item.done).
+  const listedItems = new Set<string>()
   let studioFirstStep = '', studioFirstStepPending = false, studioFirstLanguage: 'zh' | 'en' = 'zh'
   // The run whose final reveal is speaking; the application finishes it when that reply ends.
   let studioFinalReveal: number | undefined
@@ -652,6 +656,11 @@ export function createRealtimeSession(
       if (!reply) return { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable' } }
       return { outcome: reply.status, studio: reply }
     }
+    // A name or answer recorded before the visitor spoke is the model's own text: ignored silently.
+    const awaitingVisitor = async () => {
+      emitMetadata(input, 'realtime_observer_event', 'info', 'studio_visitor_reply_missing', sessionGeneration, createdAt)
+      return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: 'studio_visitor_reply_missing' } }
+    }
     const toolHandlers: Record<string, RealtimeToolHandler> = {
       start_portrait_studio: async () => {
         // Duplicate or stale starts stay silent (background results), never an unguided reply.
@@ -670,9 +679,25 @@ export function createRealtimeSession(
         if (reply.status === 'accepted' && !await enterStudio()) { void studioRequest({ action: 'exit' }); return unavailable }
         return { outcome: reply.status, studio: reply }
       },
-      studio_set_name: args => { studioFirstStepPending = false; return studioTool({ action: 'set_name', name: args.name as string, confirmed: args.confirmed as boolean, language: args.language as 'zh' | 'en' }) },
-      studio_answer: args => { studioFirstStepPending = false; return studioTool({ action: 'answer', question: args.question as number, answer: args.answer as string, language: args.language as 'zh' | 'en' }) },
-      studio_revise: args => studioTool({ action: 'revise', change: args.change as string }),
+      studio_set_name: async args => {
+        if (visitorInputs === studioEnteredInputs) return awaitingVisitor()
+        studioFirstStepPending = false
+        // Only the visitor's reply to a read-back confirms: a later visitor turn, about the name read back.
+        const name = (args.name as string).trim(), readBack = studioNameReadBack
+        const confirmed = args.confirmed === true && readBack?.run === studioStarts && readBack.name === name && visitorInputs > readBack.inputs
+        const result = await studioTool({ action: 'set_name', name, confirmed, language: args.language as 'zh' | 'en' })
+        if (result.outcome === 'accepted' && result.studio.code === 'studio_name_heard') studioNameReadBack = { run: studioStarts, name, inputs: visitorInputs }
+        return result
+      },
+      studio_answer: args => {
+        if (visitorInputs === studioEnteredInputs) return awaitingVisitor()
+        studioFirstStepPending = false; return studioTool({ action: 'answer', question: args.question as number, answer: args.answer as string, language: args.language as 'zh' | 'en' }) },
+      studio_revise: async args => {
+        // A preamble already told the visitor about the repaint; the result's own reply would repeat it.
+        const preamble = spokenResponses.has(toolCallResponse)
+        const result = await studioTool({ action: 'revise', change: args.change as string })
+        return result.outcome === 'accepted' && preamble ? { ...result, spoken: true } : result
+      },
       studio_finish: () => studioTool({ action: 'finish' }),
       studio_exit: async () => {
         const result = await studioTool({ action: 'exit' })
@@ -817,7 +842,7 @@ export function createRealtimeSession(
     }
     // Preamble diagnostics for both agents' tools.
     const onToolInvocation = (name: string) => {
-      const preamble = modelAudioResponses.has(toolCallResponse) ? 'yes' : 'no'
+      const preamble = modelAudioResponses.has(toolCallResponse) || spokenResponses.has(toolCallResponse) ? 'yes' : 'no'
       return (outcome: import('../../shared/realtime-tools').ToolOutcome) => {
         const known = OBSERVED_TOOL_NAMES.find(value => value === name)
         if (known) emitMetadata(input, 'realtime_observer_event', 'info', `tool_${known}_${outcome}_preamble_${preamble}`, sessionGeneration, createdAt)
@@ -1201,6 +1226,11 @@ export function createRealtimeSession(
     if (type === 'response.output_item.added') {
       const item = readProperty(event, 'item'), responseId = readProperty(event, 'response_id')
       if (readProperty(item, 'type') === 'function_call' && typeof responseId === 'string') toolCallResponse = responseId
+      // Its audio starts after the tool runs; the message item is the earlier sign of a preamble.
+      if (readProperty(item, 'type') === 'message' && typeof responseId === 'string') {
+        spokenResponses.add(responseId)
+        if (spokenResponses.size > 128) spokenResponses.delete(spokenResponses.values().next().value!)
+      }
       if (readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string)) {
         sleepAudioSuppressed = true
         notifyAudioActivity('interrupted')
@@ -1488,6 +1518,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.committed') {
+      visitorInputs++
       const itemId = readProperty(event, 'item_id')
       notifyInputItemCreated(itemId)
       if (typeof itemId === 'string' && (!memoryLatestItem || memoryLatestItem === itemId)) committedCommandItem = itemId
@@ -1495,7 +1526,8 @@ export function createRealtimeSession(
       return
     }
     if (type === 'conversation.item.created' || type === 'conversation.item.added' || type === 'conversation.item.done') {
-      const item = readProperty(event, 'item')
+      const item = readProperty(event, 'item'), listed = readProperty(item, 'id')
+      if (typeof listed === 'string' && type !== 'conversation.item.done') { listedItems.add(listed); if (listedItems.size > 1024) listedItems.delete(listedItems.values().next().value!) }
       trackStudioItem(item)
       if (readProperty(item, 'role') === 'user') {
         notifyInputItemCreated(readProperty(item, 'id'))
@@ -2049,7 +2081,7 @@ export function createRealtimeSession(
     if (studioRevealImageItem) { deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined }
     for (const itemId of studioItems) {
       if (createdInputItemIds.has(itemId) && !retrievedItems.has(itemId)) mediaCleanupPending.add(itemId)
-      else deleteConversationItem(itemId, 'turn')
+      else if (listedItems.has(itemId)) deleteConversationItem(itemId, 'turn')
     }
     studioItems.clear()
     for (const [callId, pair] of studioCalls) {
@@ -2132,6 +2164,7 @@ export function createRealtimeSession(
         }
         studioActive = true
         studioStarts++
+        studioEnteredInputs = visitorInputs
         const swap = studioAgentSwap.then(() => updateAgent(studioAgent!))
         studioAgentSwap = swap.catch(() => undefined)
         try { await swap; if (mediaPlaybackActive) restoreSessionState(false); return !closed } catch {
@@ -2217,7 +2250,7 @@ export function createRealtimeSession(
     })
     try {
       // Nobody has spoken yet, so the studio's own language decides, not the Persona default.
-      const language = studioFirstLanguage === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese'
+      const language = studioLanguageName(studioFirstLanguage)
       transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions: `${studioInstructions}\n\nSpeak in ${language}. ${studioFirstStep}`,
         metadata: { mirror_studio: 'first_step' } } })
       return true
@@ -2267,12 +2300,16 @@ export function createRealtimeSession(
     if (!dataUrl) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_image_prepare_failed', sessionGeneration, createdAt)
     whenIdle(() => sendStudioReveal(event, dataUrl, false, run))
   }
+  function studioLanguageName(language: 'zh' | 'en'): string {
+    return language === 'en' ? 'English' : 'Taiwan Mandarin with Traditional characters'
+  }
   function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean, run: number): boolean {
     if (closed || !currentStudioReveal(event, run)) return false
     const studio = input.avatar?.experience?.studio
+    // The reply language comes last, after the operator's English stage text.
+    const language = studioLanguageName(event.language)
     const instructions = `${studioInstructions}\n\n${renderStudioText(studioPrompt(studio, dataUrl ? 'reveal' : 'revealBlind'), {
-      language: event.language === 'en' ? 'English' : 'Taiwan Mandarin in Traditional Chinese',
-      followUp: studioPrompt(studio, event.revisionsLeft > 0 ? 'offerChange' : 'finalVersion') })}`
+      language, followUp: studioPrompt(studio, event.revisionsLeft > 0 ? 'offerChange' : 'finalVersion') })}\n\nSpeak in ${language}.`
     try {
       if (dataUrl) {
         if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem, 'image')

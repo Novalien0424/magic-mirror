@@ -197,7 +197,7 @@ export function createStudioRuntime(input: {
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       r.language = request.language
-      const name = spelledName(request.name.trim())
+      const name = request.name.trim()
       const list = guests(r)
       const candidates = list.length ? matchGuestNames(name, list) : []
       const listed = list.some(guest => guest === name)
@@ -226,6 +226,14 @@ export function createStudioRuntime(input: {
       const expected = r.answers.length + 1
       if (r.phase !== 'question') return request.question < expected ? reply('ignored', 'studio_answer_duplicate')
         : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
+      // A different answer to the question just recorded replaces it (a visitor's correction, or a
+      // reply the model recorded too early); the same answer again stays silent.
+      const text = request.answer.trim().slice(0, 80)
+      if (request.question === expected - 1 && r.answers.length && text !== r.answers.at(-1)) {
+        r.answers[r.answers.length - 1] = text
+        publish(r)
+        return reply('accepted', 'studio_answer_replaced', currentStep(r))
+      }
       if (request.question < expected) return reply('ignored', 'studio_answer_duplicate')
       if (request.question > expected) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       r.language = request.language
@@ -271,13 +279,6 @@ export function createStudioRuntime(input: {
     phase: (): StudioPhase | null => run?.phase ?? null,
     image(id: string): StoredImage | undefined { return run ? images.get(id) : undefined },
   }
-}
-
-/** A caption is a word: three or more spelled letters (M-I-A, M I A, M、I、A) become Mia. */
-export function spelledName(name: string): string {
-  if (!/^[A-Za-z](?:[\s\-、,，]+[A-Za-z]){2,}$/.test(name)) return name
-  const letters = name.replace(/[^A-Za-z]/g, '')
-  return letters[0]!.toUpperCase() + letters.slice(1).toLowerCase()
 }
 
 function sameIdentity(a: StudioIdentity, b: StudioIdentity): boolean {

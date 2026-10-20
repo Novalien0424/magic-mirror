@@ -67,16 +67,18 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
   switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] **Studio names by voice.** Live QA (2026-10-19) corrected same-sounding
-  Chinese characters (王小明 → 王曉明 by 「破曉的曉」) in 7 of 9 visits and passed all
-  3 name steps on the final build, but the Realtime model sometimes records a correction as a
-  confirmation or keeps the heard characters; the glass shows the name for a
-  further correction. Measure with human speakers before an event that depends
-  on exact names. [Studio stories](docs/testing/interactive-studio-stories-2026-10-19.md).
-- [ ] **Rejected studio clean-up delete.** Long visits occasionally get one
-  `item_delete_invalid_item_id` from the provider (no visitor impact). Deletes are
-  now once per item and labelled; the live probe classifies the next occurrence
-  by path. Fix the path it names, then drop this item.
+- [ ] **Studio names by voice.** Since 2026-10-20 a name counts as confirmed
+  only from the visitor's reply to its read-back; the final build passed 5 of 5
+  name steps (王小明 → 王曉明 by 「破曉的曉」, spelled M-I-A → Mia). The model still
+  decides how to rebuild a described character; measure with human speakers
+  before an event that depends on exact names.
+  [Studio stories](docs/testing/interactive-studio-stories-2026-10-20.md).
+- [ ] **Repaint preamble (owner decision).** A change asked with a spoken
+  preamble now gets no second line, but a vague preamble (「讓我想一下…」) can then
+  be the only line before a ~45 s repaint. Options: allow one short in-character
+  preamble for studio_revise with a sample phrase in its tool description (the
+  prompting guide's approach; extends the 2026-10-14 preamble ruling), or keep
+  as is. The painting line after the last answer is still sometimes spoken twice.
 - [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
   keyboard alongside the forwarded TV mouse. Physical local direction/clicks
   are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).

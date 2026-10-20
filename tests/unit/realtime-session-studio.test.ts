@@ -115,7 +115,8 @@ describe('Portrait Studio in the Realtime session', () => {
     const image = p.sent.find(e => e.type === 'conversation.item.create')!.item as { id: string; content: { type: string; image_url: string }[] }
     expect(image.content[0]).toEqual({ type: 'input_image', image_url: 'data:image/jpeg;base64,AAAA' })
     const reveal = responses(p).find(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')!
-    expect(reveal.instructions).toContain('Taiwan Mandarin')
+    // The reply language comes last, after the English stage text.
+    expect(String(reveal.instructions).endsWith('\n\nSpeak in Taiwan Mandarin with Traditional characters.')).toBe(true)
     expect(reveal.instructions).toContain('studio_revise')
     p.event({ type: 'response.created', response: { id: 'rev' } })
     p.event({ type: 'response.done', response: { id: 'rev', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
@@ -217,6 +218,7 @@ describe('Portrait Studio in the Realtime session', () => {
     // The SDK retrieves an input item after transcription; deletion follows that retrieval.
     p.event({ type: 'conversation.item.retrieved', item: { id: 'item-late', type: 'message', role: 'user' } })
     p.event({ type: 'response.created', response: { id: 'r-late' } })
+    p.event({ type: 'conversation.item.added', item: { id: 'reply-late', type: 'message', role: 'assistant' } })
     p.event({ type: 'response.done', response: { id: 'r-late', status: 'completed', output: [{ id: 'reply-late', type: 'message', role: 'assistant' }] } })
     await vi.waitFor(() => expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'item-late' })), { timeout: 4000 })
     await vi.waitFor(() => expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'reply-late' })), { timeout: 4000 })
@@ -398,6 +400,72 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(requests.filter(r => r.action === 'finish')).toHaveLength(1)
   })
 
+  it('never deletes an out-of-band line, which the server never listed in the conversation', async () => {
+    const p = probe()
+    const { handle } = session(p, () => accepted('studio_started'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    // A spoken cue (conversation: none) reports its item only in response.done; a reply is also listed.
+    p.event({ type: 'response.created', response: { id: 'cue' } })
+    p.event({ type: 'conversation.item.done', item: { id: 'cue-line', type: 'message', role: 'assistant' } })
+    p.event({ type: 'response.done', response: { id: 'cue', status: 'completed', output: [{ id: 'cue-line', type: 'message', role: 'assistant' }] } })
+    p.event({ type: 'conversation.item.added', item: { id: 'turn-1', type: 'message', role: 'assistant' } })
+    handle.studioEvent!({ event: 'keepsake_done', afterPortrait: 'continue' }, ID)
+    await vi.waitFor(() => expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'turn-1' })), { timeout: 4000 })
+    expect(p.sent).not.toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'cue-line' }))
+  })
+
+  it('ignores a name or answer recorded before the visitor has spoken in the studio', async () => {
+    const p = probe()
+    const { requests, reasons } = session(p, request => accepted(request.action === 'set_name' ? 'studio_name_heard' : 'studio_started', 'Read it back'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    // The model wrote its own question as the name: silent, Main never sees it.
+    expect(await call(tool(p.agents[1]!, 'studio_set_name'), { name: '畫上要寫什麼名字？', confirmed: false, language: 'zh' }))
+      .toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
+    expect(await call(tool(p.agents[1]!, 'studio_answer'), { question: 1, answer: 'owl', language: 'en' }))
+      .toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
+    expect(requests.filter(r => r.action !== 'start')).toHaveLength(0)
+    expect(reasons()).toContain('studio_visitor_reply_missing')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v1' })
+    await call(tool(p.agents[1]!, 'studio_set_name'), { name: '王曉明', confirmed: false, language: 'zh' })
+    expect(requests.at(-1)).toMatchObject({ action: 'set_name', name: '王曉明' })
+  })
+
+  it('confirms a name only from a later visitor turn about the name that was read back', async () => {
+    const p = probe()
+    const { requests } = session(p, request => request.action === 'set_name' && !request.confirmed ? accepted('studio_name_heard', 'Read it back')
+      : accepted(request.action === 'set_name' ? 'studio_name_confirmed' : 'studio_started'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    const setName = (name: string, confirmed: boolean) => call(tool(p.agents[1]!, 'studio_set_name'), { name, confirmed, language: 'zh' })
+    const confirmations = () => requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v1' })
+    // Confirmed while first heard, or again in the same turn: still a read-back.
+    await setName('王小明', true)
+    await setName('王小明', true)
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v2' })
+    // A different name in the visitor's reply is a correction to read back.
+    await setName('王曉明', true)
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v3' })
+    await setName('王曉明', true)
+    expect(confirmations()).toEqual([false, false, false, true])
+  })
+
+  it('says the repaint once: a change asked with a spoken preamble needs no second reply', async () => {
+    const p = probe()
+    const { handle } = session(p, request => request.action === 'revise' ? accepted('studio_revising', 'Say you are repainting') : accepted('studio_started'))
+    await handle.connect()
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    const revise = tool(p.agents[1]!, 'studio_revise')
+    // The preamble's message item comes before the call; its audio only starts after the tool ran.
+    p.event({ type: 'response.output_item.added', response_id: 'spoken', item: { type: 'message', role: 'assistant' } })
+    p.event({ type: 'response.output_item.added', response_id: 'spoken', item: { type: 'function_call', name: 'studio_revise' } })
+    // A background result: committed without a reply.
+    expect(await call(revise, { change: 'snow' })).toMatchObject({ content: { next: 'Say you are repainting', studio: { code: 'studio_revising' } } })
+    p.event({ type: 'response.output_item.added', response_id: 'silent', item: { type: 'function_call', name: 'studio_revise' } })
+    const replied = await call(revise, { change: 'snow' })
+    expect(replied).toMatchObject({ next: 'Say you are repainting', studio: { code: 'studio_revising' } })
+    expect(replied).not.toHaveProperty('content')
+  })
+
   it('ignores studio events addressed to another session', async () => {
     const p = probe()
     const { handle, reasons } = session(p, () => accepted('studio_started'))
@@ -550,7 +618,7 @@ describe('Portrait Studio in the Realtime session', () => {
     await vi.waitFor(() => expect(firstSteps()).toHaveLength(1))
     expect(String(firstSteps()[0]!.instructions)).toContain('# Portrait studio')
     expect(String(firstSteps()[0]!.instructions)).toContain(step)
-    expect(String(firstSteps()[0]!.instructions)).toContain('Speak in Taiwan Mandarin in Traditional Chinese.')
+    expect(String(firstSteps()[0]!.instructions)).toContain('Speak in Taiwan Mandarin with Traditional characters.')
   })
 
   it('does not ask the first step again when the visitor already answered it during the start script', async () => {
@@ -559,6 +627,7 @@ describe('Portrait Studio in the Realtime session', () => {
     await handle.connect()
     handle.studioEvent!({ event: 'enter', startScript: '畫室開門了。', firstStep: 'Ask this name question now: 名字？', language: 'zh' }, ID)
     await vi.waitFor(() => expect(responses(p).some(r => typeof (r.metadata as Record<string, unknown>)?.mirror_scene_cue === 'string')).toBe(true))
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v1' })
     await call(tool(p.agents[1]!, 'studio_set_name'), { name: '王曉明', confirmed: false, language: 'zh' })
     const cueId = (responses(p).find(r => typeof (r.metadata as Record<string, unknown>)?.mirror_scene_cue === 'string')!.metadata as Record<string, string>).mirror_scene_cue
     p.event({ type: 'response.created', response: { id: 'start-r', metadata: { mirror_scene_cue: cueId } } })

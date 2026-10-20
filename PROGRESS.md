@@ -1,19 +1,26 @@
 # Magic Mirror — current handoff, 2026-10-18
 
-Latest delivery (**Interactive Studio stories and fixes**, 2026-10-19 late;
-pushed to `field/macmini-deploy` and PR #2): three spiritual studio stories
-(Past-Life Oracle, Cartographer of Unlived Lives in English, Dream Pawnshop)
-plus the published studio ran live end to end with pictures and transcripts
-([owner review page](https://claude.ai/artifact/W5DPaA7YxfsRaq1gDyFxhd)). QA found
-and fixed: Main-started studios never asked the first step; English stories
-started in Chinese; spelled/described name corrections were lost; the last
-picture was not described (the application now finishes after the final
-reveal); Console stale mode/result line and a false microphone warning. **Final
-build: all four stories pass, full suite, `--operator-loop`, `--console`,
-`--studio-journey` pass.** Name corrections remain probabilistic and one clean-up
-provider error is still being classified (TODO). Runtime 00:11 Taipei 10-20:
-production on this build, Dormant and listening, Conversation, Jabra 69 %; QA
-artifacts deleted. [Evidence](docs/testing/interactive-studio-stories-2026-10-19.md).
+Latest delivery (**Interactive Studio follow-up**, 2026-10-20; pushed to
+`field/macmini-deploy` and PR #2): the owner's fixes (1) a repaint spoken twice
+and (2) the published studio's last description in English, studio prompts
+shortened to the OpenAI realtime prompting guide (no regex rewrite of the
+model's name), and application ordering guards (a name is confirmed only by the
+visitor's reply to its read-back; nothing is recorded before the visitor speaks;
+a newer answer replaces the old one). QA also fixed the long-open
+`item_delete_invalid_item_id` (clean-up deleted out-of-band spoken lines) and a
+multi-line guidance bug. **Final build: all four stories pass (Oracle twice
+more), full suite 2664 pass; 0 provider errors, language and single repaint in
+every visit.** Owner decision pending on a repaint preamble (TODO). Runtime
+12:05 Taipei: production on this build, Dormant and listening, Conversation,
+Jabra 69 % (set after restart); QA artifacts deleted.
+[Evidence](docs/testing/interactive-studio-stories-2026-10-20.md),
+[owner review page](https://claude.ai/artifact/W5DPaA7YxfsRaq1gDyFxhd).
+
+Earlier (**Interactive Studio stories**, 2026-10-19 late): three spiritual
+stories and the published studio ran live end to end; QA fixed the first step
+never asked, English stories starting in Chinese, lost name corrections, the
+undescribed last picture, and Console stale mode/result line and a false
+microphone warning. [Evidence](docs/testing/interactive-studio-stories-2026-10-19.md).
 
 Earlier tonight (**Remote Console QA**, 2026-10-19; pushed to
 `field/macmini-deploy` and PR #2): the Desktop app **Remote Console Magic

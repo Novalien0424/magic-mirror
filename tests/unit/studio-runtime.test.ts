@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createStudioRuntime, spelledName } from '../../src/main/studio/studio-runtime'
+import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
 import type { PortraitImageProvider, PortraitImageResult } from '../../src/main/studio/image-provider'
-import { defaultExperience, parseStudioSessionEvent, parseStudioView, type AvatarExperience } from '../../src/shared/portrait-studio'
+import { defaultExperience, parseStudioSessionEvent, parseStudioView, studioText, type AvatarExperience } from '../../src/shared/portrait-studio'
+import { PORTRAIT_STUDIO } from '../../src/shared/portrait-studio-config'
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8)])
 const identity = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
@@ -36,12 +37,8 @@ async function answerAll(h: ReturnType<typeof harness>, count = 4) {
 afterEach(() => { vi.useRealTimers() })
 
 describe('portrait studio runtime', () => {
-  it('writes a spelled name as a word on the picture, and leaves other names alone', () => {
-    expect(['M-I-A', 'M I A', 'm、i、a', 'M, I, A'].map(spelledName)).toEqual(['Mia', 'Mia', 'Mia', 'Mia'])
-    expect(['Mia', 'A J', 'J.R.R.', '王曉明', 'Mary-Ann'].map(spelledName)).toEqual(['Mia', 'A J', 'J.R.R.', '王曉明', 'Mary-Ann'])
-    const h = harness()
-    h.runtime.start(identity, h.experience, 'visitor')
-    expect(h.runtime.handle({ action: 'set_name', name: 'M-I-A', confirmed: false, language: 'zh' }, identity).next).toContain('「Mia」')
+  it('keeps every versioned guidance prompt valid as a studio reply (one line)', () => {
+    for (const text of Object.values(PORTRAIT_STUDIO.guidance)) expect(studioText(text, 2000)).toBe(true)
   })
 
   it('starts in the start script language, so an English story asks and shows its first question in English', () => {
@@ -119,6 +116,9 @@ describe('portrait studio runtime', () => {
     h.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
     h.runtime.handle({ action: 'answer', question: 1, answer: 'owl', language: 'en' }, identity)
     expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'owl', language: 'en' }, identity)).toMatchObject({ status: 'ignored', code: 'studio_answer_duplicate' })
+    // A different answer to the question just recorded replaces it and the current question is asked again.
+    expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'dragon', language: 'en' }, identity)).toMatchObject({ status: 'accepted', code: 'studio_answer_replaced', next: expect.stringContaining('2 of 4') })
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question', answered: 1 })
     expect(h.runtime.handle({ action: 'answer', question: 3, answer: 'x', language: 'en' }, identity)).toMatchObject({ code: 'studio_wrong_step' })
     expect(h.runtime.handle({ action: 'finish' }, { realtimeSessionId: 'rt-2', sessionGeneration: 2 })).toMatchObject({ code: 'studio_not_active_stale' })
     expect(h.runtime.handle({ action: 'finish' }, identity)).toMatchObject({ code: 'studio_wrong_step' })

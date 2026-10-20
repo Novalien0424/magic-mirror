@@ -21,7 +21,7 @@ function freeze<T>(value: T): Readonly<T> {
 const config = freeze(source)
 const variables: [string, string, string[]][] = [
   ['imagePrompt', 'frame', ['style']], ['imagePrompt', 'painted', ['name']], ['imagePrompt', 'revision', ['change']],
-  ['agent', 'reveal', ['followUp', 'language']], ['agent', 'revealBlind', ['followUp', 'language']], ['guidance', 'askName', ['question']], ['guidance', 'confirmName', ['name']],
+  ['agent', 'reveal', ['followUp']], ['agent', 'revealBlind', ['followUp']], ['guidance', 'askName', ['question']], ['guidance', 'confirmName', ['name']],
   ['guidance', 'chooseGuest', ['candidates']], ['guidance', 'askQuestion', ['count', 'index', 'question']], ['guidance', 'wrongStep', ['current']],
 ]
 for (const [group, key, expected] of variables) {

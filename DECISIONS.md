@@ -1,5 +1,26 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-20 — Studio prompts follow the realtime prompting guide (owner directive)
+
+- **Short prompts, no stacked rules.** Studio stage prompts and tool
+  descriptions say what to do in a sentence or two, with at most one example,
+  following the OpenAI realtime prompting guide ("Start simple", avoid
+  overlapping always/never/only/must rules). Application code never rewrites
+  the model's words with patterns: the avatar writes the name as it should
+  appear (spelled M-I-A is written Mia), replacing Main's 2026-10-19 letter join.
+- **The repaint is announced once.** When the avatar spoke a preamble while
+  calling studio_revise, the change result is committed without another reply
+  (application ordering); otherwise the result's reply announces it.
+- **The reveal names its language last.** The application ends every reveal
+  request with the reply language (Taiwan Mandarin with Traditional characters
+  by default, English for an English studio or visitor), after the operator's
+  English stage text.
+- **Order, not wording, guards the studio steps.** A name counts as confirmed
+  only from a visitor turn after its read-back, for the name read back;
+  otherwise it is read back again. A different answer to the question just
+  recorded replaces it. Studio cleanup deletes only items the server listed in
+  the conversation (out-of-band spoken lines never are).
+
 ## 2026-10-19 — Studio opening and name read-back (owner directive: fix everything found in QA)
 
 - **The avatar asks the first step.** A studio started by Main (wake in
@@ -13,7 +34,7 @@
 - **Read-back corrections.** The read-back is one short in-character question.
   Names in Latin letters are spelled back; spelled letters or a described
   character are a correction, never a confirmation, and outrank the heard
-  characters. Main joins three or more spelled letters into one word (M-I-A → Mia).
+  characters. (Main's letter join was replaced on 2026-10-20.)
 - **The application finishes after the last picture.** With no change left, the
   reveal describes the picture and hands it over (Final version) without tools;
   when that reply ends, the application finishes the studio. Hand over the

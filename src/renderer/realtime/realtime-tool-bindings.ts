@@ -10,7 +10,9 @@ export type RealtimeToolHandler = (arguments_: Readonly<Record<string, unknown>>
   code?: ToolResultCode;
   next?: 'ask' | 'explain' | 'play_media' | 'search_youtube'; playback?: import('../../shared/media-skill').MediaSkillRequest;
   memory?: import('../../shared/memory').MemoryReply; media?: import('../../shared/media-discovery').MediaDiscoveryReply;
-  youtube?: import('../../shared/youtube-search').YoutubeSearchReply; studio?: import('../../shared/portrait-studio').StudioReply }>
+  youtube?: import('../../shared/youtube-search').YoutubeSearchReply; studio?: import('../../shared/portrait-studio').StudioReply
+  /** The visitor already heard this call's line, so the result needs no reply. */
+  spoken?: boolean }>
 export type ToolFailureReason = 'tool_arguments_rejected' | 'tool_execution_failed'
 
 /** Bind only code-authorized handlers. Raw JSON schemas alone do not validate SDK input. */
@@ -24,7 +26,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     const result = (outcome: ToolOutcome, memory?: import('../../shared/memory').MemoryReply,
       media?: import('../../shared/media-discovery').MediaDiscoveryReply, youtube?: import('../../shared/youtube-search').YoutubeSearchReply,
       failureCode?: ToolResultCode, next?: 'ask' | 'explain' | 'play_media' | 'search_youtube', playback?: import('../../shared/media-skill').MediaSkillRequest,
-      studio?: import('../../shared/portrait-studio').StudioReply) => {
+      studio?: import('../../shared/portrait-studio').StudioReply, spoken = false) => {
       // Speech routing stays in application code, not in model-visible results.
       // The confirmation receipt belongs to the application-owned dialogue.
       const { confirmation: _confirmation, ...modelMemory } = memory ?? {}
@@ -39,7 +41,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
         ...(memory?.code === 'memory_identity_required' ? { next: REALTIME_PROMPTS.memoryLocked } : {}) }
       // A pending identity question speaks next; a model reply would cancel it.
       // Duplicate or stale studio replies stay silent.
-      const responds = !media?.code.endsWith('_stale') && !youtube?.code.endsWith('_stale') && memory?.code !== 'memory_result_stale'
+      const responds = !spoken && !media?.code.endsWith('_stale') && !youtube?.code.endsWith('_stale') && memory?.code !== 'memory_result_stale'
         && memory?.code !== 'memory_confirmation_required' && memory?.code !== 'memory_confirmation_pending'
         && !(studio && /_(?:duplicate|stale)$/.test(studio.code)) && (spec.completion === 'response'
         || spec.completion === 'background_on_success' && (next || outcome === 'failed' || outcome === 'rejected'
@@ -73,7 +75,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
           const outcome = typeof value === 'string' ? value : value.outcome
           if (!Object.hasOwn(spec.results, outcome)) throw new Error('invalid_tool_outcome')
           finish(outcome)
-          return typeof value === 'string' ? result(outcome) : result(outcome, value.memory, value.media, value.youtube, value.code, value.next, value.playback, value.studio)
+          return typeof value === 'string' ? result(outcome) : result(outcome, value.memory, value.media, value.youtube, value.code, value.next, value.playback, value.studio, value.spoken)
         } catch { onFailure('tool_execution_failed'); finish('failed'); return result('failed') }
       },
     }

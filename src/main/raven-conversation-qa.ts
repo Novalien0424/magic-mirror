@@ -6,6 +6,7 @@ import { Speaker } from 'decibri'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { besideMirror, consolePlacement, overMirror, sendQaOperatorCommand, type ConsolePlacement } from './operator-command-qa'
 import { sameStudioName, studioQaStory } from './studio-qa-stories'
+import { studioStartLanguage } from '../shared/portrait-studio'
 import { ravenConversationProbe } from './raven-conversation-probe'
 import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTHETIC_VISITORS, RAVEN_MEMORY_IDENTITY_REPAIR,
   RavenMemoryQaIdentity, ravenMemoryQaComparisons, ravenMemoryQuestionProbe, parseRavenQualityAssessment, renderRavenVisitorText,
@@ -97,7 +98,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   // Portrait Studio metadata: phases, event names, Main reasons, timings and booleans; never names or answers.
   const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number
     customPaintingPromptFollowed?: boolean; story?: string; nameCorrections?: number; nameAsIntended?: boolean
-    promptMarkersFollowed?: Partial<Record<'painting' | 'finished', boolean>>; farewellVerbatim?: boolean }
+    promptMarkersFollowed?: Partial<Record<'painting' | 'finished', boolean>>; farewellVerbatim?: boolean
+    repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number } }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
   let screenshots = 0, captureAttempted = false, installed = false, visit = 0, visitStarted = 0, accepted = false
@@ -791,6 +793,10 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         revised = await check(stage, async () => {
           await turn(extra[`studioChange${i + 1}`]!, stage, 'studio_revise')
           await wait(async () => await readyEvents() >= i + 2, 'studio_revision_ready', 240000)
+          // Lines the visitor heard while the change was painted (checked after the visit).
+          const readyAt = (await studio()).filter(s => s.event === 'ready')[i + 1]!.at
+          studioEvidence.repaintLines = [...studioEvidence.repaintLines ?? [],
+            (await observe()).records.filter(r => r.stage === stage && r.role === 'avatar' && r.audible !== false && r.at < readyAt).length]
           await wait(async () => await reveals() >= i + 2, 'studio_second_reveal', 60000)
           await wait(settled, 'studio_second_reveal_settled', 60000)
           await shot(`revision-${i + 1}`)
@@ -819,6 +825,20 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const words = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
         const farewell = words(studioSettings.farewell ?? '願你找到你所追尋\n再會\n人類')
         studioEvidence.farewellVerbatim = (await observe()).records.some(r => r.role === 'avatar' && r.at >= studioStarted && words(r.text) === farewell)
+      })
+      // Every studio line, farewell included, is in the studio's language (scripts counted
+      // like the adapter's reply-language observer; counts only).
+      if (finished) await check('studio_language', async () => {
+        const expected = studioStartLanguage(studioSettings.startScript)
+        const language = (text: string) => { const han = (text.match(/\p{Script=Han}/gu) ?? []).length, latin = (text.match(/[A-Za-z]/g) ?? []).length
+          return han >= 2 && han >= latin / 4 ? 'zh' : !han && latin >= 8 ? 'en' : null }
+        const lines = (await observe()).records.filter(r => r.role === 'avatar' && r.at >= studioStarted).map(r => language(r.text)).filter(l => l !== null)
+        studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l !== expected).length }
+        if (studioEvidence.language.mismatched) throw Error('raven_qa_studio_language_mismatch')
+      })
+      // Each repaint is announced once: a spoken preamble, or else the change result's reply.
+      if (studioEvidence.repaintLines) await check('studio_repaint_once', async () => {
+        if (studioEvidence.repaintLines!.some(lines => lines !== 1)) throw Error('raven_qa_studio_repaint_lines')
       })
       // Conversation mode: the normal wake, and a visitor who asks for the studio opens it.
       if (finished && extra.studioRequest !== undefined) await check('studio_conversation_request', async () => {

@@ -148,7 +148,7 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
       },
     },
     visitor: {
-      name: { say: '典當人叫 Mia。', intended: 'Mia', correction: '是英文名字，M、I、A，Mia。', confirm: '對，沒錯。' },
+      name: { say: '典當人叫 Mia。', intended: 'Mia', correction: '是英文名字，拼法是 M、I、A。', confirm: '對，沒錯。' },
       answers: ['我願意交出第一次騎腳踏車的那個下午。', '用落葉做成的翅膀。', '往後流，像倒放的電影。', '月光那種淡淡的藍。', '會長出會發光的蘑菇。', '一把會唱歌的鑰匙。'],
       changes: ['讓所有的時鐘都變成蝴蝶。'],
       thanks: '好美的夢，謝謝老闆。',
