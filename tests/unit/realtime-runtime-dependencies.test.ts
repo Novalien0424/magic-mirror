@@ -48,7 +48,7 @@ function makeBundle(): Readonly<RealtimeSessionStartBundleValue> {
   const snapshot = Object.freeze({
     configVersion: 7,
     fingerprint: 'snapshot-fingerprint',
-    sdkVersion: '0.16.1',
+    sdkVersion: '0.20.0',
     realtimeDialogue: 'configured-realtime-model',
     inputTranscription: 'configured-transcription-model',
     memoryExtractor: 'configured-memory-model',
@@ -326,6 +326,7 @@ function makeAudioAnalyserFixture(): AudioAnalyserFixture {
     audioElement,
     analyser,
     attachAnalyserTap,
+    setMuted: vi.fn(),
     dispose,
   } as unknown as RealtimeRuntimeAudioOutput
 
@@ -344,13 +345,18 @@ function makeAudioAnalyserFixture(): AudioAnalyserFixture {
 describe('Realtime runtime dependency composition core', () => {
   it('includes greeting only for fresh starts, while retaining the farewell on rollover', async () => {
     const fixture = makeFixture()
+    const waitForWakePresentation = vi.fn(async () => undefined)
     const deps = createRealtimeRuntimeOwnerDependencies({ ...fixture.input,
+      waitForWakePresentation,
       getAvatarDialogue: async () => ({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' }) })
     await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement, true)
     await deps.createSession(makeBundle(), fixture.stream, fixture.audioElement)
     expect(fixture.createSession.mock.calls[0]?.[0]).toMatchObject({ wakeGreeting: 'Welcome.', sleepFarewell: 'Rest.' })
     expect(fixture.createSession.mock.calls[1]?.[0]).toMatchObject({ sleepFarewell: 'Rest.' })
     expect(fixture.createSession.mock.calls[1]?.[0]).not.toHaveProperty('wakeGreeting')
+    expect(fixture.createSession.mock.calls[0]?.[0].waitForWakePresentation).toBe(waitForWakePresentation)
+    expect(fixture.createSession.mock.calls[1]?.[0]).not.toHaveProperty('waitForWakePresentation')
+    expect(waitForWakePresentation).not.toHaveBeenCalled()
   })
   it('constructs dependencies and a browser owner purely, leaving the owner idle', () => {
     const fixture = makeFixture()
@@ -704,6 +710,9 @@ describe('Realtime runtime dependency composition — audio analyser', () => {
     })
 
     const returnedAudioOutput = await Promise.resolve(dependencies.createAudioOutput(makeBundle()))
+
+    returnedAudioOutput.setMuted!(true)
+    expect(audioFixture.output.setMuted).toHaveBeenCalledWith(true)
 
     expect(onAudioOutputAvailable).toHaveBeenCalledOnce()
     expect(onAudioOutputAvailable).toHaveBeenCalledWith(audioFixture.output)

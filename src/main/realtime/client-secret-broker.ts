@@ -13,14 +13,17 @@ export interface ClientSecretBrokerEventSink {
 export interface ClientSecretBrokerOptions {
   readonly credentialStore: RealtimeCredentialSource
   readonly events: ClientSecretBrokerEventSink
+  readonly requestTimeoutMs?: number
 }
 
 export interface ClientSecretIssueRequest {
+  readonly signal?: AbortSignal
   readonly modelId: string
   readonly fetchImpl?: typeof fetch
 }
 
 export interface ClientSecretModelAvailabilityRequest {
+  readonly signal?: AbortSignal
   readonly modelId: string
   readonly fetchImpl?: typeof fetch
 }
@@ -155,6 +158,11 @@ function fail(
 export function createClientSecretBroker(
   options: ClientSecretBrokerOptions,
 ): ClientSecretBroker {
+  const timeoutMs = options.requestTimeoutMs ?? 10_000
+  const requestSignal = (caller?: AbortSignal): AbortSignal => {
+    const deadline = AbortSignal.timeout(timeoutMs)
+    return caller ? AbortSignal.any([caller, deadline]) : deadline
+  }
   return {
     async issue(request: ClientSecretIssueRequest): Promise<ClientSecretIssueResult> {
       if (typeof request.modelId !== 'string' || request.modelId.length === 0) {
@@ -187,9 +195,11 @@ export function createClientSecretBroker(
       }
 
       let response: Response
+      const signal = requestSignal(request.signal)
       try {
         const fetchImpl = request.fetchImpl ?? fetch
         response = await fetchImpl('https://api.openai.com/v1/realtime/client_secrets', {
+          signal,
           method: 'POST',
           headers: {
             Authorization: `Bearer ${credential}`,
@@ -230,6 +240,7 @@ export function createClientSecretBroker(
         body = await readBoundedModelResponse(response)
       } catch {
         credential = null
+        if (signal.aborted) return fail(options.events, 'realtime_client_secret_fetch_failed', 'cause=fetch_failed')
         return fail(
           options.events,
           'realtime_client_secret_response_malformed',
@@ -305,9 +316,11 @@ export function createClientSecretBroker(
       }
 
       let response: Response
+      const signal = requestSignal(request.signal)
       try {
         const fetchImpl = request.fetchImpl ?? fetch
         response = await fetchImpl(MODEL_LIST_ENDPOINT, {
+          signal,
           method: 'GET',
           headers: {
             Authorization: `Bearer ${credential}`,
@@ -346,6 +359,7 @@ export function createClientSecretBroker(
         body = await response.json()
       } catch {
         credential = null
+        if (signal.aborted) return fail(options.events, 'realtime_client_secret_fetch_failed', 'cause=fetch_failed')
         return fail(
           options.events,
           'realtime_client_secret_response_malformed',

@@ -1,10 +1,13 @@
 # Pinned SDK session and transcription contracts
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed SDK and application builders own wire behavior; current official docs
+describe supported provider fields. A configured object is distinct from a
+server-acknowledged configuration and measured recognition quality.
 
 ## Packages and session creation
 
-- `@openai/agents` **0.16.1** and `@openai/agents-realtime` **0.16.1**;
+- `@openai/agents` **0.20.0** and `@openai/agents-realtime` **0.20.0**
+  ([release](https://github.com/openai/openai-agents-js/releases/tag/v0.20.0));
   realtime imports use the official subpath `@openai/agents/realtime`.
   The package graph uses `@openai/agents-core` and `@openai/agents-openai`.
   `openai ^7.2.0` is an umbrella-package dependency, not an
@@ -22,12 +25,13 @@ const session = new RealtimeSession(agent, {
   config: {
     audio: {
       input: {
-        transcription: { model: cfg.transcriptionModel, languages: ['zh'] },
-        turnDetection: { type: 'semantic_vad', interruptResponse: true },
+        transcription: cfg.transcription, // model and supported hints from the current builder
+        turnDetection: cfg.turnDetection,
       },
       output: { voice: cfg.voice },
     },
-    reasoning: { effort: cfg.reasoningEffort },  // 'low' baseline
+    reasoning: { effort: cfg.reasoningEffort },
+    tracing: null,
   },
 });
 await session.connect({ apiKey: ephemeralKey }); // ONLY apiKey|model|url|callId here
@@ -50,26 +54,63 @@ The response `value` starts with `ek_`; hand that value to the renderer.
 `seconds` is 10-7200. Expiry gates session start, not session duration. Never
 use `useInsecureApiKey`.
 
-Electron Main alone loads `OPENAI_API_KEY` from the ignored repository-root
-`.env`. Renderer code receives only the short-lived Realtime credential. Do
-not add Console provisioning, `safeStorage`, Keychain, DPAPI, inherited-env,
-or alternate-key fallbacks. Keys never enter renderer data, configuration,
-logs, telemetry, exports, or agent evidence.
+Use the existing Main-only credential path under [AGENTS invariant 12](../../../../AGENTS.md);
+the renderer receives only the short-lived Realtime credential. RCA does not
+inspect keys or retain them in evidence.
 
 ## Transcripts
 
 - A completed transcript arrives on raw event
   `conversation.item.input_audio_transcription.completed` with `item_id` and
   `transcript`; the SDK surfaces it via `history_updated` and `history_added`.
-- Transcription model and language configuration come from the versioned config and pinned SDK contract.
-- **Transcripts lag or go missing by design.** The model can answer before the
-  transcript lands. The voice hot path never waits on transcripts. Missing
-  transcript means no spell, no identity confirmation, and no memory; log
-  `transcript_unavailable` as metadata only.
+- [Current adapter](../../../../src/renderer/realtime/realtime-session-adapter.ts)
+  takes the transcription model from the session snapshot and language hints
+  from the versioned prompt catalog. It supplies selected wake/sleep/enabled spell
+  phrases as `keywords` and the catalog's `transcription.prompt`.
+- In installed SDK 0.20.0, `OpenAIRealtimeBase._getMergedSessionConfig` forwards
+  the nested transcription object without stripping those fields. This proves
+  serialization, not server acknowledgement or that a hint was recognized.
+- Transcription is separate from the dialogue model's audio understanding.
+  Dialogue can begin before the final transcript lands. Match completed events
+  by `item_id`; cross-turn completion order is not guaranteed. Missing text
+  disables transcript-driven controls and extraction for that turn with a
+  metadata reason, without holding ordinary conversation hostage.
 
-Final transcripts, conversation audio, extracted memory values, and injected
-private context remain RAM-only. Do not write them to disk, a database,
-backups, telemetry, or debug logs, even temporarily for debugging.
+### Transcription facts (checked 2026-10-11)
+
+- **`gpt-live-transcribe` is a streaming STT model.** Its model page lists
+  transcription sessions with `turn_detection: null`. Using it inside this
+  speech-to-speech `server_vad` session works empirically but is
+  undocumented. Pre-commit deltas are documented only for transcription
+  sessions; measure them before relying on them here.
+- **`keywords`** are soft hints. Any `<`, `>`, CR or LF rejects the whole
+  update.
+- **`prompt`** (recording context) is supported. Describe the context
+  (`realtime.v1.json#transcription.prompt`), never force an expected phrase;
+  measure whether a primed prefix raises false spell-prefix turns.
+- **`languages`.** `zh-tw` is valid; unsupported codes are rejected.
+- **`delay`.** Send it only for models in the catalog's `delayModels` allowlist
+  (`gpt-realtime-whisper`); the [API reference](https://developers.openai.com/api/reference/resources/realtime/client-events) does not support it for the
+  current live-transcribe model.
+- **Detected `languages`** in completed events come from `gpt-transcribe`,
+  which needs WebSocket.
+- **Acknowledgement is not application.** The server acknowledgement echoes
+  `language`, `languages`, `model` and `prompt`, but not `keywords` or
+  `delay`. A missing echo proves neither application nor rejection.
+
+Sources:
+[Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription),
+[speech-to-text](https://developers.openai.com/api/docs/guides/speech-to-text),
+[gpt-live-transcribe](https://developers.openai.com/api/docs/models/gpt-live-transcribe).
+ASR misses are fixed in recognition config or in the sound-alike matcher
+([prompt controls](prompt-controls.md)), never with dialogue restrictions.
+Keep raw text and audio in RAM.
+
+Final transcripts, conversation audio and injected private context remain
+RAM-only, including during debugging. Selected facts and validated distilled
+summaries may persist only through Main's scoped memory policy under current
+invariant 1. RCA evidence contains comparison categories/counts/timing, never
+raw conversations, private memory values or credentials.
 
 ## Privacy flags (production posture)
 
@@ -84,10 +125,8 @@ Set these explicitly:
   `@openai/agents-core` config).
 - Do not set `DEBUG=openai-agents*` in production.
 
-Every ignore, drop, fallback, or degrade must be visitor-visible or a
-metadata-only Console event with a reason. A camera, extractor, or single
-adapter failure must not block conversation or unrelated adapters; failures
-degrade visibly.
+Use bounded metadata reasons for unavailable transcripts and SDK failures;
+[AGENTS](../../../../AGENTS.md) owns privacy and visible-degradation policy.
 
 ## Realtime gotchas checklist
 
@@ -97,7 +136,5 @@ degrade visibly.
   Responses extractor, not the Realtime model.
 - Prefer nested `audio.input/output` plus `outputModalities` config shape;
   top-level `modalities` and `turnDetection` aliases are deprecated.
-- The Phase 1 start contract test must cover WebRTC connect with configured
-  model and voice, barge-in stop, transcript-to-item-ID mapping,
-  `updateAgent` on a clean session, close/fresh-reconnect, and that no
-  audio/tracing content persists locally.
+- Choose focused checks for the changed contract: configured model/voice,
+  interruption, item-ID mapping, fresh session/history ownership or privacy.

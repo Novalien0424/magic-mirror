@@ -66,7 +66,7 @@ export async function createProcessedRealtimeAudioOutput(input: CreateRealtimeAu
         try { release() } catch { failed = true }
       }
       disposal = context.close().catch(() => { failed = true }).then(() => {
-        if (failed) { input.onDegraded?.('voice_audio_cleanup_failed'); throw new Error('voice_audio_cleanup_failed') }
+        if (failed) { disposal = undefined; input.onDegraded?.('voice_audio_cleanup_failed'); throw new Error('voice_audio_cleanup_failed') }
       })
       return disposal
     },

@@ -85,7 +85,7 @@ describe('P1-U1 Published Active session snapshot boundary', () => {
     expect(currentSession).toMatchObject({
       configVersion: 7,
       fingerprint: initialSettings.active.fingerprint,
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: 'synthetic-realtime-active-v1',
       inputTranscription: 'synthetic-transcription-active-v1',
       memoryExtractor: 'synthetic-memory-active-v1',
@@ -125,7 +125,7 @@ describe('P1-U1 Published Active session snapshot boundary', () => {
     expect(nextSession).toMatchObject({
       configVersion: 8,
       fingerprint: publishedSettings.active.fingerprint,
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: 'synthetic-realtime-active-v2',
       inputTranscription: 'synthetic-transcription-active-v2',
       memoryExtractor: 'synthetic-memory-active-v2',

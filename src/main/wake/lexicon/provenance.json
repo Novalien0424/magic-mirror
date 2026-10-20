@@ -1,0 +1,25 @@
+{
+  "commits": {
+    "pinyin": "8595294b1a97845e30f11ecfdb3caa4e61ac3988",
+    "cmu": "74790861f652b15e4ac49015a90074ad62a27690"
+  },
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/mozillazg/python-pinyin/8595294b1a97845e30f11ecfdb3caa4e61ac3988/pypinyin/pinyin_dict.json",
+      "sha256": "5f294c01e6c6c0a1c8e329c79335a3f8e0b27d06bf1de7a99244b765892d1e5b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mozillazg/python-pinyin/8595294b1a97845e30f11ecfdb3caa4e61ac3988/pypinyin/phrases_dict.json",
+      "sha256": "a45ff140a6b631ca9c82127b280a2f414e0aba6bb2824a0e9d1e77fff359c665"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict",
+      "sha256": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22"
+    }
+  ],
+  "entries": {
+    "characters": 41923,
+    "phrases": 47102,
+    "english": 126052
+  }
+}

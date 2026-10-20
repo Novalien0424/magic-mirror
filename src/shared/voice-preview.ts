@@ -1,3 +1,4 @@
+import { REALTIME_PROMPTS } from './realtime-prompts'
 import { z } from 'zod'
 import { AVATAR_VOICES } from './avatar-profiles'
 import { voiceEffectsSchema } from './voice-effects-schema'
@@ -11,4 +12,4 @@ export type VoicePreviewRequest = z.infer<typeof voicePreviewRequestSchema>
 export type VoicePreviewResult = { ok: false; reason: string } | {
   ok: true; token: string; snapshot?: Readonly<SessionModelSnapshot>; clientSecret?: string
 }
-export const VOICE_PREVIEW_TEXT = '你好，我在這裡。讓我們慢慢說，仔細聽。 The mirror is awake. Tell me what is on your mind.'
+export const VOICE_PREVIEW_TEXT = REALTIME_PROMPTS.auditionText

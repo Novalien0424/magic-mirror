@@ -65,6 +65,9 @@ interface RegisteredIpc {
 }
 
 interface HarnessOptions {
+  readonly wakeCalibration?: import('../../src/main/ipc').RegisterIpcHandlersOptions['wakeCalibration']
+  readonly noteSceneActivity?: (kind: 'started' | 'finished', runId: string) => void
+  readonly cancelPendingVoicePreview?: () => boolean
   readonly saveAvatarModelLabel?: (request: import('../../src/shared/avatar-library').AvatarLibraryLabelRequest) => Promise<import('../../src/shared/avatar-profiles').AvatarModel>
   readonly listAvatarModels?: () => Promise<{ models: import('../../src/shared/avatar-profiles').AvatarModel[]; rejectedCount: number }>
   readonly draftSceneConfig?: Record<string, unknown>
@@ -271,6 +274,7 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
   }))
   const cancelVisualAsset = vi.fn(async () => undefined)
   const runtime = {
+    noteSceneActivity: options.noteSceneActivity,
     snapshot: () => snapshot,
     handleSimulator,
     handleRealtimeFailure,
@@ -292,6 +296,8 @@ function makeHarness(options: HarnessOptions = {}): RegisteredIpc {
   }
 
   registerIpcHandlers({
+    wakeCalibration: options.wakeCalibration,
+    voicePreview: options.cancelPendingVoicePreview ? { cancelPending: options.cancelPendingVoicePreview } : undefined,
     saveAvatarModelLabel: options.saveAvatarModelLabel,
     listAvatarModels: options.listAvatarModels,
     getWakeInput: options.getWakeInput,
@@ -356,6 +362,29 @@ function authorizedMirrorEvent(registered: RegisteredIpc): Record<string, unknow
 }
 
 describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
+  it('authorizes and validates live wake calibration without accepting arbitrary payload data', async () => {
+    const wakeCalibration = vi.fn(async () => ({ status: 'stopped' as const, sessionId: null, settings: null,
+      input: null, detections: 0, lastDetectionAgeMs: null, reason: null }))
+    const h = makeHarness({ wakeCalibration })
+    const handler = h.handlers.get('console:wake-calibration')!
+    const request = { type: 'start', settings: { avatarId: 'ren', phrase: '魔鏡阿魔鏡', threshold: 0.3, score: 1, numTrailingBlanks: 1 } }
+    expect(await handler(authorizedEvent(h), request)).toMatchObject({ ok: true })
+    expect(wakeCalibration).toHaveBeenCalledOnce()
+    expect(await handler({}, request)).toMatchObject({ ok: false, reason: 'cause=sender_rejected' })
+    expect(await handler(authorizedEvent(h), { ...request, audio: TEST_AUDIO_SENTINEL })).toMatchObject({ ok: false, reason: 'cause=payload_schema_invalid' })
+    expect(await handler(authorizedEvent(h), { ...request, settings: { ...request.settings, threshold: -1 } })).toMatchObject({ ok: false })
+    expect(wakeCalibration).toHaveBeenCalledOnce()
+  })
+  it('cancels pending voice acquisition only for an empty request from Console', async () => {
+    const cancel = vi.fn(() => true)
+    const h = makeHarness({ cancelPendingVoicePreview: cancel })
+    const handler = getHandler(h, 'console:voice-preview-cancel-pending')
+    expect(await handler(authorizedMirrorEvent(h))).toBe(false)
+    expect(await handler(authorizedEvent(h), 'extra')).toBe(false)
+    expect(cancel).not.toHaveBeenCalled()
+    expect(await handler(authorizedEvent(h))).toBe(true)
+    expect(cancel).toHaveBeenCalledOnce()
+  })
   it('saves bounded library labels only from Console and redacts failures', async () => {
     const save = vi.fn(async () => ({ id: 'model-test', name: 'Raven · v10', manifestFileName: 'raven.model3.json', files: [] }))
     const h = makeHarness({ saveAvatarModelLabel: save })
@@ -400,6 +429,9 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       ready: 'boot:renderer-ready',
     }))
     expect(MIRROR_IPC_CHANNELS).toEqual({
+      mediaSkill: 'mirror:media-skill',
+      findMedia: 'mirror:find-media',
+      searchYoutube: 'mirror:search-youtube',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
       requestRealtimeClientSecret: 'mirror:request-realtime-client-secret',
@@ -560,16 +592,45 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     expectNoSensitiveOutput(registered.events)
   })
 
+  it('bounds invalid avatar-report floods while valid reports continue to arrive', async () => {
+    vi.useFakeTimers()
+    try {
+      const registered = makeHarness(), report = getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)
+      for (let i = 0; i < 60; i++) report(authorizedMirrorEvent(registered), { reason: 'Bad:Reason' })
+      expect(registered.events.filter(event => event.event === 'ipc_payload_invalid')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(registered.events.filter(event => event.event === 'ipc_payload_invalid')).toHaveLength(2)
+      expect(registered.events.at(-1)?.reason).toBe('payload_schema_invalid;repeated_count=59')
+      report(authorizedMirrorEvent(registered), { status: 'ready', reason: 'cubism_avatar_ready', state: 'Dormant',
+        fps: 0, waveform: 0, mouthOpen: 0, audioUnderruns: 0, voiceGain: 1, musicGain: 1 })
+      expect(await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)(authorizedEvent(registered)))
+        .toMatchObject({ ok: true, value: { status: 'ready' } })
+    } finally { vi.useRealTimers() }
+  })
+  it('retains unchanged device inventory when a metric-only snapshot omits it', async () => {
+    const registered = makeHarness(), report = getHandler(registered, MIRROR_IPC_CHANNELS.reportAvatarRuntime)
+    const audioDevices = { preferences: { inputId: '', inputLabel: '', outputId: '' }, reason: 'audio_devices_ready',
+      devices: [{ deviceId: 'synthetic-output', kind: 'audiooutput', label: 'Synthetic output' }] }
+    const metrics = { status: 'ready', reason: 'cubism_avatar_ready', state: 'Dormant', fps: 0,
+      waveform: 0, mouthOpen: 0, audioUnderruns: 0, voiceGain: 1, musicGain: 1 }
+    report(authorizedMirrorEvent(registered), { ...metrics, audioDevices })
+    report(authorizedMirrorEvent(registered), { ...metrics, fps: 30 })
+    expect(await getHandler(registered, CONSOLE_IPC_CHANNELS.avatarRuntime)(authorizedEvent(registered)))
+      .toMatchObject({ ok: true, value: { fps: 30, audioDevices: { devices: audioDevices.devices } } })
+  })
+
   it('tests an unpublished draft step and keeps its feedback on the preview runtime', async () => {
     const active = { configVersion: 1, wake: {}, visualAssets: [], musicAssets: [], scenes: [], spells: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock', music: 'mock' } }
     const draft = { ...active, sceneActions: [{ id: 'v', name: 'Draft video', enabled: true, kind: 'visual', assetId: 'asset', fit: 'cover', playback: 'once', audio: 'muted', gain: 0 }],
       scenes: [{ id: 'draft-scene', name: 'Draft', enabled: true, stages: [{ id: 'step', name: 'Step', actionIds: ['v'], endCondition: { kind: 'video_complete', visualActionId: 'v' } }] }] }
-    const registered = makeHarness({ sceneConfig: active, draftSceneConfig: draft })
+    const sceneActivity = vi.fn()
+    const registered = makeHarness({ sceneConfig: active, draftSceneConfig: draft, noteSceneActivity: sceneActivity })
     const result = await getHandler(registered, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(registered), 'draft-scene', { stageId: 'step' }, 'draft')
     expect(result).toMatchObject({ ok: true, value: { status: 'accepted' } })
     await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl,
       expect.objectContaining({ type: 'scene_visual', assetId: 'asset', preview: true })))
     const runId = (result as { value: { runId: string } }).value.runId
+    expect(sceneActivity).toHaveBeenCalledWith('started', runId)
     // Catalog reads and renderer feedback must not replace the draft runtime.
     await getHandler(registered, MIRROR_IPC_CHANNELS.getSceneCatalog)(authorizedMirrorEvent(registered))
     getHandler(registered, MIRROR_IPC_CHANNELS.reportSceneVisual)(authorizedMirrorEvent(registered), {
@@ -581,6 +642,7 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.sceneStatus,
       expect.objectContaining({ type: 'finished', result: expect.objectContaining({ runId, status: 'completed' }) })))
     draft.sceneActions[0]!.assetId = 'edited-asset'
+    expect(sceneActivity).toHaveBeenCalledWith('finished', runId)
     const next = await getHandler(registered, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(registered), 'draft-scene', null, 'draft')
     expect((next as { value: { runId: string } }).value.runId).not.toBe(runId)
     await vi.waitFor(() => expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl,
@@ -609,10 +671,13 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
     const h = makeHarness({ sceneConfig: config, draftSceneConfig: config })
     const start = getHandler(h, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(h), 's', null, 'draft')
     const stop = getHandler(h, CONSOLE_IPC_CHANNELS.stopScenes)(authorizedEvent(h))
-    expect(await start).toMatchObject({ ok: true, value: { status: 'accepted' } })
+    expect(await start).toMatchObject({ ok: false, reason: 'cause=scene_test_aborted' })
     expect(await stop).toMatchObject({ ok: true, value: { status: 'stopped' } })
-    expect(h.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.sceneStatus,
-      expect.objectContaining({ type: 'finished', result: expect.objectContaining({ status: 'stopped' }) }))
+    expect(h.mirrorSender.send).not.toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl,
+      expect.objectContaining({ type: 'scene_visual', action: 'start' }))
+    expect(await getHandler(h, CONSOLE_IPC_CHANNELS.runScene)(authorizedEvent(h), 's', null, 'draft'))
+      .toMatchObject({ ok: true, value: { status: 'accepted' } })
+    await getHandler(h, CONSOLE_IPC_CHANNELS.stopScenes)(authorizedEvent(h))
   })
 
   it('returns an immediate Scene start and publishes correlated completion as an event', async () => {

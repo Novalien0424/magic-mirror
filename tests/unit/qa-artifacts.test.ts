@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, copyFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, copyFile, realpath } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import { createQaArtifact, finishQaArtifact, reviewQaArtifact, cleanQaArtifact }
 const roots: string[] = []
 const id = '2026-09-10T00-00-00-000Z'
 async function fixture() {
-  const repo = await mkdtemp(join(tmpdir(), 'mm-artifact-test-'))
+  const repo = await realpath(await mkdtemp(join(tmpdir(), 'mm-artifact-test-')))
   roots.push(repo)
   await mkdir(join(repo, 'docs/testing'), { recursive: true })
   await writeFile(join(repo, 'docs/testing/result.md'), 'Synthetic QA result recorded.')

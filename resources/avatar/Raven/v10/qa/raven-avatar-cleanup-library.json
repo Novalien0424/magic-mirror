@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-09-08T22:54:05.750190+00:00",
+  "removed": [
+    "model-1baf8724-ed7f-4db0-93f8-62079114fd4c",
+    "model-8cb13e76-a05d-4b20-afc4-1b116c8524dd"
+  ],
+  "kept": [
+    {
+      "version": "raven-lord",
+      "managedId": "model-93ccc318-06ff-417f-a301-557ae7eaac2d",
+      "files": 17,
+      "sourceShaMatches": true
+    },
+    {
+      "version": "raven-lord-v08",
+      "managedId": "model-9c968fa4-5e14-4fb5-b2af-fad0c4d3cf1b",
+      "files": 17,
+      "sourceShaMatches": true
+    },
+    {
+      "version": "raven-lord-v10",
+      "managedId": "model-d5fef684-d4c0-4140-afdf-72f149076b95",
+      "files": 17,
+      "sourceShaMatches": true
+    }
+  ],
+  "configAvatarReferences": {
+    "active": {
+      "modelIds": [],
+      "avatarModelIds": [
+        "builtin-ren"
+      ]
+    },
+    "draft": {
+      "modelIds": [
+        "model-93ccc318-06ff-417f-a301-557ae7eaac2d"
+      ],
+      "avatarModelIds": [
+        "model-93ccc318-06ff-417f-a301-557ae7eaac2d"
+      ]
+    },
+    "previous": {
+      "modelIds": [],
+      "avatarModelIds": [
+        "builtin-ren"
+      ]
+    }
+  },
+  "draftChange": "Only unused duplicate removed from avatarCatalog.models; unrelated settings preserved",
+  "activePreviousByteComparison": "passed during cleanup",
+  "console": "Refreshed library; three Raven entries confirmed; Built-in Ren retained; v10 remains selected",
+  "screenshot": "raven-avatar-cleanup-console.jpg"
+}

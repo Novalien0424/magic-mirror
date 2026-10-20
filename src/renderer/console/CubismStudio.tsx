@@ -1,4 +1,5 @@
 import { HelpField } from './HelpField'
+import { ReasonDetail } from './reason-copy'
 import { FIELD_HELP, cubismParameterHelp } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -199,11 +200,12 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
             }} /> : <p className="cubism-studio__empty">Select an avatar to begin</p>}
         </div>
         <div className="console__action-row">
-          <button type="button" disabled={!ready} onClick={() => { reset(); setMessage('Stopped · neutral pose') }}>Stop / reset</button>
+          {bound && !loaded && <button type="button" onClick={load}>Load preview</button>}
+          <button type="button" disabled={!loaded} onClick={() => { reset(); if (!ready) { setLoaded(null); setCapabilities(EMPTY) }; setMessage('Stopped · neutral pose') }}>Stop / reset</button>
           <button type="button" hidden={bound} disabled={!loaded} onClick={() => { reset(); setLoaded(null); setReady(false); setCapabilities(EMPTY); setMessage('Preview unloaded.') }}>Unload</button>
         </div>
         <p role="status" className="cubism-studio__status">{message}</p>
-        {fault && <p className="console__fault" role="alert">{fault}</p>}
+        {fault && <ReasonDetail code={fault} />}
         <p className="console__muted">{ready ? `Ready · ${Math.round(fps)} FPS` : loaded ? 'Loading / unavailable' : 'No rig loaded'}</p>
       </div>
       <div className="cubism-studio__controls">
@@ -232,6 +234,7 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
             <div className="cubism-studio__parameter-input"><HelpField helpLabel={PARAMETER_NAMES[parameter.id] ?? parameter.id}
               help={cubismParameterHelp(parameter.id, PARAMETER_NAMES[parameter.id] ?? parameter.id, parameter.min, parameter.max, parameter.defaultValue)}>
               <input type="range" aria-label={parameter.id} min={parameter.min} max={parameter.max} step="any"
+              data-default-value={parameter.defaultValue}
               value={values[parameter.id] ?? observed[parameter.id] ?? parameter.defaultValue}
               onChange={e => { if (Object.keys(values).length === 0) reset(); writeParameter(parameter, Number(e.currentTarget.value)) }} /></HelpField>
               <output aria-label={`${parameter.id} observed`}>{number(observed[parameter.id] ?? parameter.defaultValue)}</output></div>

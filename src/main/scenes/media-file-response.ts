@@ -11,7 +11,7 @@ export async function serveMediaFile(request: Request, filePath: string, mimeTyp
   const size = info.size
   const headers = new Headers({ 'Content-Type': mimeType, 'Accept-Ranges': 'bytes',
     'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Content-Range, Content-Length',
-    'Cache-Control': 'no-cache' })
+    'Cache-Control': 'no-store' })
   const range = request.headers.get('Range')
   let start = 0; let end = size - 1
   if (range && request.method !== 'HEAD') {

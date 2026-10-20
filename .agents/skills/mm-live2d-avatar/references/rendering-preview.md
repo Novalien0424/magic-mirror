@@ -1,6 +1,6 @@
 # Cubism contract and Console preview
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed code, current DECISIONS and contract tests outrank version notes here.
 
 ## Inspect the owner first
 

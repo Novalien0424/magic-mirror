@@ -34,11 +34,31 @@ describe('rendered field descriptions', () => {
   afterAll(() => vi.unstubAllGlobals())
   it('describes persona fields even when editing is disabled', () => {
     const avatar = { name: 'Host', personality: 'A friendly host', idleSeconds: 300,
-      speakingStyle: 'Clear', presentation: DEFAULT_PRESENTATION } as AvatarProfile
+      speakingStyle: 'Clear', presentation: DEFAULT_PRESENTATION, spells: [] } as unknown as AvatarProfile
     expectDescriptions(createElement(AvatarCharacterEditor, { avatar, disabled: true, onChange: noop }))
   })
   it('describes every presentation choice and range', () => {
     expectDescriptions(createElement(PresentationEditor, { draft, disabled: false, onChange: noop }))
+  })
+  it('preserves an unsaved simulator preset without claiming a hardware catalog', () => {
+    const action = { ...newSceneAction('lighting', 0), presetId: 'synthetic-preset' } as SceneActionDefinition
+    const html = renderToStaticMarkup(createElement(SceneActionFields, { action, draft, onChange: noop }))
+    expect(html).toContain('<option value="synthetic-preset" selected="">synthetic-preset (configured simulator preset)</option>')
+    expect(html).toContain('Default simulator preset')
+    expect(html).toContain('Simulation only')
+    expect(html).toContain('No physical adapter or approved physical preset catalog is connected')
+  })
+  it('describes every reflective ritual control and offers videos only', () => {
+    const reflective = { ...draft, presentation: { ...DEFAULT_PRESENTATION, mode: 'reflective' as const, entranceMs: 4000 },
+      visualAssets: [{ id: 'clip', name: 'Synthetic clip', kind: 'video' }, { id: 'still', name: 'Synthetic still', kind: 'image' }] } as unknown as ConsoleConfigDraftInput
+    const element = createElement(PresentationEditor, { draft: reflective, disabled: false, onChange: noop })
+    expectDescriptions(element)
+    const html = renderToStaticMarkup(element)
+    expect(html).toContain('Quiet, ceremonial dread')
+    expect(html).toContain('Dormant music (loops)')
+    expect(html).not.toContain('Background image / looping video')
+    expect(html).not.toContain('Synthetic still')
+    expect(html.match(/value="clip"/g)).toHaveLength(2)
   })
   const base = { id: 'action', name: 'Action', enabled: true }
   const actions: SceneActionDefinition[] = [

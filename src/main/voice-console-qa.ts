@@ -4,7 +4,7 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
   let checks = 0, screenshots = 0
   const evaluate = <T>(source: string): Promise<T> => input.console.webContents.executeJavaScript(`(async()=>{
-    const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim()===text && b.getClientRects().length);
+    const button = text => [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label')||b.textContent.trim())===text && b.getClientRects().length);
     const click = text => {const b=button(text);if(!b||b.disabled)throw Error('voice_qa_control_'+text);b.click()};
     const set = (el,value) => { const proto = el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true})); };
@@ -24,15 +24,40 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     const activeBefore = JSON.stringify(before.value.active)
     await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return !!button('Default · Ethereal') && !button('Default · Ethereal').disabled", 'editor_ready')
+    for (const [id, voice, pitch] of [['talos-priestess', 'marin', '-0.8'], ['talos-god', 'cedar', '-3']]) {
+      await edit(`set(document.querySelector('[aria-label="Sound profile"]'),${JSON.stringify(id)})`)
+      await wait(`return document.querySelector('[aria-label="Pitch · semitones"]').value===${JSON.stringify(pitch)} && document.querySelector('.voice-studio select:not([aria-label="Sound profile"])').value===${JSON.stringify(voice)}`, 'sound_profile_applied')
+      await edit("click('Save all changes')")
+      await wait("return !button('Save all changes').disabled", 'sound_profile_saved')
+      const current = await input.runtime.console.getConfig()
+      const profile = current.ok ? current.value.draft.avatarCatalog?.avatars[0] : undefined
+      if (profile?.voice !== voice || profile.voiceEffects?.pitchSemitones !== Number(pitch)) throw Error('voice_qa_sound_profile_persistence')
+      if (id === 'talos-god' && (profile.voiceEffects.echoMix !== .22 || profile.voiceEffects.echoDelayMs !== 230
+        || profile.voiceEffects.echoRepeats !== 3 || profile.voiceEffects.roomSize !== 'hall')) throw Error('voice_qa_echo_profile_persistence')
+      pass(`voice_profile_${id}`)
+      if (process.env['MIRROR_VOICE_PROFILE_QA_LIVE'] === '1') {
+        await edit("click('Generate test voice')")
+        await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Generating one audition')", 'profile_provider_started', 18000)
+        await wait("return !button('Generate test voice').disabled", 'profile_provider_finished', 22000)
+        const status = await evaluate<string>("return document.querySelector('.voice-studio [role=status]').textContent")
+        if (/failed|timeout|limit|rejected/i.test(status)) throw Error('voice_qa_profile_provider_failed')
+        pass(`voice_profile_audition_${id}`)
+      }
+    }
+    await edit("document.querySelector('.voice-studio fieldset').scrollIntoView({block:'start'})")
+    await shot('voice-sound-profiles.png')
+    await edit("document.querySelector('.voice-studio details').open=true;document.querySelector('[aria-label=\"Echo amount\"]').scrollIntoView({block:'center'})")
+    await shot('voice-echo-controls.png')
     await edit("click('Default · Ethereal')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='1'", 'default_preset')
+    await wait("return document.querySelector('[aria-label=\"Sound profile\"]').value===''", 'sound_profile_custom')
     pass('voice_default_preset')
     await edit("document.querySelector('.voice-studio details').open=true")
-    for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB']) {
-      await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');set(el,Number(el.min)+(Number(el.max)-Number(el.min))/2);`)
+    for (const label of ['Pitch · semitones','Body / formant · semitones','Warmth · dB','Brightness · dB','Grit','Room mix','Output trim · dB','Echo amount','Echo delay · ms','Echo repeats']) {
+      await edit(`const el=document.querySelector('[aria-label=${JSON.stringify(label)}]');const value=Number(el.min)+(Number(el.max)-Number(el.min))/2;set(el,el.step==='1'?Math.round(value):value);`)
     }
     await edit("click('Default · Ethereal')"); await edit("click('Save all changes')")
-    await wait("return !button('Save all changes').disabled && !button('Check saved changes').disabled", 'save')
+    await wait("return !button('Save all changes').disabled", 'save')
     pass('voice_controls_saved')
     await shot('voice-default.png')
     await edit("document.querySelector('.voice-studio fieldset:nth-of-type(2)').scrollIntoView({block:'start'})")
@@ -47,14 +72,23 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Local fixture playing')", 'local_playback')
     await edit("click('Original')"); await edit("click('Processed')"); await edit("click('Stop')")
     pass('voice_local_loop_ab_stop')
+    for (const name of ['Play local fixture','Generate test voice']) {
+      await evaluate(`click(${JSON.stringify(name)}); await new Promise(r=>setTimeout(r,0)); if(button('Stop').matches(':disabled'))throw Error('voice_abort_disabled');click('Stop')`)
+      await wait("return !button('Generate test voice').disabled && document.querySelector('.voice-studio [role=status]').textContent==='Preview stopped.'",'startup_abort')
+      await new Promise(r=>setTimeout(r,300))
+      pass('voice_startup_abort_'+name.replaceAll(' ','_'))
+    }
+    await edit("click('Play local fixture')")
+    await wait("return document.querySelector('.voice-studio [role=status]').textContent.includes('Local fixture playing')",'restart_after_abort')
+    await edit("click('Stop')"); pass('voice_restart_after_abort')
     await edit("click('New avatar')"); await edit("click('Voice')"); await edit("click('Raven · Dark oracle')")
     await edit("click('Avatars')"); await edit("click('Appearance')")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [resolve('resources/avatar/Raven/v10/runtime/raven-lord.model3.json')] })) as typeof dialog.showOpenDialog
     await edit("click('Browse & import Cubism…')")
-    await wait("return !button('Save all changes').disabled", 'raven_import')
+    await wait("return document.querySelector('.console__scenes').textContent.includes('Cubism bundle imported')", 'raven_import')
     await edit("click('Avatars')"); await edit("click('Voice')")
     await wait("return document.querySelector('[aria-label=\"Pitch · semitones\"]').value==='-3'", 'rig_keeps_effect')
-    await edit("click('Save all changes')"); await wait("return !button('Check saved changes').disabled", 'raven_save')
+    await edit("click('Save all changes')"); await wait("return !button('Save all changes').disabled", 'raven_save')
     await edit("document.querySelector('.voice-studio').scrollIntoView({block:'start'})")
     await new Promise(r => setTimeout(r, 1200)); await shot('voice-raven.png')
     pass('voice_raven_rig_preserves_settings')
@@ -77,6 +111,9 @@ export async function runVoiceConsoleQa(input: Phase4QaInput): Promise<Phase4QaR
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 0, musicAnalyser: 'not_executed', screenshotCount: screenshots, consoleCheckCount: checks }
   } catch (error) {
     input.onEvidence({ step: 'voice_failure', status: 'failed', item: error instanceof Error ? error.message.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 120) : 'unknown' })
+    const diagnostic=await evaluate<string>("return document.querySelector('.voice-studio [role=status]')?.textContent ?? 'voice_status_unavailable'")
+    input.onEvidence({step:'voice_failure_status',status:'measured',item:diagnostic})
+    await evaluate("document.querySelector('.voice-studio [role=status]')?.scrollIntoView({block:'center'})")
     await shot('voice-failure.png'); throw error
   } finally { dialog.showOpenDialog = picker }
 }

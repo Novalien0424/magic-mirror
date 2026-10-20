@@ -5,8 +5,14 @@ type VisualStartCommand = Extract<AvatarControlCommand, { type: 'scene_visual'; 
 type VisualStopCommand = Extract<AvatarControlCommand, { type: 'scene_visual'; action: 'stop' }>
 
 export interface SceneVisualMedia {
+  readonly error?: { readonly code: number } | null
   src: string
+  crossOrigin: string | null
   className: string
+  style: {
+    opacity: string
+    transition: string
+  }
   currentTime: number
   duration: number
   loop: boolean
@@ -18,6 +24,19 @@ export interface SceneVisualMedia {
   play(): Promise<void>
   pause(): void
   load(): void
+  captureStream?(): MediaStream
+}
+
+/** Inspect track metadata after loadeddata, never waveform silence or volume.
+ * Captured tracks are immediately stopped; no recording or extra output path. */
+export function videoHasAudio(media: Pick<SceneVisualMedia, 'captureStream'>): boolean | null {
+  let stream: MediaStream | undefined
+  try {
+    stream = media.captureStream?.()
+    if (!stream || stream.getVideoTracks().length === 0) return null
+    return stream.getAudioTracks().length > 0
+  } catch { return null }
+  finally { stream?.getTracks().forEach(track => track.stop()) }
 }
 
 export interface SceneVisualController {
@@ -33,6 +52,10 @@ interface ActiveVisual {
   presented: boolean
   audioAttached: boolean
   disposed: boolean
+  fadeInStarted: boolean
+  fadeOutScheduled: boolean
+  fadeOutStarted: boolean
+  readonly timers: Set<unknown>
 }
 
 type VisualReportFields =
@@ -54,21 +77,36 @@ export function createSceneVisualController(input: Readonly<{
   createVideo: () => SceneVisualMedia
   present: (media: SceneVisualMedia | null) => void
   report: (report: SceneVisualPlaybackReport) => void
-  setVideoAudio: (element: SceneVisualMedia | null, gain: number) => void
+  setVideoAudio: (element: SceneVisualMedia | null, gain: number, durationMs?: number) => void
+  prepareFade?: (media: SceneVisualMedia) => void
+  onLoadRetry?: () => void
+  onVideoAudio?: (hasAudio: boolean | 'unknown' | null, context: SceneActionCommandContext) => void
+  schedule?: (callback: () => void, delayMs: number) => unknown
+  clear?: (handle: unknown) => void
 }>): SceneVisualController {
   let active: ActiveVisual | null = null
   let generation = 0
   let disposed = false
+  const schedule = input.schedule ?? ((callback, delayMs) => globalThis.setTimeout(callback, delayMs))
+  const clear = input.clear ?? ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>))
 
   const emit = (report: SceneVisualPlaybackReport): void => {
     try { input.report(report) } catch { /* observations cannot gate playback */ }
   }
 
+  const clearVisualTimers = (visual: ActiveVisual): void => {
+    for (const handle of visual.timers) clear(handle)
+    visual.timers.clear()
+    visual.media.style.transition = ''
+  }
+
   const release = (visual: ActiveVisual): void => {
     if (visual.disposed) return
     visual.disposed = true
+    clearVisualTimers(visual)
     for (const [name, listener] of visual.listeners) visual.media.removeEventListener(name, listener)
     if (visual.audioAttached) input.setVideoAudio(null, 0)
+    if (visual.command.playback !== 'still') input.onVideoAudio?.(null, visual.command.context)
     if (visual.command.playback !== 'still') {
       try { visual.media.pause() } catch { /* already stopped */ }
       visual.media.src = ''
@@ -86,6 +124,70 @@ export function createSceneVisualController(input: Readonly<{
   const current = (visual: ActiveVisual): boolean =>
     !disposed && active === visual && visual.generation === generation && !visual.disposed
 
+  const scheduleFor = (visual: ActiveVisual, callback: () => void, delayMs: number): void => {
+    let handle: unknown
+    handle = schedule(() => {
+      if (handle !== undefined) visual.timers.delete(handle)
+      if (current(visual)) callback()
+    }, Math.max(0, Math.round(delayMs)))
+    visual.timers.add(handle)
+  }
+
+  const fadeOpacity = (visual: ActiveVisual, target: number, durationMs: number, done?: () => void): void => {
+    if (!current(visual)) return
+    const duration = Math.max(0, Math.round(durationMs))
+    if (duration > 0) {
+      // Force the browser to resolve the initial opacity before the target is
+      // assigned. Without this, a media element inserted and changed in one
+      // task can skip the visible first frame of the CSS transition.
+      try { input.prepareFade?.(visual.media) } catch { /* layout observation cannot gate playback */ }
+    }
+    visual.media.style.transition = duration === 0 ? '' : `opacity ${duration}ms linear`
+    visual.media.style.opacity = String(Math.max(0, Math.min(1, target)))
+    if (duration === 0) {
+      done?.()
+      return
+    }
+    scheduleFor(visual, () => {
+      // A short clip can enter its ending fade before the fade-in timer
+      // completes. The ending transition owns the style until release.
+      if (!visual.fadeOutStarted) visual.media.style.transition = ''
+      done?.()
+    }, duration)
+  }
+
+  const finishOnce = (visual: ActiveVisual): void => {
+    if (!current(visual)) return
+    emit(reportFor(visual.command.context, { type: 'ended' }))
+    release(visual)
+  }
+
+  const beginFadeOut = (visual: ActiveVisual, done: () => void): void => {
+    if (!current(visual) || visual.fadeOutStarted) return
+    visual.fadeOutStarted = true
+    const duration = visual.command.fadeOutMs ?? 0
+    if (visual.audioAttached) input.setVideoAudio(visual.media, 0, duration)
+    fadeOpacity(visual, 0, duration, done)
+  }
+
+  const scheduleNaturalFade = (visual: ActiveVisual): void => {
+    const fadeOutMs = visual.command.fadeOutMs ?? 0
+    const endingAtMs = Math.max(0, visual.media.duration * 1000 - fadeOutMs)
+    const checkPlaybackPosition = (): void => {
+      if (!current(visual) || visual.fadeOutStarted) return
+      const currentMs = Number.isFinite(visual.media.currentTime) ? Math.max(0, visual.media.currentTime * 1000) : 0
+      if (currentMs >= endingAtMs || endingAtMs === 0) {
+        beginFadeOut(visual, () => finishOnce(visual))
+        return
+      }
+      // Media can stall while a wall-clock timer is pending. Polling against
+      // currentTime keeps the fade bound to playback, then ended remains the
+      // final fallback when a browser emits no final timeupdate.
+      scheduleFor(visual, checkPlaybackPosition, Math.min(250, Math.max(16, endingAtMs - currentMs)))
+    }
+    checkPlaybackPosition()
+  }
+
   const fail = (visual: ActiveVisual, errorCode: string): void => {
     if (!current(visual)) return
     emit(reportFor(visual.command.context, { type: 'failed', errorCode }))
@@ -93,6 +195,8 @@ export function createSceneVisualController(input: Readonly<{
   }
 
   const start = (command: VisualStartCommand): void => {
+    // Replacement is an immediate hard handoff. Only an explicit stop or a
+    // one-shot natural ending uses fadeOutMs; old media never fades over new.
     if (active !== null) release(active)
     const media = command.playback === 'still' ? input.createImage() : input.createVideo()
     const visual: ActiveVisual = {
@@ -103,10 +207,21 @@ export function createSceneVisualController(input: Readonly<{
       presented: false,
       audioAttached: false,
       disposed: false,
+      fadeInStarted: false,
+      fadeOutScheduled: false,
+      fadeOutStarted: false,
+      timers: new Set(),
     }
     active = visual
     media.className = `scene-visual__media scene-visual__media--${command.fit}`
-    media.src = `magic-mirror-media://${command.preview ? 'visual-draft' : 'visual'}/${encodeURIComponent(command.assetId)}`
+    media.style.opacity = command.playback === 'still' || (command.fadeInMs ?? 0) === 0 ? '1' : '0'
+    media.style.transition = ''
+    // The managed-media scheme is a different origin from the renderer.
+    // Request CORS before loading so Web Audio can consume the embedded track.
+    if (command.playback !== 'still') media.crossOrigin = 'anonymous'
+    // Chromium also shares in-memory media buffers by URL. A new run must
+    // reopen mutable folder files instead of replaying a previous buffer.
+    media.src = `magic-mirror-media://${command.preview ? 'visual-draft' : 'visual'}/${encodeURIComponent(command.assetId)}?playback=${generation}`
 
     if (command.playback === 'still') {
       listen(visual, 'load', () => {
@@ -125,10 +240,11 @@ export function createSceneVisualController(input: Readonly<{
     media.muted = command.audio === 'muted'
     listen(visual, 'loadeddata', () => {
       if (!current(visual)) return
+      input.onVideoAudio?.(videoHasAudio(media) ?? 'unknown', command.context)
       emit(reportFor(command.context, { type: 'ready' }))
       if (command.audio === 'embedded') {
         visual.audioAttached = true
-        input.setVideoAudio(media, command.gain)
+        input.setVideoAudio(media, command.fadeInMs && command.fadeInMs > 0 ? 0 : command.gain)
       }
       void media.play().catch(() => fail(visual, 'visual_video_play_failed'))
     })
@@ -141,18 +257,54 @@ export function createSceneVisualController(input: Readonly<{
         visual.presented = true
         input.present(media)
       }
+      if (!visual.fadeInStarted) {
+        visual.fadeInStarted = true
+        const fadeInMs = command.fadeInMs ?? 0
+        if (fadeInMs > 0) {
+          // Let the host paint the initial opacity before changing it. This
+          // makes the transition observable instead of two same-task styles.
+          scheduleFor(visual, () => {
+            if (visual.audioAttached) input.setVideoAudio(media, command.gain, fadeInMs)
+            fadeOpacity(visual, 1, fadeInMs)
+          }, 0)
+        } else {
+          fadeOpacity(visual, 1, 0)
+        }
+      }
+      if (command.playback === 'once' && (command.fadeOutMs ?? 0) > 0 && !visual.fadeOutScheduled) {
+        visual.fadeOutScheduled = true
+        scheduleNaturalFade(visual)
+      }
       emit(reportFor(command.context, { type: 'playing', durationMs: Math.round(media.duration * 1000) }))
     })
     listen(visual, 'timeupdate', () => {
       if (!current(visual) || !Number.isFinite(media.currentTime) || media.currentTime < 0) return
+      if (command.playback === 'once' && (command.fadeOutMs ?? 0) > 0 && !visual.fadeOutStarted && media.currentTime * 1000 >= media.duration * 1000 - (command.fadeOutMs ?? 0)) {
+        beginFadeOut(visual, () => finishOnce(visual))
+      }
       emit(reportFor(command.context, { type: 'progress', currentTimeMs: Math.round(media.currentTime * 1000) }))
     })
     listen(visual, 'ended', () => {
       if (!current(visual) || command.playback !== 'once') return
-      emit(reportFor(command.context, { type: 'ended' }))
-      release(visual)
+      if ((command.fadeOutMs ?? 0) > 0) {
+        beginFadeOut(visual, () => finishOnce(visual))
+        return
+      }
+      finishOnce(visual)
     })
-    listen(visual, 'error', () => fail(visual, 'visual_video_decode_failed'))
+    let retried = false
+    listen(visual, 'error', () => {
+      // A synced folder can be briefly unreadable while its provider materializes
+      // a file. Retry only startup/network/source failures, once, never mid-play.
+      if (current(visual) && !visual.presented && !retried && command.assetId.startsWith('folder-')
+        && (media.error?.code === 2 || media.error?.code === 4)) {
+        retried = true
+        input.onLoadRetry?.()
+        scheduleFor(visual, () => { try { media.load() } catch { fail(visual, 'visual_video_load_failed') } }, 500)
+        return
+      }
+      fail(visual, media.error?.code === 2 ? 'visual_video_network_failed' : 'visual_video_decode_failed')
+    })
     try { media.load() } catch { fail(visual, 'visual_video_load_failed') }
   }
 
@@ -169,6 +321,10 @@ export function createSceneVisualController(input: Readonly<{
         command.runId !== visual.command.context.runId
         || command.sceneId !== visual.command.context.sceneId
       )) return
+      if ((visual.command.fadeOutMs ?? 0) > 0 && visual.command.playback !== 'still') {
+        beginFadeOut(visual, () => release(visual))
+        return
+      }
       release(visual)
     },
     dispose(): void {

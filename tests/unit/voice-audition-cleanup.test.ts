@@ -3,14 +3,15 @@ import type { ConsoleBridge } from '../../src/shared/bridge'
 import type { AvatarProfile } from '../../src/shared/avatar-profiles'
 const mocks = vi.hoisted(() => ({ createOutput: vi.fn(), attach: vi.fn() }))
 vi.mock('../../src/renderer/realtime/processed-audio-output', () => ({ createProcessedRealtimeAudioOutput: mocks.createOutput }))
-vi.mock('../../src/renderer/audio-devices', () => ({ getAudioDeviceRouter: () => ({ attach: mocks.attach }) }))
+vi.mock('../../src/renderer/audio-devices', () => ({ getAudioDeviceRouter: () => ({ attach: mocks.attach, watchVolumes: () => () => undefined }) }))
 import { startVoiceAudition } from '../../src/renderer/console/voice-preview'
 
 describe('audition cleanup across asynchronous cancellation', () => {
   afterEach(() => vi.clearAllMocks())
   function setup() {
     const release = vi.fn().mockResolvedValue(undefined), status = vi.fn(), abort = new AbortController()
-    const bridge = { acquireVoicePreview: vi.fn().mockResolvedValue({ ok: true, token: 'synthetic-token', clientSecret: 'synthetic-secret', snapshot: {} }), releaseVoicePreview: release } as unknown as ConsoleBridge
+    const bridge = { acquireVoicePreview: vi.fn().mockResolvedValue({ ok: true, token: 'synthetic-token', clientSecret: 'synthetic-secret', snapshot: {} }),
+      getAvatarRuntime: vi.fn().mockResolvedValue({ ok: true, value: {} }), releaseVoicePreview: release } as unknown as ConsoleBridge
     const output = { setMuted: vi.fn(), dispose: vi.fn().mockResolvedValue(undefined), sink: {} }
     const start = () => startVoiceAudition({ bridge, avatar: { voice: 'cedar', speakingStyle: '' } as AvatarProfile,
       loop: false, signal: abort.signal, onAnalyser: vi.fn(), onStatus: status, onEnded: vi.fn() })
@@ -19,7 +20,9 @@ describe('audition cleanup across asynchronous cancellation', () => {
   it('disposes output arriving after Stop and releases the lease once', async () => {
     const x = setup(); let resolve!: (value: typeof x.output) => void
     mocks.createOutput.mockImplementation(() => new Promise(done => { resolve = done }))
-    const pending = x.start(); await Promise.resolve(); x.abort.abort(); resolve(x.output)
+    const pending = x.start()
+    await vi.waitFor(() => expect(mocks.createOutput).toHaveBeenCalledOnce())
+    x.abort.abort(); resolve(x.output)
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     expect(x.output.setMuted).toHaveBeenCalledWith(true)
     expect(x.output.dispose).toHaveBeenCalledOnce(); expect(x.release).toHaveBeenCalledOnce()
@@ -30,7 +33,8 @@ describe('audition cleanup across asynchronous cancellation', () => {
     mocks.createOutput.mockResolvedValue(x.output)
     let resolve!: (value: typeof detach) => void
     mocks.attach.mockImplementation(() => new Promise(done => { resolve = done }))
-    const pending = x.start(); await Promise.resolve(); await Promise.resolve()
+    const pending = x.start()
+    await vi.waitFor(() => expect(mocks.attach).toHaveBeenCalledOnce())
     x.abort.abort(); resolve(detach)
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     expect(detach).toHaveBeenCalledOnce(); expect(x.release).toHaveBeenCalledOnce()

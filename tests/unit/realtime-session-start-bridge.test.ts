@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { bootSequence } from '../../src/main/boot'
+import { DEFAULT_VOICE_EFFECTS } from '../../src/shared/voice-effects'
+import { newAvatar } from '../../src/renderer/console/profile-workspace'
+import { readFileSync } from 'node:fs'
 import {
   createRealtimeIpcContract,
 } from '../../src/main/ipc'
@@ -17,7 +20,7 @@ type TestRuntime = {
   handleSimulator(command: unknown): Promise<unknown>
 }
 
-function makeSessionBundle(sdkVersion = '0.16.1'): Record<string, unknown> {
+function makeSessionBundle(sdkVersion = '0.20.0'): Record<string, unknown> {
   return {
     snapshot: Object.freeze({
       configVersion: 7,
@@ -236,7 +239,34 @@ function mirrorBridge(): Promise<MirrorBridgeLike> {
 }
 
 describe('P1-U7 C2 atomic session-start bridge', () => {
-  it('captures the published snapshot and lifecycle identity before broker await', async () => {
+  it('captures only the active avatar folder catalog for the next session without filesystem paths', async () => {
+    const avatar = newAvatar('raven')
+    const config = { ...JSON.parse(readFileSync('resources/config/default.json', 'utf8')),
+      avatarCatalog: { activeAvatarId: 'raven', avatars: [avatar], locks: [], models: [] } }
+    const folders = vi.fn(() => [{ kind: 'video' as const, assetId: 'folder-mist', name: 'Mist', aliases: [], origin: 'own' as const }])
+    const options = { ...makeBootOptions({ issue: async () => ({ value: CLIENT_SECRET, expiresAt: EXPIRY }) }) as object,
+      configService: { initialize: async () => ({ active: config, draft: config }), read: async () => ({ active: config, draft: config }) },
+      getFolderMedia: folders }
+    const runtime = bootSequence(options as never)
+    await runtime.ready; await runtime.handleSimulator({ type: 'wake' })
+    const bundle = await runtime.requestRealtimeClientSecret()
+    expect(folders).toHaveBeenCalledWith('raven')
+    expect(bundle.avatar?.mediaSkill?.resources).toEqual([{ kind: 'video', assetId: 'folder-mist', name: 'Mist', aliases: [] }])
+    expect(JSON.stringify(bundle.avatar)).not.toMatch(/origin|path|avatarId/)
+  })
+  it('greets a woken session from the Mirror switch captured for it, not the saved per-avatar default', async () => {
+    const config = { ...JSON.parse(readFileSync('resources/config/default.json', 'utf8')), avatarCatalog: undefined }
+    const sessions: unknown[] = []
+    const options = { ...makeBootOptions({ issue: async () => ({ value: CLIENT_SECRET, expiresAt: EXPIRY }) }) as object,
+      configService: { initialize: async () => ({ active: config, draft: config }), read: async () => ({ active: config, draft: config }) },
+      mirrorModeForSession: (identity: unknown) => { sessions.push(identity); return 'studio' as const } }
+    const runtime = bootSequence(options as never)
+    await runtime.ready; await runtime.handleSimulator({ type: 'wake' })
+    const bundle = await runtime.requestRealtimeClientSecret()
+    expect(bundle.avatar?.experience?.defaultMode).toBe('portrait_studio')
+    expect(sessions).toEqual([bundle.identity])
+  })
+  it('captures the published model before broker await and rejects a result for a retired session', async () => {
     let brokerCalls = 0
     let requestedModel: string | null = null
     let resolveBroker!: (value: { value: string; expiresAt: number }) => void
@@ -261,28 +291,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     await runtime.handleSimulator({ type: 'cloud_failure' })
     resolveBroker({ value: CLIENT_SECRET, expiresAt: EXPIRY })
 
-    await expect(pending).resolves.toEqual({
-      snapshot: {
-        configVersion: 7,
-        fingerprint: 'synthetic-config-fingerprint',
-        sdkVersion: '0.16.1',
-        realtimeDialogue: MODEL_ID,
-        inputTranscription: 'synthetic-transcription-model',
-        memoryExtractor: 'synthetic-memory-model',
-        voice: 'synthetic-voice',
-        reasoningEffort: 'low',
-        turnDetectionProfile: 'semantic-vad',
-        takenAt: FIXED_TIME,
-      },
-      identity: {
-        realtimeSessionId: SESSION_ID,
-        sessionGeneration: 0,
-      },
-      clientSecret: {
-        value: CLIENT_SECRET,
-        expiresAt: EXPIRY,
-      },
-    })
+    await expect(pending).rejects.toMatchObject({ code: 'realtime_session_unavailable' })
   })
 
   it('does not call the broker when the current lifecycle has no realtime identity', async () => {
@@ -312,7 +321,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -349,6 +358,36 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
     })
   })
 
+  it('preserves published Voice Studio settings through Main and preload', async () => {
+    const bundle = makeSessionBundle()
+    const effects = { ...DEFAULT_VOICE_EFFECTS, enabled: true, pitchSemitones: -3 }
+    bundle.snapshot = { ...(bundle.snapshot as object), voiceSpeed: 0.9, voiceEffects: effects }
+    const contract = makeContract(async () => bundle)
+    const result = await contract.handleTransientSecretRequest({ sender: { identity: 'mirror' } })
+    expect(result).toMatchObject({ status: 'accepted' })
+    const bridge = await mirrorBridge()
+    electronHarness.invoke.mockResolvedValueOnce(result)
+    const returned = await bridge.requestRealtimeClientSecret() as { status: string; value: { snapshot: { voiceSpeed: number; voiceEffects: typeof effects } } }
+    expect(returned).toMatchObject({ status: 'accepted', value: { snapshot: { voiceSpeed: 0.9, voiceEffects: effects } } })
+    expect(returned.value.snapshot.voiceEffects).not.toBe(effects)
+    expect(Object.isFrozen(returned.value.snapshot.voiceEffects)).toBe(true)
+  })
+
+  it.each([
+    { voiceSpeed: 0.49 },
+    { voiceSpeed: Number.NaN },
+    { voiceEffects: undefined },
+    { voiceEffects: { ...DEFAULT_VOICE_EFFECTS, roomMix: 1 } },
+    { voiceEffects: { ...DEFAULT_VOICE_EFFECTS, privateContext: 'synthetic' } },
+  ])('rejects malformed Voice Studio settings at the preload boundary', async fields => {
+    const contract = makeContract(async () => makeSessionBundle())
+    const result = await contract.handleTransientSecretRequest({ sender: { identity: 'mirror' } }) as { value: { snapshot: object } }
+    const malformed = { ...result, value: { ...result.value, snapshot: { ...result.value.snapshot, ...fields } } }
+    const bridge = await mirrorBridge()
+    electronHarness.invoke.mockResolvedValueOnce(malformed)
+    await expect(bridge.requestRealtimeClientSecret()).resolves.toEqual({ status: 'rejected', reason: 'invalid_payload' })
+  })
+
   it('returns frozen sanitized copies instead of mutable IPC references', async () => {
     const bridge = await mirrorBridge()
     const source = {
@@ -358,7 +397,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -442,7 +481,7 @@ describe('P1-U7 C2 atomic session-start bridge', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: MODEL_ID,
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',

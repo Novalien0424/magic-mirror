@@ -1,6 +1,6 @@
 # Marked artifact cleanup
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed [qa-artifacts.mjs](../../../../scripts/qa-artifacts.mjs) owns the exact checks.
 
 ## Ownership and cleanup
 
@@ -9,7 +9,7 @@ The harness marks completion after Electron closes, including failed results.
 Save the results and requested visual review findings in `docs/testing/<name>.md`
 before marking a run reviewed. From the canonical checkout, use an exact run ID:
 
-```powershell
+```sh
 node scripts/qa-artifacts.mjs review <run-id> --report docs/testing/<report>.md
 node scripts/qa-artifacts.mjs clean <run-id>
 node scripts/qa-artifacts.mjs clean <run-id> --delete

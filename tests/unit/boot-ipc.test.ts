@@ -17,6 +17,7 @@ import {
 } from '../../src/main/ipc'
 import { createLifecycleActor } from '../../src/main/lifecycle'
 import { DEFAULT_MODULE_STATUSES } from '../../src/main/module-registry'
+import { DEFAULT_PRESENTATION } from '../../src/shared/presentation'
 import type { ModuleId, ModuleStatus, OpStatus } from '../../src/shared/types'
 
 const RAW_CONFIG_ERROR = 'synthetic-config-raw-error'
@@ -43,6 +44,12 @@ type RendererMetadataReport = {
 }
 
 type MetadataEvent = Record<string, unknown>
+
+it('suppresses snapshot publication after shutdown before checking closed windows', async () => {
+  const emit = vi.fn()
+  await publishSnapshot('mirror', {}, {}, { emit }, () => true)
+  expect(emit).not.toHaveBeenCalled()
+})
 type ModuleStatuses = Partial<Record<ModuleId, ModuleStatus>>
 type BootFailure = 'config' | 'model' | 'sqlite'
 type SimulatorResult = {
@@ -479,22 +486,22 @@ function registerTestIpcHandlers(
   events: MetadataEvent[],
   emit: (event: MetadataEvent) => void = (event) => events.push({ ...event }),
   extra: Record<string, unknown> = {},
-): RegisteredIpcHarness {
+): RegisteredIpcHarness & { control: mainIpc.SceneRuntimeControl } {
   const registered = makeIpcMainRegistrar()
   const register = registerIpcHandlers as unknown as (options: {
     ipcMain: IpcMainRegistrar
     runtime: BootRuntimeLike
     windows: unknown
     telemetry: { emit(event: MetadataEvent): void }
-  }) => void
-  register({
+  }) => mainIpc.SceneRuntimeControl
+  const control = register({
     ...extra,
     ipcMain: registered.ipcMain,
     runtime,
     windows,
     telemetry: { emit },
   })
-  return registered
+  return { ...registered, control }
 }
 
 function makeTrackedRendererWindows() {
@@ -504,7 +511,7 @@ function makeTrackedRendererWindows() {
     id: 801,
     mainFrame: mirrorFrame,
     isDestroyed: () => false,
-    send: () => {},
+    send: (..._args: unknown[]) => {},
   }
   const consoleSender = {
     id: 802,
@@ -551,6 +558,237 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('discovers only current authorized local resources and discards stale YouTube searches without logging clues', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'discovery-session', sessionGeneration: 3 }
+    const own = { kind: 'music', assetId: 'own-rain', name: 'Rain piano', aliases: [], origin: 'own' }
+    const shared = { kind: 'music', assetId: 'shared-rain', name: 'Rain guitar', aliases: [], origin: 'shared' }
+    const locked = { kind: 'music', assetId: 'other', name: 'Rain locked', aliases: [] }
+    const config = { musicAssets: [{ id: 'other' }], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven',
+      avatars: [{ id: 'raven', mediaSkill: { enabled: true, fadeMs: 0, gain: .5, resources: [locked] } }],
+      locks: [{ kind: 'music', resourceId: 'other', avatarId: 'other-avatar' }] } }
+    const getFolderMedia = vi.fn(() => [own, shared])
+    let resolveSearch!: (value: unknown) => void
+    const searchYoutube = vi.fn(() => new Promise(resolve => { resolveSearch = resolve }))
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config } as never,
+      fixtures.windows, events, undefined, { getFolderMedia, searchYoutube })
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }, identity = { realtimeSessionId: 'discovery-session', sessionGeneration: 3 }
+    const find = registered.handlers.get(MIRROR_IPC_CHANNELS.findMedia)!, search = registered.handlers.get(MIRROR_IPC_CHANNELS.searchYoutube)!
+    expect(await find(event, { request: { query: 'Rain', kind: 'music' }, identity })).toMatchObject({ status: 'accepted', total: 2 })
+    expect(getFolderMedia).toHaveBeenCalledWith('raven')
+    getFolderMedia.mockReturnValue([own])
+    expect(await find(event, { request: { query: 'Rain', kind: 'music' }, identity })).toMatchObject({ total: 1 })
+    expect(await search({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, { request: { query: 'private-query' }, identity })).toMatchObject({ status: 'rejected' })
+    expect(searchYoutube).not.toHaveBeenCalled()
+    const pending = search(event, { request: { query: 'private-query' }, identity })
+    snapshot.sessionGeneration++
+    resolveSearch({ status: 'accepted', code: 'youtube_search_results', videos: [{ url: 'https://youtu.be/abcdefghijk', title: 'Fixture', channel: 'Fixture' }] })
+    expect(await pending).toEqual({ status: 'rejected', code: 'youtube_search_stale', videos: [] })
+    expect(JSON.stringify(events)).not.toContain('private-query')
+    expect(JSON.stringify(events)).not.toContain('Rain')
+  })
+  it('routes YouTube once completion and loop wake ownership through the existing media lifecycle', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = [], send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'youtube-session', sessionGeneration: 3 }
+    const config = { configVersion: 1, spells: [], scenes: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock' },
+      musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
+    let report!: (value: any) => void, context: any
+    const youtube = { play: vi.fn((request, callback) => { context = request.context; report = callback; return true }), stop: vi.fn() }
+    const requestSleep = vi.fn(async () => ({ status: 'success' }))
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never,
+      fixtures.windows, events, undefined, { youtube })
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!, event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'youtube-session', sessionGeneration: 3 }, request = { action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'once' }
+    const once = handler(event, { request, identity })
+    await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledOnce())
+    report({ ...context, status: 'acknowledged' }); expect(await once).toBe('accepted')
+    expect(requestSleep).not.toHaveBeenCalled()
+    report({ ...context, status: 'completed' })
+    expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ active: false, hideAvatar: false }))
+    const loop = handler(event, { request: { ...request, mode: 'loop' }, identity })
+    await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledTimes(2))
+    report({ ...context, status: 'acknowledged' }); expect(await loop).toBe('accepted')
+    expect(requestSleep).toHaveBeenCalledOnce()
+    await registered.control.stopAll({ preserveSleepingMedia: true })
+    expect(youtube.stop).toHaveBeenCalledOnce()
+    await registered.control.stopAll()
+    expect(youtube.stop).toHaveBeenCalledTimes(2)
+  })
+  it('limits camera capture to the active Mirror session and drops frames after a session change', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'camera-session', sessionGeneration: 3 }
+    const frame = { dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 }
+    const captureCamera = vi.fn(async () => frame)
+    const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], snapshot), fixtures.windows, events, undefined, { captureCamera })
+    const handler = registered.handlers.get('mirror:capture-camera')!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'camera-session', sessionGeneration: 3 }
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, identity)).toBeNull()
+    expect(await handler(event, { ...identity, path: '/private' })).toBeNull()
+    expect(await handler(event, { ...identity, sessionGeneration: 2 })).toBeNull()
+    expect(captureCamera).not.toHaveBeenCalled()
+    expect(await handler(event, identity)).toEqual(frame)
+    captureCamera.mockImplementation(async () => { snapshot.sessionGeneration++; return frame })
+    expect(await handler(event, identity)).toBeNull()
+    expect(JSON.stringify(events)).not.toContain('data:image')
+    expect(events).toContainEqual(expect.objectContaining({ reason: 'camera_capture_session_stale' }))
+    const check = registered.handlers.get('console:check-camera')!
+    expect(await check(event)).toMatchObject({ ok: false })
+    const checked = await check({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })
+    expect(checked).toEqual({ ok: true, value: { status: 'ready', width: 640, height: 480 } })
+    expect(JSON.stringify(checked)).not.toContain('data:image')
+  })
+  it('restricts folder configuration to Console and rejects renderer-supplied paths', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const mediaFolders = vi.fn(async () => ({ own: null, shared: null, entries: [] }))
+    const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], { ...createStartingSnapshot() }), fixtures.windows, events, undefined, { mediaFolders })
+    const handler = registered.handlers.get('console:media-folders')!
+    const event = { sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }
+    expect(await handler({ sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }, { action: 'choose', scope: 'shared' })).toMatchObject({ ok: false })
+    expect(await handler(event, { action: 'choose', scope: 'shared', path: '/private' })).toMatchObject({ ok: false })
+    expect(await handler(event, { action: 'choose', scope: 'own' })).toMatchObject({ ok: false })
+    expect(mediaFolders).not.toHaveBeenCalled()
+    expect(await handler(event, { action: 'choose', scope: 'own', avatarId: 'raven' })).toMatchObject({ ok: true })
+    expect(mediaFolders).toHaveBeenCalledWith({ action: 'choose', scope: 'own', avatarId: 'raven' })
+  })
+  it('authorizes folder media from the active avatar catalog and rejects unavailable IDs', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    const config = { configVersion: 1, spells: [], scenes: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock' },
+      musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
+    const getFolderMedia = vi.fn((id: string) => id === 'raven' ? [{ kind: 'music', assetId: 'folder-rain', name: 'Rain', aliases: [], origin: 'shared' }] : [])
+    const requestSleep = vi.fn(async () => ({ status: 'success' }))
+    const prepareFolderMedia = vi.fn(async () => true)
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events, undefined, { getFolderMedia, prepareFolderMedia })
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const identity = { realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    // Even an earlier unavailable scene creates a cached executor with global stops.
+    await registered.handlers.get(CONSOLE_IPC_CHANNELS.runScene)!({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, 'absent-scene')
+    expect(await handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-other', mode: 'once' }, identity })).toEqual({ status: 'rejected', code: 'media_not_found' })
+    const started = handler(event, { request: { action: 'play', kind: 'music', assetId: 'folder-rain', mode: 'loop' }, identity })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
+    // Linked-folder media is copied locally for the active avatar before the player starts.
+    expect(prepareFolderMedia).toHaveBeenCalledExactlyOnceWith('folder-rain', 'raven')
+    expect(requestSleep).not.toHaveBeenCalled()
+    registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
+    expect(await started).toBe('accepted')
+    expect(requestSleep).toHaveBeenCalledOnce()
+    send.mockClear()
+    await registered.control.stopAll({ preserveSleepingMedia: true })
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'stop' }))
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_visual', action: 'stop' }))
+    await registered.control.stopAll()
+    expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+    expect(getFolderMedia).toHaveBeenCalledWith('raven')
+    await handler(event, { request: { action: 'stop' }, identity })
+  })
+  it('authorizes media against current session, published resources and avatar locks', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'session-media', sessionGeneration: 3 }
+    const resource = { kind: 'music', assetId: 'music-test', name: 'Tone', aliases: [] }
+    const config = { musicAssets: [{ id: 'music-test' }], visualAssets: [], avatarCatalog: {
+      activeAvatarId: 'host', locks: [] as { kind: string; resourceId: string; avatarId: string }[],
+      avatars: [{ id: 'host', mediaSkill: { enabled: true, fadeMs: 0, gain: 0.5, resources: [resource] } }],
+    } }
+    const runtime = { ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config,
+      requestSleep: async () => ({ status: 'success' }) }
+    const registered = registerTestIpcHandlers(runtime, fixtures.windows, events)
+    const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const envelope = { request: { action: 'play', kind: 'music', assetId: 'music-test', mode: 'loop' },
+      identity: { realtimeSessionId: 'session-media', sessionGeneration: 3 } }
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame }, envelope)).toBe('rejected')
+    expect(await handler(event, { ...envelope, identity: { ...envelope.identity, sessionGeneration: 2 } })).toBe('ignored')
+    expect(await handler(event, { ...envelope, request: { ...envelope.request, assetId: '../private' } })).toBe('rejected')
+    config.avatarCatalog.locks.push({ kind: 'music', resourceId: 'music-test', avatarId: 'other' })
+    expect(await handler(event, envelope)).toEqual({ status: 'rejected', code: 'media_not_found' })
+    config.avatarCatalog.locks = []
+    const started = handler(event, envelope)
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play' })))
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_music' && (call[1] as any)?.action === 'play')![1] as any
+    registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneAction)!(event, { ...command.context, status: 'acknowledged' })
+    expect(await started).toBe('accepted')
+    expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_music', action: 'play', loop: true }))
+    expect(await handler(event, { ...envelope, request: { action: 'stop' } })).toBe('accepted')
+    expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'media_skill_state', active: false }))
+  })
+  it('resolves only managed video refs owned by the active avatar for Mirror presentation', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const presentation = { ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, exitMs: 2400,
+      entranceVideoId: 'mist-in', exitVideoId: 'mist-out' }
+    const active = { presentation, visualAssets: [
+      { id: 'mist-in', kind: 'video', fileName: 'managed-in.webm' },
+      { id: 'mist-out', kind: 'video', fileName: 'managed-out.webm' },
+    ], avatarCatalog: { activeAvatarId: 'host', avatars: [{ id: 'host', modelId: 'builtin-ren' }, { id: 'other' }], models: [],
+      locks: [] as { kind: string; resourceId: string; avatarId: string }[] } }
+    const getConfig = vi.fn(async () => ({ ok: true, value: { active } }))
+    const runtime = makeLifecycleNeutralMetadataRuntime([], startingSnapshot())
+    const registered = registerTestIpcHandlers(runtime, fixtures.windows, events, undefined, { console: { getConfig } })
+    const handler = registered.handlers.get('mirror:get-presentation')!
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
+    const result = await handler(event)
+    expect(result).toMatchObject({ config: presentation, background: null,
+      entranceVideo: { id: 'mist-in', kind: 'video' }, exitVideo: { id: 'mist-out', kind: 'video' } })
+    expect(JSON.stringify(result)).not.toContain('fileName'); expect(JSON.stringify(result)).not.toContain('host')
+    active.avatarCatalog.locks = [{ kind: 'visual', resourceId: 'mist-in', avatarId: 'other' }]
+    active.visualAssets[1].kind = 'image'
+    expect(await handler(event)).toMatchObject({ entranceVideo: null, exitVideo: null })
+    active.visualAssets = []
+    expect(await handler(event)).toMatchObject({ entranceVideo: null, exitVideo: null })
+    expect(await handler(event, { path: 'unmanaged.webm' })).toBeNull()
+    expect(await handler({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })).toBeNull()
+  })
+
+  it('strictly validates ritual video refs in preload while accepting legacy payloads', async () => {
+    vi.resetModules()
+    let exposed: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
+    const config = { ...DEFAULT_PRESENTATION, mode: 'reflective', entranceMs: 4000, entranceVideoId: 'mist-in', exitVideoId: 'mist-out' }
+    const valid = { config, background: null, entranceVideo: { id: 'mist-in', kind: 'video' }, exitVideo: { id: 'mist-out', kind: 'video' } }
+    let payload: unknown = valid
+    vi.doMock('electron', () => ({ contextBridge: { exposeInMainWorld: (_name: string, bridge: typeof exposed) => { exposed = bridge } },
+      ipcRenderer: { invoke: vi.fn(async () => payload), on: vi.fn(), removeListener: vi.fn(), send: vi.fn() } }))
+    try {
+      await import('../../src/preload/mirror')
+      expect(await exposed.getPresentation()).toEqual(valid)
+      for (const video of [{ id: 'missing', kind: 'video' }, { id: 'mist-in', kind: 'image' },
+        { id: 'mist-in', kind: 'video', path: 'unmanaged.webm' }, { id: '../mist-in', kind: 'video' }, undefined]) {
+        payload = { ...valid, entranceVideo: video }
+        expect(await exposed.getPresentation()).toBeNull()
+      }
+      payload = { ...valid, unexpected: true }
+      expect(await exposed.getPresentation()).toBeNull()
+      payload = { config: DEFAULT_PRESENTATION, background: null }
+      expect(await exposed.getPresentation()).toEqual(payload)
+      payload = { ...valid, entranceVideo: null, exitVideo: null }
+      expect(await exposed.getPresentation()).toEqual(payload)
+    } finally { vi.doUnmock('electron'); vi.resetModules() }
+  })
+
+  it('passes only valid Interactive Studio Console commands, including the Mirror mode switch', async () => {
+    vi.resetModules()
+    let exposed: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
+    const invoke = vi.fn(async () => ({ ok: true }))
+    vi.doMock('electron', () => ({ contextBridge: { exposeInMainWorld: (_name: string, bridge: typeof exposed) => { exposed = bridge } },
+      ipcRenderer: { invoke, on: vi.fn(), removeListener: vi.fn(), send: vi.fn() } }))
+    try {
+      await import('../../src/preload/console')
+      for (const command of [{ action: 'status' }, { action: 'mode', mode: 'studio' }, { action: 'mode', mode: 'conversation' }]) {
+        await exposed.studio(command)
+        expect(invoke).toHaveBeenLastCalledWith('console:studio', command)
+      }
+      invoke.mockClear()
+      for (const command of [{ action: 'mode' }, { action: 'mode', mode: 'party' }, { action: 'status', mode: 'studio' }, { action: 'delete' }]) {
+        await expect(exposed.studio(command)).resolves.toMatchObject({ ok: false, error: 'console_request_invalid' })
+      }
+      expect(invoke).not.toHaveBeenCalled()
+    } finally { vi.doUnmock('electron'); vi.resetModules() }
+  })
+
   it('limits media imports to valid Console picker requests and sanitizes failures', async () => {
     const fixtures = makeTrackedRendererWindows()
     const events: MetadataEvent[] = []
@@ -820,6 +1058,9 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       reportRealtimeFailure: 'mirror:report-realtime-failure',
       reportRealtimeMetadata: REPORT_REALTIME_METADATA_CHANNEL,
       sleepRequest: 'mirror:sleep-request',
+      mediaSkill: 'mirror:media-skill',
+      findMedia: 'mirror:find-media',
+      searchYoutube: 'mirror:search-youtube',
       realtimeRuntimeCommand: 'mirror:realtime-runtime-command',
       getSnapshot: 'mirror:get-snapshot',
       snapshot: 'mirror:snapshot',
@@ -859,6 +1100,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       saveModelDraft: 'console:save-model-draft',
       saveDraft: 'console:save-draft',
       loadAvatar: 'console:load-avatar',
+      deleteAvatar: 'console:delete-avatar',
       testDraft: 'console:test-draft',
       publish: 'console:publish',
       rollback: 'console:rollback',
@@ -1473,6 +1715,14 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expectNoRealtimeSessionSentinel({ delivered, events })
   })
 
+  it('does not report a closed optional Console as a snapshot delivery failure', async () => {
+    const emit = vi.fn()
+    await publishSnapshot('console', startingSnapshot(), new Map(), { emit })
+    expect(emit).not.toHaveBeenCalled()
+    await publishSnapshot('mirror', startingSnapshot(), new Map(), { emit })
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ reason: 'window=mirror;cause=window_unknown' }))
+  })
+
   it('does not put model or private identifiers in any public boot result or event serialization', async () => {
     const harness = makeBootHarness()
     const runtime = startBoot(harness.options)
@@ -1641,7 +1891,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: 'synthetic-realtime-model',
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -1670,7 +1920,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
         snapshot: {
           configVersion: 7,
           fingerprint: 'synthetic-config-fingerprint',
-          sdkVersion: '0.16.1',
+          sdkVersion: '0.20.0',
           realtimeDialogue: 'synthetic-realtime-model',
           inputTranscription: 'synthetic-transcription-model',
           memoryExtractor: 'synthetic-memory-model',
@@ -1727,7 +1977,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
           snapshot: {
             configVersion: 7,
             fingerprint: 'synthetic-config-fingerprint',
-            sdkVersion: '0.16.1',
+            sdkVersion: '0.20.0',
             realtimeDialogue: 'synthetic-realtime-model',
             inputTranscription: 'synthetic-transcription-model',
             memoryExtractor: 'synthetic-memory-model',

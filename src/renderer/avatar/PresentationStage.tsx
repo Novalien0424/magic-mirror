@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react'
 import type { LifecycleState } from '../../shared/types'
 import type { PresentationPayload } from '../../shared/presentation'
 import { getAudioDeviceRouter } from '../audio-devices'
 import { createPresentationController, type PresentationPhase } from './presentation-controller'
+import { applyPresentationAmbience } from './presentation-ambience'
+import { playRitualVideo } from './ritual-video-controller'
+import { playWakeCue } from './wake-cue'
 import './presentation.css'
 
-export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false }: {
+export function PresentationStage({ payload, lifecycle, children, onPhase, onFailure, silent = false, draft = false, speechActive = false, mediaActive = false, mediaWithoutAudio = false, initialPhase = 'asleep' }: {
   payload: PresentationPayload; lifecycle: LifecycleState; children: ReactNode
   onPhase?: (phase: PresentationPhase) => void; onFailure?: (reason: string) => void; silent?: boolean; draft?: boolean
+  mediaActive?: boolean
+  mediaWithoutAudio?: boolean
+  speechActive?: boolean
+  initialPhase?: 'asleep' | 'awake'
 }) {
   const { config, background } = payload
-  const [phase, setPhase] = useState<PresentationPhase>(lifecycle === 'starting' ? 'inactive' : 'asleep')
+  const [phase, setPhase] = useState<PresentationPhase>(lifecycle === 'starting' ? 'inactive' : initialPhase)
+  const [exitOpacity, setExitOpacity] = useState(1)
+  const [transitionRun, setTransitionRun] = useState(0)
+  const [ritualVisible, setRitualVisible] = useState(false)
   const [readyId, setReadyId] = useState<string | null>(null)
   const [bgmVolume, setBgmVolume] = useState(0)
   useEffect(() => getAudioDeviceRouter().watchVolumes(volumes => setBgmVolume(volumes.bgm)), [])
@@ -19,36 +29,70 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const controller = useRef<ReturnType<typeof createPresentationController> | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const ritualRef = useRef<HTMLVideoElement | null>(null)
+  const avatarRef = useRef<HTMLDivElement | null>(null)
   const routeReady = useRef<Promise<unknown>>(Promise.resolve())
+  // Publication updates future transitions without resetting the current phase.
+  const configRef = useRef(config); configRef.current = config
   const lifecycleRef = useRef(lifecycle); lifecycleRef.current = lifecycle
-  useEffect(() => {
-    const c = createPresentationController({ entranceMs: config.entranceMs, exitMs: config.exitMs,
-      changed: p => { setPhase(p); phaseListener.current?.(p) } })
+  useLayoutEffect(() => {
+    const c = createPresentationController({
+      get entranceMs() { return configRef.current.entranceMs },
+      get exitMs() { return configRef.current.exitMs },
+      initialPhase,
+      changed: p => {
+        if (p === 'exiting' && avatarRef.current) setExitOpacity(Number(getComputedStyle(avatarRef.current).opacity))
+        if (p === 'entering' || p === 'exiting') setTransitionRun(run => run + 1)
+        setPhase(p)
+      } })
     controller.current = c
-    setPhase('asleep'); phaseListener.current?.('asleep')
+    setPhase(initialPhase)
     c.update(lifecycleRef.current)
     return () => { c.dispose(); controller.current = null }
-  }, [config.entranceMs, config.exitMs, config.mode])
-  useEffect(() => { controller.current?.update(lifecycle) }, [lifecycle])
+  }, [initialPhase])
+  useLayoutEffect(() => { controller.current?.update(lifecycle) }, [lifecycle])
+  useLayoutEffect(() => { phaseListener.current?.(phase) }, [phase])
+  useEffect(() => {
+    if (phase === 'entering' && config.mode === 'reflective' && !silent && !draft) {
+      return playWakeCue(reason => failure.current?.(reason))
+    }
+  }, [phase, config.mode, silent, draft])
   useEffect(() => { setReadyId(null) }, [background?.id])
 
   useEffect(() => {
-    if (!background || readyId === background.id || phase === 'inactive') return
+    if (config.mode === 'reflective' || !background || readyId === background.id || phase === 'inactive') return
     const timer = setTimeout(() => failure.current?.('presentation_background_timeout'), 10000)
     return () => clearTimeout(timer)
-  }, [background?.id, readyId, phase])
+  }, [background?.id, readyId, phase, config.mode])
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
+    if (!video || config.mode === 'reflective') return
     let cancelled = false
     if (phase === 'asleep' || phase === 'exiting') {
       void video.play().catch(() => { if (!cancelled) failure.current?.('presentation_background_play_failed') })
     } else video.pause()
     return () => { cancelled = true; video.pause() }
-  }, [phase, background?.id, draft])
+  }, [phase, background?.id, draft, config.mode])
 
-  useEffect(() => {
+  const ritualKind = phase === 'entering' ? 'entrance' : phase === 'exiting' ? 'exit' : null
+  const ritualVideo = ritualKind === 'entrance' ? payload.entranceVideo : ritualKind === 'exit' ? payload.exitVideo : null
+  useLayoutEffect(() => {
+    setRitualVisible(false)
+    // Reflective mode is an explicitly authored performance, including its mist
+    // and reveal timing. The OS motion preference still applies to ordinary UI.
+    if (config.mode !== 'reflective' || !ritualKind) return
+    const video = ritualRef.current
+    if (!ritualVideo || !video) { failure.current?.('presentation_ritual_video_missing'); return }
+    return playRitualVideo({ video,
+      src: `magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(ritualVideo.id)}`,
+      delayMs: ritualKind === 'entrance' ? config.blackHoldMs ?? 400 : 0,
+      durationMs: ritualKind === 'entrance' ? config.entranceMs : config.exitMs,
+      onVisible: setRitualVisible, onFailure: reason => failure.current?.(reason) })
+  }, [config.mode, ritualKind, ritualVideo?.id, config.blackHoldMs, config.revealStartMs, config.entranceMs, config.exitMs,
+    config.entranceBlend, config.exitBlend, payload.model?.id, initialPhase, draft])
+
+  useLayoutEffect(() => {
     if (!config.ambienceId || silent) return
     const audio = audioRef.current
     if (!audio) return
@@ -66,39 +110,36 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     }
   }, [config.ambienceId, silent, draft])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    let cancelled = false
-    let frame = 0
-    const target = phase === 'asleep' || phase === 'exiting' ? config.ambienceGain * bgmVolume : 0
-    const start = audio.volume
-    const started = performance.now()
-    if (target > 0) void routeReady.current.then(() => { if (!cancelled) return audio.play() }).catch(() => { if (!cancelled) failure.current?.('presentation_ambience_play_failed') })
-    const tick = () => {
-      if (cancelled) return
-      const fraction = Math.min(1, (performance.now() - started) / 500)
-      audio.volume = start + (target - start) * fraction
-      if (fraction < 1) frame = requestAnimationFrame(tick)
-      else if (target === 0) audio.pause()
-    }
-    if (phase === 'inactive') { audio.volume = 0; audio.pause() } else tick()
-    return () => { cancelled = true; cancelAnimationFrame(frame) }
-  }, [phase, config.ambienceId, config.ambienceGain, silent, bgmVolume])
+    return applyPresentationAmbience({ audio, phase, reflective: config.mode === 'reflective', ambienceGain: config.ambienceGain,
+      activeAmbienceGain: config.activeAmbienceGain ?? 0, bgmVolume, speechActive, mediaActive, mediaWithoutAudio,
+      routeReady: routeReady.current, onFailure: reason => failure.current?.(reason) })
+  }, [phase, config.mode, config.ambienceId, config.ambienceGain, config.activeAmbienceGain, silent, draft, bgmVolume, speechActive, mediaActive, mediaWithoutAudio])
 
   const backgroundReady = !background || readyId === background.id
-  const hidden = config.mode === 'emerge' && phase === 'asleep' && backgroundReady
+  const hidden = config.mode === 'reflective' && (phase === 'asleep' || phase === 'inactive')
+    || config.mode === 'emerge' && phase === 'asleep' && backgroundReady
   const mediaUrl = background ? `magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(background.id)}` : undefined
   return <div className="presentation" data-phase={phase} data-mode={config.mode}
-    data-background-ready={backgroundReady} style={{ '--entrance-ms': `${config.entranceMs}ms`, '--exit-ms': `${config.exitMs}ms` } as CSSProperties}>
+    data-background-ready={backgroundReady} style={{ '--entrance-ms': `${config.entranceMs}ms`, '--exit-ms': `${config.exitMs}ms`,
+      '--reveal-delay-ms': `${config.revealStartMs ?? 1500}ms`, '--reveal-duration-ms': `${config.entranceMs - (config.revealStartMs ?? 1500)}ms`,
+      '--ritual-exit-opacity': exitOpacity } as CSSProperties}>
     {!silent && config.ambienceId ? <audio key={config.ambienceId} ref={audioRef} src={`magic-mirror-media://music${draft ? '-draft' : ''}/${encodeURIComponent(config.ambienceId)}`} data-presentation-ambience="true" /> : null}
-    <div className="presentation__background" aria-hidden="true">
+    {config.mode !== 'reflective' ? <div className="presentation__background" aria-hidden="true">
       {background?.kind === 'video' ? <video key={background.id} ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto"
         onLoadedData={() => setReadyId(background.id)} onPlaying={() => setReadyId(background.id)} onError={() => { setReadyId(null); failure.current?.('presentation_background_failed') }} /> : null}
       {background?.kind === 'image' ? <img key={background.id} src={mediaUrl} alt=""
         onLoad={() => setReadyId(background.id)} onError={() => { setReadyId(null); failure.current?.('presentation_background_failed') }} /> : null}
-    </div>
-    <div className="presentation__avatar" style={{ opacity: hidden ? 0 : undefined }}>{children}</div>
+    </div> : null}
+    <div ref={avatarRef} className="presentation__avatar" style={{ opacity: hidden ? 0 : undefined,
+      animationName: config.mode === 'reflective' && (phase === 'entering' || phase === 'exiting')
+        ? `reflective-${phase === 'entering' ? 'reveal' : 'retreat'}${transitionRun % 2 ? '' : '-repeat'}` : undefined }}>{children}</div>
+    {config.mode === 'reflective' && ritualKind && ritualVideo ? <video
+      key={`${ritualKind}:${ritualVideo.id}`} ref={ritualRef} className="presentation__ritual-video" data-ritual-video={ritualKind}
+      muted playsInline preload="auto" aria-hidden="true"
+      style={{ visibility: ritualVisible ? 'visible' : 'hidden', mixBlendMode: ritualKind === 'entrance' ? config.entranceBlend ?? 'screen' : config.exitBlend ?? 'screen' }} /> : null}
     {config.mode === 'emerge' ? <div className="presentation__mist" aria-hidden="true"><i /><i /><i /></div> : null}
   </div>
 }

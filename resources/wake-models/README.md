@@ -31,3 +31,30 @@ The minimum quality run is 100 positive utterances across
 speakers/distances/noise, hard negatives including `魔鏡魔鏡` and `魔鏡啊魔鏡`,
 and two hours of approved background audio. The official 30-minute live
 ambient exit demo remains a separate human check.
+
+## Per-avatar tuning flow
+
+In Avatars → Persona → Wake sensitivity tuning, enable overrides for the
+current phrase, adjust the threshold/score/trailing blanks, then save, check
+and publish. Test the listener in Dormant. Changing the phrase disables its
+previous tuning; disabling overrides restores package defaults. These controls
+activate detector parameters, not neural training or a measured quality badge.
+
+Evaluate the same phrase and parameter values with a dedicated approved corpus:
+
+```powershell
+node scripts/evaluate-wake-models.mjs --corpus wake-corpus/manifest.json --package sherpa-magic-mirror-win-v2 --phrase "施放魔法" --threshold 0.45 --score 1 --trailing-blanks 1 --output wake-corpus/result.json
+```
+
+The evaluator derives keywords using the same verified package and worker
+configuration as the app. Output identifies the evaluated phrase and parameters.
+Use separate tuning and held-out validation recordings; never capture normal
+conversations as a training dataset. No representative local corpus is supplied.
+
+Aggregate schema version 2 counts repeated false activations throughout negative
+clips. Missing positive or negative exposure produces a null corresponding rate,
+not zero. To measure keyword-end latency, add `keywordEndMs` to positive sample
+entries; unannotated clips and negatives do not contribute latency. Negative
+latency means detection preceded the annotated end. Failures invalidate quality
+acceptance even if the remaining rates look good. Synthetic fixture results are
+pipeline checks, never spoken-accuracy evidence.

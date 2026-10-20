@@ -290,7 +290,7 @@ function assertPassedDemo(
   demo: DemoId,
   options: { readonly expectRetained?: boolean } = {},
 ): string {
-  expect(run.exitCode).toBe(0)
+  expect(run.exitCode, JSON.stringify(run.markers)).toBe(0)
   assertMetadataOnly(run)
 
   const directory = assertRunDirectory(run, demo, options.expectRetained !== false)
@@ -430,6 +430,7 @@ describe('Phase 0 Task 10C black-box demos', () => {
       expect(runId).toBe(basename(directory))
       integerField(sample, 'rssBytes', 1)
       integerField(sample, 'workingSetBytes', 1)
+      expect(sample.workingSetSource).toBe(process.platform === 'darwin' ? 'macos_footprint' : 'resident_set')
       integerField(sample, 'heapUsedBytes', 1)
       integerField(sample, 'mediaCurrentTimeMs', 0)
       integerField(sample, 'loopCount', 0)

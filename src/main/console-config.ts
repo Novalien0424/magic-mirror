@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
-import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
+import { avatarCatalogFor, projectActiveAvatar, type AvatarWakeTuning } from '../shared/avatar-profiles'
 import { avatarCatalogSchema } from './avatar/avatar-config'
+import { sceneActionSchema } from './scenes/scene-config'
+import type { ZodIssue } from 'zod'
 
 import type {
   ConfigService,
   ConfigSlots,
 } from './config-service'
-import { ConfigServiceError } from './config-service'
+import { ConfigServiceError, makeConfigDiff } from './config-service'
 import {
   buildModelSettingsSimulatorEvidence,
   createJobModelSnapshot,
@@ -129,6 +131,8 @@ export type ConsoleConfigRefreshResult =
     }
 
 export interface ConsoleConfigControllerOptions {
+  readonly onSlotsRead?: (slots: ConfigSlots) => void
+  readonly getWakeTuningDefaults?: (wake: MirrorConfig['wake']) => Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>
   readonly getLifecycle?: () => string
   readonly acquireAvatarSwitch?: () => (() => void) | null
   readonly validateSceneAssets?: (config: MirrorConfig) => boolean | PromiseLike<boolean>
@@ -138,13 +142,14 @@ export interface ConsoleConfigControllerOptions {
   readonly getDeveloperMode: () => boolean
   readonly emit: (event: Omit<MirrorEvent, 'time'>) => void
   readonly now: () => string
-  readonly validateWakeConfig?: (wake: MirrorConfig['wake']) => boolean | PromiseLike<boolean>
+  readonly validateWakeConfig?: (wake: MirrorConfig['wake'], tuning?: AvatarWakeTuning) => boolean | PromiseLike<boolean>
   readonly mockDraftProbe?: (...args: readonly unknown[]) =>
     | ConsoleDraftProbeResult
     | PromiseLike<ConsoleDraftProbeResult>
 }
 
 export interface ConsoleConfigController {
+  deleteAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
@@ -189,6 +194,20 @@ function nonEmptyString(value: unknown): value is string {
 
 function safeFieldError(path: string, message: string): ConsoleFieldError {
   return { path, message }
+}
+
+function schemaFieldErrors(issues: readonly ZodIssue[], prefix: string): ConsoleFieldError[] {
+  return issues.flatMap(issue => {
+    if (issue.code === 'invalid_union') {
+      // Ignore branches for other kinds/commands; never return schema messages or input values.
+      const matching = issue.errors.filter(branch => !branch.some(error =>
+        error.code === 'invalid_value' && ['kind', 'command'].includes(String(error.path.at(-1)))))
+      if (matching.length === 1) return schemaFieldErrors(matching[0], prefix)
+    }
+    const path = issue.path.reduce<string>((result, segment) => typeof segment === 'number'
+      ? `${result}[${segment}]` : /^[a-zA-Z][a-zA-Z0-9_]*$/.test(String(segment)) ? `${result}.${String(segment)}` : result, prefix)
+    return [safeFieldError(path, issue.code)]
+  })
 }
 
 function safeFields(fields: readonly ConsoleFieldError[]): readonly ConsoleFieldError[] {
@@ -482,8 +501,9 @@ function draftInputValidation(value: unknown):
 
   const stringFields = ['personaName', 'voice'] as const
   const catalog = readProperty(value, 'avatarCatalog')
-  if (catalog !== undefined && !avatarCatalogSchema.safeParse(catalog).success) {
-    return { ok: false, fields: [safeFieldError('avatarCatalog', 'invalid_avatar_catalog')] }
+  if (catalog !== undefined) {
+    const parsed = avatarCatalogSchema.safeParse(catalog)
+    if (!parsed.success) return { ok: false, fields: schemaFieldErrors(parsed.error.issues, 'avatarCatalog') }
   }
   for (const field of stringFields) {
     const fieldValue = readProperty(value, field)
@@ -502,6 +522,11 @@ function draftInputValidation(value: unknown):
       return { ok: false, fields: [safeFieldError(field, 'invalid_type')] }
     }
   }
+  const actionErrors = (readProperty(value, 'sceneActions') as unknown[]).flatMap((action, index) => {
+    const parsed = sceneActionSchema.safeParse(action)
+    return parsed.success ? [] : schemaFieldErrors(parsed.error.issues, `sceneActions[${index}]`)
+  })
+  if (actionErrors.length) return { ok: false, fields: actionErrors }
 
   const nested = [
     ['wake', ['phrase', 'modelVersion', 'packageId']],
@@ -721,10 +746,10 @@ export function createConsoleConfigController(
   let runtimeOld: ConsoleRuntimeSnapshot | null = null
   let runtimeNew: ConsoleRuntimeSnapshot | null = null
 
-  async function wakeConfigIsValid(wake: MirrorConfig['wake']): Promise<boolean> {
+  async function wakeConfigIsValid(wake: MirrorConfig['wake'], tuning?: AvatarWakeTuning): Promise<boolean> {
     if (options.validateWakeConfig === undefined) return true
     try {
-      return await Promise.resolve(options.validateWakeConfig(wake))
+      return await Promise.resolve(options.validateWakeConfig(wake, tuning))
     } catch {
       return false
     }
@@ -736,10 +761,35 @@ export function createConsoleConfigController(
       || slots.active.wake.packageId !== slots.draft.wake.packageId
   }
 
+  async function changedWakeConfigsAreValid(slots: ConfigSlots): Promise<boolean> {
+    const current = avatarCatalogFor(slots.active)
+    const draft = avatarCatalogFor(slots.draft)
+    const packageChanged = slots.active.wake.packageId !== slots.draft.wake.packageId
+      || slots.active.wake.modelVersion !== slots.draft.wake.modelVersion
+    const configs = draft.avatars.filter(avatar => packageChanged
+      || !current.avatars.some(old => old.id === avatar.id
+        && old.wakePhrase === avatar.wakePhrase
+        && JSON.stringify(old.wakeTuning) === JSON.stringify(avatar.wakeTuning)))
+      .map(avatar => ({
+        wake: { ...slots.draft.wake, phrase: avatar.wakePhrase ?? slots.draft.wake.phrase },
+        tuning: avatar.wakeTuning,
+      }))
+    if (wakeConfigChanged(slots)) configs.push({ wake: { ...slots.draft.wake }, tuning: undefined })
+    const seen = new Set<string>()
+    for (const config of configs) {
+      const key = JSON.stringify(config)
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (!(await wakeConfigIsValid(config.wake, config.tuning))) return false
+    }
+    return true
+  }
+
   async function readState(): Promise<ControllerState | null> {
     const service = getService(options)
     if (service === null) return null
     const slots = await service.read()
+    options.onSlotsRead?.(slots)
     const resolution = resolveModelSettings(slots)
     cachedResolution = resolution
     return { service, slots, resolution }
@@ -747,12 +797,13 @@ export function createConsoleConfigController(
 
   async function readOperationDiff(
     operation: ConfigOperation,
+    existingState?: ControllerState,
   ): Promise<OperationDiff | null> {
-    const state = await readState()
+    const state = existingState ?? await readState()
     if (state === null) return null
     const from: 'active' | 'previous' = operation === 'publish' ? 'active' : 'previous'
     const to: 'draft' | 'active' = operation === 'publish' ? 'draft' : 'active'
-    const serviceDiff = await state.service.diff(from, to)
+    const serviceDiff = makeConfigDiff(state.slots[from], state.slots[to])
     const changes = configDiffFromService(serviceDiff)
     return {
       operation,
@@ -788,14 +839,15 @@ export function createConsoleConfigController(
     try {
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
-      const publish = await readOperationDiff('publish')
-      const rollback = await readOperationDiff('rollback')
+      const publish = await readOperationDiff('publish', state)
+      const rollback = await readOperationDiff('rollback', state)
       if (publish === null || rollback === null) {
         return responseError('console_not_ready', 'cause=config_service_unavailable')
       }
       return {
         ok: true,
         value: {
+          wakeTuningDefaults: await options.getWakeTuningDefaults?.(state.slots.draft.wake).catch(() => null) ?? null,
           active: safeConfigView(state.slots.active),
           draft: safeConfigView(state.slots.draft),
           previous: safeConfigView(state.slots.previous),
@@ -911,7 +963,7 @@ export function createConsoleConfigController(
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
       let probeResult: ConsoleDraftProbeResult
       if (!(await sceneAssetsAreValid(state.slots.draft))
-        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        || !(await changedWakeConfigsAreValid(state.slots))) {
         probeResult = { result: 'failed', reason: 'cause=draft_invalid' }
       } else try {
         probeResult = options.mockDraftProbe === undefined
@@ -999,7 +1051,7 @@ export function createConsoleConfigController(
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
       if (!(await sceneAssetsAreValid(state.slots.draft))
-        || wakeConfigChanged(state.slots) && !(await wakeConfigIsValid(state.slots.draft.wake))) {
+        || !(await changedWakeConfigsAreValid(state.slots))) {
         draftTest = null
         return responseError('console_config_test_failed', 'cause=draft_test_failed')
       }
@@ -1105,6 +1157,17 @@ export function createConsoleConfigController(
     }
   }
 
+  async function deleteAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
+    try {
+      const state = await readState()
+      if (!state) return responseError('console_not_ready', 'cause=config_service_unavailable')
+      await state.service.deleteAvatar(id)
+      draftTest = null
+      return await refreshAfterMutation()
+    } catch (error) { return mapConfigError(error, 'save') }
+  }
+
   async function loadAvatar(id: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
     if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(id)) return responseError('console_request_invalid', 'cause=payload_schema_invalid')
     if (options.getLifecycle?.() !== 'dormant') return responseError('console_config_publish_failed', 'cause=avatar_switch_requires_dormant')
@@ -1149,6 +1212,7 @@ export function createConsoleConfigController(
     }
   }
   return {
+    deleteAvatar: serial(deleteAvatar),
     loadAvatar: serial(loadAvatar),
     getConfig: serial(getConfig),
     getModels: serial(getModels),

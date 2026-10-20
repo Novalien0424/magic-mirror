@@ -19,7 +19,7 @@ describe('phase 1 live smoke coordinator', () => {
       userDataDir: 'isolated-user-data',
       configVersion: 1,
       fingerprint: 'a'.repeat(64),
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: 'configured-realtime-model',
       inputTranscription: 'configured-transcription-model',
       memoryExtractor: 'configured-memory-model',

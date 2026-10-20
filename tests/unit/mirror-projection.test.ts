@@ -45,12 +45,12 @@ const EXPECTED_COPY = {
   active: { title: 'Active', detail: 'Ready for conversation.' },
   suspending: { title: 'Suspending', detail: 'Returning to sleep.' },
   offlineLoop: {
-    title: 'OfflineLoop',
-    detail: 'Cloud unavailable; local fallback is playing.',
+    title: '魔鏡暫時失聯',
+    detail: '遠方的聲音暫時中斷，請稍後再喚醒我。',
   },
   maintenance: {
-    title: 'Maintenance',
-    detail: 'Local service unavailable; see the Console.',
+    title: '魔鏡休息中',
+    detail: '請洽現場人員協助。',
   },
 } as const
 
@@ -149,12 +149,12 @@ describe('Mirror seven-state projection contract', () => {
 
     expect(offline).toEqual(expect.objectContaining({
       className: 'screen screen--offlineLoop',
-      title: 'OfflineLoop',
+      title: EXPECTED_COPY.offlineLoop.title,
       detail: EXPECTED_COPY.offlineLoop.detail,
     }))
     expect(maintenance.className).toBe('screen screen--maintenance')
-    expect(maintenance.title).toBe('Maintenance')
-    expect(String(maintenance.detail)).toContain('sqlite_open_failed')
+    expect(maintenance.title).toBe(EXPECTED_COPY.maintenance.title)
+    expect(String(maintenance.detail)).not.toContain('sqlite_open_failed')
     expect(String(maintenance.detail).trim().length).toBeGreaterThan(0)
   })
 
@@ -173,8 +173,8 @@ describe('Mirror seven-state projection contract', () => {
     expect(unavailableOffline).toEqual(expect.objectContaining({
       state: 'offlineLoop',
       className: 'screen screen--offlineLoop',
-      title: 'OfflineLoop',
-      detail: 'offline_loop_asset_unavailable',
+      title: EXPECTED_COPY.offlineLoop.title,
+      detail: EXPECTED_COPY.offlineLoop.detail,
     }))
     expect(String(unavailableOffline.detail).trim().length).toBeGreaterThan(0)
     expectNoForbiddenContent({ starting, dormant, unavailableOffline })
@@ -493,7 +493,7 @@ describe('Mirror ErrorBoundary stable failure contract', () => {
     expect(serialized(callbacks)).not.toContain(RAW_ERROR_STACK)
   })
 
-  it('renders a nonblank fallback containing only stable failure code and reason', () => {
+  it('renders readable guest recovery copy without exposing technical codes', () => {
     const boundary = new ErrorBoundary({
       label: 'mirror',
       children: null,
@@ -507,8 +507,10 @@ describe('Mirror ErrorBoundary stable failure contract', () => {
     const encoded = serialized(fallback)
 
     expect(String(encoded).trim().length).toBeGreaterThan(0)
-    expect(encoded).toContain('renderer_boundary_failed')
-    expect(encoded).toContain('render_exception')
+    expect(encoded).toContain('魔鏡休息中')
+    expect(encoded).toContain('請洽現場人員協助')
+    expect(encoded).not.toContain('renderer_boundary_failed')
+    expect(encoded).not.toContain('render_exception')
     expect(encoded).not.toContain(RAW_ERROR_MESSAGE)
     expect(encoded).not.toContain(RAW_ERROR_STACK)
   })
@@ -668,13 +670,14 @@ describe('Mirror scene-action feedback transport', () => {
         stageId: 'stage-opening', actionId: 'dialogue-opening',
       }
       const commands = [
+        { type: 'stop_avatar_test' },
         { type: 'asset_failure', action: 'inject' },
         { type: 'scene_dialogue', text: 'The mirror awakens now.', context },
         { type: 'motion', group: 'Scene', context: { ...context, actionId: 'motion-scene' } },
         { type: 'expression', name: 'exp_01', context: { ...context, actionId: 'expression-one' } },
         { type: 'scene_music', action: 'play', assetId: 'music-tone', gain: 0.65, loop: false, context: { ...context, actionId: 'music-play' } },
         { type: 'scene_music', action: 'play', assetId: 'music-tone', gain: 0.65, loop: false, preview: true, context },
-        { type: 'scene_visual', action: 'start', assetId: 'draft-video', fit: 'cover', playback: 'once', audio: 'muted', gain: 0, preview: true, context },
+        { type: 'scene_visual', action: 'start', assetId: 'draft-video', fit: 'cover', playback: 'once', audio: 'muted', gain: 0, fadeInMs: 0, fadeOutMs: 0, preview: true, context },
       ]
       for (const command of commands) registration.listener({}, command)
       registration.listener({}, { ...commands.at(-1), preview: 'true' })
@@ -798,7 +801,7 @@ describe('Mirror realtime runtime command transport', () => {
       snapshot: {
         configVersion: 7,
         fingerprint: 'synthetic-config-fingerprint',
-        sdkVersion: '0.16.1',
+        sdkVersion: '0.20.0',
         realtimeDialogue: 'synthetic-realtime-model',
         inputTranscription: 'synthetic-transcription-model',
         memoryExtractor: 'synthetic-memory-model',
@@ -1250,7 +1253,7 @@ describe('Mirror App realtime runtime composition', () => {
       snapshot: {
         configVersion: 7,
         fingerprint: 'synthetic-runtime-config-fingerprint',
-        sdkVersion: '0.16.1',
+        sdkVersion: '0.20.0',
         realtimeDialogue: 'synthetic-realtime-model',
         inputTranscription: 'synthetic-transcription-model',
         memoryExtractor: 'synthetic-memory-model',

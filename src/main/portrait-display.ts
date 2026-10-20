@@ -30,3 +30,17 @@ export function selectPortraitDisplay<T extends DisplayCandidate>(
     ?? displays[0]
     ?? null
 }
+
+/**
+ * Remote Console target: the primary display unless it shows the mirror, else any
+ * other display. Never the mirror's display; null when the mirror's is the only one.
+ */
+export function selectConsoleMainDisplay<T extends DisplayCandidate>(
+  displays: readonly T[],
+  primaryDisplayId: number,
+  mirrorDisplayId: number | undefined,
+): T | null {
+  return displays.find(({ id }) => id === primaryDisplayId && id !== mirrorDisplayId)
+    ?? displays.find(({ id }) => id !== mirrorDisplayId)
+    ?? null
+}

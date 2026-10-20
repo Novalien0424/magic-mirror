@@ -1,53 +1,88 @@
-# Magic Mirror — Current handoff
+# Magic Mirror — current handoff, 2026-10-18
 
-## Raven V11 performance candidate — 2026-09-16
+Latest delivery (**Sticker pictures and visible prompts**, 2026-10-20
+afternoon; pushed to `field/macmini-deploy` and PR #2): Interactive Studio
+pictures default to **stickers** (square transparent PNG, one emblem with a
+white die-cut border) with Console **Picture type** (Sticker / Full picture)
+and **Name font**; hidden prompt text moved to versioned files and shown in the
+Prompt Inspector (memory helpers view only); one short line before a change
+request (owner choice); order guards stop the model finishing or changing a
+picture, or recording a name or answer, without the visitor. **Live: Oracle
+24/24, Pawnshop 24/24, published 23/23 as stickers, Cartographer 18/18 as a
+full picture; full suite 2668, `--studio-journey`, `--console` pass.** No print
+output yet (TODO). Runtime 14:44 Taipei: production on this build, Dormant and
+listening, Jabra 69 % (set after restart); QA artifacts deleted.
+[Evidence](docs/testing/interactive-studio-stories-2026-10-20.md).
 
-Built on `7072a1c` in the isolated cloud checkout, branch `raven-v11-calm-performance`. Seven restrained state motions, explicit per-model ownership/loop policy, full blink closure, crossfade/cancellation fixes and updated `mm-live2d-avatar` skill are delivered as a candidate. V10 remains byte-identical; MOC/atlas/Layout are preserved. [Acting plan and runtime](resources/avatar/Raven/v11/README.md), [audit and open acceptance gates](resources/avatar/Raven/v11/AUDIT.md).
+Earlier (**Interactive Studio follow-up**, 2026-10-20 morning): fixes for a
+repaint spoken twice and an English last description, prompts shortened to the
+realtime prompting guide, name-confirmation and clean-up fixes.
 
-Focused Linux checks passed 92 tests / 9 files, web typecheck, skill validation and actual Core structural inspection (27 parameters, 22 drawables). Current rendered QA is **blocked**: no Windows desktop connection, and cloud browser policy rejected local/file preview URLs. No Windows/Electron or visual naturalness acceptance is claimed. The existing Windows runtime and operator drafts were not accessed or changed; previous runtime statements below are historical. Use the new code plus separate V11 import for canonical Windows QA; no automatic model activation, merge or phase promotion.
+Earlier (**Interactive Studio stories**, 2026-10-19 late): three spiritual
+stories and the published studio ran live end to end; QA fixed the first step
+never asked, English stories starting in Chinese, lost name corrections, the
+undescribed last picture, and Console stale mode/result line and a false
+microphone warning. [Evidence](docs/testing/interactive-studio-stories-2026-10-19.md).
 
-Remote delivery completed after the user explicitly approved the 30-file payload: [draft PR #1](https://github.com/Novalien0424/magic-mirror/pull/1), branch `raven-v11-calm-performance`. The uploaded candidate tree was verified identical to the reviewed local tree. The initial HTTPS-credential failure and automatic approval rejection remain historical evidence in the audit. The existing Git bundle is the pre-upload checkpoint. Live activation and Windows visual acceptance remain separate.
+Earlier tonight (**Remote Console QA**, 2026-10-19; pushed to
+`field/macmini-deploy` and PR #2): the Desktop app **Remote Console Magic
+Mirror** (Console on the main display beside the avatar, for Chrome Remote
+Desktop) now has user journeys O8, five new `--operator-loop` cases and three
+live studio steps. QA found and fixed a Console defect: after INTERACTIVE
+STUDIO or START while asleep, the Console kept showing the old Mirror mode; it
+now re-reads it when shown. On the stamped build **`--operator-loop` (22
+cases), full suite, `--console` and `--studio-journey` pass**; three live
+`portrait_studio` visits: console steps 9/9, two runs fully green, one with an
+unidentified provider error event. The real Desktop, CONSOLE and START apps
+were checked on production at the macOS window level. Runtime 21:50 Taipei:
+production restarted on this build, Dormant and listening, Console hidden,
+Conversation, Jabra 69 %.
+[Evidence](docs/testing/remote-console-2026-10-18.md#full-qa-and-user-journeys-2026-10-19) ·
+[journeys](docs/testing/user-journeys-2026-10-18.md#o8-check-in-from-away-remote-console).
 
-## Clock-in and field-help delivery — 2026-09-14, Asia/Taipei
+Previous delivery (**Interactive Studio visit flow**; pushed to
+`field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): in
+Interactive Studio mode the mirror wakes to its own **Studio wake phrase**
+(default 「招喚渡鴉使者」, set in the Console), runs name → questions → picture,
+says the **Studio farewell** (「願你找到你所追尋 / 再會 / 人類」, pauses between lines)
+and returns to Dormant; the studio character (system prompt), rules, questions,
+every step's reply, image prompt, on-glass text and failure lines are editable
+in an editor ordered by the visit; printing has a documented seam. Built on the
+same day's Interactive Studio, Mirror mode switch and Stream Deck key delivery.
+On the stamped build: **full suite, `--studio-journey` (incl. the real wake
+listener switching to the studio phrase), `--field-help`, `--console`,
+`--profiles`, `--editor`, `--operator-loop`, `review_ui` and one live
+`portrait_studio` run of the owner flow (17 steps, farewell → Dormant) pass.**
+[Evidence](docs/testing/interactive-studio-2026-10-18.md) ·
+[user journeys](docs/testing/user-journeys-2026-10-18.md).
 
-Resumed and completed the paused Console tooltip task in canonical `C:/Project/magic-mirror`, branch `main`, starting from `3b20c81`. All 82 input/select/textarea source locations now have field-specific accessible help, including conditional scene controls, dynamic Cubism parameters and Voice Studio's local-file chooser. Hover, Tab focus, Enter/Space, click pinning, Escape and outside dismissal are covered. Existing audio and harness/document edits are preserved. No phase promotion. [Implementation, fresh checks, screenshots and retained failures](docs/testing/field-help-2026-09-14.md).
+Earlier today: memory extraction on `gpt-6.1-sol` and ChatGPT sign-in upkeep
+([evidence](docs/testing/memory-model-signin-2026-10-18.md)); the nine TODO
+code-audit fixes ([evidence](docs/testing/todo-audit-fixes-2026-10-18.md)).
+Earlier: Console revamp ([evidence](docs/testing/console-ux-revamp-2026-10-17.md)),
+Portrait Studio ([QA](docs/testing/portrait-studio-2026-10-17.md)), Loop Video
+Drive save ([evidence](docs/testing/loop-video-cloud-save-2026-10-17.md)),
+portrait Console mouse ([setup](docs/testing/portrait-console-mouse-2026-10-17.md)),
+Neo operator controls ([QA](docs/testing/operator-controls-2026-10-17.md)) and
+Loop Video ([ledger](docs/testing/operator-loop-2026-10-17.md)). Prior handoff:
+[archive](docs/archive/progress-before-clockout-2026-10-18.md).
 
-Commit/push follow-up: the operator requested committing and pushing the completed work. The earlier harness compaction and the audio/field-help delivery are packaged as separate commits on `main`. Fresh pre-commit validation passed 77 tests / 15 files and web typecheck; staged whitespace checks passed. Product source is unchanged from the running development session below, which is preserved to avoid losing new operator edits. Earlier reports' no-commit/no-push statements describe their original delivery time.
+Runtime (**14:29 Taipei, 2026-10-18**): production app restarted on the new
+build after QA; Mirror mode Conversation; published config version 19. Stream
+Deck: the five-key profile is imported and selected for the Neo ("Magic Mirror
+copy"); the old four-key profile is still listed, unused. Output: Jabra (default
+device) **69 %, unmuted** (the owner's normal level); input gain 57 unchanged. The owner is away for two days.
 
-Fresh Windows evidence: 62 tests / 11 files passed; field-help Electron QA passed 20 checks with 6 screenshots; local Voice Studio QA passed 6 checks with 3 screenshots. Stamped build, web typecheck and scoped Node check (182 files) passed. Full Node typecheck still has the existing missing `qa-artifacts.mjs` declaration. Screenshots were visually inspected, including 1024/768 window widths and Ren's rig parameters. Physical touch/screen-reader acceptance and live-provider listening were not performed.
+Open gaps (all in [TODO](TODO.md)): saying 「招喚渡鴉使者」 at the mirror and a
+physical INTERACTIVE STUDIO press; a human studio visit; the QA sound wrapper
+under output-device switches; the stricter `gpt-6.1-sol` judge baseline; no real
+cold Drive download since the deadline change; Chrome Remote Desktop pointer;
+physical Neo checks; camera, wake and dialogue boundaries in the
+[open-issues ledger](docs/testing/open-issues-2026-10-13.md). No phase
+acceptance changes.
 
-The detached `.worktrees/field-help` checkout remains a preserved historical partial copy; the completed implementation is in canonical. Its older audio baseline was not transferred. [Original paused handoff](docs/testing/field-help-handoff-2026-09-14.md).
-
-Runtime: after isolated QA exited and a process/port check found no running Electron or port-5173 listener, canonical `npm run dev` was restarted as requested. Session `79343` reported `MAIN_READY`, both windows loaded and both renderers ready; Vite serves `http://localhost:5173/`. The app is left running for operator testing. Preserve any new unsaved Console edits before future reload/restart. `out/` now contains a development build; rebuild a stamped bundle before another Electron QA run.
-
-The preceding independent BGM / Avatar audio / Sound effects controls remain delivered locally; Sound effects currently covers embedded scene-video audio. [Audio implementation and earlier Windows evidence](docs/testing/audio-volumes-2026-09-14.md). The broader editor QA's earlier config/navigation failure remains outside these focused passes.
-
-## Previous harness work — 2026-09-13
-
-Task: apply OpenAI's GPT-6 Astra skill/prompt guidance to all six personal Codex skills and compact the related user/project harness. Local instruction changes only; no product implementation, publication or phase promotion.
-
-Clock-in checkout: canonical `C:/Project/magic-mirror`, branch `main`, HEAD `3b20c81` (`Mark QA artifacts and add reviewed scoped cleanup`); working tree was clean. No Electron process was found in the task's direct process check. Runtime was not launched or restarted. Older PIDs in archived handoffs are historical.
-
-Harness change scope, validation and local backup: [audit](docs/testing/harness-compaction-2026-09-13.md). Current task edits remain local; this record does not claim a commit or push.
-
-## Current Windows delivery and evidence
-
-- Audio volumes: persistent 0–100% controls, operator-mode access, independent music/speech/embedded-video gains, retained ducking and preview level matching. [Fresh 2026-09-14 evidence](docs/testing/audio-volumes-2026-09-14.md).
-- Profile Console: Mirror / Avatars / System; avatar-owned Persona, Appearance, Voice and Spells/scenes; explicit shared-resource scope and separate publish/activation. [Delivery/runbook](docs/testing/profile-console-2026-09-09.md), [actual-image review](docs/testing/profile-console-reviews-2026-09-09.md). Prior evidence: 942 tests / 103 files; editor 26, profile journey 16 and Cubism including Raven 224 checks, exit 0. These were not rerun during harness work.
-- Voice Studio: shared processed Realtime output, per-avatar provider and DSP controls, frozen sessions, default/Raven presets. [Implementation and acoustic gates](docs/testing/voice-studio-implementation-2026-09-09.md), [delivery](docs/testing/voice-studio-delivery-2026-09-09.md). Prior measured added p95 149.333 ms, interruption stale/muted RMS 0; human sound and hardware acceptance remain open.
-- Cubism: reusable managed rig library, names/versions, persistent discovery and looping Console motions. [Loop preview](docs/testing/cubism-loop-preview-2026-09-09.md), [labels](docs/testing/avatar-library-labels-2026-09-09.md), [framing](docs/testing/avatar-framing-2026-09-08.md). Current Raven master: [v10 storage](resources/avatar/Raven/README.md), [v10 handoff](RAVEN-V10-EXPRESSION-FIX-HANDOFF.md). Large ignored editable/QA assets require separate backup.
-- QA artifact ownership and reviewed cleanup are delivered at HEAD: [workflow and 21-test proof](docs/testing/qa-artifact-cleanup.md). New marked runs use the scoped tool; older unmarked artifacts cannot be adopted by fabricating markers.
-
-## Blockers and next product work
-
-- Phases 0–3 remain accepted Windows checkpoints; Phase 4 remains active, unaccepted and untagged. Pulled-forward avatar/Console work does not start Identity or Memory. Phases 5→6→7 and the later Mac port remain sequential.
-- First-boot wake remains unresolved. Capture actual speech on a failing boot with the RAM-only wake meter; synthetic probes did not reproduce it. [Wake evidence](docs/testing/wake-first-boot-2026-09-06.md).
-- Human default/Raven sound tuning, physical speaker/echo and interruption, operator scenes/media, physical adapters and long-run performance remain. [Phase 4 checklist](docs/testing/phase4-scene-media-windows-checklist.md), [scene evidence](docs/testing/scene-editor-usability-2026-09-06.md). Phase 7 retains offline wake, multi-speaker/19-of-20 live-wake and 30-minute ambient/TV negative evidence.
-- Cleanup of the profile task's 12 QA runs plus one temporary review directory was repeatedly denied by tool policy, last recorded 2026-09-10; exact paths are in the profile delivery report. User authority already exists, but historical denial is not proof that today's tool policy permits deletion. This harness task did not retry it.
-- The Claude-in-Codex launcher repair has prior fresh-MCP proof; adopting it required a new connection/session. [Repair evidence](docs/testing/claude-in-codex-windows-repair-2026-09-09.md). No fresh connection or review claim here.
-
-For requested fresh UI QA, follow [mm-ui-qa](.agents/skills/mm-ui-qa/SKILL.md), preserve operator drafts, use a matching stamped build, and explicitly supply the current Raven manifest when testing Raven. Inspect new screenshots and record fresh results. No startup or publication is implied by this handoff.
-
-## History
-
-[Pre-compaction handoff](docs/archive/progress-before-harness-2026-09-13.md) retains all earlier delivery states, failures, exact artifact links and runtime observations. Its linked older archives remain available. [AGENTS](AGENTS.md) owns execution policy; [DECISIONS](DECISIONS.md) owns durable rulings.
+Next: owner presses INTERACTIVE STUDIO, says the studio wake phrase at the
+mirror (if detection is weak, try 召喚 instead of 招喚 in Interactive Studio ›
+1 · Start), runs one visit to the farewell, then START MIRROR; walks user
+journeys O2–O4 on the portrait TV. Leave runtime and device state under the
+owner's control.

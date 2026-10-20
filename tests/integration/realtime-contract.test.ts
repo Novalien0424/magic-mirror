@@ -11,7 +11,7 @@ const SESSION_START_BUNDLE: Readonly<RealtimeSessionStartBundle> = {
   snapshot: {
     configVersion: 7,
     fingerprint: "synthetic-config-fingerprint",
-    sdkVersion: "0.16.1",
+    sdkVersion: "0.20.0",
     realtimeDialogue: "synthetic-realtime-model",
     inputTranscription: "synthetic-transcription-model",
     memoryExtractor: "synthetic-memory-model",

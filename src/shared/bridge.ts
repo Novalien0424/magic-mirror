@@ -105,6 +105,10 @@ export const AVATAR_RUNTIME_STATES = [
 export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
+  | Readonly<{ type: 'media_skill_state'; active: boolean; hideAvatar: boolean; fadeMs: number }>
+  | Readonly<{ type: 'studio_view'; view: import('./portrait-studio').StudioView | null }>
+  | Readonly<{ type: 'studio_event'; event: import('./portrait-studio').StudioSessionEvent; identity: import('./portrait-studio').StudioEventIdentity }>
+  | Readonly<{ type: 'stop_avatar_test' }>
   | Readonly<{ type: 'audio_devices'; preferences: import('./audio-devices').AudioPreferences }>
   | Readonly<{ type: 'refresh_audio_devices' }>
   | Readonly<{ type: 'state'; state: AvatarRuntimeState }>
@@ -138,6 +142,8 @@ export type AvatarControlCommand =
       playback: 'still' | 'once' | 'loop'
       audio: 'muted' | 'embedded'
       gain: number
+      fadeInMs?: number
+      fadeOutMs?: number
       context: SceneActionCommandContext
     }>
   | Readonly<{ type: 'scene_visual'; action: 'stop'; runId: string; sceneId: string }>
@@ -173,6 +179,9 @@ export interface MirrorChannelMap {
   readonly reportRealtimeFailure: 'mirror:report-realtime-failure'
   readonly reportRealtimeMetadata: 'mirror:report-realtime-metadata'
   readonly sleepRequest: 'mirror:sleep-request'
+  readonly mediaSkill: 'mirror:media-skill'
+  readonly findMedia: 'mirror:find-media'
+  readonly searchYoutube: 'mirror:search-youtube'
   readonly avatarControl: 'mirror:avatar-control'
   readonly reportAvatarRuntime: 'mirror:report-avatar-runtime'
   readonly reportSceneAction: 'mirror:report-scene-action'
@@ -198,6 +207,7 @@ export interface ConsoleChannelMap {
   readonly saveModelDraft: 'console:save-model-draft'
   readonly saveDraft: 'console:save-draft'
   readonly loadAvatar: 'console:load-avatar'
+  readonly deleteAvatar: 'console:delete-avatar'
   readonly testDraft: 'console:test-draft'
   readonly publish: 'console:publish'
   readonly rollback: 'console:rollback'
@@ -233,6 +243,13 @@ interface SharedRendererBridge {
 }
 
 export interface MirrorBridge extends SharedRendererBridge {
+  getOperatorLoop?(): Promise<import('./operator-loop').OperatorLoopSnapshot>
+  onOperatorLoop?(listener: (snapshot: import('./operator-loop').OperatorLoopSnapshot) => void): () => void
+  reportOperatorLoop?(report: import('./operator-loop').OperatorLoopReport): void
+  memory?(request: import('./memory').MemoryRequest, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
+  memoryInput?(phase: import('./memory').MemoryInputPhase, itemId: string, transcript: string, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
+  resetMemorySession?(identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
+  onCameraTarget?(listener: (target: import('./camera-tracking').CameraTarget | null) => void): () => void
   getPresentation?(): Promise<import('./presentation').PresentationPayload | null>
   getAudioPreferences?(): Promise<{ preferences: import('./audio-devices').AudioPreferences; reason: string }>
   requestRealtimeClientSecret(): Promise<TransientRealtimeSecretResult>
@@ -240,6 +257,11 @@ export interface MirrorBridge extends SharedRendererBridge {
   reportRealtimeFailure(report: RealtimeFailureReport): void
   reportRealtimeMetadata(report: RealtimeRendererMetadataReport): void
   requestSleep(): void
+  requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./media-skill').MediaSkillResult>
+  studio?(request: import('./portrait-studio').StudioRequest, identity: RealtimeSessionIdentity): Promise<import('./portrait-studio').StudioReply>
+  findMedia?(request: import('./media-discovery').MediaDiscoveryRequest, identity: RealtimeSessionIdentity): Promise<import('./media-discovery').MediaDiscoveryReply>
+  searchYoutube?(request: import('./youtube-search').YoutubeSearchRequest, identity: RealtimeSessionIdentity): Promise<import('./youtube-search').YoutubeSearchReply>
+  captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void
   reportSceneAction(report: SceneActionRendererReport): void
   reportSceneVisual(report: SceneVisualPlaybackReport): void
@@ -253,8 +275,13 @@ export interface MirrorBridge extends SharedRendererBridge {
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
+  loopVideo?(command: import('./operator-loop').LoopVideoCommand): Promise<ConsoleResponse<import('./operator-loop').LoopVideoView>>
+  memory?(request: import('./memory').MemoryConsoleRequest): Promise<import('./memory').MemoryConsoleReply>
+  memoryImport?(request: import('./memory').MemoryImportRequest): Promise<import('./memory').MemoryImportStatus>
+  wakeCalibration?(command: import('./wake-calibration').WakeCalibrationCommand): Promise<ConsoleResponse<import('./wake-calibration').WakeCalibrationSnapshot>>
   acquireVoicePreview?(request: import('./voice-preview').VoicePreviewRequest): Promise<import('./voice-preview').VoicePreviewResult>
   releaseVoicePreview?(token: string): Promise<boolean>
+  cancelPendingVoicePreview?(): Promise<boolean>
   onVoicePreviewCancelled?(listener: (reason: string) => void): () => void
   simulate(command: SimulatorCommand): Promise<SimulatorResult>
   startConversation(): Promise<ConsoleResponse<ConsoleLifecycleActionResult>>
@@ -267,6 +294,7 @@ export interface ConsoleBridge extends SharedRendererBridge {
   saveModelDraft(input: ConsoleModelDraftInput): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  deleteAvatar?(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   importAvatarModel(): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel | null>>
   listAvatarModels(): Promise<ConsoleResponse<import('./avatar-library').AvatarLibrary>>
   saveAvatarModelLabel(request: import('./avatar-library').AvatarLibraryLabelRequest): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel>>
@@ -276,15 +304,18 @@ export interface ConsoleBridge extends SharedRendererBridge {
   createNextRuntimeSnapshots(): Promise<ConsoleResponse<ConsoleRuntimeSnapshotResult>>
   getPhaseTests(phase?: PhaseTestPhase): Promise<ConsoleResponse<ConsolePhaseTestsPayload>>
   getAvatarRuntime(): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
+  checkCamera?(): Promise<ConsoleResponse<{ status: 'ready' | 'unavailable'; width?: number; height?: number }>>
   controlAvatar(command: AvatarControlCommand): Promise<ConsoleResponse<AvatarRuntimeSnapshot>>
   runScene(sceneId: string, scope?: import('./scene-test-scope').SceneTestScope, source?: 'draft'): Promise<ConsoleResponse<SceneStartResult>>
   stopScenes(): Promise<ConsoleResponse<{ readonly status: 'stopped' }>>
   onSceneStatus(listener: SceneStatusListener): () => void
   uploadMusic(): Promise<ConsoleResponse<ManagedMusicAsset | null>>
   importMedia?(request: import('./media-import').MediaImportRequest): Promise<ConsoleResponse<import('./media-import').MediaImportEntry[]>>
+  mediaFolders?(request: import('./media-folders').MediaFolderCommand): Promise<ConsoleResponse<import('./media-folders').MediaFoldersView>>
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>>
   finalizeVisual(input: Readonly<{ token: string; probe: VisualAssetProbe }>): Promise<ConsoleResponse<ManagedVisualAsset>>
   cancelVisual(token: string): Promise<ConsoleResponse<{ readonly status: 'cancelled' }>>
+  studio?(command: import('./portrait-studio').StudioConsoleCommand): Promise<ConsoleResponse<import('./portrait-studio').StudioConsoleResult>>
 }
 
 /** Compatibility alias for code that only needs the shared renderer surface. */

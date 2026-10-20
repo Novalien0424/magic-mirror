@@ -1,19 +1,9 @@
-# Host and production UI interaction
-
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
-
-## Host and interaction boundaries
-
-Launch Electron only from `C:\Project\magic-mirror`. Verify the two exact-path
-Private firewall rules described in AGENTS.md before the first run. Do not run
-two Electron QA sessions or interfere with an operator's manual test session.
-Full `npm test` also launches Electron smoke; run it separately. Check for
-unsaved Console edits before stopping/reloading the normal app.
+# Display and production UI interaction
 
 Visual modes require an OS-reported portrait display and verify the actual
 Mirror window's display. `PHASE4_QA_DISPLAY` records the selection and display
-dimensions. A physically rotated panel still needs the correct Windows display
-orientation. Ask which panel and whether to change orientation if Windows
+dimensions. A physically rotated panel still needs the correct OS display
+orientation. Resolve the intended panel/orientation when the OS
 reports all panels as landscape; do not guess. Editor-only work can continue.
 
 The Console harnesses in `src/main/phase4-console-qa.ts` and

@@ -1,0 +1,3 @@
+.operator-loop { position: fixed; inset: 0; overflow: hidden; background: #000; }
+.operator-loop__video { display: block; width: 100%; height: 100%; background: #000; }
+.operator-loop:not([data-state="playing"]) .operator-loop__video { visibility: hidden; }

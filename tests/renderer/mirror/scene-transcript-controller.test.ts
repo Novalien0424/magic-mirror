@@ -26,6 +26,73 @@ function harness() {
 }
 
 describe('Scene transcript control boundary', () => {
+  it('speaks one retry for a sound-alike unmatched prefix and never reveals or starts a scene', async () => {
+    const h = harness(), retrySpell = vi.fn(async () => ({ status: 'completed' as const })), claimControlTurn = vi.fn()
+    const controller = createSceneTranscriptController({ bridge: h.bridge, interrupt: h.interrupt, retrySpell, claimControlTurn })
+    controller.handleInputItemCreated('wrong')
+    const input = { itemId: 'wrong', transcript: '是放咒语未知', realtimeSessionId: 'test' }
+    expect(await controller.handleCompletedTranscript(input)).toMatchObject({ decision: 'ignored', reason: 'spell_command_not_recognized' })
+    await controller.handleCompletedTranscript(input)
+    expect(retrySpell).toHaveBeenCalledOnce()
+    expect(claimControlTurn).toHaveBeenCalledExactlyOnceWith('wrong')
+    expect(h.bridge.triggerScene).not.toHaveBeenCalled()
+  })
+  it('starts an authorized scene without waiting for its spoken cue, even when later VAD interrupts the cue', async () => {
+    for (const status of ['completed', 'failed'] as const) {
+      const h = harness()
+      let finish!: (value: { status: 'completed' } | { status: 'failed'; reason: string }) => void
+      const announce = vi.fn(() => new Promise<{ status: 'completed' } | { status: 'failed'; reason: string }>(resolve => { finish = resolve }))
+      const controller = createSceneTranscriptController({ bridge: h.bridge, interrupt: h.interrupt, announceSpell: announce })
+      controller.handleInputItemCreated('cast')
+      const pending = controller.handleCompletedTranscript({ itemId: 'cast', transcript: 'Begin the show', realtimeSessionId: 'test' })
+      await vi.waitFor(() => expect(announce).toHaveBeenCalledTimes(1))
+      expect(h.bridge.triggerScene).toHaveBeenCalledOnce()
+      finish(status === 'completed' ? { status } : { status, reason: 'spell_announcement_cancelled' })
+      const result = await pending
+      expect(result.decision).toBe('triggered')
+      expect(h.bridge.triggerScene).toHaveBeenCalledOnce()
+    }
+  })
+  it('rejects a session that changes while interrupting old output, and never announces a rejected scene', async () => {
+    for (const stale of [true, false]) {
+      const h = harness(), announce = vi.fn(), current = vi.fn().mockReturnValueOnce(true).mockReturnValue(!stale)
+      if (!stale) h.bridge.triggerScene.mockResolvedValue({ status: 'rejected', reason: 'scene_busy' } as never)
+      const controller = createSceneTranscriptController({ bridge: h.bridge, interrupt: h.interrupt, announceSpell: announce, isCurrentSession: current })
+      controller.handleInputItemCreated('cast')
+      const result = await controller.handleCompletedTranscript({ itemId: 'cast', transcript: 'Begin the show', realtimeSessionId: 'test' })
+      expect(result.decision).toBe(stale ? 'ignored' : 'triggered')
+      expect(h.bridge.triggerScene).toHaveBeenCalledTimes(stale ? 0 : 1)
+      expect(announce).not.toHaveBeenCalled()
+    }
+  })
+  it('runs the short rain command once across punctuation, spaces and prefix script variants', async () => {
+    for (const transcript of ['施放咒語，下雨！', '施放咒語 下雨', '施放咒语，下雨。']) {
+      const h = harness()
+      h.bridge.getSceneCatalog.mockResolvedValue({ configVersion: 8, stopPhrase: '魔鏡阿魔鏡',
+        spells: [{ id: 'rain', phrase: '施放咒語，下雨' }] })
+      h.controller.handleInputItemCreated('rain-item', 'rain-turn')
+      const input = { itemId: 'rain-item', transcript, realtimeSessionId: 'synthetic-session' }
+      expect(await h.controller.handleCompletedTranscript(input)).toMatchObject({ decision: 'triggered', result: { status: 'accepted' } })
+      expect(await h.controller.handleCompletedTranscript(input)).toMatchObject({ decision: 'ignored', reason: 'duplicate_turn' })
+      expect(h.bridge.triggerScene).toHaveBeenCalledExactlyOnceWith({ spellId: 'rain', turnId: 'rain-turn' })
+    }
+  })
+
+  it('claims unknown spell-prefix attempts while leaving ordinary conversation alone', async () => {
+    const h = harness()
+    h.bridge.getSceneCatalog.mockResolvedValue({ configVersion: 8, stopPhrase: '魔鏡阿魔鏡',
+      spells: [{ id: 'rain', phrase: '施放咒語，下雨' }] })
+    for (const [index, transcript] of ['施放咒語，下雪', '下雨', '不要施放咒語，下雨', '他說施放咒語，下雨', '施放咒語，下雨然後停止'].entries()) {
+      const itemId = `negative-${index}`
+      h.controller.handleInputItemCreated(itemId)
+      expect(await h.controller.handleCompletedTranscript({ itemId, transcript, realtimeSessionId: 'synthetic-session' }))
+        .toMatchObject({ decision: 'ignored' })
+    }
+    expect(h.metadata).toContain('spell_command_not_recognized')
+    expect(h.bridge.triggerScene).not.toHaveBeenCalled()
+    expect(h.interrupt).toHaveBeenCalledTimes(2)
+  })
+
   it('stops the run snapshotted at item creation and cannot also trigger a spell', async () => {
     const h = harness()
     h.controller.handleStatus({

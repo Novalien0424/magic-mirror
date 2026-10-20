@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createAvatarRuntimeReporter } from './avatar-runtime-reporter'
 import { getAudioDeviceRouter } from '../audio-devices'
+import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
+import { OperatorLoopBlack, OperatorLoopPlayer } from './OperatorLoopPlayer'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
 import type { PresentationPhase } from '../avatar/presentation-controller'
+import { createPresentationGreetingGate } from '../avatar/presentation-greeting-gate'
 import type {
   AvatarRuntimeSnapshot,
   MirrorBridge,
@@ -17,6 +21,8 @@ import type {
 import type { AppSnapshot, LifecycleState, SceneActionCommandContext, SceneRunResult } from '../../shared/types'
 import { createBrowserRealtimeRuntimeOwner } from '../realtime/realtime-runtime-dependencies'
 import { createSceneTranscriptController, type SceneTranscriptDecision } from './scene-transcript-controller'
+import { createSpellAnnouncement } from './spell-announcement'
+import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import {
   createSceneVisualController,
   type SceneVisualController,
@@ -34,6 +40,9 @@ import type {
   RealtimeRuntimeSession,
 } from '../realtime/realtime-runtime-owner'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
+import type { StudioView } from '../../shared/portrait-studio'
+import { PortraitStudioLayer, studioCoversAvatar } from './portrait-studio-layer'
+import { downscaleStudioImage } from './studio-image'
 import {
   projectAvatarState,
   type AvatarConversationState,
@@ -63,6 +72,14 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'onRealtimeRuntimeCommand'
   | 'onInterrupt'
   | 'requestSleep'
+  | 'requestMedia'
+  | 'findMedia'
+  | 'searchYoutube'
+  | 'studio'
+  | 'captureCamera'
+  | 'memory'
+  | 'memoryInput'
+  | 'resetMemorySession'
   | 'reportAvatarRuntime'
   | 'getSceneCatalog'
   | 'triggerScene'
@@ -379,8 +396,10 @@ function createMirrorRealtimeRuntimeOwner(
       turnId?: string
     }) => Promise<SceneTranscriptDecision>) | null,
   ) => void,
-): Readonly<{ owner: RealtimeRuntimeOwner; disposeSceneStatus: () => void }> {
+  waitForWakePresentation?: (signal: AbortSignal) => Promise<void>,
+): Readonly<{ owner: RealtimeRuntimeOwner; cancelAnnouncement: () => void; disposeSceneStatus: () => void }> {
   let owner: RealtimeRuntimeOwner
+  const announcement = createSpellAnnouncement({ speak: (text, signal, finished) => owner.speakVerbatim(text, signal, finished).status === 'dispatched' })
   const ignoreDuplicateRuntimeOutcome: RealtimeRuntimeEventSink = () => {
     // subscribeMirrorRealtimeRuntime reports each returned outcome exactly once.
   }
@@ -388,6 +407,7 @@ function createMirrorRealtimeRuntimeOwner(
   const reportFailure = (
     failure: Parameters<MirrorBridge['reportRealtimeFailure']>[0],
   ): void => {
+    announcement.cancel()
     try {
       void Promise.resolve(bridge.reportRealtimeFailure(failure)).catch(() => undefined)
     } catch {
@@ -398,21 +418,39 @@ function createMirrorRealtimeRuntimeOwner(
   const sceneTranscript = createSceneTranscriptController({
     bridge,
     interrupt: async () => owner.interrupt(),
+    isCurrentSession: sessionId => owner.getSnapshot().state === 'active' && owner.getSnapshot().currentIdentity?.realtimeSessionId === sessionId,
+    announceSpell: async () => {
+      const sessionId = owner.getSnapshot().currentIdentity?.realtimeSessionId
+      const result = await announcement.run()
+      const current = owner.getSnapshot()
+      return current.state === 'active' && current.currentIdentity?.realtimeSessionId === sessionId
+        ? result : { status: 'failed' as const, reason: 'spell_announcement_cancelled' }
+    },
+    retrySpell: () => announcement.run(REALTIME_PROMPTS.spellRetry),
+    claimControlTurn: itemId => owner.claimControlTurn?.(itemId),
     metadataSink: (reason, realtimeSessionId) => reportMirrorRealtimeMetadata(bridge, 'transcript', {
       status: reason === 'transcript_available' ? 'success' : 'info',
       reason: `cause=${reason}`,
       realtimeSessionId,
     }),
   })
-  const disposeSceneStatus = bridge.onSceneStatus((event) => sceneTranscript.handleStatus(event))
+  // Offline QA exercises matching/IPC/scenes without provider audio. Live QA
+  // uses the production announcement path; timing has focused playback tests.
+  const offlineQaTranscript = createSceneTranscriptController({ bridge, interrupt: async () => owner.interrupt() })
+  const unsubscribeSceneStatus = bridge.onSceneStatus((event) => {
+    sceneTranscript.handleStatus(event)
+    offlineQaTranscript.handleStatus(event)
+  })
+  const disposeSceneStatus = (): void => { announcement.dispose(); unsubscribeSceneStatus() }
   const handleQaTranscript = async (input: {
     transcript: string
     realtimeSessionId: string
     turnId?: string
   }): Promise<SceneTranscriptDecision> => {
     const itemId = `qa-${input.turnId ?? 'turn'}`
-    sceneTranscript.handleInputItemCreated(itemId, input.turnId)
-    return sceneTranscript.handleCompletedTranscript({
+    const target = owner.getSnapshot().state === 'active' ? sceneTranscript : offlineQaTranscript
+    target.handleInputItemCreated(itemId, input.turnId)
+    return target.handleCompletedTranscript({
       itemId,
       transcript: input.transcript,
       realtimeSessionId: input.realtimeSessionId,
@@ -427,8 +465,8 @@ function createMirrorRealtimeRuntimeOwner(
     createCleanup: (session) => createMirrorRuntimeCleanup(bridge, session),
     onFailure: reportFailure,
     onAudioOutputAvailable: avatarAudio.onOutputAvailable,
-    onAudioOutputDisposed: avatarAudio.onOutputDisposed,
-    onAudioActivity: avatarAudio.onActivity,
+    onAudioOutputDisposed: output => { announcement.cancel(); avatarAudio.onOutputDisposed(output) },
+    onAudioActivity: activity => { announcement.handleActivity(activity); avatarAudio.onActivity(activity) },
     onAudioDegraded: reason => reportMirrorRealtimeMetadata(bridge, 'avatar', { status: 'degraded', reason }),
     playbackCompletion: {
       scheduler: createBrowserPlaybackScheduler(),
@@ -440,6 +478,16 @@ function createMirrorRealtimeRuntimeOwner(
       eventSink: (event) => reportMirrorRealtimeMetadata(bridge, 'playback', event),
     },
     onReturnToDormant: () => bridge.requestSleep(),
+    onMediaRequest: (request, identity) => bridge.requestMedia(request, identity),
+    onFindMedia: bridge.findMedia,
+    onSearchYoutube: bridge.searchYoutube,
+    onCameraCapture: identity => bridge.captureCamera(identity),
+    onStudioRequest: bridge.studio,
+    prepareStudioImage: url => downscaleStudioImage(url),
+    onMemory: bridge.memory,
+    onMemoryInput: bridge.memoryInput,
+    onMemoryReset: bridge.resetMemorySession,
+    waitForWakePresentation,
     onInputItemCreated: ({ itemId }) => sceneTranscript.handleInputItemCreated(itemId),
     onCompletedInputTranscript: async (input) => {
       reportMirrorRealtimeMetadata(bridge, 'transcript', {
@@ -449,7 +497,7 @@ function createMirrorRealtimeRuntimeOwner(
     },
   })
   onQaTranscriptHandler?.(handleQaTranscript)
-  return Object.freeze({ owner, disposeSceneStatus })
+  return Object.freeze({ owner, cancelAnnouncement: announcement.cancel, disposeSceneStatus })
 }
 
 export interface MirrorInterruptComposition {
@@ -524,12 +572,12 @@ export const MIRROR_STATE_COPY: Readonly<Record<LifecycleState, { readonly title
   active: Object.freeze({ title: 'Active', detail: 'Ready for conversation.' }),
   suspending: Object.freeze({ title: 'Suspending', detail: 'Returning to sleep.' }),
   offlineLoop: Object.freeze({
-    title: 'OfflineLoop',
-    detail: 'Cloud unavailable; local fallback is playing.',
+    title: '魔鏡暫時失聯',
+    detail: '遠方的聲音暫時中斷，請稍後再喚醒我。',
   }),
   maintenance: Object.freeze({
-    title: 'Maintenance',
-    detail: 'Local service unavailable; see the Console.',
+    title: '魔鏡休息中',
+    detail: '請洽現場人員協助。',
   }),
 })
 
@@ -544,7 +592,7 @@ interface MirrorProjectionOptions {
   readonly offlineAssetAvailable?: boolean
 }
 
-const OFFLINE_LOOP_ASSET_UNAVAILABLE = 'offline_loop_asset_unavailable'
+const OFFLINE_LOOP_ASSET_UNAVAILABLE = MIRROR_STATE_COPY.offlineLoop.detail
 const MAINTENANCE_SCREEN_CLASS = 'screen screen--maintenance'
 
 type OfflineLoopMediaStatus = 'unavailable' | 'playing'
@@ -649,13 +697,6 @@ function isLifecycleState(value: unknown): value is LifecycleState {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(MIRROR_STATE_COPY, value)
 }
 
-function stableMaintenanceCode(value: unknown): string {
-  const code = isRecord(value) ? readProperty(value, 'code') : undefined
-  return typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code)
-    ? code
-    : MIRROR_STATE_COPY.maintenance.detail
-}
-
 export function projectMirrorSnapshot(
   snapshot: unknown,
   options: MirrorProjectionOptions = {},
@@ -678,7 +719,7 @@ export function projectMirrorSnapshot(
       state,
       className: MAINTENANCE_SCREEN_CLASS,
       title: copy.title,
-      detail: stableMaintenanceCode(readProperty(snapshot, 'maintenance')),
+      detail: copy.detail,
     }
   }
 
@@ -733,57 +774,124 @@ function OfflineLoopScreen(): React.JSX.Element {
   )
 }
 
-export function App({ interruptComposition }: AppProps = {}): React.JSX.Element {
+export function App(props: AppProps = {}): React.JSX.Element {
+  const [loop, setLoop] = useState<OperatorLoopSnapshot | null>(null)
+  const [failure, setFailure] = useState('')
+  useEffect(() => {
+    const bridge = window.magicMirror
+    let disposed = false, receivedEvent = false
+    let unsubscribe = () => {}
+    const unavailable = () => {
+      if (disposed) return
+      setFailure('operator_loop_snapshot_unavailable')
+      try {
+        if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
+          kind: 'avatar', status: 'failed', reason: 'operator_loop_snapshot_unavailable',
+        })
+      } catch { /* The black surface remains the local failure state. */ }
+    }
+    if (!bridge || !('getOperatorLoop' in bridge) || !bridge.getOperatorLoop || !bridge.onOperatorLoop) {
+      unavailable(); return
+    }
+    try {
+      unsubscribe = bridge.onOperatorLoop(next => {
+        if (disposed) return
+        receivedEvent = true; setFailure('')
+        setLoop(current => current && current.generation > next.generation ? current : next)
+      })
+      bridge.notifyReady()
+      void bridge.getOperatorLoop().then(next => {
+        if (!disposed && !receivedEvent) { setLoop(next); setFailure('') }
+      }).catch(() => { if (!receivedEvent) unavailable() })
+    } catch { unavailable() }
+    return () => { disposed = true; unsubscribe() }
+  }, [])
+  if (failure || !loop) return <OperatorLoopBlack reason={failure || undefined} />
+  if (loop.mode === 'avatar') return <AvatarApp {...props} />
+  if (loop.generation === 0) return <OperatorLoopBlack reason={loop.reason} />
+  if (loop.status === 'failed' || loop.status === 'idle') return <OperatorLoopBlack reason="operator_loop_failed" />
+  return <OperatorLoopPlayer key={loop.generation} snapshot={loop} />
+}
+
+function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<unknown>(STARTING_SNAPSHOT)
   const [presentation, setPresentation] = useState<PresentationPayload>({ config: { ...DEFAULT_PRESENTATION }, background: null })
+  const [presentationLoaded, setPresentationLoaded] = useState(false)
   const [presentationPhase, setPresentationPhase] = useState<PresentationPhase>('asleep')
+  const presentationRef = useRef(presentation); presentationRef.current = presentation
+  const presentationPhaseRef = useRef(presentationPhase); presentationPhaseRef.current = presentationPhase
+  const presentationLifecycleRef = useRef<LifecycleState>('starting')
+  const greetingGateRef = useRef<ReturnType<typeof createPresentationGreetingGate> | null>(null)
   const publishedVersion = readProperty(snapshot, 'configVersion')
   useEffect(() => {
     const bridge = window.magicMirror
-    if (!bridge || !('getPresentation' in bridge) || !bridge.getPresentation) return
+    if (!bridge || !('getPresentation' in bridge) || !bridge.getPresentation) { setPresentationLoaded(true); return }
     let disposed = false
     void bridge.getPresentation().then(value => {
-      if (!disposed) setPresentation(value ?? { config: { ...DEFAULT_PRESENTATION }, background: null })
+      if (!disposed) {
+        if (value) setPresentation(value)
+        setPresentationLoaded(true)
+        if (!value && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
+          kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable',
+        })
+      }
     }).catch(() => {
       if (!disposed && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({
         kind: 'avatar', status: 'degraded', reason: 'presentation_config_unavailable',
       })
+      if (!disposed) setPresentationLoaded(true)
     })
     return () => { disposed = true }
   }, [publishedVersion])
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [conversationState, setConversationState] = useState<AvatarConversationState>('listening')
+  const [toolWorking, setToolWorking] = useState(false)
+  const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
+  const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
+  const [studioView, setStudioView] = useState<StudioView | null>(null)
+  // Keeps the avatar's fade-in after the portrait frame closes (the media fade variable may be 0).
+  const [studioFade, setStudioFade] = useState(false)
+  const studioCoverRef = useRef(false)
+  const studioFadeTimerRef = useRef<number | undefined>(undefined)
+  const [localVideoHasAudio, setLocalVideoHasAudio] = useState<boolean | null>(null)
+  const [coverVisual, setCoverVisual] = useState(false)
+  const [scenePlaying, setScenePlaying] = useState(false)
+  // Playback completion includes the processed speech tail. Visitor speech
+  // interrupts and clears that output before this callback is delivered.
+  const updateBgmSpeechPriority = (activity: AvatarAudioActivity): void => {
+    if (activity === 'output_started') setAvatarSpeechActive(true)
+    else if (activity === 'output_stopped' || activity === 'interrupted' || activity === 'speech_started') setAvatarSpeechActive(false)
+  }
   const [avatarFallbackInjected, setAvatarFallbackInjected] = useState(false)
   const avatarRendererRef = useRef<CubismAvatarRenderer | null>(null)
   const realtimeRuntimeOwnerRef = useRef<RealtimeRuntimeOwner | null>(null)
   const phase4QaTranscriptHandlerRef = useRef<Parameters<NonNullable<Parameters<typeof createMirrorRealtimeRuntimeOwner>[2]>>[0]>(null)
   const pendingSceneMotionRef = useRef(new Map<string, SceneActionCommandContext>())
-  const pendingSceneMusicRef = useRef<SceneActionCommandContext | null>(null)
+  const pendingSceneDialogueRef = useRef(new Set<AbortController>())
   const avatarAudioOutputRef = useRef<RealtimeAudioOutput | null>(null)
   const avatarMediaControllerRef = useRef<AvatarMediaController | null>(null)
   const sceneVisualControllerRef = useRef<SceneVisualController | null>(null)
   const sceneVisualHostRef = useRef<HTMLDivElement | null>(null)
   const presentedSceneVisualRef = useRef<SceneVisualMedia | null>(null)
-  const avatarMetricsRef = useRef<AvatarRuntimeSnapshot>({
-    status: 'not_ready',
-    reason: 'avatar_renderer_not_ready',
-    state: 'Dormant',
-    fps: 0,
-    waveform: 0,
-    mouthOpen: 0,
-    audioUnderruns: 0,
-    voiceGain: 1,
-    musicGain: 1,
-  })
-
-  const reportAvatarRuntime = (patch: Partial<AvatarRuntimeSnapshot>): void => {
-    const next = Object.freeze({ ...avatarMetricsRef.current, ...patch })
-    avatarMetricsRef.current = next
+  const runtimeReporter = useRef<ReturnType<typeof createAvatarRuntimeReporter> | null>(null)
+  runtimeReporter.current ??= createAvatarRuntimeReporter(next => {
     const bridge = window.magicMirror
     if (bridge !== undefined && 'reportAvatarRuntime' in bridge) {
-      try { bridge.reportAvatarRuntime(next) } catch { /* reporting cannot gate rendering */ }
+      bridge.reportAvatarRuntime(next)
     }
-  }
+  })
+  const reportAvatarRuntime = (patch: Partial<AvatarRuntimeSnapshot>): void => runtimeReporter.current?.report(patch)
+  useEffect(() => () => runtimeReporter.current?.dispose(), [])
+  const attachSceneVisual = useCallback((host: HTMLDivElement | null) => {
+    sceneVisualHostRef.current = host
+    const media = presentedSceneVisualRef.current
+    if (host && media && host.firstChild !== (media as unknown as Node)) host.replaceChildren(media as unknown as Node)
+  }, [])
+  useEffect(() => {
+    const bridge = window.magicMirror
+    if (!bridge || !('onSceneStatus' in bridge)) return
+    return bridge.onSceneStatus(event => setScenePlaying(event.type !== 'finished'))
+  }, [])
   const reportSceneAction = (
     context: SceneActionCommandContext,
     status: 'acknowledged' | 'completed' | 'failed' | 'timeout',
@@ -829,9 +937,22 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
     }
   }, [])
   const view = projectMirrorSnapshot(snapshot)
+  presentationLifecycleRef.current = view.state
+  useLayoutEffect(() => {
+    const gate = createPresentationGreetingGate({ onReason: reason => {
+      const bridge = window.magicMirror
+      if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
+    } })
+    greetingGateRef.current = gate
+    gate.update(presentationRef.current.config, presentationPhaseRef.current, presentationLifecycleRef.current)
+    return () => { gate.dispose(); if (greetingGateRef.current === gate) greetingGateRef.current = null }
+  }, [])
+  useLayoutEffect(() => {
+    greetingGateRef.current?.update(presentation.config, presentationPhaseRef.current, view.state)
+  }, [presentation, view.state])
   const avatarState = projectAvatarState({
     lifecycle: view.state,
-    conversation: conversationState,
+    conversation: scenePlaying && !avatarSpeechActive ? 'scene' : conversationState,
   })
   const avatarStateRef = useRef(avatarState)
   avatarStateRef.current = avatarState
@@ -848,7 +969,6 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       }
     }
 
-    bridge.notifyReady()
     void bridge.getSnapshot()
       .then((initialSnapshot) => {
         if (!mounted) return
@@ -877,25 +997,25 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
           if (output !== null) avatarRendererRef.current?.setState('Speaking')
           else if (avatarStateRef.current !== null) avatarRendererRef.current?.setState(avatarStateRef.current)
         },
-        onActivity: (activity) => coordinator?.handleActivity(activity),
+        onActivity: (activity) => {
+          updateBgmSpeechPriority(activity)
+          coordinator?.handleActivity(activity)
+        },
         onChanged: (metrics: AvatarMediaSnapshot) => reportAvatarRuntime(metrics),
-        eventSink: (reason) => {
+        eventSink: (reason, context) => {
           const failed = /failed|unavailable|inactive|underrun/.test(reason)
           reportAvatarRuntime({ ...(failed ? { status: 'degraded' as const } : {}), reason })
           const bridge = window.magicMirror
           if (bridge !== undefined && 'reportRealtimeMetadata' in bridge) {
             bridge.reportRealtimeMetadata({ kind: 'avatar', status: failed ? 'degraded' : 'success', reason })
           }
-          const context = pendingSceneMusicRef.current
-          if (context !== null) {
+          if (context !== undefined) {
             if (reason === 'avatar_music_started') {
-              pendingSceneMusicRef.current = null
               reportSceneAction(context, 'acknowledged')
-            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_fade_completed') {
-              pendingSceneMusicRef.current = null
+            } else if (reason === 'avatar_music_stopped' || reason === 'avatar_music_completed'
+              || reason === 'avatar_music_fade_completed' && context.sceneId !== 'media-skill') {
               reportSceneAction(context, 'completed')
-            } else if (reason.startsWith('avatar_music_play_failed') || reason === 'avatar_music_analyser_inactive') {
-              pendingSceneMusicRef.current = null
+            } else if (reason.startsWith('avatar_music_play_failed')) {
               reportSceneAction(context, 'failed', 'avatar_music_action_failed')
             }
           }
@@ -934,10 +1054,16 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         onOutputDisposed: (output) => {
           if (avatarAudioOutputRef.current !== output) return
           avatarAudioOutputRef.current = null
+          setAvatarSpeechActive(false)
+          setToolWorking(false)
+          pendingSceneDialogueRef.current.clear()
           avatarMediaControllerRef.current?.setRealtimeOutput(null)
           coordinator?.setAudioOutput(null)
         },
         onActivity: (activity) => {
+          if (activity === 'tool_started') setToolWorking(true)
+          if (activity === 'tool_finished' || activity === 'speech_started') setToolWorking(false)
+          updateBgmSpeechPriority(activity)
           if (activity === 'interrupted') {
             coordinator.handleActivity(activity)
             avatarMediaControllerRef.current?.handleActivity(activity)
@@ -946,13 +1072,16 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
             coordinator.handleActivity(activity)
           }
         },
-      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler })
+      }, (handler) => { phase4QaTranscriptHandlerRef.current = handler },
+      signal => greetingGateRef.current?.wait(signal) ?? Promise.resolve())
       const owner = sceneRuntime.owner
       realtimeRuntimeOwnerRef.current = owner
       const unsubscribe = subscribeMirrorRealtimeRuntime(
         bridge,
         owner,
         () => {
+          sceneRuntime.cancelAnnouncement()
+          setAvatarSpeechActive(false)
           coordinator.handleActivity('interrupted')
           avatarMediaControllerRef.current?.handleActivity('interrupted')
         },
@@ -1029,14 +1158,23 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
       createVideo: () => document.createElement('video') as unknown as SceneVisualMedia,
       present: (media) => {
         presentedSceneVisualRef.current = media
+        setCoverVisual(media?.className.split(' ').includes('scene-visual__media--cover') ?? false)
         const host = sceneVisualHostRef.current
         if (host !== null) host.replaceChildren(...(media === null ? [] : [media as unknown as Node]))
       },
       report: (report) => bridge.reportSceneVisual(report),
-      setVideoAudio: (media, gain) => avatarMediaControllerRef.current?.setSceneVideoAudio(
+      setVideoAudio: (media, gain, durationMs) => avatarMediaControllerRef.current?.setSceneVideoAudio(
         media as unknown as HTMLVideoElement | null,
         gain,
+        durationMs,
       ),
+      prepareFade: (media) => { void getComputedStyle(media as unknown as Element).opacity },
+      onLoadRetry: () => reportAvatarRuntime({ status: 'degraded', reason: 'media_load_retry' }),
+      onVideoAudio: (hasAudio, context) => {
+        if (context.sceneId !== 'media-skill') return
+        setLocalVideoHasAudio(hasAudio === 'unknown' ? null : hasAudio)
+        if (hasAudio === 'unknown') reportAvatarRuntime({ status: 'degraded', reason: 'media_video_audio_unknown' })
+      },
     })
     sceneVisualControllerRef.current = visual
     return () => {
@@ -1047,20 +1185,34 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   }, [])
 
   useEffect(() => {
-    avatarMediaControllerRef.current?.setLifecycle(view.state)
-    if (view.state !== 'active') {
+    avatarMediaControllerRef.current?.setLifecycle(mediaSkillState.active ? 'active' : view.state)
+    avatarMediaControllerRef.current?.setDormantMedia(mediaSkillState.active && view.state === 'dormant')
+    if (view.state !== 'active' && !mediaSkillState.active) {
       sceneVisualControllerRef.current?.handleCommand({
         type: 'scene_visual', action: 'stop', runId: 'all', sceneId: 'all',
       })
     }
     if (avatarState !== null) reportAvatarRuntime({ state: avatarState })
     else if (view.state === 'offlineLoop') reportAvatarRuntime({ state: 'OfflineLoop' })
-  }, [avatarState, view.state])
+  }, [avatarState, view.state, mediaSkillState.active])
 
   useEffect(() => {
     const bridge = window.magicMirror
     if (bridge === undefined || !('onAvatarControl' in bridge)) return
     return bridge.onAvatarControl((command) => {
+      if (command.type === 'stop_avatar_test') {
+        pendingSceneMotionRef.current.clear()
+        for (const controller of pendingSceneDialogueRef.current) controller.abort()
+        pendingSceneDialogueRef.current.clear()
+        setAvatarFallbackInjected(false)
+        avatarRendererRef.current?.setState(avatarStateRef.current ?? 'Dormant')
+        avatarRendererRef.current?.clearExpression()
+        avatarRendererRef.current?.setMouthOpen(0)
+        avatarMediaControllerRef.current?.handleCommand({ type: 'recorded_audio', action: 'stop' })
+        avatarMediaControllerRef.current?.handleCommand({ type: 'music', action: 'stop' })
+        reportAvatarRuntime({ reason: 'avatar_tests_stopped' })
+        return
+      }
       if (command.type === 'audio_devices') {
         void getAudioDeviceRouter().select(command.preferences)
         return
@@ -1114,7 +1266,9 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         return
       }
       if (command.type === 'scene_dialogue') {
-        const result = realtimeRuntimeOwnerRef.current?.speakVerbatim(command.text)
+        const controller = new AbortController()
+        const result = realtimeRuntimeOwnerRef.current?.speakVerbatim(command.text, controller.signal, () => pendingSceneDialogueRef.current.delete(controller))
+        if (result?.status === 'dispatched') pendingSceneDialogueRef.current.add(controller)
         const status = result?.status ?? 'ignored'
         const reason = result?.reason ?? 'no_active_realtime_session'
         reportSceneAction(
@@ -1128,11 +1282,36 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         })
         return
       }
-      if (command.type === 'scene_music' && command.context !== undefined) {
-        pendingSceneMusicRef.current = command.context
-      }
       if (command.type === 'scene_visual') {
         sceneVisualControllerRef.current?.handleCommand(command)
+        return
+      }
+      if (command.type === 'studio_view') {
+        const covered = studioCoversAvatar(command.view)
+        if (studioCoverRef.current && !covered) {
+          setStudioFade(true)
+          window.clearTimeout(studioFadeTimerRef.current)
+          studioFadeTimerRef.current = window.setTimeout(() => setStudioFade(false), 1000)
+        }
+        studioCoverRef.current = covered
+        setStudioView(command.view)
+        return
+      }
+      if (command.type === 'studio_event') {
+        // A session that is starting or rolling over takes no studio event; report the drop (invariant 9).
+        if (realtimeRuntimeOwnerRef.current?.studioEvent?.(command.event, command.identity) !== true && bridge && 'reportRealtimeMetadata' in bridge) {
+          bridge.reportRealtimeMetadata({ kind: 'session', status: 'info', reason: 'studio_event_dropped' })
+        }
+        return
+      }
+      if (command.type === 'media_skill_state') {
+        realtimeRuntimeOwnerRef.current?.setMediaPlayback?.(command.active)
+        if (command.active) {
+          setAvatarSpeechActive(false)
+          ensureAvatarAudioCoordinator().handleActivity('interrupted')
+          avatarMediaControllerRef.current?.handleActivity('interrupted')
+        }
+        setMediaSkillState({ active: command.active, hideAvatar: command.hideAvatar, fadeMs: command.fadeMs })
         return
       }
       reportAvatarRuntime({ reason: `avatar_${command.type}_command_received` })
@@ -1166,24 +1345,37 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
   if (bridgeMissing) {
     return (
       <div className="screen screen--starting">
-        <p className="screen__title">Starting</p>
-        <p className="screen__detail">bridge_unavailable</p>
+        <p className="screen__title">魔鏡休息中</p>
+        <p className="screen__detail">請洽現場人員協助。</p>
       </div>
     )
   }
 
   if (view.state === 'offlineLoop') return <OfflineLoopScreen />
 
+  // The studio appears after the wake entrance, never over the entering ritual.
+  const studioShown = view.state === 'active' && presentationPhase === 'awake'
   if (avatarState !== null) {
     return (
-      <>
-        <PresentationStage payload={presentation} lifecycle={view.state} onPhase={setPresentationPhase}
+      <div className="mirror-presentation" data-mode={presentation.config.mode} data-phase={presentationPhase} data-loading={!presentationLoaded}
+        data-media-video={mediaSkillState.hideAvatar} data-studio-cover={studioShown && studioCoversAvatar(studioView)}
+        style={{ '--media-fade-ms': `${studioFade ? 900 : mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
+        <PresentationStage payload={presentation}
+          lifecycle={mediaSkillState.active && !mediaSkillState.hideAvatar ? 'active' : view.state} onPhase={phase => {
+          presentationPhaseRef.current = phase
+          setPresentationPhase(phase)
+          greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)
+        }}
+          speechActive={avatarSpeechActive} mediaActive={mediaSkillState.active}
+          mediaWithoutAudio={mediaSkillState.active && mediaSkillState.hideAvatar && localVideoHasAudio === false}
           onFailure={reason => {
             reportAvatarRuntime({ status: 'degraded', reason })
             const bridge = window.magicMirror
             if (bridge && 'reportRealtimeMetadata' in bridge) bridge.reportRealtimeMetadata({ kind: 'avatar', status: 'degraded', reason })
           }}>
         <AvatarCanvas
+          paused={mediaSkillState.hideAvatar || coverVisual || presentationPhase === 'inactive' || (studioShown && studioCoversAvatar(studioView))
+            || presentation.config.mode === 'reflective' && presentationPhase === 'asleep' && !mediaSkillState.active}
           model={presentation.model}
           state={presentationPhase === 'entering' ? 'Waking' : presentationPhase === 'exiting' ? 'Suspending' : avatarState}
           forceFallback={avatarFallbackInjected}
@@ -1233,15 +1425,21 @@ export function App({ interruptComposition }: AppProps = {}): React.JSX.Element 
         <div
           className="scene-visual"
           aria-hidden="true"
-          ref={(host) => {
-            sceneVisualHostRef.current = host
-            const media = presentedSceneVisualRef.current
-            if (host !== null && media !== null) host.replaceChildren(media as unknown as Node)
-          }}
+          ref={attachSceneVisual}
         />
-      </>
+        {coverVisual && !mediaSkillState.active && view.state === 'active' && <div className="scene-conversation" role="status" lang="zh-Hant">
+          <span aria-hidden="true">{avatarSpeechActive ? '◉' : '◇'}</span>{avatarSpeechActive ? '渡鴉正在說話' : '渡鴉在聽'}
+        </div>}
+        {scenePlaying && view.state === 'active' && <div className="scene-conversation scene-conversation--spell" role="status" lang="zh-Hant">
+          ◇ 施法中
+        </div>}
+        {toolWorking && view.state === 'active' && <div className="mirror-working" role="status" aria-label="Working"><span aria-hidden="true">✧</span></div>}
+        {studioShown && <PortraitStudioLayer view={studioView} />}
+      </div>
     )
   }
+
+  if (view.state === 'starting') return <div className="screen screen--loading" data-state="starting" aria-label="Mirror loading" />
 
   return (
     <div className={view.className} data-state={view.state}>

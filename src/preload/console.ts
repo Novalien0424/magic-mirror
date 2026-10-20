@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { StudioConsoleCommand } from '../shared/portrait-studio'
 import type { AppSnapshot, ManagedMusicAsset, ManagedVisualAsset, PendingVisualAsset, SceneStartResult, SceneStatusEvent, SimulatorCommand, SimulatorResult, VisualAssetProbe } from '../shared/types'
 import type {
   ConsoleConfigDraftInput,
@@ -52,8 +53,12 @@ const FINALIZE_VISUAL_CHANNEL = 'console:finalize-visual' as const
 const CANCEL_VISUAL_CHANNEL = 'console:cancel-visual' as const
 
 const bridge: ConsoleBridge = {
+  loopVideo: command => ipcRenderer.invoke('console:loop-video', command),
+  memory: request => ipcRenderer.invoke('console:memory', request),
+  wakeCalibration: command => ipcRenderer.invoke('console:wake-calibration', command),
   acquireVoicePreview(request) { return ipcRenderer.invoke('console:voice-preview-acquire', request) },
   releaseVoicePreview(token) { return ipcRenderer.invoke('console:voice-preview-release', token) },
+  cancelPendingVoicePreview() { return ipcRenderer.invoke('console:voice-preview-cancel-pending') },
   onVoicePreviewCancelled(listener) {
     const handler = (_event: IpcRendererEvent, reason: string): void => listener(reason)
     ipcRenderer.on('console:voice-preview-cancelled', handler)
@@ -64,6 +69,9 @@ const bridge: ConsoleBridge = {
   saveAvatarModelLabel(request) { return ipcRenderer.invoke('console:save-avatar-model-label', request) },
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>> {
     return ipcRenderer.invoke('console:load-avatar', id)
+  },
+  deleteAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke('console:delete-avatar', id)
   },
   notifyReady(): void {
     ipcRenderer.send(READY_CHANNEL)
@@ -174,6 +182,9 @@ const bridge: ConsoleBridge = {
   importMedia(request) {
     return ipcRenderer.invoke('console:import-media', request)
   },
+  mediaFolders(request) {
+    return ipcRenderer.invoke('console:media-folders', request)
+  },
 
   uploadVisual(): Promise<ConsoleResponse<PendingVisualAsset | null>> {
     return ipcRenderer.invoke(UPLOAD_VISUAL_CHANNEL) as Promise<ConsoleResponse<PendingVisualAsset | null>>
@@ -191,4 +202,15 @@ const bridge: ConsoleBridge = {
   },
 }
 
+bridge.checkCamera = () => ipcRenderer.invoke('console:check-camera')
+bridge.memoryImport = request => ipcRenderer.invoke('console:memory-import', request)
+// Inlined on purpose: a runtime import shared with the Mirror preload becomes a
+// Rollup chunk that sandboxed preloads cannot require. Main validates again.
+const studioConsoleCommand = (value: unknown): value is StudioConsoleCommand => !!value && typeof value === 'object' && !Array.isArray(value)
+  && (Object.keys(value).length === 1 && ['status', 'start', 'exit', 'test'].includes((value as { action?: unknown }).action as string)
+    || Object.keys(value).length === 2 && (value as { action?: unknown }).action === 'mode'
+      && ['conversation', 'studio'].includes((value as { mode?: unknown }).mode as string))
+bridge.studio = command => studioConsoleCommand(command)
+  ? ipcRenderer.invoke('console:studio', command)
+  : Promise.resolve({ ok: false, error: 'console_request_invalid', reason: 'cause=payload_schema_invalid' } as never)
 contextBridge.exposeInMainWorld('magicMirror', bridge)

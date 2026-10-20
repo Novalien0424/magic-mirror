@@ -13,6 +13,7 @@ import {
   type ConfigSlot,
 } from '../../src/main/config-service'
 import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/types'
+import { avatarCatalogFor, projectActiveAvatar } from '../../src/shared/avatar-profiles'
 
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
@@ -399,6 +400,44 @@ afterEach(async () => {
 })
 
 describe('ConfigService contract', () => {
+  it('emits config_loaded once for repeated reads and again after published version changes', async () => {
+    const h = makeMemoryHarness()
+    seedSlots(h, 'mock-config', baseConfig(), baseConfig())
+    const service = h.service()
+    await service.read(); await service.read(); await service.read()
+    expect(h.events.filter(event => event.event === 'config_loaded')).toHaveLength(1)
+    await service.publish()
+    await service.read()
+    expect(h.events.filter(event => event.event === 'config_loaded')).toHaveLength(2)
+  })
+  it.each([false, true])('deletes one inactive avatar in both slots, preserves other drafts and compensates a write failure (%s)', async (fail) => {
+    const harness = makeMemoryHarness()
+    const catalog = avatarCatalogFor(baseConfig())
+    catalog.avatars[0].voice = 'coral'
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]), id: 'copy', name: 'Copy' })
+    const active = projectActiveAvatar({ ...baseConfig(), avatarCatalog: catalog })
+    const draft = structuredClone(active)
+    draft.avatarCatalog.avatars[0].name = 'Unpublished name'
+    const projectedDraft = projectActiveAvatar(draft)
+    seedSlots(harness, 'mock-config', active, projectedDraft)
+    const service = harness.service()
+    const before = await service.read()
+    if (fail) harness.writer.failWrites.add(harness.writer.writeCount + 2)
+    if (fail) {
+      await expect(service.deleteAvatar('copy')).rejects.toMatchObject({ code: 'config_write_failed' })
+      expect(await service.read()).toEqual(before)
+    } else {
+      await service.deleteAvatar('copy')
+      const after = await service.read()
+      expect(after.active.avatarCatalog?.avatars.map(a => a.id)).toEqual(['default-avatar'])
+      expect(after.draft.avatarCatalog?.avatars.map(a => a.id)).toEqual(['default-avatar'])
+      expect(after.draft.persona.name).toBe('Unpublished name')
+      expect(after.active.persona.name).toBe(active.persona.name)
+      expect(after.active.visualAssets).toEqual(before.active.visualAssets)
+      expect(after.previous).toEqual(before.active)
+      await expect(service.deleteAvatar('default-avatar')).rejects.toMatchObject({ code: 'config_schema_invalid' })
+    }
+  })
   it('validates the strict core without deciding auxiliary Phase 4 shape', () => {
     expect(mirrorConfigSchema.safeParse(baseConfig()).success).toBe(true)
     expect(
@@ -434,7 +473,7 @@ describe('ConfigService contract', () => {
     expect(resource.schemaVersion).not.toBe(resource.configVersion)
     expect(resource).toEqual({
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      configVersion: 7,
+      configVersion: 8,
       persona: {
         name: 'mock-persona-v1',
         instructions: 'mock-persona-instructions-v1',
@@ -446,7 +485,7 @@ describe('ConfigService contract', () => {
       aiModels: {
         realtimeDialogue: { modelId: 'gpt-realtime-2.1-mini' },
         inputTranscription: { modelId: 'gpt-live-transcribe' },
-        memoryExtractor: { modelId: 'gpt-5.6-luna' },
+        memoryExtractor: { modelId: 'gpt-6.1-sol' },
       },
       wake: {
         phrase: '魔鏡阿魔鏡',
@@ -497,7 +536,7 @@ describe('ConfigService contract', () => {
     const aiModels = resource.aiModels as Record<string, { modelId: string }>
     expect(aiModels.realtimeDialogue.modelId).toBe('gpt-realtime-2.1-mini')
     expect(aiModels.inputTranscription.modelId).toBe('gpt-live-transcribe')
-    expect(aiModels.memoryExtractor.modelId).toBe('gpt-5.6-luna')
+    expect(aiModels.memoryExtractor.modelId).toBe('gpt-6.1-sol')
     expect(Object.values(aiModels).every(({ modelId }) => !modelId.startsWith('mock-'))).toBe(true)
     const production = await Promise.all([
       readFile(resolve(process.cwd(), 'src/main/config-service.ts'), 'utf8'),

@@ -1,0 +1,35 @@
+{
+  "Created": "2026-09-09T06:44:57.5383578+08:00",
+  "KeepVersions": [
+    "v7",
+    "v8",
+    "v10"
+  ],
+  "Delete": [
+    {
+      "Path": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\outputs\\raven-lord-v09",
+      "Bytes": 88388802.0
+    },
+    {
+      "Path": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\outputs\\raven-lord-v09-complete.zip",
+      "Bytes": 85890023
+    },
+    {
+      "Path": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\outputs\\raven-lord-v09-runtime.zip",
+      "Bytes": 3538279
+    },
+    {
+      "Path": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\outputs\\raven-lord-backups\\v09-before-expression-revision-20260908T234209",
+      "Bytes": 89431295.0
+    },
+    {
+      "Path": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\work\\raven-lord-v09\\runtime-native-check-01",
+      "Bytes": 3683070.0
+    }
+  ],
+  "PreserveQaAt": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\work\\raven-lord-v10\\prior-v09-qa",
+  "RetainedFilesVerified": 129,
+  "Executed": true,
+  "FreedBytes": 270931469.0,
+  "RetainedHashesUnchanged": true
+}

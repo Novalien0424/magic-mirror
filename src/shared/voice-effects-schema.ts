@@ -9,7 +9,10 @@ const voiceEffectsShape = {
   brightnessDb: z.number().finite().min(-6).max(6),
   grit: z.number().finite().min(0).max(0.3),
   roomMix: z.number().finite().min(0).max(0.25),
-  roomSize: z.enum(['short', 'medium']),
+  roomSize: z.enum(['short', 'medium', 'hall', 'cathedral']),
+  echoMix: z.number().finite().min(0).max(0.3).default(0),
+  echoDelayMs: z.number().finite().min(60).max(500).default(220),
+  echoRepeats: z.number().int().min(1).max(4).default(2),
   outputTrimDb: z.number().finite().min(-18).max(0),
 } as const
 

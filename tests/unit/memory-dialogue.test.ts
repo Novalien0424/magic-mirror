@@ -1,0 +1,166 @@
+import { describe, it, expect, vi } from 'vitest'
+import { MemoryDialogue } from '../../src/renderer/realtime/memory-dialogue'
+import { buildMemoryState, buildMemoryQuestion, buildMemoryAcknowledgment } from '../../src/shared/realtime-prompts'
+function setup() {
+  const sent: any[] = [], receipt = vi.fn(async (_phase: string, _token: string, _text: string) => ({ status: 'accepted' as const, code: 'memory_question_delivered' }))
+  const failed = vi.fn(), tail = vi.fn(async () => {}), report = vi.fn()
+  const dialogue = new MemoryDialogue({ send: e => sent.push(e), baseInstructions: 'Persona', turnDetection: { type: 'semantic_vad', interrupt_response: true },
+    speakingStyle: '', input: receipt, tail, interrupt: vi.fn(async () => {}), failed, report })
+  const ack = () => { const e = sent.filter(e => e.type === 'session.update').at(-1); dialogue.event({ type: 'session.updated', session: e.session }) }
+  const tick = async () => { for (let i = 0; i < 15; i++) await Promise.resolve() }
+  return { dialogue, sent, receipt, failed, tail, report, ack, tick }
+}
+describe('ordered memory dialogue', () => {
+  it('accepts one answer after the output tail while the delivery receipt is pending', async () => {
+    const p = setup()
+    let finishReceipt!: (reply: { status: 'accepted'; code: string }) => void
+    p.receipt.mockImplementationOnce(() => new Promise(resolve => { finishReceipt = resolve }))
+    const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    p.dialogue.speech('answer')
+    await p.dialogue.answer('answer', { status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] })
+    expect(p.failed).not.toHaveBeenCalled()
+    expect(p.sent.filter(e => e.type === 'session.update')).toHaveLength(1)
+    finishReceipt({ status: 'accepted', code: 'memory_question_delivered' }); await p.tick()
+    expect(p.sent.filter(e => e.type === 'session.update')).toHaveLength(2)
+    p.ack(); await p.tick()
+    expect(p.report).toHaveBeenCalledWith('memory_brief_installed')
+    p.dialogue.close()
+  })
+  it('still rejects speech while the processed question tail is playing', async () => {
+    const p = setup(); p.tail.mockImplementationOnce(() => new Promise(() => {}))
+    const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    p.dialogue.speech('early')
+    expect(p.failed).toHaveBeenCalledOnce()
+    expect(p.receipt.mock.calls.some(c => c[0] === 'question_played')).toBe(false)
+    p.dialogue.close()
+  })
+  it('uses the selected disclosure language for both question and policy acknowledgment', () => {
+    expect(buildMemoryQuestion('小林', 'zh-TW')).toBe('你是小林嗎？')
+    expect(buildMemoryAcknowledgment({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'explicit', language: 'zh-TW' }, '').instructions).toContain('你特別交代的事，我才會記下。')
+  })
+  it('projects all policy modes with no row identifiers, including empty and temporary contexts', () => {
+    for (const mode of ['automatic', 'explicit', 'off'] as const) {
+      const text = buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode, entries: [] })
+      expect(text).toContain('Identity: verbally confirmed')
+      expect(text.toLowerCase()).toContain(mode === 'explicit' ? 'explicit-only' : mode)
+    }
+    const text = buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'off', temporary: true,
+      entries: [{ id: 'private-row-id', topic: 'Plan', text: 'Tentative plan', state: 'active', updatedAt: '' }] })
+    expect(text).toContain('Temporary encounter'); expect(text).not.toContain('private-row-id')
+  })
+  it('bounds missing acknowledgments and rejects a late acknowledgment after close', async () => {
+    vi.useFakeTimers()
+    try {
+      const p = setup(); const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' })
+      await vi.advanceTimersByTimeAsync(3001); await ask
+      expect(p.failed).toHaveBeenCalledOnce()
+      p.ack(); await p.tick()
+      expect(p.sent.some(e => e.type === 'response.create')).toBe(false)
+      expect(p.receipt.mock.calls.some(c => c[0] === 'question_played')).toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+  it('waits for matching configuration and actual matching question playback before arming Main', async () => {
+    const p = setup(); const started = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' })
+    p.dialogue.event({ type: 'session.updated', session: { instructions: 'old' } })
+    expect(p.sent.some(e => e.type === 'response.create')).toBe(false)
+    p.ack(); await started
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    await p.tick(); expect(p.receipt).not.toHaveBeenCalled()
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'unrelated' })
+    await p.tick(); expect(p.receipt).not.toHaveBeenCalled()
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    expect(p.tail).toHaveBeenCalledOnce()
+    expect(p.receipt).toHaveBeenCalledWith('question_played', 'q', 'Are you Alex?')
+    p.dialogue.close()
+  })
+  it('synchronizes empty-memory policy before exactly one follow-up and ignores duplicate acknowledgments', async () => {
+    const p = setup(); const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+    p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+    p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+    p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+    p.dialogue.speech('answer')
+    const done = p.dialogue.answer('answer', { status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] })
+    expect(p.sent.filter(e => e.type === 'response.create')).toHaveLength(1)
+    expect(JSON.stringify(p.sent.at(-1))).toContain('Automatic:')
+    p.ack(); await done; p.ack()
+    expect(p.sent.filter(e => e.type === 'response.create')).toHaveLength(2)
+    p.dialogue.close()
+  })
+  it('binds confirmation to the speech-start item and ignores late unrelated ASR', async () => {
+    const p = setup(); const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+    try {
+      p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+      p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+      p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+      p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+      p.dialogue.speech('answer')
+      // A delayed earlier completion cannot install an unconfirmed state.
+      void p.dialogue.answer('earlier', { status: 'rejected', code: 'memory_confirmation_stale' })
+      await p.tick()
+      expect(p.sent.filter(e => e.type === 'session.update')).toHaveLength(1)
+      expect(p.report).toHaveBeenCalledWith('memory_input_unavailable')
+      const done = p.dialogue.answer('answer', { status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] })
+      p.ack(); await done
+      expect(p.report).toHaveBeenCalledWith('memory_brief_installed')
+      expect(p.failed).not.toHaveBeenCalled()
+      expect(p.sent.filter(e => e.type === 'response.create')).toHaveLength(2)
+    } finally { p.dialogue.close() }
+  })
+  it('never reports mismatched, cancelled or interrupted questions as delivered', async () => {
+    for (const reason of ['mismatch', 'cancelled', 'interrupted']) {
+      const p = setup(); const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+      p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+      p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+      if (reason === 'interrupted') p.dialogue.speech('interruption')
+      p.dialogue.event({ type: 'response.done', response: { id: 'r', status: reason === 'cancelled' ? 'cancelled' : 'completed', output: [{ content: [{ transcript: reason === 'mismatch' ? 'Would you like to talk?' : 'Are you Alex?' }] }] } })
+      p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+      expect(p.receipt.mock.calls.some(c => c[0] === 'question_played')).toBe(false)
+      expect(p.failed).toHaveBeenCalledOnce()
+      p.dialogue.close()
+    }
+  })
+  it('bounds missing answer transcription and cancels on media ownership changes', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const media of [false, true]) {
+        const p = setup(); const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+        p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+        p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+        p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+        p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+        if (media) p.dialogue.cancel()
+        else { p.dialogue.speech('answer'); await vi.advanceTimersByTimeAsync(20001) }
+        expect(p.failed).toHaveBeenCalledOnce(); expect(p.dialogue.active).toBe(false)
+      }
+    } finally { vi.useRealTimers() }
+  })
+  it('allows spoken-answer and ASR time before Main finishes its bounded interpretation', async () => {
+    vi.useFakeTimers()
+    const p = setup()
+    try {
+      const ask = p.dialogue.ask({ token: 'q', text: 'Are you Alex?' }); p.ack(); await ask
+      p.dialogue.event({ type: 'response.created', response: { id: 'r', metadata: { mirror_memory_question: 'q' } } })
+      p.dialogue.event({ type: 'output_audio_buffer.started', response_id: 'r' })
+      p.dialogue.event({ type: 'response.done', response: { id: 'r', status: 'completed', output: [{ content: [{ transcript: 'Are you Alex?' }] }] } })
+      p.dialogue.event({ type: 'output_audio_buffer.stopped', response_id: 'r' }); await p.tick()
+      p.dialogue.speech('answer')
+      await vi.advanceTimersByTimeAsync(12000)
+      expect(p.failed).not.toHaveBeenCalled()
+      const answer = p.dialogue.answer('answer', { status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] })
+      p.ack(); await answer
+      expect(p.report).toHaveBeenCalledWith('memory_brief_installed')
+      expect(p.failed).not.toHaveBeenCalled()
+    } finally { p.dialogue.close(); vi.useRealTimers() }
+  })
+})

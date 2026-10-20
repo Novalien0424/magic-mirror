@@ -146,11 +146,15 @@ function adaptRealtimeAudioOutput(
   return Object.freeze({
     audioElement: output.audioElement,
     analyser,
+    setMuted: (muted: boolean) => output.setMuted(muted),
     dispose,
   })
 }
 
 export interface CreateRealtimeRuntimeOwnerDependenciesInput {
+  readonly onMemory?: CreateRealtimeSessionInput['onMemory']
+  readonly onMemoryInput?: CreateRealtimeSessionInput['onMemoryInput']
+  readonly onMemoryReset?: CreateRealtimeSessionInput['onMemoryReset']
   readonly onAudioDegraded?: (reason: string) => void
   readonly audioDevices?: AudioDeviceRouter
   readonly eventSink: RealtimeRuntimeEventSink
@@ -159,7 +163,14 @@ export interface CreateRealtimeRuntimeOwnerDependenciesInput {
   readonly createCleanup: RealtimeRuntimeOwnerDependencies['createCleanup']
   readonly onFailure?: RealtimeFailureCallback
   readonly onReturnToDormant?: CreateRealtimeSessionInput['onReturnToDormant']
+  readonly onMediaRequest?: CreateRealtimeSessionInput['onMediaRequest']
+  readonly onFindMedia?: CreateRealtimeSessionInput['onFindMedia']
+  readonly onSearchYoutube?: CreateRealtimeSessionInput['onSearchYoutube']
+  readonly onCameraCapture?: CreateRealtimeSessionInput['onCameraCapture']
+  readonly onStudioRequest?: CreateRealtimeSessionInput['onStudioRequest']
+  readonly prepareStudioImage?: CreateRealtimeSessionInput['prepareStudioImage']
   readonly getAvatarDialogue?: () => Promise<{ wakeGreeting?: string; sleepFarewell?: string }>
+  readonly waitForWakePresentation?: CreateRealtimeSessionInput['waitForWakePresentation']
   readonly onAudioActivity?: CreateRealtimeSessionInput['onAudioActivity']
   readonly mediaDevices?: Pick<MediaDevices, 'getUserMedia'>
   readonly createSession?: (
@@ -279,9 +290,18 @@ export function createRealtimeRuntimeOwnerDependencies(
       }
 
       const dialogue = bundle.avatar ?? await input.getAvatarDialogue?.()
+      const availableDevices = input.mediaDevices ?? (typeof navigator === 'undefined' ? undefined : navigator.mediaDevices)
+      const recoveryDevices = availableDevices && 'enumerateDevices' in availableDevices
+        && 'addEventListener' in availableDevices && 'removeEventListener' in availableDevices
+        ? availableDevices as MediaDevices : undefined
       return sessionFactory({
+        ...(recoveryDevices ? { microphoneRecovery: {
+          mediaDevices: recoveryDevices,
+          getConstraints: () => input.audioDevices?.inputConstraints() ?? Promise.resolve(true as const),
+        } } : {}),
         ...(bundle.avatar ? { avatar: bundle.avatar } : {}),
         ...(greet && dialogue?.wakeGreeting !== undefined ? { wakeGreeting: dialogue.wakeGreeting } : {}),
+        ...(greet && input.waitForWakePresentation ? { waitForWakePresentation: input.waitForWakePresentation } : {}),
         ...(dialogue?.sleepFarewell !== undefined ? { sleepFarewell: dialogue.sleepFarewell } : {}),
         snapshot: bundle.snapshot,
         clientSecret: bundle.clientSecret,
@@ -292,6 +312,16 @@ export function createRealtimeRuntimeOwnerDependencies(
         eventSink: input.sessionEventSink,
         onFailure: input.onFailure,
         onReturnToDormant: input.onReturnToDormant,
+        onMediaRequest: input.onMediaRequest,
+        onFindMedia: input.onFindMedia,
+        onSearchYoutube: input.onSearchYoutube,
+        onCameraCapture: input.onCameraCapture,
+        onStudioRequest: input.onStudioRequest,
+        prepareStudioImage: input.prepareStudioImage,
+        onMemory: input.onMemory,
+        onMemoryInput: input.onMemoryInput,
+        onMemoryReset: input.onMemoryReset,
+        waitForOutputTail: async () => { await outputs.get(audioElement)?.waitForTail?.() },
         onAudioActivity: activity => {
           const output = outputs.get(audioElement)
           const notify = input.onAudioActivity ?? (() => undefined)

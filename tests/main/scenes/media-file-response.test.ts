@@ -15,5 +15,6 @@ it('serves exact byte ranges and rejects unsatisfiable requests without sending 
   const invalid = await serveMediaFile(new Request('http://local/', { headers: { Range: 'bytes=15-' } }), path, 'video/mp4')
   expect(invalid.status).toBe(416); expect(invalid.headers.get('Content-Range')).toBe('bytes */10')
   const head = await serveMediaFile(new Request('http://local/', { method: 'HEAD' }), path, 'video/mp4')
+  expect(head.headers.get('Cache-Control')).toBe('no-store')
   expect(head.headers.get('Content-Length')).toBe('10'); expect(await head.text()).toBe('')
 })

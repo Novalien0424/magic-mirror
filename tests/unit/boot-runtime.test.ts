@@ -1,18 +1,33 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { bootSequence } from '../../src/main/boot'
+import { createConfigService, type ConfigService } from '../../src/main/config-service'
+import type { MirrorConfig } from '../../src/shared/types'
+import { avatarCatalogFor } from '../../src/shared/avatar-profiles'
+import type { ConsoleConfigDiff } from '../../src/shared/console-types'
 
 type ProbeStatus = 'available' | 'unavailable'
 
 interface TestRuntimeOptions {
+  readonly operatorLoopActive?: () => boolean
+  readonly currentMirrorMode?: () => 'conversation' | 'studio'
+  readonly configService?: ConfigService
+  readonly useRealResolution?: boolean
+  readonly onFatalFailure?: (reason: string) => void
+  readonly rebuildWakeOwner?: () => Promise<{ status: 'success' | 'failed'; reason: string }>
+  readonly read?: () => Promise<unknown>
+  readonly completeSleepForDemo?: boolean
   readonly clientSecretBroker?: {
+    issue?(request: unknown): Promise<unknown>
     probeModelAvailability(request: { readonly modelId: string }): Promise<{ readonly status: ProbeStatus }>
   }
   readonly realtimeDialogue?: unknown
+  readonly openSqlite?: () => unknown
   readonly initialize?: () => Promise<unknown>
   readonly wake?: { readonly phrase: string; readonly modelVersion: string; readonly packageId: string }
   readonly wakeMicrophoneHandoff?: {
     release(): Promise<{ readonly status: 'success' | 'failed'; readonly reason: string }>
-    acquire(): Promise<{ readonly status: 'success' | 'failed'; readonly reason: string }>
+    acquire(): Promise<{ readonly status: 'success' | 'failed' | 'degraded'; readonly reason: string }>
   }
   readonly dispatchRealtimeRuntimeCommand?: (command: { readonly operation: string }) => {
     readonly status: 'success'
@@ -24,19 +39,26 @@ interface TestRuntimeOptions {
 }
 
 function createTestRuntime(options: TestRuntimeOptions = {}) {
+  let session = 0
   const runtime = bootSequence({
+    operatorLoopActive: options.operatorLoopActive,
+    currentMirrorMode: options.currentMirrorMode,
+    onFatalFailure: options.onFatalFailure,
+    rebuildWakeOwner: options.rebuildWakeOwner,
+    createRealtimeSessionId: () => `session-${++session}`,
+    completeSleepForDemo: options.completeSleepForDemo,
     isPackaged: options.isPackaged,
     createTelemetry: () => ({
       emit() {},
-      readPage: () => [],
+      readPage: () => ({ events: [], nextBeforeSequence: null }),
       flush: async () => {},
       close: async () => {},
     } as never),
-    configService: {
+    configService: options.configService ?? {
       initialize: options.initialize ?? (async () => ({ active: { wake: options.wake } })),
-      read: async () => ({ active: { wake: options.wake } }),
+      read: options.read ?? (async () => ({ active: { wake: options.wake } })),
     } as never,
-    resolveModelSettings: () => ({
+    resolveModelSettings: options.useRealResolution ? undefined : () => ({
       active: {
         slot: 'active',
         configVersion: 1,
@@ -50,7 +72,7 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
       },
     } as never),
     clientSecretBroker: options.clientSecretBroker as never,
-    openSqlite: () => ({ close() {} } as never),
+    openSqlite: (options.openSqlite ?? (() => ({ close() {} }))) as never,
     createMockModuleFactory: () => ({ create: () => ({}) } as never),
     createModuleRegistry: () => ({
       getStatus: () => 'not_implemented',
@@ -64,6 +86,7 @@ function createTestRuntime(options: TestRuntimeOptions = {}) {
     })),
     scheduleRealtimeTimer: options.scheduleRealtimeTimer,
     cancelRealtimeTimer: options.cancelRealtimeTimer,
+    mockDraftProbe: async () => ({ result: 'mock_passed', reason: 'cause=all_configured_ids_observed' }),
   })
   return runtime
 }
@@ -74,7 +97,299 @@ async function startRuntime(runtime: ReturnType<typeof createTestRuntime>): Prom
   expect(result).toEqual({ status: 'success', reason: 'runtime_command_delivered' })
 }
 
+afterEach(() => vi.useRealTimers())
+
+describe('operator loop lifecycle ownership', () => {
+  it('blocks manual and wake activation while operator playback owns the surface', async () => {
+    let loop = true
+    const dispatch = vi.fn(() => ({ status: 'success' as const, reason: 'runtime_command_delivered' as const }))
+    const runtime = createTestRuntime({ operatorLoopActive: () => loop, dispatchRealtimeRuntimeCommand: dispatch })
+    await runtime.ready
+    expect(await runtime.manualStart()).toMatchObject({ status: 'ignored', reason: 'operator_loop_active' })
+    await runtime.handleSimulator({ type: 'wake' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    expect(dispatch).not.toHaveBeenCalled()
+    loop = false
+    await startRuntime(runtime)
+    expect(runtime.snapshot().lifecycle).toBe('activating')
+    await runtime.shutdown()
+  })
+  it.each([false, true])('waits for renderer stop when replacing an active=%s session', async connected => {
+    let loop = false
+    const commands: string[] = []
+    const runtime = createTestRuntime({ operatorLoopActive: () => loop, dispatchRealtimeRuntimeCommand: command => {
+      commands.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' }
+    } })
+    await startRuntime(runtime)
+    if (connected) await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    loop = true
+    await runtime.suspendForOperatorLoop?.()
+    expect(runtime.snapshot().lifecycle).toBe('suspending')
+    expect(commands).toEqual(['start', 'stop'])
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    await runtime.shutdown()
+  })
+})
+
+describe('Main lifecycle remediation', () => {
+  const success = { status: 'success' as const, reason: 'synthetic_ready' }
+  async function active(options: TestRuntimeOptions = {}) {
+    const runtime = createTestRuntime(options)
+    await startRuntime(runtime)
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    return runtime
+  }
+  it.each(['config', 'sqlite'] as const)('keeps persistent %s faults in stable Maintenance with Console available', async failure => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success)
+    const runtime = createTestRuntime({ onFatalFailure: fatal, rebuildWakeOwner: rebuild,
+      ...(failure === 'config' ? { initialize: async () => { throw Error('synthetic_invalid_config') } }
+        : { openSqlite: () => ({ ok: false, error: { code: 'sqlite_open_failed', reason: 'open_failed' } }) }) })
+    await runtime.ready
+    const original = runtime.snapshot()
+    expect(original.lifecycle).toBe('maintenance')
+    runtime.handleMirrorRendererGone()
+    await runtime.handleMirrorRendererReady()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'maintenance', lastError: original.lastError, maintenance: original.maintenance })
+    expect(runtime.console.getOverview().ok).toBe(true)
+    expect(fatal).not.toHaveBeenCalled()
+    expect(rebuild).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it('treats activation timeout as cloud failure only after renderer stop, without using the audio retry', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success), acquire = vi.fn(async () => success), commands: string[] = []
+    const runtime = createTestRuntime({ onFatalFailure: fatal, rebuildWakeOwner: rebuild,
+      wakeMicrophoneHandoff: { release: async () => success, acquire },
+      dispatchRealtimeRuntimeCommand: command => { commands.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' } } })
+    await startRuntime(runtime)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(commands).toEqual(['start', 'stop'])
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'activating', maintenance: null,
+      lastError: { module: 'openai', error_code: 'realtime_activation_timeout' } })
+    expect(acquire).not.toHaveBeenCalled()
+    expect(runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'late_connected' })).toMatchObject({ status: 'ignored' })
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'offlineLoop', maintenance: null,
+      lastError: { module: 'openai', error_code: 'realtime_activation_timeout' } })
+    expect(rebuild).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(commands).toEqual(['start', 'stop'])
+    // A subsequent real stop failure still has its one audio recovery attempt.
+    await runtime.handleSimulator({ type: 'cloud_recovery' })
+    await runtime.manualStart()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    await runtime.manualStop()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'stop_cleanup_failed' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(commands.slice(-2)).toEqual(['stop', 'stop'])
+    expect(fatal).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it.each(['audio', 'renderer'] as const)('lets a persistent core fault supersede pending %s recovery', async mode => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success)
+    const runtime = await active({ onFatalFailure: fatal, rebuildWakeOwner: rebuild })
+    if (mode === 'renderer') runtime.handleMirrorRendererGone()
+    else {
+      await runtime.manualStop()
+      await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'synthetic_stop_failure' })
+    }
+    await runtime.handleSimulator({ type: 'sqlite_failure' })
+    await runtime.handleMirrorRendererReady()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'maintenance', lastError: { error_code: 'sqlite_open_failed' } })
+    expect(fatal).not.toHaveBeenCalled()
+    expect(rebuild).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it.each(['failed', 'ignored'] as const)('closes the old renderer after %s rollover before wake acquires', async status => {
+    const calls: string[] = []
+    const runtime = await active({ wakeMicrophoneHandoff: {
+      release: async () => success, acquire: async () => { calls.push('wake_acquire'); return success },
+    }, dispatchRealtimeRuntimeCommand: command => { calls.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' } } })
+    await runtime.rolloverAtSafeBoundary()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'rollover', status, reason: 'rollover_setup_failed' })
+    expect(runtime.snapshot().lifecycle).toBe('suspending')
+    expect(calls).toEqual(['start', 'rollover', 'stop'])
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'ignored', reason: 'stop_no_active_session' })
+    expect(calls).toEqual(['start', 'rollover', 'stop', 'wake_acquire'])
+    expect(runtime.snapshot().lifecycle).toBe('offlineLoop')
+    expect(runtime.snapshot().realtimeSessionId).toBeNull()
+    await runtime.shutdown()
+  })
+  it('clears renderer authority and playback timers, then waits for replacement readiness', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), acquire = vi.fn(async () => success)
+    const runtime = await active({ onFatalFailure: fatal, wakeMicrophoneHandoff: { release: async () => success, acquire } })
+    runtime.noteRealtimeActivity('assistant_playback_started', runtime.snapshot().realtimeSessionId!)
+    runtime.handleMirrorRendererGone()
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'maintenance', realtimeSessionId: null })
+    await expect(runtime.requestRealtimeClientSecret()).rejects.toMatchObject({ code: 'realtime_session_unavailable' })
+    expect(acquire).not.toHaveBeenCalled()
+    await runtime.handleMirrorRendererReady()
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fatal).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it('exits through the configured supervisor boundary if renderer readiness never returns', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), runtime = await active({ onFatalFailure: fatal })
+    runtime.handleMirrorRendererGone()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(fatal).toHaveBeenCalledExactlyOnceWith('maintenance_recovery_exhausted')
+    await runtime.shutdown()
+  })
+  it('keeps authority closed when the renderer crashes before boot finishes', async () => {
+    vi.useFakeTimers()
+    let finishConfig!: (value: unknown) => void
+    const acquire = vi.fn(async () => success), fatal = vi.fn()
+    const runtime = createTestRuntime({ onFatalFailure: fatal,
+      initialize: () => new Promise(resolve => { finishConfig = resolve }),
+      wakeMicrophoneHandoff: { release: async () => success, acquire } })
+    runtime.handleMirrorRendererGone()
+    finishConfig({ active: {} })
+    await runtime.ready
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+    expect(acquire).not.toHaveBeenCalled()
+    await runtime.handleMirrorRendererReady()
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    expect(acquire).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(fatal).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it('retries an audio owner once after a closed renderer receipt and sends RETRY_STARTUP', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => success), acquire = vi.fn(async () => success), commands: string[] = []
+    const runtime = await active({ onFatalFailure: fatal, rebuildWakeOwner: rebuild,
+      wakeMicrophoneHandoff: { release: async () => success, acquire },
+      dispatchRealtimeRuntimeCommand: command => { commands.push(command.operation); return { status: 'success', reason: 'runtime_command_delivered' } } })
+    const states: string[] = []
+    runtime.subscribe(snapshot => states.push(snapshot.lifecycle))
+    await runtime.manualStop()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'stop_cleanup_failed' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(commands).toEqual(['start', 'stop', 'stop'])
+    expect(rebuild).not.toHaveBeenCalled()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(rebuild).toHaveBeenCalledOnce()
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(states).toContain('starting')
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(fatal).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
+  it('bounds an unsuccessful owner rebuild and cancels recovery on shutdown', async () => {
+    vi.useFakeTimers()
+    const fatal = vi.fn(), rebuild = vi.fn(async () => ({ status: 'failed' as const, reason: 'synthetic_failed' }))
+    const runtime = await active({ onFatalFailure: fatal, rebuildWakeOwner: rebuild })
+    await runtime.manualStop()
+    runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'failed', reason: 'stop_cleanup_failed' })
+    await vi.advanceTimersByTimeAsync(1000)
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'ignored', reason: 'stop_no_active_session' })
+    await vi.advanceTimersByTimeAsync(14_000)
+    expect(fatal).toHaveBeenCalledOnce()
+    expect(rebuild).toHaveBeenCalledOnce()
+    await runtime.shutdown()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fatal).toHaveBeenCalledOnce()
+  })
+  it('lets a confirmed unowned unavailable wake module degrade after a closed conversation', async () => {
+    const runtime = await active({ wakeMicrophoneHandoff: { release: async () => success,
+      acquire: async () => ({ status: 'degraded', reason: 'wake_worker_unavailable' }) } })
+    await runtime.setWakeRuntimeStatus('failed', 'wake_worker_unavailable')
+    await runtime.manualStop()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    expect(runtime.snapshot()).toMatchObject({ lifecycle: 'dormant', modules: { wake: 'failed' } })
+    await runtime.shutdown()
+  })
+  it('keeps a real acquire failure in Maintenance when cloud recovery timers fire', async () => {
+    vi.useFakeTimers()
+    const runtime = await active({ wakeMicrophoneHandoff: { release: async () => success,
+      acquire: async () => ({ status: 'failed', reason: 'wake_microphone_open_failed' }) } })
+    await runtime.handleRealtimeFailure({ kind: 'ice', realtimeSessionId: runtime.snapshot().realtimeSessionId!, reason: 'ice_failed' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(runtime.snapshot().lifecycle).toBe('maintenance')
+    await runtime.shutdown()
+  })
+  it('serves published public controls, scenes and model files without Console or disk reads', async () => {
+    const config = { wake: { phrase: 'synthetic-wake', modelVersion: 'v1', packageId: 'synthetic-package' },
+      spells: [{ phrase: 'synthetic-spell' }], visualAssets: [], musicAssets: [], sceneActions: [], scenes: [], adapters: {},
+      avatarCatalog: { activeAvatarId: 'synthetic-avatar', avatars: [{ id: 'synthetic-avatar', sleepPhrase: 'synthetic-sleep',
+        spells: [{ phrase: 'synthetic-avatar-spell' }] }], models: [{ id: 'model-test', files: ['model.json'] }] } }
+    const read = vi.fn(async () => ({ active: config, draft: config, previous: config }))
+    const runtime = createTestRuntime({ read, initialize: read })
+    await runtime.ready
+    const count = read.mock.calls.length
+    for (let i = 0; i < 20; i++) {
+      expect(runtime.getPublishedControlPhrasesForRuntime()).toEqual(['synthetic-spell', 'synthetic-avatar-spell', 'synthetic-sleep', 'synthetic-wake'])
+      expect(runtime.getAvatarModelForRuntime('model-test')?.files).toEqual(['model.json'])
+      expect((await runtime.getPublishedSceneConfigForRuntime()).wake.phrase).toBe('synthetic-wake')
+    }
+    expect(read).toHaveBeenCalledTimes(count)
+    await runtime.shutdown()
+  })
+  it('throws when control phrases are unavailable so the caller cannot extract control evidence', async () => {
+    const runtime = createTestRuntime()
+    await runtime.ready
+    expect(() => runtime.getPublishedControlPhrasesForRuntime()).toThrow('memory_control_phrases_unavailable')
+    await runtime.shutdown()
+  })
+  it('refreshes public caches for draft reads, publish and rollback while controls remain published', async () => {
+    const source = JSON.parse(readFileSync('resources/config/default.json', 'utf8')) as MirrorConfig
+    source.avatarCatalog = avatarCatalogFor(source)
+    const files = new Map<string, string>([['/synthetic-default.json', JSON.stringify(source)]])
+    const service = createConfigService({ configDir: '/synthetic-config', defaultConfigPath: '/synthetic-default.json',
+      files: { ensureDirectory: async () => {}, readText: async path => files.get(path) ?? null, remove: async path => { files.delete(path) } },
+      atomicWriter: { write: async (path, value) => { files.set(path, value) } }, events: { emit() {} } })
+    const runtime = createTestRuntime({ configService: service, useRealResolution: true })
+    await runtime.ready
+    const original = runtime.getPublishedControlPhrasesForRuntime()
+    const draft = structuredClone((await service.read()).draft)
+    draft.avatarCatalog!.avatars[0]!.sleepPhrase = 'synthetic-new-sleep'
+    draft.avatarCatalog!.models.push({ id: 'model-test', name: 'Synthetic', manifestFileName: 'test.model3.json', files: ['test.model3.json'] })
+    await service.saveDraft(draft)
+    const config = await runtime.console.getConfig()
+    expect(config.ok).toBe(true)
+    expect(runtime.getPublishedControlPhrasesForRuntime()).toEqual(original)
+    expect(runtime.getAvatarModelForRuntime('model-test')?.files).toEqual(['test.model3.json'])
+    const confirmation = (diff: ConsoleConfigDiff) => ({ operation: diff.operation, expectedActiveVersion: diff.expectedActiveVersion,
+      changedPaths: diff.changed.map(change => change.path).sort(), nonModelChanges: diff.nonModelChanges, confirmationDigest: diff.confirmationDigest })
+    expect((await runtime.console.testDraft()).ok).toBe(true)
+    if (!config.ok) throw Error('synthetic_config_unavailable')
+    const published = await runtime.console.publish(confirmation(config.value.publishDiff))
+    expect(published.ok).toBe(true)
+    expect(runtime.getPublishedControlPhrasesForRuntime()).toContain('synthetic-new-sleep')
+    if (!published.ok) throw Error('synthetic_publish_failed')
+    expect((await runtime.console.rollback(confirmation(published.value.rollbackDiff))).ok).toBe(true)
+    expect(runtime.getPublishedControlPhrasesForRuntime()).toEqual(original)
+    expect(runtime.getAvatarModelForRuntime('model-test')).toBeUndefined()
+    await runtime.shutdown()
+  })
+})
+
 describe('BootRuntime realtime runtime outcome reason', () => {
+  it('completes media-requested sleep through the offline simulator without stopping a nonexistent renderer session', async () => {
+    const dispatch = vi.fn(() => ({ status: 'success' as const, reason: 'runtime_command_delivered' as const }))
+    const runtime = createTestRuntime({ completeSleepForDemo: true, dispatchRealtimeRuntimeCommand: dispatch })
+    await runtime.ready
+    expect((await runtime.handleSimulator({ type: 'wake' })).op).toBe('success')
+    expect(runtime.snapshot().lifecycle).toBe('active')
+    expect(await runtime.requestSleep()).toEqual({ status: 'success', reason: 'simulated_sleep_handoff' })
+    expect(runtime.snapshot().lifecycle).toBe('dormant')
+    expect(runtime.snapshot().realtimeSessionId).toBeNull()
+    expect(dispatch).not.toHaveBeenCalled()
+    await runtime.shutdown()
+  })
   it('makes the sanitized failed reason readable before OfflineLoop subscribers run', async () => {
     const runtime = createTestRuntime()
     await startRuntime(runtime)
@@ -130,17 +445,17 @@ describe('BootRuntime configured model availability probe', () => {
       await startRuntime(runtime)
       runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
       const sessionId = runtime.snapshot().realtimeSessionId!
-      await vi.advanceTimersByTimeAsync(29_000)
+      await vi.advanceTimersByTimeAsync(299_000)
       runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
       runtime.noteRealtimeActivity('user_turn', sessionId)
-      await vi.advanceTimersByTimeAsync(90_000)
+      await vi.advanceTimersByTimeAsync(390_000)
       expect(runtime.snapshot().lifecycle).toBe('active')
       expect(operations).toEqual(['start'])
       runtime.noteRealtimeActivity('assistant_playback', 'stale-session')
-      await vi.advanceTimersByTimeAsync(31_000)
+      await vi.advanceTimersByTimeAsync(301_000)
       expect(operations).toEqual(['start'])
       runtime.noteRealtimeActivity('assistant_playback', sessionId)
-      await vi.advanceTimersByTimeAsync(29_999)
+      await vi.advanceTimersByTimeAsync(299_999)
       expect(operations).toEqual(['start'])
       await vi.advanceTimersByTimeAsync(1)
       expect(operations).toEqual(['start', 'stop'])
@@ -148,7 +463,7 @@ describe('BootRuntime configured model availability probe', () => {
       await startRuntime(runtime)
       runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
       runtime.noteRealtimeActivity('assistant_playback_started', sessionId)
-      await vi.advanceTimersByTimeAsync(30_000)
+      await vi.advanceTimersByTimeAsync(300_000)
       expect(operations).toEqual(['start', 'stop', 'start', 'stop'])
     } finally {
       await runtime.shutdown()
@@ -156,7 +471,39 @@ describe('BootRuntime configured model availability probe', () => {
     }
   })
 
-  it('owns one resettable 30-second Developer Mode idle timer and dispatches idle stop', async () => {
+  it('holds idle for scenes and overlapping speech, ignores stale finishes, and resumes the full interval', async () => {
+    vi.useFakeTimers()
+    const runtime = createTestRuntime({ scheduleRealtimeTimer: (fn, ms) => setTimeout(fn, ms),
+      cancelRealtimeTimer: handle => clearTimeout(handle as ReturnType<typeof setTimeout>) })
+    try {
+      await startRuntime(runtime)
+      runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+      const session = runtime.snapshot().realtimeSessionId!
+      await vi.advanceTimersByTimeAsync(299_000)
+      runtime.noteSceneActivity('started', 'scene-a')
+      runtime.noteRealtimeActivity('user_turn', session)
+      runtime.noteRealtimeActivity('assistant_playback_started', session)
+      runtime.noteRealtimeActivity('assistant_playback', session)
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteSceneActivity('started', 'scene-b')
+      runtime.noteSceneActivity('finished', 'scene-a')
+      runtime.noteSceneActivity('finished', 'stale-run')
+      await vi.advanceTimersByTimeAsync(301_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteRealtimeActivity('assistant_playback_started', session)
+      runtime.noteSceneActivity('finished', 'scene-b')
+      await vi.advanceTimersByTimeAsync(301_000)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      runtime.noteRealtimeActivity('assistant_playback', session)
+      await vi.advanceTimersByTimeAsync(299_999)
+      expect(runtime.snapshot().lifecycle).toBe('active')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(runtime.snapshot().lifecycle).toBe('suspending')
+    } finally { await runtime.shutdown(); vi.useRealTimers() }
+  })
+
+  it('owns one resettable configured 300-second Developer Mode idle timer and dispatches idle stop', async () => {
     const timers = new Map<number, { callback: () => void; delayMs: number }>()
     let nextHandle = 0
     const cancelled: number[] = []
@@ -180,11 +527,11 @@ describe('BootRuntime configured model availability probe', () => {
     await runtime.ready
     await runtime.manualStart()
     runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
-    const firstIdle = [...timers.entries()].find(([, timer]) => timer.delayMs === 30_000)
+    const firstIdle = [...timers.entries()].find(([, timer]) => timer.delayMs === 300_000)
     expect(firstIdle).toBeDefined()
 
     runtime.noteRealtimeActivity('user_turn')
-    const activeIdleTimers = [...timers.entries()].filter(([, timer]) => timer.delayMs === 30_000)
+    const activeIdleTimers = [...timers.entries()].filter(([, timer]) => timer.delayMs === 300_000)
     expect(activeIdleTimers).toHaveLength(1)
     expect(cancelled).toContain(firstIdle?.[0])
 
@@ -312,6 +659,15 @@ describe('BootRuntime configured model availability probe', () => {
     expect(runtime.snapshot().lifecycle).not.toBe('maintenance')
   })
 
+  it('gives the wake listener the studio wake phrase, without avatar tuning, in Interactive Studio mode', async () => {
+    const wake = { phrase: '魔鏡阿魔鏡', modelVersion: 'test-v1', packageId: 'magic-mirror-zh-test-v1' }
+    let mode: 'conversation' | 'studio' = 'studio'
+    const runtime = createTestRuntime({ wake, currentMirrorMode: () => mode })
+    expect(await runtime.getPublishedWakeConfigForRuntime()).toEqual({ ...wake, phrase: '招喚渡鴉使者' })
+    mode = 'conversation'
+    expect(await runtime.getPublishedWakeConfigForRuntime()).toEqual(wake)
+  })
+
   it('publishes the validated Main-only session model snapshot after ready', async () => {
     const runtime = createTestRuntime({ realtimeDialogue: 'configured-realtime-model' })
 
@@ -320,7 +676,7 @@ describe('BootRuntime configured model availability probe', () => {
     expect(snapshot).toEqual(expect.objectContaining({
       configVersion: 1,
       fingerprint: 'a'.repeat(64),
-      sdkVersion: '0.16.1',
+      sdkVersion: '0.20.0',
       realtimeDialogue: 'configured-realtime-model',
       inputTranscription: 'configured-transcription-model',
       voice: 'marin',

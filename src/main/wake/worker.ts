@@ -1,6 +1,7 @@
 import type { WakeDetector } from './detector'
+import type { WakeScore } from '../../shared/wake-score'
 import { createConfiguredSherpaDetector } from './sherpa-detector'
-import { openWakeCapture, type WakeCapture } from './capture'
+import { openWakeCapture, wakeMicrophoneFailureReason, type WakeCapture } from './capture'
 import {
   parseWakeWorkerCommand,
   type WakeWorkerCommand,
@@ -32,6 +33,7 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
   const now = dependencies.now ?? Date.now
   let detector: WakeDetector | null = null
   let capture: WakeCapture | null = null
+  let captureGeneration = 0
   let activePackage: Extract<WakeWorkerCommand, { type: 'initialize' }>['package'] | null = null
   let stopped = false
   let commandQueue = Promise.resolve()
@@ -47,6 +49,7 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
   const releaseCapture = (): void => {
     const current = capture
     capture = null
+    captureGeneration += 1
     try {
       current?.stop()
     } catch {
@@ -65,11 +68,21 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
     let peak = 0
     let squares = 0
     let count = 0
-    capture = await openCapture({
+    let windowScore: WakeScore | null = null
+    const generation = ++captureGeneration
+    const opened = await openCapture({
       ...(inputLabel ? { inputLabel } : {}),
       onSamples(samples) {
-        if (capture === null || detector === null || activePackage === null) return
+        if (generation !== captureGeneration || capture === null || detector === null || activePackage === null) return
         try {
+          const result = detector.process(samples)
+          const score = activePackage.calibration ? detector.measurement?.() ?? null : null
+          if (score) {
+            if (!windowScore || score.matchedTokens > windowScore.matchedTokens
+              || (score.matchedTokens === windowScore.matchedTokens && score.acousticScore >= windowScore.acousticScore)) {
+              windowScore = score
+            } else windowScore = { ...windowScore, decodedSteps: score.decodedSteps }
+          }
           if (samples.length > 0) {
             blocks += 1
             for (const sample of samples) {
@@ -78,14 +91,16 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
               squares += value * value
             }
             count += samples.length
-            if (now() - lastReport >= 500) {
-              post({ type: 'input_activity', blocks, peak, rms: Math.sqrt(squares / count) })
+            if (blocks === 1 || now() - lastReport >= 500) {
+              post({ type: 'input_activity', blocks, peak, rms: Math.sqrt(squares / count),
+                ...(activePackage.calibration ? { detector: windowScore } : {}) })
               lastReport = now()
               peak = squares = count = 0
+              windowScore = null
             }
           }
-          if (detector.process(samples).status !== 'detected') return
-          releaseCapture()
+          if (result.status !== 'detected') return
+          if (activePackage.calibration !== true) releaseCapture()
           detector.reset()
           post({
             type: 'wake_detected',
@@ -97,11 +112,17 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
           post({ type: 'failed', reason: 'wake_detector_failed' })
         }
       },
-      onError() {
+      onError(reason) {
+        if (generation !== captureGeneration) return
         releaseCapture()
-        post({ type: 'failed', reason: 'wake_microphone_failed' })
+        post({ type: 'failed', reason: reason ?? 'wake_microphone_failed' })
       },
     })
+    if (generation !== captureGeneration) {
+      opened.stop()
+      return
+    }
+    capture = opened
     post({ type: 'microphone_acquired', requestId })
   }
 
@@ -142,8 +163,10 @@ export function startWakeWorker(port: WorkerPort, dependencies: WakeWorkerDepend
     }
     commandQueue = commandQueue
       .then(() => handleCommand(parsed.value))
-      .catch(() => {
-        post({ type: 'failed', requestId: parsed.value.requestId, reason: 'wake_command_failed' })
+      .catch((error: unknown) => {
+        post({ type: 'failed', requestId: parsed.value.requestId,
+          reason: error instanceof Error && error.message === 'wake_native_score_unavailable' ? 'wake_native_score_unavailable'
+            : parsed.value.type === 'acquire_microphone' ? wakeMicrophoneFailureReason(error) : 'wake_command_failed' })
       })
   })
 }

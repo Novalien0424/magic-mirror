@@ -1,30 +1,67 @@
+import { allowPromptWindow } from '../shared/prompt-window'
+import { createOperatorLoop } from './operator-loop'
+import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
+import { startOperatorControl } from './operator-control'
+import { createMirrorMode } from './mirror-mode'
+import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile, open } from 'node:fs/promises'
 import {
   app,
   BrowserWindow,
   dialog,
   globalShortcut,
   ipcMain,
+  Menu,
+  MenuItem,
   powerSaveBlocker,
   protocol,
   screen,
+  systemPreferences,
   utilityProcess,
   type WebContents,
 } from 'electron'
 import { BOOT_RENDERER_READY_CHANNEL, type MirrorWindowKind } from '../shared/bridge'
-import type { LifecycleState } from '../shared/types'
+import type { LifecycleState, ModuleId } from '../shared/types'
 import type { ImportedMedia, MediaImportEntry } from '../shared/media-import'
 import { createVoicePreviewLease, type VoicePreviewLease } from './realtime/voice-preview'
+import { createMemoryRepository, unavailableMemoryRepository } from './memory/repository'
+import { createMemoryEmbedder } from './memory/embedding'
+import { createMemoryExtractor } from './memory/extractor'
+import { createMemoryInterpreter } from './memory/intent'
+import { createMemoryConsolidator } from './memory/consolidator'
+import { MemoryLearning } from './memory/learning'
+import { MemoryIndexer } from './memory/indexer'
+import { MemoryImporter } from './memory/import'
+import { runMemoryLiveQa } from './memory/live-qa'
+import { runMemoryCalendarQa } from './memory/calendar-live-qa'
+import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
-import { initializeAudioPreferences } from './audio-preferences'
+import { initializeAudioPreferences, getAudioPreferences } from './audio-preferences'
 import { createCrashRecovery } from './crash-recovery'
+import { createRendererLiveness, startMainLiveness } from './liveness'
+import { Microphone } from 'decibri'
+import { effectiveMicrophoneName, startCameraTracking } from './camera/tracker'
+import { cameraLifecycleStatus, createCameraLifecycle, type CameraLifecycleService } from './camera/lifecycle'
+import {
+  chooseMirrorDisplay,
+  parseMirrorDisplayMatch,
+  planInitialPlacement,
+  planRehome,
+  type DisplayInfo,
+  type DisplayMarker,
+  type DisplayTrigger,
+  type MirrorPlacement,
+  type Rect
+} from './display-target'
 import { createDisplaySleepBlocker, type DisplaySleepBlocker, type DisplaySleepBlockerEvent } from './display-sleep-blocker'
+import { monitorTvPresence, parseTvHost, probeTvEthernet } from './tv-presence'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import {
   dispatchMirrorRealtimeRuntimeCommand,
   publishSnapshot,
   registerIpcHandlers,
+  authorizeSender,
   type SceneRuntimeControl,
 } from './ipc'
 import { formatMarker, marker, type MarkerFields } from './log'
@@ -43,22 +80,31 @@ import { evaluateSmoke, parseSmokeMode } from './smoke'
 import { loadWakeModelPackage } from './wake/model-package'
 import {
   createWakeSupervisor,
+  isWakeMicrophoneDeviceUnavailable,
   type WakeSupervisor,
+  type WakeSupervisorResult,
   type WakeWorkerChild,
 } from './wake/supervisor'
 import type { WakeWorkerPackage } from './wake/protocol'
 import { createWakeConversationActivation } from './wake/conversation-activation'
-import { selectPortraitDisplay } from './portrait-display'
+import { selectConsoleMainDisplay, selectPortraitDisplay } from './portrait-display'
 import { validateCubismModelBundle } from './avatar/model-bundle'
 import { importAvatarModel, verifyAvatarModel, safeAvatarFile, listAvatarModels, saveAvatarModelLabel } from './avatar/model-import'
 import type { AvatarModel } from '../shared/avatar-profiles'
 import { importManagedMusicAsset } from './scenes/music-assets'
+import { MediaFolders } from './avatar/media-folders'
 import { createVisualAssetManager, createVisualPlaybackVerifier, verifyManagedVisualAsset } from './scenes/visual-assets'
 import { serveMediaFile } from './scenes/media-file-response'
 import { runPhase4Qa } from './phase4-qa'
 import { configureVideoDecoding } from './video-decoding-policy'
+import { createWakeWorkerPackage, wakeTuningIsActive } from './wake/runtime-config'
+import { createWakeCalibration } from './wake/calibration'
+import { needsWakeMicrophonePermission, requestWakeMicrophonePermission } from './wake/microphone-permission'
+import { createYoutubePlayer } from './avatar/youtube-player'
+import { createYoutubeCredentialSource, createYoutubeSearch } from './avatar/youtube-search'
 
 const isDarwin = process.platform === 'darwin'
+let cameraTracking: CameraLifecycleService | null = null
 const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 /** Never let a stalled stdout pipe turn a smoke run into a hang. */
 const EXIT_FLUSH_TIMEOUT_MS = 500
@@ -98,6 +144,20 @@ const hideWindowsForSmoke = smokeMode.kind === 'on' && !phase4QaEnabled
   || phase4QaEnabled && process.env['MIRROR_PHASE4_QA_EDITOR'] === '1'
 
 /**
+ * `MIRROR_DISPLAY=<label substring>` pins the Mirror to that display (e.g. `T749`, the
+ * portrait HDMI panel) and follows it across unplug/replug. Unset keeps the incoming
+ * portrait-display selection, with primary fallback and no display listeners.
+ */
+const mirrorDisplayMatch = parseMirrorDisplayMatch(process.env['MIRROR_DISPLAY'])
+/** Displays settle in bursts after a replug (added, then rotation via metrics-changed). */
+const DISPLAY_SETTLE_MS = 750
+let mirrorPlacement: MirrorPlacement | null = null
+/** Mirror windows that went through their first placement; anything else is still loading. */
+const placedMirrors = new WeakSet<BrowserWindow>()
+let displaySettleTimer: NodeJS.Timeout | null = null
+let tvPresence: ReturnType<typeof monitorTvPresence> | undefined
+
+/**
  * Smoke-contract hook: `MIRROR_FORCE_RENDERER_CRASH=<n>` crashes the next n mirror
  * renderers, so recreate-once and the give-up branch are both testable end to end.
  */
@@ -121,11 +181,23 @@ let sceneRuntimeControl: SceneRuntimeControl | null = null
 let phase1LiveSmokeCoordinator: Phase1LiveSmokeCoordinator | null = null
 const phase4QaReadyKinds = new Set<MirrorWindowKind>()
 let phase4QaStarted = false
+let memoryPipelineQa: ((evidence: (step: string) => void) => Promise<void>) | undefined
+let memoryLearningSettledQa: (() => boolean) | undefined
 let wakeSupervisor: WakeSupervisor | null = null
+let wakeCalibration: ReturnType<typeof createWakeCalibration> | null = null
+let wakeOwnerRebuild: Promise<WakeSupervisorResult> | null = null
 let shutdownPromise: Promise<void> | null = null
+let shutdownMemory: (() => Promise<void>) | undefined
 let willQuitHandled = false
 let quitResourcesStopped = false
 let appQuitFinalizationStarted = false
+let shutdownStarted = false
+let stopMainLiveness: (() => void) | undefined
+let requestedExitCode: number | null = null
+let stopYoutube: (() => void) | undefined
+let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
+let stopOperatorControl: (() => void) | undefined
+let consoleOnMirror = false
 
 type RendererEntry = { readonly from: 'dev-server'; readonly url: string } | { readonly from: 'file'; readonly file: string }
 
@@ -193,7 +265,25 @@ function spawnWakeWorker(): WakeWorkerChild {
   }
 }
 
-async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+let wakeConfigurationTask: Promise<void> = Promise.resolve()
+let configuredWakeSignature = ''
+function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
+  const wasCalibrating = wakeCalibration?.isActive()
+  wakeConfigurationTask = wakeConfigurationTask.then(async () => {
+    await wakeCalibration?.stop(false)
+    if (wasCalibrating) configuredWakeSignature = ''
+    await applyWakeRuntimeConfig(runtime)
+  }).catch(async () => {
+    configuredWakeSignature = ''
+    reportMainDegradation('wake', 'wake_configuration_failed', 'wake_config_refresh_failed')
+    try { await runtime.setWakeRuntimeStatus('degraded', 'wake_config_refresh_failed') }
+    catch { reportMainDegradation('wake', 'wake_status_failed', 'wake_status_projection_rejected') }
+  })
+  return wakeConfigurationTask
+}
+
+async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
+  if (operatorLoop?.isLoopMode()) { await wakeSupervisor?.release(); return }
   if (
     typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
     || typeof runtime.setWakeRuntimeStatus !== 'function'
@@ -205,57 +295,110 @@ async function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
     await runtime.setWakeRuntimeStatus('failed', 'wake_config_unavailable')
     return
   }
+  if (wake.tuning?.enabled === true && wake.tuning.phrase !== wake.phrase) {
+    runtime.telemetry.emit({ module: 'wake', event: 'wake_tuning_ignored', status: 'degraded',
+      reason: 'phrase_binding_mismatch', source: 'runtime' })
+  }
+  const signature = JSON.stringify(wake)
+  if (signature === configuredWakeSignature) return
+  const requiresMicrophonePermission = needsWakeMicrophonePermission({ platform: process.platform,
+    smoke: smokeMode.kind === 'on', isolatedQa: phase4QaEnabled || phase1LiveSmokeEnabled,
+    nativeWakeQa: phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' })
+  if (requiresMicrophonePermission && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+    await runtime.setWakeRuntimeStatus('degraded', 'wake_microphone_permission_required')
+  }
+  const permission = await requestWakeMicrophonePermission({
+    required: requiresMicrophonePermission,
+    request: () => systemPreferences.askForMediaAccess('microphone'),
+    stopping: () => shutdownStarted,
+  })
+  if (permission === 'stopped') return
+  if (permission !== 'granted') {
+    await wakeSupervisor?.release()
+    configuredWakeSignature = ''
+    await runtime.setWakeRuntimeStatus('degraded', permission === 'denied'
+      ? 'wake_microphone_permission_denied' : 'wake_microphone_permission_unavailable')
+    return
+  }
   const loaded = await loadWakeModelPackage({
     rootDirectory: wakeModelRoot(),
     wake,
     platform: `${process.platform}-${process.arch}`,
+    customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+    forceCustomKeywords: wakeTuningIsActive(wake),
   })
   if (!loaded.ok) {
+    await wakeSupervisor?.release()
+    configuredWakeSignature = ''
     await runtime.setWakeRuntimeStatus('degraded', loaded.reason)
     return
   }
 
-  const tuning = loaded.manifest.tuning
-  const workerPackage: WakeWorkerPackage = {
-    packageId: loaded.manifest.packageId,
-    engine: loaded.manifest.engine,
-    engineVersion: loaded.manifest.engineVersion,
-    modelVersion: loaded.manifest.modelVersion,
-    phrase: loaded.manifest.phrase,
-    sampleRateHz: 16_000,
-    artifactPaths: Object.fromEntries(loaded.artifactPaths),
-    tuning: {
-      ...(tuning.threshold === undefined ? {} : { threshold: tuning.threshold }),
-      ...(tuning.score === undefined ? {} : { score: tuning.score }),
-      ...(tuning.numTrailingBlanks === undefined ? {} : { numTrailingBlanks: tuning.numTrailingBlanks }),
-    },
+  const workerPackage: WakeWorkerPackage = createWakeWorkerPackage(loaded, wake)
+  if (shutdownStarted) return
+  if (wakeSupervisor !== null) {
+    const released = await wakeSupervisor.release()
+    if (released.status !== 'success') return
+    const updated = wakeSupervisor.microphoneUnowned()
+      ? await wakeSupervisor.start({ package: workerPackage })
+      : await wakeSupervisor.updateConfig({ package: workerPackage })
+    if (updated.status !== 'success') return
+    configuredWakeSignature = signature
+    if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
+      await wakeSupervisor.acquire()
+    }
+    return
   }
   let activation: ReturnType<typeof createWakeConversationActivation> | null = null
   const supervisor = createWakeSupervisor({
     spawn: spawnWakeWorker,
     onWake: () => {
-      void activation?.handleWake()
+      if (operatorLoop?.isLoopMode()) { marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_ignored' }); return }
+      void activation?.handleWake().catch(() => reportMainDegradation('wake', 'wake_activation_failed', 'wake_activation_rejected'))
     },
     onStatus: (snapshot) => {
-      const moduleStatus = snapshot.status === 'failed'
+      const moduleStatus = snapshot.status === 'failed' || snapshot.input.recovery?.state === 'failed'
         ? 'failed'
-        : snapshot.status === 'starting' || snapshot.status === 'stopped'
+        : snapshot.status === 'starting' || snapshot.status === 'stopped' || snapshot.status === 'acquiring' || snapshot.input.recovery?.state === 'restarting'
           ? 'degraded'
           : 'ready'
-      void runtime.setWakeRuntimeStatus(moduleStatus, snapshot.reason ?? `wake_worker_${snapshot.status}`)
+      const healthReason = snapshot.input.recovery?.state === 'failed' ? snapshot.input.recovery.reason
+        : snapshot.input.recovery?.state === 'restarting' ? 'wake_worker_restarting' : snapshot.reason
+      void runtime.setWakeRuntimeStatus(moduleStatus, healthReason ?? `wake_worker_${snapshot.status}`)
+        .catch(() => reportMainDegradation('wake', 'wake_status_failed', 'wake_status_projection_rejected'))
+      if (snapshot.reason === 'wake_worker_exit_repeated' && !shutdownStarted
+        && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+        fatalMainFailure('wake_worker_exit_repeated')
+      }
     },
   })
   activation = createWakeConversationActivation({
     getLifecycle: () => runtime.snapshot().lifecycle,
+    beforeStart: () => stopScenes(),
     startConversation: () => runtime.manualStart(),
-    reacquireWake: () => supervisor.acquire(),
+    reacquireWake: () => operatorLoop?.isLoopMode() ? Promise.resolve({ status: 'success' as const, reason: 'operator_loop_no_microphone' }) : supervisor.acquire(),
   })
   wakeSupervisor = supervisor
   const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
-  if (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop') {
+  configuredWakeSignature = signature
+  if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
     await supervisor.acquire()
   }
+}
+
+function selectMirrorDisplay(
+  displays: readonly Electron.Display[],
+  primaryDisplayId: number,
+): Electron.Display | null {
+  if (mirrorDisplayMatch === undefined) return selectPortraitDisplay(displays, primaryDisplayId)
+  const choice = chooseMirrorDisplay(
+    displays.map(display => ({ ...display, primary: display.id === primaryDisplayId })),
+    mirrorDisplayMatch,
+  )
+  return choice.reason === 'match'
+    ? displays.find(display => display.id === choice.display.id) ?? null
+    : null
 }
 
 function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructorOptions {
@@ -275,14 +418,14 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
   }
 
   const primaryDisplay = screen.getPrimaryDisplay()
-  const mirrorDisplay = selectPortraitDisplay(screen.getAllDisplays(), primaryDisplay.id)
+  const mirrorDisplay = selectMirrorDisplay(screen.getAllDisplays(), primaryDisplay.id)
   const mirrorBounds = mirrorDisplay?.bounds
 
   return {
     ...shared,
     ...(mirrorBounds ?? { width: 1280, height: 800 }),
     frame: false,
-    backgroundColor: '#05070a',
+    backgroundColor: '#000000',
     // macOS kiosk uses pre-Lion fullscreen (no Space transition); the Windows dev
     // machine gets a maximized frameless window instead.
     ...(isDarwin ? { simpleFullscreen: true, alwaysOnTop: true } : {}),
@@ -293,13 +436,38 @@ function windowOptions(kind: MirrorWindowKind): Electron.BrowserWindowConstructo
 function createWindow(kind: MirrorWindowKind): BrowserWindow {
   const win = new BrowserWindow(windowOptions(kind))
   windows.set(kind, win)
+  if (kind === 'mirror') {
+    const health = createRendererLiveness(() => performance.now(), () => {
+      if (shutdownStarted || win.isDestroyed() || windows.get(kind) !== win) return
+      reportMainDegradation('app', 'renderer_unresponsive', 'renderer_heartbeat_timeout')
+      win.webContents.forcefullyCrashRenderer()
+    })
+    const heartbeat = (event: Electron.IpcMainEvent): void => {
+      if (event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame) health.beat()
+    }
+    ipcMain.on('mirror:heartbeat', heartbeat)
+    const timer = setInterval(() => health.check(), 5000)
+    timer.unref()
+    win.once('closed', () => { clearInterval(timer); ipcMain.removeListener('mirror:heartbeat', heartbeat) })
+  }
   boot.loaded[kind] = false
   if (kind === 'mirror') {
     mirrorRendererReady = false
+    cameraTracking?.update(mainLifecycle, false)
     boot.lifecycle = 'starting'
   }
 
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => allowPromptWindow(kind, url, frameName)
+    ? { action: 'allow', overrideBrowserWindowOptions: { width: 1000, height: 800, minWidth: 600,
+        minHeight: 450, backgroundColor: '#101418', autoHideMenuBar: true } }
+    : { action: 'deny' })
+  win.webContents.on('did-create-window', child => {
+    // about:blank inherits the sandbox and isolation. Its sender is deliberately
+    // absent from `windows`: all privileged Console IPC remains unauthorized.
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    child.webContents.on('will-navigate', event => event.preventDefault())
+    child.webContents.on('will-frame-navigate', event => event.preventDefault())
+  })
   win.webContents.on('will-navigate', (event) => {
     event.preventDefault()
   })
@@ -327,8 +495,11 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
   })
 
   win.once('closed', () => {
-    if (windows.get(kind) === win) windows.delete(kind)
-    if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
+    if (windows.get(kind) === win) {
+      windows.delete(kind)
+      if (kind === 'console') consoleOnMirror = false
+    }
+    if (kind === 'mirror' && !shutdownStarted) stopScenes()
   })
 
   // The mirror is the visitor-facing glass: show it as soon as it can paint.
@@ -339,31 +510,158 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
         marker('WINDOW_KEPT_HIDDEN', { window: kind, reason: 'smoke_mode' })
         return
       }
+      if (!placeMirrorInitially(win)) return
       if (isDarwin) win.setSimpleFullScreen(true)
       else win.maximize()
       win.show()
-      marker('WINDOW_SHOWN', { window: kind, mode: isDarwin ? 'simple_fullscreen' : 'maximized' })
+      raiseMirrorAboveMenuBar(win)
+      marker('WINDOW_SHOWN', {
+        window: kind,
+        mode: isDarwin ? 'simple_fullscreen' : 'maximized',
+        ...(isDarwin ? { level: MIRROR_WINDOW_LEVEL } : {})
+      })
       if (bootRuntime !== null) startPhase4QaIfReady(bootRuntime)
     })
   }
 
   const entry = rendererEntry(kind)
   const phase4QaQuery = phase4QaEnabled && kind === 'mirror' ? { phase4Qa: '1' } : undefined
+  const onLoadFailure = (): void => {
+    if (windows.get(kind) !== win || shutdownStarted) return
+    if (kind === 'console') {
+      marker('WINDOW_LOAD_FAILED', { window: kind, reason: 'console_page_load_failed' })
+      reportMainDegradation('app', 'console_window_load_failed', 'console_page_load_failed')
+      return
+    }
+    exitWithMarker('APP_EXIT', { code: 1, window: kind, reason: 'window_load_failed' }, 1)
+  }
   if (entry.from === 'dev-server') {
     const url = new URL(entry.url)
     if (phase4QaQuery !== undefined) url.searchParams.set('phase4Qa', phase4QaQuery.phase4Qa)
-    void win.loadURL(url.toString())
+    void win.loadURL(url.toString()).catch(onLoadFailure)
   } else {
-    void win.loadFile(entry.file, phase4QaQuery === undefined ? undefined : { query: phase4QaQuery })
+    void win.loadFile(entry.file, phase4QaQuery === undefined ? undefined : { query: phase4QaQuery }).catch(onLoadFailure)
   }
 
   return win
 }
 
+function emitDisplayMarker(m: DisplayMarker): void {
+  marker(m.name, m.fields)
+}
+
+function displaySnapshot(): DisplayInfo[] {
+  try {
+    const primaryId = screen.getPrimaryDisplay().id
+    return screen
+      .getAllDisplays()
+      .map((d) => ({ id: d.id, label: d.label, bounds: d.bounds, primary: d.id === primaryId }))
+  } catch {
+    // Treat unavailable display metadata as "no displays" without logging raw errors.
+    marker('MIRROR_DISPLAY_QUERY_FAILED', { reason: 'display_query_failed' })
+    return []
+  }
+}
+
+/**
+ * Before the first show: move onto the chosen display; fullscreen + show are the caller's.
+ * Returns false when the window must stay hidden (recreated while its target is missing).
+ */
+function placeMirrorInitially(win: BrowserWindow): boolean {
+  if (mirrorDisplayMatch === undefined) return true
+  const plan = planInitialPlacement(
+    chooseMirrorDisplay(displaySnapshot(), mirrorDisplayMatch),
+    mirrorDisplayMatch,
+    mirrorPlacement
+  )
+  emitDisplayMarker(plan.marker)
+  mirrorPlacement = plan.placement
+  placedMirrors.add(win)
+  if (plan.action === 'hide') return false
+  if (plan.display !== null) moveMirrorWindow(win, plan.display.bounds)
+  return true
+}
+
+/**
+ * simpleFullscreen hides the menu bar only while this app is frontmost; the operator's
+ * apps (or any focus-stealing dialog) would draw their menu bar over the top of the glass.
+ * The screen-saver level (1000) sits above the menu bar (24). Toggling simple fullscreen
+ * can reset the level, so this is re-asserted after every show/move. An explicitly
+ * requested operator Console sits one level above it until hidden or closed.
+ */
+const MIRROR_WINDOW_LEVEL = 'screen-saver'
+function raiseMirrorAboveMenuBar(win: BrowserWindow): void {
+  if (isDarwin) win.setAlwaysOnTop(true, MIRROR_WINDOW_LEVEL)
+}
+
+/** A fullscreen window cannot change displays: leave fullscreen, move, re-enter. */
+function moveMirrorWindow(win: BrowserWindow, bounds: Rect): void {
+  if (isDarwin) {
+    if (win.isSimpleFullScreen()) win.setSimpleFullScreen(false)
+    win.setBounds(bounds)
+    win.setSimpleFullScreen(true)
+    raiseMirrorAboveMenuBar(win)
+    return
+  }
+  if (win.isMaximized()) win.unmaximize()
+  win.setBounds(bounds)
+  win.maximize()
+}
+
+function rehomeMirror(trigger: DisplayTrigger): void {
+  const win = windows.get('mirror')
+  if (win === undefined || win.isDestroyed() || !placedMirrors.has(win)) {
+    // Not placed yet (first load or being recreated): its own ready-to-show placement runs.
+    // A window we deliberately hid for a missing target IS placed and proceeds.
+    marker('MIRROR_DISPLAY_REHOME_SKIPPED', { reason: 'mirror_not_shown', trigger })
+    return
+  }
+
+  const decision = planRehome(mirrorPlacement, chooseMirrorDisplay(displaySnapshot(), mirrorDisplayMatch), mirrorDisplayMatch, trigger)
+  emitDisplayMarker(decision.marker)
+  switch (decision.action) {
+    case 'none':
+      if (consoleOnMirror) placeConsoleOnMirror()
+      return
+    case 'hide':
+      // Not destroyed: the renderer keeps running (backgroundThrottling is off) for the return.
+      win.hide()
+      break
+    case 'move':
+      moveMirrorWindow(win, decision.display.bounds)
+      break
+    case 'move_and_show':
+      moveMirrorWindow(win, decision.display.bounds)
+      win.show()
+      raiseMirrorAboveMenuBar(win)
+      if (bootRuntime !== null) startPhase4QaIfReady(bootRuntime)
+      break
+  }
+  mirrorPlacement = decision.placement
+  if (consoleOnMirror && decision.action !== 'hide') placeConsoleOnMirror()
+}
+
+function scheduleRehome(trigger: DisplayTrigger): void {
+  if (displaySettleTimer !== null) clearTimeout(displaySettleTimer)
+  displaySettleTimer = setTimeout(() => {
+    displaySettleTimer = null
+    rehomeMirror(trigger)
+  }, DISPLAY_SETTLE_MS)
+}
+
+/** Only when a target is configured and windows are really on screen (never in smoke mode). */
+function watchMirrorDisplay(): void {
+  if (mirrorDisplayMatch === undefined || hideWindowsForSmoke) return
+  screen.on('display-added', () => scheduleRehome('display-added'))
+  screen.on('display-removed', () => scheduleRehome('display-removed'))
+  screen.on('display-metrics-changed', () => scheduleRehome('display-metrics-changed'))
+}
+
 /** Task 1 interface: both Phase 0 windows, created in one call. */
 export function createWindows(): void {
   createWindow('mirror')
-  createWindow('console')
+  // Synthetic harnesses explicitly require both readiness receipts.
+  if (smokeMode.kind === 'on' || phase1LiveSmokeEnabled || phase4QaEnabled) createWindow('console')
 }
 
 function windowKindOf(sender: WebContents): MirrorWindowKind | null {
@@ -374,6 +672,7 @@ function windowKindOf(sender: WebContents): MirrorWindowKind | null {
 }
 
 function onRendererReady(sender: WebContents): void {
+  if (shutdownStarted) return
   // Authorization comes from the sender's identity, never from a renderer-supplied value.
   const kind = windowKindOf(sender)
   if (kind === null) {
@@ -390,22 +689,29 @@ function onRendererReady(sender: WebContents): void {
   if (kind === 'mirror') {
     mirrorRendererReady = true
     boot.lifecycle = mainLifecycle
+    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : mainLifecycle, true)
+    cameraTracking?.republishTarget()
+    void bootRuntime?.handleMirrorRendererReady().catch(() => fatalMainFailure('renderer_recovery_failed'))
+    operatorLoop?.rendererReady()
   }
 }
 
 function onRenderProcessGone(contents: WebContents, details: Electron.RenderProcessGoneDetails): void {
+  if (shutdownStarted) return
   const kind = windowKindOf(contents)
   if (kind === null) {
     marker('RENDERER_GONE_UNTRACKED', { reason: details.reason })
     return
   }
 
-  if (kind === 'mirror') void sceneRuntimeControl?.stopAll()
-
   const decision = crashRecovery.decide({ window: kind, reason: details.reason, exitCode: details.exitCode })
   if (decision.action === 'ignore') return
 
   marker('RENDERER_GONE', { window: kind, reason: details.reason, exit_code: details.exitCode })
+  if (kind === 'mirror') {
+    stopScenes()
+    bootRuntime?.handleMirrorRendererGone()
+  }
 
   if (decision.action === 'give_up') {
     // The supervisor (macOS LaunchAgent KeepAlive) owns app restarts; do not relaunch in-app.
@@ -422,19 +728,112 @@ function onRenderProcessGone(contents: WebContents, details: Electron.RenderProc
   // The mirror re-shows itself from 'ready-to-show'; the console has no such handler
   // (it opens on the shortcut), so an open console must be restored explicitly rather
   // than silently disappearing from under the operator.
-  if (kind === 'console' && wasVisible) replacement.show()
+  if (kind === 'console' && wasVisible) {
+    if (consoleOnMirror) void showConsoleOnMirror()
+    else replacement.show()
+  }
   marker('WINDOW_RECREATED', { window: kind, attempt: decision.attempt, was_visible: wasVisible })
 }
 
-function toggleConsoleWindow(): void {
+function hideConsoleWindow(): void {
+  consoleOnMirror = false
   const win = windows.get('console')
+  if (win && !win.isDestroyed()) {
+    win.hide()
+  }
+}
+
+/** Reuse the existing renderer so bringing Console forward preserves unsaved edits. */
+function placeConsoleOnMirror(): boolean {
+  const win = windows.get('console'), mirror = windows.get('mirror')
+  if (!win || win.isDestroyed() || !mirror || mirror.isDestroyed()) return false
+  const display = screen.getDisplayMatching(mirror.getBounds()), area = display.workArea
+  const bounds = { x: area.x + 16, y: area.y + 16,
+    width: Math.max(1, area.width - 32), height: Math.max(1, area.height - 32) }
+  if (win.isMinimized()) win.restore()
+  if (win.isMaximized()) win.unmaximize()
+  win.setBounds(bounds)
+  if (isDarwin) win.setAlwaysOnTop(true, MIRROR_WINDOW_LEVEL, 1)
+  else win.setAlwaysOnTop(true)
+  win.show()
+  if (isDarwin) app.focus({ steal: true })
+  win.focus()
+  const actual = win.getBounds()
+  const onMirror = screen.getDisplayMatching(actual).id === display.id
+  marker('CONSOLE_ON_MIRROR', { display_id: display.id, x: actual.x, y: actual.y,
+    width: actual.width, height: actual.height, visible: win.isVisible(), focused: win.isFocused(),
+    on_mirror: onMirror })
+  return onMirror && win.isVisible()
+}
+
+/**
+ * Remote desktop route: the same Console on the main (virtual) display at the normal
+ * window level, so the avatar stays uncovered on the TV. The next CONSOLE press
+ * places it back over the mirror.
+ */
+function placeConsoleOnMain(): boolean {
+  const win = windows.get('console'), mirror = windows.get('mirror')
+  if (!win || win.isDestroyed()) return false
+  const mirrorId = mirror && !mirror.isDestroyed() ? screen.getDisplayMatching(mirror.getBounds()).id : undefined
+  const display = selectConsoleMainDisplay(screen.getAllDisplays(), screen.getPrimaryDisplay().id, mirrorId)
+  if (display === null) {
+    marker('CONSOLE_OPEN_FAILED', { reason: 'console_main_display_missing' })
+    return false
+  }
+  const area = display.workArea
+  const bounds = { x: area.x + 16, y: area.y + 16,
+    width: Math.max(1, area.width - 32), height: Math.max(1, area.height - 32) }
+  if (win.isMinimized()) win.restore()
+  if (win.isMaximized()) win.unmaximize()
+  win.setAlwaysOnTop(false)
+  win.setBounds(bounds)
+  win.show()
+  if (isDarwin) app.focus({ steal: true })
+  win.focus()
+  const actual = win.getBounds()
+  const onMain = screen.getDisplayMatching(actual).id === display.id
+  marker('CONSOLE_ON_MAIN', { display_id: display.id, x: actual.x, y: actual.y,
+    width: actual.width, height: actual.height, visible: win.isVisible(), focused: win.isFocused(),
+    on_main: onMain })
+  return onMain && win.isVisible()
+}
+
+async function consoleWhenReady(): Promise<boolean> {
+  if (shutdownStarted) return false
+  let win = windows.get('console')
+  if (!win || win.isDestroyed()) win = createWindow('console')
+  const deadline = performance.now() + 10000
+  while (!boot.loaded.console || !readyReported.has(win.webContents)) {
+    if (shutdownStarted || win.isDestroyed() || windows.get('console') !== win || performance.now() >= deadline) {
+      marker('CONSOLE_OPEN_FAILED', { reason: 'console_not_ready' })
+      return false
+    }
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  return true
+}
+
+async function showConsoleOnMirror(): Promise<boolean> {
+  if (!await consoleWhenReady()) return false
+  consoleOnMirror = true
+  return placeConsoleOnMirror()
+}
+
+async function showConsoleOnMain(): Promise<boolean> {
+  if (!await consoleWhenReady()) return false
+  consoleOnMirror = false
+  return placeConsoleOnMain()
+}
+
+function toggleConsoleWindow(): void {
+  if (shutdownStarted) return
+  let win = windows.get('console')
   if (win === undefined || win.isDestroyed()) {
-    marker('CONSOLE_TOGGLE_IGNORED', { reason: 'console_window_missing' })
-    return
+    win = createWindow('console')
   }
 
   if (win.isVisible()) {
-    win.hide()
+    hideConsoleWindow()
     marker('CONSOLE_TOGGLED', { visible: false })
     return
   }
@@ -447,16 +846,31 @@ function registerConsoleShortcut(): void {
   const registered = globalShortcut.register(CONSOLE_SHORTCUT, toggleConsoleWindow)
   if (registered) marker('SHORTCUT_REGISTERED', { accelerator: CONSOLE_SHORTCUT })
   else marker('SHORTCUT_REGISTER_FAILED', { accelerator: CONSOLE_SHORTCUT, reason: 'accelerator_unavailable' })
+  const menu = Menu.getApplicationMenu()
+  if (menu) {
+    const view = menu.items.find(item => item.role === 'viewMenu' || item.label === 'View')?.submenu
+    const item = new MenuItem({ label: 'Magic Mirror Console', click: toggleConsoleWindow })
+    if (view) view.append(item)
+    else { const submenu = new Menu(); submenu.append(item); menu.append(new MenuItem({ label: 'Console', submenu })) }
+    Menu.setApplicationMenu(menu)
+  }
 }
 
 /** Logs a final marker and exits once it has reached the pipe — the exit code is the contract. */
 function exitWithMarker(name: string, fields: MarkerFields, code: number): void {
+  if (requestedExitCode !== null) return
+  requestedExitCode = code
+  stopMainLiveness?.()
+  shutdownStarted = true
   let exited = false
   const quit = (): void => {
     if (exited) return
     exited = true
+    // Cleanup is bounded; launchd remains the only process restart owner.
+    const deadline = setTimeout(() => app.exit(code), 15_000)
     stopQuitResources()
     void shutdownBootRuntime().then(() => {
+      clearTimeout(deadline)
       if (code === 1) {
         app.exit(1)
         return
@@ -464,9 +878,39 @@ function exitWithMarker(name: string, fields: MarkerFields, code: number): void 
       app.exit(code)
     })
   }
-  process.stdout.write(formatMarker(name, fields), quit)
+  try { process.stdout.write(formatMarker(name, fields), quit) } catch { quit() }
   setTimeout(quit, EXIT_FLUSH_TIMEOUT_MS)
 }
+
+function fatalMainFailure(reason: string): void {
+  if (shutdownStarted) {
+    reportMainDegradation('app', 'shutdown_failure', reason)
+    return
+  }
+  try { bootRuntime?.telemetry.emit({ module: 'app', event: 'main_process_failed',
+    status: 'failed', reason, source: 'runtime' }) } catch { /* Metadata sink cannot gate fatal exit. */ }
+  exitWithMarker('APP_EXIT', { code: 1, reason }, 1)
+}
+function reportMainDegradation(module: ModuleId, event: string, reason: string): void {
+  try {
+    if (bootRuntime) bootRuntime.telemetry.emit({ module, event, status: 'degraded', reason, source: 'runtime' })
+    else marker('RUNTIME_DEGRADED', { module, event, reason })
+  } catch { /* Diagnostics cannot turn an adapter failure into a fatal rejection. */ }
+}
+function stopScenes(input?: { preserveSleepingMedia?: boolean }): Promise<void> {
+  return Promise.resolve().then(() => sceneRuntimeControl?.stopAll(input)).then(() => undefined)
+    .catch(() => reportMainDegradation('app', 'scene_cleanup_failed', 'scene_cleanup_rejected'))
+}
+// Never log raw thrown values: they may contain conversation or credential data.
+process.on('uncaughtException', () => fatalMainFailure('main_uncaught_exception'))
+process.on('unhandledRejection', () => fatalMainFailure('main_unhandled_rejection'))
+// Keep the listener installed: a second TERM must not restore the OS default
+// signal exit, which launchd interprets as a request to restart.
+function handleOperatorStop(): void {
+  operatorLoop?.clearIntent()
+  if (!shutdownStarted) exitWithMarker('APP_EXIT', { code: 0, reason: 'operator_stop' }, 0)
+}
+process.on('SIGTERM', handleOperatorStop)
 
 function finishSmokeRun(): void {
   const verdict = evaluateSmoke(boot)
@@ -523,13 +967,16 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
   if (!editorOnly && !mirror.isVisible()) return
   phase4QaStarted = true
   const displays = screen.getAllDisplays()
-  const portrait = selectPortraitDisplay(displays, screen.getPrimaryDisplay().id)
+  const portrait = selectMirrorDisplay(displays, screen.getPrimaryDisplay().id)
   const mirrorDisplay = screen.getDisplayMatching(mirror.getBounds())
   for (const display of displays) marker('PHASE4_QA_DISPLAY_CANDIDATE', {
     display: display.id, width: display.bounds.width, height: display.bounds.height,
     mirror: display.id === mirrorDisplay.id ? 'yes' : 'no',
   })
-  if (!editorOnly && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
+  const ravenConversation = process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+  const reviewUi = process.env['MIRROR_REVIEW_UI_QA'] === '1'
+  const mediaFunctional = ravenConversation || reviewUi || process.env['MIRROR_MEDIA_SKILL_QA'] === '1' && process.env['MIRROR_MEDIA_SKILL_QA_FUNCTIONAL'] === '1'
+  if (!editorOnly && !mediaFunctional && (portrait === null || portrait.bounds.height <= portrait.bounds.width || mirrorDisplay.id !== portrait.id)) {
     exitWithMarker('PHASE4_QA_RESULT', { status: 'failed', reason: 'phase4_qa_portrait_display_required' }, 2)
     return
   }
@@ -542,7 +989,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
   consoleWindow.show()
   marker('PHASE4_QA_DISPLAY', { display_count: displays.length, mirror_display: portrait?.id ?? 0,
     width: portrait?.bounds.width ?? 0, height: portrait?.bounds.height ?? 0, scale_factor: portrait?.scaleFactor ?? 1,
-    console_display: consoleDisplay?.id ?? 0, status: editorOnly ? 'mirror_not_executed' : 'portrait_verified' })
+    console_display: consoleDisplay?.id ?? 0, status: editorOnly ? 'mirror_not_executed' : mediaFunctional ? 'functional_only_portrait_not_verified' : 'portrait_verified' })
   if (process.env['MIRROR_PHASE4_QA_MANUAL'] === '1') {
     marker('PHASE4_QA_MANUAL', { status: 'ready', evidence: 'not_executed' })
     return
@@ -552,10 +999,10 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     try {
       await writeFile(join(outputDir, '..', 'evidence.json'), JSON.stringify({
         platform: process.platform,
-        mode: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
+        mode: reviewUi ? 'review_ui' : ravenConversation ? 'raven_conversation' : mediaFunctional ? 'media_skill_functional' : process.env['MIRROR_PHASE4_QA_CUBISM'] === '1' ? 'cubism' : editorOnly ? 'editor' : process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1' ? 'console' : 'avatar_scenes',
         live: process.env['MIRROR_PHASE4_QA_LIVE'] === '1',
         display: { count: displays.length, mirror: portrait?.id, width: portrait?.bounds.width,
-          height: portrait?.bounds.height, verified: !editorOnly, console: consoleDisplay?.id },
+          height: portrait?.bounds.height, verified: !editorOnly && !mediaFunctional, console: consoleDisplay?.id },
         result, evidence,
         humanAcceptance: 'not_executed', physicalHardware: 'not_executed',
       }, null, 2))
@@ -565,6 +1012,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     }
   }
   void runPhase4Qa({
+    wakeOwner: () => wakeSupervisor,
     runtime,
     mirror,
     console: consoleWindow,
@@ -575,6 +1023,8 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     consoleOnly: process.env['MIRROR_PHASE4_QA_CONSOLE'] === '1',
     editorOnly,
     cubismOnly: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1',
+    memoryPipeline: memoryPipelineQa,
+    memoryLearningSettled: memoryLearningSettledQa,
     onEvidence: (step) => { evidence.push({ ...step }); marker('PHASE4_QA_STEP', { ...step }) },
   }).then((result) => {
     return finish({
@@ -650,6 +1100,12 @@ function createDeferredCredentialEventSink(): {
 }
 
 void app.whenReady().then(async () => {
+  // Electron installs its POSIX shutdown handler after loading Main. Re-arm
+  // Node's persistent handler now; otherwise its native second-TERM default
+  // can terminate cleanup and make launchd restart an intentional stop.
+  process.removeListener('SIGTERM', handleOperatorStop)
+  process.on('SIGTERM', handleOperatorStop)
+  stopMainLiveness = startMainLiveness(() => fatalMainFailure('main_liveness_worker_failed'))
   if (!phase0UserDataPath.ok) {
     exitWithMarker('SMOKE_CONFIG_INVALID', { reason: 'phase0_user_data_isolation_invalid' }, 2)
     return
@@ -667,6 +1123,15 @@ void app.whenReady().then(async () => {
   }
 
   const deferredCredentialEvents = createDeferredCredentialEventSink()
+  const mediaFolders = new MediaFolders(join(app.getPath('userData'), 'media-folders.json'),
+    process.platform === 'darwin' ? createMacMediaFilePreparer(app.isPackaged
+      ? join(process.resourcesPath, 'app.asar.unpacked/out/native/media-file-prepare')
+      : join(app.getAppPath(), 'out/native/media-file-prepare'), join(app.getPath('userData'), 'media-cache-v1'), reason => {
+        runtime.telemetry.emit({ module: 'avatar', event: 'media_file_preparation',
+          status: reason.endsWith('_failed') ? 'degraded' : 'info', reason, source: 'runtime' })
+      }) : undefined)
+  const mediaFoldersReady = mediaFolders.load()
+    .catch(() => reportMainDegradation('avatar', 'media_folders', 'media_folder_load_failed'))
   initializeAudioPreferences(join(app.getPath('userData'), 'audio-devices.json'))
   const credentialSource = createEnvironmentCredentialSource()
   let voicePreview: VoicePreviewLease | undefined
@@ -674,8 +1139,68 @@ void app.whenReady().then(async () => {
     credentialStore: credentialSource,
     events: deferredCredentialEvents.sink,
   })
+  const bounded = async <T>(operation: Promise<T>, ms: number): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([operation, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('operator_loop_operation_timeout')), ms) })]) }
+    finally { clearTimeout(timer) }
+  }
+  const mirrorMode = createMirrorMode({ path: join(app.getPath('userData'), 'mirror-mode.json'), report: reason => marker('MIRROR_MODE', { reason }) })
+  operatorLoop = createOperatorLoop({
+    path: join(app.getPath('userData'), 'operator-loop.json'),
+    validate: async settings => {
+      await mediaFoldersReady
+      await bounded(mediaFolders.refresh(), 12000)
+      const shared = mediaFolders.resources()
+      const selected = [{ id: settings.videoId, kind: 'video' }, ...(settings.audioMode === 'separate' ? [{ id: settings.audioId, kind: 'music' }] : [])]
+      // A cold cloud file may download for its size-scaled deadline; Return to Avatar abandons the wait.
+      return (await Promise.all(selected.map(async file => shared.some(entry => entry.assetId === file.id && entry.kind === file.kind)
+        && !!await bounded(mediaFolders.resolve(file.id), mediaFolders.preparationBudgetMs(file.id))))).every(Boolean)
+    },
+    suspendAvatar: async () => {
+      voicePreview?.preempt('operator_loop_active')
+      await wakeCalibration?.stop(false)
+      // In-flight configuration must also see the new intent before release.
+      await wakeConfigurationTask
+      cameraTracking?.update('dormant', mirrorRendererReady)
+      await bounded(cameraTracking?.released() ?? Promise.resolve(), 5000)
+      await stopScenes()
+      await runtime.suspendForOperatorLoop?.()
+      await bounded(new Promise<void>(resolve => {
+        const quiet = () => !['active', 'activating', 'suspending'].includes(runtime.snapshot().lifecycle)
+        if (quiet()) { resolve(); return }
+        const subscription = runtime.subscribe(() => { if (quiet()) { subscription.unsubscribe(); resolve() } })
+        setTimeout(() => subscription.unsubscribe(), 16000).unref()
+      }), 16000)
+      const result = await wakeSupervisor?.release()
+      // A released worker stays alive with no input stream. microphoneUnowned()
+      // means the entire child has exited, not that release failed.
+      if (result && result.status !== 'success') throw Error('operator_loop_microphone_release_failed')
+      marker('OPERATOR_LOOP', { reason: 'operator_loop_inputs_released', wake: wakeSupervisor?.snapshot().status ?? 'not_configured',
+        lifecycle: runtime.snapshot().lifecycle, camera: 'released' })
+    },
+    resumeAvatar: async () => {
+      await configureWakeRuntime(runtime)
+      if (!operatorLoop?.isLoopMode() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+        const result = await wakeSupervisor?.acquire()
+        if (result?.status === 'failed') marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_restore_failed' })
+      }
+      if (runtime.snapshot().lifecycle === 'offlineLoop') runtime.scheduleRecoveryProbes()
+    },
+    publish: snapshot => {
+      const win = windows.get('mirror')
+      if (win && !win.isDestroyed()) win.webContents.send('mirror:operator-loop', snapshot)
+    },
+    report: reason => marker('OPERATOR_LOOP', { reason }),
+  })
+  const wakeDefaults = new Map<string, Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>>()
 
   const runtime: BootRuntime = bootSequence({
+    operatorLoopActive: () => operatorLoop?.isLoopMode() ?? false,
+    mirrorModeForSession: identity => mirrorMode.sessionMode(identity),
+    currentMirrorMode: () => mirrorMode.get(),
+    ...(phase4QaEnabled && ['baseline', 'trimmed', 'merged', 'focused'].includes(process.env['MIRROR_QA_PROMPT_VARIANT'] ?? '')
+      ? { qaPromptVariant: process.env['MIRROR_QA_PROMPT_VARIANT'] as 'baseline' | 'trimmed' | 'merged' | 'focused' } : {}),
+    getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     // Synthetic QA has no provider session to deliver MEDIA_CLOSED.
     completeSleepForDemo: phase4QaEnabled && process.env['MIRROR_PHASE4_QA_LIVE'] !== '1',
     appVersion: app.getVersion(),
@@ -690,21 +1215,79 @@ void app.whenReady().then(async () => {
     sqlitePath: join(app.getPath('userData'), 'mirror.sqlite'),
     offlineLoopAssetPath: resolveOfflineLoopAssetPath(),
     clientSecretBroker,
-    wakeMicrophoneHandoff: {
-      release: () => wakeSupervisor?.release() ?? Promise.resolve({
-        status: 'success' as const,
-        reason: 'wake_microphone_not_configured',
-      }),
-      acquire: () => wakeSupervisor?.acquire() ?? Promise.resolve({
-        status: 'success' as const,
-        reason: 'wake_microphone_not_configured',
-      }),
+    onFatalFailure: fatalMainFailure,
+    rebuildWakeOwner: () => {
+      if (operatorLoop?.isLoopMode()) return Promise.resolve({ status: 'success', reason: 'operator_loop_no_microphone' })
+      if (wakeOwnerRebuild) return wakeOwnerRebuild
+      const rebuilding = (async (): Promise<WakeSupervisorResult> => {
+        await wakeCalibration?.stop(false)
+        if (!wakeSupervisor) return { status: 'success', reason: 'wake_microphone_not_configured' }
+        const wake = await runtime.getPublishedWakeConfigForRuntime()
+        const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+          platform: `${process.platform}-${process.arch}`, customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+          forceCustomKeywords: wakeTuningIsActive(wake) })
+        if (!loaded.ok) return { status: 'failed', reason: loaded.reason }
+        if (operatorLoop?.isLoopMode()) return { status: 'success', reason: 'operator_loop_no_microphone' }
+        return wakeSupervisor.restart({ package: createWakeWorkerPackage(loaded, wake) })
+      })().finally(() => { wakeOwnerRebuild = null })
+      wakeOwnerRebuild = rebuilding
+      return rebuilding
     },
-    validateWakeConfig: async (wake) => (await loadWakeModelPackage({
-      rootDirectory: wakeModelRoot(),
-      wake,
-      platform: `${process.platform}-${process.arch}`,
-    })).ok,
+    wakeMicrophoneHandoff: {
+      release: async () => {
+        const calibration = await wakeCalibration?.stop(false)
+        if (calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_calibration_restore_failed' }
+        return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
+      },
+      acquire: async () => {
+        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        await wakeOwnerRebuild
+        const calibration = await wakeCalibration?.stop(false)
+        if (shutdownStarted || calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_microphone_acquire_cancelled' }
+        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        if (!wakeSupervisor) return { status: 'degraded' as const, reason: 'wake_microphone_not_configured' }
+        const result = await wakeSupervisor.acquire()
+        return result.status === 'failed' && (wakeSupervisor.microphoneUnowned() || isWakeMicrophoneDeviceUnavailable(result.reason))
+          ? { status: 'degraded' as const, reason: result.reason } : result
+      },
+    },
+    onWakeConfigChanged: () => configureWakeRuntime(runtime),
+    getWakeTuningDefaults: wake => {
+      const key = JSON.stringify(wake)
+      const cached = wakeDefaults.get(key)
+      if (cached) return cached
+      const result = (async () => {
+        const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+          platform: `${process.platform}-${process.arch}`,
+          customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+        })
+        if (!loaded.ok) return null
+        const defaults = createWakeWorkerPackage(loaded, wake).tuning
+        return { packageId: loaded.manifest.packageId, threshold: defaults.threshold!, score: defaults.score!,
+          numTrailingBlanks: defaults.numTrailingBlanks ?? 1 }
+      })().then(defaults => {
+        if (defaults === null && wakeDefaults.get(key) === result) wakeDefaults.delete(key)
+        return defaults
+      }, error => {
+        if (wakeDefaults.get(key) === result) wakeDefaults.delete(key)
+        throw error
+      })
+      wakeDefaults.set(key, result)
+      if (wakeDefaults.size > 16) wakeDefaults.delete(wakeDefaults.keys().next().value!)
+      return result
+    },
+    validateWakeConfig: async (wake, tuning) => {
+      const result = await loadWakeModelPackage({
+        rootDirectory: wakeModelRoot(),
+        wake,
+        platform: `${process.platform}-${process.arch}`,
+        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
+        forceCustomKeywords: tuning?.enabled === true && tuning.phrase === wake.phrase,
+      })
+      if (!result.ok) runtime.telemetry.emit({ module: 'wake', event: 'wake_phrase_validation_failed',
+        status: 'failed', reason: result.reason, source: 'runtime' })
+      return result.ok
+    },
     validateSceneAssets: async (config) => {
       for (const model of config.avatarCatalog?.models ?? []) {
         if (!(await verifyAvatarModel(model, join(app.getPath('userData'), 'assets', 'avatars')))) return false
@@ -720,9 +1303,44 @@ void app.whenReady().then(async () => {
     },
   })
   deferredCredentialEvents.install(runtime.telemetry)
+  let lastFolderHealth = ''
+  const reportFolderHealth = () => {
+    const status = mediaFolders.health()
+    if (status === lastFolderHealth) return
+    lastFolderHealth = status
+    runtime.telemetry.emit({ module: 'avatar', event: 'media_folders', source: 'runtime',
+      status: status === 'ready' ? 'success' : 'degraded', reason: `media_folder_index_${status}` })
+  }
+  void mediaFoldersReady.then(reportFolderHealth)
+    .catch(() => reportMainDegradation('avatar', 'media_folders', 'media_folder_status_failed'))
+  let refreshingFolders = false
+  const folderTimer = setInterval(() => {
+    if (refreshingFolders || !['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle) || shutdownStarted) return
+    refreshingFolders = true
+    void mediaFoldersReady.then(() => mediaFolders.refresh()).then(reportFolderHealth).catch(() => runtime.telemetry.emit({ module: 'avatar', event: 'media_folders',
+      source: 'runtime', status: 'degraded', reason: 'media_folder_refresh_failed' })).finally(() => { refreshingFolders = false })
+  }, 30000)
+  folderTimer.unref()
+  app.once('before-quit', () => clearInterval(folderTimer))
   bootRuntime = runtime
+  wakeCalibration = createWakeCalibration({
+    supervisor: () => wakeSupervisor,
+    canListen: () => runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop',
+    load: async settings => {
+      // Testing an unsaved avatar is safe: settings are temporary and cannot publish.
+      const published = await runtime.getPublishedWakeConfigForRuntime()
+      const wake = { ...published, phrase: settings.phrase, tuning: { enabled: true, phrase: settings.phrase,
+        threshold: settings.threshold, score: settings.score, numTrailingBlanks: settings.numTrailingBlanks } }
+      const loaded = await loadWakeModelPackage({ rootDirectory: wakeModelRoot(), wake,
+        platform: `${process.platform}-${process.arch}`, forceCustomKeywords: true,
+        customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords') })
+      if (!loaded.ok) throw new Error(loaded.reason)
+      return createWakeWorkerPackage(loaded, wake)
+    },
+  })
   void runtime.ready.then(() => runtime.telemetry.emit({ module: 'avatar', event: 'video_decode_policy',
     status: 'info', reason: videoDecodingReason, source: 'runtime' }))
+    .catch(() => reportMainDegradation('avatar', 'video_decode_policy', 'video_decode_status_failed'))
   const visualStorageDir = join(app.getPath('userData'), 'assets', 'visual')
   const visualAssetManager = createVisualAssetManager({ storageDir: visualStorageDir })
   const verifyPlaybackVisual = createVisualPlaybackVerifier()
@@ -745,7 +1363,10 @@ void app.whenReady().then(async () => {
     })
   })
   void configureWakeRuntime(runtime)
+  // Interactive Studio listens for its own wake phrase; each switch reloads the wake listener.
+  mirrorMode.subscribe(() => { void configureWakeRuntime(runtime) })
   void configureAvatarRuntime(runtime)
+    .catch(() => reportMainDegradation('avatar', 'avatar_configuration_failed', 'avatar_config_refresh_failed'))
 
   displaySleepBlocker = createDisplaySleepBlocker(
     {
@@ -759,18 +1380,123 @@ void app.whenReady().then(async () => {
 
   app.on('render-process-gone', (_event, contents, details) => onRenderProcessGone(contents, details))
 
+  ipcMain.handle('mirror:get-operator-loop', (event, ...args) => {
+    if (!authorizeSender(event, 'mirror', windows).ok || args.length) throw Error('operator_loop_request_rejected')
+    return operatorLoop!.view().snapshot
+  })
+  ipcMain.on('mirror:report-operator-loop', (event, ...args) => {
+    const report = args.length === 1 ? parseOperatorLoopReport(args[0]) : null
+    if (!authorizeSender(event, 'mirror', windows).ok || !report) {
+      marker('OPERATOR_LOOP', { reason: 'operator_loop_report_rejected' }); return
+    }
+    operatorLoop!.report(report)
+  })
+  ipcMain.handle('console:loop-video', async (event, ...args) => {
+    const command = args.length === 1 ? parseLoopVideoCommand(args[0]) : null
+    if (!authorizeSender(event, 'console', windows).ok || !command) {
+      return { ok: false, error: 'console_request_rejected', reason: 'operator_loop_request_rejected' }
+    }
+    try {
+      if (command.action === 'save') await operatorLoop!.save(command.settings)
+      if (command.action === 'play' && !await operatorLoop!.play()) throw Error('operator_loop_start_failed')
+      if (command.action === 'stop' && !await operatorLoop!.normal()) throw Error('operator_loop_stop_failed')
+      return { ok: true, value: operatorLoop!.view() }
+    } catch (error) {
+      const reason = error instanceof Error && /^operator_loop_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_operation_failed'
+      marker('OPERATOR_LOOP', { reason })
+      return { ok: false, error: 'console_request_rejected', reason }
+    }
+  })
+  void startOperatorControl({
+    directory: join(app.getPath('userData'), 'operator-control'),
+    execute: async action => {
+      if (action === 'show_console') return showConsoleOnMirror()
+      if (action === 'show_console_main') return showConsoleOnMain()
+      // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
+      // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
+      if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
+      const success = await (action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      if (success) hideConsoleWindow()
+      return success
+    },
+    report: reason => marker('OPERATOR_CONTROL', { reason }),
+  }).then(stop => { if (shutdownStarted) stop(); else stopOperatorControl = stop })
+    .catch(() => { marker('OPERATOR_CONTROL', { reason: 'operator_control_unavailable' }) })
+
   createWindows()
+  watchMirrorDisplay()
+  const tvHost = parseTvHost(process.env['MIRROR_TV_HOST'])
+  if (isDarwin && mirrorDisplayMatch && tvHost && smokeMode.kind === 'off'
+    && !phase4QaEnabled && !phase1LiveSmokeEnabled) {
+    const displayNeedle = mirrorDisplayMatch.toLowerCase()
+    tvPresence = monitorTvPresence({
+      display: () => screen.getAllDisplays().some(display => display.label.toLowerCase().includes(displayNeedle))
+        ? 'present' : 'absent',
+      ethernet: signal => probeTvEthernet(tvHost, signal),
+      report: event => {
+        marker('TV_PRESENCE', event)
+        try {
+          runtime.telemetry.emit({ module: 'app', event: 'tv_presence', source: 'runtime',
+            status: event.reason === 'presence_query_unavailable' ? 'degraded' : 'info',
+            reason: `${event.reason};hdmi=${event.hdmi};ethernet=${event.ethernet}` })
+        } catch { /* Diagnostics cannot gate shutdown or conversation. */ }
+      },
+      onAbsent: () => app.quit(),
+    })
+  } else if (process.env['MIRROR_TV_HOST'] && !tvHost) {
+    marker('TV_PRESENCE_DISABLED', { reason: 'invalid_tv_host' })
+  }
+  // Permission and capture startup never gate the Mirror, voice, or other adapters.
+  const physicalDeviceQa = phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+    && process.env['MIRROR_QA_PHYSICAL_DEVICES'] === '1'
+  if (isDarwin && (smokeMode.kind === 'off' && !phase4QaEnabled && !phase1LiveSmokeEnabled || physicalDeviceQa)) {
+    cameraTracking = createCameraLifecycle({
+      requestPermission: () => systemPreferences.askForMediaAccess('camera'),
+      report: reason => {
+        const status = cameraLifecycleStatus(reason)
+        if (status) {
+          void runtime.setCameraRuntimeStatus?.(status, reason)
+            .catch(() => reportMainDegradation('camera', 'camera_status_failed', 'camera_status_projection_rejected'))
+        } else {
+          try { runtime.telemetry.emit({ module: 'camera', event: 'camera_lifecycle', source: 'runtime', status: 'info', reason }) }
+          catch { reportMainDegradation('camera', 'camera_status_failed', 'camera_status_projection_rejected') }
+        }
+      },
+      start: () => startCameraTracking({
+        executable: app.isPackaged
+          ? join(process.resourcesPath, 'app.asar.unpacked/out/native/camera-tracker')
+          : join(app.getAppPath(), 'out/native/camera-tracker'),
+        cameraName: 'Arducam',
+        microphoneName: () => effectiveMicrophoneName(getAudioPreferences().preferences, () => Microphone.devices()),
+        onTarget: target => {
+          const mirror = windows.get('mirror')
+          if (mirror && !mirror.isDestroyed()) mirror.webContents.send('mirror:camera-target', target)
+        },
+        onStatus: (status, reason) => {
+          void runtime.setCameraRuntimeStatus?.(status, reason)
+            .catch(() => reportMainDegradation('camera', 'camera_status_failed', 'camera_status_projection_rejected'))
+        },
+      }),
+    })
+  }
   protocol.handle('magic-mirror-media', async (request) => {
     try {
       await visualAssetReady
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
       const url = new URL(request.url)
+      if (url.hostname === 'studio') {
+        // Portrait Studio images exist only in Main RAM for the current studio run.
+        const id = decodeURIComponent(url.pathname.slice(1))
+        const image = /^[a-z0-9-]{8,64}$/.test(id) ? sceneRuntimeControl?.studioImage?.(id) : undefined
+        if (!image) return new Response(null, { status: 404 })
+        // CORS like other media responses: the Mirror fetches it to attach the reveal image.
+        return new Response(new Uint8Array(image.bytes), { headers: { 'Content-Type': image.mimeType, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } })
+      }
       if (url.hostname === 'avatar') {
         const [id, ...segments] = decodeURIComponent(url.pathname.slice(1)).split('/')
         if (!/^model-[a-z0-9-]{1,80}$/.test(id)) return new Response(null, { status: 404 })
         const file = segments.join('/')
-        const config = await runtime.console.getConfig()
-        const model = importedModels.get(id) ?? (config.ok ? [...(config.value.active.avatarCatalog?.models ?? []), ...(config.value.draft.avatarCatalog?.models ?? [])].find(m => m.id === id) : undefined)
+        const model = importedModels.get(id) ?? runtime.getAvatarModelForRuntime(id)
         if (!model?.files.includes(file)) return new Response(null, { status: 404 })
         const path = await safeAvatarFile(join(avatarStorageDir, id), file)
         return serveMediaFile(request, path, file.endsWith('.png') ? 'image/png' : /\.jpe?g$/i.test(file) ? 'image/jpeg' : file.endsWith('.json') ? 'application/json' : 'application/octet-stream')
@@ -778,6 +1504,14 @@ void app.whenReady().then(async () => {
       const opaqueId = decodeURIComponent(url.pathname.replace(/^\//, ''))
       if (!/^[a-z0-9][a-z0-9._-]{0,95}$/.test(opaqueId)) {
         return new Response(null, { status: 404 })
+      }
+      if (opaqueId.startsWith('folder-') && ['music', 'music-draft', 'visual', 'visual-draft'].includes(url.hostname)) {
+        await mediaFoldersReady
+        const loopRequest = url.searchParams.has('operatorLoop')
+        const active = loopRequest ? null : await runtime.getPublishedSceneConfigForRuntime()
+        const file = await mediaFolders.resolve(opaqueId, active?.avatarCatalog?.activeAvatarId, url.hostname.endsWith('-draft'))
+        if (!file || url.hostname.startsWith('music') !== file.mimeType.startsWith('audio/')) return new Response(null, { status: 404 })
+        return serveMediaFile(request, file.path, file.mimeType)
       }
       let filePath: string
       let mimeType: string
@@ -824,7 +1558,7 @@ void app.whenReady().then(async () => {
     }
   })
   voicePreview = createVoicePreviewLease({
-    isDormant: () => runtime.snapshot().lifecycle === 'dormant',
+    isDormant: () => !operatorLoop?.isLoopMode() && runtime.snapshot().lifecycle === 'dormant',
     snapshot: () => runtime.getPublishedSessionModelSnapshotForDiagnostics(),
     broker: clientSecretBroker,
     suppressOutput: () => windows.get('console')?.webContents.setAudioMuted(true),
@@ -834,7 +1568,46 @@ void app.whenReady().then(async () => {
       runtime.telemetry.emit({ module: 'avatar', event: 'voice_preview_stopped', status: 'info', reason, source: 'runtime' })
     },
   })
+  const youtubePlayer = createYoutubePlayer(() => windows.get('mirror'), { preferences: () => getAudioPreferences().preferences,
+    report: reason => runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason }) })
+  stopYoutube = () => youtubePlayer.stop()
+  app.once('before-quit', () => youtubePlayer.stop())
   sceneRuntimeControl = registerIpcHandlers({
+    isShuttingDown: () => shutdownStarted,
+    youtube: youtubePlayer,
+    searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
+    captureCamera: () => phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && !physicalDeviceQa
+      ? windows.get('mirror')!.webContents.executeJavaScript(`(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
+      : cameraTracking?.capture() ?? Promise.resolve(null),
+    getFolderMedia: avatarId => mediaFolders.resources(avatarId),
+    prepareFolderMedia: (id, avatarId) => bounded(mediaFolders.resolve(id, avatarId), mediaFolders.preparationBudgetMs(id))
+      .then(file => !!file, () => false),
+    keepChatgptSignedIn: true,
+    mirrorMode,
+    mediaFolders: async request => {
+      await mediaFoldersReady
+      const config = await runtime.console.getConfig()
+      if (!config.ok) throw Error('media_folder_config_unavailable')
+      const knownAvatar = !request.avatarId || config.value.draft.avatarCatalog?.avatars.some(avatar => avatar.id === request.avatarId)
+      if (!knownAvatar && ['choose', 'unlink'].includes(request.action) && request.scope === 'own') throw Error('media_folder_save_avatar_first')
+      const owner = request.scope === 'shared' ? 'shared' : `avatar:${request.avatarId}`
+      if (request.action === 'choose') {
+        const options: Electron.OpenDialogOptions = { title: request.scope === 'shared' ? 'Choose shared media folder for all avatars' : 'Choose this avatar’s media folder', properties: ['openDirectory'],
+          defaultPath: (request.scope === 'shared' ? mediaFolders.view().shared : mediaFolders.view(request.avatarId).own)?.path ?? app.getPath('home') }
+        const window = windows.get('console')
+        const selected = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
+        if (!selected.canceled && selected.filePaths[0]) await mediaFolders.link(owner, selected.filePaths[0])
+      } else if (request.action === 'unlink') await mediaFolders.unlink(owner)
+      else if (request.action === 'refresh') await mediaFolders.refresh()
+      else if (request.action === 'save') await mediaFolders.saveCurrent()
+      reportFolderHealth()
+      return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
+    },
+    wakeCalibration: async command => {
+      if (operatorLoop?.isLoopMode() && (command.type === 'start' || command.type === 'update')) throw Error('operator_loop_active')
+      if (command.type === 'start' || command.type === 'update') await wakeConfigurationTask
+      return wakeCalibration!.command(command)
+    },
     voicePreview,
     getWakeInput: () => wakeSupervisor?.snapshot().input,
     ipcMain,
@@ -945,15 +1718,117 @@ void app.whenReady().then(async () => {
       }
     },
   })
+  const memoryReport = (code: string): void => {
+    if (code === 'memory_storage_unavailable') void runtime.setMemoryRuntimeStatus('degraded')
+      .catch(() => reportMainDegradation('memory', 'memory_status_failed', 'memory_status_projection_rejected'))
+    if (code === 'memory_storage_ready') void runtime.setMemoryRuntimeStatus('ready')
+      .catch(() => reportMainDegradation('memory', 'memory_status_failed', 'memory_status_projection_rejected'))
+    runtime.telemetry.emit({ module: 'memory', event: 'memory_operation', status: /failed|unavailable|invalid|timeout/.test(code) ? 'degraded' : 'info', reason: code, source: 'runtime' })
+  }
+  let memoryStore: ReturnType<typeof createMemoryRepository>
+  try { memoryStore = createMemoryRepository(join(app.getPath('userData'), 'private-memory', 'memory.sqlite'), { report: memoryReport }) }
+  catch { memoryStore = unavailableMemoryRepository(); memoryReport('memory_storage_unavailable') }
+  void memoryStore.names('runtime-check').then(() => runtime.setMemoryRuntimeStatus('ready')).catch(() => memoryReport('memory_storage_unavailable'))
+  const memoryEmbedder = createMemoryEmbedder({ runtimeDirectory: app.isPackaged
+    ? join(app.getPath('userData'), 'memory-embedding') : join(app.getAppPath(), '.local', 'memory-embedding'),
+    report: event => memoryReport(`memory_embedding_${event.reason}`) })
+  const memoryIndexer = new MemoryIndexer(memoryStore, memoryEmbedder, memoryReport)
+  const memoryExtractor = createMemoryExtractor({ credentialSource, report: memoryReport })
+  const memoryModel = async () => (await runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
+  const memoryInterpreter = createMemoryInterpreter({ credentialSource, model: memoryModel, report: memoryReport })
+  const memoryConsolidator = createMemoryConsolidator({ repository: memoryStore, extract: memoryExtractor, embedder: memoryEmbedder, report: memoryReport })
+  const memoryLearning = new MemoryLearning({ repository: memoryStore, extract: memoryExtractor, consolidate: memoryConsolidator, model: memoryModel,
+    report: memoryReport, onCommitted: (avatarId, name) => {
+      memoryIndexer.schedule()
+      void memoryStore.policy(avatarId, name).then(async policy => {
+        const snapshot = runtime.snapshot()
+        if (policy.cleanupRequired && memory.relationship.invalidateLoaded({ active: snapshot.lifecycle === 'active',
+          avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration }, avatarId, name)) {
+          memoryReport('memory_context_refresh_required')
+          const reset = await runtime.rolloverAtSafeBoundary()
+          if (!['dispatched', 'success'].includes(reset.status as string)) await runtime.manualStop()
+        }
+      }).catch(() => memoryReport('memory_context_refresh_failed'))
+    } })
+  memoryLearningSettledQa = () => memoryLearning.isSettled()
+  const memoryImporter = new MemoryImporter({ repository: memoryStore, extract: memoryExtractor, consolidate: memoryConsolidator, model: memoryModel,
+    canRun: () => runtime.snapshot().lifecycle === 'dormant', report: memoryReport, onChanged: () => memoryIndexer.schedule() })
+  memoryIndexer.schedule()
+  if (phase4QaEnabled && process.env['MIRROR_MEMORY_LIVE_QA'] === '1') memoryPipelineQa = async evidence => runMemoryLiveQa({
+    path: join(app.getPath('userData'), 'private-memory', 'synthetic-e2e.sqlite'), model: await memoryModel(),
+    extract: memoryExtractor, embedder: memoryEmbedder, evidence })
+  if (phase4QaEnabled && process.env['MIRROR_MEMORY_CALENDAR_QA'] === '1') memoryPipelineQa = async evidence => {
+    let validationReason = 'memory_extraction_invalid'
+    const extract = createMemoryExtractor({ credentialSource, report: reason => { validationReason = reason; memoryReport(reason) } })
+    await runMemoryCalendarQa({ model: await memoryModel(), evidence, extract: async (input, signal) => {
+      try { return await extract(input, signal) }
+      catch (error) { if (error instanceof Error && error.message === 'memory_extraction_invalid') throw Error(validationReason); throw error }
+    } })
+  }
+  const memory = registerMemoryIpc({
+    handle: (channel, handler) => ipcMain.handle(channel, handler),
+    authorize: (event, kind) => authorizeSender(event, kind, windows).ok,
+    state: () => { const snapshot = runtime.snapshot(); return { active: snapshot.lifecycle === 'active', lifecycle: snapshot.lifecycle,
+      avatarId: runtime.getPublishedAvatarId(), realtimeSessionId: snapshot.realtimeSessionId ?? '', sessionGeneration: snapshot.sessionGeneration } },
+    store: () => memoryStore,
+    learning: memoryLearning, embedder: memoryEmbedder, importer: memoryImporter, interpret: memoryInterpreter,
+    onChanged: () => memoryIndexer.schedule(),
+    controlPhrases: async () => {
+      try { return [...runtime.getPublishedControlPhrasesForRuntime()] }
+      catch {
+        memoryReport('memory_control_phrases_unavailable')
+        // Reject this evidence input before it can be submitted for extraction.
+        throw new Error('memory_control_phrases_unavailable')
+      }
+    },
+    pickMarkdown: async () => {
+      const selected = await dialog.showOpenDialog({ title: 'Import memory Markdown', properties: ['openFile'], filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }] })
+      if (selected.canceled || !selected.filePaths[0]) return null
+      const file = await open(selected.filePaths[0], 'r')
+      try {
+        const info = await file.stat()
+        if (!info.isFile() || info.size > 20 * 1024 * 1024) throw Error('memory_import_too_large')
+        const buffer = Buffer.alloc(Math.min(info.size + 1, 20 * 1024 * 1024 + 1))
+        let bytesRead = 0
+        while (bytesRead < buffer.length) {
+          const part = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead)
+          if (!part.bytesRead) break
+          bytesRead += part.bytesRead
+        }
+        if (bytesRead > info.size || bytesRead > 20 * 1024 * 1024) throw Error('memory_import_too_large')
+        if (bytesRead !== info.size) throw Error('memory_import_source_changed')
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead))
+      } finally { await file.close() }
+    },
+    knownAvatar: async id => { const config = await runtime.console.getConfig(); return config.ok && !!config.value.active.avatarCatalog?.avatars.some(a => a.id === id) },
+    resetConversation: async () => {
+      const result = await runtime.rolloverAtSafeBoundary()
+      if (!['dispatched', 'success'].includes(result.status as string)) { await runtime.manualStop(); throw new Error('memory_session_reset_failed') }
+    },
+    canEdit: () => runtime.snapshot().lifecycle === 'dormant',
+    report: memoryReport,
+  })
+  shutdownMemory = async () => {
+    memory.close(); memoryImporter.cancel()
+    await memoryLearning.flush()
+    await Promise.allSettled([memoryLearning.close(), memoryImporter.idle(), memoryIndexer.close(), memoryEmbedder.close()])
+    await memoryStore.close()
+  }
   runtime.subscribe((snapshot) => {
+    if (shutdownStarted) return
+    memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
+    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
-      void sceneRuntimeControl?.stopAll()
+      stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
+    } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {
+      stopScenes()
     }
     boot.lifecycle = mirrorRendererReady ? snapshot.lifecycle : 'starting'
-    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry)
-    void publishSnapshot('console', snapshot, windows, runtime.telemetry)
+    void publishSnapshot('mirror', snapshot, windows, runtime.telemetry, () => shutdownStarted)
+    // A lazy Console has no receiver until the operator opens it.
+    if (windows.has('console')) void publishSnapshot('console', snapshot, windows, runtime.telemetry, () => shutdownStarted)
   })
 
   if (phase1LiveSmokeEnabled) {
@@ -998,6 +1873,8 @@ void app.whenReady().then(async () => {
 })
 
 function shutdownBootRuntime(): Promise<void> {
+  shutdownStarted = true
+  stopOperatorControl?.(); operatorLoop?.dispose()
   if (shutdownPromise !== null) return shutdownPromise
   const runtime = bootRuntime
   if (runtime === null) {
@@ -1005,22 +1882,42 @@ function shutdownBootRuntime(): Promise<void> {
     return shutdownPromise
   }
 
-  shutdownPromise = Promise.resolve()
-    .then(() => sceneRuntimeControl?.stopAll())
-    .then(() => wakeSupervisor?.shutdown())
-    .then(() => runtime.shutdown())
-    .catch(() => {
-      marker('SHUTDOWN_FAILED', { reason: 'shutdown_rejected' })
-    })
+  // Cancel lifecycle/probe timers immediately, including during clean quit.
+  const runtimeShutdown = runtime.shutdown()
+  shutdownPromise = (async () => {
+    const steps = [
+      () => stopYoutube?.(),
+      () => cameraTracking?.stop(),
+      () => sceneRuntimeControl?.stopAll(),
+      () => wakeOwnerRebuild?.catch(() => undefined),
+      () => wakeCalibration?.stop(false),
+      () => wakeSupervisor?.shutdown(),
+      () => shutdownMemory?.(),
+      () => runtimeShutdown,
+    ]
+    for (const [index, step] of steps.entries()) {
+      try { await step() }
+      catch { marker('SHUTDOWN_FAILED', { reason: 'resource_cleanup_rejected', step: index }) }
+    }
+  })()
   return shutdownPromise
 }
 
 function stopQuitResources(): void {
+  stopMainLiveness?.()
+  shutdownStarted = true
   if (quitResourcesStopped) return
   quitResourcesStopped = true
-  globalShortcut.unregisterAll()
-  displaySleepBlocker?.stop()
+  try { tvPresence?.stop() } catch { marker('SHUTDOWN_FAILED', { reason: 'tv_monitor_stop_failed' }) }
+  if (displaySettleTimer !== null) {
+    clearTimeout(displaySettleTimer)
+    displaySettleTimer = null
+  }
+  try { globalShortcut.unregisterAll() } catch { marker('SHUTDOWN_FAILED', { reason: 'shortcut_release_failed' }) }
+  try { displaySleepBlocker?.stop() } catch { marker('SHUTDOWN_FAILED', { reason: 'display_blocker_release_failed' }) }
 }
+
+app.on('before-quit', () => { shutdownStarted = true; void cameraTracking?.stop(); stopMainLiveness?.() })
 
 app.on('will-quit', (event) => {
   if (willQuitHandled) return
@@ -1029,10 +1926,13 @@ app.on('will-quit', (event) => {
   stopQuitResources()
   if (appQuitFinalizationStarted) return
   appQuitFinalizationStarted = true
+  const deadline = setTimeout(() => app.exit(requestedExitCode ?? 0), 15_000)
 
   void shutdownBootRuntime().then(() => {
+    clearTimeout(deadline)
     // Release before app.quit() so Electron's reentrant will-quit is allowed through.
     willQuitHandled = true
+    if (requestedExitCode !== null) { app.exit(requestedExitCode); return }
     app.quit()
   })
 })

@@ -3,8 +3,12 @@ productName: Magic Mirror
 files:
   - out/**/*
   - package.json
+  - src/main/wake/lexicon/*-LICENSE.txt
+  - src/main/wake/lexicon/provenance.json
+  - src/main/wake/lexicon/README.md
 asar: true
 asarUnpack:
+  - out/native/*
   - out/renderer/mock/*.mp4
   - out/renderer/avatar/**/*
   - out/renderer/audio/**/*
@@ -14,11 +18,17 @@ extraResources:
   - from: resources/wake-models
     to: wake-models
 mac:
+  extraResources:
+    - from: resources/wake-native/darwin-arm64
+      to: wake-score-native
   hardenedRuntime: true
   entitlements: resources/macos/entitlements.plist
   entitlementsInherit: resources/macos/entitlements.plist
   extendInfo: resources/macos/Info.plist.additions.xml
 win:
+  extraResources:
+    - from: resources/wake-native/win32-x64
+      to: wake-score-native
   target:
     - target: dir
       arch:

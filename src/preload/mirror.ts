@@ -1,8 +1,16 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { parseOperatorLoopSnapshot } from '../shared/operator-loop'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
+import { parseMediaSkillRequest, parseMediaSkillResult } from '../shared/media-skill'
+import { parseStudioEventIdentity, parseStudioReply, parseStudioRequest, parseStudioSessionEvent, parseStudioView, STUDIO_MIRROR_CHANNEL } from '../shared/portrait-studio'
+import { parseMediaDiscoveryRequest, parseMediaDiscoveryReply } from '../shared/media-discovery'
+import { parseYoutubeSearchRequest, parseYoutubeSearchReply } from '../shared/youtube-search'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
 import { parseAudioPreferences } from '../shared/audio-devices'
+import { isCameraSnapshot, isCameraTarget } from '../shared/camera-tracking'
+import { parseVoiceEffects } from '../shared/voice-effects'
 import { parsePresentation } from '../shared/presentation'
+import { VISUAL_FADE_MAX_MS } from '../shared/types'
 import type {
   AppSnapshot,
   SceneActionCommandContext,
@@ -33,6 +41,11 @@ if (process.env['MIRROR_FORCE_RENDERER_FAIL'] === '1') {
 }
 
 const READY_CHANNEL = 'boot:renderer-ready' as const
+// Preload shares the renderer event loop, so a hung page cannot fake liveness.
+if (typeof window !== 'undefined') {
+  const heartbeat = setInterval(() => ipcRenderer.send('mirror:heartbeat'), 5000)
+  window.addEventListener('unload', () => clearInterval(heartbeat), { once: true })
+}
 const SNAPSHOT_CHANNEL = 'mirror:snapshot' as const
 const GET_SNAPSHOT_CHANNEL = 'mirror:get-snapshot' as const
 const REQUEST_REALTIME_CLIENT_SECRET_CHANNEL = 'mirror:request-realtime-client-secret' as const
@@ -131,7 +144,23 @@ function sanitizeSceneActionContext(value: unknown): SceneActionCommandContext |
 function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
   if (!isRecord(value)) return null
   const type = readProperty(value, 'type')
-  if (type === 'refresh_audio_devices' && exactKeys(value, ['type'])) return { type }
+  if (type === 'media_skill_state' && exactKeys(value, ['type', 'active', 'hideAvatar', 'fadeMs'])) {
+    const { active, hideAvatar, fadeMs } = value
+    if (typeof active !== 'boolean' || typeof hideAvatar !== 'boolean' || typeof fadeMs !== 'number'
+      || !Number.isInteger(fadeMs) || fadeMs < 0 || fadeMs > 10000) return null
+    return Object.freeze({ type, active, hideAvatar, fadeMs })
+  }
+  if (type === 'studio_view' && exactKeys(value, ['type', 'view'])) {
+    const raw = readProperty(value, 'view')
+    const view = raw === null ? null : parseStudioView(raw)
+    return raw !== null && view === null ? null : Object.freeze({ type, view })
+  }
+  if (type === 'studio_event' && exactKeys(value, ['type', 'event', 'identity'])) {
+    const event = parseStudioSessionEvent(readProperty(value, 'event'))
+    const identity = parseStudioEventIdentity(readProperty(value, 'identity'))
+    return event && identity ? Object.freeze({ type, event, identity }) : null
+  }
+  if ((type === 'refresh_audio_devices' || type === 'stop_avatar_test') && exactKeys(value, ['type'])) return Object.freeze({ type })
   if (type === 'audio_devices' && exactKeys(value, ['type', 'preferences'])) {
     const preferences = parseAudioPreferences(readProperty(value, 'preferences'))
     return preferences ? Object.freeze({ type, preferences }) : null
@@ -222,19 +251,30 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
     if (action === 'start' && exactKeys(value, [
       'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context',
       ...(preview === true ? ['preview'] : []),
+    ]) || action === 'start' && exactKeys(value, [
+      'type', 'action', 'assetId', 'fit', 'playback', 'audio', 'gain', 'context', 'fadeInMs', 'fadeOutMs',
+      ...(preview === true ? ['preview'] : []),
     ])) {
       const assetId = readProperty(value, 'assetId')
       const fit = readProperty(value, 'fit')
       const playback = readProperty(value, 'playback')
       const audio = readProperty(value, 'audio')
       const gain = readProperty(value, 'gain')
+      const fadeInMs = readProperty(value, 'fadeInMs')
+      const fadeOutMs = readProperty(value, 'fadeOutMs')
       const context = sanitizeSceneActionContext(readProperty(value, 'context'))
+      const normalizedFade = (candidate: unknown): number | null => candidate === undefined
+        ? 0
+        : typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= 0 && candidate <= VISUAL_FADE_MAX_MS
+          ? candidate : null
+      const normalizedFadeInMs = normalizedFade(fadeInMs)
+      const normalizedFadeOutMs = normalizedFade(fadeOutMs)
       return typeof assetId === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(assetId)
         && (fit === 'contain' || fit === 'cover')
         && (playback === 'still' || playback === 'once' || playback === 'loop')
         && (audio === 'muted' || audio === 'embedded')
-        && unitNumber(gain) && context !== null
-        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, context, ...(preview === true ? { preview: true as const } : {}) })
+        && unitNumber(gain) && normalizedFadeInMs !== null && normalizedFadeOutMs !== null && context !== null
+        ? Object.freeze({ type, action, assetId, fit, playback, audio, gain, fadeInMs: normalizedFadeInMs, fadeOutMs: normalizedFadeOutMs, context, ...(preview === true ? { preview: true as const } : {}) })
         : null
     }
     if (action === 'stop' && exactKeys(value, ['type', 'action', 'runId', 'sceneId'])) {
@@ -280,7 +320,16 @@ function isValidSessionStartBundleValue(value: unknown): value is RealtimeSessio
   if ('avatar' in value && !parseAvatarSessionSettings(value.avatar)) return false
 
   const snapshot = readProperty(value, 'snapshot')
-  if (!isRecord(snapshot) || !exactKeys(snapshot, SESSION_SNAPSHOT_KEYS)) return false
+  if (!isRecord(snapshot)) return false
+  const optionalKeys = ['voiceSpeed', 'voiceEffects'].filter(key => Object.prototype.hasOwnProperty.call(snapshot, key))
+  if (!exactKeys(snapshot, [...SESSION_SNAPSHOT_KEYS, ...optionalKeys])) return false
+  if (optionalKeys.includes('voiceSpeed') && (
+    typeof snapshot.voiceSpeed !== 'number' || !Number.isFinite(snapshot.voiceSpeed)
+    || snapshot.voiceSpeed < 0.5 || snapshot.voiceSpeed > 1.5
+  )) return false
+  if (optionalKeys.includes('voiceEffects') && (
+    snapshot.voiceEffects === undefined || !parseVoiceEffects(snapshot.voiceEffects)
+  )) return false
   if (
     typeof readProperty(snapshot, 'configVersion') !== 'number'
     || !Number.isSafeInteger(readProperty(snapshot, 'configVersion'))
@@ -335,6 +384,12 @@ function sanitizeSessionStartBundleValue(value: unknown): RealtimeSessionStartBu
     reasoningEffort: readProperty(snapshot, 'reasoningEffort') as string,
     turnDetectionProfile: readProperty(snapshot, 'turnDetectionProfile') as string,
     takenAt: readProperty(snapshot, 'takenAt') as string,
+    ...(readProperty(snapshot, 'voiceSpeed') === undefined ? {} : {
+      voiceSpeed: readProperty(snapshot, 'voiceSpeed') as number,
+    }),
+    ...(readProperty(snapshot, 'voiceEffects') === undefined ? {} : {
+      voiceEffects: Object.freeze(parseVoiceEffects(readProperty(snapshot, 'voiceEffects'))!),
+    }),
   })
   const sanitizedIdentity = Object.freeze({
     realtimeSessionId: readProperty(identity, 'realtimeSessionId') as string,
@@ -392,18 +447,49 @@ function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretRe
 }
 
 const bridge: MirrorBridge = {
+  getOperatorLoop: async () => {
+    const value = parseOperatorLoopSnapshot(await ipcRenderer.invoke('mirror:get-operator-loop'))
+    if (!value) throw Error('operator_loop_snapshot_invalid')
+    return value
+  },
+  onOperatorLoop(listener) {
+    const handler = (_event: IpcRendererEvent, value: unknown) => {
+      const snapshot = parseOperatorLoopSnapshot(value)
+      if (snapshot) listener(snapshot)
+    }
+    ipcRenderer.on('mirror:operator-loop', handler)
+    return () => ipcRenderer.removeListener('mirror:operator-loop', handler)
+  },
+  reportOperatorLoop: report => ipcRenderer.send('mirror:report-operator-loop', report),
+  onCameraTarget(listener): () => void {
+    const receive = (_event: IpcRendererEvent, value: unknown): void => {
+      if (value === null || isCameraTarget(value)) listener(value)
+    }
+    ipcRenderer.on('mirror:camera-target', receive)
+    return () => { ipcRenderer.removeListener('mirror:camera-target', receive) }
+  },
   async getPresentation() {
     const value = await ipcRenderer.invoke('mirror:get-presentation')
-    if (!isRecord(value) || !exactKeys(value, ['config', 'background', ...('model' in value ? ['model'] : [])])) return null
+    if (!isRecord(value) || !exactKeys(value, ['config', 'background', ...('model' in value ? ['model'] : []),
+      ...('entranceVideo' in value ? ['entranceVideo'] : []), ...('exitVideo' in value ? ['exitVideo'] : [])])) return null
     const model = 'model' in value ? parseAvatarModelReference(value.model) : null
     if ('model' in value && !model) return null
     const config = parsePresentation(value.config)
     if (!config) return null
     const background = value.background
-    if (background === null) return { config, background: null, ...(model ? { model } : {}) }
-    if (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
-      || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video')) return null
-    return { config, background: { id: config.backgroundId, kind: background.kind }, ...(model ? { model } : {}) }
+    if (background !== null && (!isRecord(background) || !exactKeys(background, ['id', 'kind'])
+      || background.id !== config.backgroundId || (background.kind !== 'image' && background.kind !== 'video'))) return null
+    const videos: { entranceVideo?: { id: string; kind: 'video' } | null; exitVideo?: { id: string; kind: 'video' } | null } = {}
+    for (const key of ['entranceVideo', 'exitVideo'] as const) {
+      if (!(key in value)) continue
+      const video = value[key]
+      if (video === null) { videos[key] = null; continue }
+      const id = config[key === 'entranceVideo' ? 'entranceVideoId' : 'exitVideoId']
+      if (!id || !isRecord(video) || !exactKeys(video, ['id', 'kind']) || video.id !== id || video.kind !== 'video') return null
+      videos[key] = { id, kind: 'video' }
+    }
+    return { config, background: background === null ? null : { id: config.backgroundId, kind: background.kind as 'image' | 'video' },
+      ...videos, ...(model ? { model } : {}) }
   },
   async getAudioPreferences() {
     const result = await ipcRenderer.invoke('mirror:get-audio-preferences')
@@ -458,6 +544,53 @@ const bridge: MirrorBridge = {
 
   requestSleep(): void {
     ipcRenderer.send(SLEEP_REQUEST_CHANNEL)
+  },
+
+  async captureCamera(identity) {
+    if (!identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return null
+    const frame: unknown = await ipcRenderer.invoke('mirror:capture-camera', {
+      realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration,
+    })
+    return isCameraSnapshot(frame) ? frame : null
+  },
+
+  memory: (request, identity) => ipcRenderer.invoke('mirror:memory', { request, identity }),
+  memoryInput: (phase, itemId, transcript, identity) => ipcRenderer.invoke('mirror:memory-input', { phase, itemId, transcript, identity }),
+  resetMemorySession: identity => ipcRenderer.invoke('mirror:memory-reset', identity),
+
+  async findMedia(request, identity) {
+    const parsed = parseMediaDiscoveryRequest(request)
+    const failure = { status: 'failed' as const, code: 'media_discovery_unavailable', resources: [], total: 0 }
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return failure
+    return parseMediaDiscoveryReply(await ipcRenderer.invoke('mirror:find-media', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
+  },
+  async searchYoutube(request, identity) {
+    const parsed = parseYoutubeSearchRequest(request)
+    const failure = { status: 'failed' as const, code: 'youtube_search_unavailable' as const, videos: [] }
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return failure
+    return parseYoutubeSearchReply(await ipcRenderer.invoke('mirror:search-youtube', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
+  },
+  async requestMedia(request, identity) {
+    const parsed = parseMediaSkillRequest(request)
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return 'rejected'
+    const result: unknown = await ipcRenderer.invoke('mirror:media-skill', { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })
+    return parseMediaSkillResult(result) ?? { status: 'failed', code: 'media_playback_failed' }
+  },
+
+  async studio(request, identity) {
+    const parsed = parseStudioRequest(request)
+    const failure = { status: 'failed' as const, code: 'studio_unavailable' }
+    if (!parsed || !identity || typeof identity.realtimeSessionId !== 'string'
+      || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return { status: 'rejected' as const, code: 'studio_request_invalid' }
+    return parseStudioReply(await ipcRenderer.invoke(STUDIO_MIRROR_CHANNEL, { request: parsed,
+      identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
   },
 
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void {

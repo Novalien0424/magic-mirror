@@ -1,5 +1,7 @@
-import { createSpellTriggerGuard, normalizeTranscript, type SpellTriggerGuard } from '../../main/scenes/spell-trigger'
+import { createSpellTriggerGuard, type SpellTriggerGuard } from '../../main/scenes/spell-trigger'
+import { isSpellAttempt, spokenCommandKey } from '../../shared/spoken-command'
 import type { ScenePublicCatalog, SceneStartResult, SceneStatusEvent } from '../../shared/types'
+import type { SpellAnnouncementResult } from './spell-announcement'
 
 interface SceneTranscriptBridge {
   getSceneCatalog(): Promise<ScenePublicCatalog>
@@ -27,6 +29,10 @@ const TURN_LIMIT = 2048
 export function createSceneTranscriptController(input: Readonly<{
   bridge: SceneTranscriptBridge
   interrupt: () => Promise<unknown>
+  announceSpell?: () => Promise<SpellAnnouncementResult>
+  retrySpell?: () => Promise<SpellAnnouncementResult>
+  claimControlTurn?: (itemId: string) => void
+  isCurrentSession?: (sessionId: string) => boolean
   metadataSink?: (reason: string, realtimeSessionId: string) => void
 }>): SceneTranscriptController {
   const boundaries = new Map<string, { runId: string | null; turnId: string }>()
@@ -46,7 +52,7 @@ export function createSceneTranscriptController(input: Readonly<{
     const catalog = await input.bridge.getSceneCatalog()
     if (catalog.configVersion === catalogVersion) return
     catalogVersion = catalog.configVersion
-    stopPhrase = normalizeTranscript(catalog.stopPhrase)
+    stopPhrase = spokenCommandKey(catalog.stopPhrase)
     spellGuard = createSpellTriggerGuard(catalog.spells.map((spell) => ({
       spellId: spell.id,
       phrase: spell.phrase,
@@ -91,8 +97,9 @@ export function createSceneTranscriptController(input: Readonly<{
       consumed.add(completed.itemId)
       try {
         await refreshCatalog()
-        const normalized = normalizeTranscript(completed.transcript)
+        const normalized = spokenCommandKey(completed.transcript)
         if (stopPhrase !== '' && normalized === stopPhrase) {
+          input.claimControlTurn?.(completed.itemId)
           if (boundary.runId === null) {
             report('stale_scene_stop', completed.realtimeSessionId)
             return { decision: 'ignored', reason: 'stale_scene_stop' }
@@ -108,14 +115,41 @@ export function createSceneTranscriptController(input: Readonly<{
           transcript: completed.transcript,
         })
         if (decision === undefined || decision.decision === 'ignore') {
-          const reason = decision?.reason ?? 'invalid_config'
+          const reason = decision?.reason === 'not_exact_match' && isSpellAttempt(completed.transcript)
+            ? 'spell_command_not_recognized' : decision?.reason ?? 'invalid_config'
           report(reason, completed.realtimeSessionId)
+          if (reason === 'spell_command_not_recognized' && input.isCurrentSession?.(completed.realtimeSessionId) !== false) {
+            input.claimControlTurn?.(completed.itemId)
+            await input.interrupt()
+            if (input.isCurrentSession?.(completed.realtimeSessionId) !== false && input.retrySpell) {
+              void input.retrySpell().then(result => report(result.status === 'completed' ? 'spell_retry_completed' : result.reason, completed.realtimeSessionId))
+                .catch(() => report('spell_retry_unavailable', completed.realtimeSessionId))
+            }
+          }
           return { decision: 'ignored', reason }
         }
+        if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
+          report('spell_session_stale', completed.realtimeSessionId)
+          return { decision: 'ignored', reason: 'spell_session_stale' }
+        }
+        input.claimControlTurn?.(completed.itemId)
         await input.interrupt()
+        if (input.isCurrentSession?.(completed.realtimeSessionId) === false) {
+          report('spell_session_stale', completed.realtimeSessionId)
+          return { decision: 'ignored', reason: 'spell_session_stale' }
+        }
+        // The exact completed command authorizes the scene. Speech is feedback,
+        // not a second authorization gate that ambient VAD can revoke.
+        const result = await input.bridge.triggerScene({ spellId: decision.spellId, turnId: decision.turnId })
+        report(result.status === 'accepted' ? 'spell_command_accepted' : 'spell_command_rejected', completed.realtimeSessionId)
+        if (result.status === 'accepted' && input.announceSpell && input.isCurrentSession?.(completed.realtimeSessionId) !== false) {
+          void Promise.resolve().then(() => input.announceSpell!()).then(announcement => {
+            report(announcement.status === 'completed' ? 'spell_announcement_completed' : announcement.reason, completed.realtimeSessionId)
+          }).catch(() => report('spell_announcement_unavailable', completed.realtimeSessionId))
+        }
         return {
           decision: 'triggered',
-          result: await input.bridge.triggerScene({ spellId: decision.spellId, turnId: decision.turnId }),
+          result,
         }
       } catch {
         report('scene_trigger_failed', completed.realtimeSessionId)

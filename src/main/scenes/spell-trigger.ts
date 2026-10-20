@@ -1,3 +1,5 @@
+import { spokenCommandKey } from '../../shared/spoken-command'
+
 export type TranscriptAttempt =
   | {
       readonly turnId: string;
@@ -98,14 +100,17 @@ export function normalizeTranscript(
     options,
   );
 
-  return equivalenceNormalized.replace(UNICODE_PUNCTUATION, "").trim();
+  return equivalenceNormalized.replace(UNICODE_PUNCTUATION, "")
+    .replace(/(\p{Script=Han})\s+(?=\p{Script=Han})/gu, '$1').trim()
+    // One explicit script equivalence for the fixed command prefix, not fuzzy intent matching.
+    .replace(/^施放咒语/u, '施放咒語');
 }
 
 function normalizedSpellPhrase(
   spell: SpellDefinition,
   options: NormalizationOptions,
 ): string {
-  const normalized = normalizeTranscript(spell.phrase, options);
+  const normalized = spokenCommandKey(applyCharacterEquivalences(spell.phrase, options));
   if (normalized.length === 0) {
     throw new SpellCatalogError("empty_normalized_spell_phrase");
   }
@@ -126,7 +131,7 @@ export function matchExactSpell(
     return { matched: false, reason: "transcript_unavailable" };
   }
 
-  return normalizeTranscript(attempt.transcript, options) === normalizedPhrase
+  return spokenCommandKey(applyCharacterEquivalences(attempt.transcript, options)) === normalizedPhrase
     ? { matched: true, spellId: spell.spellId }
     : { matched: false, reason: "not_exact_match" };
 }
@@ -172,7 +177,7 @@ export function createSpellTriggerGuard(
         };
       }
 
-      const spellId = catalog.get(normalizeTranscript(attempt.transcript, options));
+      const spellId = catalog.get(spokenCommandKey(applyCharacterEquivalences(attempt.transcript, options)));
       if (spellId === undefined) {
         return {
           decision: "ignore",

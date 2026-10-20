@@ -1,0 +1,54 @@
+{
+  "ok": true,
+  "scope": "static",
+  "basic": {
+    "ok": true,
+    "motionGroups": [
+      "Dormant",
+      "Waking",
+      "Listening",
+      "Thinking",
+      "Speaking",
+      "Scene",
+      "Suspending"
+    ],
+    "motionFirstFiles": {
+      "Dormant": "motions/raven_dormant.motion3.json",
+      "Waking": "motions/raven_waking.motion3.json",
+      "Listening": "motions/raven_listening.motion3.json",
+      "Thinking": "motions/raven_thinking.motion3.json",
+      "Speaking": "motions/raven_speaking.motion3.json",
+      "Scene": "motions/raven_scene.motion3.json",
+      "Suspending": "motions/raven_suspending.motion3.json"
+    },
+    "parameters": {
+      "EyeBlink": [
+        "ParamEyeLOpen",
+        "ParamEyeROpen"
+      ],
+      "LipSync": [
+        "ParamMouthOpenY"
+      ]
+    },
+    "referenceCount": 16,
+    "fileCount": 17,
+    "totalBytes": 3666359
+  },
+  "profile": {
+    "ok": true,
+    "requiredExpressions": [
+      "exp_01",
+      "exp_02",
+      "exp_03",
+      "exp_04",
+      "exp_05"
+    ],
+    "expressionNames": [
+      "exp_01",
+      "exp_02",
+      "exp_03",
+      "exp_04",
+      "exp_05"
+    ]
+  }
+}

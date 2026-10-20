@@ -1,68 +1,143 @@
 import { HelpField } from './HelpField'
+import { InfoTip } from './HelpButton'
+import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
 import { useEffect, useState } from 'react'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
 import type { LifecycleState } from '../../shared/types'
-import { DEFAULT_PRESENTATION } from '../../shared/presentation'
+import { DEFAULT_PRESENTATION, parsePresentation } from '../../shared/presentation'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { PresentationPhase } from '../avatar/presentation-controller'
+import type { ConsoleBridge } from '../../shared/bridge'
+import type { FolderMediaEntry } from '../../shared/media-folders'
 
 const ignore = () => undefined
-export function PresentationEditor({ draft, onChange, disabled, model }: {
+export function PresentationEditor({ draft, onChange, disabled, model, bridge, avatarId, onEditSpokenLines }: {
   draft: ConsoleConfigDraftInput; onChange(draft: ConsoleConfigDraftInput): void; disabled: boolean
   model?: import('../../shared/avatar-profiles').AvatarModelReference
+  bridge?: ConsoleBridge | null; avatarId?: string
+  /** Persona owns the wake greeting and sleep farewell; Appearance links there. */
+  onEditSpokenLines?(): void
 }) {
   const config = draft.presentation ?? DEFAULT_PRESENTATION
+  const fieldPath = (field: string): string => `${avatarId ? `avatar.${avatarId}.` : ''}presentation.${field}`
   const [lifecycle, setLifecycle] = useState<LifecycleState>('dormant')
   const [phase, setPhase] = useState<PresentationPhase>('asleep')
-  const [cycle, setCycle] = useState(false)
-  const [previewing, setPreviewing] = useState(false)
+  const [previewKind, setPreviewKind] = useState<'entrance' | 'exit' | 'cycle' | null>(null)
+  const [previewRun, setPreviewRun] = useState(0)
   const [reason, setReason] = useState('')
-  const edit = (patch: Partial<typeof config>) => { setReason(''); onChange({ ...draft, presentation: { ...config, ...patch } }) }
+  const [folderMusic, setFolderMusic] = useState<FolderMediaEntry[]>([])
+  const [folderError, setFolderError] = useState('')
   useEffect(() => {
-    if (!cycle) return
-    setLifecycle('dormant')
+    let cancelled = false
+    const refresh = async () => {
+      if (!bridge?.mediaFolders) return
+      try {
+        const result = await bridge.mediaFolders({ action: 'get', ...(avatarId ? { avatarId } : {}) })
+        if (cancelled) return
+        if (result.ok) { setFolderMusic(result.value.entries.filter(entry => entry.kind === 'music')); setFolderError(result.value.reason ? 'Folder library unavailable. Check Music & video folder settings.' : '') }
+        else setFolderError('Could not read media folders. Check Music & video folder settings.')
+      } catch { if (!cancelled) setFolderError('Could not read media folders. Check Music & video folder settings.') }
+    }
+    void refresh(); const timer = setInterval(() => void refresh(), 30000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [bridge, avatarId])
+  const reflective = config.mode === 'reflective'
+  const videos = draft.visualAssets.filter(asset => asset.kind === 'video')
+  const entranceVideo = videos.find(asset => asset.id === config.entranceVideoId)
+  const exitVideo = videos.find(asset => asset.id === config.exitVideoId)
+  const blackHoldMs = config.blackHoldMs ?? 400
+  const revealStartMs = config.revealStartMs ?? 1500
+  const timingError = reflective && blackHoldMs > revealStartMs ? 'Black hold must finish at or before the reveal starts.'
+    : reflective && revealStartMs >= config.entranceMs ? 'Reveal must start before the entrance ends.' : ''
+  const error = timingError || (config.entranceVideoId && !entranceVideo || config.exitVideoId && !exitVideo
+    ? 'Select available videos for the entrance and exit, or choose No video.'
+    : !parsePresentation(config) ? 'Check timing ranges, whole milliseconds, volume levels and the greeting/farewell fields.' : '')
+  const stop = () => setPreviewKind(null)
+  const edit = (patch: Partial<typeof config>) => { stop(); setReason(''); onChange({ ...draft, presentation: { ...config, ...patch } }) }
+  const preview = (kind: 'entrance' | 'exit' | 'cycle') => {
+    if (error) return
+    setReason(''); setLifecycle(kind === 'entrance' ? 'active' : 'dormant')
+    setPhase(kind === 'exit' ? 'awake' : 'asleep')
+    setPreviewKind(kind); setPreviewRun(run => run + 1)
+  }
+  useEffect(() => {
+    if (previewKind !== 'cycle') return
     const enter = setTimeout(() => setLifecycle('active'), 2000)
-    const timer = setTimeout(() => { setLifecycle('dormant'); setCycle(false) }, 2000 + config.entranceMs + 2500)
+    const timer = setTimeout(() => setLifecycle('dormant'), 2000 + config.entranceMs + 2500)
     return () => { clearTimeout(enter); clearTimeout(timer) }
-  }, [cycle, config.entranceMs])
-  return <fieldset className="presentation-editor" disabled={disabled}>
-    <legend>Avatar presentation</legend>
-    <p>Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep.</p>
+  }, [previewKind, previewRun, config.entranceMs])
+  useEffect(() => { setPreviewKind(null) }, [config.mode, config.entranceMs, config.exitMs, config.blackHoldMs,
+    config.revealStartMs, config.entranceVideoId, config.exitVideoId, config.entranceBlend, config.exitBlend,
+    config.ambienceId, config.ambienceGain, config.activeAmbienceGain, config.backgroundId, model?.id])
+  return <fieldset className="presentation-editor">
+    <legend>Avatar presentation <InfoTip label="Avatar presentation" help={`Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep. Videos are muted. Music mutes during avatar speech, then fades back in, through your selected speakers.${reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''} Music is listed from this avatar’s folder and the common folder; link folders in Music & video.`} /></legend>
     <div className="presentation-editor__layout">
-      <div className="console__form-grid">
-        <HelpField help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
+      <fieldset className="console__form-grid" disabled={disabled}>
+        <HelpField fieldPath={fieldPath('mode')} help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>
           <option value="always_visible">Always visible</option><option value="emerge">Emerge from mist</option>
+          <option value="reflective">Reflective mirror · black when dormant</option>
         </select></HelpField>
-        <HelpField help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
+        <button type="button" onClick={() => edit({ mode: 'reflective', blackHoldMs: 400, revealStartMs: 1500, entranceMs: 4000, exitMs: 2400 })}>Quiet, ceremonial dread</button>
+        {!reflective ? <HelpField fieldPath={fieldPath('backgroundId')} help={FIELD_HELP.background}>Background image / looping video<select value={config.backgroundId} onChange={e => edit({ backgroundId: e.currentTarget.value })}>
           <option value="">Built-in atmosphere</option>{draft.visualAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
+        </select></HelpField> : null}
+        <HelpField fieldPath={fieldPath('ambienceId')} help={FIELD_HELP.ambience}>{reflective ? 'Dormant music (loops)' : 'Sleep ambience (loops)'}<select aria-label="Dormant music" value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
+          <option value="">No ambience</option>
+          {(['own', 'shared'] as const).map(origin => <optgroup key={origin} label={origin === 'own' ? 'Avatar folder' : 'Common / shared folder'}>{folderMusic.filter(a => a.origin === origin).map(a => <option value={a.assetId} key={a.assetId}>{a.name}</option>)}</optgroup>)}
+          <optgroup label="Imported music">{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}</optgroup>
+          {config.ambienceId && !draft.musicAssets.some(a => a.id === config.ambienceId) && !folderMusic.some(a => a.assetId === config.ambienceId) && <option value={config.ambienceId}>Selected music unavailable — check linked folders</option>}
         </select></HelpField>
-        <HelpField help={FIELD_HELP.ambience}>Sleep ambience (loops)<select value={config.ambienceId} onChange={e => edit({ ambienceId: e.currentTarget.value })}>
-          <option value="">No ambience</option>{draft.musicAssets.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
-        </select></HelpField>
-        <HelpField help={FIELD_HELP.ambienceVolume}>Ambience volume · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.entrance}>Entrance seconds<input type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <HelpField help={FIELD_HELP.exit}>Exit seconds<input type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
-        <p className="console__muted">Cubism motions: Waking → Listening → Suspending → Dormant. Mist is a built-in effect. Background video is muted; ambience fades out on wake and uses your selected speakers.</p>
-        <p className="console__muted">Import media in the Media library. Save, Test and Publish below to apply this presentation to the mirror.</p>
-      </div>
+        {folderError && <p role="alert">{folderError}</p>}
+        <HelpField fieldPath={fieldPath('ambienceGain')} help={FIELD_HELP.ambienceVolume}>{reflective ? 'Dormant music volume' : 'Ambience volume'} · {Math.round(config.ambienceGain * 100)}%<input type="range" min="0" max="1" step="0.05" value={config.ambienceGain} onChange={e => edit({ ambienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('activeAmbienceGain')} help={FIELD_HELP.activeBgmVolume}>Active BGM volume · {Math.round((config.activeAmbienceGain ?? 0) * 100)}%<input aria-label="Active BGM volume" type="range" min="0" max="1" step="0.05" value={config.activeAmbienceGain ?? 0} onChange={e => edit({ activeAmbienceGain: Number(e.currentTarget.value) })} /></HelpField>
+        {reflective ? <>
+          <HelpField fieldPath={fieldPath('entranceVideoId')} error={config.entranceVideoId && !entranceVideo ? 'Select an available entrance video or No video.' : undefined} help={FIELD_HELP.entranceVideo}>Entrance mist video<select value={config.entranceVideoId ?? ''} onChange={e => edit({ entranceVideoId: e.currentTarget.value })}>
+            <option value="">No video · soft fade</option>{videos.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
+          </select></HelpField>
+          <HelpField fieldPath={fieldPath('exitVideoId')} error={config.exitVideoId && !exitVideo ? 'Select an available exit video or No video.' : undefined} help={FIELD_HELP.exitVideo}>Exit mist video<select value={config.exitVideoId ?? ''} onChange={e => edit({ exitVideoId: e.currentTarget.value })}>
+            <option value="">No video · soft fade</option>{videos.map(a => <option value={a.id} key={a.id}>{a.name}</option>)}
+          </select></HelpField>
+          <HelpField fieldPath={fieldPath('entranceBlend')} help={FIELD_HELP.ritualBlend}>Entrance video background<select value={config.entranceBlend ?? 'screen'} onChange={e => edit({ entranceBlend: e.currentTarget.value as 'screen' | 'normal' })}>
+            <option value="screen">Black background · screen blend</option><option value="normal">Transparent background · normal blend</option>
+          </select></HelpField>
+          <HelpField fieldPath={fieldPath('exitBlend')} help={FIELD_HELP.ritualBlend}>Exit video background<select value={config.exitBlend ?? 'screen'} onChange={e => edit({ exitBlend: e.currentTarget.value as 'screen' | 'normal' })}>
+            <option value="screen">Black background · screen blend</option><option value="normal">Transparent background · normal blend</option>
+          </select></HelpField>
+          <HelpField fieldPath={fieldPath('blackHoldMs')} error={reflective && blackHoldMs > revealStartMs ? timingError : undefined} help={FIELD_HELP.blackHold}>Black hold seconds<NumberInput type="number" min="0" max="10" step="0.1" value={blackHoldMs / 1000} onChange={e => edit({ blackHoldMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+          <HelpField fieldPath={fieldPath('revealStartMs')} error={reflective && revealStartMs >= config.entranceMs ? 'Reveal must start before the entrance ends.' : undefined} help={FIELD_HELP.revealStart}>Reveal starts at seconds<NumberInput type="number" min="0" max="10" step="0.1" value={revealStartMs / 1000} onChange={e => edit({ revealStartMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+          <p className="console__muted">Black hold ≤ reveal start &lt; entrance duration. The avatar fades in from the reveal start until the entrance ends.</p>
+        </> : null}
+        <HelpField fieldPath={fieldPath('entranceMs')} help={FIELD_HELP.entrance}>Entrance seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.entranceMs / 1000} onChange={e => edit({ entranceMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+        <HelpField fieldPath={fieldPath('exitMs')} help={FIELD_HELP.exit}>Exit seconds<NumberInput type="number" min="0.2" max="10" step="0.1" value={config.exitMs / 1000} onChange={e => edit({ exitMs: Math.round(Number(e.currentTarget.value) * 1000) })} /></HelpField>
+        <p className="presentation-editor__spoken">Spoken lines, set in Persona: <q lang="zh-Hant">{config.wakeGreeting || 'Silent wake'}</q> · <q lang="zh-Hant">{config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell}</q>
+          {onEditSpokenLines && <button type="button" className="console__link" onClick={onEditSpokenLines}>Edit in Persona</button>}</p>
+        {!(config.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell ?? '').trim() && <p className="field-error">Enter a sleep farewell in Persona › Spoken lines.</p>}
+        {error ? <p className="console__fault" role="alert">{error} Fix this before previewing, saving or publishing.</p> : null}
+        {reflective && (!entranceVideo || !exitVideo) ? <p className="console__muted">Missing video uses a soft fade. No mist is generated.</p> : null}
+      </fieldset>
       <div className="presentation-editor__preview-panel">
         <div className="console__action-row">
-          <button type="button" aria-label="Preview entrance" onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('active') }}>Entrance</button>
-          <button type="button" aria-label="Preview exit" onClick={() => { setReason(''); setPreviewing(true); setCycle(false); setLifecycle('dormant') }}>Exit / sleep</button>
-          <button type="button" aria-label="Preview full cycle" disabled={disabled || cycle} onClick={() => { setReason(''); setPreviewing(true); setCycle(true) }}>Preview draft</button>
-          <button type="button" disabled={disabled || !previewing} onClick={() => { setPreviewing(false); setCycle(false) }}>Stop preview</button>
+          <button type="button" aria-label="Preview entrance" disabled={disabled || !!error} onClick={() => preview('entrance')}>Entrance</button>
+          <button type="button" aria-label="Preview exit" disabled={disabled || !!error} onClick={() => preview('exit')}>Exit / sleep</button>
+          <button type="button" aria-label="Preview full cycle" disabled={disabled || !!error} onClick={() => preview('cycle')}>Preview draft</button>
+          <button type="button" disabled={!previewKind} onClick={stop}>Stop preview</button>
         </div>
         <div className="presentation-preview">
-          <PresentationStage payload={{ config: { ...config }, background: draft.visualAssets.find(a => a.id === config.backgroundId) ?? null }} lifecycle={previewing ? lifecycle : 'starting'} onPhase={setPhase} onFailure={setReason} draft>
+          {previewKind && !error ? <PresentationStage key={previewRun} payload={{ config: { ...config },
+            background: draft.visualAssets.find(a => a.id === config.backgroundId) ?? null,
+            entranceVideo: entranceVideo ? { id: entranceVideo.id, kind: 'video' } : null,
+            exitVideo: exitVideo ? { id: exitVideo.id, kind: 'video' } : null }}
+            initialPhase={previewKind === 'exit' ? 'awake' : 'asleep'} lifecycle={lifecycle} onPhase={setPhase} onFailure={setReason} draft>
             <AvatarCanvas embedded model={model} state={phase === 'entering' ? 'Waking' : phase === 'exiting' ? 'Suspending' : phase === 'awake' ? 'Listening' : 'Dormant'}
               onRenderer={ignore} onMetrics={ignore} onEvent={e => { if (e.status === 'failed') setReason(e.reason) }} />
-          </PresentationStage>
+          </PresentationStage> : <p>Preview stopped. Choose Entrance, Exit / sleep or Preview draft.</p>}
         </div>
-        <p role="status">Local draft preview · {previewing ? phase : 'stopped'} · uses selected media and speakers</p>
-        {reason ? <p className="console__fault" role="alert">Preview: {reason}</p> : null}
-        <p className="console__muted">Local only. No microphone or live changes.</p>
+        <p className="presentation-editor__preview-status"><span role="status">Local draft preview · {previewKind ? phase : 'stopped'} · uses selected media and speakers</span>
+          <InfoTip label="Local draft preview" help="Full-cycle preview uses local video and music. No microphone or provider speech. The greeting is live only; a reflective greeting waits for the reveal to finish. Save, check and publish to apply live changes." /></p>
+        {reason === 'presentation_ritual_video_missing' ? <p className="console__muted" role="status">Missing video uses a soft fade.</p>
+          : reason ? <p className="console__fault" role="alert">Preview: {reason.startsWith('presentation_ritual_video_') ? 'Video unavailable. The avatar uses a soft fade.' : reason}</p> : null}
       </div>
     </div>
   </fieldset>

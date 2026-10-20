@@ -1,0 +1,77 @@
+{
+  "created": "2026-09-08T23:42:09.6653460+08:00",
+  "baseline": "v09",
+  "backup": "C:\\Users\\b8901\\Documents\\Codex\\2026-09-07\\new-chat\\outputs\\raven-lord-backups\\v09-before-expression-revision-20260908T234209",
+  "originalCompleteSha": "B368E3F99E063824A42A1091990CF256B3F22651B76C28FD5C6788D48253F5E6",
+  "backupCompleteSha": "B368E3F99E063824A42A1091990CF256B3F22651B76C28FD5C6788D48253F5E6",
+  "files": [
+    {
+      "relative": "raven-lord.cdi3.json",
+      "sha256": "C6B20E9FA961438CD86685D432268750C58D1F7CC529EF893EBB8613B03930B1"
+    },
+    {
+      "relative": "raven-lord.moc3",
+      "sha256": "3065D7339EB57762E282016EB81A1F1894C05F224D1180CC47EE86F71B060DE0"
+    },
+    {
+      "relative": "raven-lord.model3.json",
+      "sha256": "C25929FA83A1A0A8B6221BF4D526C9ED51CE3997DFCCF5D811D549C74FA2E91A"
+    },
+    {
+      "relative": "raven-lord.physics3.json",
+      "sha256": "2C7CE1F03C20DB561D51AF267EDF3E4971A95297CBE9E527C579F42D5B811A55"
+    },
+    {
+      "relative": "motions\\exp_01.exp3.json",
+      "sha256": "D79B746351F56B5384BA423F908354B6E1CE78C02F21AA7D7B09557620099BB1"
+    },
+    {
+      "relative": "motions\\exp_02.exp3.json",
+      "sha256": "C6C3AF449CF0D9C82EBF9435C6396E1D270BBFAA0E1B03DEE1E71AD997440826"
+    },
+    {
+      "relative": "motions\\exp_03.exp3.json",
+      "sha256": "2EC90465655EBC3641D4C6327C3A0E38D5CB08CFF3D2DBC1DAEC91787398D8D8"
+    },
+    {
+      "relative": "motions\\exp_04.exp3.json",
+      "sha256": "67C24B34CAB64B08C96C5CE1714F7E3E666A7AC2CFC89F3259C3D0BDB4E4772D"
+    },
+    {
+      "relative": "motions\\exp_05.exp3.json",
+      "sha256": "D4EB45B40CC99B6572F7FD690047B44B272491CEAB7506453B973B82ABB58A98"
+    },
+    {
+      "relative": "motions\\raven_dormant.motion3.json",
+      "sha256": "E9FEDF6D74EBEA5FD03DE279A3D1E042DA24FF93761AD451523DF0535251F97C"
+    },
+    {
+      "relative": "motions\\raven_listening.motion3.json",
+      "sha256": "67C398ADB38F5B21ED78F8AF3F86388E231E9C58A5B490E0EAD3A4B0A88157C1"
+    },
+    {
+      "relative": "motions\\raven_scene.motion3.json",
+      "sha256": "EFC9D329EA2A7F628FE176422A73F07D7313D921D8789B651BB2D8F0317328D8"
+    },
+    {
+      "relative": "motions\\raven_speaking.motion3.json",
+      "sha256": "7D28A33A387159D8CA44538627BB31C6F8DC991E2B3A7C5BB1AD937FBABE9E7B"
+    },
+    {
+      "relative": "motions\\raven_suspending.motion3.json",
+      "sha256": "20D6BA2753CD817F43636AA19E3B90096039F8552D95CF2DEBC60EC8CB11AE60"
+    },
+    {
+      "relative": "motions\\raven_thinking.motion3.json",
+      "sha256": "E852E284026FC363F1167FAEDD67E9448B8E3895942AB138A339F7A7B0FA2251"
+    },
+    {
+      "relative": "motions\\raven_waking.motion3.json",
+      "sha256": "97FD182C375D15EBAB5B231AEEEED0B1681061386DC4845434819B88A0B3066E"
+    },
+    {
+      "relative": "raven-lord.2048\\texture_00.png",
+      "sha256": "0775A752B3D6B1697D011C1D0F9B39D1841B941F7785A8E3965CAA38C4EA29CB"
+    }
+  ]
+}

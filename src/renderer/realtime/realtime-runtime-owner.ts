@@ -79,6 +79,7 @@ export interface RealtimeRuntimeAudioOutput {
   readonly audioElement: HTMLAudioElement
   readonly analyser?: object
   readonly dispose: () => MaybePromise<void>
+  readonly setMuted?: (muted: boolean) => void
 }
 
 export type RealtimeRuntimeSession = RealtimeSessionHandle
@@ -184,7 +185,12 @@ export interface RealtimeRuntimeOwner {
   ) => Promise<RealtimeRuntimeOutcome>
   readonly dispose: () => Promise<RealtimeRuntimeOutcome>
   readonly interrupt: () => Promise<RealtimeRuntimeOutcome>
-  readonly speakVerbatim: (text: string) => RealtimeSceneDialogueResult
+  readonly setMediaPlayback?: (active: boolean) => void
+  readonly claimControlTurn?: (itemId: string) => void
+  /** Forwards Portrait Studio events to the current session, which ignores events for another session. False when no session took it. */
+  readonly studioEvent?: (event: import('../../shared/portrait-studio').StudioSessionEvent,
+    identity: import('../../shared/portrait-studio').StudioEventIdentity) => boolean
+  readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
 
@@ -270,6 +276,12 @@ export function createRealtimeRuntimeOwner(
 ): RealtimeRuntimeOwner {
   let state: RealtimeRuntimeState = 'idle'
   let current: OwnedResources | undefined
+  let mediaPlayback = false
+  const setMediaPlayback = (active: boolean): void => {
+    mediaPlayback = active
+    current?.audioOutput.setMuted?.(active)
+    current?.session.setMediaPlayback?.(active)
+  }
   let startPromise: Promise<RealtimeRuntimeOutcome> | undefined
   let rolloverPromise: Promise<RealtimeRuntimeOutcome> | undefined
   let rolloverAbort: AbortController | undefined
@@ -342,12 +354,12 @@ export function createRealtimeRuntimeOwner(
         return completionFactory(owned.playbackTransport, analyser)
           .waitForActualEnd(new AbortController().signal)
       }
-      runObserver(() => transcriptHandler({
+      return transcriptHandler({
           itemId: completed.itemId,
           transcript: completed.transcript,
           realtimeSessionId: owned.identity.realtimeSessionId,
           waitForActualEnd,
-        }))
+        })
     })
   }
 
@@ -470,6 +482,7 @@ export function createRealtimeRuntimeOwner(
         identity,
       }
       state = 'active'
+      if (mediaPlayback) setMediaPlayback(true)
       observeCompletedTranscripts(current)
       return result('start', 'success', 'started')
     } catch {
@@ -641,6 +654,7 @@ export function createRealtimeRuntimeOwner(
       identity: freezeIdentity(bundle.identity),
     }
     state = 'active'
+    if (mediaPlayback) setMediaPlayback(true)
     observeCompletedTranscripts(current)
     return result(
       'rollover',
@@ -774,12 +788,12 @@ export function createRealtimeRuntimeOwner(
     ...(current === undefined ? {} : { currentIdentity: freezeIdentity(current.identity) }),
   })
 
-  const speakVerbatim = (text: string): RealtimeSceneDialogueResult => {
+  const speakVerbatim = (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void): RealtimeSceneDialogueResult => {
     if (state !== 'active' || current === undefined) {
       return Object.freeze({ status: 'ignored', reason: 'no_active_realtime_session' })
     }
     try {
-      current.session.speakVerbatim(text)
+      if (signal) current.session.speakVerbatim(text, signal, onFinished); else current.session.speakVerbatim(text)
       return Object.freeze({ status: 'dispatched', reason: 'scene_dialogue_dispatched' })
     } catch {
       return Object.freeze({ status: 'failed', reason: 'scene_dialogue_dispatch_failed' })
@@ -792,7 +806,14 @@ export function createRealtimeRuntimeOwner(
     stop,
     dispose,
     interrupt,
+    setMediaPlayback,
+    studioEvent: (event: import('../../shared/portrait-studio').StudioSessionEvent, identity: import('../../shared/portrait-studio').StudioEventIdentity) => {
+      if (state !== 'active' || !current?.session.studioEvent) return false
+      current.session.studioEvent(event, identity)
+      return true
+    },
     speakVerbatim,
+    claimControlTurn: (itemId: string) => current?.session.claimControlTurn?.(itemId),
     getSnapshot,
   })
 }

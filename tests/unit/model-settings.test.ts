@@ -161,7 +161,7 @@ describe('model settings resolver core', () => {
     const resolved = resolveModelSettings(fixtureSlots())
     const session = createSessionModelSnapshot(resolved.active, '2026-08-19T00:00:00.000Z')
     const job = createJobModelSnapshot(resolved.active, '2026-08-19T00:00:01.000Z')
-    expect(session).toEqual({ configVersion: resolved.active.configVersion, fingerprint: resolved.active.fingerprint, sdkVersion: '0.16.1', realtimeDialogue: 'fixture-realtime-active', inputTranscription: 'fixture-transcription-active', memoryExtractor: 'fixture-memory-active', voice: 'fixture-voice-active', reasoningEffort: 'low', turnDetectionProfile: 'semantic-vad-interruptible', takenAt: '2026-08-19T00:00:00.000Z' })
+    expect(session).toEqual({ configVersion: resolved.active.configVersion, fingerprint: resolved.active.fingerprint, sdkVersion: '0.20.0', realtimeDialogue: 'fixture-realtime-active', inputTranscription: 'fixture-transcription-active', memoryExtractor: 'fixture-memory-active', voice: 'fixture-voice-active', reasoningEffort: 'low', turnDetectionProfile: 'semantic-vad-interruptible', takenAt: '2026-08-19T00:00:00.000Z' })
     expect(job).toEqual({ configVersion: resolved.active.configVersion, fingerprint: resolved.active.fingerprint, memoryExtractor: 'fixture-memory-active', takenAt: '2026-08-19T00:00:01.000Z' })
     expect(Object.isFrozen(session)).toBe(true); expect(Object.isFrozen(job)).toBe(true)
     expect(() => Object.defineProperty(session, 'realtimeDialogue', { value: 'fixture-realtime-other' })).toThrow()
