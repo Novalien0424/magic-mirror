@@ -57,6 +57,18 @@ describe('presentation BGM speech priority', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(audio.volume).toBe(0)
   })
+  it('keeps reflective exit silent after farewell and restores dormant music only after black', async () => {
+    const { audio, input } = setup()
+    audio.volume = 0
+    const cancel = applyPresentationAmbience({ ...input, phase: 'exiting', reflective: true })
+    await vi.advanceTimersByTimeAsync(2400)
+    expect(audio.volume).toBe(0); expect(audio.play).not.toHaveBeenCalled()
+    cancel()
+    applyPresentationAmbience({ ...input, phase: 'asleep', reflective: true })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.volume).toBeCloseTo(.2); expect(audio.play).toHaveBeenCalledOnce()
+    expect(audio.currentTime).toBe(12)
+  })
 
   it('pauses for inactive states, zero active volume and global mute', async () => {
     for (const patch of [{ phase: 'inactive' as const }, { activeAmbienceGain: 0 }, { bgmVolume: 0 }]) {
@@ -66,6 +78,20 @@ describe('presentation BGM speech priority', () => {
       expect(audio.volume).toBe(0)
       expect(audio.pause).toHaveBeenCalled()
     }
+  })
+  it('pauses BGM during requested media and resumes its position when media ends', async () => {
+    const { audio, input } = setup()
+    const cancel = applyPresentationAmbience({ ...input, mediaActive: true })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.pause).toHaveBeenCalledOnce()
+    expect(audio.play).not.toHaveBeenCalled()
+    expect(audio.volume).toBe(0)
+    cancel()
+    applyPresentationAmbience({ ...input, mediaActive: false })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.play).toHaveBeenCalledOnce()
+    expect(audio.volume).toBeCloseTo(.1)
+    expect(audio.currentTime).toBe(12)
   })
 
   it('does not play after disposal while routing is pending, and reports playback failures', async () => {
@@ -79,5 +105,19 @@ describe('presentation BGM speech priority', () => {
     applyPresentationAmbience(input)
     await vi.advanceTimersByTimeAsync(600)
     expect(input.onFailure).toHaveBeenCalledWith('presentation_ambience_play_failed')
+  })
+  it.each(['awake', 'exiting', 'asleep'] as const)('keeps existing BGM under audio-free video while %s, respecting its level and global mute', async phase => {
+    const { audio, input } = setup()
+    const cancel = applyPresentationAmbience({ ...input, phase, reflective: true, mediaActive: true, mediaWithoutAudio: true })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.volume).toBeCloseTo(.2)
+    expect(audio.play).toHaveBeenCalledOnce()
+    expect(audio.pause).not.toHaveBeenCalled()
+    expect(audio.currentTime).toBe(12)
+    cancel()
+    applyPresentationAmbience({ ...input, phase, mediaActive: true, mediaWithoutAudio: true, bgmVolume: 0 })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(audio.volume).toBe(0)
+    expect(audio.pause).toHaveBeenCalledOnce()
   })
 })

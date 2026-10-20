@@ -1,13 +1,18 @@
 import { createHash } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
+import { MEMORY_CONVERSATION_FIXTURE } from '../src/main/memory-conversation-fixture.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm']
+const releaseOwner = acquireElectronOwner('phase4-qa')
+process.once('exit', releaseOwner)
+assertElectronStopped()
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--operator-loop', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation', '--studio-journey']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -21,13 +26,22 @@ const cubismOnly = process.argv.includes('--cubism')
 const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
+const ritualOnly = process.argv.includes('--ritual')
+const operatorLoopOnly = process.argv.includes('--operator-loop')
+const mediaSkillFunctional = process.argv.includes('--media-skill-functional')
+const mediaSkillOnly = process.argv.includes('--media-skill') || mediaSkillFunctional
+const memoryLive = process.argv.includes('--memory-live')
+const memoryConversation = process.argv.includes('--memory-conversation')
+const memoryOnly = process.argv.includes('--memory') || memoryLive || memoryConversation
 const fieldHelpOnly = process.argv.includes('--field-help')
-const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly
+const studioJourneyOnly = process.argv.includes('--studio-journey')
+const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly || studioJourneyOnly
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || operatorLoopOnly || mediaSkillOnly || memoryOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
-  || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()) {
+  || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()
+  || process.platform === 'darwin' && repoRoot !== '/Users/novalien0424/magic-mirror') {
   throw new Error('phase4_qa_requires_canonical_checkout_cwd')
 }
 const buildProvenance = await verifyBuild(repoRoot).catch(() => {
@@ -73,6 +87,20 @@ const musicFileName = 'phase4-qa-tone.wav'
 await writeFile(join(musicDir, musicFileName), music)
 
 const trialVisualDir = join(repoRoot, 'resources', 'phase4-trial-assets')
+if (operatorLoopOnly) {
+  // Seed only the isolated Common library. Loop settings and the return avatar
+  // are authored later through the real Console, never prewritten here.
+  const sharedDir = join(userDataDir, 'operator-loop-shared')
+  await mkdir(sharedDir, { recursive: true })
+  await writeFile(join(sharedDir, 'operator-loop-qa-video.webm'),
+    await readFile(join(trialVisualDir, 'phase4-finite-embedded-audio.webm')))
+  await writeFile(join(sharedDir, 'operator-loop-qa-replacement.webm'),
+    await readFile(join(trialVisualDir, 'phase4-loop-silent.webm')))
+  // Deliberately unlike the ~3.008 s video: independent wraps are observable.
+  await writeFile(join(sharedDir, 'operator-loop-qa-music.wav'), makeToneWav(1.25))
+  await writeFile(join(userDataDir, 'media-folders.json'),
+    JSON.stringify({ version: 1, links: { shared: await realpath(sharedDir) } }), { mode: 0o600 })
+}
 const visualFixtures = [
   { id: 'visual-qa-still', fileName: 'phase4-still.png', name: 'QA still', kind: 'image', mimeType: 'image/png', width: 360, height: 640, orientation: 'portrait', audioTrack: 'absent' },
   { id: 'visual-qa-finite', fileName: 'phase4-finite-silent.webm', name: 'QA finite silent', kind: 'video', mimeType: 'video/webm', width: 360, height: 640, orientation: 'portrait', durationMs: 3000, audioTrack: 'absent' },
@@ -96,6 +124,11 @@ visualFixtures.push({
 })
 
 const config = JSON.parse(await readFile(join(repoRoot, 'resources', 'config', 'default.json'), 'utf8'))
+if (process.platform === 'darwin' && process.arch === 'arm64') {
+  const packageId = 'sherpa-magic-mirror-mac-v1'
+  const manifest = JSON.parse(await readFile(join(repoRoot, 'resources/wake-models', packageId, 'manifest.json'), 'utf8'))
+  config.wake = { packageId, modelVersion: manifest.modelVersion, phrase: manifest.phrase }
+}
 config.configVersion = 41
 // Renderer capture takes longer than the developer-mode product idle timeout.
 // Keep this isolated QA session alive until the live dialogue assertions run.
@@ -215,12 +248,40 @@ if (consoleOnly) {
   config.scenes = []
   config.spells = []
 }
+if (memoryOnly) {
+  config.avatarCatalog = { activeAvatarId: 'qa-memory-avatar', locks: [], models: [], avatars: [
+    { id: 'qa-memory-avatar', name: 'QA Memory Companion', personality: 'A friendly, concise conversational companion.',
+      speakingStyle: 'Natural, short replies in the visitor language.', voice: config.voice, idleSeconds: 300,
+      modelId: 'builtin-ren', presentation: { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
+        entranceMs: 800, exitMs: 900, wakeGreeting: 'Hello.', sleepFarewell: 'Goodbye.' }, scenes: [], spells: [] },
+  ] }
+  if (memoryConversation) config.avatarCatalog.avatars[0].personality = MEMORY_CONVERSATION_FIXTURE.avatarPersona
+}
+if (ritualOnly) {
+  const legacyPresentation = { mode: 'always_visible', backgroundId: '', ambienceId: '',
+    ambienceGain: 0.25, activeAmbienceGain: 0, entranceMs: 1800, exitMs: 1800,
+    wakeGreeting: '', sleepFarewell: 'Rest now.' }
+  config.presentation = legacyPresentation
+  config.avatarCatalog = { activeAvatarId: 'qa-ritual', locks: [], models: [], avatars: [
+    ['qa-ritual', 'always_visible'], ['qa-legacy-visible', 'always_visible'], ['qa-legacy-emerge', 'emerge'],
+  ].map(([id, mode]) => ({ id, name: id, personality: 'Synthetic local QA fixture.',
+    speakingStyle: '', voice: config.voice, idleSeconds: 300, modelId: 'builtin-ren',
+    presentation: { ...legacyPresentation, mode }, scenes: [], spells: [] })) }
+}
+
+if (mediaSkillOnly) {
+  config.visualAssets = visualFixtures.filter(a => a.id !== 'visual-qa-missing')
+  config.presentation = { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0.25,
+    entranceMs: 0, exitMs: 0, wakeGreeting: '', sleepFarewell: 'Rest now.' }
+}
 
 for (const slot of ['active', 'draft', 'previous']) {
   await writeFile(join(configDir, `${slot}.json`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
 }
 
-const electron = join(repoRoot, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron')
+const electronExecutable = process.platform === 'win32' ? ['electron.exe']
+  : process.platform === 'darwin' ? ['Electron.app', 'Contents', 'MacOS', 'Electron'] : ['electron']
+const electron = join(repoRoot, 'node_modules', 'electron', 'dist', ...electronExecutable)
 const environment = {
   ...process.env,
   MIRROR_PHASE4_QA: '1',
@@ -229,10 +290,18 @@ const environment = {
   MIRROR_PROFILE_QA: profileOnly ? '1' : '0',
   MIRROR_AUDIO_VOLUME_QA: audioOnly ? '1' : '0',
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
+  MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
+  MIRROR_OPERATOR_LOOP_QA: operatorLoopOnly ? '1' : '0',
+  MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
+  MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: mediaSkillFunctional ? '1' : '0',
+  MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
+  MIRROR_MEMORY_LIVE_QA: memoryLive ? '1' : '0',
+  MIRROR_MEMORY_CONVERSATION_QA: memoryConversation ? '1' : '0',
   MIRROR_FIELD_HELP_QA: fieldHelpOnly ? '1' : '0',
+  MIRROR_STUDIO_JOURNEY_QA: studioJourneyOnly ? '1' : '0',
   MIRROR_PHASE4_QA_MANUAL: manual ? '1' : '0',
   MIRROR_PHASE4_QA_MUSIC_ONLY: musicOnly ? '1' : '0',
-  MIRROR_PHASE4_QA_LIVE: live ? '1' : '0',
+  MIRROR_PHASE4_QA_LIVE: live || memoryLive || memoryConversation ? '1' : '0',
   MIRROR_PHASE4_QA_LIFECYCLE_LIVE: lifecycleLive ? '1' : '0',
   MIRROR_PHASE4_QA_CONSOLE: consoleOnly ? '1' : '0',
   MIRROR_PHASE4_QA_EDITOR: editorOnly ? '1' : '0',
@@ -240,7 +309,7 @@ const environment = {
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly ? '300000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly ? '180000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -276,7 +345,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : cubismOnly ? 310_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly ? 190_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)

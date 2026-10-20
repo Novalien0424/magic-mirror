@@ -1,15 +1,15 @@
 ---
 name: mm-ui-qa
-description: "Run or extend real Windows Electron visual QA for Magic Mirror Console, Cubism or portrait scene playback."
+description: "Run, extend or audit Magic Mirror Electron QA runners and screenshots; separate visual, synthetic-provider, acoustic and human-microphone evidence."
 ---
 
-# Windows UI QA
+# Electron QA and evidence boundaries
 
-Use current [PROGRESS](../../../PROGRESS.md) evidence/runbook links to choose cases. A previous pass is not fresh QA. Run only from canonical `C:/Project/magic-mirror` with AGENTS firewall/unsaved-edit safeguards; never overlap normal Electron, another QA run or full `npm test`.
+Use [PROGRESS](../../../PROGRESS.md) to select relevant cases/evidence; open an unresolved issue when applicable. Do not load completed ledgers by default. A previous pass is not fresh QA; a static/no-launch audit starts no QA.
 
 | Task | Read |
 |---|---|
-| Select profile/Cubism/editor/portrait/live mode and verify the build | [modes](references/modes.md) |
+| Select visual/text/virtual-mic/physical evidence, permission coverage and build | [modes](references/modes.md) |
 | Extend rendered controls, native-picker substitution or display assertions | [interaction](references/interaction.md) |
 | Inspect captured images, framing, motion, media or failure evidence | [visual evidence](references/visual-evidence.md) |
 | User-requested disposal of owned QA artifacts | [artifact cleanup](references/artifact-cleanup.md) |
@@ -18,4 +18,13 @@ Runners execute stamped `out/`; rebuild changed source rather than bypassing has
 
 Require exit 0 plus expected executed cases for a pass; inspect the relevant screenshots. Built-in Ren does not prove Raven, Console-only does not prove portrait display, and pixels do not prove physical sound, smoothness or fog/lights. External rig coverage must identify its manifest.
 
-Fix observed failures and rerun the affected mode within scope. Preserve failed evidence and actual manual exclusions. Cleanup requires task ownership, completion/review markers and current authority; do not fabricate markers or bypass policy rejection. Record command, exit, cases, build/artifact links, visual findings and remaining manual checks. QA does not advance phases.
+Identify each audio route explicitly; each proves only its own boundary. Provider dialogue is probabilistic: one pass or failure is a sample, so report rates over repeated runs ([prompt evidence](../roleplay-control-prompts/SKILL.md)).
+
+Owner sound directive (2026-10-17): before sound-producing QA, capture output
+volume/mute, use the minimum output level (tested Mac system route: 1%), and
+restore the captured state on success, failure or cancellation. Preserve mute;
+never change input gain. Protect any alternate output selected by the test too.
+Use guaranteed cleanup, not a success-only restore. Mark acoustic evidence as
+minimum-volume; do not silently raise volume to satisfy an acoustic threshold.
+
+Fix observed failures and rerun the affected mode within scope. Preserve failed evidence and actual manual exclusions. Record command, exit, cases, build/artifact links, visual findings and remaining manual checks. QA does not advance phases.

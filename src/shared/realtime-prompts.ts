@@ -1,4 +1,5 @@
-import source from '../../resources/config/prompts/realtime.v1.json'
+import source from '../../resources/config/prompts/realtime.v1.json' with { type: 'json' }
+import type { MemoryReply, MemoryLanguage } from './memory'
 
 export const REALTIME_PROMPT_SOURCE = 'resources/config/prompts/realtime.v1.json'
 // Static JSON imports give builders a checked shape without dependencies in the
@@ -18,6 +19,7 @@ const catalog = freezeCatalog(source)
 const variables = {
   session: ['name', 'personality', 'speakingStyle', 'toolInstructions'],
   performance: ['speakingStyle', 'text'], audition: ['speakingStyle'],
+  memoryQuestion: ['name'], memoryState: ['mode', 'reference'],
 } as const
 type Template = keyof typeof variables
 for (const key of Object.keys(variables) as Template[]) {
@@ -37,7 +39,25 @@ export function buildAuditionPrompt(speakingStyle: string): string {
 
 /** Response-scoped instructions cannot become a lingering imperative user turn. */
 export function buildSpeechResponse(text: string, speakingStyle: string) {
-  return { tool_choice: 'none' as const, input: [], instructions: renderPrompt('performance', {
+  return { conversation: 'none' as const, tool_choice: 'none' as const, input: [], instructions: renderPrompt('performance', {
     speakingStyle: speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle, text,
   }) }
+}
+
+export function buildMemoryQuestion(name: string, language: MemoryLanguage = 'zh-TW'): string {
+  return language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.question.replace('{{name}}', () => name) : renderPrompt('memoryQuestion', { name })
+}
+/** Punctuation/spacing do not change the question; added or changed words do. RAM only. */
+export function sameSpokenQuestion(expected: string, actual: string): boolean {
+  const normalize = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '')
+  return !!actual.trim() && normalize(expected) === normalize(actual)
+}
+export function buildMemoryState(reply: MemoryReply): string {
+  const mode = reply.temporary ? 'temporary' : reply.mode ?? 'off'
+  const reference = (reply.entries ?? []).map(({ topic, text, kind, state, eventAt }) => ({ topic, text, kind, state, eventAt }))
+  return renderPrompt('memoryState', { mode: REALTIME_PROMPTS.memoryModes[mode], reference: JSON.stringify(reference) })
+}
+export function buildMemoryAcknowledgment(reply: MemoryReply, speakingStyle: string) {
+  const mode = reply.temporary ? 'temporary' : reply.mode ?? 'off'
+  return buildSpeechResponse((reply.language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.acknowledgments : REALTIME_PROMPTS.memoryAcknowledgments)[mode], speakingStyle)
 }

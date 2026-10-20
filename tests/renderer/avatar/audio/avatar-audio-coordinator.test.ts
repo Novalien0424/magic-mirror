@@ -26,6 +26,52 @@ function output(): AvatarAudioOutput {
 }
 
 describe('actual-output avatar audio coordination', () => {
+  it('keeps a known slow tool in Thinking without a false missing-output failure', async () => {
+    vi.useFakeTimers()
+    const onConversationState = vi.fn(), eventSink = vi.fn()
+    const coordinator = createAvatarAudioCoordinator({ onConversationState, eventSink })
+    try {
+      coordinator.handleActivity('speech_stopped')
+      coordinator.handleActivity('tool_started')
+      await vi.advanceTimersByTimeAsync(9000)
+      expect(onConversationState).toHaveBeenLastCalledWith('thinking')
+      expect(eventSink).not.toHaveBeenCalled()
+      coordinator.handleActivity('tool_finished')
+      expect(onConversationState).toHaveBeenLastCalledWith('listening')
+    } finally { coordinator.dispose(); vi.useRealTimers() }
+  })
+  it('clears Thinking on the media-activation interruption without inventing speech output', async () => {
+    vi.useFakeTimers()
+    const onConversationState = vi.fn(), eventSink = vi.fn(), createDriver = vi.fn()
+    const coordinator = createAvatarAudioCoordinator({ onConversationState, eventSink, createDriver })
+    try {
+      coordinator.setRenderer(renderer())
+      coordinator.setAudioOutput(output())
+      coordinator.handleActivity('speech_stopped')
+      // Mirror sends this notification even when the new video has no audio.
+      coordinator.handleActivity('interrupted')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(onConversationState).toHaveBeenLastCalledWith('listening')
+      expect(eventSink).not.toHaveBeenCalled()
+      expect(createDriver).not.toHaveBeenCalled()
+    } finally { coordinator.dispose(); vi.useRealTimers() }
+  })
+  it('leaves Thinking after a silent response without fabricating output completion', async () => {
+    vi.useFakeTimers()
+    const onConversationState = vi.fn(), eventSink = vi.fn()
+    const coordinator = createAvatarAudioCoordinator({ onConversationState, eventSink })
+    try {
+      coordinator.handleActivity('speech_stopped')
+      expect(onConversationState).toHaveBeenLastCalledWith('thinking')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(onConversationState).toHaveBeenLastCalledWith('listening')
+      expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'avatar_thinking_without_output' }))
+      coordinator.handleActivity('speech_stopped')
+      coordinator.handleActivity('output_started')
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(onConversationState).toHaveBeenLastCalledWith('speaking')
+    } finally { coordinator.dispose(); vi.useRealTimers() }
+  })
   it('starts lip sync only from actual output and projects speaking/listening', () => {
     const renderPort = renderer()
     const audioOutput = output()

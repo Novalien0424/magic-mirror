@@ -1,0 +1,133 @@
+import { randomUUID } from 'node:crypto'
+import type { MemoryRepository } from './contracts'
+import type { MemoryEvidence, MemoryExtractor } from './extractor'
+import { createMemoryConsolidator, type MemoryConsolidator } from './consolidator'
+
+interface Observation { avatarId: string; name: string; itemId: string; text: string; observedAt: string; epoch?: number }
+interface Batch { avatarId: string; name: string; epoch: number; model: string; evidence: MemoryEvidence[]; token: number }
+interface Options { repository: MemoryRepository; extract: MemoryExtractor; consolidate?: MemoryConsolidator; model(): Promise<string>; report(reason: string): void; onCommitted?(avatarId: string, name: string): void; debounceMs?: number }
+/** Bounded RAM-only ingestion. Persistent writes contain validated summaries only. */
+export class MemoryLearning {
+  private batches = new Map<string, Batch>()
+  private seen = new Set<string>()
+  private tokens = new Map<string, number>()
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private running: Promise<void> | undefined
+  private observing = 0
+  private active: { key: string; batch: Batch; abort: AbortController; excluded: boolean } | undefined
+  private closed = false
+  private readonly consolidate: MemoryConsolidator
+  constructor(private readonly options: Options) {
+    this.consolidate = options.consolidate ?? createMemoryConsolidator({ repository: options.repository, extract: options.extract, report: options.report })
+  }
+  isSettled(): boolean { return this.observing === 0 && this.batches.size === 0 && !this.running && !this.active }
+  private key(avatarId: string, name: string): string { return JSON.stringify([avatarId, name.normalize('NFKC').trim().toLowerCase()]) }
+  private remember(unique: string): void {
+    this.seen.add(unique)
+    if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value!)
+  }
+  async observe(item: Observation): Promise<void> {
+    if (this.closed) return
+    const key = this.key(item.avatarId, item.name), unique = `${key}:${item.itemId}`, token = this.tokens.get(key) ?? 0
+    if (this.seen.has(unique)) return
+    this.observing++
+    try {
+      const policy = await this.options.repository.policy(item.avatarId, item.name)
+      if (this.closed || this.seen.has(unique) || token !== (this.tokens.get(key) ?? 0) || policy.mode !== 'automatic' || policy.cleanupRequired || item.epoch !== undefined && item.epoch !== policy.epoch) {
+        this.options.report('memory_learning_ineligible'); return
+      }
+      const previous = this.batches.get(key)
+      if (previous && previous.epoch !== policy.epoch) this.batches.delete(key)
+      const batch = this.batches.get(key) ?? { avatarId: item.avatarId, name: item.name, epoch: policy.epoch,
+        model: await this.options.model(), token, evidence: [] }
+      if (this.closed || this.seen.has(unique) || token !== (this.tokens.get(key) ?? 0)) return
+      if (this.batches.size >= 8 && !this.batches.has(key) || batch.evidence.length >= 24 || item.text.length > 4000 || batch.evidence.reduce((n, e) => n + e.text.length, 0) + item.text.length > 16000) {
+        this.options.report('memory_learning_overloaded'); return
+      }
+      this.remember(unique)
+      batch.evidence.push({ id: item.itemId, text: item.text, observedAt: item.observedAt })
+      this.batches.set(key, batch)
+      this.options.report('memory_learning_pending')
+      if (!this.timer) { this.timer = setTimeout(() => { this.timer = undefined; void this.flush() }, this.options.debounceMs ?? 20_000); this.timer.unref() }
+      if (batch.evidence.length >= 6) void this.flush()
+    } catch { this.options.report('memory_learning_unavailable') }
+    finally { this.observing-- }
+  }
+  invalidate(avatarId: string, name: string): void {
+    const key = this.key(avatarId, name)
+    const count = (this.batches.get(key)?.evidence.length ?? 0)
+      + (this.active?.key === key ? this.active.batch.evidence.length : 0)
+    this.tokens.set(key, (this.tokens.get(key) ?? 0) + 1)
+    this.batches.delete(key)
+    if (this.active?.key === key) this.active.abort.abort()
+    this.options.report(`memory_learning_invalidated;count=${count}`)
+  }
+  /** A plain explicit save advances the epoch only. Queued raw evidence stays
+   * valid: consolidation re-reads the saved topic and commits re-check revisions. */
+  carry(avatarId: string, name: string, from: number, to: number): void {
+    const batch = this.batches.get(this.key(avatarId, name))
+    if (batch?.epoch === from) batch.epoch = to
+  }
+  exclude(avatarId: string, name: string, itemId: string): void {
+    const key = this.key(avatarId, name)
+    // Also prevent an observation still awaiting policy/model from entering a batch.
+    this.remember(`${key}:${itemId}`)
+    const batch = this.batches.get(key)
+    if (batch) {
+      batch.evidence = batch.evidence.filter(e => e.id !== itemId)
+      if (!batch.evidence.length) this.batches.delete(key)
+    }
+    const active = this.active
+    if (active?.key === key && active.batch.evidence.some(e => e.id === itemId)) {
+      active.batch.evidence = active.batch.evidence.filter(e => e.id !== itemId)
+      active.excluded = true; active.abort.abort()
+    }
+    this.options.report('memory_learning_control_excluded')
+  }
+  flush(): Promise<void> {
+    if (this.running) return this.running
+    clearTimeout(this.timer); this.timer = undefined
+    this.running = this.drain().finally(() => { this.running = undefined })
+    return this.running
+  }
+  private async drain(): Promise<void> {
+    let retry: [string, Batch] | undefined
+    while (!this.closed && (retry || this.batches.size)) {
+      const [key, batch] = retry ?? this.batches.entries().next().value!
+      if (!retry) this.batches.delete(key)
+      retry = undefined
+      const abort = new AbortController(), active = { key, batch, abort, excluded: false }; this.active = active
+      let mutationStarted = false
+      try {
+        const policy = await this.options.repository.policy(batch.avatarId, batch.name)
+        if (policy.mode !== 'automatic' || policy.cleanupRequired || policy.epoch !== batch.epoch || batch.token !== (this.tokens.get(key) ?? 0)) {
+          this.options.report('memory_learning_stale'); continue
+        }
+        const { records, sourceRevisions } = await this.consolidate({ avatarId: batch.avatarId, name: batch.name, model: batch.model, evidence: batch.evidence }, abort.signal)
+        if (this.closed || abort.signal.aborted || batch.token !== (this.tokens.get(key) ?? 0)) { this.options.report('memory_learning_cancelled'); continue }
+        if (!records.length) { this.options.report('memory_learning_no_change'); continue }
+        mutationStarted = true
+        const result = await this.options.repository.commitLearning(batch.avatarId, batch.name, { operationId: randomUUID(), epoch: batch.epoch, records, sourceRevisions })
+        this.options.report(`memory_learning_${result}`)
+        if (result === 'committed') this.options.onCommitted?.(batch.avatarId, batch.name)
+      } catch (error) {
+        const reason = error instanceof Error && ['memory_invalid_input', 'memory_storage_failed', 'memory_extraction_invalid', 'memory_extraction_unavailable'].includes(error.message) ? error.message : 'memory_learning_unavailable'
+        this.options.report(abort.signal.aborted ? 'memory_learning_cancelled' : reason)
+      }
+      finally {
+        // Retry only before storage begins: a timed-out write may have committed.
+        // Scope mutations still invalidate all work through the owner token.
+        if (active.excluded && !this.closed && batch.token === (this.tokens.get(key) ?? 0) && batch.evidence.length) {
+          if (mutationStarted) this.options.report('memory_learning_retry_skipped;cause=mutation_started')
+          else retry = [key, { ...batch, evidence: [...batch.evidence] }]
+        }
+        batch.evidence.length = 0; this.active = undefined
+      }
+    }
+  }
+  async close(): Promise<void> {
+    this.closed = true; clearTimeout(this.timer); this.batches.clear(); this.seen.clear(); this.tokens.clear()
+    this.active?.abort.abort()
+    await this.running
+  }
+}

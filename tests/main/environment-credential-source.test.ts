@@ -1,75 +1,38 @@
 import { resolve } from 'node:path'
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { createEnvironmentCredentialSource } from '../../src/main/environment-credential-source'
 
-const envFilePath = resolve(process.cwd(), '.env')
+afterEach(() => vi.unstubAllEnvs())
 
-test('loads the env file before reading and trims a non-empty credential', async () => {
-  const order: string[] = []
-  let envValue: string | undefined
-  const env: NodeJS.ProcessEnv = {}
-  Object.defineProperty(env, 'OPENAI_API_KEY', {
-    configurable: true,
-    get() {
-      order.push('read')
-      return envValue
-    },
-  })
-  const loadEnvFile = vi.fn((path: string): void => {
-    order.push('load')
-    expect(path).toBe(envFilePath)
-    envValue = '  synthetic-credential  '
-  })
-
-  const source = createEnvironmentCredentialSource({ loadEnvFile, env })
-
-  await expect(source.get()).resolves.toBe('synthetic-credential')
-  await expect(source.get()).resolves.toBe('synthetic-credential')
-  expect(order).toEqual(['load', 'read', 'read'])
-  expect(loadEnvFile).toHaveBeenCalledOnce()
-})
-
-test('returns null when the injected environment has no credential', async () => {
-  const loadEnvFile = vi.fn((_path: string): void => undefined)
-  const source = createEnvironmentCredentialSource({ loadEnvFile, env: {} })
-
-  await expect(source.get()).resolves.toBeNull()
-  expect(loadEnvFile).toHaveBeenCalledOnce()
-})
-
-test('returns null when the injected credential is whitespace-only', async () => {
-  const loadEnvFile = vi.fn((_path: string): void => undefined)
+test('never falls back to an inherited environment credential when the file is absent', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'synthetic-inherited-value')
   const source = createEnvironmentCredentialSource({
-    loadEnvFile,
-    env: { OPENAI_API_KEY: ' \t\r\n ' },
+    async readFile() { throw Object.assign(new Error('synthetic missing'), { code: 'ENOENT' }) },
   })
-
-  await expect(source.get()).resolves.toBeNull()
+  expect(await source.get() === null).toBe(true)
 })
 
-test('ignores an ENOENT env-file error and returns null without a credential', async () => {
-  const missingFileError = Object.assign(new Error('synthetic env file missing'), { code: 'ENOENT' })
-  const loadEnvFile = vi.fn((_path: string): void => {
-    throw missingFileError
-  })
-  const source = createEnvironmentCredentialSource({ loadEnvFile, env: {} })
-
-  await expect(source.get()).resolves.toBeNull()
+test('reads only the root file without copying its credential into process.env', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'synthetic-inherited-value')
+  const readFile = vi.fn(async () => 'OPENAI_API_KEY=" synthetic-file-value "\n')
+  const source = createEnvironmentCredentialSource({ readFile })
+  expect(await source.get() === 'synthetic-file-value').toBe(true)
+  expect(process.env.OPENAI_API_KEY === 'synthetic-inherited-value').toBe(true)
+  expect(readFile).toHaveBeenCalledWith(resolve(process.cwd(), '.env'))
 })
 
-test('propagates a non-ENOENT env-file error', async () => {
-  const loaderError = Object.assign(new Error('synthetic env loader failure'), { code: 'EACCES' })
-  const loadEnvFile = vi.fn((_path: string): void => {
-    throw loaderError
-  })
-  const source = createEnvironmentCredentialSource({
-    loadEnvFile,
-    env: {
-      get OPENAI_API_KEY(): string {
-        throw new Error('credential read should not occur')
-      },
-    },
-  })
+test.each(['', 'OTHER=value\n', 'OPENAI_API_KEY="  "\n'])(
+  'does not use an inherited key when file content is empty or missing the field (%#)', async text => {
+    vi.stubEnv('OPENAI_API_KEY', 'synthetic-inherited-value')
+    const source = createEnvironmentCredentialSource({ readFile: async () => text })
+    expect(await source.get() === null).toBe(true)
+  },
+)
 
-  await expect(source.get()).rejects.toBe(loaderError)
+test('keeps read errors content-free and can recover after the operator repairs the file', async () => {
+  const readFile = vi.fn().mockRejectedValueOnce(Object.assign(new Error('private native detail'), { code: 'EACCES' }))
+    .mockResolvedValueOnce('OPENAI_API_KEY=synthetic-file-value\n')
+  const source = createEnvironmentCredentialSource({ readFile })
+  await expect(source.get()).rejects.toThrow('credential_file_unreadable')
+  expect(await source.get() === 'synthetic-file-value').toBe(true)
 })

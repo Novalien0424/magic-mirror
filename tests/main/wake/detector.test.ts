@@ -1,5 +1,37 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSherpaDetector } from '../../../src/main/wake/sherpa-detector'
+import { join, resolve } from 'node:path'
+import { createSherpaDetector, resolveSherpaModulePath } from '../../../src/main/wake/sherpa-detector'
+
+describe('wake native module resolution', () => {
+  const developmentRoot = resolve('synthetic-native-checkout')
+  it.each([
+    ['win32', 'x64', 'win32-x64'],
+    ['darwin', 'arm64', 'darwin-arm64'],
+  ])('loads the %s-%s development score extension', (platform, arch, directory) => {
+    const path = join(developmentRoot, 'resources/wake-native', directory, 'keyword-spotter.js')
+    expect(resolveSherpaModulePath({ platform, arch, developmentRoot,
+      exists: candidate => candidate === path })).toBe(path)
+  })
+
+  it('prefers the packaged Mac extension over a development copy', () => {
+    const path = join('/app/Contents/Resources', 'wake-score-native/keyword-spotter.js')
+    expect(resolveSherpaModulePath({ platform: 'darwin', arch: 'arm64',
+      resourcesPath: '/app/Contents/Resources', developmentRoot: '/checkout', exists: () => true })).toBe(path)
+  })
+
+  it.each([['darwin', 'x64'], ['linux', 'arm64'], ['win32', 'arm64']])(
+    'retains normal detection on unsupported %s-%s', (platform, arch) => {
+      expect(resolveSherpaModulePath({ platform, arch, developmentRoot: '/checkout',
+        exists: () => true })).toBe('sherpa-onnx-node')
+    },
+  )
+
+  it('keeps missing Mac scores visible to calibration while normal detection can fall back', () => {
+    const input = { platform: 'darwin', arch: 'arm64', developmentRoot: '/checkout', exists: () => false }
+    expect(() => resolveSherpaModulePath({ ...input, calibration: true })).toThrow('wake_native_score_unavailable')
+    expect(resolveSherpaModulePath(input)).toBe('sherpa-onnx-node')
+  })
+})
 
 describe('wake detector adapters', () => {
   it('exposes native partial-match measurements without token text or invented confidence', () => {

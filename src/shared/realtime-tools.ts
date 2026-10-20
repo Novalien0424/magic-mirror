@@ -1,24 +1,25 @@
-import source from '../../resources/config/prompts/realtime-tools.v1.json'
+import source from '../../resources/config/prompts/realtime-tools.v1.json' with { type: 'json' }
 import type { fromJSONSchema } from 'zod'
 
 type ParameterSchema = Exclude<Parameters<typeof fromJSONSchema>[0], boolean>
 
 export const REALTIME_TOOL_SOURCE = 'resources/config/prompts/realtime-tools.v1.json'
 export type ToolOutcome = 'accepted' | 'ignored' | 'rejected' | 'failed'
-export interface ToolResult { readonly status: ToolOutcome; readonly code: string; readonly speech: 'application' | 'none' }
+export interface ToolResult { readonly status: ToolOutcome; readonly code: string; readonly speech: 'application' | 'model' | 'none' }
 export interface RealtimeToolSpec {
   readonly name: string
   readonly handler: string
   readonly enabled: boolean
-  readonly availability: 'conversation'
+  /** Which agent offers the tool: the conversation agent, the Interactive Studio agent, or both. */
+  readonly availability: 'conversation' | 'studio' | 'all'
   readonly routing: 'model_intent'
   readonly description: string
   readonly parameters: ParameterSchema & { type: 'object'; properties: Record<string, ParameterSchema>; required: string[]; additionalProperties: false }
   readonly rules: { useWhen: string; avoidWhen: string; speech: string }
-  readonly completion: 'background'
+  readonly completion: 'background' | 'response' | 'background_on_success' | 'background_on_reset'
   readonly results: Readonly<Record<ToolOutcome, ToolResult>>
 }
-export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[] }
+export interface RealtimeToolCatalog { readonly version: string; readonly tools: readonly RealtimeToolSpec[]; readonly templateDefaults?: { readonly studioOffer: string } }
 
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value) }
 function keys(value: Record<string, unknown>, expected: string[]): boolean {
@@ -30,7 +31,7 @@ function freeze<T>(value: T): T {
   return value
 }
 function validTemplate(value: unknown): value is string {
-  return text(value) && [...value.matchAll(/\{\{(\w+)\}\}/g)].every(match => match[1] === 'sleepPhrase')
+  return text(value) && [...value.matchAll(/\{\{(\w+)\}\}/g)].every(match => match[1] === 'sleepPhrase' || match[1] === 'studioOffer')
 }
 
 /** Deliberate schema subset: reject unsupported keywords instead of silently losing validation. */
@@ -51,13 +52,16 @@ function validSchema(value: unknown): boolean {
 /** Dependency-free: this module also reaches sandboxed preload imports. */
 export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
   const invalid = (): never => { throw new Error('invalid_realtime_tool_catalog') }
-  if (!record(value) || !keys(value, ['version', 'tools']) || !text(value.version) || !Array.isArray(value.tools)) return invalid()
+  const defaults = value && typeof value === 'object' && 'templateDefaults' in value ? (value as Record<string, unknown>).templateDefaults : undefined
+  if (!record(value) || !(keys(value, ['version', 'tools']) || keys(value, ['version', 'templateDefaults', 'tools']) && record(defaults)
+    && keys(defaults, ['studioOffer']) && text(defaults.studioOffer) && !/\{\{/.test(defaults.studioOffer))
+    || !text(value.version) || !Array.isArray(value.tools)) return invalid()
   const names = new Set<string>()
   for (const spec of value.tools) {
     if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
       || !text(spec.name) || !/^[a-z][a-z0-9_]{0,63}$/.test(spec.name) || names.has(spec.name)
-      || !text(spec.handler) || typeof spec.enabled !== 'boolean' || spec.availability !== 'conversation'
-      || spec.routing !== 'model_intent' || spec.completion !== 'background' || !validTemplate(spec.description)) return invalid()
+      || !text(spec.handler) || typeof spec.enabled !== 'boolean' || !['conversation', 'studio', 'all'].includes(spec.availability as string)
+      || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success', 'background_on_reset'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()
     names.add(spec.name)
     const parameters = spec.parameters, rules = spec.rules, results = spec.results
     if (!record(parameters) || parameters.type !== 'object' || !validSchema(parameters)
@@ -66,7 +70,7 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
     for (const [status, result] of Object.entries(results)) {
       if (!record(result) || !keys(result, ['status', 'code', 'speech']) || result.status !== status
         || !text(result.code) || !/^[a-z][a-z0-9_]{0,79}$/.test(result.code)
-        || !['application', 'none'].includes(result.speech as string)) return invalid()
+        || !['application', 'model', 'none'].includes(result.speech as string)) return invalid()
     }
   }
   return freeze(structuredClone(value)) as unknown as RealtimeToolCatalog
@@ -74,11 +78,16 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
 
 export const REALTIME_TOOLS = parseRealtimeToolCatalog(source)
 
+/** Versioned default for the operator's "what the studio offers" text (Interactive Studio stage `offer`). */
+export const DEFAULT_STUDIO_OFFER: string = REALTIME_TOOLS.templateDefaults?.studioOffer ?? (() => { throw new Error('invalid_realtime_tool_catalog') })()
+
 /** Templates are rendered once; inserted operator values are never reinterpreted. */
-export function resolveRealtimeTools(sleepPhrase: string, preview = false, catalog = REALTIME_TOOLS): readonly RealtimeToolSpec[] {
+export function resolveRealtimeTools(sleepPhrase: string, preview = false, catalog = REALTIME_TOOLS,
+  agent: 'conversation' | 'studio' = 'conversation', studioOffer = DEFAULT_STUDIO_OFFER): readonly RealtimeToolSpec[] {
   if (preview) return []
-  const render = (value: string) => value.replace(/\{\{sleepPhrase\}\}/g, () => JSON.stringify(sleepPhrase))
-  return catalog.tools.filter(spec => spec.enabled).map(spec => freeze({ ...spec, description: render(spec.description),
+  const render = (value: string) => value.replace(/\{\{(sleepPhrase|studioOffer)\}\}/g, (_match, name: string) =>
+    JSON.stringify(name === 'sleepPhrase' ? sleepPhrase : studioOffer))
+  return catalog.tools.filter(spec => spec.enabled && (spec.availability === 'all' || spec.availability === agent)).map(spec => freeze({ ...spec, description: render(spec.description),
     rules: { useWhen: render(spec.rules.useWhen), avoidWhen: render(spec.rules.avoidWhen), speech: render(spec.rules.speech) } }))
 }
 
@@ -86,6 +95,15 @@ export function realtimeToolDefinition(spec: RealtimeToolSpec) {
   return { type: 'function' as const, name: spec.name, description: spec.description, parameters: spec.parameters }
 }
 
-export function realtimeToolInstructions(specs: readonly RealtimeToolSpec[]): string {
-  return specs.map(spec => [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen].map(rule => `- ${rule}`).join('\n')).join('\n')
+export function realtimeToolInstructions(specs: readonly RealtimeToolSpec[], compact = false): string {
+  const seen = new Set<string>()
+  // Compact only removes repeated wording; every authored rule still reaches the model.
+  return specs.map(spec => {
+    const rules = [spec.rules.useWhen, spec.rules.speech, spec.rules.avoidWhen]
+    return `### ${spec.name}\n` + rules.filter(rule => {
+      if (!compact) return true
+      if (seen.has(rule)) return false
+      seen.add(rule); return true
+    }).map(rule => `- ${rule}`).join('\n')
+  }).join('\n\n')
 }

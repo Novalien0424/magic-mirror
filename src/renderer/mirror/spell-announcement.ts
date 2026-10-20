@@ -5,34 +5,35 @@ export type SpellAnnouncementResult = { readonly status: 'completed' }
   | { readonly status: 'failed'; readonly reason: string }
 
 /** Only processed output activity (including its tail) can complete an announcement. */
-export function createSpellAnnouncement(input: { speak(text: string): boolean }) {
+export function createSpellAnnouncement(input: { speak(text: string, signal: AbortSignal, finished: (completed: boolean) => void): boolean }) {
   let disposed = false
-  let pending: { started: boolean; settle(result: SpellAnnouncementResult): void } | null = null
+  let pending: { settle(result: SpellAnnouncementResult): void } | null = null
   const cancel = (reason = 'spell_announcement_cancelled'): void => pending?.settle({ status: 'failed', reason })
   return {
-    run(): Promise<SpellAnnouncementResult> {
+    run(text = REALTIME_PROMPTS.spellAnnouncement): Promise<SpellAnnouncementResult> {
       cancel()
       if (disposed) return Promise.resolve({ status: 'failed', reason: 'spell_announcement_cancelled' })
       return new Promise(resolve => {
-        const current = { started: false, settle(result: SpellAnnouncementResult) {
+        const controller = new AbortController()
+        const current = { settle(result: SpellAnnouncementResult) {
           if (pending !== current) return
           clearTimeout(timeout)
           pending = null
+          if (result.status === 'failed') controller.abort()
           resolve(result)
         } }
         const timeout = setTimeout(() => current.settle({ status: 'failed', reason: 'spell_announcement_timeout' }), 12_000)
         pending = current
         try {
-          if (!input.speak(REALTIME_PROMPTS.spellAnnouncement)) current.settle({ status: 'failed', reason: 'spell_announcement_unavailable' })
+          if (!input.speak(text, controller.signal, completed => current.settle(completed
+            ? { status: 'completed' } : { status: 'failed', reason: 'spell_announcement_output_interrupted' }))) current.settle({ status: 'failed', reason: 'spell_announcement_unavailable' })
         } catch { current.settle({ status: 'failed', reason: 'spell_announcement_unavailable' }) }
       })
     },
     handleActivity(activity: AvatarAudioActivity): void {
       if (activity === 'speech_started') { cancel('spell_announcement_visitor_speech'); return }
-      if (activity === 'interrupted') { cancel('spell_announcement_output_interrupted'); return }
-      if (pending === null) return
-      if (activity === 'output_started') pending.started = true
-      if (activity === 'output_stopped' && pending.started) pending.settle({ status: 'completed' })
+      // Global audio events can belong to scene dialogue or a cancelled model
+      // reply. Only this cue's response completion callback can settle it.
     },
     cancel,
     dispose(): void { disposed = true; cancel() },

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createHash } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -293,7 +294,7 @@ export async function runPhase1LiveSmoke(options = {}) {
 
   let closeResult = { error: false, code: null, signal: null }
   try {
-    temporaryRoot = await mkdtemp(join(tmpdir(), 'magic-mirror-phase1-live-'))
+    temporaryRoot = await realpath(await mkdtemp(join(tmpdir(), 'magic-mirror-phase1-live-')))
     userDataDir = join(temporaryRoot, 'user-data')
     await mkdir(userDataDir)
     const expectedProvenance = await createExpectedProvenance(userDataDir)
@@ -455,6 +456,9 @@ export async function runPhase1LiveSmoke(options = {}) {
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const releaseOwner = acquireElectronOwner('phase1-live')
+  process.once('exit', releaseOwner)
+  assertElectronStopped()
   const result = await runPhase1LiveSmoke()
   process.stdout.write(formatPhase1LiveResult(result))
   process.exitCode = result.exitCode

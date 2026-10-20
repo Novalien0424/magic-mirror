@@ -31,7 +31,7 @@ Parameter group names are organizational suggestions, not importer requirements.
 
 ## Ownership
 
-Inspect the current runtime update chain and explicit model profile. Eye-open expressions need intentional Add/Multiply behavior with blink; do not add a second blink controller. Remote output RMS drives `ParamMouthOpenY`: the default blend is 0.8; Raven V11 uses full replacement for reliable closure. Expressions, state motions and physics must not leave upstream mouth-open values. Silence still needs actual closure verification. Expression owns MouthForm/brows/cheek; physics owns designated outputs only when enabled by the profile. Head motion does not imply tracking support. See [performance ownership](performance-ownership.md).
+Inspect the current runtime update chain and explicit model profile. Eye-open expressions need intentional Add/Multiply behavior with blink; do not add a second blink controller. [Performance ownership](performance-ownership.md) owns Raven's eye, mouth and physics overrides. Verify actual mouth closure in silence and keep speech-driven values out of state motions. Head motion does not imply tracking support.
 
 Deliver meaningful `Dormant`, `Waking`, `Listening`, `Thinking`, `Speaking`, `Scene`, `Suspending` motions and `exp_01`…`exp_05` references. Record parameter owners, first motion file, fades, loop intent, completion behavior, physics normalization/order/FPS and actual Viewer reload. Editor/Viewer looping is separate from product runtime behavior.
 

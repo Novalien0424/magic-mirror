@@ -1,65 +1,72 @@
 ---
 name: roleplay-control-prompts
-description: "Design or repair character-agent prompts with hidden game commands and application-controlled speech or effects."
+description: "Design or repair prompts for a realtime voice character (e.g. Raven) whose dialogue coexists with hidden spells, application-spoken cues, tools or device effects."
 ---
 
 # Roleplay control prompts
 
-Use for character/entertainment agents whose dialogue coexists with spells,
-hidden commands, scenes or device effects. Do not impose these rules on ordinary
-assistants, tutorials or unrelated prompt work; the user's product rules decide
-whether players may receive help.
+A realtime prompt shapes behavior rates; it cannot guarantee silence or
+authorize effects. The application owns matching, effect ordering, cues,
+farewells and identity questions. The model owns character, conversation and
+native tool selection from the versioned catalog.
 
-## Separate character behavior from application authority
+## Diagnose before prompting
 
-- Establish the requested behavior for valid, invalid and ambiguous commands.
-  Do not add coaching, confirmation, hints or command discovery because a general
-  assistant would be helpful. Preserve the persona during failures.
-- When commands are meant to stay hidden, keep the valid command catalog out of
-  the conversational prompt. The application matcher and speech-recognition
-  hints may use it separately. A transcription hint is not an output mandate.
-- Models may understand audio differently from the separate final transcription.
-  A plausible reply does not prove a command matched or an effect ran. Diagnose
-  the actual failing boundary before changing the prompt or adding a fallback.
-- Let application code authorize configured effects and enforce once-per-turn
-  execution. Model dialogue must not claim effects independently.
-- For model-selected actions, use native function schemas with compact use/avoid
-  and speech rules from a versioned catalog shared with inspection. Validate
-  arguments before explicit handler bindings; return small structured results.
-  Keep exact hidden-command routes in application code. A JSON prompt alone
-  neither authorizes effects nor guarantees silence before a tool call.
+Separate delivery, ASR, matching, model reply and playback. The model hears raw
+audio and can reply before final ASR: suppress/cancel replies on application-owned
+turns in code. Keep hidden commands in the matcher/transcription hints, outside
+dialogue prompts. ASR misses do not justify dialogue restrictions, confirmation
+gates or regex speech filters.
+For a missed visual tool call, check separately whether the microphone
+transcription preserved the camera request and whether an image reached the
+session. ASR is a diagnostic proxy for the audio the model heard, not proof of
+its internal interpretation. Do not gate tool/image assessment on that proxy;
+an unavailable ASR judge is unknown. Keep diagnostic verdicts metadata-only.
 
-## Write the smallest consistent prompt
+## Prompt design
 
-Use short bullets for persona, permitted behavior and explicit exceptions. Remove
-superseded instructions instead of appending contradictory prohibitions. Keep
-the application cue wording identical between the prompt and dispatch code.
+- Use short sections for role, language, delivery, tools and character. State
+  each rule once; descriptions explain tools, rules guide their use. Replace
+  superseded instructions instead of accumulating exceptions.
+- Start with the smallest prompt that explains the desired behavior. Token/tool
+  counts are measurements, not optimization targets: keep necessary capabilities
+  and compare matched evaluations before claiming that pruning improved quality.
+- Preserve the operator persona across ordinary help, failures, corrections and
+  language changes. Prefer observable attitude/diction over generic "stay in
+  character" repetition. Character never licenses invented facts or capabilities;
+  sincere AI-identity questions still get truthful answers. Character design and
+  evaluation: [character and evidence](references/character-evaluation.md).
+- Realtime-2 preambles are a model default, with no API switch. Make the desired
+  policy explicit and align tool descriptions with it. Magic Mirror's current
+  [owner rulings](../../../DECISIONS.md) allow one short in-character line before
+  YouTube search, local search, non-identify memory calls and a studio change
+  request (sample line in its tool instructions), none for other tools, and an
+  Active-only nonverbal cue.
+- Avoid quoting unwanted phrases; mark useful style examples as variable.
+- Language follows the owner's complete-sentence rule: default Taiwan Mandarin
+  with Traditional characters; a complete English sentence switches to English.
+  Greetings, names, media titles and tool data do not select it. The visitor
+  language hint item (`languageHints`) retains the last complete sentence across
+  title/name turns and explicitly yields to new complete speech. It shapes the
+  rate without waiting for final ASR; measure switching as well as continuity.
+  Normalize Traditional/Simplified script before classifying Chinese sentence
+  structure; ASR script choice does not change the Traditional-Chinese reply policy.
+- Give unusual-name pronunciation (渡鴉 dù yā). Persona owns character/delivery;
+  configured voice, speed and DSP own audio treatment.
+- Hidden spells must not be taught, confirmed or corrected. Application cues
+  use exact approved wording; consult the rulings for unmatched spell attempts.
 
-For a no-hints spell game, adapt this compact pattern to the user's rules:
+## Evidence
 
-> Stay in character. Never teach, reveal, correct or suggest incantations or game mechanics, including after mistakes or requests for help.
-> Leave designated command utterances to the application; do not independently announce casting or claim effects.
-> For an application performance cue, speak only its exact supplied text in character, without explanation.
+Measure preambles, language, extra application-turn speech and persona quality
+over repeated real-provider runs; retain failures. Distinguish prompt assertions,
+synthetic text/PCM, provider output, physical playback and human microphone
+accuracy. Required speech-before-effect ordering uses actual playback plus its
+processed tail, never request time or a fixed delay.
 
-Do not expose the hidden command catalog as examples. Do not introduce a general
-silence rule when the user expects an in-character response to invalid attempts.
-
-## Enforce and prove the sequence
-
-If speech must precede an effect, code must wait for actual output playback and
-its processed tail before starting the effect. Sending a speech request,
-finishing text generation or waiting a fixed delay does not prove it was heard.
-Cancel pending effects on interruption, session change, stop or disposal. Keep
-failures local and observable without blocking unrelated conversation.
-
-Check an invalid command/help request for forbidden coaching, a valid command for
-exact requested speech before the effect, and interruption/duplicate/stale-event
-behavior. Use focused tests plus a bounded real-provider test when repairing
-observed model behavior. Distinguish prompt assertions, synthetic text control
-tests, provider output, physical audio and real microphone accuracy. Keep actual
-transcripts/audio in RAM according to the project's privacy contract; persist
-only permitted comparison results and metadata.
-
-Sources checked 2026-09-17: [Voice prompting](https://developers.openai.com/api/docs/guides/voice-prompting),
-[Realtime function tools](https://developers.openai.com/api/docs/guides/realtime-mcp).
-Use the installed SDK and current official documentation for API details.
+Magic Mirror wiring, implementation gaps and evidence:
+[prompt controls](../mm-realtime-voice/references/prompt-controls.md).
+Sources checked 2026-10-13 (model-family advice requires evaluation on the configured model):
+[realtime models prompting](https://developers.openai.com/api/docs/guides/realtime-models-prompting),
+[voice prompting](https://developers.openai.com/api/docs/guides/voice-prompting),
+[realtime prompting cookbook](https://developers.openai.com/cookbook/examples/realtime_prompting_guide).

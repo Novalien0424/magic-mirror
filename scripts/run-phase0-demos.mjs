@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -6,6 +7,8 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const commonjsRequire = createRequire(import.meta.url)
+const releaseOwner = acquireElectronOwner('phase0-demo')
+process.once('exit', releaseOwner)
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const REPO_ROOT = resolve(dirname(SCRIPT_PATH), '..')
 const RUNNER_SOURCE_PATH = resolve(REPO_ROOT, 'src', 'main', 'phase0-demo-runner.ts')
@@ -600,6 +603,7 @@ function childEnvironment(options, runDirectory, processRole) {
 }
 
 async function runElectronChild(options, runDirectory, applicationDirectory, processRole, requireStart) {
+  if (processRole === undefined) assertElectronStopped()
   const electron = localElectronExecutable()
   const child = spawn(electron, [applicationDirectory], {
     cwd: REPO_ROOT,
@@ -706,7 +710,9 @@ async function finishOuterRun(options, runDirectory, markers, passed) {
   }
 
   writeMarkers(withoutResultMarkers(markers))
-  writeFailureMarker(options.demo, 'phase0_demo_failed')
+  const reason = resultMarker(markers)?.reason
+  writeFailureMarker(options.demo, typeof reason === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(reason)
+    ? reason : 'phase0_demo_failed')
   return 2
 }
 

@@ -1,4 +1,5 @@
 import { HelpField } from './HelpField'
+import { ReasonDetail } from './reason-copy'
 import { FIELD_HELP, cubismParameterHelp } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
@@ -204,7 +205,7 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
           <button type="button" hidden={bound} disabled={!loaded} onClick={() => { reset(); setLoaded(null); setReady(false); setCapabilities(EMPTY); setMessage('Preview unloaded.') }}>Unload</button>
         </div>
         <p role="status" className="cubism-studio__status">{message}</p>
-        {fault && <p className="console__fault" role="alert">{fault}</p>}
+        {fault && <ReasonDetail code={fault} />}
         <p className="console__muted">{ready ? `Ready · ${Math.round(fps)} FPS` : loaded ? 'Loading / unavailable' : 'No rig loaded'}</p>
       </div>
       <div className="cubism-studio__controls">

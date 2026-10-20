@@ -57,7 +57,7 @@ const INITIAL_CONTEXT: LifecycleContext = {
   sceneInvocationId: null,
 };
 
-const LEGAL_TARGETS: Record<
+export const LEGAL_TARGETS: Record<
   LifecycleState,
   Partial<Record<LifecycleEvent['type'], LifecycleState>>
 > = {
@@ -70,6 +70,7 @@ const LEGAL_TARGETS: Record<
     LOCAL_CORE_FAILED: 'maintenance',
   },
   activating: {
+    SLEEP_REQUESTED: 'suspending',
     REALTIME_READY: 'active',
     CLOUD_FAILED: 'offlineLoop',
     LOCAL_AUDIO_FAILED: 'maintenance',
@@ -85,11 +86,13 @@ const LEGAL_TARGETS: Record<
   },
   suspending: {
     MEDIA_CLOSED: 'dormant',
+    CLOUD_FAILED: 'offlineLoop',
     LOCAL_AUDIO_FAILED: 'maintenance',
     LOCAL_CORE_FAILED: 'maintenance',
   },
   offlineLoop: {
     RECOVERY_PASSED: 'dormant',
+    LOCAL_AUDIO_FAILED: 'maintenance',
     LOCAL_CORE_FAILED: 'maintenance',
   },
   maintenance: {
@@ -189,6 +192,7 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
     },
     activating: {
       on: {
+        SLEEP_REQUESTED: 'suspending',
         REALTIME_READY: {
           target: 'active',
           actions: 'assignRealtimeSession',
@@ -235,6 +239,10 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
           target: 'dormant',
           actions: 'clearSessionContext',
         },
+        CLOUD_FAILED: {
+          target: 'offlineLoop',
+          actions: 'enterOfflineLoop',
+        },
         LOCAL_CORE_FAILED: {
           target: 'maintenance',
           actions: 'clearSessionContext',
@@ -248,6 +256,10 @@ const createLifecycleMachine = () => lifecycleSetup.createMachine({
     offlineLoop: {
       on: {
         RECOVERY_PASSED: 'dormant',
+        LOCAL_AUDIO_FAILED: {
+          target: 'maintenance',
+          actions: 'clearSessionContext',
+        },
         LOCAL_CORE_FAILED: {
           target: 'maintenance',
           actions: 'clearSessionContext',

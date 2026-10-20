@@ -8,6 +8,7 @@ build/
 *.tsbuildinfo
 resources/generated/
 resources/wake-native/win32-x64/
+resources/wake-native/darwin-arm64/
 
 # Local environment & secrets — Electron Main alone loads the ignored root .env
 .env

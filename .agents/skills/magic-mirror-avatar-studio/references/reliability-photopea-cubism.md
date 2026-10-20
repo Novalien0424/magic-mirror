@@ -10,7 +10,7 @@ At the failing pose, isolate the suspected surface and compare source alpha/text
 
 ## Native repair loop
 
-Establish the document, object ID, parameter key and unsaved state; save a recoverable CMO revision before repair. Within current tool policy, batch deterministic inputs on a stable surface and inspect after a meaningful edit or uncertain result, rather than every keystroke. Reobserve after focus, modal or selection changes; export may open Explorer over Cubism. Use the documented Computer Use API and reuse it while unchanged. In file dialogs, focus the filename field and confirm the path before submitting.
+Establish the document, object ID, parameter key and unsaved state; save a recoverable CMO revision before repair. Within current tool policy, batch deterministic inputs on a stable surface and inspect after a meaningful edit or uncertain result, rather than every keystroke. Reobserve after focus, modal or selection changes; export may open a file-manager window over Cubism. Use the documented Computer Use API and reuse it while unchanged. In file dialogs, focus the filename field and confirm the path before submitting.
 
 Restore temporary visibility/opacity diagnostics before export. Save the edited CMO, export through the Editor to a new runtime directory, then save any export-setting changes and hash the final files. Retain the raw exported model3 separately before restoring the accepted motion/expression mappings. Do not copy an old MOC into a new version or package a pre-final CMO hash.
 
@@ -24,7 +24,9 @@ In a Cubism 5.3.04 document, a disabled Photopea raster mask still affected reim
 
 ## Numeric values, selection and copy forms
 
-- Ctrl+A before entering signed values; double-click can omit the minus sign. Press Return to commit, then read back exact value and editable keyform state. A slider can land on interpolation rather than the intended key.
+Shortcuts below were observed on Windows; use the macOS equivalents (Cmd for Ctrl, Option for Alt) and verify them in the current Editor.
+
+- Select all (Ctrl+A) before entering signed values; double-click can omit the minus sign. Press Return to commit, then read back exact value and editable keyform state. A slider can land on interpolation rather than the intended key.
 - Copy Form uses Editor copied-form state that text automation/clipboard use may overwrite. Recopy neutral per axis/object, set endpoint and Apply Rate, commit, Apply and inspect. Do not share unverified forms across X/Y/Z or ArtMeshes.
 - Keep beak/jaw pivots coordinated through a shared parent before local jaw edits; inspect Y/Z junction holes.
 - Shift+Down after selecting an ArtMesh can move canvas art rather than extend tree selection. Undo wrong movement immediately and verify.

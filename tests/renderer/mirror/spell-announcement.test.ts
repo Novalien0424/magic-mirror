@@ -3,19 +3,24 @@ import { createSpellAnnouncement } from '../../../src/renderer/mirror/spell-anno
 
 describe('spell incantation playback ordering', () => {
   afterEach(() => vi.useRealTimers())
-  it('speaks only the prefix and completes only after output starts then finishes', async () => {
-    const speak = vi.fn(() => true)
+  it('completes only from its own processed response and ignores unrelated audio', async () => {
+    const speak = vi.fn((_text: string, _signal: AbortSignal, _finished: (completed: boolean) => void) => true)
     const a = createSpellAnnouncement({ speak })
     const done = vi.fn()
     const pending = a.run().then(done)
-    expect(speak).toHaveBeenCalledExactlyOnceWith('施放咒語')
+    expect(speak).toHaveBeenCalledExactlyOnceWith('施放咒語', expect.any(AbortSignal), expect.any(Function))
     a.handleActivity('output_stopped')
+    await Promise.resolve()
+    expect(done).not.toHaveBeenCalled()
     await Promise.resolve()
     expect(done).not.toHaveBeenCalled()
     a.handleActivity('output_started')
     await Promise.resolve()
     expect(done).not.toHaveBeenCalled()
     a.handleActivity('output_stopped')
+    await Promise.resolve()
+    expect(done).not.toHaveBeenCalled()
+    speak.mock.calls[0]![2](true)
     await pending
     expect(done).toHaveBeenCalledWith({ status: 'completed' })
   })

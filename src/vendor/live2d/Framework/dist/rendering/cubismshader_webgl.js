@@ -1110,6 +1110,11 @@ export class CubismShaderManager_WebGL {
     getShader(gl) {
         return this._shaderMap.get(gl);
     }
+    // Magic Mirror: release only the disposed canvas, preserving other previews.
+    removeContext(gl) {
+        this._shaderMap.get(gl)?.release();
+        this._shaderMap.delete(gl);
+    }
     /**
      * GLContextを登録する
      *

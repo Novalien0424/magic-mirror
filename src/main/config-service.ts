@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { avatarCatalogSchema, validateAvatarReferences } from './avatar/avatar-config'
 import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
 import { parsePresentation, type PresentationConfig } from '../shared/presentation'
+import { isFolderMediaId } from '../shared/media-folders'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
   managedMusicAssetSchema,
@@ -157,7 +158,8 @@ const mirrorConfigBaseEnvelope = z.object({
 
 const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
   avatarCatalog: avatarCatalogSchema.optional(),
-  presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null).optional(),
+  presentation: z.custom<PresentationConfig>(value => parsePresentation(value) !== null)
+    .transform(value => parsePresentation(value)!).optional(),
   reasoningEffort: reasoningEffortSchema,
   turnDetectionProfile: turnDetectionProfileSchema,
   visualAssets: z.array(managedVisualAssetSchema).max(256),
@@ -172,8 +174,13 @@ const mirrorConfigCoreEnvelope = mirrorConfigBaseEnvelope.extend({
     if (p.backgroundId && !value.visualAssets.some(asset => asset.id === p.backgroundId)) {
       context.addIssue({ code: 'custom', path: ['presentation', 'backgroundId'], message: 'Unknown visual asset' })
     }
-    if (p.ambienceId && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
+    if (p.ambienceId && !isFolderMediaId(p.ambienceId) && !value.musicAssets.some(asset => asset.id === p.ambienceId)) {
       context.addIssue({ code: 'custom', path: ['presentation', 'ambienceId'], message: 'Unknown music asset' })
+    }
+    for (const key of ['entranceVideoId', 'exitVideoId'] as const) {
+      if (p[key] && !value.visualAssets.some(asset => asset.id === p[key] && asset.kind === 'video')) {
+        context.addIssue({ code: 'custom', path: ['presentation', key], message: 'Unavailable ritual video' })
+      }
     }
   }
   const parsed = sceneCollectionsSchema.safeParse({
@@ -1021,7 +1028,7 @@ function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
+export function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
   const fromLeaves = new Map<string, unknown>()
   const toLeaves = new Map<string, unknown>()
   flattenJson(from, '', fromLeaves)
@@ -1049,6 +1056,15 @@ function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff {
 
 export function createConfigService(options: ConfigServiceOptions): ConfigService {
   const resolved = resolveConfigOptions(options)
+  const events = resolved.events
+  let lastLoadedReason: string | undefined
+  resolved.events = { emit(event) {
+    if (event.event === 'config_loaded') {
+      if (event.reason === lastLoadedReason) return
+      lastLoadedReason = event.reason
+    }
+    events.emit(event)
+  } }
 
   return {
     async initialize(): Promise<ConfigSlots> {

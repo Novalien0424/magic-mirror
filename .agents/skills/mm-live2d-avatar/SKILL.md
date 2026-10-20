@@ -13,6 +13,10 @@ Use the vendored Framework/Core and current model importer contract. Motion, exp
 
 Console preview does not publish a character or switch the live Mirror. Preserve operator drafts. Actual output audio drives the mouth; generation/transcript/mic input is not the speaking clock. The shared processed output is the sole audible path.
 
-Framing preserves model height fit and explicit Layout; draw/resize compose MVP without mutating the model matrix. Writable MOC IDs and ready status do not prove visible artwork. Use focused ownership checks and [UI QA](../mm-ui-qa/SKILL.md) for actual visual changes; distinguish Windows render evidence from physical sound, artistic acceptance and Mac readiness.
+Reflective Dormant stays completely black (DECISIONS 2026-10-10); failure/recovery
+remain distinct, and wake acknowledgement preserves the reveal.
 
-Do not report “natural”, “flawless” or visually accepted from JSON ranges, unit tests, generated stills or historical screenshots. State exactly which current rendering was inspected and which rig/artwork limitations remain.
+Framing preserves height fit and explicit Layout; draw/resize compose MVP without
+mutating the model matrix. Use [UI QA](../mm-ui-qa/SKILL.md) for visual changes.
+MOC IDs, parameter ranges, tests and stills do not prove natural motion, physical
+sound or artistic acceptance. Report the rendering inspected and remaining limits.

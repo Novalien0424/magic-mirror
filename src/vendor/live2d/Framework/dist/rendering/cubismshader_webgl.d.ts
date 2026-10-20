@@ -189,6 +189,7 @@ export declare class CubismShaderManager_WebGL {
      * @return shaderを返す
      */
     getShader(gl: WebGLRenderingContext): CubismShader_WebGL;
+    removeContext(gl: WebGLRenderingContext): void;
     /**
      * GLContextを登録する
      *

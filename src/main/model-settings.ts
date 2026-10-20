@@ -13,7 +13,7 @@ export type ModelSettingsRole =
   | 'inputTranscription'
   | 'memoryExtractor'
 
-export const REALTIME_SDK_VERSION = '0.16.1' as const
+export const REALTIME_SDK_VERSION = '0.20.0' as const
 
 export const MODEL_SETTINGS_ROLES: readonly ModelSettingsRole[] = Object.freeze([
   'realtimeDialogue',

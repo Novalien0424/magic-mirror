@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { normalizeTranscript } from './spell-trigger'
+import { spokenCommandKey } from '../../shared/spoken-command'
 import { REN_EXPRESSION_NAMES, REN_MOTION_GROUPS, VISUAL_FADE_MAX_MS } from '../../shared/types'
 
 const idSchema = z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/)
@@ -315,7 +315,7 @@ export const sceneCollectionsSchema = z.object({
   })
 
   value.spells.forEach((spell, index) => {
-    const normalized = normalizeTranscript(spell.phrase)
+    const normalized = spokenCommandKey(spell.phrase)
     if (normalizedPhrases.has(normalized)) {
       context.addIssue({
         code: 'custom',

@@ -1,9 +1,9 @@
 import { resolve } from 'node:path'
-import { loadEnvFile as nodeLoadEnvFile } from 'node:process'
+import { readFile } from 'node:fs/promises'
+import { parseEnv } from 'node:util'
 
 export interface EnvironmentCredentialSourceOptions {
-  readonly loadEnvFile?: (path: string) => void
-  readonly env?: NodeJS.ProcessEnv
+  readonly readFile?: (path: string) => Promise<string>
 }
 
 export interface EnvironmentCredentialSource {
@@ -22,23 +22,24 @@ function isMissingEnvFileError(error: unknown): boolean {
 export function createEnvironmentCredentialSource(
   options: EnvironmentCredentialSourceOptions = {},
 ): EnvironmentCredentialSource {
-  const loadEnvFile = options.loadEnvFile ?? nodeLoadEnvFile
-  const env = options.env ?? process.env
-  let envFileLoadAttempted = false
+  const read = options.readFile ?? ((path: string) => readFile(path, 'utf8'))
 
   return {
     async get(): Promise<string | null> {
-      if (!envFileLoadAttempted) {
-        envFileLoadAttempted = true
-        try {
-          loadEnvFile(resolve(process.cwd(), '.env'))
-        } catch (error) {
-          if (!isMissingEnvFileError(error)) throw error
-        }
+      let text: string
+      try {
+        text = await read(resolve(process.cwd(), '.env'))
+      } catch (error) {
+        if (isMissingEnvFileError(error)) return null
+        throw new Error('credential_file_unreadable')
       }
-
-      const credential = env.OPENAI_API_KEY?.trim() ?? ''
-      return credential.length > 0 ? credential : null
+      // Main-only RAM value: never populate process.env or accept an inherited key.
+      try {
+        const credential = parseEnv(text).OPENAI_API_KEY?.trim() ?? ''
+        return credential || null
+      } catch {
+        throw new Error('credential_file_invalid')
+      }
     },
   }
 }

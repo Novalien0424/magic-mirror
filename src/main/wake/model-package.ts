@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import type { MirrorConfig } from '../../shared/types'
 import { compileWakePhrase } from './custom-keywords'
+const writeFileAtomic = require('write-file-atomic') as (file: string, value: string, options: { encoding: 'utf8' }) => Promise<void>
 
 const safeId = z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,95}$/)
 const artifactFile = z.string().trim().min(1).max(160).refine((value) => {
@@ -184,7 +185,11 @@ export async function loadWakeModelPackage(input: {
       const hash = createHash('sha256').update(input.wake.packageId).update(encoded).digest('hex')
       const file = resolve(input.customKeywordsDirectory, `${hash}.txt`)
       await mkdir(input.customKeywordsDirectory, { recursive: true })
-      await writeFile(file, encoded, 'utf8')
+      const existing = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (existing !== encoded) await writeFileAtomic(file, encoded, { encoding: 'utf8' })
       artifactPaths.set('keywords', file)
     } catch (error) {
       const code = error instanceof Error ? error.message : ''

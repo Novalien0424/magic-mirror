@@ -1,4 +1,5 @@
 import { runPromptInspectorQa } from './prompt-inspector-qa'
+import { runRavenWakeLevelQa } from './raven-wake-level-qa'
 import { dialog } from 'electron'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -6,7 +7,21 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { runVoiceConsoleQa } from './voice-console-qa'
 import { runProfileConsoleQa } from './profile-console-qa'
 import { runFieldHelpConsoleQa } from './field-help-console-qa'
+import { runStudioJourneyQa } from './studio-journey-qa'
 import { runActiveBgmQa } from './active-bgm-qa'
+import { runReflectiveRitualQa } from './reflective-ritual-qa'
+import { runMediaSkillQa } from './media-skill-qa'
+import { runMemoryConsoleQa } from './memory-console-qa'
+import { runMemoryConversationQa } from './memory-conversation-qa'
+import { runRavenConversationQa } from './raven-conversation-qa'
+import { runRavenWakeDiagnosticQa } from './raven-wake-diagnostic-qa'
+import { runRavenWakeMediaQa } from './raven-wake-media-qa'
+import { runRavenWakeReplayQa } from './raven-wake-replay-qa'
+import { runRavenWakeAecQa } from './raven-wake-aec-qa'
+import { runRavenWakeBrowserQa } from './raven-wake-browser-qa'
+import { runReviewUiQa } from './review-ui-qa'
+import { runNativeCameraQa, runNativeCameraDeliveryQa } from './camera/native-qa'
+import { runRavenJudgeCalibrationQa, runRavenMemoryIntentCalibrationQa } from './raven-judge-calibration-qa'
 
 // This driver runs only in the isolated Phase 4 QA process. It substitutes the
 // native file-picker selection; import, Chromium decode, edits, and publication
@@ -18,12 +33,14 @@ const DOM = `
   const button = (name, root = panel) => [...root.querySelectorAll('button')]
     .find(el => (el.getAttribute('aria-label') || el.textContent.trim()) === name);
   const control = (name, root = panel) => [...root.querySelectorAll('label')]
-    .find(el => [...el.childNodes].filter(n => n.nodeType === 3 || n.nodeName === 'SPAN')
+    .find(el => [...el.childNodes].filter(n => n.nodeType === 3 || n.nodeName === 'SPAN' && !n.classList.contains('field-error'))
       .map(n => n.textContent).join('').trim() === name)?.querySelector('input,select,textarea');
   const action = () => panel.querySelector('.scene-action-editor');
   const scene = () => panel.querySelector('.scene-composer__body');
   const stage = () => scene().querySelector('.console__stage-card');
   const status = () => panel.querySelector('[aria-live]').textContent;
+  const stopAll = () => button('Stop All', document);
+  const liveResult = () => document.querySelector('.live-bar__result')?.textContent ?? '';
   const click = el => {
     if (!el || el.disabled) throw new Error('phase4_qa_console_control_unavailable');
     for (let parent = el.parentElement; parent; parent = parent.parentElement) {
@@ -42,7 +59,24 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'memory_intent_calibration') return runRavenMemoryIntentCalibrationQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'judge_calibration') return runRavenJudgeCalibrationQa(input)
+  if (process.env['MIRROR_REVIEW_UI_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'camera_delivery') return runNativeCameraDeliveryQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && ['wake_levels', 'wake_levels_asr'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')) return runRavenWakeLevelQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'wake_browser') return runRavenWakeBrowserQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && ['wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')) return runRavenWakeAecQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'camera_native') return runNativeCameraQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && ['wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')) return runRavenWakeMediaQa(input)
+  if (process.env['MIRROR_REVIEW_UI_QA'] === '1') return runReviewUiQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && ['wake_replay', 'wake_capture', 'wake_control'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')) return runRavenWakeReplayQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'wake_diagnostic') return runRavenWakeDiagnosticQa(input)
+  if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1') return runRavenConversationQa(input)
+  if (process.env['MIRROR_MEMORY_CONVERSATION_QA'] === '1') return runMemoryConversationQa(input)
+  if (process.env['MIRROR_MEMORY_QA'] === '1') return runMemoryConsoleQa(input)
+  if (process.env['MIRROR_REFLECTIVE_RITUAL_QA'] === '1') return runReflectiveRitualQa(input)
+  if (process.env['MIRROR_MEDIA_SKILL_QA'] === '1') return runMediaSkillQa(input)
   if (process.env['MIRROR_ACTIVE_BGM_QA'] === '1') return runActiveBgmQa(input)
+  if (process.env['MIRROR_STUDIO_JOURNEY_QA'] === '1') return runStudioJourneyQa(input)
   if (process.env['MIRROR_FIELD_HELP_QA'] === '1') return runFieldHelpConsoleQa(input)
   if (process.env['MIRROR_PROFILE_QA'] === '1') return runProfileConsoleQa(input)
   if (process.env['MIRROR_VOICE_QA'] === '1') return runVoiceConsoleQa(input)
@@ -91,6 +125,12 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Confirm publish'))")
     await wait("return !button('Save all changes').disabled && button('Publish all changes').disabled")
   }
+  const saveAndApply = async (): Promise<void> => {
+    await wait("return !!button('Save & apply all changes') && !button('Save & apply all changes').disabled")
+    await edit("click(button('Save & apply all changes'))")
+    await wait("return status() === 'Saved and applied. Ready for the next conversation.' && !button('Save & apply all changes').disabled")
+    await wait("const r = await window.magicMirror.getConfig(); return r.ok && r.value.publishDiff.changed.length === 0")
+  }
   const picker = dialog.showOpenDialog
   let selection: string | string[] | null = null
   dialog.showOpenDialog = (async () => ({ canceled: selection === null,
@@ -102,6 +142,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !!document.querySelector('[aria-label=\"BGM volume\"]') && !document.querySelector('[aria-label=\"BGM volume\"]').disabled")
     for (const [label, channel, value] of [['BGM', 'bgm', 30], ['Avatar audio', 'avatar', 70], ['Sound effects', 'effects', 0]] as const) {
       await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '${value}')`)
+      await wait("return !!button('Save device settings', document) && !button('Save device settings', document).disabled")
+      await edit("click(button('Save device settings', document))")
       await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === ${value / 100}`)
     }
     await wait('const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.voiceGain === 0.7', 'avatar_volume_applied')
@@ -124,6 +166,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     passed()
     for (const [label, channel] of [['BGM', 'bgm'], ['Avatar audio', 'avatar'], ['Sound effects', 'effects']] as const) {
       await edit(`set(document.querySelector('[aria-label="${label} volume"]'), '100')`)
+      await wait("return !!button('Save device settings', document) && !button('Save device settings', document).disabled")
+      await edit("click(button('Save device settings', document))")
       await wait(`const r = await window.magicMirror.getAvatarRuntime(); return r.ok && r.value.audioDevices?.preferences.volumes?.${channel} === 1`)
     }
     if (process.env['MIRROR_AUDIO_VOLUME_QA'] === '1') {
@@ -235,10 +279,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.scenes.length === 0
         && r.value.draft.scenes[0].name === 'Magic Vision' && r.value.draft.scenes[0].stages[0].name === 'Saved preview step'
         && control('Scene name', scene()).value === 'Keep this scene title unsaved';`)
-      await edit("click(button('Test step')); click(button('Stop All'))")
-      await wait("return status() === 'All Scenes stopped.' && !button('Test step').disabled")
+      await edit("click(button('Test step')); click(stopAll())")
+      await wait("return liveResult().includes('All scenes stopped.') && !button('Test step').disabled")
       await new Promise(resolveWait => setTimeout(resolveWait, 1000))
-      if (!await evaluate<boolean>("return status() === 'All Scenes stopped.'")) throw new Error('phase4_qa_pending_test_not_cancelled')
+      if (!await evaluate<boolean>("return liveResult().includes('All scenes stopped.') && !status().includes('completed')")) throw new Error('phase4_qa_pending_test_not_cancelled')
       await edit("button('Test step').scrollIntoView({block:'center'}); button('Test step').focus()")
       await wait("return getComputedStyle(document.getElementById(button('Test step').getAttribute('aria-describedby'))).display !== 'none'")
       await screenshot('console-step-test-help.png')
@@ -257,10 +301,10 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       for (const name of ['Test action', 'Test step', 'Test scene']) {
         step = 'console_abort_' + name.replaceAll(' ', '_')
         await evaluate(`click(button(${JSON.stringify(name)})); await new Promise(r=>setTimeout(r,0));
-          const abort=button('Abort scene test'); if(abort.matches(':disabled')) throw Error('scene_abort_disabled'); click(abort);`)
+          const abort=stopAll(); if(!abort || abort.matches(':disabled')) throw Error('phase4_qa_scene_abort_disabled'); click(abort);`)
         await wait("return !button('Save all changes').disabled")
         await new Promise(r=>setTimeout(r,350))
-        if (await input.mirror.webContents.executeJavaScript("!!document.querySelector('.scene-visual video')")) throw Error('scene_started_after_abort')
+        if (await input.mirror.webContents.executeJavaScript("!!document.querySelector('.scene-visual video')")) throw Error('phase4_qa_scene_started_after_abort')
         await edit(`click(button(${JSON.stringify(name)}))`)
         const playingDeadline = Date.now() + 10000
         let playing = false
@@ -269,8 +313,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
           if (playing) break
           await new Promise(r=>setTimeout(r,50))
         }
-        if (!playing) throw Error('scene_restart_did_not_play')
-        await edit("click(button('Abort scene test'))")
+        if (!playing) throw Error('phase4_qa_scene_restart_did_not_play')
+        await edit("click(stopAll())")
         await wait("return !button('Save all changes').disabled")
         passed()
       }
@@ -328,7 +372,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("set(control('Scene name', scene()), 'Unsaved correction')")
     await edit("click(control('Magic Vision visual', stage()))")
     await edit("click(button('Save all changes'))")
-    await wait("return status().includes('console_config_invalid')")
+    await wait("return status().includes('Some settings are incomplete or invalid')")
     await wait("return control('Scene name', scene()).value === 'Unsaved correction' && !control('Magic Vision visual', stage()).checked")
     await wait(`const r = await window.magicMirror.getConfig();
       return r.ok && r.value.active.scenes[0]?.name === 'Magic Vision' && r.value.draft.scenes[0]?.name === 'Magic Vision';`)
@@ -345,7 +389,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !button('Publish all changes').disabled")
     await edit("set(control('Scene name', scene()), 'Unpublished title')")
     await wait("return button('Publish all changes').disabled")
-    await edit("click(button('Stop All'))")
+    await edit("click(stopAll())")
     await wait("return control('Scene name', scene()).value === 'Unpublished title'")
     await edit("set(control('Scene name', scene()), 'Magic Vision')")
     passed()
@@ -353,7 +397,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     step = 'console_incompatible_end_condition'
     await edit("set(control('Playback', action()), 'loop')")
     await edit("click(button('Save all changes'))")
-    await wait("return status().includes('console_config_invalid') && control('Playback', action()).value === 'loop'")
+    await wait("return status().includes('Some settings are incomplete or invalid') && control('Playback', action()).value === 'loop'")
     await edit("set(control('Ends when', stage()), 'until_stopped')")
     await edit("set(control('Maximum seconds', stage()), '5')")
     await save()
@@ -374,7 +418,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     step = 'console_stage_reorder_and_delete'
     await edit("click(button('Move down'))")
     await edit("click(button('Save all changes'))")
-    await wait("return status().includes('console_config_invalid')")
+    await wait("return status().includes('Some settings are incomplete or invalid')")
     await edit("click(button('Delete step'))")
     await edit("click(button('Undo removal'))")
     await wait("return scene().querySelectorAll('.scene-steps > button').length === 3")
@@ -395,7 +439,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('Add Trigger Phrase'))")
     await edit("set(control('Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]), 'Mirror show the vision!')")
     await edit("click(button('Save all changes'))")
-    await wait("return status().includes('console_config_invalid') && panel.querySelectorAll('.scene-spell').length === 2")
+    await wait("return status().includes('Some settings are incomplete or invalid') && panel.querySelectorAll('.scene-spell').length === 2")
     await edit("click(button('Remove Trigger Phrase', panel.querySelectorAll('.scene-spell')[1]))")
     await screenshot('console-trigger-phrase-inline.png')
     passed()
@@ -407,7 +451,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await save()
     await testAndPublish()
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok
-      && !r.value.active.scenes[0].enabled && !r.value.active.sceneActions[0].enabled && !r.value.active.spells[0].enabled
+      && !r.value.active.scenes[0].enabled && r.value.active.sceneActions.find(a => a.id === r.value.active.scenes[0].stages[0].actionIds[0])?.enabled === false && !r.value.active.spells[0].enabled
       && button('Run Published Scene', scene()).disabled;`)
     await edit("click(control('Enabled', action()))")
     await edit("click(control('Enabled', scene()))")
@@ -431,7 +475,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await writeFile(assetPath, 'synthetic corrupt managed media')
       await edit("click(button('Publish all changes'))")
     await edit("click(button('Confirm publish'))")
-      await wait("return status().includes('console_config_test_failed')")
+      await wait("return status().includes('needs attention') && panel.textContent.includes('console_config_test_failed')")
       await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.configVersion === ${activeVersion};`)
       await edit("click(button('Save all changes'))")
       await wait("return (status().includes('failed') || status().includes('Cannot save')) && button('Publish all changes').disabled")
@@ -457,13 +501,14 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await screenshot('console-presentation-asleep.png')
     for (const name of ['Preview entrance', 'Preview exit', 'Preview full cycle']) {
       await edit(`click(button(${JSON.stringify(name)}))`)
-      await evaluate("click(button('Save all changes')); const stop=button('Stop preview'); if(stop.matches(':disabled')) throw Error('presentation_stop_disabled'); click(stop)")
-      await wait("return !panel.querySelector('.presentation') && !button('Save all changes').disabled")
+      const readiness = await evaluate("return {savePresent:!!button('Save & apply all changes'),saveDisabled:button('Save & apply all changes')?.disabled,stopPresent:!!button('Stop preview'),stopDisabled:button('Stop preview')?.disabled,conflict:panel.textContent.includes('saved configuration changed while you were editing'),invalidFields:panel.querySelectorAll('[aria-invalid=true]').length}")
+      input.onEvidence({ step: 'presentation_stop_readiness', status: 'measured', item: JSON.stringify(readiness) })
+      await evaluate("const save=button('Save & apply all changes');if(!save||save.disabled)throw Error('phase4_qa_presentation_save_unavailable');click(save); const stop=button('Stop preview'); if(!stop||stop.matches(':disabled')) throw Error('phase4_qa_presentation_stop_disabled'); click(stop)")
+      await wait("return !panel.querySelector('.presentation') && !button('Save & apply all changes').disabled")
       passed()
     }
     await screenshot('console-presentation-stopped.png')
-    await save()
-    await testAndPublish()
+    await saveAndApply()
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok
       && r.value.active.presentation.mode === 'emerge' && r.value.active.presentation.exitMs === 900;`)
     passed()
@@ -491,7 +536,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await mirrorWait('entering')
       await screenshot('presentation-entering.png', true)
       await mirrorWait('awake')
-      await wait("return document.querySelector('.console__status').textContent === 'active' && !button('Disconnect', document).disabled", 'overview_live_active')
+      await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'active' && !button('Disconnect', document).disabled", 'overview_live_active')
       await new Promise(resolveWait => setTimeout(resolveWait, 550))
       const quiet = await input.mirror.webContents.executeJavaScript(
         "(()=>{const a=document.querySelector('[data-presentation-ambience]'); return !!a && a.paused && a.volume === 0})()")
@@ -504,14 +549,17 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await mirrorWait('exiting')
       await screenshot('presentation-exiting.png', true)
       await mirrorWait('asleep')
-      await wait("return document.querySelector('.console__status').textContent === 'dormant' && !button('Start Conversation', document).disabled", 'overview_live_dormant')
+      await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'dormant' && !button('Start Conversation', document).disabled", 'overview_live_dormant')
       await screenshot('presentation-return.png', true)
       passed()
     }
 
     step = 'console_delete_referenced_action'
     await edit("click(button('Action library'))")
-    await wait("return button('Delete unused action').disabled")
+    await wait(`const r = await window.magicMirror.getConfig(); if (!r.ok) return false;
+      const used = r.value.active.sceneActions.find(a => a.id === r.value.active.scenes[0].stages[0].actionIds[0]);
+      const card = [...fieldset('Reusable actions').querySelectorAll(':scope > details')].find(d => d.querySelector('summary').textContent === used.name + ' · ' + used.kind);
+      return !!card && button('Delete unused action', card).disabled`)
     passed()
     await edit("click(button('Spells & scenes'))")
 
@@ -529,12 +577,15 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("click(button('System', document))")
     await edit("click(button('Advanced config', document))")
     const configRoot = "document.querySelector('[aria-labelledby=console-config]')"
-    await wait(`return !!control('idleSeconds', ${configRoot}) && !control('idleSeconds', ${configRoot}).disabled`)
-    await edit(`set(control('idleSeconds', ${configRoot}), '0')`)
-    await edit(`click(button('Save Draft', ${configRoot}))`)
-    await wait(`return ${configRoot}.textContent.includes('console_config_invalid') && control('idleSeconds', ${configRoot}).value === '0'`)
+    const idleLabel = 'Sleep after inactivity (seconds)'
+    await wait(`return !!control('${idleLabel}', ${configRoot}) && !control('${idleLabel}', ${configRoot}).disabled`)
+    await edit(`set(control('${idleLabel}', ${configRoot}), '0')`)
+    await edit(`click(button('Save configuration draft', ${configRoot}))`)
+    await wait(`return ${configRoot}.textContent.includes('Correct the highlighted field before saving.')
+      && control('${idleLabel}', ${configRoot}).value === '0' && control('${idleLabel}', ${configRoot}).getAttribute('aria-invalid') === 'true'`)
+    await wait('const r = await window.magicMirror.getConfig(); return r.ok && r.value.draft.idleSeconds === 300')
     await screenshot('console-config-invalid.png')
-    await edit(`set(control('idleSeconds', ${configRoot}), '300')`)
+    await edit(`set(control('${idleLabel}', ${configRoot}), '300')`)
     passed()
 
     step = 'console_mixed_batch_and_previews'
@@ -607,8 +658,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     selection = join(process.cwd(), 'resources', 'avatar', 'Ren', 'Ren.model3.json')
     await edit("click(button('Browse & import Cubism…'))")
     await wait("return status().startsWith('Cubism bundle imported.')")
-    await save()
-    await testAndPublish()
+    await saveAndApply()
     await edit("click(button('Avatars', document))")
     await edit("click(button('Spells & scenes'))")
     await edit("click(button('Appearance'))")
@@ -649,8 +699,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return status().includes('completed')")
     await edit("click(button('Test action'))")
     await wait("return status().includes('started') || status().includes('completed')")
-    await edit("click(button('Stop All'))")
-    await wait("return status() === 'All Scenes stopped.'")
+    await edit("click(stopAll())")
+    await wait("return liveResult().includes('All scenes stopped.')")
     await screenshot('console-focused-test.png')
     passed()
 
@@ -663,7 +713,7 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     await input.runtime.handleSimulator({ type: 'wake' })
     await wait("return button('Use on Mirror').disabled && document.querySelector('#avatar-activation-reason').textContent.includes('End the conversation')")
     await input.runtime.handleSimulator({ type: 'sleep' })
-    await wait("return document.querySelector('.console__status').textContent === 'dormant'")
+    await wait("return document.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle') === 'dormant'")
     await edit("click(button('Use on Mirror'))")
     await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalAvatar)}`)
     await wait("return [...fieldset('Managed visuals').querySelectorAll('input[type=checkbox]')].at(-1).disabled")
@@ -676,6 +726,8 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
       await wait(`return document.querySelector('[aria-current=page]')?.textContent === ${JSON.stringify(tab)}`)
     }
     for (const tab of ['Simulator', 'Events', 'Phase Tests', 'Models']) {
+      // Simulator is listed only in developer mode.
+      if (tab === 'Simulator' && !await evaluate<boolean>("return !!button('Simulator', document)")) continue
       await edit(`click(button(${JSON.stringify(tab)}, document))`)
       await wait(`return [...document.querySelectorAll('h2')].some(el => el.getClientRects().length && el.textContent.includes(${JSON.stringify(tab)}))`)
     }
@@ -705,12 +757,13 @@ export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
             };
             return {overflow: document.documentElement.scrollWidth > innerWidth,
               font: parseFloat(getComputedStyle(document.documentElement).fontSize),
-              smallText: text.filter(el => parseFloat(getComputedStyle(el).fontSize) < 15).length,
+              smallText: text.filter(el => parseFloat(getComputedStyle(el).fontSize) < 11).length,
               lowContrast: text.filter(el => contrast(el) < 4.5).length,
               smallControls: [...document.querySelectorAll('button,select,input:not([type=checkbox])')]
-                .filter(visible).filter(el => el.getBoundingClientRect().height < 43).length};`)
+                .filter(visible).filter(el => el.getBoundingClientRect().height < 24).length};`)
           input.onEvidence({step:'console_readability_metrics',status:'measured',item:JSON.stringify({width,page,...metrics})})
-          if (metrics.overflow || metrics.font < 18 || metrics.smallControls > 0 || metrics.smallText > 0 || metrics.lowContrast > 0) throw new Error('phase4_qa_readability_' + width + '_' + page)
+          // Compact operator Console (owner request 2026-10-17): 15px root, WCAG 2.2 24px targets, 4.5:1 text contrast.
+          if (metrics.overflow || metrics.font < 15 || metrics.smallControls > 0 || metrics.smallText > 0 || metrics.lowContrast > 0) throw new Error('phase4_qa_readability_' + width + '_' + page)
           await screenshot('console-' + page.replaceAll(/[^a-z]/gi, '-').toLowerCase() + '-' + width + '.png')
         }
       }

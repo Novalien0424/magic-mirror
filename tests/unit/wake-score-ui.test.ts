@@ -12,8 +12,8 @@ describe('native wake score display', () => {
     expect(render('failed')).toContain('Start live test')
     expect(render('failed')).toContain('close and restart Magic Mirror')
     expect(render('failed')).toContain('wake_audio_stalled')
-    expect(render('restarting')).toContain('Restarting wake listener')
-    expect(render('recovered')).toContain('Audio resumed after')
+    expect(render('restarting')).toContain('Restarting the wake listener')
+    expect(render('recovered')).toContain('Microphone audio has resumed')
     expect(render('recovered')).toContain('2')
   })
   it('shows the measured decimal score and partial phrase progress independently', () => {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "configVersion": 7,
+  "configVersion": 8,
   "persona": {
     "name": "mock-persona-v1",
     "instructions": "mock-persona-instructions-v1"
@@ -17,7 +17,7 @@
       "modelId": "gpt-live-transcribe"
     },
     "memoryExtractor": {
-      "modelId": "gpt-5.6-luna"
+      "modelId": "gpt-6.1-sol"
     }
   },
   "wake": {

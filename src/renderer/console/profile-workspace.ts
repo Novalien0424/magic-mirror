@@ -3,15 +3,25 @@ import type { AvatarProfile } from '../../shared/avatar-profiles'
 import type { ConsoleConfigDraftInput, ConsoleConfigPayload } from '../../shared/console-types'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
-import { DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
+import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
+import { defaultExperience } from '../../shared/portrait-studio'
+import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_SLEEP_PHRASE, DEFAULT_WAKE_PHRASE } from '../../shared/avatar-commands'
 import { draftFingerprint } from './scene-editor-model'
 
-export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Spells & scenes'] as const
+export const PROFILE_SECTIONS = ['Persona', 'Appearance', 'Voice', 'Music & video', 'Interactive Studio', 'Memories', 'Spells & scenes'] as const
 export const LIBRARY_SECTIONS = ['Rig library', 'Media library', 'Action library'] as const
 export type ProfileSection = typeof PROFILE_SECTIONS[number] | typeof LIBRARY_SECTIONS[number]
 
+export interface SavedDraftRefresh {
+  readonly submittedFingerprint: string
+  readonly savedFingerprint: string
+}
+
 export function draftRefreshDecision(previous: ConsoleConfigDraftInput | null, incoming: ConsoleConfigDraftInput,
-  local: ConsoleConfigDraftInput | null, expected: boolean): 'accept' | 'retain' | 'conflict' {
+  local: ConsoleConfigDraftInput | null, expected: boolean, saved: SavedDraftRefresh | null = null): 'accept' | 'retain' | 'conflict' {
+  if (saved && draftFingerprint(incoming) === saved.savedFingerprint) {
+    return local && draftFingerprint(local) === saved.submittedFingerprint ? 'accept' : 'retain'
+  }
   if (expected || !previous || !local || draftFingerprint(previous) === draftFingerprint(local)) return 'accept'
   return draftFingerprint(previous) === draftFingerprint(incoming) ? 'retain' : 'conflict'
 }
@@ -21,7 +31,9 @@ export function newAvatar(id: string): AvatarProfile {
     speakingStyle: '', voice: 'alloy', idleSeconds: 120, modelId: 'builtin-ren',
     presentation: { ...DEFAULT_PRESENTATION }, scenes: [], spells: [],
     voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
-    wakePhrase: DEFAULT_WAKE_PHRASE, sleepPhrase: DEFAULT_SLEEP_PHRASE }
+    mediaSkill: structuredClone(DEFAULT_MEDIA_SKILL),
+    experience: defaultExperience(),
+    wakePhrase: DEFAULT_WAKE_PHRASE, sleepPhrase: DEFAULT_SLEEP_PHRASE, cloudSearchPhrase: DEFAULT_CLOUD_SEARCH_PHRASE }
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)

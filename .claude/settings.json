@@ -1,0 +1,11 @@
+{
+  "skillOverrides": {
+    "mm-electron-foundation": "off",
+    "mm-face-identity": "off",
+    "mm-invariants": "off",
+    "mm-live2d-avatar": "off",
+    "mm-phase-workflow": "off",
+    "mm-realtime-voice": "off",
+    "mm-wake-word": "off"
+  }
+}

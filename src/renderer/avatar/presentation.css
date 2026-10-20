@@ -5,6 +5,18 @@
 .presentation[data-phase="awake"] .presentation__background, .presentation[data-phase="entering"] .presentation__background { opacity: 0; }
 .presentation__background img, .presentation__background video { width: 100%; height: 100%; object-fit: cover; }
 .presentation__avatar { z-index: 1; transition: opacity 200ms ease; }
+.presentation[data-mode="reflective"] { background: #000000; }
+.presentation[data-mode="reflective"] .presentation__avatar { transition: none; transform: none; }
+.presentation[data-mode="reflective"][data-phase="asleep"] .presentation__avatar,
+.presentation[data-mode="reflective"][data-phase="inactive"] .presentation__avatar { opacity: 0; visibility: hidden; }
+.presentation[data-mode="reflective"][data-phase="entering"] .presentation__avatar { opacity: 0; animation: reflective-reveal var(--reveal-duration-ms) ease-in-out var(--reveal-delay-ms) both; }
+.presentation[data-mode="reflective"][data-phase="awake"] .presentation__avatar { opacity: 1; }
+.presentation[data-mode="reflective"][data-phase="exiting"] .presentation__avatar { animation: reflective-retreat var(--exit-ms) ease-in-out both; }
+.presentation__ritual-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; filter: brightness(.7); }
+@keyframes reflective-reveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reflective-reveal-repeat { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reflective-retreat { from { opacity: var(--ritual-exit-opacity, 1); } to { opacity: 0; } }
+@keyframes reflective-retreat-repeat { from { opacity: var(--ritual-exit-opacity, 1); } to { opacity: 0; } }
 .presentation .avatar-stage { position: absolute; inset: 0; overflow: hidden; background: transparent; }
 .presentation .avatar-stage__canvas { position: absolute; display: block; }
 .presentation .avatar-stage__fallback { position: absolute; inset: 0; display: grid; place-content: center; background: #172331; color: #f1f5fa; text-align: center; }
@@ -23,3 +35,8 @@
 @keyframes avatar-emerge { 0%, 20% { opacity: 0; transform: translateY(3%); } 100% { opacity: 1; transform: none; } }
 @keyframes avatar-retreat { 0% { opacity: 1; } 70%, 100% { opacity: 0; transform: translateY(3%); } }
 @media (prefers-reduced-motion: reduce) { .presentation__mist i { animation: none; } .presentation__avatar { transform: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  /* Keep explicitly authored reflective media and fades on their shared clock. */
+  .presentation:not([data-mode="reflective"])[data-phase="entering"] .presentation__avatar { animation: none !important; opacity: 1; transition: opacity 150ms linear; }
+  .presentation:not([data-mode="reflective"])[data-phase="exiting"] .presentation__avatar { animation: none !important; opacity: 0; transition: opacity 150ms linear; }
+}

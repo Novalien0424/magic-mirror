@@ -13,13 +13,17 @@ import type { ACubismMotion } from '../../vendor/live2d/Framework/dist/motion/ac
 import type { CubismMotion } from '../../vendor/live2d/Framework/dist/motion/cubismmotion'
 import { InvalidMotionQueueEntryHandleValue } from '../../vendor/live2d/Framework/dist/motion/cubismmotionqueuemanager'
 import type { CubismIdHandle } from '../../vendor/live2d/Framework/dist/id/cubismid'
+import { CubismMatrix44 } from '../../vendor/live2d/Framework/dist/math/cubismmatrix44'
 import { CubismWebGLOffscreenManager } from '../../vendor/live2d/Framework/dist/rendering/cubismoffscreenmanager'
+import { CubismShaderManager_WebGL } from '../../vendor/live2d/Framework/dist/rendering/cubismshader_webgl'
 import {
   renExpressionForState,
   resolveAvatarModelSource,
   resolveCubismShaderBaseUrl,
 } from './avatar-model-source'
 import type { AvatarState } from './avatar-state'
+import type { CameraTarget } from '../../shared/camera-tracking'
+import { createGazeSmoother } from './gaze-tracking'
 import { createAvatarMvp } from './avatar-framing'
 import { clampPreviewParameter, configureMotionPlayback, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
 import { CONTINUOUS_PARAMETERS, drainMotionQueue, lifecycleLoops, ownsBlink, performanceState, PerformanceContinuity, readPerformanceProfile, type PerformanceProfile } from './cubism-performance'
@@ -28,10 +32,16 @@ const CUBISM_MEMORY_BYTES = 1024 * 1024 * 32
 const STATE_PRIORITY = 2
 const FPS_SAMPLE_COUNT = 120
 const METRICS_INTERVAL_MS = 500
+const GAZE_PARAMETERS = [
+  ['ParamAngleX', 'x', 7], ['ParamAngleY', 'y', 5],
+  ['ParamEyeBallX', 'x', .6], ['ParamEyeBallY', 'y', .5],
+] as const
+const GAZE_STATES = new Set<AvatarState>(['Listening', 'Thinking', 'Speaking'])
 
 export type CubismAvatarFailureReason =
   | 'avatar_core_unavailable'
   | 'avatar_webgl_unavailable'
+  | 'avatar_webgl_context_lost'
   | 'avatar_software_renderer'
   | 'avatar_model_load_failed'
   | 'avatar_texture_load_failed'
@@ -57,6 +67,8 @@ export interface CubismAvatarMetrics {
 }
 
 export interface CubismAvatarRenderer {
+  setPaused?(paused: boolean): void
+  setLookTarget?(target: CameraTarget | null): void
   initialize(): Promise<void>
   setState(state: AvatarState): void
   playMotion(group: string, index?: number): boolean
@@ -142,6 +154,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
   readonly #continuity = new PerformanceContinuity()
   #state: AvatarState = 'Dormant'
   #mouthOpen = 0
+  readonly #gaze = createGazeSmoother()
   #oneShotGroup: string | null = null
   #previewMotion = false
   #playbackGeneration = 0
@@ -150,6 +163,10 @@ class MagicMirrorCubismModel extends CubismUserModel {
   #lifecycleStarted = false
   readonly #previewValues = new Map<string, number>()
   readonly #motionEntries: CubismCapabilities['motions'] = []
+  readonly #continuousIds = CONTINUOUS_PARAMETERS.map(name => ({ name, id: CubismFramework.getIdManager().getId(name) }))
+  readonly #gazeIds = GAZE_PARAMETERS.map(([name, axis, scale]) => ({ id: CubismFramework.getIdManager().getId(name), axis, scale }))
+  readonly #projection = new CubismMatrix44()
+  readonly #viewport = [0, 0, 0, 0]
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -414,6 +431,10 @@ class MagicMirrorCubismModel extends CubismUserModel {
     this.#mouthOpen = unit(value)
   }
 
+  setLookTarget(target: CameraTarget | null): void {
+    this.#gaze.setTarget(target, performance.now())
+  }
+
   previewControls(): CubismPreviewControls {
     const parameters = Array.from({ length: this._model.getParameterCount() }, (_, index) => ({
       id: this._model.getParameterId(index).getString(), index,
@@ -516,10 +537,19 @@ class MagicMirrorCubismModel extends CubismUserModel {
     }
     try {
       if (this.#performance !== null && !this.#previewNeutral) {
-        for (const name of CONTINUOUS_PARAMETERS) {
-          const id = CubismFramework.getIdManager().getId(name)
+        for (const { name, id } of this.#continuousIds) {
           this._model.setParameterValueById(id,
             this.#continuity.sample(name, this._model.getParameterValueById(id), deltaSeconds))
+        }
+      }
+      const gaze = this.#gaze.step(deltaSeconds, performance.now(),
+        !this.#previewNeutral && this.#oneShotGroup === null
+        && GAZE_STATES.has(this.#state))
+      // Apply after authored continuity, before preview overrides. Saved body parameters
+      // precede this overlay, so gaze cannot accumulate or rewrite authored curves.
+      for (const { id, axis, scale } of this.#gazeIds) {
+        if (this._model.getParameterIndex(id) < this._model.getParameterCount()) {
+          this._model.addParameterValueById(id, gaze[axis] * scale)
         }
       }
       for (const [id, value] of this.#previewValues) {
@@ -535,11 +565,12 @@ class MagicMirrorCubismModel extends CubismUserModel {
     if (!this.isInitialized()) return
     const width = this.#canvas.width
     const height = this.#canvas.height
-    const projection = createAvatarMvp(width, height, this._modelMatrix)
+    const projection = createAvatarMvp(width, height, this._modelMatrix, this.#projection)
+    this.#viewport[2] = width; this.#viewport[3] = height
     this.getRenderer().setMvpMatrix(projection)
     this.getRenderer().setRenderState(
       this.#gl.getParameter(this.#gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer,
-      [0, 0, width, height],
+      this.#viewport,
     )
     this.getRenderer().drawModel(resolveCubismShaderBaseUrl())
   }
@@ -551,6 +582,7 @@ class MagicMirrorCubismModel extends CubismUserModel {
     // A rig owns this canvas/context. Its pooled mask targets must not survive
     // into the next rig: the renderer just destroyed the targets they reference.
     CubismWebGLOffscreenManager.getInstance().removeContext(this.#gl)
+    CubismShaderManager_WebGL.getInstance().removeContext(this.#gl)
   }
 }
 
@@ -562,6 +594,7 @@ export function createCubismAvatarRenderer(
   let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null
   let frameId: number | null = null
   let disposed = false
+  let paused = false
   let previousTimestamp = 0
   let lastMetricsTimestamp = 0
   let state: AvatarState = 'Dormant'
@@ -572,10 +605,19 @@ export function createCubismAvatarRenderer(
   const fail = (reason: CubismAvatarFailureReason): void => {
     report(input.eventSink, { status: 'failed', reason })
   }
+  const contextLost = (event: Event): void => {
+    event.preventDefault()
+    if (disposed) return
+    paused = true
+    if (frameId !== null) cancelAnimationFrame(frameId)
+    frameId = null
+    fail('avatar_webgl_context_lost')
+  }
+  input.canvas.addEventListener('webglcontextlost', contextLost)
 
   const frame = (timestamp: number): void => {
     frameId = null
-    if (disposed || model === null || gl === null) return
+    if (disposed || paused || model === null || gl === null) return
     const deltaMs = previousTimestamp === 0 ? 16.67 : Math.min(100, timestamp - previousTimestamp)
     previousTimestamp = timestamp
 
@@ -675,7 +717,19 @@ export function createCubismAvatarRenderer(
       report(input.eventSink, softwareRenderer
         ? { status: 'degraded', reason: 'avatar_software_renderer' }
         : { status: 'ready', reason: 'cubism_avatar_ready' })
-      frameId = requestAnimationFrame(frame)
+      if (!paused) frameId = requestAnimationFrame(frame)
+    },
+    setPaused: (next: boolean): void => {
+      if (disposed || next === paused) return
+      paused = next
+      previousTimestamp = 0
+      frameTimes.length = 0
+      if (frameId !== null) cancelAnimationFrame(frameId)
+      frameId = null
+      if (!paused && model?.isInitialized()) frameId = requestAnimationFrame(frame)
+      if (paused) {
+        try { input.metricsSink(Object.freeze({ fps: 0, mouthOpen, state })) } catch { /* Observational only. */ }
+      }
     },
     setState: (next: AvatarState): void => {
       state = next
@@ -684,6 +738,7 @@ export function createCubismAvatarRenderer(
     playMotion: (group: string, index = 0): boolean => model?.playMotion(group, index, input.preview === true) ?? false,
     getPreviewControls: (): CubismPreviewControls | null => input.preview && model ? model.previewControls() : null,
     setExpression: (name: string): void => model?.setExpression(name),
+    setLookTarget: (target: CameraTarget | null): void => { if (!input.preview) model?.setLookTarget(target) },
     setMouthOpen: (value: number): void => {
       mouthOpen = unit(value)
       model?.setMouthOpen(mouthOpen)
@@ -705,6 +760,10 @@ export function createCubismAvatarRenderer(
       frameId = null
       model?.release()
       model = null
+      input.canvas.removeEventListener('webglcontextlost', contextLost)
+      // React StrictMode may reuse a connected canvas. Removed canvases can
+      // relinquish their context immediately; all model GL objects are already freed.
+      if (!input.canvas.isConnected) gl?.getExtension('WEBGL_lose_context')?.loseContext()
       gl = null
     },
   })

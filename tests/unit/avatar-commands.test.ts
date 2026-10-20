@@ -24,6 +24,27 @@ describe('avatar-owned spoken commands', () => {
     expect(avatarSessionSettings(config).sleepPhrase).toBe(raven.sleepPhrase)
   })
 
+  it('keeps a per-avatar online search phrase out of the model prompt', () => {
+    const base = JSON.parse(readFileSync('resources/config/default.json', 'utf8'))
+    delete base.schemaVersion
+    const catalog = avatarCatalogFor(base)
+    const ren = { ...catalog.avatars[0]!, id: 'ren', name: 'Ren', cloudSearchPhrase: '芝麻開門' }
+    const raven = { ...ren, id: 'raven', name: 'Raven' }
+    delete (raven as { cloudSearchPhrase?: string }).cloudSearchPhrase
+    const config = { ...base, avatarCatalog: { ...catalog, activeAvatarId: 'ren', avatars: [ren, raven] } }
+    expect(mirrorConfigSchema.safeParse(config).success).toBe(true)
+    const settings = avatarSessionSettings(config)
+    expect(settings.cloudSearchPhrase).toBe('芝麻開門')
+    expect(parseAvatarSessionSettings(settings)).toEqual(settings)
+    expect(buildAvatarPrompt(settings)).not.toContain('芝麻開門')
+    config.avatarCatalog.activeAvatarId = 'raven'
+    expect(avatarSessionSettings(config).cloudSearchPhrase).toBe('在雲上找找')
+    for (const invalid of ['', '   ', 'a\u0007b', 'x'.repeat(97)]) {
+      expect(mirrorConfigSchema.safeParse({ ...config, avatarCatalog: { ...config.avatarCatalog, avatars: [{ ...ren, cloudSearchPhrase: invalid }, raven] } }).success).toBe(false)
+      expect(parseAvatarSessionSettings({ ...settings, cloudSearchPhrase: invalid })).toBeNull()
+    }
+  })
+
   it('matches Ren Chinese punctuation/spacing variants without matching extra words', () => {
     const spell = { spellId: 'rain', phrase: '天氣熱，能不能下雨呢?' }
     for (const transcript of ['天氣熱 能不能下雨呢?', '天氣熱， 能不能下雨呢？', '天氣熱能不能下雨呢']) {

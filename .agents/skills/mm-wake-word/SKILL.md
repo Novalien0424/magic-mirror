@@ -1,15 +1,18 @@
 ---
 name: mm-wake-word
-description: "Implement or tune Magic Mirror sherpa-onnx wake detection, keyword packages, capture or wake-to-Realtime microphone handoff."
+description: "Implement, tune or diagnose Magic Mirror sherpa-onnx wake detection, physical microphone input, keyword packages or wake-to-Realtime handoff."
 ---
 
 # Wake word
 
+`npm run evaluate:wake` runs the versioned corpus/tuning evaluator. Inspect its
+selected positives, negatives and acoustic route before interpreting the rates.
+
 Main verifies the hashed sherpa-onnx model package, then compiles the active avatar's wake phrase with the bundled pronunciation lexicon and that model's tokens. Preserve the original phrase's verified pronunciation. Package defaults apply unless the selected avatar enables overrides bound to that exact phrase. Model/lockfile pins remain authoritative; another supported phrase needs encoding, not automatic neural retraining.
 
-- For encoding, worker config and false-wake tuning: [keyword package](references/keyword-package.md). Use model-owned tokens, 16 kHz / featureDim 80, and reset the spotter after detection. Keyword tuning is not neural training; configured thresholds are not measured per-event confidence.
-- For release/acquire ownership, crashes or Mac port constraints: [handoff/platform](references/handoff-platform.md). Mac version caveats need verification at the port, not a current Windows gate.
+- Encoding, worker config and false-wake tuning: [keyword package](references/keyword-package.md). Use model-owned tokens, 16 kHz / featureDim 80, and reset the spotter after detection. Keyword tuning is not neural training; configured thresholds are not measured per-event confidence.
+- Physical wake RCA, permissions, release/acquire ownership or recovery: [handoff/platform](references/handoff-platform.md). Identify the failed boundary before tuning.
 
-The worker listens in Dormant; it confirms stream release before Realtime acquires. Updating the active phrase also releases, updates, then reacquires the worker. Caller-owned renderer tracks stop before wake reacquires. Handoff failure is local Maintenance. Sleep uses the current avatar's separate `sleepPhrase` and farewell; changing the farewell does not change its trigger.
+Native wake listens only in Dormant/OfflineLoop. During Active media, the wake phrase is matched from Realtime ASR under the shared sound-alike rules (DECISIONS 2026-10-11), never by reopening native capture. Sleep is model-intent routing through `return_to_dormant`, not a wake keyword; `sleepPhrase` is a tool/ASR hint and the farewell is separate.
 
-Use the current PROGRESS links for unresolved first-boot and corpus evidence. Enabling sensitivity tuning in Persona allows testing; it does not certify accuracy. Tune pronunciation/parameters on representative approved positives and negatives, then validate on separate samples. Synthetic success and worker loading are not spoken accuracy. [AGENTS](../../../AGENTS.md) owns phase, privacy and execution rules.
+Use current PROGRESS links for physical and corpus evidence. A loaded worker, a synthetic PCM match and completed speaker playback each prove different boundaries. Establish fresh native input and delivery before attributing a miss to permissions, echo cancellation or detector sensitivity. Enabling sensitivity tuning in Persona allows testing; it does not certify accuracy. Tune on representative approved positives and negatives, validate on separate samples, and report detection and false-wake rates for the tested route.

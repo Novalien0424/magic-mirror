@@ -48,9 +48,8 @@ export async function runActiveBgmQa(input: Phase4QaInput): Promise<Phase4QaResu
     await edit("click('Stop preview')"); pass()
 
     step = 'active_bgm_saved_published'
-    await edit("click('Save all changes')")
-    await wait(()=>evaluate("return !button('Publish all changes').disabled"))
-    await edit("click('Publish all changes')"); await edit("click('Confirm publish')")
+    // Appearance saves, checks and publishes in one action.
+    await edit("click('Save & apply all changes')")
     await wait(()=>evaluate("const r=await window.magicMirror.getConfig();return r.ok&&r.value.active.presentation.activeAmbienceGain===.2&&r.value.active.presentation.ambienceGain===.4"))
     input.console.webContents.reload()
     await wait(()=>evaluate("return !!button('Avatars')")); await edit("click('Avatars')")
@@ -83,9 +82,11 @@ export async function runActiveBgmQa(input: Phase4QaInput): Promise<Phase4QaResu
     await wait(()=>mirror('return a&&!a.paused&&Math.abs(a.volume-.2)<.001')); pass()
 
     step = 'active_bgm_global_mute'
-    await edit("set(document.querySelector('[aria-label=\"BGM volume\"]'),'0')")
+    // Device volumes apply when System › Devices is saved.
+    await edit("click('System')")
+    await edit("set(document.querySelector('[aria-label=\"BGM volume\"]'),'0')"); await edit("click('Save device settings')")
     await wait(()=>mirror('return a&&a.paused&&a.volume===0'))
-    await edit("set(document.querySelector('[aria-label=\"BGM volume\"]'),'100')")
+    await edit("set(document.querySelector('[aria-label=\"BGM volume\"]'),'100')"); await edit("click('Save device settings')")
     await wait(()=>mirror('return a&&!a.paused&&Math.abs(a.volume-.2)<.001')); pass()
 
     step = 'active_bgm_return_to_sleep'

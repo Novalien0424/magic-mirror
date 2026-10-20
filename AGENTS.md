@@ -1,87 +1,118 @@
 # Magic Mirror — Working contract
 
-Complete the requested outcome with the smallest correct change and relevant evidence. Prioritize correctness/privacy, surgical scope, then time and token cost. Continue through in-scope fixes and checks until done or concretely blocked; stop when the requested boundary is proven.
+Finish the requested outcome with the smallest correct change and relevant
+evidence. Prioritize correctness/privacy, scope, then time/token cost. Stop at
+the proven task boundary or concrete blocker; preserve others' edits.
 
-## Authority and context
+## Authority and execution
 
-Latest user request/routing → this file → newer DECISIONS rulings → product/spec/implementation/stack documents → PROGRESS → applicable domain facts → history. This ordering resolves project documents, not system/developer instructions.
+Precedence: latest user request/routing → AGENTS → newer DECISIONS → product/
+spec/implementation/stack → PROGRESS → domain facts → history. DECISIONS owns
+rulings; PROGRESS routes current runtime/issues/evidence. Read only the selected
+issue and relevant skill references; completed ledgers are history, not a startup
+reading list. Keep harness instructions in English and domain facts in skills.
 
-`PROGRESS.md` owns current delivery, runtime, blockers and evidence links; `DECISIONS.md` owns durable rulings. Read each only as the task needs. For another-session QA, start with current PROGRESS evidence/runbook links and `mm-ui-qa`; prior passes are historical evidence.
+- Explain/review/diagnose/plan: inspect/report. Fix/change/build: implement/check. Start
+  at the named path/symbol/error with targeted `rg`; no adjacent cleanup.
+- In-scope reads, reversible edits, isolated tests and task-caused repairs are
+  authorized. Ask only for unresolved destructive actions, external writes,
+  purchases, credential rotation, irreversible migration or material expansion.
+  Existing authority persists; bounded work needs no plan or repeated approval.
+- External/flaky actions: at most one retry, then report the exact failure.
+  Stop/cancel/abort ends active work; do not restart or substitute it.
+- Report meaningful findings/blockers; status uses current evidence or the
+  smallest direct capture.
 
-## Execution
+## Verification and skills
 
-- Explain/review/diagnose/plan means inspect and report. Fix/change/build means make the authorized local change and finish its relevant checks. Obvious bounded work needs no plan artifact or repeated approval.
-- Start at the named path, symbol or error; use targeted `rg` and follow relevant callers/imports. Preserve user edits. No adjacent cleanup, refactor, rename, dependency update or formatting sweep.
-- In-scope reads, reversible edits, isolated tests and task-caused repairs are authorized. Ask only for unresolved destructive actions, external writes, purchases, credential rotation, irreversible migration or material expansion; existing explicit authority persists.
-- External/flaky actions get one retry at most, then the exact failure. Stop/cancel/abort terminates active commands and agents; do not substitute or restart the abandoned task.
-- Report meaningful findings, blockers and completion. Status/show/paste uses current evidence or the smallest direct capture.
+One agent normally implements/checks (2026-10-04). No mandatory chain, plan,
+approval gate, independent review or full suite. Use focused behavioral tests
+or docs/config static checks; reuse unchanged passes. Broaden for affected
+integration, packaging, privacy, mic/restart ownership or release boundaries.
+Review the final diff once unless it reveals a problem. Retain full failures,
+summarize passes; artifacts serve reproduction/handoff, not untested acceptance.
 
-## Skills, models and proof
+Realtime prompts/tools come from the versioned catalog; application code owns
+authorization/ordering. Use `roleplay-control-prompts` for behavior, without regex
+speech filters. QA starts at PROGRESS and `mm-ui-qa`. Historical passes are not
+fresh QA. Never overlap normal Electron, Electron QA or full `npm test` (includes
+Electron smoke). Preserve unsaved operator edits before reload/restart.
 
-Write skill and harness instructions in English; preserve exact product phrases and necessary non-English examples. Load skills for their actual workflow, not a keyword match. Keep descriptions short; put conditional detail in references. Skills add domain facts, not blanket preloads, approval loops, fixed itineraries or repeated test/review gates.
+## Optional delegation
 
-Realtime function definitions, rules and results come from the versioned tool catalog shared by runtime and inspector. Bind and validate handlers explicitly; keep exact spell authorization in the application. See `mm-realtime-voice` for the contract.
+Only independent substantial work that saves time. Root retains the selected
+model/effort; workers use PATH-resolved CLI, exact `nova-auto` / `gpt-6.1-sol` /
+`max`, without substitution:
 
-Use the session's selected model/effort. Optional roles in `.codex/agents/` are bounded tools, not required stages. Work directly by default; use at most one subagent for independent parallel work or noisy read isolation when it adds value. Never delegate a small edit, lookup, command or status capture. Subagents do not delegate.
+```zsh
+codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
+```
 
-Match verification to the changed boundary: reads need no tests; docs/config need static checks; small behavior changes need focused tests and/or narrow typecheck. Use practical TDD for durable behavior, not investigation or one-run diagnostics. Temporary diagnostics stay narrowly enabled, content-free and are removed in the same task unless retention is requested.
-
-Broaden for cross-cutting changes, dependencies/packaging, migrations, credentials, runtime models, mic/restart ownership, identity/privacy, release or phase exit. Full suite/build/demo/independent review are conditional, not routine. Check the final diff once; repeat only for a concrete finding. Report command, exit code and key result; full output on failure or request.
-
-Do not overlap normal Electron, Electron QA or full `npm test` (includes Electron smoke). Preserve unsaved operator edits before reload/restart.
+Windows: `--cd 'C:\Project\magic-mirror'`. Assign owned paths, invariant IDs and
+checks. Workers preserve others' edits, use `apply_patch` for source, and never
+delegate. Surveyors are read-only; testers run assigned checks. Root integrates
+without another review stage. Return commands, exits, results and checked IDs;
+retain failures. Evidence is metadata-only: no transcripts, audio, private
+context, memory values, credentials, images or embeddings. Cite primary external
+sources and distinguish inference.
 
 ## Canonical product invariants
 
-Preserve these IDs; delegated prompts name only applicable IDs.
+Preserve all 12 IDs.
 
-1. Transcripts, conversation audio, extracted memory values, and injected
-   private context are RAM-only; diagnostics are metadata-only.
+1. Transcripts, conversation audio and injected private context are RAM-only;
+   diagnostics are metadata-only. Main's private local database may persist
+   selected facts/validated summaries by avatar and confirmed person under that
+   scope's learning policy.
+   Imported history stays transient, persona edits separate; no raw archive.
 2. Face recognition proposes; private memory loads only after verbal confirm.
-3. Guest/candidate profile IDs stay in Electron Main and never cross
-   renderer/model boundaries.
-4. Profile change closes old history, confirms in a clean Persona+Master
+3. Guest/candidate profile IDs stay in Main, never renderer/model boundaries.
+4. Profile change closes old history, confirms in a clean Persona+Master-only
    session, then updates the agent.
 5. Extraction writes to the owner snapshot captured at turn start.
-6. Identity/naming/switch/group/sleep/spell control turns skip extraction.
-7. Scene trigger is normalized exact full-transcript match, once per turn;
-   approved presets alone control hardware.
-8. Exactly one microphone owner, with explicit release then acquire.
+6. Identity/naming/switch/group/sleep and spoken-command (spell, stop,
+   media-wake) turns skip extraction.
+7. Commands require whole final-transcript equality after deterministic
+   normalization, including approved shared-lexicon sound-alike folding. No
+   substring, edit-distance or model authorization. Execute once per turn;
+   approved presets alone control hardware. DECISIONS owns accepted folds.
+8. Exactly one microphone owner; explicit release before acquire.
 9. Every ignore/drop/fallback/degrade is visitor-visible or a metadata-only
    Console event with a reason.
 10. Failures degrade without gating conversation or unrelated adapters.
 11. Runtime model IDs come only from versioned config; no silent substitution.
-12. Under the dated personal-build ruling, ignored root `.env`
-    `OPENAI_API_KEY` is the sole master-key source and Electron Main alone loads
-    it. No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env, or
-    alternate fallback. Agents/workers never inspect or output its value;
-    missing/empty/read failures remain metadata-only reasons.
+12. Main alone loads `OPENAI_API_KEY` from ignored root `.env`, the sole source.
+    No Console provisioning, `safeStorage`, Keychain, DPAPI, process-env or
+    fallback. Agents never inspect/output its value; failures are metadata-only.
+    Portrait Studio images alone use the owner's ChatGPT sign-in in ignored root
+    `.env.chatgpt` (owner-run `npm run chatgpt:login`, refreshed by Main; ruling
+    2026-10-17), under the same rules.
 
 ## Platform and protected boundaries
 
-- Windows is the development and functional-verification host for all phases.
-  Mac mini M4 port follows PC development; TCC, signing, entitlements,
-  packaged workers, LaunchAgent, power/performance and final wake-quality
-  evidence are deferred, not current PC gates. Label Windows evidence;
-  never claim Mac behavior/deployment readiness from it.
-- Launch development Electron only from canonical `C:\Project\magic-mirror`.
-  Worktrees may run Node-only tests, typechecks/build/package, never Electron
-  runtime demos or live smoke. Firewall rules bind exact executable paths.
-- Before the first Electron run verify persistent Private rules
-  `MagicMirror.Development.Electron.TCP` and
-  `MagicMirror.Development.Electron.UDP` target canonical
-  `node_modules\electron\dist\electron.exe`. If absent/mismatched, stop and
-  ask for elevated `scripts\configure-windows-electron-firewall.ps1` once
-  from canonical checkout. Never create worktree rules or rely on a Defender
-  prompt. After an exact match, recheck only if path/install changes or an
-  actual lookup fails; do not ask again otherwise.
-- User LaunchAgent `KeepAlive={SuccessfulExit=false}` is sole restart owner.
-  Never `app.relaunch()` or a second restart owner.
-- Do not modify `scripts/install-node-lts.ps1`, immutable historical inputs,
-  protected review/product docs, dependencies, runtime model config or phase
-  status unless the task explicitly requires and names it.
-- Official phases, runtime integration, demos, exits, regression, tags and
-  promotion remain sequential. Dated prep-only exceptions are not phase starts.
+- Final Raven target: `/Users/novalien0424/magic-mirror` (2026-10-03). Scoped
+  deployment is authorized. Mac TCC/signing/entitlements, packaged workers,
+  LaunchAgent, power/performance and wake need actual Mac evidence.
+- Electron runs only from canonical checkout (Windows:
+  `C:\Project\magic-mirror`). Worktrees may run Node tests/typecheck/build/package,
+  never Electron demos/smoke. Explicit no-launch boundaries remain binding.
+- Before first Windows Electron run, verify persistent Private firewall rules
+  `MagicMirror.Development.Electron.TCP`/`.UDP` target canonical
+  `node_modules\electron\dist\electron.exe`. If missing/mismatched, stop and ask
+  once for elevated canonical `scripts\configure-windows-electron-firewall.ps1`.
+  No worktree rules/Defender prompt; recheck after path/install change or failure.
+- User LaunchAgent `KeepAlive={SuccessfulExit=false}` alone restarts Electron.
+  Recreate a failed renderer once; failed/repeated recovery exits 1. Never
+  `app.relaunch()` or another restart owner. Board ADB/audio services do not
+  restart Electron; the board-HDMI watchdog is retired.
+- Do not modify `scripts/install-node-lts.ps1`, immutable history, protected
+  review/product docs, dependencies, runtime model config or phase status unless
+  explicitly required and named. Official phases/demos/exits/regression/tags/
+  promotion stay sequential; prep-only exceptions do not start phases.
 
 ## Handoff
 
-Lead with outcome, changed files, focused checks and material unresolved risk. At clock-out keep PROGRESS to current delivery/runtime, evidence, blockers and next action; archive superseded detail with resolvable links. Preserve failed evidence and runtime state unless shutdown is requested. Compaction does not change phase acceptance.
+Report outcome, changed files, checks and unresolved risk briefly. At clock-out,
+keep PROGRESS to current delivery/runtime, evidence, blockers and next action;
+archive superseded detail with working links. Preserve failures and runtime
+unless shutdown is requested. Compaction never changes phase acceptance.

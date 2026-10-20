@@ -14,6 +14,8 @@ This is a maintainable repository snapshot, not authority over current AGENTS/co
 
 ## Compatibility and bundle
 
+Raven's versioned masters are indexed in [resources/avatar/Raven/README.md](../../../../resources/avatar/Raven/README.md): canonical editable source is `v10/cubism/raven-lord-v09.cmo3`; V11 changes performance on V10's MOC. New authoring gets a new `vN/`.
+
 SDK labels and `.d.ts` declarations are not initialized binary evidence. Core APIs such as `csmGetVersion`, `csmGetLatestMocVersion`, `csmGetMocVersion` and Framework `getMocVersionFromBuffer` can establish actual compatibility through a supported runtime check. Select the matching Editor target; do not upgrade Core or overwrite source with a downgrade merely to satisfy a label.
 
 Native validation requires Version 3, Moc, nonempty Textures and Expressions, Physics, Parameter groups named EyeBlink/LipSync with nonempty IDs, and at least one file in each required motion group. Extra motion groups are allowed. Lifecycle uses the first motion; Console may expose all indices.
@@ -30,7 +32,7 @@ Native validation requires Version 3, Moc, nonempty Textures and Expressions, Ph
 
 Use current per-model/config mapping if it differs. The direct-compatible profile provides `exp_01`…`exp_05` including Console-only exp_04; native minimum validation alone does not enforce this profile. Do not copy Ren's values and claim they fit a new rig.
 
-Both `ParamEyeLOpen/ROpen` belong to EyeBlink when both eyes exist; `ParamMouthOpenY` belongs to LipSync, normally 0 closed to 1 open. IDs must exist and deform in the actual MOC. State motion excludes live mouth/effect curves. Authored eyelids require explicit state ownership that disables automatic blink, as in Raven V11 sleep/wake states; expressions use intentional blink mixing. Meaningful seven-state motion is not seven renamed empty files.
+Both `ParamEyeLOpen/ROpen` belong to EyeBlink when both eyes exist; `ParamMouthOpenY` belongs to LipSync, normally 0 closed to 1 open. IDs must exist and deform in the actual MOC. State motion excludes live mouth/effect curves; [performance ownership](performance-ownership.md) owns Raven's overrides and blink mixing.
 
 ## Paths and import
 
@@ -42,6 +44,6 @@ Use current Console import controls; do not rely on old navigation labels. Impor
 
 Default `avatar-import-display` stops after valid bundle, normal import and observed display of this new model. Voice/wake/reload/performance are out of scope unless explicitly requested.
 
-Remote output RMS/envelope is the mouth clock, never transcripts or room microphone. Current `processed-audio-output.ts` mutes the SDK receiver and sends one shared graph to AudioContext.destination. Use its analysers and processed-tail completion, preserving mouth reset on interruption/disconnect. Preserve profile-specific ownership: default mouth blend 0.8, Raven V11 full replacement. No second mic/audio owner. Private content remains RAM-only with audio history/tracing disabled. Avatar failure degrades visibly without gating speech.
+Use the [output audio clock](../../mm-live2d-avatar/references/audio-presentation.md#output-audio-is-the-speaking-clock) and [performance ownership](performance-ownership.md) for speech integration. Avatar failure degrades visibly without gating speech.
 
 Use [validate-bundle.mjs](../scripts/validate-bundle.mjs) for static checks and [acceptance](acceptance-resume.md) for observed display. Static success is not Core compatibility, visible deformation or human acceptance.

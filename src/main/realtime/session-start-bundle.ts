@@ -25,7 +25,7 @@ export interface RealtimeSessionStartBundle {
 }
 
 export interface RealtimeSessionStartBundleIssuer {
-  issue(): Promise<Readonly<RealtimeSessionStartBundle>>
+  issue(signal?: AbortSignal): Promise<Readonly<RealtimeSessionStartBundle>>
 }
 
 function deepFreeze<T>(value: T): T {
@@ -38,12 +38,13 @@ export function createRealtimeSessionStartBundleIssuer(
   options: RealtimeSessionStartBundleIssuerOptions,
 ): RealtimeSessionStartBundleIssuer {
   return {
-    async issue(): Promise<Readonly<RealtimeSessionStartBundle>> {
+    async issue(signal?: AbortSignal): Promise<Readonly<RealtimeSessionStartBundle>> {
       const snapshot = deepFreeze(structuredClone(options.getPublishedSessionModelSnapshot()))
       const identity = Object.freeze({ ...options.getRealtimeSessionIdentity() })
       const avatar = options.getAvatarSettings ? Object.freeze({ ...options.getAvatarSettings() }) : undefined
       const brokerResult = await options.broker.issue({
         modelId: snapshot.realtimeDialogue,
+        ...(signal ? { signal } : {}),
       })
       const clientSecret = Object.freeze({ ...brokerResult })
       return Object.freeze({ snapshot, identity, clientSecret, ...(avatar ? { avatar } : {}) })

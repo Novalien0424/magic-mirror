@@ -264,7 +264,7 @@ export interface ConfigDiff { changed: Array<{ path: string; from: unknown; to: 
 
 export interface SessionModelSnapshot {
   configVersion: number; fingerprint: string;
-  sdkVersion: '0.16.1';
+  sdkVersion: '0.20.0';
   realtimeDialogue: string; inputTranscription: string; memoryExtractor: string;
   voice: string; reasoningEffort: string; turnDetectionProfile: string;
   voiceSpeed?: number;

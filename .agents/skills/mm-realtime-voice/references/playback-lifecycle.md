@@ -4,6 +4,16 @@ Repository implementation reference; installed code, current DECISIONS and focus
 
 ## Barge-in and playback
 
+### Voice DSP
+
+`src/renderer/avatar/audio/voice-effects.ts` owns the Signalsmith/Web Audio graph;
+`src/renderer/console/VoiceStudio.tsx` owns operator controls and audition;
+`scripts/prepare-voice-effects.mjs` stages the pinned worklet. Provider delivery
+instructions and speed are separate from pitch/formant processing. Accepted
+budgets: added direct-speech p95 ≤180 ms, overhead above engine latency ≤40 ms,
+interruption mute ≤50 ms and no stale cancelled audio. Measure the processed
+output path. A rejected close/dispose must be retryable, with metadata failure.
+
 - VAD interruption is automatic on WebRTC; use `session.interrupt()` for manual
   interruption such as spell-response cutoff. It emits `audio_interrupted`.
 - `audio_stopped` means generation done, not speaker-out done. True playback
@@ -18,6 +28,11 @@ Repository implementation reference; installed code, current DECISIONS and focus
 - We supply `mediaStream`, so `close()` does not stop mic tracks. Stop them
   explicitly before handing the mic back to the wake worker.
 
+These are transport/processed-graph completion boundaries. They establish
+application sequencing, not physical sound at the speaker or native microphone.
+For no-wake/no-speech RCA, compare routes, current-owner input freshness/energy,
+permissions and lifecycle separately using [physical wake RCA](../../mm-wake-word/references/handoff-platform.md).
+
 Exactly one microphone owner exists at a time. Use the explicit release-then-
 acquire handoff between the wake worker and renderer; a failed handoff is local
 Maintenance, not cloud OfflineLoop.
@@ -30,25 +45,26 @@ Maintenance, not cloud OfflineLoop.
   `900` ms, and automatic response/interruption enabled. Semantic VAD `low` is
   an alternate for premature turn endings, not the default noise filter.
 - Read the current versioned per-avatar transcription/language/sleep configuration. Do not hard-code historical model IDs or farewell words. Avoid stacking browser denoising over speaker DSP and provider far-field processing without field evidence.
-- Automated evidence covers the exact SDK config and a live provider session;
-  a human judges recognition, false turns, pause handling, and barge-in quality.
+- SDK/config and provider checks cover their tested inputs and routes;
+  representative physical evidence is needed for recognition, false turns,
+  pause handling and barge-in quality on the deployed microphone.
 
 ## Profile switch and reconnect
 
-- `await session.updateAgent(newAgent)` swaps instructions and tools in-session;
-  history is retained. That is exactly why a profile change must first CLOSE
-  the old session and confirm in a clean Persona+Master session before
-  `updateAgent` loads the new owner (invariant #4).
-- There is a **60-minute hard session cap** and no `reconnect()`. Rollover is:
-  wait for turn + playback end -> new `ek_` -> new `RealtimeSession` using the
-  same caller-owned `MediaStream` -> `connect()` -> rebuild context. Same-owner
-  rollover may call `updateHistory(snapshot)`; profile switches never carry
-  history.
+- An in-session `session.update` keeps history, so a profile change never
+  swaps instructions in place. Main's `resetConversation()` replaces the
+  Realtime session (`memory_session_replaced`); the clean Persona+Master session
+  confirms, then `memory-dialogue.ts` installs the owner's state (invariant 4).
+- There is a **60-minute hard session cap** and no `reconnect()`. Main's
+  `rolloverAtSafeBoundary` waits for turn and playback end, then a new
+  `RealtimeSession` reuses the caller-owned `MediaStream`. Profile switches
+  never carry history.
 - Reject stale callbacks by the owned `realtimeSessionId`. Generation is diagnostic
   except the positive Main start-bundle generation that commits activation; follow
   the current Main/runtime owner contract.
 
-Extraction writes only to the owner snapshot taken at turn start,
-`ownerProfileIdAtTurnStart`; never re-read the current owner at job completion.
-Identity, naming, switching, group, sleep, and spell control turns do not enter
-personal-memory extraction (`controlIntent !== 'none'` -> skip).
+Extraction writes only to the owner snapshot taken at turn start
+(`MemorySession.turnStart`, `src/main/memory/session.ts`); never re-read the
+current owner at job completion. Control turns (identity, naming, switch, group,
+sleep, spell, stop, media-wake) set `turn.control` in
+`src/main/memory/relationship.ts` and skip extraction (invariant 6).

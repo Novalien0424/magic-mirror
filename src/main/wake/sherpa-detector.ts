@@ -4,6 +4,11 @@ import { wakeScoreSchema, type WakeScore } from '../../shared/wake-score'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+// Paired Mac capture/replay showed four paths pruning Raven's wake candidate;
+// 32 covered both tested voices/rates; eight and 16 still missed some positives.
+// Keyword bias and acceptance threshold remain package-owned.
+export const WAKE_MAX_ACTIVE_PATHS = process.platform === 'darwin' ? 32 : 4
+
 interface SherpaStream {
   acceptWaveform(input: { readonly samples: Float32Array; readonly sampleRate: number }): void
 }
@@ -87,15 +92,9 @@ export function createConfiguredSherpaDetector(wakePackage: WakeWorkerPackage): 
     || wakePackage.tuning.score === undefined
   ) throw new Error('wake_detector_configuration_invalid')
 
-  // Windows calibration uses a separately built, pinned extension. Other
-  // platforms retain normal detection and report no numerical measurement.
-  const extension = process.resourcesPath
-    ? join(process.resourcesPath, 'wake-score-native/keyword-spotter.js') : ''
-  const developmentExtension = resolve('resources/wake-native/win32-x64/keyword-spotter.js')
-  const supportsExtension = process.platform === 'win32' && process.arch === 'x64'
-  const modulePath = supportsExtension && extension && existsSync(extension) ? extension
-    : supportsExtension && existsSync(developmentExtension) ? developmentExtension : 'sherpa-onnx-node'
-  if (wakePackage.calibration && modulePath === 'sherpa-onnx-node') throw new Error('wake_native_score_unavailable')
+  const modulePath = resolveSherpaModulePath({ platform: process.platform, arch: process.arch,
+    resourcesPath: process.resourcesPath, developmentRoot: process.cwd(), calibration: wakePackage.calibration,
+    exists: existsSync })
   const module = require(modulePath) as {
     KeywordSpotter: new (config: Record<string, unknown>) => SherpaKeywordSpotter
   }
@@ -104,15 +103,35 @@ export function createConfiguredSherpaDetector(wakePackage: WakeWorkerPackage): 
     modelConfig: {
       transducer: { encoder, decoder, joiner },
       tokens,
-      numThreads: 2,
+      numThreads: 1,
       debug: 0,
       provider: 'cpu',
     },
-    maxActivePaths: 4,
+    maxActivePaths: WAKE_MAX_ACTIVE_PATHS,
     numTrailingBlanks: wakePackage.tuning.numTrailingBlanks ?? 1,
     keywordsScore: wakePackage.tuning.score,
     keywordsThreshold: wakePackage.tuning.threshold,
     keywordsFile: keywords,
   })
   return createSherpaDetector(spotter, wakePackage.sampleRateHz)
+}
+
+export function resolveSherpaModulePath(input: {
+  readonly platform: string
+  readonly arch: string
+  readonly resourcesPath?: string
+  readonly developmentRoot: string
+  readonly calibration?: boolean
+  readonly exists: (path: string) => boolean
+}): string {
+  // Separately built score extensions never replace installed npm binaries.
+  const supported = (input.platform === 'win32' && input.arch === 'x64')
+    || (input.platform === 'darwin' && input.arch === 'arm64')
+  const extension = input.resourcesPath ? join(input.resourcesPath, 'wake-score-native/keyword-spotter.js') : ''
+  const development = resolve(input.developmentRoot, 'resources/wake-native',
+    `${input.platform}-${input.arch}`, 'keyword-spotter.js')
+  const modulePath = supported && extension && input.exists(extension) ? extension
+    : supported && input.exists(development) ? development : 'sherpa-onnx-node'
+  if (input.calibration && modulePath === 'sherpa-onnx-node') throw new Error('wake_native_score_unavailable')
+  return modulePath
 }

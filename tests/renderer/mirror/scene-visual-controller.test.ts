@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSceneVisualController, type SceneVisualMedia } from '../../../src/renderer/mirror/scene-visual-controller'
+import { createSceneVisualController, videoHasAudio, type SceneVisualMedia } from '../../../src/renderer/mirror/scene-visual-controller'
 import type { AvatarControlCommand } from '../../../src/shared/bridge'
 
 class FakeMedia implements SceneVisualMedia {
+  error: { code: number } | null = null
   crossOrigin: string | null = null
   crossOriginAtLoad: string | null = null
   private source = ''
@@ -84,12 +85,45 @@ function harness() {
 }
 
 describe('Mirror Scene visual controller', () => {
+  it.each([true, false])('detects embedded audio presence=%s and releases every inspection track', hasAudio => {
+    const videoTrack = { stop: vi.fn() }, audioTrack = { stop: vi.fn() }
+    const tracks = hasAudio ? [videoTrack, audioTrack] : [videoTrack]
+    const stream = { getVideoTracks: () => [videoTrack], getAudioTracks: () => hasAudio ? [audioTrack] : [], getTracks: () => tracks } as unknown as MediaStream
+    expect(videoHasAudio({ captureStream: () => stream })).toBe(hasAudio)
+    for (const track of tracks) expect(track.stop).toHaveBeenCalledOnce()
+  })
+  it('does not treat unavailable capture or unready metadata as proof of no audio', () => {
+    expect(videoHasAudio({})).toBeNull()
+    expect(videoHasAudio({ captureStream: () => { throw Error('unsupported') } })).toBeNull()
+    expect(videoHasAudio({ captureStream: () => new class { getVideoTracks() { return [] }; getTracks() { return [] } } as unknown as MediaStream })).toBeNull()
+  })
+  it('retries a transient folder-video load once, before showing it, and fences cancelled retries', () => {
+    const h = harness()
+    h.controller.handleCommand(command({ assetId: 'folder-test' }))
+    const video = h.videos[0]!
+    video.error = { code: 4 }; video.emit('error')
+    expect(h.reports).toEqual([])
+    h.advance(500)
+    expect(video.load).toHaveBeenCalledTimes(2)
+    video.error = null; video.emit('loadeddata'); video.emit('playing')
+    expect(h.reports.at(-1)).toMatchObject({ type: 'playing' })
+    h.controller.handleCommand(command({ assetId: 'folder-next' }))
+    const next = h.videos[1]!
+    next.error = { code: 2 }; next.emit('error'); h.advance(500); next.emit('error')
+    expect(h.reports.at(-1)).toMatchObject({ type: 'failed' })
+    h.controller.handleCommand(command({ assetId: 'folder-last' }))
+    const last = h.videos[2]!
+    last.error = { code: 2 }; last.emit('error'); h.controller.dispose()
+    const loads = last.load.mock.calls.length
+    h.advance(1000)
+    expect(last.load).toHaveBeenCalledTimes(loads)
+  })
   it('loads draft media only for an explicit preview command', () => {
     const h = harness()
     h.controller.handleCommand(command({ preview: true }))
-    expect(h.videos[0]!.src).toBe('magic-mirror-media://visual-draft/visual-one')
+    expect(h.videos[0]!.src).toBe('magic-mirror-media://visual-draft/visual-one?playback=1')
     h.controller.handleCommand(command())
-    expect(h.videos[1]!.src).toBe('magic-mirror-media://visual/visual-one')
+    expect(h.videos[1]!.src).toBe('magic-mirror-media://visual/visual-one?playback=2')
     h.controller.dispose()
   })
   it('keeps the prior surface visible until an image is decoded and fences stale replacement events', () => {

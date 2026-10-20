@@ -1,8 +1,17 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
+import { registerStudioIpc } from './studio/studio-ipc'
+import { defaultExperience } from '../shared/portrait-studio'
+import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
+import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
+import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
+import { mediaClueKey } from '../shared/media-clue'
+import { parseYoutubeSearchRequest, type YoutubeSearchReply } from '../shared/youtube-search'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
-import { canUseAvatarAction, parseAvatarModelReference } from '../shared/avatar-profiles'
+import { canUseAvatarAction, canUseAvatarResource, parseAvatarModelReference } from '../shared/avatar-profiles'
+import { parsePresentation } from '../shared/presentation'
 import { parseAvatarLibraryLabelRequest } from '../shared/avatar-library'
 import { isAudioDeviceState, parseAudioPreferences } from '../shared/audio-devices'
 import { voiceEffectsSchema } from '../shared/voice-effects-schema'
@@ -78,6 +87,9 @@ export const MIRROR_IPC_CHANNELS: MirrorChannelMap = Object.freeze({
   reportAvatarRuntime: 'mirror:report-avatar-runtime',
   reportSceneAction: 'mirror:report-scene-action',
   reportSceneVisual: 'mirror:report-scene-visual',
+  mediaSkill: 'mirror:media-skill',
+  findMedia: 'mirror:find-media',
+  searchYoutube: 'mirror:search-youtube',
   getSceneCatalog: 'mirror:get-scene-catalog',
   triggerScene: 'mirror:trigger-scene',
   stopScene: 'mirror:stop-scene',
@@ -152,6 +164,18 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly isShuttingDown?: () => boolean
+  readonly youtube?: import('../shared/youtube-media').YoutubePlayer
+  readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
+  readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
+  readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
+  readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
+  /** Copies linked-folder media for local playback; false when it cannot be read in time. */
+  readonly prepareFolderMedia?: (assetId: string, avatarId: string) => Promise<boolean>
+  /** Keeps the Interactive Studio ChatGPT sign-in refreshed in the background. */
+  readonly keepChatgptSignedIn?: boolean
+  /** The Mirror's Conversation / Interactive Studio switch. */
+  readonly mirrorMode?: import('./mirror-mode').MirrorModeStore
   readonly wakeCalibration?: (command: import('../shared/wake-calibration').WakeCalibrationCommand) => Promise<import('../shared/wake-calibration').WakeCalibrationSnapshot>
   readonly voicePreview?: import('./realtime/voice-preview').VoicePreviewLease
   readonly getWakeInput?: () => import('../shared/wake-input').WakeInputSnapshot | undefined
@@ -172,6 +196,7 @@ export interface RegisterIpcHandlersOptions {
     readonly noteSceneActivity?: BootRuntime['noteSceneActivity']
     readonly noteRealtimeActivity?: BootRuntime['noteRealtimeActivity']
     readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
+    readonly subscribe?: BootRuntime['subscribe']
   }
   readonly console?: ConsoleDataPlane
   readonly windows: TrackedWindows
@@ -185,7 +210,9 @@ export interface RegisterIpcHandlersOptions {
 }
 
 export interface SceneRuntimeControl {
-  stopAll(): Promise<void>
+  stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void>
+  /** RAM-only Portrait Studio image for the media protocol; undefined when unknown or closed. */
+  studioImage?(id: string): { readonly bytes: Buffer; readonly mimeType: string } | undefined
 }
 
 export type SenderAuthResult =
@@ -824,13 +851,13 @@ function senderRejected(telemetry: IpcEventSink, reason: SenderRejectionReason):
   })
 }
 
-function payloadRejected(telemetry: IpcEventSink): void {
+function payloadRejected(telemetry: IpcEventSink, repeatedCount?: number): void {
   emit(telemetry, {
     module: 'app',
     event: 'ipc_payload_invalid',
     status: 'failed',
     error_code: 'ipc_payload_invalid',
-    reason: 'payload_schema_invalid',
+    reason: repeatedCount ? `payload_schema_invalid;repeated_count=${repeatedCount}` : 'payload_schema_invalid',
     source: 'runtime',
   })
 }
@@ -897,10 +924,14 @@ export async function publishSnapshot(
   value: unknown,
   windows: TrackedWindows,
   telemetry: IpcEventSink,
+  isShuttingDown?: () => boolean,
 ): Promise<void> {
+  if (isShuttingDown?.()) return
   const tracked = getTrackedWindow(windows, kind)
   const channel = kind === 'mirror' ? MIRROR_IPC_CHANNELS.snapshot : CONSOLE_IPC_CHANNELS.snapshot
   if (tracked === null) {
+    // Console is optional and normally closed during Mirror playback.
+    if (kind === 'console') return
     emit(telemetry, {
       module: 'app',
       event: 'ipc_snapshot_delivery_failed',
@@ -1271,6 +1302,40 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     musicGain: 1,
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
+  let sleepingMedia = false
+  const mediaSkill = createMediaSkillRuntime({
+    youtube: options.youtube,
+    activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
+    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    report: reason => {
+      if (!mediaSkill.isActive()) sleepingMedia = false
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
+        status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason })
+    },
+  })
+  const studio = registerStudioIpc({
+    ipcMain,
+    authorize: (event, kind) => {
+      const auth = authorizeSender(event, kind, windows)
+      if (!auth.ok) senderRejected(telemetry, auth.reason)
+      return auth.ok
+    },
+    payloadRejected: () => payloadRejected(telemetry),
+    snapshot: () => runtime.snapshot(),
+    subscribe: listener => runtime.subscribe?.(listener),
+    experience: async () => {
+      const config = await runtime.getPublishedSceneConfigForRuntime?.()
+      const catalog = config?.avatarCatalog
+      return config ? catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience() : null
+    },
+    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
+    stopMedia: () => { sleepingMedia = false; mediaSkill.stop('media_stopped_for_studio') },
+    report: (reason, status, durationMs) => emit(telemetry, { module: 'avatar', event: 'portrait_studio', source: 'runtime', status, reason,
+      ...(durationMs === undefined ? {} : { duration_ms: Math.round(durationMs) }) }),
+    keepSignedIn: options.keepChatgptSignedIn,
+    ...(options.mirrorMode ? { mirrorMode: options.mirrorMode } : {}),
+  })
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0
   let sceneOperations: Promise<unknown> = Promise.resolve()
@@ -1514,6 +1579,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     }
   })
 
+  let lastInvalidAvatarReport = -Infinity
+  let repeatedInvalidReports = 0
+  let invalidReportSummary: ReturnType<typeof setTimeout> | undefined
   ipcMain.on(MIRROR_IPC_CHANNELS.reportAvatarRuntime, (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) {
@@ -1521,10 +1589,23 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     if (args.length !== 1 || !isValidAvatarRuntimeSnapshot(args[0])) {
-      payloadRejected(telemetry)
+      if (performance.now() - lastInvalidAvatarReport >= 1000) {
+        lastInvalidAvatarReport = performance.now()
+        payloadRejected(telemetry)
+      } else {
+        repeatedInvalidReports++
+        invalidReportSummary ??= setTimeout(() => {
+          invalidReportSummary = undefined
+          if (!options.isShuttingDown?.()) payloadRejected(telemetry, repeatedInvalidReports)
+          repeatedInvalidReports = 0
+        }, 1000)
+        invalidReportSummary.unref?.()
+      }
       return
     }
-    avatarRuntime = Object.freeze({ ...(args[0] as AvatarRuntimeSnapshot) })
+    const report = args[0] as AvatarRuntimeSnapshot
+    avatarRuntime = Object.freeze({ ...report, ...(report.audioDevices || avatarRuntime.audioDevices
+      ? { audioDevices: report.audioDevices ?? avatarRuntime.audioDevices } : {}) })
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneAction, (event, ...args) => {
@@ -1538,7 +1619,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneActionRendererReport
-    cachedSceneRuntime?.value.reportAction(report)
+    if (!mediaSkill.reportAction(report)) cachedSceneRuntime?.value.reportAction(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportSceneVisual, (event, ...args) => {
@@ -1552,7 +1633,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return
     }
     const report = args[0] as SceneVisualPlaybackReport
-    cachedSceneRuntime?.value.reportVisual(report)
+    if (!mediaSkill.reportVisual(report)) cachedSceneRuntime?.value.reportVisual(report)
   })
 
   ipcMain.on(MIRROR_IPC_CHANNELS.reportRealtimeMetadata, (event, ...args) => {
@@ -1692,6 +1773,165 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return projectAppSnapshot(runtime.snapshot())
   })
 
+  ipcMain.handle('console:check-camera', async (event, ...args) => {
+    if (!authorizeSender(event, 'console', windows).ok || !eventArgsAreEmpty(args)) {
+      payloadRejected(telemetry); return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    }
+    const frame = await options.captureCamera?.().catch(() => null) ?? null
+    emit(telemetry, { module: 'camera', event: 'camera_capture_check', source: 'runtime', status: frame ? 'success' : 'degraded', reason: frame ? 'camera_frame_captured' : 'camera_capture_unavailable' })
+    return { ok: true, value: frame ? { status: 'ready', width: frame.width, height: frame.height } : { status: 'unavailable' } }
+  })
+
+  ipcMain.handle('mirror:capture-camera', async (event, ...args) => {
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return null }
+    const identity = args[0]
+    if (args.length !== 1 || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])
+      || typeof readProperty(identity, 'realtimeSessionId') !== 'string'
+      || !Number.isSafeInteger(readProperty(identity, 'sessionGeneration'))) { payloadRejected(telemetry); return null }
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
+        && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    let frame: import('../shared/camera-tracking').CameraSnapshot | null = null
+    let reason = 'camera_capture_session_stale'
+    if (current()) {
+      frame = await options.captureCamera?.().catch(() => null) ?? null
+      reason = frame ? 'camera_frame_captured' : 'camera_capture_unavailable'
+      if (!current()) { frame = null; reason = 'camera_capture_session_stale' }
+    }
+    emit(telemetry, { module: 'camera', event: 'camera_capture', source: 'runtime', status: frame ? 'success' : 'degraded', reason })
+    return frame
+  })
+
+  for (const source of ['local', 'youtube'] as const) ipcMain.handle(source === 'local' ? MIRROR_IPC_CHANNELS.findMedia : MIRROR_IPC_CHANNELS.searchYoutube, async (event, ...args) => {
+    const reply = (code: string, status: 'failed' | 'rejected' = 'rejected') => source === 'local'
+      ? { status, code, resources: [], total: 0 } : { status, code, videos: [] }
+    const prefix = source === 'local' ? 'media_discovery' : 'youtube_search'
+    const auth = authorizeSender(event, 'mirror', windows)
+    if (!auth.ok) { senderRejected(telemetry, auth.reason); return reply(`${prefix}_invalid`) }
+    const envelope = args[0], identity = readProperty(envelope, 'identity')
+    const request = source === 'local' ? parseMediaDiscoveryRequest(readProperty(envelope, 'request')) : parseYoutubeSearchRequest(readProperty(envelope, 'request'))
+    if (args.length !== 1 || !exactKeys(envelope, ['request', 'identity']) || !request || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])) {
+      payloadRejected(telemetry); return reply(`${prefix}_invalid`)
+    }
+    const generation = consoleSceneGeneration
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return generation === consoleSceneGeneration && snapshot.lifecycle === 'active' && !mediaSkill.isActive()
+        && snapshot.realtimeSessionId !== null && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    const stale = () => {
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: `${prefix}_stale` })
+      return reply(`${prefix}_stale`)
+    }
+    if (!current()) return stale()
+    let result: MediaDiscoveryReply | YoutubeSearchReply
+    try {
+      if (source === 'youtube') result = await options.searchYoutube?.(request) ?? { status: 'failed', code: 'youtube_search_not_configured', videos: [] }
+      else {
+        const config = await runtime.getPublishedSceneConfigForRuntime?.()
+        if (!config) throw Error()
+        const catalog = config.avatarCatalog
+        const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL,
+          options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? [])
+        const resources = skill.enabled ? skill.resources.filter(resource => !catalog || canUseAvatarResource(catalog, catalog.activeAvatarId,
+          resource.kind === 'video' ? 'visual' : 'music', resource.assetId)) : []
+        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest, mediaClueKey)
+      }
+    } catch { result = reply(`${prefix}_unavailable`, 'failed') as MediaDiscoveryReply | YoutubeSearchReply }
+    if (!current()) return stale()
+    emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: result.status === 'accepted' ? 'info' : 'degraded', reason: result.code })
+    return result
+  })
+
+  ipcMain.handle(MIRROR_IPC_CHANNELS.mediaSkill, async (event, ...args) => {
+    let failureCode: import('../shared/media-skill').MediaFailureCode = 'media_playback_failed'
+    const authorization = authorizeSender(event, 'mirror', windows)
+    if (!authorization.ok) { senderRejected(telemetry, authorization.reason); return 'rejected' }
+    const envelope = args[0]
+    const request = parseMediaSkillRequest(readProperty(envelope, 'request'))
+    const identity = readProperty(envelope, 'identity')
+    if (args.length !== 1 || !exactKeys(envelope, ['request', 'identity']) || !request
+      || !exactKeys(identity, ['realtimeSessionId', 'sessionGeneration'])) {
+      payloadRejected(telemetry); return 'rejected'
+    }
+    const generation = consoleSceneGeneration
+    const current = () => {
+      const snapshot = runtime.snapshot()
+      return generation === consoleSceneGeneration && snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
+        && snapshot.realtimeSessionId === readProperty(identity, 'realtimeSessionId')
+        && snapshot.sessionGeneration === readProperty(identity, 'sessionGeneration')
+    }
+    const outcome = await enqueueSceneOperation(async () => {
+      if (!current()) { emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' }); return 'ignored' }
+      if (request.action === 'stop') return mediaSkill.stop()
+      if (request.mode === 'loop' && !runtime.requestSleep) {
+        failureCode = 'media_loop_unavailable'
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_wake_handoff_unavailable' })
+        return 'failed'
+      }
+      const config = await runtime.getPublishedSceneConfigForRuntime?.().catch(() => null)
+      if (!current()) return 'ignored'
+      if (!config) {
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_config_unavailable' })
+        return 'rejected'
+      }
+      const catalog = config?.avatarCatalog
+      const folderEntries = options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? []
+      const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL, folderEntries)
+      const available = request.action === 'play_youtube' ? !!options.youtube : skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)
+        && (folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind === 'video'
+          ? config.visualAssets.some(a => a.id === request.assetId && a.kind === 'video') : config.musicAssets.some(a => a.id === request.assetId)))
+        && (!catalog || canUseAvatarResource(catalog, catalog.activeAvatarId, request.kind === 'video' ? 'visual' : 'music', request.assetId))
+      if (!skill.enabled || !available) {
+        failureCode = request.action === 'play_youtube' && !options.youtube ? 'media_youtube_not_configured' : 'media_not_found'
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })
+        return 'rejected'
+      }
+      await cachedSceneRuntime?.value.stopAll()
+      // Scene stopAll owns global local-player stops. Retire that owner before
+      // media takes over, so later Dormant cleanup cannot stop a preserved loop.
+      cachedSceneRuntime = null
+      if (!current()) return 'ignored'
+      // Release the command queue while awaiting the player, so Stop/replacement can cancel startup.
+      const folderFile = request.action === 'play' && folderEntries.some(entry => entry.assetId === request.assetId)
+      const pending = mediaSkill.playConfirmed(request, skill, folderFile && options.prepareFolderMedia
+        ? () => options.prepareFolderMedia!(request.assetId, catalog?.activeAvatarId ?? '') : undefined)
+      return { pending, runId: mediaSkill.activeRunId() }
+    }).catch(() => {
+      mediaSkill.stop('media_playback_failed')
+      return 'failed'
+    })
+    const result = typeof outcome === 'string' ? outcome : await outcome.pending
+    if (result === 'accepted' && request.action !== 'stop'
+      && (!current() || typeof outcome === 'string' || outcome.runId !== mediaSkill.activeRunId())) {
+      emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' })
+      return 'ignored'
+    }
+    if (result === 'accepted' && request.action !== 'stop' && request.mode === 'loop'
+      && current() && mediaSkill.isActive() && runtime.requestSleep) {
+      // Let the existing lifecycle release Realtime's mic before the local
+      // wake worker acquires it. The loop survives this intentional sleep.
+      sleepingMedia = true
+      try {
+        const sleep = await runtime.requestSleep()
+        if (readProperty(sleep, 'status') !== 'success') throw new Error('media_wake_handoff_failed')
+        if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) options.youtube?.setDormant?.(true)
+      } catch {
+        sleepingMedia = false
+        if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) mediaSkill.stop('media_wake_handoff_failed')
+        return { status: 'failed', code: 'media_loop_unavailable' }
+      }
+    }
+    const reason = typeof outcome !== 'string' ? mediaSkill.failureReason(outcome.runId) : undefined
+    if (reason?.includes('timeout')) failureCode = 'media_playback_timeout'
+    return result === 'failed' || result === 'rejected' ? { status: result, code: failureCode } : result
+  })
+
   ipcMain.handle(MIRROR_IPC_CHANNELS.getSceneCatalog, async (event, ...args) => {
     const authorization = authorizeSender(event, 'mirror', windows)
     if (!authorization.ok) {
@@ -1732,6 +1972,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return enqueueSceneOperation(async () => {
       const loaded = await loadSceneRuntime()
       if (loaded === null) return unavailableSceneResult()
+      // A spell replaces the studio as it replaces media; nothing plays under the portrait overlay.
+      studio.close('studio_replaced_by_scene')
+      mediaSkill.stop('media_replaced_by_scene')
       return loaded.value.triggerSpell({
         spellId: readProperty(request, 'spellId') as string,
         turnId: readProperty(request, 'turnId') as string,
@@ -1847,6 +2090,26 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     return invokeConsole(consoleFacade(options), (facade) => facade.getOverview(), telemetry)
   })
 
+  ipcMain.handle('console:media-folders', async (event, ...args) => {
+    if (!authorizeSender(event, 'console', windows).ok) return consoleFailure('console_request_rejected', 'cause=sender_rejected')
+    const value = args[0]
+    if (args.length !== 1 || !value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).some(key => !['action', 'avatarId', 'scope'].includes(key))
+      || !['get', 'refresh', 'save', 'choose', 'unlink'].includes(readProperty(value, 'action') as string)
+      || ('avatarId' in value && (typeof value.avatarId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(value.avatarId)))
+      || ('scope' in value && !['own', 'shared'].includes(value.scope as string))
+      || ['choose', 'unlink'].includes(readProperty(value, 'action') as string) && (!readProperty(value, 'scope') || readProperty(value, 'scope') === 'own' && !readProperty(value, 'avatarId'))) {
+      payloadRejected(telemetry); return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
+    }
+    if (!options.mediaFolders) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+    try { return { ok: true, value: await options.mediaFolders(value as MediaFolderCommand) } }
+    catch (error) {
+      const reason = error instanceof Error && /^media_folder_[a-z_]+$/.test(error.message) ? error.message : 'media_folder_unavailable'
+      emit(telemetry, { module: 'avatar', event: 'media_folders', source: 'runtime', status: 'degraded', reason })
+      return { ok: false, error: 'console_request_rejected', reason: 'cause=runtime_action_failed', fields: [{ path: 'mediaFolder', message: reason }] }
+    }
+  })
+
   ipcMain.handle(CONSOLE_IPC_CHANNELS.avatarRuntime, (event, ...args) => {
     const authorization = authorizeSender(event, 'console', windows)
     if (!authorization.ok) {
@@ -1926,6 +2189,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const loaded = await loadSceneRuntime(isDraft ? 'draft' : 'published')
       if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
+      studio.close('studio_replaced_by_scene')
+      mediaSkill.stop('media_replaced_by_scene')
       const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
       return { ok: true, value: result }
     })
@@ -1942,10 +2207,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
     consoleSceneGeneration += 1
+    mediaSkill.stop()
     dispatchMirrorAvatarControl({ type: 'stop_avatar_test' }, windows)
     const stopping = cachedSceneRuntime?.value.stopAll()
     return enqueueSceneOperation(async () => {
       await stopping
+      mediaSkill.stop()
       await cachedSceneRuntime?.value.stopAll()
       return { ok: true, value: { status: 'stopped' as const } }
     })
@@ -2146,14 +2413,20 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (!eventArgsAreEmpty(args)) { payloadRejected(telemetry); return null }
     const response = await invokeConsole(consoleFacade(options), facade => facade.getConfig(), telemetry)
     if (!response.ok) return null
-    const config = response.value.active.presentation
+    const config = parsePresentation(response.value.active.presentation)
     if (!config) return null
     const asset = response.value.active.visualAssets.find(asset => asset.id === config.backgroundId)
     const catalog = response.value.active.avatarCatalog
     const avatar = catalog?.avatars.find(a => a.id === catalog.activeAvatarId)
+    const ritualVideo = (id: string | undefined) => {
+      if (!id || catalog && (!avatar || !canUseAvatarResource(catalog, avatar.id, 'visual', id))) return null
+      const video = response.value.active.visualAssets.find(asset => asset.id === id && asset.kind === 'video')
+      return video ? { id: video.id, kind: 'video' as const } : null
+    }
     const source = catalog?.models.find(m => m.id === avatar?.modelId)
     const model = source ? parseAvatarModelReference({ id: source.id, manifestFileName: source.manifestFileName }) : null
-    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null, ...(model ? { model } : {}) }
+    return { config: structuredClone(config), background: asset ? { id: asset.id, kind: asset.kind } : null,
+      entranceVideo: ritualVideo(config.entranceVideoId), exitVideo: ritualVideo(config.exitVideoId), ...(model ? { model } : {}) }
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.config, async (event, ...args) => {
@@ -2285,7 +2558,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         return
       }
       options.onReady?.('mirror')
-      void publishSnapshot('mirror', runtime.snapshot(), windows, telemetry)
+      void publishSnapshot('mirror', runtime.snapshot(), windows, telemetry, options.isShuttingDown)
       return
     }
 
@@ -2296,7 +2569,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         return
       }
       options.onReady?.('console')
-      void publishSnapshot('console', runtime.snapshot(), windows, telemetry)
+      void publishSnapshot('console', runtime.snapshot(), windows, telemetry, options.isShuttingDown)
       return
     }
 
@@ -2332,8 +2605,16 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
 
   return Object.freeze({
-    async stopAll(): Promise<void> {
-      await enqueueSceneOperation(async () => { await cachedSceneRuntime?.value.stopAll() })
+    studioImage: (id: string) => studio.image(id),
+    async stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void> {
+      studio.close('studio_session_ended')
+      await enqueueSceneOperation(async () => {
+        if (!options?.preserveSleepingMedia || !sleepingMedia) {
+          sleepingMedia = false
+          mediaSkill.stop()
+        }
+        await cachedSceneRuntime?.value.stopAll()
+      })
     },
   })
 }

@@ -503,8 +503,8 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     })
     expect(view.state).toBe('maintenance')
     expect(view.className).toBe('screen screen--maintenance')
-    expect(view.title).toBe('Maintenance')
-    expect(view.detail).toBe('offline_loop_asset_missing')
+    expect(view.title).toBe('魔鏡休息中')
+    expect(view.detail).toBe('請洽現場人員協助。')
     // Device-change observation is not microphone acquisition.
     expect(/getUserMedia|new AudioContext/i.test(appSource)).toBe(false)
   })
@@ -530,10 +530,10 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(packageJson.dependencies.decibri).toBe('5.7.0')
     expect(packageJson.scripts['generate:offline-loop']).toBe('node scripts/generate-offline-loop.mjs')
     expect(packageJson.scripts.predev).toBe(
-      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs',
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs && node scripts/prepare-wake-score-native.mjs && node scripts/prepare-camera-tracker.mjs && node scripts/prepare-media-file.mjs',
     )
     expect(packageJson.scripts.prebuild).toBe(
-      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs && node scripts/qa-build.mjs --begin',
+      'npm run generate:offline-loop && npm run prepare:avatar && npm run generate:avatar-audio && node scripts/prepare-voice-effects.mjs && node scripts/prepare-wake-score-native.mjs && node scripts/prepare-camera-tracker.mjs && node scripts/prepare-media-file.mjs && node scripts/qa-build.mjs --begin',
     )
     expect(packageJson.scripts.postbuild).toBe('node scripts/qa-build.mjs --finish')
     expect(packageJson.scripts.package).toBe('electron-builder --dir --publish never')
@@ -557,10 +557,12 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
 
     expect(builder).toContain('appId: com.magicmirror.app')
     expect(builder).toContain('productName: Magic Mirror')
-    expect(files).toEqual(['files:', '- out/**/*', '- package.json'])
+    expect(files).toEqual(['files:', '- out/**/*', '- package.json', '- src/main/wake/lexicon/*-LICENSE.txt',
+      '- src/main/wake/lexicon/provenance.json', '- src/main/wake/lexicon/README.md'])
     expect(builder).toMatch(/^asar:\s*true\s*$/m)
     expect(asarUnpack).toEqual([
       'asarUnpack:',
+      '- out/native/*',
       '- out/renderer/mock/*.mp4',
       '- out/renderer/avatar/**/*',
       '- out/renderer/audio/**/*',
@@ -596,6 +598,7 @@ describe('Task 10B OfflineLoop source and packaging contract', () => {
     expect(PACKAGED_VIDEO_RELATIVE).toBe('app.asar.unpacked/out/renderer/mock/offline-loop-v1.mp4')
     expect(asarUnpack).toEqual([
       'asarUnpack:',
+      '- out/native/*',
       '- out/renderer/mock/*.mp4',
       '- out/renderer/avatar/**/*',
       '- out/renderer/audio/**/*',

@@ -32,6 +32,9 @@ function readMirrorConnectSource(): string[] {
 }
 
 describe('mirror renderer security policy', () => {
+  test.each([MIRROR_HTML_URL, CONSOLE_HTML_URL])('does not put a header-only directive in a CSP meta tag (%s)', (url) => {
+    expect(readFileSync(url, 'utf8')).not.toContain('frame-ancestors')
+  })
   test('allows only the loopback endpoints and the production Realtime origin', () => {
     const connectSource = readMirrorConnectSource()
     const expectedConnectSource = [

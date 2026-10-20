@@ -1,6 +1,0 @@
-interface:
-  display_name: "Magic Mirror Avatar Studio"
-  short_description: "Create and validate an importable Cubism avatar"
-  default_prompt: "Use $magic-mirror-avatar-studio to turn my portrait into an editable Cubism avatar using the installed Photopea App and Cubism Editor, then export and verify its import/display in Magic Mirror."
-policy:
-  allow_implicit_invocation: true

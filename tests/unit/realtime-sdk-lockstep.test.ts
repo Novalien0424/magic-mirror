@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import packageLock from '../../package-lock.json'
 import packageManifest from '../../package.json'
+import { REALTIME_SDK_VERSION } from '../../src/main/model-settings'
 
 type DependencyMap = Readonly<Record<string, string>>
 
@@ -20,8 +21,8 @@ type PackageLockFixture = {
 }
 
 const EXPECTED_REALTIME_SDK_VERSIONS = {
-  '@openai/agents': '0.16.1',
-  '@openai/agents-realtime': '0.16.1',
+  '@openai/agents': '0.20.0',
+  '@openai/agents-realtime': '0.20.0',
 } as const
 
 describe('P1-U1 realtime SDK dependency contract', () => {
@@ -29,6 +30,7 @@ describe('P1-U1 realtime SDK dependency contract', () => {
     const manifest = packageManifest as PackageManifestFixture
     const lockfile = packageLock as PackageLockFixture
     const manifestDependencies = manifest.dependencies ?? {}
+    expect(REALTIME_SDK_VERSION).toBe(manifestDependencies['@openai/agents-realtime'])
     const lockRoot = lockfile.packages?.[''] ?? {}
     const lockRootDependencies = lockRoot.dependencies ?? {}
 

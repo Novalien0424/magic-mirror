@@ -1,21 +1,28 @@
 ---
 name: mm-realtime-voice
-description: "Implement or debug Magic Mirror Realtime sessions, voice playback, transcripts, mic handoff, profile switching or Responses extraction."
+description: "Implement or debug Magic Mirror Realtime sessions, prompts/tools, voice playback, transcripts, spoken commands, mic handoff, profile switching or Responses extraction."
 ---
 
 # Realtime voice
 
-Runtime model/voice IDs come from versioned config and frozen session/job snapshots, never this skill or the coding-agent model. Pinned SDK code and accepted contract tests own API details.
+Use versioned config/frozen snapshots and the pinned SDK's contract tests.
+Load only the reference for the failing boundary:
 
 | Boundary | Read |
 |---|---|
-| Structured tool registry, prompt inspector or spoken controls | [Prompts and structured controls](references/prompt-controls.md) |
-| Session construction, ephemeral credentials, transcript events or privacy flags | [SDK/session](references/sdk-session.md) |
-| Barge-in, output completion, mic handoff, noisy-room tuning, rollover or profile change | [playback/lifecycle](references/playback-lifecycle.md) |
+| Prompt design, preambles, language, persona | [roleplay-control-prompts](../roleplay-control-prompts/SKILL.md) |
+| Tool catalog, prompt inspector, spoken commands and spells | [prompt controls](references/prompt-controls.md) |
+| Session construction, transcription config, privacy flags | [SDK/session](references/sdk-session.md) |
+| Barge-in, output completion, mic handoff, rollover, profile change | [playback/lifecycle](references/playback-lifecycle.md) |
+| Voice Studio pitch/formant DSP, latency or processed-audio cleanup | [playback/lifecycle](references/playback-lifecycle.md#voice-dsp) |
 | Responses memory extractor | [memory extraction](references/memory-extraction.md) |
 
-Transcripts, conversation audio, extracted values and injected private context remain RAM-only. Disable audio history and tracing before connect; never expose the master key. Voice never waits for transcripts; missing text disables transcript-driven controls with a metadata reason.
+Dialogue hears raw audio independently of ASR and may precede its final text.
+Handle late/missing transcripts with metadata reasons. Diagnose input delivery,
+final ASR, matching, model reply, cue playback and Main execution separately.
 
-Use one microphone owner with release then acquire. Close caller-owned tracks explicitly. Current processed output mutes the SDK receiver and sends only the shared audio graph to speakers. Actual playback plus the processed tail, not generation completion, governs transitions.
-
-Close old-owner history before clean verbal confirmation and agent update. Guest IDs stay in Main; extraction uses the turn-start owner and skips control turns. Preserve reasoned stale-event rejection. [AGENTS](../../../AGENTS.md) owns the canonical invariants and execution policy.
+The processed output mutes the SDK receiver; actual playback plus its tail
+governs transitions, not generation completion. Synthetic WebRTC tests prove
+provider integration, not [physical audio](../mm-wake-word/references/handoff-platform.md).
+[AGENTS](../../../AGENTS.md) owns privacy, mic/profile/extraction ownership and
+execution policy.

@@ -12,6 +12,9 @@ export default defineConfig({
         external: ['node:sqlite'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'youtube-qa': resolve(__dirname, 'src/main/youtube-qa.ts'),
+          'media-intent-qa': resolve(__dirname, 'src/main/media-intent-qa.ts'),
+          'memory-storage-worker': resolve(__dirname, 'src/main/memory/storage-worker.ts'),
           'wake-worker': resolve(__dirname, 'src/main/wake/worker.ts'),
           'wake-evaluator': resolve(__dirname, 'src/main/wake/evaluate-cli.ts'),
         }
@@ -36,6 +39,7 @@ export default defineConfig({
     publicDir: resolve(__dirname, 'resources/generated'),
     plugins: [react()],
     build: {
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           mirror: resolve(__dirname, 'src/renderer/mirror/index.html'),

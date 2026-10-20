@@ -1,6 +1,6 @@
 # Main process, lifecycle and persistence
 
-Repository implementation reference; installed code, current DECISIONS and focused contract tests outrank historical SDK/version observations. Follow AGENTS for execution policy.
+Installed code, current DECISIONS and contract tests outrank version notes here.
 
 ## Process Model & IPC
 
@@ -8,9 +8,8 @@ Repository implementation reference; installed code, current DECISIONS and focus
   silently disables the sandbox). Preload exposes a narrow typed API via
   `contextBridge.exposeInMainWorld`; `ipcRenderer` cannot be passed wholesale
   (Electron >=29).
-- Two-way calls: `ipcMain.handle` + `ipcRenderer.invoke`. No official typed
-  helper exists -- hand-roll a channel-map type or use
-  `@electron-toolkit/typed-ipc`.
+- Two-way calls: `ipcMain.handle` + `ipcRenderer.invoke`; extend the repository's
+  typed channel map and boundary validators.
 - **Validate `event.senderFrame`/`webContents.id` in every handler** so the
   visitor window can never call console/admin channels. Main owns lifecycle,
   config, SQLite, devices; renderers never open the DB (Spec Section 3.2).
@@ -48,6 +47,20 @@ and shows the exact field error in Console; an invalid scene block must not
 block anonymous Voice startup (Spec Section 13.3).
 
 ## Gotchas
+
+- Main's permanent TERM listener is re-armed after Electron `ready`: Electron
+  installs its native POSIX handler after loading Main, overriding an early
+  Node registration. The listener handles intentional stop once and preserves
+  exit 0 through shutdown errors. The field LaunchAgent gets 20 seconds for the
+  app's bounded cleanup. Renderer heartbeats allow one existing recreation;
+  Main's separate liveness worker terminates a blocked event loop after 60 s.
+  It writes directly to the log descriptor because Main cannot forward worker
+  stdout while hung. Launchd remains the sole restart owner. Whole-process
+  SIGSTOP also freezes the watchdog and is a different failure boundary.
+- `scripts/run-field-soak.mjs` holds the shared Electron operation lease and
+  samples the running field process tree every two minutes for 24 hours. It
+  stops on app exit/restart and never overrides TV-off. Acceptance also needs
+  ten real completed conversation cycles; elapsed time alone is insufficient.
 
 - Cubism Core (Phase 3) loads as a global script, not an ES module -- plan
   CSP/bundler handling early.
