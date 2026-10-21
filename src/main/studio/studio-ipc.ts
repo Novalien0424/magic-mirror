@@ -1,5 +1,4 @@
-import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
-import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
+import type { AvatarImageService } from '../avatar/image-service'
 import { PORTRAIT_STUDIO, studioPrompt, studioWakePhrase } from '../../shared/portrait-studio-config'
 import {
   parseStudioConsoleCommand, parseStudioRequest, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL, studioPictureType, studioStartLanguage,
@@ -9,7 +8,6 @@ import {
 import { STUDIO_SAMPLE_ANSWERS } from '../../shared/studio-image-prompt'
 import type { MirrorModeStore } from '../mirror-mode'
 import type { ConsoleResponse } from '../../shared/console-types'
-import { createCodexImageProvider, type PortraitImageProvider } from './image-provider'
 import { buildPortraitPrompt } from './prompt-builder'
 import { createStudioRuntime, type KeepsakeSink, type StudioIdentity, type StudioStartSource } from './studio-runtime'
 
@@ -36,19 +34,17 @@ export function registerStudioIpc(deps: {
   dispatch(command: StudioCommand): boolean
   activity(kind: 'started' | 'finished', runId: string): void
   stopMedia(): Promise<void> | void
+  photoPending?(): boolean
   report(reason: string, status: 'info' | 'degraded' | 'failed', durationMs?: number): void
-  credentials?: ChatgptCredentialSource
-  /** Production only: refresh the sign-in in the background so it never lapses while idle. */
-  keepSignedIn?: boolean
+  images: AvatarImageService
+  /** Session-pinned assignment; without an identity checks the published avatar. */
+  imageEnabled(identity?: StudioIdentity): boolean
   /** The Mirror switch. Without it (tests), the saved per-avatar default mode applies. */
   mirrorMode?: Pick<MirrorModeStore, 'get' | 'set' | 'sessionMode' | 'subscribe'>
   /** Where finished pictures go besides the Mirror. PRINTING (to be added): pass the printer skill's sink here. */
   keepsakeSinks?: readonly KeepsakeSink[]
-  fetchImpl?: typeof fetch
 }) {
-  const credentials = deps.credentials ?? createChatgptTokenFile({ report: reason => deps.report(reason, /fail|invalid|missing|http_/.test(reason) ? 'degraded' : 'info') })
-  const provider: PortraitImageProvider = createCodexImageProvider({ credentials, settings: PORTRAIT_STUDIO.image, fetchImpl: deps.fetchImpl,
-    report: reason => deps.report(reason, 'info') })
+  const { provider, usable } = deps.images
   const runtime = createStudioRuntime({
     provider: () => provider,
     dispatch: command => deps.dispatch(command),
@@ -57,14 +53,6 @@ export function registerStudioIpc(deps: {
     stopMedia: () => deps.stopMedia(),
     keepsakeSinks: deps.keepsakeSinks ?? [],
   })
-  if (deps.keepSignedIn && credentials.keepAlive) {
-    const keepAlive = () => void credentials.keepAlive!().catch(() => deps.report('chatgpt_keepalive_failed', 'degraded'))
-    keepAlive()
-    setInterval(keepAlive, CHATGPT_KEEPALIVE_INTERVAL_MS).unref()
-  }
-  // Usable means a credential is available now: a refresh runs if due, and a
-  // failed scheduled refresh still allows a token that has not expired.
-  const usable = async () => (await credentials.get().catch(() => null)) !== null
   const identityOf = (snapshot: SnapshotLike): StudioIdentity | null => snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
     ? { realtimeSessionId: snapshot.realtimeSessionId, sessionGeneration: snapshot.sessionGeneration } : null
   const currentIdentity = (): StudioIdentity | null => identityOf(deps.snapshot())
@@ -86,6 +74,11 @@ export function registerStudioIpc(deps: {
    * is not a new visit and never restarts the studio.
    */
   async function startDefault(identity: StudioIdentity): Promise<void> {
+    if (!deps.imageEnabled(identity)) {
+      deps.report('studio_skill_disabled', 'info')
+      deps.dispatch({ type: 'studio_event', event: { event: 'closed', reason: 'studio_skill_disabled' }, identity })
+      return
+    }
     const epoch = startEpoch
     const sessionMode = deps.mirrorMode?.sessionMode(identity)
     // Switched on while this session was still waking: start it like a live switch.
@@ -114,6 +107,7 @@ export function registerStudioIpc(deps: {
   }
   /** Console or mode-switch start inside the current conversation. */
   async function startFor(identity: StudioIdentity, source: 'console' | 'mode'): Promise<{ status: StudioOutcome; code: string }> {
+    if (!deps.imageEnabled(identity)) return { status: 'rejected', code: 'studio_skill_disabled' }
     const epoch = startEpoch
     const experience = await deps.experience().catch(() => null)
     if (!experience || !await usable()) return { status: 'rejected', code: 'studio_unavailable' }
@@ -156,6 +150,10 @@ export function registerStudioIpc(deps: {
     if (args.length !== 1 || !exactKeys(envelope, ['request', 'identity']) || !request) { deps.payloadRejected(); return { status: 'rejected', code: 'studio_request_invalid' } }
     const identity = (envelope as Record<string, unknown>).identity
     if (!matches(identity)) { deps.report('studio_session_stale', 'info'); return { status: 'ignored', code: 'studio_session_stale' } }
+    if (request.action !== 'exit' && !deps.imageEnabled(identity)) {
+      deps.report('studio_skill_disabled', 'info'); return { status: 'rejected', code: 'studio_skill_disabled' }
+    }
+    if (request.action !== 'exit' && deps.photoPending?.()) return { status: 'ignored', code: 'studio_photo_pending' }
     if (request.action !== 'start') return runtime.handle(request, identity)
     const epoch = startEpoch
     const experience = await deps.experience().catch(() => null)
@@ -167,11 +165,12 @@ export function registerStudioIpc(deps: {
   })
 
   async function status(): Promise<StudioConsoleStatus> {
-    const auth = await credentials.status()
+    const auth = await deps.images.status()
     const experience = await deps.experience().catch(() => null)
     const phase = runtime.phase()
     return { auth: auth.status, ...(auth.lastRefresh ? { lastRefresh: auth.lastRefresh } : {}), modelId: PORTRAIT_STUDIO.image.modelId,
-      active: runtime.isActive(), ...(phase ? { phase } : {}), mirrorMode: deps.mirrorMode?.get() ?? 'conversation',
+      active: runtime.isActive(), imageSkillEnabled: deps.imageEnabled(currentIdentity() ?? undefined),
+      ...(phase ? { phase } : {}), mirrorMode: deps.imageEnabled(currentIdentity() ?? undefined) ? deps.mirrorMode?.get() ?? 'conversation' : 'conversation',
       ...(experience ? { wakePhrase: studioWakePhrase(experience.studio) } : {}) }
   }
 
@@ -186,6 +185,8 @@ export function registerStudioIpc(deps: {
       return { ok: true, value: { status: await status(), action: { status: active ? 'accepted' : 'ignored', code: active ? 'studio_operator_exit' : 'studio_not_active' } } }
     }
     if (command.action === 'mode') {
+      if (command.mode === 'studio' && !deps.imageEnabled(currentIdentity() ?? undefined)) return { ok: true,
+        value: { status: await status(), action: { status: 'rejected', code: 'studio_skill_disabled' } } }
       const saved = deps.mirrorMode?.set(command.mode, 'console') ?? false
       return { ok: true, value: { status: await status(), action: saved ? { status: 'accepted', code: `mirror_mode_${command.mode}` } : { status: 'failed', code: 'mirror_mode_save_failed' } } }
     }
@@ -195,6 +196,7 @@ export function registerStudioIpc(deps: {
       return { ok: true, value: { status: await status(), action } }
     }
     // Test portrait: shown in the Console only, never saved.
+    if (!deps.imageEnabled(currentIdentity() ?? undefined)) return { ok: true, value: { status: await status(), test: { ok: false, code: 'studio_skill_disabled', elapsedMs: 0 } } }
     const experience = await deps.experience().catch(() => null)
     if (!experience) return { ok: true, value: { status: await status(), test: { ok: false, code: 'studio_config_unavailable', elapsedMs: 0 } } }
     const answers = experience.studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
@@ -210,6 +212,10 @@ export function registerStudioIpc(deps: {
   return {
     close: exit,
     image: (id: string) => runtime.image(id),
+    active: () => runtime.isActive(),
+    canUsePhoto: runtime.canUsePhoto,
+    usePhoto: runtime.usePhoto,
+    clearPhoto: runtime.clearPhoto,
   }
 }
 

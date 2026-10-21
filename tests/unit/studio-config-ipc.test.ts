@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mirrorConfigSchema } from '../../src/main/config-service'
 import { newAvatar } from '../../src/renderer/console/profile-workspace'
 import { registerStudioIpc } from '../../src/main/studio/studio-ipc'
+import { createAvatarImageService } from '../../src/main/avatar/image-service'
 import { avatarProfileSessionSettings, parseAvatarSessionSettings } from '../../src/shared/avatar-prompt'
 import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, parseStudioView, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL,
   STUDIO_PROMPT_STAGES, studioPromptIssue } from '../../src/shared/portrait-studio'
@@ -80,7 +81,7 @@ describe('Portrait Studio configuration', () => {
 
 describe('Portrait Studio IPC', () => {
   type Snapshot = { lifecycle: string; realtimeSessionId: string | null; sessionGeneration: number }
-  function harness(options: { lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode'] } = {}) {
+  function harness(options: { enabled?: boolean; lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode'] } = {}) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const dispatched: unknown[] = []
     const reports: string[] = []
@@ -88,7 +89,10 @@ describe('Portrait Studio IPC', () => {
     const listeners: ((value: Snapshot) => void)[] = []
     const credentials: ChatgptCredentialSource = { get: async () => options.auth === 'missing' ? null : ({ accessToken: 't', accountId: 'a' }),
       refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }), keepAlive: options.keepAlive }
+    const fetchImpl = vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
+    const images = createAvatarImageService({ credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
     registerStudioIpc({
+      images, imageEnabled: () => options.enabled !== false,
       ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
       authorize: (event, kind) => event === kind,
       payloadRejected: () => reports.push('payload_rejected'),
@@ -96,17 +100,28 @@ describe('Portrait Studio IPC', () => {
       subscribe: listener => { listeners.push(listener); listener(snapshot) },
       experience: options.experience ?? (async () => defaultExperience()),
       dispatch: command => { dispatched.push(command); return true },
-      activity: vi.fn(), stopMedia: vi.fn(), report: reason => reports.push(reason), credentials, keepSignedIn: options.keepSignedIn,
+      activity: vi.fn(), stopMedia: vi.fn(), report: reason => reports.push(reason),
       ...(options.mirrorMode ? { mirrorMode: options.mirrorMode } : {}),
-      fetchImpl: vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch,
     })
     const mirror = (request: unknown, identity: unknown = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }) =>
       handlers.get(STUDIO_MIRROR_CHANNEL)!('mirror', { request, identity })
     const console = (command: unknown, sender = 'console') => handlers.get(STUDIO_CONSOLE_CHANNEL)!(sender, command)
     const move = (next: Snapshot) => { snapshot = next; for (const listener of listeners) listener(next) }
-    return { mirror, console, dispatched, reports, move }
+    return { mirror, console, dispatched, reports, move, fetchImpl }
   }
   const RT1 = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
+
+  it('rejects disabled Studio entry through visitor, Console, mode and test routes without generation', async () => {
+    const h = harness({ enabled: false, experience: async () => ({ ...defaultExperience(), defaultMode: 'portrait_studio' }) })
+    expect(await h.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'rejected', code: 'studio_skill_disabled' })
+    for (const command of [{ action: 'start' }, { action: 'mode', mode: 'studio' }]) {
+      expect(await h.console(command)).toMatchObject({ ok: true, value: { action: { code: 'studio_skill_disabled' }, status: { active: false, imageSkillEnabled: false, mirrorMode: 'conversation' } } })
+    }
+    expect(await h.console({ action: 'test' })).toMatchObject({ ok: true, value: { test: { code: 'studio_skill_disabled' } } })
+    expect(h.fetchImpl).not.toHaveBeenCalled()
+    expect(h.dispatched).not.toContainEqual(expect.objectContaining({ event: expect.objectContaining({ event: 'enter' }) }))
+    expect(await h.console({ action: 'exit' })).toMatchObject({ ok: true })
+  })
 
   it('keeps the ChatGPT sign-in alive only when Main asks, at start and every 30 minutes', async () => {
     vi.useFakeTimers()

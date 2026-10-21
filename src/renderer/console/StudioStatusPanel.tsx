@@ -19,7 +19,7 @@ export interface StudioAuthCopy { readonly label: string; readonly action: strin
 export function studioAuthText(auth: StudioAuthStatus): StudioAuthCopy {
   const login = `Run ${STUDIO_LOGIN_COMMAND} in Terminal on this Mac, then press Refresh status.`
   switch (auth) {
-    case 'signed_in': return { label: 'Signed in', action: 'Studio pictures use this Mac’s ChatGPT plan. The app keeps the sign-in refreshed in the background.', tone: 'success', needsLogin: false }
+    case 'signed_in': return { label: 'Signed in', action: 'Conversation and Interactive Studio pictures share this Mac’s ChatGPT plan. The app keeps the sign-in refreshed in the background.', tone: 'success', needsLogin: false }
     case 'missing': return { label: 'Not signed in', action: `Sign in so the Interactive Studio can paint pictures. ${login}`, tone: 'failed', needsLogin: true }
     case 'invalid': return { label: 'Not signed in · sign-in file unreadable', action: `Sign in again to replace it. ${login}`, tone: 'failed', needsLogin: true }
     case 'expired': return { label: 'Signed in · refresh due', action: `The app refreshes it in the background and before the next picture. If painting still fails, sign in again: ${login}`, tone: 'degraded', needsLogin: false }
@@ -29,6 +29,7 @@ export function studioAuthText(auth: StudioAuthStatus): StudioAuthCopy {
 }
 
 const FAILURES: Readonly<Record<string, string>> = {
+  studio_skill_disabled: 'Image generation is off for this Avatar. Enable it in Avatars → Skills, then save and publish.',
   studio_auth_required: `ChatGPT sign-in is missing or was rejected. Run ${STUDIO_LOGIN_COMMAND} in Terminal on this Mac, then try again.`,
   studio_quota_exhausted: 'The ChatGPT plan’s image limit is reached. Check Manage usage, or try again after the limit resets.',
   studio_image_refused: 'The image request was refused by the image safety system. Adjust the art style, publish, then try again.',
@@ -45,6 +46,7 @@ export function studioFailureText(code: string | undefined): string {
 }
 
 const ACTIONS: Readonly<Record<string, string>> = {
+  studio_skill_disabled: 'Image generation is off for this Avatar. Enable it in Avatars → Skills, then save and publish. A current conversation keeps its previous selection until the next conversation.',
   studio_started: 'Interactive Studio started for the visitor.',
   studio_start_duplicate: 'Interactive Studio is already running for this conversation.',
   studio_session_replaced: 'The previous studio closed; a new one started.',
@@ -184,7 +186,8 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
     {!status && available && !failure && <p className="console__muted">{loading ? 'Checking sign-in…' : 'Sign-in status not loaded yet.'}</p>}
     <div className="studio-status__test">
       <HelpButton help="Paints one picture here with the published Interactive Studio settings of the avatar on the Mirror, sample answers and the name “Raven”. Publish edits before testing. Nothing is shown on the Mirror or saved."
-        disabled={!available || busy} onClick={() => void runTest()}>{busy ? 'Painting…' : 'Generate test picture'}</HelpButton>
+        disabled={!available || busy || status?.imageSkillEnabled === false} onClick={() => void runTest()}>{busy ? 'Painting…' : 'Generate test picture'}</HelpButton>
+      {status?.imageSkillEnabled === false && <p>{FAILURES.studio_skill_disabled}</p>}
     </div>
     <p className={`studio-status__result${test.kind === 'failed' ? ' studio-status__result--failed' : ''}`} role="status" aria-live="polite">
       {testMessage && <><span aria-hidden="true">{test.kind === 'busy' ? '◷' : test.kind === 'ready' ? ICONS.success : ICONS.failed}</span> {testMessage}</>}
@@ -273,7 +276,6 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
   useEffect(() => {
     if (!visible || !available) return
     void refresh()
-    if (!active) return
     const timer = setInterval(() => void refresh(), LIVE_POLL_MS)
     return () => clearInterval(timer)
   }, [visible, available, active, lifecycle, refresh])
@@ -294,6 +296,7 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
   const mode: MirrorMode | undefined = status?.mirrorMode
   const auth = status ? studioAuthText(status.auth) : null
   const studioHelp = !available ? 'Interactive Studio controls are unavailable in this Console. Restart the app to load them.'
+    : status?.imageSkillEnabled === false ? ACTIONS.studio_skill_disabled!
     : auth?.needsLogin ? `ChatGPT: ${auth.label}. Sign in from System → Studio service first; a wake then falls back to conversation.`
       : active ? 'Switches the Mirror to Interactive Studio: the visitor in front of the mirror enters it now; afterwards the mirror wakes to the studio wake phrase.'
         : `Switches the Mirror to Interactive Studio: the mirror wakes to 「${status?.wakePhrase ?? 'the studio wake phrase'}」 and runs the studio, then says farewell and sleeps.`
@@ -307,7 +310,7 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
       <HelpButton placement="below" aria-pressed={mode === 'conversation'}
         help={conversationHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'conversation') void run({ action: 'mode', mode: 'conversation' }) }}>Conversation</HelpButton>
       <HelpButton placement="below" aria-pressed={mode === 'studio'}
-        help={studioHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'studio') void run({ action: 'mode', mode: 'studio' }) }}>Interactive Studio</HelpButton>
+        help={studioHelp} disabled={!available || busy || !mode || status?.imageSkillEnabled === false} onClick={() => { if (mode !== 'studio') void run({ action: 'mode', mode: 'studio' }) }}>Interactive Studio</HelpButton>
     </div>
     {status?.active && <span className="console__status console__status--success" role="status">{studioPhaseText(status)}</span>}
     {visitorRun && <HelpButton placement="below" help="Ends the studio the visitor asked for, clears its picture from the Mirror and returns to conversation."

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { avatarSessionSettings, type AvatarSessionSettings } from '../shared/avatar-prompt'
+import { DEFAULT_AVATAR_SKILLS, imageGenerationEnabled, type AvatarSkills } from '../shared/avatar-skills'
 import { defaultExperience, sessionExperience, type MirrorMode, type StudioSettings } from '../shared/portrait-studio'
 import { studioWakePhrase } from '../shared/portrait-studio-config'
 import { LEGACY_SLEEP_PHRASE } from '../shared/avatar-commands'
@@ -297,6 +298,8 @@ export interface BootRuntime {
   readonly telemetry: Pick<Telemetry, 'emit'>
   readonly console: ConsoleDataPlane
   requestRealtimeClientSecret(): Promise<Readonly<RealtimeSessionStartBundle>>
+  /** Main authorization uses the same immutable assignment issued to this session. */
+  getAvatarSkillsForRuntime(identity?: RealtimeSessionIdentity): Readonly<AvatarSkills>
   /** Main-only live-smoke provenance seam; never exposed through renderer IPC. */
   getPublishedSessionModelSnapshotForDiagnostics(): Promise<Readonly<SessionModelSnapshot>>
   /** Main-only active wake pin; never exposed through renderer IPC. */
@@ -882,6 +885,12 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
   let maintenance: MaintenanceInfo | null = null
   let resolvedModelSettings: ModelSettingsResolution | null = null
   let publishedAvatarSettings: Readonly<AvatarSessionSettings> | undefined
+  const sessionSkills = new Map<string, Readonly<AvatarSkills>>()
+  const skillKey = (identity: RealtimeSessionIdentity) => `${identity.realtimeSessionId}:${identity.sessionGeneration}`
+  function getAvatarSkillsForRuntime(identity?: RealtimeSessionIdentity): Readonly<AvatarSkills> {
+    return identity ? sessionSkills.get(skillKey(identity)) ?? Object.freeze({ imageGeneration: false })
+      : Object.freeze(publishedAvatarSettings ? { ...(publishedAvatarSettings.skills ?? DEFAULT_AVATAR_SKILLS) } : { imageGeneration: false })
+  }
   let publishedAvatarId = ''
   let publishedConfig: MirrorConfig | null = null
   let publishedControlPhrases: readonly string[] | null = null
@@ -2166,13 +2175,23 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     const withMedia = publishedAvatarSettings && media.length ? { ...publishedAvatarSettings,
       mediaSkill: folderMediaSkill(publishedAvatarSettings.mediaSkill, media) } : publishedAvatarSettings
     // The saved per-avatar default mode is superseded by the Mirror switch.
-    const mode = options.mirrorModeForSession?.(identity)
+    const key = skillKey(identity)
+    if (!sessionSkills.has(key)) {
+      const previous = lifecycleView.state === 'active' ? authoritativeRealtimeSessionIdentity() : null
+      const inherited = previous ? sessionSkills.get(skillKey(previous)) : undefined
+      sessionSkills.set(key, inherited ?? getAvatarSkillsForRuntime())
+      // Retain old and new identities during a rollover, never an unbounded session history.
+      if (sessionSkills.size > 2) sessionSkills.delete(sessionSkills.keys().next().value!)
+    }
+    const skills = getAvatarSkillsForRuntime(identity)
+    const requestedMode = options.mirrorModeForSession?.(identity)
+    const mode = skills.imageGeneration ? requestedMode : 'conversation'
     const avatarSettings = withMedia && mode ? { ...withMedia, experience: { ...(withMedia.experience ?? sessionExperience(defaultExperience())),
       defaultMode: mode === 'studio' ? 'portrait_studio' as const : 'conversation' as const } } : withMedia
     const issuer = createRealtimeSessionStartBundleIssuer({
       getPublishedSessionModelSnapshot: () => snapshot,
       getRealtimeSessionIdentity: () => identity,
-      ...(avatarSettings ? { getAvatarSettings: () => ({ ...avatarSettings,
+      ...(avatarSettings ? { getAvatarSettings: () => ({ ...avatarSettings, skills,
         ...(options.qaPromptVariant ? { qaPromptVariant: options.qaPromptVariant } : {}) }) } : {}),
       broker,
     })
@@ -2214,7 +2233,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
       : undefined
     const tuning = readProperty(active, 'wakeTuning')
     // Avatar wake tuning is bound to the conversation phrase, so the studio phrase uses package defaults.
-    if (options.currentMirrorMode?.() === 'studio') {
+    if (options.currentMirrorMode?.() === 'studio' && imageGenerationEnabled(publishedAvatarSettings)) {
       const studio = readProperty(readProperty(active, 'experience'), 'studio') as Pick<StudioSettings, 'wakePhrase'> | undefined
       return Object.freeze({ phrase: studioWakePhrase(studio), modelVersion, packageId })
     }
@@ -2933,6 +2952,7 @@ export function bootSequence(options: BootOptions = {}): BootRuntime {
     getPublishedSessionModelSnapshotForDiagnostics,
     getPublishedWakeConfigForRuntime,
     getPublishedSceneConfigForRuntime,
+    getAvatarSkillsForRuntime,
     setWakeRuntimeStatus,
     setCameraRuntimeStatus,
     setAvatarRuntimeStatus,

@@ -6,6 +6,7 @@ import { createMirrorMode } from './mirror-mode'
 import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { readFile, readdir, writeFile, open } from 'node:fs/promises'
+import { isCameraSnapshot, type CameraSnapshot } from '../shared/camera-tracking'
 import {
   app,
   BrowserWindow,
@@ -1412,6 +1413,12 @@ void app.whenReady().then(async () => {
     execute: async action => {
       if (action === 'show_console') return showConsoleOnMirror()
       if (action === 'show_console_main') return showConsoleOnMain()
+      const session = runtime.snapshot()
+      const skillOwner = session.lifecycle === 'active' && session.realtimeSessionId
+        ? { realtimeSessionId: session.realtimeSessionId, sessionGeneration: session.sessionGeneration } : undefined
+      if (action === 'studio' && !runtime.getAvatarSkillsForRuntime(skillOwner).imageGeneration) {
+        marker('OPERATOR_CONTROL', { reason: 'studio_skill_disabled' }); return false
+      }
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
       if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
@@ -1449,7 +1456,18 @@ void app.whenReady().then(async () => {
   // Permission and capture startup never gate the Mirror, voice, or other adapters.
   const physicalDeviceQa = phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
     && process.env['MIRROR_QA_PHYSICAL_DEVICES'] === '1'
-  if (isDarwin && (smokeMode.kind === 'off' && !phase4QaEnabled && !phase1LiveSmokeEnabled || physicalDeviceQa)) {
+  const nativeCameraJourneyQa = phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+    && process.env['MIRROR_QA_NATIVE_CAMERA'] === '1'
+    && ['image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
+  let qaPortraitFixture: CameraSnapshot | null = null
+  if (phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
+    && ['image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
+    && process.env['MIRROR_QA_PORTRAIT_FIXTURE'] === '1') {
+    const fixture: unknown = JSON.parse(await readFile(join(app.getPath('userData'), 'portrait-fixture.json'), 'utf8'))
+    if (!isCameraSnapshot(fixture)) throw Error('raven_qa_portrait_fixture_invalid')
+    qaPortraitFixture = fixture
+  }
+  if (isDarwin && (smokeMode.kind === 'off' && !phase4QaEnabled && !phase1LiveSmokeEnabled || physicalDeviceQa || nativeCameraJourneyQa)) {
     cameraTracking = createCameraLifecycle({
       requestPermission: () => systemPreferences.askForMediaAccess('camera'),
       report: reason => {
@@ -1484,10 +1502,10 @@ void app.whenReady().then(async () => {
       await visualAssetReady
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
       const url = new URL(request.url)
-      if (url.hostname === 'studio') {
+      if (url.hostname === 'studio' || url.hostname === 'image-skill') {
         // Portrait Studio images exist only in Main RAM for the current studio run.
         const id = decodeURIComponent(url.pathname.slice(1))
-        const image = /^[a-z0-9-]{8,64}$/.test(id) ? sceneRuntimeControl?.studioImage?.(id) : undefined
+        const image = /^[a-z0-9-]{8,64}$/.test(id) ? url.hostname === 'studio' ? sceneRuntimeControl?.studioImage?.(id) : sceneRuntimeControl?.skillImage?.(id) : undefined
         if (!image) return new Response(null, { status: 404 })
         // CORS like other media responses: the Mirror fetches it to attach the reveal image.
         return new Response(new Uint8Array(image.bytes), { headers: { 'Content-Type': image.mimeType, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } })
@@ -1576,9 +1594,28 @@ void app.whenReady().then(async () => {
     isShuttingDown: () => shutdownStarted,
     youtube: youtubePlayer,
     searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
-    captureCamera: () => phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && !physicalDeviceQa
-      ? windows.get('mirror')!.webContents.executeJavaScript(`(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
-      : cameraTracking?.capture() ?? Promise.resolve(null),
+    captureCamera: () => qaPortraitFixture && !nativeCameraJourneyQa
+      ? (() => {
+        marker('PHASE4_CAMERA_FIXTURE', { source: 'owner_authorized_public_portrait',
+          width: qaPortraitFixture!.width, height: qaPortraitFixture!.height, faces: qaPortraitFixture!.faceCount ?? -1 })
+        return Promise.resolve(qaPortraitFixture)
+      })()
+      : phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && !physicalDeviceQa && !nativeCameraJourneyQa
+      ? windows.get('mirror')!.webContents.executeJavaScript(['image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
+        ? `(()=>{const c=document.createElement('canvas');c.width=1920;c.height=1080;const x=c.getContext('2d');x.fillStyle='#e8e0d2';x.fillRect(0,0,1920,1080);x.fillStyle='#354e84';x.fillRect(660,760,600,320);x.fillStyle='#d8a278';x.beginPath();x.ellipse(960,450,220,300,0,0,Math.PI*2);x.fill();x.fillStyle='#30271f';for(const cx of [880,1040]){x.beginPath();x.arc(cx,410,22,0,Math.PI*2);x.fill()}x.strokeStyle='#713e36';x.lineWidth=16;x.beginPath();x.arc(960,530,85,0,Math.PI);x.stroke();return {dataUrl:c.toDataURL('image/jpeg',.95),width:1920,height:1080,faceCount:1}})()`
+        : `(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
+      : (cameraTracking?.capture() ?? Promise.resolve(null)).then(frame => {
+        if (nativeCameraJourneyQa) marker('PHASE4_CAMERA_CAPTURE', { status: frame ? 'received' : 'unavailable',
+          width: frame?.width ?? 0, height: frame?.height ?? 0, faces: frame?.faceCount ?? -1 })
+        // Explicit owner-authorized QA substitution only AFTER a fresh native
+        // still succeeds. The real camera bytes never leave Main or enter logs.
+        if (frame && qaPortraitFixture) {
+          marker('PHASE4_CAMERA_FIXTURE', { source: 'public_portrait_after_native_capture',
+            width: qaPortraitFixture.width, height: qaPortraitFixture.height, faces: qaPortraitFixture.faceCount ?? -1 })
+          return qaPortraitFixture
+        }
+        return frame
+      }),
     getFolderMedia: avatarId => mediaFolders.resources(avatarId),
     prepareFolderMedia: (id, avatarId) => bounded(mediaFolders.resolve(id, avatarId), mediaFolders.preparationBudgetMs(id))
       .then(file => !!file, () => false),

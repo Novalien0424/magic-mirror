@@ -3,7 +3,7 @@
  * Realtime model, so the reveal fits one data-channel message (Fable review).
  */
 export async function downscaleStudioImage(url: string, maxSide = 512, quality = 0.82): Promise<string | null> {
-  if (!/^magic-mirror-media:\/\/studio\/[a-z0-9-]{8,64}$/.test(url)) return null
+  if (!/^magic-mirror-media:\/\/(?:studio|image-skill)\/[a-z0-9-]{8,64}$/.test(url)) return null
   const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) return null
   const bitmap = await createImageBitmap(await response.blob())

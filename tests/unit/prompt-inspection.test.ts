@@ -41,7 +41,7 @@ describe('file-sourced prompt inspection', () => {
     expect(view.pages.Session.find(section => section.title.startsWith('Interactive Studio picture description'))!.content)
       .toMatch(/\n\nSpeak in Taiwan Mandarin with Traditional characters\.$/)
     // No hidden wording remains in the studio agent instructions either.
-    expect(view.pages.Session[1].content).toContain('After the name there are 4 studio questions; the application gives each one in the tool guidance.')
+    expect(view.pages.Session.find(s => s.title.startsWith('Interactive Studio agent instructions'))!.content).toContain('After the name there are 4 studio questions; the application gives each one in the tool guidance.')
   })
 
   it('does not reinterpret template markers or markup inside operator values', () => {

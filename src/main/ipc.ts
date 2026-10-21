@@ -1,6 +1,8 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { registerStudioIpc } from './studio/studio-ipc'
+import { registerImageSkillIpc } from './studio/image-skill-ipc'
+import { createAvatarImageService } from './avatar/image-service'
 import { defaultExperience } from '../shared/portrait-studio'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
 import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
@@ -196,6 +198,7 @@ export interface RegisterIpcHandlersOptions {
     readonly noteSceneActivity?: BootRuntime['noteSceneActivity']
     readonly noteRealtimeActivity?: BootRuntime['noteRealtimeActivity']
     readonly getPublishedSceneConfigForRuntime?: BootRuntime['getPublishedSceneConfigForRuntime']
+    readonly getAvatarSkillsForRuntime?: BootRuntime['getAvatarSkillsForRuntime']
     readonly subscribe?: BootRuntime['subscribe']
   }
   readonly console?: ConsoleDataPlane
@@ -213,6 +216,7 @@ export interface SceneRuntimeControl {
   stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void>
   /** RAM-only Portrait Studio image for the media protocol; undefined when unknown or closed. */
   studioImage?(id: string): { readonly bytes: Buffer; readonly mimeType: string } | undefined
+  skillImage?(id: string): { readonly bytes: Buffer; readonly mimeType: string } | undefined
 }
 
 export type SenderAuthResult =
@@ -1303,17 +1307,26 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
   let sleepingMedia = false
+  let imageSkill: ReturnType<typeof registerImageSkillIpc> | undefined
   const mediaSkill = createMediaSkillRuntime({
     youtube: options.youtube,
     activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
-    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    dispatch: command => {
+      if (command.type === 'media_skill_state' && command.active) imageSkill?.close('image_replaced_by_media')
+      return dispatchMirrorAvatarControl(command, windows)
+    },
     report: reason => {
       if (!mediaSkill.isActive()) sleepingMedia = false
       emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
         status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason })
     },
   })
+  const images = createAvatarImageService({ keepSignedIn: options.keepChatgptSignedIn,
+    report: (reason, status) => emit(telemetry, { module: 'avatar', event: 'image_service', source: 'runtime', status, reason }) })
+  const imageEnabled = (identity?: import('./studio/studio-runtime').StudioIdentity) =>
+    runtime.getAvatarSkillsForRuntime?.(identity).imageGeneration ?? false
   const studio = registerStudioIpc({
+    images, imageEnabled,
     ipcMain,
     authorize: (event, kind) => {
       const auth = authorizeSender(event, kind, windows)
@@ -1328,14 +1341,32 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const catalog = config?.avatarCatalog
       return config ? catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience() : null
     },
-    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    dispatch: command => {
+      if (command.type === 'studio_view' && (!command.view || !imageSkill?.studioPending())) imageSkill?.close('image_studio_changed')
+      return dispatchMirrorAvatarControl(command, windows)
+    },
+    photoPending: () => imageSkill?.photoPending() ?? false,
     activity: (kind, runId) => runtime.noteSceneActivity?.(kind, runId),
     stopMedia: () => { sleepingMedia = false; mediaSkill.stop('media_stopped_for_studio') },
     report: (reason, status, durationMs) => emit(telemetry, { module: 'avatar', event: 'portrait_studio', source: 'runtime', status, reason,
       ...(durationMs === undefined ? {} : { duration_ms: Math.round(durationMs) }) }),
-    keepSignedIn: options.keepChatgptSignedIn,
     ...(options.mirrorMode ? { mirrorMode: options.mirrorMode } : {}),
   })
+  imageSkill = registerImageSkillIpc({ ipcMain, studio, images, enabled: imageEnabled,
+    authorize: event => authorizeSender(event, 'mirror', windows).ok,
+    snapshot: () => runtime.snapshot(), subscribe: listener => runtime.subscribe?.(listener),
+    quality: async () => {
+      const config = await runtime.getPublishedSceneConfigForRuntime?.()
+      if (!config) throw Error('image_config_unavailable')
+      const catalog = config.avatarCatalog
+      return (catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience()).studio.quality
+    },
+    capture: async () => await options.captureCamera?.() ?? null,
+    dispatch: command => dispatchMirrorAvatarControl(command, windows),
+    report: reason => emit(telemetry, { module: 'avatar', event: 'image_skill', source: 'runtime', status: /failed|unavailable|rejected|expired/.test(reason) ? 'degraded' : 'info', reason }),
+    activity: (kind, id) => runtime.noteSceneActivity?.(kind, id),
+  })
+  options.mirrorMode?.subscribe(() => imageSkill?.close('image_mode_changed'))
   let sceneRuntimeGeneration = 0
   let consoleSceneGeneration = 0
   let sceneOperations: Promise<unknown> = Promise.resolve()
@@ -1797,11 +1828,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     }
     let frame: import('../shared/camera-tracking').CameraSnapshot | null = null
     let reason = 'camera_capture_session_stale'
-    if (current()) {
+    if (current() && imageSkill?.consumeCameraPermit({ realtimeSessionId: readProperty(identity, 'realtimeSessionId') as string,
+      sessionGeneration: readProperty(identity, 'sessionGeneration') as number })) {
       frame = await options.captureCamera?.().catch(() => null) ?? null
       reason = frame ? 'camera_frame_captured' : 'camera_capture_unavailable'
       if (!current()) { frame = null; reason = 'camera_capture_session_stale' }
-    }
+    } else if (current()) reason = 'camera_capture_permission_required'
     emit(telemetry, { module: 'camera', event: 'camera_capture', source: 'runtime', status: frame ? 'success' : 'degraded', reason })
     return frame
   })
@@ -1974,6 +2006,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       if (loaded === null) return unavailableSceneResult()
       // A spell replaces the studio as it replaces media; nothing plays under the portrait overlay.
       studio.close('studio_replaced_by_scene')
+      imageSkill?.close('image_replaced_by_scene')
       mediaSkill.stop('media_replaced_by_scene')
       return loaded.value.triggerSpell({
         spellId: readProperty(request, 'spellId') as string,
@@ -2190,6 +2223,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       if (generation !== consoleSceneGeneration) return consoleFailure('console_request_rejected', 'cause=scene_test_aborted')
       if (loaded === null) return consoleFailure('console_not_ready', 'cause=console_data_plane_unavailable')
       studio.close('studio_replaced_by_scene')
+      imageSkill?.close('image_replaced_by_scene')
       mediaSkill.stop('media_replaced_by_scene')
       const result = await loaded.value.runScene(args[0] as string, scope ?? undefined)
       return { ok: true, value: result }
@@ -2606,8 +2640,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
 
   return Object.freeze({
     studioImage: (id: string) => studio.image(id),
+    skillImage: (id: string) => imageSkill?.image(id),
     async stopAll(options?: { preserveSleepingMedia?: boolean }): Promise<void> {
       studio.close('studio_session_ended')
+      imageSkill?.close('image_session_ended')
       await enqueueSceneOperation(async () => {
         if (!options?.preserveSleepingMedia || !sleepingMedia) {
           sleepingMedia = false

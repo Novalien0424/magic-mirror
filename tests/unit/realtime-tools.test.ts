@@ -68,7 +68,7 @@ describe('structured Realtime tool catalog', () => {
     expect(resolveRealtimeTools('Rest.').some(tool => tool.name === 'stop_media')).toBe(false)
   })
   it('resumes the real SDK response after camera capture, with the image already in context', async () => {
-    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'capture_camera')
+    const spec = resolveRealtimeTools('Rest.').filter(t => t.name === 'look_at_surroundings')
     expect(spec[0].results.accepted.speech).toBe('model')
     const transport = new ScriptedRealtimeTransport(), errors = vi.fn()
     const addImage = vi.spyOn(transport, 'addImage'), output = vi.spyOn(transport, 'sendFunctionCallOutput')
@@ -78,7 +78,7 @@ describe('structured Realtime tool catalog', () => {
     session.on('error', errors)
     try {
       await session.connect({ apiKey: 'synthetic-unused-credential' })
-      transport.emit('function_call', { type: 'function_call', id: 'capture-item', callId: 'capture-call', name: 'capture_camera', arguments: '{}', responseId: 'fixture-response' })
+      transport.emit('function_call', { type: 'function_call', id: 'capture-item', callId: 'capture-call', name: 'look_at_surroundings', arguments: '{}', responseId: 'fixture-response' })
       await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
       expect(addImage).toHaveBeenCalledWith('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false })
       expect(addImage.mock.invocationCallOrder[0]).toBeLessThan(output.mock.invocationCallOrder[0])
@@ -168,7 +168,8 @@ describe('structured Realtime tool catalog', () => {
   it('validates media arguments and serializes all native tools through the SDK', async () => {
     const all = resolveRealtimeTools('Rest.'), media = vi.fn(async () => 'accepted' as const)
     const tools = bindRealtimeTools(all, { return_to_dormant: async () => 'accepted', play_media: media, stop_media: async () => 'accepted', capture_camera: async () => 'accepted', memory: async () => 'rejected',
-      find_media: async () => 'accepted', search_youtube: async () => 'accepted', play_youtube: async () => 'accepted', start_portrait_studio: async () => 'accepted' }, vi.fn())
+      find_media: async () => 'accepted', search_youtube: async () => 'accepted', play_youtube: async () => 'accepted', start_portrait_studio: async () => 'accepted',
+      create_image: async () => 'accepted', edit_image: async () => 'accepted', dismiss_image: async () => 'accepted' }, vi.fn())
     const play = tools.find(t => t.name === 'play_media')!
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip', mode: 'forever' }))
     await call(play, JSON.stringify({ kind: 'video', assetId: 'clip' }))

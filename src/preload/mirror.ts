@@ -3,6 +3,7 @@ import { parseOperatorLoopSnapshot } from '../shared/operator-loop'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseMediaSkillRequest, parseMediaSkillResult } from '../shared/media-skill'
 import { parseStudioEventIdentity, parseStudioReply, parseStudioRequest, parseStudioSessionEvent, parseStudioView, STUDIO_MIRROR_CHANNEL } from '../shared/portrait-studio'
+import { IMAGE_SKILL_CHANNEL, parseImageSkillEvent, parseImageSkillReply, parseImageSkillRequest, parseImageSkillView } from '../shared/image-skill'
 import { parseMediaDiscoveryRequest, parseMediaDiscoveryReply } from '../shared/media-discovery'
 import { parseYoutubeSearchRequest, parseYoutubeSearchReply } from '../shared/youtube-search'
 import { parseAvatarModelReference } from '../shared/avatar-profiles'
@@ -149,6 +150,14 @@ function sanitizeAvatarControl(value: unknown): AvatarControlCommand | null {
     if (typeof active !== 'boolean' || typeof hideAvatar !== 'boolean' || typeof fadeMs !== 'number'
       || !Number.isInteger(fadeMs) || fadeMs < 0 || fadeMs > 10000) return null
     return Object.freeze({ type, active, hideAvatar, fadeMs })
+  }
+  if (type === 'image_view' && exactKeys(value, ['type', 'view'])) {
+    const raw = readProperty(value, 'view'), view = raw === null ? null : parseImageSkillView(raw)
+    return raw !== null && view === null ? null : Object.freeze({ type, view })
+  }
+  if (type === 'image_event' && exactKeys(value, ['type', 'event', 'identity'])) {
+    const event = parseImageSkillEvent(readProperty(value, 'event')), identity = parseStudioEventIdentity(readProperty(value, 'identity'))
+    return event && identity ? Object.freeze({ type, event, identity }) : null
   }
   if (type === 'studio_view' && exactKeys(value, ['type', 'view'])) {
     const raw = readProperty(value, 'view')
@@ -591,6 +600,12 @@ const bridge: MirrorBridge = {
       || !Number.isSafeInteger(identity.sessionGeneration) || identity.sessionGeneration <= 0) return { status: 'rejected' as const, code: 'studio_request_invalid' }
     return parseStudioReply(await ipcRenderer.invoke(STUDIO_MIRROR_CHANNEL, { request: parsed,
       identity: { realtimeSessionId: identity.realtimeSessionId, sessionGeneration: identity.sessionGeneration } })) ?? failure
+  },
+
+  async imageSkill(request, identity) {
+    const parsed = parseImageSkillRequest(request)
+    if (!parsed || !parseStudioEventIdentity(identity)) return { status: 'rejected', code: 'image_request_invalid' }
+    return parseImageSkillReply(await ipcRenderer.invoke(IMAGE_SKILL_CHANNEL, { request: parsed, identity })) ?? { status: 'failed', code: 'image_unavailable' }
   },
 
   reportAvatarRuntime(snapshot: AvatarRuntimeSnapshot): void {

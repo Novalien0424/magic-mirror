@@ -1,5 +1,73 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-21 — Selectable common image skill per Avatar (owner directive)
+
+- Avatars → Skills owns each Avatar's `skills.imageGeneration` assignment.
+  Existing/missing assignments stay enabled for compatibility; disabling one
+  Avatar never changes another or erases saved Interactive Studio content.
+- The versioned tool catalog declares `requiredSkill`. Native definitions,
+  instructions and the Prompt Inspector share the same assignment filter.
+  Main independently authorizes effects; hiding a tool is not authorization.
+- Save/Publish applies the assignment on the next conversation. Main and the
+  renderer use the same immutable session assignment, retained through a
+  connection rollover. Unknown session assignments deny image effects.
+- Conversation and guided Interactive Studio receive one independent,
+  Main-owned image service. The existing provider/model/sign-in path stays;
+  the Studio workflow no longer owns the common service. Studio needs the image
+  skill; ordinary conversation and separately consented camera questions do not.
+- Guest photo permission remains explicit, per request and separate from the
+  operator's skill assignment. Camera minimums and field-evidence limits remain.
+  [Design and fresh acceptance](docs/testing/avatar-image-skill-selection-2026-10-21.md).
+
+## 2026-10-21 — Temporary lowest-bandwidth USB camera (owner directive)
+
+- For now, use the camera's smallest advertised resolution and slowest
+  supported frame rate. Fresh AVFoundation inspection reports 96×96 at 5 fps.
+- This temporarily supersedes the full-HD-only portrait requirement. Preserve
+  actual captured dimensions, decoded-image validation, single-face validation
+  and explicit per-request capture/cloud permission; never upscale to claim HD.
+- Complete Conversation and Interactive Studio journeys with the actual USB
+  capture route. Camera-fixture passes remain separate evidence.
+- As nobody is available, the owner explicitly permits a downloaded Internet
+  portrait to simulate the guest after successful USB-frame delivery. Keep
+  that substitution explicit in QA provenance and isolated from production.
+
+## 2026-10-21 — Close ordinary-camera permission bypass
+
+- Live portrait refusal QA exposed a second route: the model could call the
+  ordinary camera-looking tool before image permission. Main now requires a
+  single-use, session-bound permission for that route too, granted only after
+  application disclosure, whole-final approval and the three-second countdown.
+  It expires after 15 seconds and is revoked on session change or cancellation.
+- The native visual-question tool is named `look_at_surroundings`; its handler
+  remains `capture_camera`. It sends an approved image to the conversation
+  service, while `create_image` sends an approved portrait to the image service.
+  Neither route can reuse the other's permission. Local gaze tracking and the
+  Console's metadata-only camera check retain their existing ownership.
+
+## 2026-10-21 — Shared avatar image skill (owner directive)
+
+- Conversation can create, present and edit images without entering the guided
+  Interactive Studio. Both use the existing Studio image service, versioned
+  image model and Main-owned ChatGPT sign-in. This extends that image-only
+  credential route to both entry points; no other capability uses it.
+- Follow the foundational native avatar tool catalog and validated application
+  handlers. The existing Studio name/questions/revisions/ending remain intact.
+  Explicit guided-experience requests enter Studio; ordinary drawing stays in
+  Conversation. Portrait input may join Studio before its first painting.
+- A fresh guest portrait requires an explicit guest request and application-owned
+  disclosure/confirmation before capture and cloud use. Permission is single-use,
+  scoped to the current request/session, and ends on cancellation or replacement.
+  A later whole final reply 「使用我的照片」 / “use my photo” (versioned approved
+  variants, case/spacing normalization and shared command folds) grants it only
+  after disclosure playback; no model boolean or substring authorizes a photo.
+- Source portraits/artwork stay in RAM; no identity inference, private-memory
+  injection, image/transcript diagnostics or automatic archive. Image and consent
+  controls skip learning. Existing camera gaze/looking permission is separate.
+- Retain the observed sticker corner alpha metadata. Provider transparency
+  variation alone is not an application release blocker; fix an app-caused
+  request/format/rendering defect if found. Do not reclassify historical QA.
+
 ## 2026-10-20 — Sticker pictures and visible prompts (owner directive, afternoon)
 
 - **Picture type, sticker by default.** The Console sets Picture type per

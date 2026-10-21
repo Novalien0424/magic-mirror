@@ -1,4 +1,6 @@
 import type { AvatarProfile } from './avatar-profiles'
+import { imageGenerationEnabled } from './avatar-skills'
+import { IMAGE_SKILL, IMAGE_SKILL_SOURCE, buildImageSkillPrompt } from './image-skill'
 import { buildAvatarPrompt, buildStudioPrompt, avatarProfileSessionSettings, avatarRealtimeTools, studioToolSpecs } from './avatar-prompt'
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, realtimeToolDefinition } from './realtime-tools'
 import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, renderStudioText, studioFirstStepInstructions, studioPrompt, studioRevealInstructions } from './portrait-studio-config'
@@ -25,9 +27,15 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
   const section = (title: string, content: string, source = REALTIME_PROMPT_SOURCE): PromptSection => ({ title, source, content })
   const speech = (title: string, text: string, source: string): PromptSection => section(title,
     text ? json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
+  const imageEnabled = imageGenerationEnabled(settings)
   return { name: avatar.name, pages: {
-    Session: [section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
+    Session: [section('Assigned skills', `Image generation: ${imageEnabled ? 'enabled · Conversation and Interactive Studio' : 'disabled · Conversation remains available'}. Published changes apply on the next conversation.`, `${profileSource}.skills`),
+      section('Session instructions · system', buildAvatarPrompt(settings), `${REALTIME_PROMPT_SOURCE}#session + ${profileSource}`),
+      ...(imageEnabled ? [
       section('Interactive Studio agent instructions · system (after updateAgent)', buildStudioPrompt(settings), `${PORTRAIT_STUDIO_SOURCE}#agent + ${REALTIME_PROMPT_SOURCE}#session + ${profileSource}.experience`),
+      section('Conversation image prompt · sample request', buildImageSkillPrompt('An owl over the sea', 'generate', 'portrait'), IMAGE_SKILL_SOURCE),
+      section('Photo reference instruction · both modes', IMAGE_SKILL.photo, IMAGE_SKILL_SOURCE),
+      section('Conversation image reveal · seen / unavailable', `${IMAGE_SKILL.reveal}\n\n${IMAGE_SKILL.revealBlind}`, IMAGE_SKILL_SOURCE),
       ...STUDIO_PROMPT_STAGES.filter(stage => stage !== 'instructions').map(stage => {
         const studio = (avatar.experience ?? defaultExperience()).studio
         const edited = studio.prompts?.[stage] !== undefined
@@ -35,7 +43,7 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
           edited ? `${profileSource}.experience.studio.prompts.${stage}` : `${PORTRAIT_STUDIO_SOURCE} (default)`)
       }),
       ...studioImagePrompts(avatar, profileSource),
-      ...studioRequests(avatar, buildStudioPrompt(settings), profileSource),
+      ...studioRequests(avatar, buildStudioPrompt(settings), profileSource)] : []),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),
@@ -47,7 +55,7 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
     'Tools & input': [...tools.flatMap(spec => [
       section(`${spec.name} · tool definition`, json(realtimeToolDefinition(spec)), `${REALTIME_TOOL_SOURCE} + ${profileSource}.sleepPhrase`),
       section(`${spec.name} · structured results`, json(spec.results), REALTIME_TOOL_SOURCE),
-      section(`${spec.name} · execution policy`, json({ handler: spec.handler, availability: spec.availability, routing: spec.routing,
+      section(`${spec.name} · execution policy`, json({ handler: spec.handler, requiredSkill: spec.requiredSkill, availability: spec.availability, routing: spec.routing,
         completion: spec.completion, rules: spec.rules }), REALTIME_TOOL_SOURCE)]),
       section('Application exact-match routes · spells', json(avatar.spells), `${profileSource}.spells · application matcher; not model tools`),
       section('Application opening-phrase route · online media search', json({ cloudSearchPhrase: settings.cloudSearchPhrase }), `${profileSource}.cloudSearchPhrase · application matcher; not model-visible`),
@@ -63,6 +71,7 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
       section('Audition tools and input', json({ tools: [], input: { turnDetection: null, transcription: null } }), 'src/renderer/realtime/realtime-session-adapter.ts')],
     Sources: [section(`Loaded catalog · ${prompts.version}`, json(prompts)),
       section(`Loaded tool catalog · ${REALTIME_TOOLS.version}`, json(REALTIME_TOOLS), REALTIME_TOOL_SOURCE),
+      section('Loaded shared image skill prompts and permission phrases', json(IMAGE_SKILL), IMAGE_SKILL_SOURCE),
       section(`Loaded Interactive Studio config · ${PORTRAIT_STUDIO.version}`, json(PORTRAIT_STUDIO), PORTRAIT_STUDIO_SOURCE),
       section(`Loaded memory helper prompts · ${MEMORY_PROMPTS.version}`, json(MEMORY_PROMPTS), MEMORY_PROMPT_SOURCE),
       section('Avatar variables', json(settings), profileSource)],

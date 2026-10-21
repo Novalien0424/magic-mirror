@@ -68,6 +68,7 @@ export async function runNativeCameraQa(input: Phase4QaInput): Promise<Phase4QaR
   const initialPermission = systemPreferences.getMediaAccessStatus('camera')
   const granted = await systemPreferences.askForMediaAccess('camera')
   let ready = false, targets = 0, snapshot = false
+  const snapshotFaces: (number | null)[] = []
   const checks: { phase: string; ready: boolean; snapshots: number; stableSnapshots: boolean; resetsDuringSnapshots: number; maxSnapshotReceiptGapMs: number; dimensions: { width: number; height: number }[]; usbResetCompleted: boolean; frameReceipts: number; maxReceiptGapMs: number; injectedStallToResetMs: number | null; lastFrameToResetMs: number | null; resetToFreshFrameMs: number | null; resets: { requestedAtMs: number; releaseAfterMs: number | null; nativeResetAfterMs: number | null; completeAfterMs: number | null; freshFrameAfterMs: number | null; workerRetired: boolean }[] }[] = []
   try {
     for (const phase of ['capture', 'automatic_usb_recovery']) {
@@ -135,7 +136,7 @@ export async function runNativeCameraQa(input: Phase4QaInput): Promise<Phase4QaR
         snapshotReceiptAt = previousReceipt || performance.now()
         if (ready && service && (phase !== 'automatic_usb_recovery' || usbResetCompleted)) for (let i = 0; i < expectedSnapshots; i++) {
           const frame = await service.capture()
-          if (frame) { snapshots++; dimensions.push({ width: frame.width, height: frame.height }) }
+          if (frame) { snapshots++; dimensions.push({ width: frame.width, height: frame.height }); snapshotFaces.push(frame.faceCount ?? null) }
           else break // Six successes are required; another timed-out request cannot rescue this phase.
           if (i < expectedSnapshots - 1) await new Promise(resolve => setTimeout(resolve, 5000))
         }
@@ -156,7 +157,7 @@ export async function runNativeCameraQa(input: Phase4QaInput): Promise<Phase4QaR
   } finally {
     await writeFile(join(input.outputDir, '../camera-native.json'), JSON.stringify({
       initialPermission, permission: systemPreferences.getMediaAccessStatus('camera'), ready, targets, snapshot,
-      statuses, checks, imageRetention: 'none', cloudTransmission: 'none', humanAcceptance: 'not_executed',
+      statuses, checks, snapshotFaces, imageRetention: 'none', cloudTransmission: 'none', humanAcceptance: 'not_executed',
     }, null, 2))
   }
   input.onEvidence({ step: 'native_camera', status: ready && snapshot ? 'passed' : 'failed' })

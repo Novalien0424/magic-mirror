@@ -73,7 +73,7 @@ export async function runCameraAvailabilityQa(input: Phase4QaInput): Promise<Pha
         }
       } finally { clearInterval(ownerWatch); await service.stop() }
       const elapsedMs = performance.now() - at, summary = metrics.result(elapsedMs), idleOwners = owners()
-      const expected = mode.startsWith('low') ? [320, 240, mode === 'low15' ? 15 : 5] : /1080/.test(mode) ? [1920, 1080, mode === 'mjpeg1080' ? 15 : 5]
+      const expected = mode === 'minimum' ? [96, 96, 5] : mode.startsWith('low') ? [320, 240, mode === 'low15' ? 15 : 5] : /1080/.test(mode) ? [1920, 1080, mode === 'mjpeg1080' ? 15 : 5]
         : /720/.test(mode) ? [1280, 720, ['yuy2720', 'mjpeg7205'].includes(mode) ? 5 : 15] : [640, 480, mode === 'vga5' ? 5 : 15]
       const apiRate = Number(mode.match(/_api([125])$/)?.[1] ?? 0)
       if (apiRate) expected[2] = apiRate

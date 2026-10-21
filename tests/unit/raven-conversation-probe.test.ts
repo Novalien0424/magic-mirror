@@ -18,6 +18,19 @@ function probe(globals: Record<string, unknown> = {}, physical = false, memory =
 }
 
 describe('Raven real protocol observation', () => {
+  it('observes image requests, grounded input, reveal speech and cleanup without changing them', () => {
+    const { q, send, emit } = probe()
+    send({ type: 'conversation.item.create', item: { id: 'image_1_1', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/jpeg;base64,cGhvdG8=' }] } })
+    send({ type: 'response.create', response: { metadata: { mirror_image: 'reveal' } } })
+    emit({ type: 'response.created', response: { id: 'reveal-1', metadata: { mirror_image: 'reveal' } } })
+    emit({ type: 'output_audio_buffer.started', response_id: 'reveal-1' })
+    emit({ type: 'response.output_audio_transcript.done', response_id: 'reveal-1', item_id: 'speech-1', content_index: 0, transcript: 'A synthetic picture.' })
+    send({ type: 'conversation.item.delete', item_id: 'image_1_1', event_id: 'delete_image_1' })
+    expect(q.imageRevealRequests).toBe(1); expect(q.imageAttachments).toBe(1)
+    expect(q.imageReveals).toEqual(['reveal-1'])
+    expect(q.records.some((r: { role: string; responseId: string }) => r.role === 'avatar' && r.responseId === q.imageReveals[0])).toBe(true)
+    expect(q.audibleResponses.has(q.imageReveals[0])).toBe(true); expect(q.deletes).toEqual(['image_1_1'])
+  })
   it('observes application identity question tokens in RAM without changing requests or relying on model results', () => {
     const { q, send, sent } = probe({}, false, true)
     q.visit = 1; q.stage = 'identify'
@@ -222,5 +235,6 @@ describe('Raven real protocol observation', () => {
     await expect(q.speak(0, true)).resolves.toBe(.1)
     expect(calls).toEqual(['fixture-output', 'resume', 'disconnect', 'close'])
     expect(q.tracks).toHaveLength(0)
+    expect(q.speechPlayback).toEqual([expect.objectContaining({ expectedMs: 100, ended: true })])
   })
 })

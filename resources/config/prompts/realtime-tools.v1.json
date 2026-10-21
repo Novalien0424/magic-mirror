@@ -1,7 +1,7 @@
 {
   "version": "realtime-tools.v1",
   "templateDefaults": {
-    "studioOffer": "a portrait painted for them on the mirror after their name and a few short questions, for example when they say 幫我畫一張畫像 or draw me a picture"
+    "studioOffer": "a guided portrait experience with their name and a few short questions, for example when they say 帶我進互動畫室 or start the guided portrait studio"
   },
   "tools": [
     {
@@ -129,12 +129,12 @@
       }
     },
     {
-      "name": "capture_camera",
+      "name": "look_at_surroundings",
       "handler": "capture_camera",
       "enabled": true,
       "availability": "conversation",
       "routing": "model_intent",
-      "description": "Capture a fresh image from the mirror's camera so you can see.",
+      "description": "Request permission to inspect the surroundings and answer a visual question. This does not make pictures. For any artwork request use create_image directly.",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -142,9 +142,9 @@
         "additionalProperties": false
       },
       "rules": {
-        "useWhen": "When asked to look at or describe the current surroundings, call this before answering.",
-        "avoidWhen": "No background monitoring, identity or sensitive-trait inference.",
-        "speech": "Answer from the image; if unclear or unavailable ask for a description."
+        "useWhen": "Only when asked to look at or describe the current surroundings. The application asks for photo/cloud permission before supplying an image.",
+        "avoidWhen": "Never call this to prepare a portrait, drawing, image edit or photo-based artwork. Those requests belong to the separate image-generation skill when enabled; otherwise explain it is unavailable. Do not capture a reference first. No background monitoring, identity or sensitive-trait inference.",
+        "speech": "Remain silent while the application asks permission. Answer only after the approved image arrives; if unavailable ask for a description."
       },
       "completion": "response",
       "results": {
@@ -198,16 +198,50 @@
       }
     },
     {
+      "name": "create_image", "handler": "create_image", "requiredSkill": "imageGeneration", "enabled": true, "availability": "conversation", "routing": "model_intent",
+      "description": "Create and display a picture while continuing this conversation, using the Studio image service without starting its guided story. A photo source requests permission before capture/upload.",
+      "parameters": { "type": "object", "properties": {
+        "prompt": { "type": "string", "description": "Artwork requested by the guest; only details they ask to include, no private memory or whole chat." },
+        "picture": { "type": "string", "enum": ["portrait", "sticker"], "description": "portrait means a full picture; sticker only when requested." },
+        "source": { "type": "string", "enum": ["description", "photo"], "description": "photo only for an explicit request for a fresh photograph of the guest for this artwork; otherwise description." },
+        "language": { "type": "string", "enum": ["zh", "en"], "description": "The language the guest is using, including for the permission question: zh for Chinese, en for English." }
+      }, "required": ["prompt", "picture", "source", "language"], "additionalProperties": false },
+      "rules": { "useWhen": "For a drawing or photo-based artwork request, call create_image directly. source photo asks permission and captures the photo itself; do not call look_at_surroundings first. A new request after cancellation starts a new permission flow. For an ambiguous draw me request, ask whether to use a fresh photo or a description first.", "avoidWhen": "Do not call for questions, quoted/hypothetical mentions or without a guest request. Looking through the camera is not photo-art permission. Guided Studio entry needs its own explicit request.", "speech": "Call without a preamble, then acknowledge accepted drawing once and keep chatting. Photo permission is spoken by the application; remain silent while it asks." },
+      "completion": "response", "results": { "accepted": { "status": "accepted", "code": "image_started", "speech": "model" }, "ignored": { "status": "ignored", "code": "image_busy", "speech": "model" }, "rejected": { "status": "rejected", "code": "image_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "image_unavailable", "speech": "model" } }
+    },
+    {
+      "name": "edit_image", "handler": "edit_image", "requiredSkill": "imageGeneration", "enabled": true, "availability": "conversation", "routing": "model_intent",
+      "description": "Change the picture displayed in Conversation, preserving everything the visitor did not ask to change.",
+      "parameters": { "type": "object", "properties": { "prompt": { "type": "string", "description": "The guest's requested change to the current artwork." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the guest is using: zh for Chinese, en for English." } }, "required": ["prompt", "language"], "additionalProperties": false },
+      "rules": { "useWhen": "When the guest asks for a change after seeing the picture, call edit_image.", "avoidWhen": "Do not edit on your own, before reveal, or to capture another photo. A new photo needs a new explicit request and permission.", "speech": "Call without a preamble, then acknowledge the accepted change once. Present it when the application supplies the result." },
+      "completion": "response", "results": { "accepted": { "status": "accepted", "code": "image_revising", "speech": "model" }, "ignored": { "status": "ignored", "code": "image_busy", "speech": "model" }, "rejected": { "status": "rejected", "code": "image_not_available", "speech": "model" }, "failed": { "status": "failed", "code": "image_unavailable", "speech": "model" } }
+    },
+    {
+      "name": "dismiss_image", "handler": "dismiss_image", "requiredSkill": "imageGeneration", "enabled": true, "availability": "all", "routing": "model_intent",
+      "description": "Dismiss the Conversation picture or cancel an unfinished drawing/photo request. In Studio this only cancels a pending photo request, preserving the guided visit.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": { "useWhen": "Call when the guest asks to dismiss the Conversation picture or cancel a pending drawing/photo request.", "avoidWhen": "Do not dismiss on your own. To finish or exit the guided Studio use its own tools.", "speech": "Call without a preamble, then continue the conversation or current Studio step." },
+      "completion": "response", "results": { "accepted": { "status": "accepted", "code": "image_dismissed", "speech": "model" }, "ignored": { "status": "ignored", "code": "image_not_active", "speech": "none" }, "rejected": { "status": "rejected", "code": "image_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "image_unavailable", "speech": "model" } }
+    },
+    {
+      "name": "studio_use_photo", "handler": "studio_use_photo", "requiredSkill": "imageGeneration", "enabled": true, "availability": "studio", "routing": "model_intent",
+      "description": "Request permission for a fresh guest photo as the reference for this Studio's first picture. Existing name, questions, edits and ending still apply.",
+      "parameters": { "type": "object", "properties": { "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the guest is using for the permission question: zh for Chinese, en for English." } }, "required": ["language"], "additionalProperties": false },
+      "rules": { "useWhen": "Before the first painting, call only when the visitor explicitly asks to use a fresh photo of themselves for this artwork.", "avoidWhen": "Never offer or capture a photo automatically. A description or ordinary camera-looking request is not permission.", "speech": "Call without a preamble. The application asks permission and reports capture; stay silent during permission, then continue the current Studio step." },
+      "completion": "background_on_success", "results": { "accepted": { "status": "accepted", "code": "image_consent_pending", "speech": "application" }, "ignored": { "status": "ignored", "code": "image_busy", "speech": "none" }, "rejected": { "status": "rejected", "code": "image_studio_step", "speech": "model" }, "failed": { "status": "failed", "code": "image_unavailable", "speech": "model" } }
+    },
+    {
       "name": "start_portrait_studio",
       "handler": "start_portrait_studio",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "conversation",
       "routing": "model_intent",
       "description": "Open your interactive studio for the visitor. It offers {{studioOffer}}.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor directly asks for what your studio offers ({{studioOffer}}), call start_portrait_studio as your first output.",
-        "avoidWhen": "Do not call it for questions about the studio, for describing a picture, or for quoted, negated or hypothetical mentions of it.",
+        "useWhen": "When the visitor explicitly asks to enter the guided Interactive Studio experience ({{studioOffer}}), call start_portrait_studio as your first output.",
+        "avoidWhen": "Ordinary drawing/photo-art requests use create_image and stay in Conversation. Do not start for questions about Studio, describing a picture, or quoted, negated or hypothetical mentions.",
         "speech": "No spoken preamble before the call. If accepted, follow the returned guidance and ask its first question. If rejected or failed, follow the returned guidance briefly and continue the conversation; never claim the studio will start."
       },
       "completion": "response",
@@ -216,6 +250,7 @@
     {
       "name": "studio_set_name",
       "handler": "studio_set_name",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
@@ -232,6 +267,7 @@
     {
       "name": "studio_answer",
       "handler": "studio_answer",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
@@ -248,6 +284,7 @@
     {
       "name": "studio_revise",
       "handler": "studio_revise",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
@@ -264,6 +301,7 @@
     {
       "name": "studio_finish",
       "handler": "studio_finish",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
@@ -280,6 +318,7 @@
     {
       "name": "studio_exit",
       "handler": "studio_exit",
+      "requiredSkill": "imageGeneration",
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",

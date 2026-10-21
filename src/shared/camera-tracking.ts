@@ -2,7 +2,7 @@
 export interface CameraTarget { readonly x: number; readonly y: number }
 
 /** One requested frame, RAM-only. Never include this object in diagnostics. */
-export interface CameraSnapshot { readonly dataUrl: string; readonly width: number; readonly height: number }
+export interface CameraSnapshot { readonly dataUrl: string; readonly width: number; readonly height: number; readonly faceCount?: number }
 // Keep the native JPEG encoder's bounds in deploy/macos/camera-tracker.swift aligned.
 export const CAMERA_SNAPSHOT_MAX_DIMENSION = 1920
 export const CAMERA_SNAPSHOT_MAX_PIXELS = 1920 * 1080
@@ -21,7 +21,8 @@ export function isCameraSnapshotDimensions(width: unknown, height: unknown): boo
 export function isCameraSnapshot(value: unknown): value is CameraSnapshot {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const v = value as CameraSnapshot
-  if (Object.keys(v).sort().join(',') !== 'dataUrl,height,width'
+  if (Object.keys(v).sort().join(',') !== ('faceCount' in v ? 'dataUrl,faceCount,height,width' : 'dataUrl,height,width')
+    || ('faceCount' in v && (!Number.isSafeInteger(v.faceCount) || v.faceCount! < 0 || v.faceCount! > 100))
     || !isCameraSnapshotDimensions(v.width, v.height)
     || typeof v.dataUrl !== 'string' || v.dataUrl.length > SNAPSHOT_DATA_URL_PREFIX.length + CAMERA_SNAPSHOT_MAX_BASE64_LENGTH
     || !v.dataUrl.startsWith(SNAPSHOT_DATA_URL_PREFIX)) return false

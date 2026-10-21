@@ -1,5 +1,6 @@
 import source from '../../resources/config/prompts/realtime-tools.v1.json' with { type: 'json' }
 import type { fromJSONSchema } from 'zod'
+import { AVATAR_SKILLS, type AvatarSkillId } from './avatar-skills'
 
 type ParameterSchema = Exclude<Parameters<typeof fromJSONSchema>[0], boolean>
 
@@ -10,6 +11,7 @@ export interface RealtimeToolSpec {
   readonly name: string
   readonly handler: string
   readonly enabled: boolean
+  readonly requiredSkill?: AvatarSkillId
   /** Which agent offers the tool: the conversation agent, the Interactive Studio agent, or both. */
   readonly availability: 'conversation' | 'studio' | 'all'
   readonly routing: 'model_intent'
@@ -58,7 +60,8 @@ export function parseRealtimeToolCatalog(value: unknown): RealtimeToolCatalog {
     || !text(value.version) || !Array.isArray(value.tools)) return invalid()
   const names = new Set<string>()
   for (const spec of value.tools) {
-    if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results'])
+    if (!record(spec) || !keys(spec, ['name', 'handler', 'enabled', 'availability', 'routing', 'description', 'parameters', 'rules', 'completion', 'results', ...('requiredSkill' in spec ? ['requiredSkill'] : [])])
+      || 'requiredSkill' in spec && !AVATAR_SKILLS.some(skill => skill.id === spec.requiredSkill)
       || !text(spec.name) || !/^[a-z][a-z0-9_]{0,63}$/.test(spec.name) || names.has(spec.name)
       || !text(spec.handler) || typeof spec.enabled !== 'boolean' || !['conversation', 'studio', 'all'].includes(spec.availability as string)
       || spec.routing !== 'model_intent' || !['background', 'response', 'background_on_success', 'background_on_reset'].includes(spec.completion as string) || !validTemplate(spec.description)) return invalid()

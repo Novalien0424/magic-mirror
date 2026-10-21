@@ -105,6 +105,8 @@ export const AVATAR_RUNTIME_STATES = [
 export type AvatarRuntimeState = (typeof AVATAR_RUNTIME_STATES)[number]
 
 export type AvatarControlCommand =
+  | Readonly<{ type: 'image_view'; view: import('./image-skill').ImageSkillView | null }>
+  | Readonly<{ type: 'image_event'; event: import('./image-skill').ImageSkillEvent; identity: RealtimeSessionIdentity }>
   | Readonly<{ type: 'media_skill_state'; active: boolean; hideAvatar: boolean; fadeMs: number }>
   | Readonly<{ type: 'studio_view'; view: import('./portrait-studio').StudioView | null }>
   | Readonly<{ type: 'studio_event'; event: import('./portrait-studio').StudioSessionEvent; identity: import('./portrait-studio').StudioEventIdentity }>
@@ -259,6 +261,7 @@ export interface MirrorBridge extends SharedRendererBridge {
   requestSleep(): void
   requestMedia(request: import('./media-skill').MediaSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./media-skill').MediaSkillResult>
   studio?(request: import('./portrait-studio').StudioRequest, identity: RealtimeSessionIdentity): Promise<import('./portrait-studio').StudioReply>
+  imageSkill?(request: import('./image-skill').ImageSkillRequest, identity: RealtimeSessionIdentity): Promise<import('./image-skill').ImageSkillReply>
   findMedia?(request: import('./media-discovery').MediaDiscoveryRequest, identity: RealtimeSessionIdentity): Promise<import('./media-discovery').MediaDiscoveryReply>
   searchYoutube?(request: import('./youtube-search').YoutubeSearchRequest, identity: RealtimeSessionIdentity): Promise<import('./youtube-search').YoutubeSearchReply>
   captureCamera(identity: RealtimeSessionIdentity): Promise<import('./camera-tracking').CameraSnapshot | null>

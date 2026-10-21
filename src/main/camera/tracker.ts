@@ -249,7 +249,8 @@ export function startCameraTracking(input: {
         }
         if (value && typeof value === 'object' && (value as { type?: unknown }).type === 'snapshot') {
           const frame = value as Record<string, unknown>
-          const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height }
+          const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height,
+            ...('faceCount' in frame ? { faceCount: frame.faceCount } : {}) }
           if (capturePending && capturePending.id === frame.id) {
             const valid = isCameraSnapshot(snapshot)
             if (!valid) status('degraded', !isCameraSnapshotDimensions(frame.width, frame.height)

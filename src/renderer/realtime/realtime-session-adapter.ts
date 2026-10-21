@@ -8,6 +8,7 @@ import {
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
 import { PORTRAIT_STUDIO, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioRevealInstructions } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent } from '../../shared/portrait-studio'
+import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../shared/image-skill'
 import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
 import { visitorSentenceLanguage } from '../../shared/visitor-language'
@@ -111,6 +112,7 @@ export interface CreateRealtimeSessionInput {
   readonly onFindMedia?: NonNullable<import('../../shared/bridge').MirrorBridge['findMedia']>
   readonly onSearchYoutube?: NonNullable<import('../../shared/bridge').MirrorBridge['searchYoutube']>
   readonly onStudioRequest?: (request: StudioRequest, identity: import('../../shared/bridge').RealtimeSessionIdentity) => Promise<StudioReply>
+  readonly onImageRequest?: NonNullable<import('../../shared/bridge').MirrorBridge['imageSkill']>
   /** Downscales a Portrait Studio image URL to a small JPEG data URL for the model; null when unavailable. */
   readonly prepareStudioImage?: (imageUrl: string) => Promise<string | null>
   readonly waitForOutputTail?: () => Promise<void>
@@ -137,6 +139,7 @@ export interface RealtimeSessionHandle {
   setMediaPlayback?(active: boolean): void
   /** Portrait Studio events from Main (via the Mirror): agent swap, reveal, failure lines, end of keepsake. */
   studioEvent?(event: StudioSessionEvent, identity: StudioEventIdentity): void
+  imageEvent?(event: ImageSkillEvent, identity: StudioEventIdentity): void
   close(reason: string): Promise<void>
   speakVerbatim(text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void): void
   claimControlTurn?(itemId: string): void
@@ -494,6 +497,8 @@ export function createRealtimeSession(
   const audioResponseInputs = new Map<string, string>()
   const activeMemoryResponses = new Set<string>()
   const memoryAudioResponses = new Set<string>()
+  const audioResponseOrder = new Map<string, number>()
+  let nextAudioResponseOrder = 0
   const finishedMemoryAudio = new Set<string>()
   let pendingQuestion: import('../../shared/memory').MemoryReply['confirmation']
   let questionToolEnded = false
@@ -545,9 +550,10 @@ export function createRealtimeSession(
   let farewellCueId = ''
   const farewell = input.avatar?.sleepFarewell ?? input.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell!
   // The studio entry tool needs Main's studio; without it the model never sees the tool.
-  const toolSpecs = avatarRealtimeTools(input.avatar, input.preview).filter(spec => spec.handler !== 'start_portrait_studio' || !!input.onStudioRequest)
+  const imageHandlers = new Set(['create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'])
+  const toolSpecs = avatarRealtimeTools(input.avatar, input.preview).filter(spec => (spec.handler !== 'start_portrait_studio' || !!input.onStudioRequest) && (!imageHandlers.has(spec.handler) || !!input.onImageRequest))
   // The studio agent exists only when the application can execute studio requests.
-  const studioSpecs = input.preview || !input.onStudioRequest ? [] : studioToolSpecs({ ...promptAvatar, sleepPhrase: input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE })
+  const studioSpecs = input.preview || !input.onStudioRequest ? [] : studioToolSpecs({ ...promptAvatar, sleepPhrase: input.avatar?.sleepPhrase ?? LEGACY_SLEEP_PHRASE }).filter(spec => !imageHandlers.has(spec.handler) || !!input.onImageRequest)
   const studioInstructions = studioSpecs.length ? buildStudioPrompt(promptAvatar) : ''
   const studioToolNames = new Set([...studioSpecs.filter(spec => spec.availability === 'studio'), ...toolSpecs.filter(spec => spec.handler === 'start_portrait_studio')].map(spec => spec.name))
   let studioActive = false
@@ -572,6 +578,12 @@ export function createRealtimeSession(
   let studioSendSequence = 0
   // Main's latest portrait revision in the current run; an older one is never revealed after it.
   let studioRevision = 0
+  let imageRun = '', imageUrl = '', imageClosed = true, imageRevealInputs = -1, imageLastRequestInputs = -1
+  let imageConsent: { id: string; ticket: string; armed: boolean; startedInputs: number; abort: AbortController } | undefined
+  let imagePhotoPending = false, imageRevealItem: string | undefined
+  let cameraViewingPending = false
+  let imageStateItem: string | undefined
+  const imageCues = new AbortController()
   let visitorSpeaking = false
   let speechSettledAt = 0
   let idleRetryTimer: ReturnType<typeof setTimeout> | undefined
@@ -589,6 +601,10 @@ export function createRealtimeSession(
   async function studioRequest(request: StudioRequest): Promise<StudioReply | null> {
     if (closed || !input.onStudioRequest) return null
     try { return await input.onStudioRequest(request, studioIdentity()) } catch { return null }
+  }
+  async function imageRequest(request: ImageSkillRequest): Promise<ImageSkillReply> {
+    try { return await input.onImageRequest?.(request, studioIdentity()) ?? { status: 'failed', code: 'image_unavailable' } }
+    catch { return { status: 'failed', code: 'image_unavailable' } }
   }
   const sleepToolNames = new Set(toolSpecs.filter(spec => spec.handler === 'return_to_dormant').map(spec => spec.name))
   const mediaToolNames = new Set(toolSpecs.filter(spec => ['play', 'find_media', 'search_youtube', 'play_media', 'play_youtube', 'stop_media'].includes(spec.handler)).map(spec => spec.name))
@@ -652,6 +668,7 @@ export function createRealtimeSession(
     const studioTool = async (request: StudioRequest) => {
       // A spoken command owns this turn; a studio call from its cancelled reply is stale.
       if (closed || !studioActive || commandTurnOwned) return { outcome: 'ignored' as const, studio: { status: 'ignored' as const, code: 'studio_not_active_stale' } }
+      if (imagePhotoPending && request.action !== 'exit') return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: 'studio_photo_pending' } }
       const reply = await studioRequest(request)
       if (!reply) return { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable' } }
       return { outcome: reply.status, studio: reply }
@@ -661,7 +678,35 @@ export function createRealtimeSession(
       emitMetadata(input, 'realtime_observer_event', 'info', 'studio_visitor_reply_missing', sessionGeneration, createdAt)
       return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: 'studio_visitor_reply_missing' } }
     }
+    const imageTool = async (request: ImageSkillRequest) => {
+      if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || memoryDialogue.active || pendingQuestion
+        || !visitorInputs || (imagePhotoPending && request.action !== 'dismiss'
+          && !(cameraViewingPending && request.action === 'generate' && request.source === 'photo'))) return { outcome: 'ignored' as const, spoken: true, image: { status: 'ignored' as const, code: 'image_request_stale' } }
+      if (request.action === 'edit' && (imageClosed || visitorInputs <= imageRevealInputs)) return { outcome: 'rejected' as const, image: { status: 'rejected' as const, code: 'image_not_available' } }
+      if (['generate', 'edit', 'studio_photo'].includes(request.action)) {
+        if (imageLastRequestInputs === visitorInputs) return { outcome: 'ignored' as const, spoken: true, image: { status: 'ignored' as const, code: 'image_request_stale' } }
+        imageLastRequestInputs = visitorInputs
+      }
+      if (memoryLatestItem) memoryInput('control', memoryLatestItem)
+      if ('language' in request) {
+        // A completed visitor sentence wins over a guessed tool argument.
+        // Before final ASR (or for a short fragment), retain the native tool's hint.
+        const detected = localSearchClue?.generation === memoryTurnGeneration ? visitorSentenceLanguage(localSearchClue.text) : null
+        if (detected) request = { ...request, language: detected === 'english' ? 'en' : 'zh' }
+        replyLanguage = request.language === 'en' ? 'english' : 'chinese'
+      }
+      cameraViewingPending = request.action === 'camera_permission'
+      const photo = request.action === 'camera_permission' || request.action === 'studio_photo' || request.action === 'generate' && request.source === 'photo'
+      if (photo) imagePhotoPending = true
+      const image = await imageRequest(request)
+      if (photo && image.code !== 'image_consent_pending') imagePhotoPending = false
+      return { outcome: image.status, image }
+    }
     const toolHandlers: Record<string, RealtimeToolHandler> = {
+      create_image: args => imageTool({ action: 'generate', prompt: args.prompt as string, picture: args.picture as 'portrait' | 'sticker', source: args.source as 'description' | 'photo', language: args.language as 'zh' | 'en' }),
+      edit_image: args => imageTool({ action: 'edit', prompt: args.prompt as string, language: args.language as 'zh' | 'en' }),
+      dismiss_image: () => imageTool({ action: 'dismiss' }),
+      studio_use_photo: args => imageTool({ action: 'studio_photo', language: args.language as 'zh' | 'en' }),
       start_portrait_studio: async () => {
         // Duplicate or stale starts stay silent (background results), never an unguided reply.
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || studioActive) {
@@ -673,6 +718,7 @@ export function createRealtimeSession(
           return { outcome: 'rejected', studio: { status: 'rejected', code: 'studio_identity_question_pending', next: PORTRAIT_STUDIO.guidance.identityPending } }
         }
         const unavailable = { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable', next: studioPrompt(input.avatar?.experience?.studio, 'unavailable') } }
+        if (input.onImageRequest) await imageRequest({ action: 'dismiss' })
         const reply = await studioRequest({ action: 'start', source: 'visitor' })
         if (!reply) return unavailable
         // The swap precedes the tool output, so the studio agent asks the name question.
@@ -754,16 +800,8 @@ export function createRealtimeSession(
         return { outcome: memory.status, memory }
       },
       capture_camera: async () => {
-        const generation = memoryTurnGeneration
-        if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || !input.onCameraCapture) return 'ignored'
-        const frame = await withWorking(() => input.onCameraCapture!({ realtimeSessionId: input.sessionId, sessionGeneration }))
-        if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) {
-          emitMetadata(input, 'realtime_observer_event', 'info', 'camera_result_stale', sessionGeneration, createdAt)
-          return 'ignored'
-        }
-        if (!frame) return 'failed'
-        session.addImage(frame.dataUrl, { triggerResponse: false })
-        return 'accepted'
+        if (!input.onCameraCapture || !input.onImageRequest) return 'failed'
+        return imageTool({ action: 'camera_permission', language: replyLanguage === 'english' ? 'en' : 'zh' })
       },
       find_media: async args => {
         const generation = memoryTurnGeneration
@@ -822,6 +860,7 @@ export function createRealtimeSession(
       },
       return_to_dormant: async () => {
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || farewellRequested) return 'ignored'
+        if (input.onImageRequest) await imageRequest({ action: 'dismiss' })
         // Cut off a premature acknowledgement and require the farewell's own
         // output start/end pair, never the previous response's completion.
         const wasPlaying = returnToDormantAudioStarted
@@ -1247,8 +1286,12 @@ export function createRealtimeSession(
       const response = readProperty(event, 'response')
       const metadata = readProperty(response, 'metadata')
       // A studio reveal is application speech: command-turn suppression never cancels it.
-      const applicationOwned = ['mirror_scene_cue', 'mirror_sleep_cue', 'mirror_memory_question', 'mirror_studio'].some(key => typeof readProperty(metadata, key) === 'string')
+      const applicationOwned = ['mirror_scene_cue', 'mirror_sleep_cue', 'mirror_memory_question', 'mirror_studio', 'mirror_image'].some(key => typeof readProperty(metadata, key) === 'string')
       const ownedResponseId = readProperty(response, 'id')
+      if (type === 'response.created' && typeof ownedResponseId === 'string' && !audioResponseOrder.has(ownedResponseId)) {
+        audioResponseOrder.set(ownedResponseId, ++nextAudioResponseOrder)
+        if (audioResponseOrder.size > 128) audioResponseOrder.delete(audioResponseOrder.keys().next().value!)
+      }
       if (type === 'response.done' && typeof ownedResponseId === 'string') commandCandidate?.cancelled.delete(ownedResponseId)
       if (applicationOwned && typeof ownedResponseId === 'string') {
         applicationResponses.add(ownedResponseId)
@@ -1298,7 +1341,7 @@ export function createRealtimeSession(
           // words. An unsolicited/rejected model save must not erase ordinary evidence.
           const hasControl = Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call'
             && (sleepToolNames.has(readProperty(item, 'name') as string) || mediaToolNames.has(readProperty(item, 'name') as string)
-              || studioToolNames.has(readProperty(item, 'name') as string)))
+              || studioToolNames.has(readProperty(item, 'name') as string) || imageHandlers.has(readProperty(item, 'name') as string)))
           // Studio turns (name and answers) never reach memory extraction (owner ruling R5, invariant 6).
           if (itemId && (hasControl || studioActive || studioTurnItems.has(itemId))) memoryInput('control', itemId)
           // Application studio replies (the reveal) have no visitor turn; their metadata marks them.
@@ -1313,6 +1356,9 @@ export function createRealtimeSession(
           if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio') === 'reveal' && studioRevealImageItem) {
             // The downscaled image served one reveal; keep it out of later billed context.
             deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined
+          }
+          if (type === 'response.done' && readProperty(metadata, 'mirror_image') === 'reveal' && imageRevealItem) {
+            deleteConversationItem(imageRevealItem, 'image'); imageRevealItem = undefined
           }
           if (itemId && readProperty(response, 'status') === 'completed') memoryInput('settled', itemId)
           askPendingQuestion()
@@ -1349,11 +1395,20 @@ export function createRealtimeSession(
     if (type === 'output_audio_buffer.stopped' || type === 'output_audio_buffer.cleared') {
       const responseId = readProperty(event, 'response_id')
       if (typeof responseId === 'string') {
-        memoryAudioResponses.delete(responseId)
-        audioResponseInputs.delete(responseId)
+        // WebRTC may join a tool preamble and its follow-up in one output
+        // buffer, then report only the last response when it drains. Retire
+        // completed earlier replies too; newer or still-generating replies
+        // retain ownership and cannot be interrupted by queued image speech.
+        const order = audioResponseOrder.get(responseId)
+        const drained = [responseId, ...[...memoryAudioResponses].filter(id => id !== responseId
+          && order !== undefined && (audioResponseOrder.get(id) ?? Infinity) < order && !activeMemoryResponses.has(id))]
+        for (const id of drained) {
+          memoryAudioResponses.delete(id)
+          audioResponseInputs.delete(id)
+          finishedMemoryAudio.add(id)
+        }
         // Playback completion can precede a late/duplicate response.done.
-        finishedMemoryAudio.add(responseId)
-        if (finishedMemoryAudio.size > 128) finishedMemoryAudio.delete(finishedMemoryAudio.values().next().value!)
+        while (finishedMemoryAudio.size > 128) finishedMemoryAudio.delete(finishedMemoryAudio.values().next().value!)
       }
       resumeRevisedCommand()
       if (pendingQuestion) void Promise.resolve(input.waitForOutputTail?.()).then(askPendingQuestion)
@@ -1505,6 +1560,7 @@ export function createRealtimeSession(
       memoryTurnGeneration++
       memoryLatestItem = typeof itemId === 'string' ? itemId : ''
       memoryInput('speech', memoryLatestItem)
+      if (imageConsent) { commandTurnOwned = true; memoryInput('control', memoryLatestItem) }
       cancelPendingGreeting('wake_greeting_cancelled_visitor_speech')
       if (studioActive) rememberStudioTurn(memoryLatestItem)
       visitorSpeaking = true
@@ -1592,6 +1648,18 @@ export function createRealtimeSession(
       }
       finalCommandInputs.add(itemId)
       if (finalCommandInputs.size > 128) finalCommandInputs.delete(finalCommandInputs.values().next().value!)
+      if (imageConsent && (!memoryLatestItem || memoryLatestItem === itemId)) {
+        const consent = imageConsent
+        commandTurnOwned = true; memoryInput('control', itemId)
+        notifyAudioActivity('interrupted')
+        void Promise.resolve(session.interrupt()).catch(() => undefined)
+        if (consent.armed && visitorInputs > consent.startedInputs) {
+          consent.armed = false
+          void imageRequest({ action: 'photo_reply', ticket: consent.ticket, text: transcript.slice(0, 1000), itemId })
+            .then(result => { if (imageConsent === consent && result.code !== 'image_consent_not_ready') imageConsent = undefined })
+        } else emitMetadata(input, 'realtime_observer_event', 'info', 'image_consent_early_reply', sessionGeneration, createdAt)
+        return
+      }
       if (mediaPlaybackActive) rememberMediaInput(itemId)
       const mediaInput = mediaInputItems.has(itemId)
       if (mediaInput) {
@@ -1885,6 +1953,7 @@ export function createRealtimeSession(
     if (closePromise !== null) return closePromise
     cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
+    imageCues.abort(); imageConsent?.abort.abort(); imageConsent = undefined; imagePhotoPending = false; imageClosed = true
     clearCommandCandidate()
     pendingQuestion = undefined
     memoryDialogue.close()
@@ -2032,6 +2101,7 @@ export function createRealtimeSession(
   function setMediaPlayback(active: boolean): void {
     if (closed || mediaPlaybackActive === active) return
     mediaPlaybackActive = active
+    if (active) void imageRequest({ action: 'dismiss' })
     // speech_stopped is ignored during media; never keep a stale speaking flag across it.
     visitorSpeaking = false
     if (!active && idleTasks.length) queueMicrotask(runIdleTasks)
@@ -2369,6 +2439,104 @@ export function createRealtimeSession(
     void exitStudio()
   }
 
+  function imageEvent(event: ImageSkillEvent, identity: StudioEventIdentity): void {
+    if (closed || identity.realtimeSessionId !== input.sessionId || identity.sessionGeneration !== sessionGeneration) {
+      emitMetadata(input, 'realtime_observer_event', 'info', 'image_event_stale', sessionGeneration, createdAt); return
+    }
+    if (event.event === 'camera_approved') {
+      if (imageRun !== event.id || closed || mediaPlaybackActive || returnToDormantPending || !input.onCameraCapture) return
+      imageRun = ''
+      const generation = memoryTurnGeneration, ownedAtCapture = commandTurnOwned
+      const stale = () => closed || commandTurnOwned && !ownedAtCapture || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration
+      void withWorking(() => input.onCameraCapture!({ realtimeSessionId: input.sessionId, sessionGeneration })).then(frame => {
+        if (stale()) {
+          emitMetadata(input, 'realtime_observer_event', 'info', 'camera_result_stale', sessionGeneration, createdAt); return
+        }
+        if (frame) whenImageIdle(() => {
+          if (stale()) { emitMetadata(input, 'realtime_observer_event', 'info', 'camera_result_stale', sessionGeneration, createdAt); return false }
+          session.addImage(frame.dataUrl, { triggerResponse: false })
+          transport.sendEvent({ type: 'response.create', response: { instructions: `${baseInstructions}\n\n${IMAGE_SKILL.cameraAnswer}\n\n${IMAGE_SKILL.language[replyLanguage === 'english' ? 'en' : 'zh']}`,
+            tool_choice: 'none', metadata: { mirror_image: 'camera' } } })
+          return true
+        })
+        else speakVerbatim(IMAGE_SKILL.cameraUnavailable[replyLanguage === 'english' ? 'en' : 'zh'], imageCues.signal)
+      }).catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'camera_result_stale', sessionGeneration, createdAt))
+      return
+    }
+    if (event.event !== 'line' && imageStateItem) { deleteConversationItem(imageStateItem, 'turn'); imageStateItem = undefined }
+    if (event.event === 'closed') {
+      const consent = imageConsent
+      imageRun = event.id; imageClosed = true; imageConsent = undefined; imagePhotoPending = false; cameraViewingPending = false; imageUrl = ''
+      consent?.abort.abort()
+      if (imageRevealItem) { deleteConversationItem(imageRevealItem, 'image'); imageRevealItem = undefined }
+      // Application speech is out-of-band. Replace the model's stale pending
+      // state explicitly, without inventing a visitor turn or authorizing work.
+      imageStateItem = `imgstate_${sessionGeneration}_${++studioImageSequence}`.slice(0, 32)
+      try { transport.sendEvent({ type: 'conversation.item.create', item: { id: imageStateItem, type: 'message', role: 'system', content: [{ type: 'input_text', text: event.outcome === 'photo_attached' ? IMAGE_SKILL.studioPhotoAttached : IMAGE_SKILL.requestClosed }] } }) }
+      catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'image_state_update_failed', sessionGeneration, createdAt) }
+      return
+    }
+    imageRun = event.id
+    if (event.event === 'consent') {
+      imageClosed = false; imagePhotoPending = true
+      const previous = imageConsent
+      imageConsent = undefined; previous?.abort.abort()
+      const consent = { id: event.id, ticket: event.ticket, armed: false, startedInputs: visitorInputs, abort: new AbortController() }
+      imageConsent = consent
+      whenImageIdle(() => {
+        if (closed || imageConsent !== consent) return false
+        speakVerbatim(event.line, consent.abort.signal, completed => {
+          if (closed || imageConsent !== consent) return
+          if (!completed) { void imageRequest({ action: 'dismiss' }); return }
+          void imageRequest({ action: 'consent_ready', ticket: consent.ticket }).then(result => {
+            if (imageConsent === consent && result.status === 'accepted') { consent.armed = true; consent.startedInputs = visitorInputs }
+          })
+        })
+        return true
+      })
+      return
+    }
+    if (event.event === 'line') {
+      imageConsent = undefined; imagePhotoPending = false
+      whenImageIdle(() => {
+        if (closed || imageRun !== event.id) return false
+        speakVerbatim(event.line, imageCues.signal)
+        return true
+      })
+      return
+    }
+    imageClosed = false; imageConsent = undefined; imagePhotoPending = false; imageUrl = event.imageUrl; imageRevealInputs = visitorInputs
+    const current = () => !closed && !imageClosed && imageRun === event.id && imageUrl === event.imageUrl
+    void (async () => {
+      let dataUrl: string | null = null
+      try { dataUrl = await input.prepareStudioImage?.(event.imageUrl) ?? null } catch { /* spoken fallback below */ }
+      if (!current()) return
+      whenImageIdle(() => {
+        if (!current()) return false
+        try {
+          if (dataUrl) {
+            if (imageRevealItem) deleteConversationItem(imageRevealItem, 'image')
+            imageRevealItem = `image_${sessionGeneration}_${++studioImageSequence}`.slice(0, 32)
+            transport.sendEvent({ type: 'conversation.item.create', item: { id: imageRevealItem, type: 'message', role: 'user', content: [{ type: 'input_image', image_url: dataUrl }] } })
+          }
+          transport.sendEvent({ type: 'response.create', response: { instructions: `${baseInstructions}\n\n${dataUrl ? IMAGE_SKILL.reveal : IMAGE_SKILL.revealBlind}\n\n${IMAGE_SKILL.language[replyLanguage === 'english' ? 'en' : 'zh']}`,
+            tool_choice: 'none', metadata: { mirror_image: 'reveal' } } })
+          imageRevealInputs = visitorInputs
+          return true
+        } catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'image_reveal_failed', sessionGeneration, createdAt); return false }
+      })
+    })()
+  }
+
+  // Pictures may wait for conversation. Never force a reveal or permission
+  // question over an ongoing visitor turn or actual avatar playback.
+  function whenImageIdle(run: () => boolean | void): void {
+    whenIdle(() => {
+      if (visitorSpeaking || activeMemoryResponses.size || memoryAudioResponses.size || cues.size) { whenImageIdle(run); return false }
+      return run()
+    }, 30000)
+  }
+
   return Object.freeze({
     realtimeSessionId: input.sessionId,
     sessionGeneration,
@@ -2377,6 +2545,7 @@ export function createRealtimeSession(
     interrupt,
     setMediaPlayback,
     studioEvent,
+    imageEvent,
     close,
     speakVerbatim,
     claimControlTurn: (itemId: string) => { if (!memoryLatestItem || memoryLatestItem === itemId) commandTurnOwned = true },

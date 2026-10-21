@@ -177,6 +177,16 @@ body * { cursor: none !important; }
 /* ---------- Portrait Studio (rendered only while Active; Dormant stays black) ---------- */
 /* Sizes use cqw of a 9:16 panel: 1cqw = 10.8 px on the 1080 x 1920 mirror. */
 .mirror-presentation[data-studio-cover="true"] > .presentation { opacity: 0; transition: opacity 900ms ease; }
+.image-skill { position: absolute; inset: 0; z-index: 40; pointer-events: none; color: #f6eddc; font-family: system-ui, sans-serif; }
+.image-skill[data-picture="true"] { background: rgb(8 7 15 / 94%); }
+.image-skill__art { position: absolute; inset: 5% 7% 23%; display: grid; place-items: center; }
+.image-skill__art img { width: 100%; height: 100%; min-height: 0; object-fit: contain; border-radius: 12px; }
+.image-skill__status { position: absolute; bottom: 5%; left: 7%; right: 7%; padding: 22px; border: 1px solid #aa8e5b; border-radius: 16px; background: rgb(12 10 20 / 94%); text-align: center; font-size: clamp(17px, 2.6vh, 32px); }
+.image-skill__status p { margin: 0 0 16px; }
+.image-skill__permission { font-size: .72em; line-height: 1.55; color: #ddd1bc; }
+.image-skill__status button { pointer-events: auto; border: 1px solid #aa8e5b; border-radius: 100px; background: #29202e; color: inherit; padding: 10px 26px; font: inherit; font-size: .7em; cursor: pointer; }
+.image-skill__status button:focus-visible { outline: 3px solid #f2c575; outline-offset: 5px; }
+.image-skill[data-phase="revising"] .image-skill__art { opacity: .6; }
 .portrait-studio {
   --ps-ink: #e4def3; --ps-dim: #8f87a6; --ps-lilac: #d8d1ec; --ps-violet: #a68bd0; --ps-gold: #d8b46a;
   --ps-brush: "Kaiti TC", "BiauKai", "STKaiti", "Songti TC", serif;

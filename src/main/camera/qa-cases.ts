@@ -1,5 +1,6 @@
 /** Isolated experiment inputs. Never consulted by production capture. */
 export const CAMERA_QA_CASES = {
+  minimum: ['--qa-mode=minimum'],
   baseline: ['--qa-mode=vga15'],
   low5: ['--qa-mode=low5'],
   low15: ['--qa-mode=low15'],

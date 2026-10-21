@@ -68,6 +68,8 @@ import { canUseAvatarAction, canUseAvatarResource, type AvatarCatalog, type Avat
 import { ResourceAccess } from './ResourceAccess'
 import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
+import { SkillsEditor } from './SkillsEditor'
+import { imageGenerationEnabled } from '../../shared/avatar-skills'
 import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection, type SavedDraftRefresh } from './profile-workspace'
 import { ActiveAvatarPanel } from './ActiveAvatarPanel'
 import { MemoryPanel } from './MemoryPanel'
@@ -1817,6 +1819,8 @@ export function ScenesPanel({
       {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
       {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
       {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
+      {visible && section === 'Skills' && editingAvatar ? <SkillsEditor avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar} /> : null}
+      {visible && section === 'Interactive Studio' && editingAvatar && !imageGenerationEnabled(editingAvatar) && <p role="status">Image generation is off for this Avatar. Enable it in Skills to use Interactive Studio. You can still edit the story below.</p>}
       {visible && section === 'Interactive Studio' && <StudioServiceSummary bridge={bridge} visible={visible} onOpen={() => onPortraitImages?.()} />}
       {visible && section === 'Interactive Studio' && editingAvatar ? <ExperiencesEditor key={editingId} avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar}
         onEditGreeting={() => setSection('Persona')} /> : null}

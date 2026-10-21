@@ -80,6 +80,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   if (app.getPath('userData') !== resolve(input.outputDir, '../user-data') || !resolve(input.outputDir).startsWith(join(process.cwd(), '.artifacts/phase4-qa/'))) throw Error('raven_qa_isolation_required')
   const started = Date.now(), results: Result[] = []
   const physical = process.env['MIRROR_QA_PHYSICAL_DEVICES'] === '1'
+  const nativeCameraJourney = process.env['MIRROR_QA_NATIVE_CAMERA'] === '1'
+  const publicPortraitFixture = process.env['MIRROR_QA_PORTRAIT_FIXTURE'] === '1'
   const cameraWorkers = () => execFileSync('/bin/ps', ['-axo', 'ppid=,comm='], { encoding: 'utf8' })
     .split('\n').filter(line => {
       const fields = line.trim().match(/^(\d+)\s+(.+)$/)
@@ -90,11 +92,12 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const diagnosisCodes = ['asr_changed_meaning', 'missing_audible_output', 'tool_preamble', 'mechanism_narration', 'wrong_language', 'invented_fact', 'missed_correction', 'incomplete_answer', 'unnecessary_question', 'identity_question_conflict', 'private_context_leak', 'wrong_tool', 'playback_unproven', 'fixture_evidence_gap']
   const qualityDiagnostics: { scenario: string; turn: string; codes: string[] }[] = []
   const capabilityQuality: Record<string, Record<string, boolean>> = {}
-  let protocol: { inputText: number; asr: number; errors: string[]; errorStages: string[]; duplicateTranscriptEvents: number; repeatedDeletes: number } | undefined
+  let protocol: { inputText: number; asr: number; errors: string[]; errorStages: string[]; duplicateTranscriptEvents: number; repeatedDeletes: number; speechPlayback?: unknown[] } | undefined
   const toolTimingEvidence: unknown[] = []
   const acousticEvidence: { blocks: number; detections: number; beforeRms: number; maxRms: number; maxPeak: number; freshSamples: number; playbackCompleted: boolean; sink: 'default' | 'explicit'; output: string; backgroundMediaMuted: boolean; maxActivePaths: number; phraseMatches: boolean; cleanSourceDetections?: number; sourceDurationMs?: number }[] = []
   const spellRecognition: Record<string, unknown>[] = []
   const controlSpeech: Record<string, unknown>[] = []
+  const imageEvidence: Record<string, unknown> = {}
   // Portrait Studio metadata: phases, event names, Main reasons, timings and booleans; never names or answers.
   const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number
     customPaintingPromptFollowed?: boolean; story?: string; nameCorrections?: number; nameAsIntended?: boolean
@@ -125,8 +128,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const metadata = async () => {
       const observation = installed ? await observe().catch(() => null) : null
       const calls = observation?.tools.filter(c => c.stage === name && c.direction === 'call').map(c =>
-        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'capture_camera', 'return_to_dormant',
-          'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit'].includes(c.name ?? '') ? c.name!
+        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'look_at_surroundings', 'return_to_dormant',
+          'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit', 'create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'].includes(c.name ?? '') ? c.name!
           : c.name === 'memory' && ['identify', 'remember', 'recall', 'forget', 'policy', 'temporary'].includes(String(c.args?.action)) ? 'memory.' + String(c.args?.action) : 'unknown_tool') ?? []
       const records = observation?.records.filter(r => r.stage === name) ?? []
       const heard = records.filter(r => r.role === 'visitor').map(r => r.text).join(' '), spoken = spokenTexts.get(name)
@@ -174,6 +177,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     if (input.runtime.snapshot().lifecycle !== 'dormant') await button('Disconnect')
     await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'transport_release')
     await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'wake_microphone_acquired', 12000)
+    if (nativeCameraJourney) await wait(async () => cameraWorkers() === 0, 'camera_sleep_released', 8000)
   }
   const start = async () => {
     visit++; visitStarted = Date.now()
@@ -185,6 +189,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       return input.runtime.snapshot().lifecycle === 'active' && !!input.runtime.snapshot().realtimeSessionId && s.stops > before.stops && !s.active && !s.audio && Date.now() - s.last > 1800 && s.phase === 'awake'
     }, 'greeting')
     if ((await wakeInput())?.state !== 'inactive') throw Error('raven_qa_duplicate_microphone_owner')
+    if (nativeCameraJourney) await wait(async () => cameraWorkers() === 1, 'camera_awake_owned', 10000)
   }
   const speak = async (index: number, name: string, silent = false) => {
     spokenTexts.set(name, texts[index]!)
@@ -345,13 +350,16 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const storyFile = selection === 'portrait_studio' ? JSON.parse(await readFile(join(app.getPath('userData'), 'studio-qa-story.json'), 'utf8')) : null
   const story = storyFile ? studioQaStory(storyFile.story) : undefined
   if (storyFile && (storyFile.version !== 1 || !story || typeof storyFile.keepTranscript !== 'boolean')) throw Error('raven_qa_studio_story_invalid')
-  const keepTranscript = storyFile?.keepTranscript === true
+  const keepTranscript = storyFile?.keepTranscript === true && !nativeCameraJourney
   const persist = (running: boolean) => writeFile(join(input.outputDir, '..', 'raven-results.json'), JSON.stringify({ selection: selection || 'all', running, passed: !running && accepted,
     elapsedMs: Date.now() - started, results, quality, qualityDiagnostics, capabilityQuality, acousticEvidence, spellRecognition, controlSpeech, protocol, toolTimingEvidence, screenshots,
     ...(selection === 'portrait_studio' ? { studioEvidence } : {}),
-    route: physical ? 'mac_speaker_jabra_microphone_real_webrtc_and_native_camera' : 'synthetic_audio_real_webrtc_asr_tools_ipc_playback',
+    ...(selection === 'image_skill' ? { imageEvidence } : {}),
+    route: physical ? 'mac_speaker_jabra_microphone_real_webrtc_and_native_camera' : nativeCameraJourney ? 'synthetic_audio_real_webrtc_asr_tools_ipc_playback_native_camera' : 'synthetic_audio_real_webrtc_asr_tools_ipc_playback',
+    ...(nativeCameraJourney || publicPortraitFixture ? { imageRetention: publicPortraitFixture ? 'public_fixture_derived_qa_screenshots_only' : 'none_including_derived_artwork_and_screenshots',
+      portraitSource: publicPortraitFixture ? nativeCameraJourney ? 'public_fixture_after_fresh_native_capture' : 'owner_authorized_public_fixture_native_verified_separately' : 'native_camera' } : {}),
     transcriptRetention: keepTranscript ? 'synthetic_owner_review' : 'none', humanAcousticAcceptance: 'not_executed' }, null, 2))
-  if (selection && !['additional_capabilities', 'camera', 'media_stop', 'portrait_studio'].includes(selection) && !RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)) throw Error('raven_qa_scenario_invalid')
+  if (selection && !['additional_capabilities', 'camera', 'media_stop', 'portrait_studio', 'image_skill'].includes(selection) && !RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)) throw Error('raven_qa_scenario_invalid')
   // Character stress has its own selected run; retain the full suite's bounded
   // budget and case mix instead of silently adding another ten spoken turns.
   const scenarios = [...RAVEN_CONVERSATION_SCENARIOS.filter(s => s.id !== 'identity_denial'
@@ -372,8 +380,21 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     mediaAfterStop: texts.push('Can we keep talking? Tell me one brief fact about rain.') - 1,
     camera: texts.push(physical ? '請看一下攝影機，用兩句話描述眼前看得清楚的物品，不必猜測人物身分。'
       : 'Look through the camera. What two colored shapes can you see, and which one is on the left?') - 1,
+    cameraYes: texts.push(physical ? '使用我的照片。' : 'Use my photo.') - 1,
     bargePrompt: texts.push('Tell me three different ways to prepare for a small exhibition, and explain the advantages of each.') - 1,
     bargeInterrupt: texts.push('Stop there. I changed my mind. Please give me just one small step I can finish in ten minutes.') - 1,
+    ...(selection === 'image_skill' ? {
+      imageDraw: texts.push('Please create a full picture of a red fox beside a blue lake at sunset. Keep chatting with me; I do not want the guided Studio.') - 1,
+      imageChat: texts.push('While you draw, tell me one short interesting fact about foxes.') - 1,
+      imageEdit: texts.push('Please change the sky in that picture to purple, keeping the fox and lake.') - 1,
+      imageDismiss: texts.push('Please dismiss the picture.') - 1,
+      imagePhoto: texts.push('Please take a fresh photo of me and use it to make a full picture of me as a forest wizard.') - 1,
+      imageNo: texts.push('Cancel.') - 1,
+      imageYes: texts.push('Use my photo.') - 1,
+      imagePhotoEdit: texts.push('Please change the wizard hat in the picture to blue.') - 1,
+      imageAfter: texts.push('Now that the picture is dismissed, tell me one short fact about owls.') - 1,
+      imageSleep: texts.push(avatar.sleepPhrase!) - 1,
+    } : {}),
     ...(story ? {
       ...(story.visitor.request ? { studioRequest: texts.push(story.visitor.request) - 1 } : {}),
       ...(story.visitor.name ? { studioName: texts.push(story.visitor.name.say) - 1,
@@ -381,6 +402,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       ...Object.fromEntries(story.visitor.answers.map((answer, i) => [`studioAnswer${i + 1}`, texts.push(answer) - 1])),
       ...Object.fromEntries(story.visitor.changes.map((change, i) => [`studioChange${i + 1}`, texts.push(change) - 1])),
       studioThanks: texts.push(story.visitor.thanks) - 1,
+      ...(storyFile?.photo ? { studioPhoto: texts.push('請先拍我的新照片，用我的樣子來畫這次工作室的畫。') - 1,
+        studioPhotoNo: texts.push('取消。') - 1, studioPhotoYes: texts.push('使用我的照片。') - 1 } : {}),
     } : {}),
   } as Record<string, number>
   const model = (await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
@@ -687,6 +710,103 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       }
       await check('media_stop_release', stop)
     }
+    if (selection === 'image_skill') {
+      const began = Date.now()
+      await evaluate(`const q=window.__ravenQa;q.imageViews=[];q.imageEvents=[];q.unsubscribeImages=window.magicMirror.onAvatarControl(c=>{
+        if(c.type==='image_view')q.imageViews.push({phase:c.view?.phase??null,at:Date.now()});
+        if(c.type==='image_event')q.imageEvents.push({event:c.event.event,at:Date.now()})})`)
+      const phase = () => evaluate<string | null>(`return window.__ravenQa.imageViews.at(-1)?.phase??null`)
+      const readyCount = () => evaluate<number>(`return window.__ravenQa.imageEvents.filter(e=>e.event==='ready').length`)
+      const settled = async () => { const s = await state(); return !s.active && !s.audio && Date.now() - s.last > 1800 }
+      const used = async (stage: string, name: string) => (await observe()).tools.some(c => c.stage === stage && c.direction === 'call' && c.name === name)
+      const turn = async (key: string, stage: string, tool?: string, silent = false) => {
+        await speak(extra[key]!, stage, silent)
+        if (tool && !await used(stage, tool)) {
+          const observed = await observe(), heard = observed.records.filter(r => r.stage === stage && r.role === 'visitor').map(r => r.text).join(' ')
+          imageEvidence.missingTool = { stage, expected: tool,
+            heardExact: mediaClueKey(heard) === mediaClueKey(texts[extra[key]!]!),
+            replies: observed.records.filter(r => r.stage === stage && r.role === 'avatar').length,
+            calls: observed.tools.filter(c => c.direction === 'call').map(c => ({ stage: c.stage, name: c.name })),
+            inputClock: await evaluate<string>(`return window.__ravenQa.input.context.state`) }
+          throw Error('raven_qa_image_tool_missing')
+        }
+      }
+      const shot = async (name: string) => { if (!nativeCameraJourney || publicPortraitFixture) { await capture(input.mirror, input.outputDir, `image-${name}.png`); screenshots++ } }
+      const reveal = async (count: number, name: string) => {
+        await wait(async () => await readyCount() === count && await phase() === 'ready', 'image_ready', 240000)
+        await wait(() => evaluate<boolean>(`const q=window.__ravenQa,id=q.imageReveals[${count - 1}];return !!id&&q.records.some(r=>r.role==='avatar'&&r.responseId===id)&&(q.audibleResponses.has(id)||q.continuedAudioResponses.has(id))`), 'image_spoken_reveal', 60000)
+        await wait(settled, 'image_reveal_settled', 60000)
+        if (!await evaluate<boolean>(`const q=window.__ravenQa;return q.imageAttachments===${count}&&q.deletes.filter(id=>id.startsWith('image_')).length===${count}`)) throw Error('raven_qa_image_grounding_cleanup')
+        if (!await evaluate<boolean>(`const img=document.querySelector('.image-skill__art img');return !!img?.complete&&img.naturalWidth>0&&img.naturalHeight>0`)) throw Error('raven_qa_image_display_missing')
+        await shot(name)
+      }
+      let good = await check('image_conversation_start', start)
+      if (good) good = await check('image_create_in_conversation', async () => {
+        const stage = 'image_create_in_conversation'
+        spokenTexts.set(stage, texts[extra.imageDraw!]!)
+        await evaluate(`window.__ravenQa.stage=${JSON.stringify(stage)}`)
+        await playSpeech(extra.imageDraw!)
+        await wait(async () => await used(stage, 'create_image') && await phase() === 'painting', 'image_painting_started')
+        await wait(() => evaluate<boolean>(`return document.querySelector('.image-skill')?.getAttribute('data-phase')==='painting'`), 'image_painting_rendered', 5000)
+        imageEvidence.requestLanguage = (await observe()).tools.find(c => c.stage === stage && c.name === 'create_image')?.args?.language
+        imageEvidence.renderLanguage = await evaluate<string | null>(`return document.querySelector('.image-skill')?.getAttribute('lang')??null`)
+        if (!await evaluate<boolean>(`return document.querySelector('.image-skill')?.getAttribute('lang')==='en'`)) throw Error('raven_qa_image_language')
+        if ((await observe()).tools.some(c => c.at >= began && c.name === 'start_portrait_studio')) throw Error('raven_qa_image_entered_studio')
+        await shot('painting')
+      })
+      if (good) good = await check('image_chat_while_painting', async () => {
+        imageEvidence.chatStartedDuringPainting = await phase() === 'painting'
+        if (!imageEvidence.chatStartedDuringPainting) throw Error('raven_qa_image_painting_overlap_missing')
+        try { await turn('imageChat', 'image_chat_while_painting') }
+        catch (error) {
+          imageEvidence.chatCompletionTimeout = await evaluate(`const q=window.__ravenQa;return {
+            activeResponses:q.active,pendingResponses:q.pendingResponses,openToolCalls:q.openCalls.size,
+            audioPlaying:q.audio,outputStops:q.stops,asr:q.asr,lastEventAgeMs:Date.now()-q.last,
+            completedResponses:q.usage.length,toolResults:q.tools.filter(c=>c.direction==='result').length,
+            imagePhase:q.imageViews.at(-1)?.phase??null}`)
+          throw error
+        }
+      })
+      if (good) good = await check('image_first_reveal', () => reveal(1, 'reveal'))
+      if (good) good = await check('image_edit', async () => { await turn('imageEdit', 'image_edit', 'edit_image'); await reveal(2, 'revision') })
+      if (good) good = await check('image_dismiss', async () => { await turn('imageDismiss', 'image_dismiss', 'dismiss_image'); await wait(async () => await phase() === null, 'image_dismissed') })
+      if (good) good = await check('image_photo_decline', async () => {
+        const since = Date.now()
+        await turn('imagePhoto', 'image_photo_request_decline', 'create_image')
+        await wait(async () => await phase() === 'consent', 'image_consent')
+        await shot('permission')
+        await turn('imageNo', 'image_photo_decline', undefined, true)
+        await wait(async () => await phase() === null, 'image_photo_declined')
+        if (events(since).some(e => e.reason === 'image_photo_captured' || e.reason === 'image_photo_approved' || e.reason === 'camera_frame_captured')) throw Error('raven_qa_photo_without_permission')
+      })
+      if (good) good = await check('image_photo_create', async () => {
+        const since = Date.now()
+        await turn('imagePhoto', 'image_photo_request_approve', 'create_image')
+        await wait(async () => await phase() === 'consent', 'image_consent')
+        if (events(since).some(e => e.reason === 'image_photo_captured' || e.reason === 'camera_frame_captured')) throw Error('raven_qa_photo_without_permission')
+        await turn('imageYes', 'image_photo_approve', undefined, true)
+        await reveal(3, 'photo-reveal')
+        const reasons = events(since).map(e => e.reason)
+        if (!reasons.includes('image_photo_approved') || !reasons.includes('image_photo_captured') || !reasons.includes('image_photo_ready')) throw Error('raven_qa_photo_flow_missing')
+      })
+      if (good) good = await check('image_photo_edit', async () => { await turn('imagePhotoEdit', 'image_photo_edit', 'edit_image'); await reveal(4, 'photo-revision') })
+      if (good) good = await check('image_return_to_chat', async () => {
+        await turn('imageDismiss', 'image_final_dismiss', 'dismiss_image')
+        await turn('imageAfter', 'image_return_to_chat')
+        if (await phase() !== null || input.runtime.snapshot().lifecycle !== 'active') throw Error('raven_qa_image_conversation_not_restored')
+        await shot('conversation')
+      })
+      if (good) await check('image_sleep_release', async () => {
+        await turn('imageSleep', 'image_sleep_release', 'return_to_dormant')
+        await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'image_sleep_release')
+      })
+      Object.assign(imageEvidence, await evaluate(`const q=window.__ravenQa;return {ready:q.imageEvents.filter(e=>e.event==='ready').length,
+        requests:q.imageRevealRequests,attached:q.imageAttachments,deleted:q.deletes.filter(id=>id.startsWith('image_')).length,
+        reveals:q.imageReveals.map(id=>({created:!!id,transcript:q.records.some(r=>r.role==='avatar'&&r.responseId===id),
+          played:q.audibleResponses.has(id)||q.continuedAudioResponses.has(id)}))}`))
+      await evaluate('window.__ravenQa.unsubscribeImages?.()')
+      await check('image_cleanup', stop)
+    }
     if (selection === 'portrait_studio' && story) {
       // A complete Interactive Studio visit with real provider dialogue and real Main painting on
       // the owner's ChatGPT plan, for the selected story: Mirror mode Interactive Studio → wake
@@ -704,7 +824,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const calls = async (stage: string) => (await observe()).tools.filter(c => c.stage === stage && c.direction === 'call').map(c => c.name)
       const settled = async () => { const s = await state(); return !s.active && !s.audio && Date.now() - s.last > 1800 }
       const reveals = () => evaluate<number>('return window.__ravenQa.studioReveals')
-      const shot = async (name: string) => { await capture(input.mirror, input.outputDir, `studio-${name}.png`); screenshots++ }
+      const shot = async (name: string) => { if (!nativeCameraJourney || publicPortraitFixture) { await capture(input.mirror, input.outputDir, `studio-${name}.png`); screenshots++ } }
       // The picture itself, only for an owner review of a synthetic visit.
       const picture = async (name: string) => {
         if (!keepTranscript) return
@@ -770,7 +890,23 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (input.runtime.snapshot().lifecycle !== 'active' || input.runtime.snapshot().realtimeSessionId !== session
           || !phases.includes(await phase() ?? '') || (await wakeInput())?.state !== 'inactive') throw Error('raven_qa_console_disturbed_visit')
       }
-      const remoteChecked = named && await check('studio_remote_console', () => operator('show_console_main', besideMirror, ['question']))
+      let photoReady = named
+      if (photoReady && storyFile?.photo) photoReady = await check('studio_photo_permission_and_capture', async () => {
+        const photoPhase = () => evaluate<string | null>(`return document.querySelector('.image-skill')?.getAttribute('data-phase')??null`)
+        const since = Date.now()
+        await turn(extra.studioPhoto!, 'studio_photo_request_decline', 'studio_use_photo')
+        await wait(async () => await photoPhase() === 'consent', 'studio_photo_consent')
+        await speak(extra.studioPhotoNo!, 'studio_photo_decline', true)
+        await wait(async () => await photoPhase() === null, 'studio_photo_declined')
+        if (events(since).some(e => e.reason === 'image_photo_captured' || e.reason === 'camera_frame_captured')) throw Error('raven_qa_studio_photo_without_permission')
+        await turn(extra.studioPhoto!, 'studio_photo_request_approve', 'studio_use_photo')
+        await speak(extra.studioPhotoYes!, 'studio_photo_approve', true)
+        await wait(async () => events(since).some(e => e.reason === 'studio_photo_attached'), 'studio_photo_attached')
+        await wait(settled, 'studio_photo_settled')
+        if (await phase() !== 'question') throw Error('raven_qa_studio_photo_changed_step')
+        await shot('photo-attached')
+      })
+      const remoteChecked = photoReady && await check('studio_remote_console', () => operator('show_console_main', besideMirror, ['question']))
       let answered = remoteChecked
       for (let i = 0; answered && i < story.visitor.answers.length; i++) {
         answered = await check(`studio_answer_${i + 1}`, async () => turn(extra[`studioAnswer${i + 1}`]!, `studio_answer_${i + 1}`, 'studio_answer'))
@@ -851,10 +987,11 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l !== expected).length }
         if (studioEvidence.language.mismatched) throw Error('raven_qa_studio_language_mismatch')
       })
-      // Every picture has the configured shape: a sticker is a square PNG with see-through corners.
+      // Shape/format are integration gates. Keep measured alpha metadata; provider
+      // transparency variability is not an app defect (owner ruling 2026-10-21).
       if (studioEvidence.pictures?.length) await check('studio_picture_format', async () => {
         const sticker = studioPictureType(studioSettings) === 'sticker'
-        if (!studioEvidence.pictures!.every(p => sticker ? p.type === 'image/png' && p.width === p.height && p.cornerAlpha === 0 : p.height > p.width))
+        if (!studioEvidence.pictures!.every(p => sticker ? p.type === 'image/png' && p.width === p.height : p.height > p.width))
           throw Error('raven_qa_studio_picture_format')
       })
       // Each repaint is announced once: a spoken preamble, or else the change result's reply.
@@ -939,7 +1076,17 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     }
     }
     await check('camera_visual_question', async () => {
+      const since = Date.now()
       await speak(extra.camera, 'camera_visual_question')
+      await wait(async () => await evaluate<string | null>(`return document.querySelector('.image-skill')?.getAttribute('data-phase')??null`) === 'consent', 'camera_consent_ready')
+      if (events(since).some(e => e.reason === 'camera_frame_captured')) throw Error('raven_qa_camera_without_permission')
+      await speak(extra.cameraYes, 'camera_visual_approval', true)
+      await wait(async () => events(since).some(e => e.reason === 'camera_frame_captured'), 'camera_capture')
+      await wait(async () => {
+        const s = await state()
+        return !s.active && !s.audio && Date.now() - s.last > 1800
+          && (await observe()).records.some(r => r.stage === 'camera_visual_approval' && r.role === 'avatar' && r.audible !== false)
+      }, 'camera_answer_settled')
       const observation = await observe()
       if (physical) {
         const heard = observation.records.filter(r => r.stage === 'camera_visual_question' && r.role === 'visitor').map(r => r.text).join(' ')
@@ -947,13 +1094,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!capabilityQuality.cameraInput.judged) input.onEvidence({ step: 'camera_input_diagnostic',
           status: 'unavailable', item: 'raven_qa_camera_input_judge_unavailable' })
       }
-      const call = observation.tools.find(c => c.stage === 'camera_visual_question' && c.name === 'capture_camera')
+      const call = observation.tools.find(c => c.stage === 'camera_visual_question' && c.name === 'look_at_surroundings')
       if (!call) throw Error('raven_qa_camera_not_called')
       const result = observation.tools.find(c => c.direction === 'result' && c.callId === call.callId)?.result as { status?: string } | undefined
       if (result?.status !== 'accepted') throw Error('raven_qa_camera_not_added')
-      const reply = observation.records.filter(r => r.stage === 'camera_visual_question' && r.role === 'avatar' && r.audible !== false).map(r => r.text).join(' ')
+      const reply = observation.records.filter(r => r.stage === 'camera_visual_approval' && r.role === 'avatar' && r.audible !== false).map(r => r.text).join(' ')
       if (physical) {
-        const image = await evaluate<string | undefined>(`return window.__ravenQa.images.find(i=>i.stage==='camera_visual_question')?.image`)
+        const image = await evaluate<string | undefined>(`return window.__ravenQa.images.find(i=>i.stage==='camera_visual_approval')?.image`)
         if (!image) throw Error('raven_qa_camera_image_unobserved')
         const fields = ['answersFromImage', 'objectsGrounded', 'noIdentityInference', 'noInventedPrecision']
         const schema = { type: 'object', properties: Object.fromEntries(fields.map(key => [key, { type: 'boolean' }])), required: fields, additionalProperties: false }
@@ -999,6 +1146,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const observation = await observe()
     // Provider error codes/types and the QA stage they arrived in: metadata only, never messages.
     protocol = { inputText: observation.inputText, asr: observation.records.filter(r => r.role === 'visitor').length, errors: observation.errors,
+      speechPlayback: await evaluate<unknown[]>('return window.__ravenQa.speechPlayback'),
       errorStages: await evaluate<string[]>('return window.__ravenQa.errorStages'),
       repeatedDeletes: await evaluate<number>('const d=window.__ravenQa.deletes;return d.length-new Set(d).size'), duplicateTranscriptEvents: await evaluate<number>('return window.__ravenQa.duplicateTranscriptEvents') }
     // Skipped prerequisite-dependent turns are not missing ASR. Their own

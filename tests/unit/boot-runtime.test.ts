@@ -375,6 +375,49 @@ describe('Main lifecycle remediation', () => {
     expect(runtime.getAvatarModelForRuntime('model-test')).toBeUndefined()
     await runtime.shutdown()
   })
+  it('pins skill authorization across publication and applies the new selection at the next conversation', async () => {
+    const source = JSON.parse(readFileSync('resources/config/default.json', 'utf8')) as MirrorConfig
+    source.avatarCatalog = avatarCatalogFor(source)
+    const files = new Map<string, string>([['/skills-default.json', JSON.stringify(source)]])
+    const service = createConfigService({ configDir: '/skills-config', defaultConfigPath: '/skills-default.json',
+      files: { ensureDirectory: async () => {}, readText: async path => files.get(path) ?? null, remove: async path => { files.delete(path) } },
+      atomicWriter: { write: async (path, value) => { files.set(path, value) } }, events: { emit() {} } })
+    const runtime = createTestRuntime({ configService: service, useRealResolution: true, currentMirrorMode: () => 'studio',
+      clientSecretBroker: { issue: async () => ({ value: 'synthetic-secret', expiresAt: 9999999999 }), probeModelAvailability: async () => ({ status: 'available' }) } })
+    await startRuntime(runtime)
+    const first = await runtime.requestRealtimeClientSecret()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'start', status: 'success', reason: 'connected' })
+    expect(first.avatar?.skills?.imageGeneration).toBe(true)
+    const draft = structuredClone((await service.read()).draft)
+    draft.avatarCatalog!.avatars[0]!.skills = { imageGeneration: false }
+    await service.saveDraft(draft)
+    const config = await runtime.console.getConfig()
+    expect((await runtime.console.testDraft()).ok).toBe(true)
+    if (!config.ok) throw Error('synthetic_config_unavailable')
+    const diff = config.value.publishDiff
+    expect((await runtime.console.publish({ operation: diff.operation, expectedActiveVersion: diff.expectedActiveVersion,
+      changedPaths: diff.changed.map(c => c.path).sort(), nonModelChanges: diff.nonModelChanges, confirmationDigest: diff.confirmationDigest })).ok).toBe(true)
+    expect(runtime.getAvatarSkillsForRuntime().imageGeneration).toBe(false)
+    expect(runtime.getAvatarSkillsForRuntime(first.identity).imageGeneration).toBe(true)
+    expect((await runtime.requestRealtimeClientSecret()).avatar?.skills?.imageGeneration).toBe(true)
+    expect((await runtime.getPublishedWakeConfigForRuntime()).phrase).toBe(source.wake.phrase)
+    await runtime.rolloverAtSafeBoundary()
+    const rollover = await runtime.requestRealtimeClientSecret()
+    expect(rollover.identity).not.toEqual(first.identity)
+    expect(rollover.avatar?.skills?.imageGeneration).toBe(true)
+    expect(runtime.getAvatarSkillsForRuntime(rollover.identity).imageGeneration).toBe(true)
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'rollover', status: 'success', reason: 'rolled_over' })
+    await runtime.manualStop()
+    await runtime.handleRealtimeRuntimeOutcome({ operation: 'stop', status: 'success', reason: 'stopped' })
+    await runtime.manualStart()
+    const next = await runtime.requestRealtimeClientSecret()
+    expect(next.identity).not.toEqual(first.identity)
+    expect(next.avatar?.skills?.imageGeneration).toBe(false)
+    expect(next.avatar?.experience?.defaultMode).toBe('conversation')
+    expect(runtime.getAvatarSkillsForRuntime(next.identity).imageGeneration).toBe(false)
+    expect(runtime.getAvatarSkillsForRuntime({ realtimeSessionId: 'forged', sessionGeneration: 99 }).imageGeneration).toBe(false)
+    await runtime.shutdown()
+  })
 })
 
 describe('BootRuntime realtime runtime outcome reason', () => {

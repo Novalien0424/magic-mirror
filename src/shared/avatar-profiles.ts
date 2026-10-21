@@ -4,6 +4,7 @@ import { DEFAULT_VOICE_EFFECTS, type VoiceEffects } from './voice-effects'
 import { LEGACY_SLEEP_PHRASE } from './avatar-commands'
 import { DEFAULT_MEDIA_SKILL, type AvatarMediaSkill } from './media-skill'
 import { defaultExperience, type AvatarExperience } from './portrait-studio'
+import { DEFAULT_AVATAR_SKILLS, type AvatarSkills } from './avatar-skills'
 
 // Built-in Realtime voices; model IDs remain exclusively in versioned config.
 export const AVATAR_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'] as const
@@ -43,6 +44,7 @@ export interface AvatarProfile {
   voiceSpeed?: number
   voiceEffects?: VoiceEffects
   mediaSkill?: AvatarMediaSkill
+  skills?: AvatarSkills
   /** Interactive Studio content (the saved default mode is superseded by the Mirror switch); Main normalizes a missing value. */
   experience?: AvatarExperience
   wakePhrase?: string
@@ -81,6 +83,7 @@ export function avatarCatalogFor(config: MirrorConfig): AvatarCatalog {
   if (config.avatarCatalog) {
     const catalog = structuredClone(config.avatarCatalog)
     catalog.avatars = catalog.avatars.map(avatar => ({ ...avatar,
+      skills: avatar.skills ?? { ...DEFAULT_AVATAR_SKILLS },
       mediaSkill: avatar.mediaSkill ?? structuredClone(DEFAULT_MEDIA_SKILL),
       experience: avatar.experience ?? defaultExperience(),
       wakePhrase: avatar.wakePhrase ?? config.wake.phrase,
@@ -94,6 +97,7 @@ export function avatarCatalogFor(config: MirrorConfig): AvatarCatalog {
     scenes: structuredClone(config.scenes), spells: structuredClone(config.spells),
     voiceSpeed: 1, voiceEffects: { ...DEFAULT_VOICE_EFFECTS },
     mediaSkill: structuredClone(DEFAULT_MEDIA_SKILL),
+    skills: { ...DEFAULT_AVATAR_SKILLS },
     experience: defaultExperience(),
     wakePhrase: config.wake.phrase, sleepPhrase: LEGACY_SLEEP_PHRASE,
   }] }

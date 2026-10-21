@@ -12,6 +12,7 @@ import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDG
 import { defaultExperience } from '../src/shared/portrait-studio.ts'
 import { studioQaStory } from '../src/main/studio-qa-stories.ts'
 import { isCameraQaCase } from '../src/main/camera/qa-cases.ts'
+import { isCameraSnapshot } from '../src/shared/camera-tracking.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('raven-qa')
@@ -22,6 +23,15 @@ if (launchAgent) args.splice(args.indexOf('--launch-agent'), 1)
 const physical = args.includes('--physical')
 if (physical) args.splice(args.indexOf('--physical'), 1)
 if (physical && !launchAgent) throw Error('raven_qa_physical_requires_launchagent')
+const nativeCameraJourney = args.includes('--native-camera')
+if (nativeCameraJourney) args.splice(args.indexOf('--native-camera'), 1)
+if (nativeCameraJourney && !launchAgent) throw Error('raven_qa_native_camera_requires_launchagent')
+const portraitFixtureIndex = args.indexOf('--portrait-fixture')
+const portraitFixturePath = portraitFixtureIndex < 0 ? null : args[portraitFixtureIndex + 1]
+if (portraitFixtureIndex >= 0) args.splice(portraitFixtureIndex, 2)
+if (portraitFixtureIndex >= 0 && (!launchAgent || !portraitFixturePath || physical)) throw Error('raven_qa_portrait_fixture_requires_isolated_launchagent')
+const portraitFixtureBytes = portraitFixturePath ? await readFile(resolve(portraitFixturePath)) : null
+if (portraitFixtureBytes && !isCameraSnapshot(JSON.parse(portraitFixtureBytes.toString()))) throw Error('raven_qa_portrait_fixture_invalid')
 const personaIndex = args.indexOf('--persona')
 const personaVariant = personaIndex < 0 ? 'published' : args[personaIndex + 1]
 if (!['published', 'sage', 'authoritative'].includes(personaVariant)) throw Error('raven_qa_persona_invalid')
@@ -58,13 +68,17 @@ if (!story) throw Error('raven_qa_studio_story_invalid')
 if (storyIndex >= 0) args.splice(storyIndex, 2)
 const keepTranscript = args.includes('--keep-transcript')
 if (keepTranscript) args.splice(args.indexOf('--keep-transcript'), 1)
+const studioPhoto = args.includes('--studio-photo')
+if (studioPhoto) args.splice(args.indexOf('--studio-photo'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
-if ((storyIndex >= 0 || keepTranscript) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
+if (nativeCameraJourney && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_native_camera_journey_invalid')
+if (portraitFixtureBytes && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_portrait_fixture_journey_invalid')
+if ((storyIndex >= 0 || keepTranscript || studioPhoto) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
 if ((cameraCaseIndex >= 0 || cameraCheckIndex >= 0) && selected !== 'camera_availability') throw Error('camera_qa_scenario_required')
 const mediaBgm = selected === 'media_bgm'
 const nativeCamera = ['camera_native', 'camera_delivery', 'camera_availability'].includes(selected)
 const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery', 'camera_availability'].includes(selected)
-if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'camera_availability', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'image_skill', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'camera_availability', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)
@@ -93,7 +107,8 @@ const root = await createQaArtifact(repo, stamp)
 const data = join(root, 'user-data'), output = join(root, 'screenshots')
 for (const path of ['config', 'assets/music', 'assets/visual', 'assets/avatars', 'fixtures/own', 'fixtures/shared']) await mkdir(join(data, path), { recursive: true })
 await mkdir(output)
-if (selected === 'portrait_studio') await writeFile(join(data, 'studio-qa-story.json'), JSON.stringify({ version: 1, story: story.id, keepTranscript }))
+if (selected === 'portrait_studio') await writeFile(join(data, 'studio-qa-story.json'), JSON.stringify({ version: 1, story: story.id, keepTranscript, photo: studioPhoto }))
+if (portraitFixtureBytes) await writeFile(join(data, 'portrait-fixture.json'), portraitFixtureBytes, { mode: 0o600 })
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const fingerprint = digest(JSON.stringify(avatar))
 const promptPath = { baseline: 'resources/testing/raven-prompt-baseline.v1.json',
@@ -170,8 +185,11 @@ await writeFile(join(root, 'raven-provenance.json'), JSON.stringify({ publishedC
     'src/main/raven-camera-input-qa.ts', 'src/main/raven-conversation-judge.ts'].map(path => readFile(join(repo, path)))))),
   modelTrial: modelTrial ? { version: modelTrial.version, variant, configVersion: config.configVersion } : null,
   name: avatar.name, rig: model.name, modelId: model.id, voice: avatar.voice, models: config.aiModels,
-  substitutions: ['isolated identity database', 'synthetic media folders', ...(physical || nativeCamera ? [] : ['synthetic camera frame']), 'one fixture spell with mock hardware'],
-  deviceRoute: nativeCamera ? 'native_camera_only_silent' : physical ? 'mac_speaker_to_jabra_microphone_and_native_camera' : 'virtual_microphone_and_camera_fixture',
+  substitutions: ['isolated identity database', 'synthetic media folders', ...(physical || nativeCamera || nativeCameraJourney || portraitFixtureBytes ? [] : ['synthetic camera frame']),
+    ...(portraitFixtureBytes ? [nativeCameraJourney ? 'owner-authorized public portrait replaces each successfully captured native still' : 'owner-authorized public portrait fixture; native capture verified separately'] : []), 'one fixture spell with mock hardware'],
+  deviceRoute: nativeCamera ? 'native_camera_only_silent' : physical ? 'mac_speaker_to_jabra_microphone_and_native_camera' : nativeCameraJourney ? 'virtual_microphone_and_native_camera' : portraitFixtureBytes ? 'virtual_microphone_and_public_portrait_fixture' : 'virtual_microphone_and_camera_fixture',
+  imageRetention: nativeCameraJourney && !portraitFixtureBytes ? 'none_including_derived_artwork_and_screenshots' : 'synthetic_or_public_fixture_qa_screenshots',
+  portraitFixtureSha256: portraitFixtureBytes ? digest(portraitFixtureBytes) : null,
   tvShutdown: 'session_scoped_qa_exemption',
   humanAcousticAcceptance: 'not_executed', portraitAcceptance: 'not_executed' }, null, 2))
 const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_QA: '1', MIRROR_PHASE4_QA_LIVE: '1',
@@ -182,6 +200,8 @@ for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_P
 env.MIRROR_QA_PROMPT_VARIANT = promptVariant
 if (selected === 'camera_availability') Object.assign(env, { MIRROR_CAMERA_QA_CASE: cameraCase, MIRROR_CAMERA_QA_CHECK: cameraCheck })
 if (physical) env.MIRROR_QA_PHYSICAL_DEVICES = '1'
+if (nativeCameraJourney) env.MIRROR_QA_NATIVE_CAMERA = '1'
+if (portraitFixtureBytes) env.MIRROR_QA_PORTRAIT_FIXTURE = '1'
 if (mediaBgm) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0',
   MIRROR_MEDIA_SKILL_QA: '1', MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: '1' })
 if (reviewUi) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0', MIRROR_REVIEW_UI_QA: '1',

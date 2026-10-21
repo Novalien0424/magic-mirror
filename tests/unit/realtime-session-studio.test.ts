@@ -61,6 +61,112 @@ const accepted = (code: string, next?: string): StudioReply => ({ status: 'accep
 const responses = (p: ReturnType<typeof probe>) => p.sent.filter(e => e.type === 'response.create').map(e => e.response as Record<string, unknown>)
 
 describe('Portrait Studio in the Realtime session', () => {
+  it('releases joined reply playback before revealing an image, while retaining newer playback ownership', async () => {
+    const p = probe(), { handle } = session(p, () => accepted('x'))
+    const done = (id: string) => p.event({ type: 'response.done', response: { id, status: 'completed', output: [{ type: 'message', content: [{ type: 'audio' }] }] } })
+    p.event({ type: 'response.created', response: { id: 'preamble' } })
+    p.event({ type: 'output_audio_buffer.started', response_id: 'preamble' })
+    done('preamble')
+    p.event({ type: 'response.created', response: { id: 'followup' } })
+    done('followup') // The same WebRTC output buffer continues; no second start.
+    p.event({ type: 'response.created', response: { id: 'newer' } })
+    done('newer')
+    handle.imageEvent!({ event: 'ready', id: 'picture-a', imageUrl: 'magic-mirror-media://image-skill/abcd1234', language: 'en' }, ID)
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'followup' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_image === 'reveal')).toBe(false)
+    p.event({ type: 'output_audio_buffer.started', response_id: 'newer' })
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'newer' })
+    try { await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_image === 'reveal')).toBe(true), { timeout: 200 }) }
+    finally { await handle.close('test_complete') }
+  })
+  it('uses native image tools without swapping the Conversation agent and excludes drawing from learning', async () => {
+    const p = probe(), image = vi.fn(async () => ({ status: 'accepted' as const, code: 'image_started' }))
+    const { memoryInput } = session(p, () => accepted('studio_started'), { onImageRequest: image })
+    const create = tool(p.agents[0]!, 'create_image')
+    await call(create, { prompt: 'A fox', picture: 'portrait', source: 'description', language: 'en' })
+    expect(image).not.toHaveBeenCalled()
+    p.event({ type: 'input_audio_buffer.speech_started', item_id: 'draw' })
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'draw' })
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'draw', transcript: 'I want a picture of a fox.' })
+    await call(create, { prompt: 'A fox', picture: 'portrait', source: 'description', language: 'zh' })
+    expect(image).toHaveBeenCalledOnce(); expect(p.updateAgent).not.toHaveBeenCalled()
+    expect(image).toHaveBeenCalledWith(expect.objectContaining({ language: 'en' }), ID)
+    await vi.waitFor(() => expect(memoryInput).toHaveBeenCalledWith('control', 'draw', '', ID))
+    await call(create, { prompt: 'Another fox', picture: 'portrait', source: 'description', language: 'en' })
+    expect(image).toHaveBeenCalledOnce()
+  })
+
+  it('arms photo permission only after its own playback and processed tail, then forwards one later final visitor reply', async () => {
+    const p = probe(), requests: import('../../src/shared/image-skill').ImageSkillRequest[] = []
+    let finishTail!: () => void
+    const tail = new Promise<void>(resolve => { finishTail = resolve })
+    const { handle } = session(p, () => accepted('x'), { onImageRequest: async request => { requests.push(request); return { status: 'accepted', code: 'image_consent_ready' } }, waitForOutputTail: () => tail })
+    await handle.connect()
+    handle.imageEvent!({ event: 'consent', id: 'photo-a', ticket: 'ticket-a', line: 'Use my photo?' }, ID)
+    await vi.waitFor(() => expect(responses(p).some(r => String(r.instructions).includes('Use my photo?'))).toBe(true))
+    const cue = responses(p).find(r => String(r.instructions).includes('Use my photo?'))!.metadata as Record<string, string>
+    p.event({ type: 'response.created', response: { id: 'consent-r', metadata: cue } })
+    p.event({ type: 'output_audio_buffer.started', response_id: 'consent-r' })
+    p.event({ type: 'response.done', response: { id: 'consent-r', status: 'completed', output: [], metadata: cue } })
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'consent-r' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(requests).toHaveLength(0)
+    finishTail()
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'consent_ready', ticket: 'ticket-a' }))
+    p.event({ type: 'input_audio_buffer.speech_started', item_id: 'approval' })
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'approval' })
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'approval', transcript: 'Use my photo.' })
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'approval', transcript: 'Use my photo.' })
+    await vi.waitFor(() => expect(requests.filter(r => r.action === 'photo_reply')).toHaveLength(1))
+    expect(requests.at(-1)).toMatchObject({ action: 'photo_reply', ticket: 'ticket-a', text: 'Use my photo.', itemId: 'approval' })
+    await handle.close('test_complete')
+  })
+
+  it('does not reveal an image whose preparation finishes after dismissal', async () => {
+    const p = probe(); let prepared!: (value: string) => void
+    const { handle } = session(p, () => accepted('x'), { onImageRequest: async () => ({ status: 'accepted', code: 'image_started' }),
+      prepareStudioImage: () => new Promise(resolve => { prepared = resolve }) })
+    handle.imageEvent!({ event: 'ready', id: 'picture-a', imageUrl: 'magic-mirror-media://image-skill/abcd1234', language: 'en' }, ID)
+    handle.imageEvent!({ event: 'closed', id: 'picture-a' }, ID)
+    prepared('data:image/jpeg;base64,AAAA')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(p.sent.some(e => e.type === 'conversation.item.create' && (e.item as { role: string }).role === 'user')).toBe(false)
+    expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_image === 'reveal')).toBe(false)
+    await handle.close('test_complete')
+  })
+
+  it('replaces stale photo permission context after cancellation without creating a visitor turn or granting permission', async () => {
+    const p = probe(), image = vi.fn(async () => ({ status: 'accepted' as const, code: 'image_started' }))
+    const { handle } = session(p, () => accepted('x'), { onImageRequest: image })
+    handle.imageEvent!({ event: 'closed', id: 'cancelled-photo' }, ID)
+    const state = p.sent.find(e => e.type === 'conversation.item.create')!.item as { id: string; role: string; content: { text: string }[] }
+    expect(state.role).toBe('system'); expect(state.content[0]!.text).toContain('no longer active')
+    expect(image).not.toHaveBeenCalled()
+    handle.imageEvent!({ event: 'ready', id: 'next-picture', imageUrl: 'magic-mirror-media://image-skill/abcd1234', language: 'en' }, ID)
+    expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: state.id }))
+    await handle.close('test_complete')
+  })
+
+  it('tells the Studio agent to resume its question after Main confirms photo attachment', async () => {
+    const p = probe(), image = vi.fn(async () => ({ status: 'accepted' as const, code: 'image_started' }))
+    const { handle } = session(p, () => accepted('x'), { onImageRequest: image })
+    handle.imageEvent!({ event: 'closed', id: 'attached-photo', outcome: 'photo_attached' }, ID)
+    const state = p.sent.find(e => e.type === 'conversation.item.create')!.item as { role: string; content: { text: string }[] }
+    expect(state.role).toBe('system'); expect(state.content[0]!.text).toContain('approved photo is attached')
+    expect(state.content[0]!.text).toContain('studio_answer'); expect(image).not.toHaveBeenCalled()
+    await handle.close('test_complete')
+  })
+
+  it('blocks the ordinary camera tool while image-photo permission owns the camera step', async () => {
+    const p = probe(), capture = vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,AAAA', width: 1920, height: 1080 }))
+    const { handle } = session(p, () => accepted('x'), { onCameraCapture: capture })
+    handle.imageEvent!({ event: 'consent', id: 'photo-a', ticket: 'ticket-a', line: 'Use my photo?' }, ID)
+    await call(tool(p.agents[0]!, 'look_at_surroundings'), {})
+    expect(capture).not.toHaveBeenCalled()
+    await handle.close('test_complete')
+  })
+
   it('builds a conversation agent with the entry tool and a studio agent without memory or media tools', () => {
     const p = probe()
     session(p, () => accepted('studio_started'))

@@ -5,12 +5,14 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 
 ## Unresolved reliability
 
-- [ ] **Camera transport/driver reliability.** Full-HD delivery is still corrupt
-  or intermittent; direct USB and root access work, but no production transport
-  qualifies. Require actual 1920×1080, normally fresh within five seconds; low FPS
-  is allowed. Obtain vendor-matched firmware/PCB information or alternate physical
-  cable/port/host evidence, then qualify a persistent fix across restart/reboot.
-  [Current investigation](docs/testing/camera-availability-qa-2026-10-18.md).
+- [ ] **Camera transport/driver reliability.** The owner's temporary minimum
+  mode is 96×96 at 5 fps. It returned six native snapshots, but strict stability
+  failed; a separate 72-frame sample delivered about 2.18 fps. The earlier zero-frame
+  result is superseded, while continuous reliability remains unqualified.
+  Obtain vendor-matched firmware/PCB or alternate cable/port/host evidence,
+  then qualify a persistent fix across restart/reboot.
+  [Latest native evidence](docs/testing/low-camera-image-journeys-2026-10-21.md) ·
+  [Transport investigation](docs/testing/camera-availability-qa-2026-10-18.md).
 - [ ] **Wake robustness under media and cold start.** Validate representative
   human positives, near negatives and startup behavior over Dormant media. The
   Jabra speech-bed stress failures remain; synthetic detection rates are not
@@ -24,10 +26,20 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
   evidence gaps; do not reopen repaired memory-write bugs without reproduction.
   [Latest live results](docs/testing/console-ux-revamp-2026-10-17.md#results) ·
   [Earlier boundaries](docs/testing/open-issues-2026-10-13.md).
+  The 10-21 ordinary-camera regression also missed tool selection on its first
+  attempt despite correct ASR; its one unchanged retry passed all five checks.
+  No photo was taken on the failed attempt.
+  [Camera failure/retry](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
 - [ ] **Intermittent Console reload stall.** One of three ritual runs stalled;
   later runs passed. Preserve the failure and use the new unload-blocker
   diagnostics if it recurs before claiming the cause is fixed.
   [QA driver evidence](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
+- [ ] **Image chat completion timing.** The first per-Avatar live Conversation
+  run timed out waiting for chat-during-painting completion despite recorded audio
+  replies and an image reveal. The single retry passed the full 14-check journey.
+  New metadata counters can identify the outstanding wait if it recurs; the first
+  run does not establish whether provider timing or QA tracking was responsible.
+  [Retained failure and retry](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
 
 - [ ] **Live quality judge baseline on `gpt-6.1-sol`.** Since config 19 the
   judge reads the memory role, now `gpt-6.1-sol`. Live `local_scope` failed its
@@ -45,6 +57,13 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 
 ## Remaining acceptance
 
+- [ ] **Shared image skill with real guests.** The owner authorized a public
+  Internet portrait after native frame delivery because nobody was available.
+  The complete simulated journeys and retained failures are in the
+  [latest per-Avatar report](docs/testing/avatar-image-skill-selection-2026-10-21.md).
+  When a willing guest is available, verify real microphone use, a clear face
+  at 96×96, fresh capture and likeness in both modes. Simulation cannot establish
+  these human checks or reliable USB delivery.
 - [ ] **Interactive Studio in the field.** The five-key profile is imported
   (Neo shows "Magic Mirror copy"; delete the unused old profile). Press
   INTERACTIVE STUDIO, say 「招喚渡鴉使者」 at the mirror (check detection; 招 is
@@ -64,7 +83,8 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 - [ ] **Studio names by voice.** Measure corrections and spelling with human
   speakers before an event that depends on exact names. The 2026-10-20 synthetic
   visits passed 5 of 5 name steps, and local tests now cover repeated unconfirmed
-  calls; neither establishes human accuracy.
+  calls. The new 2026-10-21 shared-image QA passed 2/3 name steps; one visit
+  advanced with the wrong intended spelling. Neither sample establishes human accuracy.
   [Studio stories](docs/testing/interactive-studio-stories-2026-10-20.md).
 - [ ] **Sticker print output.** Stickers are shown on the mirror only; the
   keepsake has no file or printer output yet (`KeepsakeSink` is display-only).

@@ -621,41 +621,57 @@ describe("RealtimeSession adapter", () => {
     probe.emit('transport_event', { type: 'conversation.item.retrieved', item: { id: 'late-background', role: 'user' } });
     expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'late-background' }));
   });
-  it('adds a full-HD camera frame unchanged before returning a response result and drops late captures', async () => {
+  it('asks permission before adding an approved camera frame and drops late captures', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let deliver!: (frame: { dataUrl: string; width: number; height: number } | null) => void;
     const capture = vi.fn(() => new Promise<{ dataUrl: string; width: number; height: number } | null>(resolve => { deliver = resolve }));
-    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onCameraCapture: capture });
+    const permit = vi.fn(async () => ({ status: 'accepted' as const, code: 'image_consent_pending' }))
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), sessionGeneration: 1, onCameraCapture: capture, onImageRequest: permit });
     const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
-    const tool = agent.tools.find(t => t.name === 'capture_camera')!;
+    const tool = agent.tools.find(t => t.name === 'look_at_surroundings')!;
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'look' });
+    probe.emit('transport_event', { type: 'input_audio_buffer.committed', item_id: 'look' });
     const result = tool.invoke({}, '{}');
+    await result; expect(permit).toHaveBeenCalledWith({ action: 'camera_permission', language: 'zh' }, expect.anything()); expect(capture).not.toHaveBeenCalled();
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_stopped' })
+    handle.claimControlTurn!('look')
+    const identity = { realtimeSessionId: 'session-a', sessionGeneration: 1 }
+    handle.imageEvent!({ event: 'closed', id: 'camera-a' }, identity)
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-a' }, identity)
     const bytes = Buffer.alloc(600_000, 0xff);
     bytes.set([0xff, 0xd8, 0xff]); bytes.set([0xff, 0xd9], bytes.length - 2);
     const frame = { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`, width: 1920, height: 1080 };
     deliver(frame);
-    expect(await result).toMatchObject({ status: 'accepted', code: 'camera_image_added' });
+    await vi.waitFor(() => expect(probe.addImage).toHaveBeenCalledOnce(), { timeout: 2500 });
     expect(probe.addImage).toHaveBeenCalledOnce();
     expect(probe.addImage.mock.lastCall?.[0] === frame.dataUrl).toBe(true);
     expect(probe.addImage.mock.lastCall?.[1]).toEqual({ triggerResponse: false });
-    const late = tool.invoke({}, '{}');
+    expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create', response: expect.objectContaining({ metadata: { mirror_image: 'camera' }, tool_choice: 'none' }) }))
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'approved-camera', metadata: { mirror_image: 'camera' } } })
+    expect(probe.sendEvent).not.toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'approved-camera' })
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-a' }, identity)
+    expect(capture).toHaveBeenCalledOnce()
+    handle.imageEvent!({ event: 'closed', id: 'camera-b' }, identity)
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-b' }, identity)
     await handle.close('manual_stop');
     deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
-    expect(await late).toMatchObject({ status: 'ignored' });
+    await Promise.resolve();
     expect(probe.addImage).toHaveBeenCalledOnce();
     expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
   });
   it.each(['new_turn', 'media_started'])('discards a camera result after %s without adding an image', async boundary => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let deliver!: (frame: any) => void;
-    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe),
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), sessionGeneration: 1,
       onCameraCapture: () => new Promise(resolve => { deliver = resolve }) });
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'old' });
-    const tool = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'capture_camera');
-    const pending = tool.invoke({}, '{}');
+    const identity = { realtimeSessionId: 'session-a', sessionGeneration: 1 }
+    handle.imageEvent!({ event: 'closed', id: 'camera-a' }, identity)
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-a' }, identity)
     if (boundary === 'new_turn') probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'new' });
     else handle.setMediaPlayback!(true);
     deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
-    expect(await pending).toMatchObject({ status: 'ignored' });
+    await vi.waitFor(() => expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'camera_result_stale' })));
     expect(probe.addImage).not.toHaveBeenCalled();
     expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'camera_result_stale' }));
     expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
@@ -665,17 +681,19 @@ describe("RealtimeSession adapter", () => {
     const probe = makeAdapterProbe()
     let deliverFrame!: (value: any) => void, deliverMemory!: (value: any) => void
     const memory = vi.fn(() => new Promise<any>(resolve => { deliverMemory = resolve }))
-    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onMemory: memory,
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), sessionGeneration: 1, onMemory: memory,
       onCameraCapture: () => new Promise(resolve => { deliverFrame = resolve }) })
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
     probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'cast' })
-    const cameraResult = tools.find(t => t.name === 'capture_camera').invoke({}, '{}')
+    const identity = { realtimeSessionId: 'session-a', sessionGeneration: 1 }
+    handle.imageEvent!({ event: 'closed', id: 'camera-a' }, identity)
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-a' }, identity)
     const memoryResult = tools.find(t => t.name === 'memory').invoke({}, JSON.stringify({ action: 'recall', name: '', topic: '', text: '', query: '' }))
     await vi.waitFor(() => expect(memory).toHaveBeenCalledOnce())
     probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.delta', item_id: 'cast', delta: '施放咒語' })
     deliverFrame({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 })
     deliverMemory({ status: code === 'memory_recalled' ? 'accepted' : 'rejected', code, entries: [{ text: 'Synthetic late fact' }] })
-    expect(await cameraResult).toMatchObject({ status: 'ignored' })
+    await Promise.resolve()
     const result = await memoryResult
     expect(isBackgroundResult(result)).toBe(true)
     expect(JSON.stringify(result)).not.toContain('Synthetic late fact')

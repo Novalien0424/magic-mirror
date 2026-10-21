@@ -615,13 +615,17 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(youtube.stop).toHaveBeenCalledTimes(2)
   })
   it('limits camera capture to the active Mirror session and drops frames after a session change', async () => {
+    vi.useFakeTimers()
+    try {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'camera-session', sessionGeneration: 3 }
     const bytes = Buffer.alloc(600_000, 0xff)
     bytes.set([0xff, 0xd8, 0xff]); bytes.set([0xff, 0xd9], bytes.length - 2)
     const frame = { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`, width: 1920, height: 1080 }
     const captureCamera = vi.fn(async () => frame)
-    const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], snapshot), fixtures.windows, events, undefined, { captureCamera })
+    const send = vi.fn(); fixtures.mirrorSender.send = send
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => ({}) } as never,
+      fixtures.windows, events, undefined, { captureCamera })
     const handler = registered.handlers.get('mirror:capture-camera')!
     const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'camera-session', sessionGeneration: 3 }
@@ -629,7 +633,22 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(await handler(event, { ...identity, path: '/private' })).toBeNull()
     expect(await handler(event, { ...identity, sessionGeneration: 2 })).toBeNull()
     expect(captureCamera).not.toHaveBeenCalled()
+    expect(await handler(event, identity)).toBeNull()
+    expect(events).toContainEqual(expect.objectContaining({ reason: 'camera_capture_permission_required' }))
+    const permit = async () => {
+      const image = registered.handlers.get('mirror:image-skill')!
+      const request = (request: unknown) => image(event, { request, identity })
+      expect(await request({ action: 'camera_permission', language: 'en' })).toMatchObject({ code: 'image_consent_pending' })
+      const consent = send.mock.calls.map(c => c[1]).filter(c => c.type === 'image_event' && c.event.event === 'consent').at(-1).event
+      await request({ action: 'consent_ready', ticket: consent.ticket })
+      await request({ action: 'photo_reply', ticket: consent.ticket, text: 'use my photo', itemId: 'yes' })
+      await vi.advanceTimersByTimeAsync(3000)
+    }
+    await permit()
     expect(await handler(event, identity) === frame).toBe(true)
+    expect(await handler(event, identity)).toBeNull()
+    expect(captureCamera).toHaveBeenCalledOnce()
+    await permit()
     captureCamera.mockImplementation(async () => { snapshot.sessionGeneration++; return frame })
     expect(await handler(event, identity)).toBeNull()
     expect(JSON.stringify(events)).not.toContain('data:image')
@@ -639,6 +658,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const checked = await check({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })
     expect(checked).toEqual({ ok: true, value: { status: 'ready', width: 1920, height: 1080 } })
     expect(JSON.stringify(checked)).not.toContain('data:image')
+    } finally { vi.useRealTimers() }
   })
   it('restricts folder configuration to Console and rejects renderer-supplied paths', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []

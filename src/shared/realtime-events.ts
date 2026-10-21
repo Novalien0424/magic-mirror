@@ -89,11 +89,15 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'studio_identity_question_pending',
   'studio_event_stale',
   'studio_speech_failed',
+  'image_event_stale',
+  'image_reveal_failed',
+  'image_state_update_failed',
+  'image_consent_early_reply',
   'realtime_tool_not_found',
 ] as const)
 
-export const OBSERVED_TOOL_NAMES = ['return_to_dormant', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'play', 'capture_camera', 'memory', 'stop_media',
-  'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit'] as const
+export const OBSERVED_TOOL_NAMES = ['return_to_dormant', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'play', 'look_at_surroundings', 'memory', 'stop_media',
+  'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit', 'create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'] as const
 export type RealtimeMetadataReason = (typeof REALTIME_METADATA_REASONS)[number]
   | `tool_${typeof OBSERVED_TOOL_NAMES[number]}_${'accepted' | 'ignored' | 'rejected' | 'failed'}_preamble_${'yes' | 'no'}`
   | `reply_language_${'match' | 'mismatch' | 'unknown'}`

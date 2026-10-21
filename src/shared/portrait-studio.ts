@@ -473,6 +473,7 @@ export const STUDIO_CONSOLE_CHANNEL = 'console:studio'
 export type StudioAuthStatus = 'signed_in' | 'missing' | 'invalid' | 'expired' | 'refresh_failed'
 export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'test' } | { action: 'mode'; mode: MirrorMode }
 export interface StudioConsoleStatus {
+  imageSkillEnabled?: boolean
   auth: StudioAuthStatus
   lastRefresh?: string
   modelId: string

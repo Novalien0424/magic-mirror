@@ -225,7 +225,21 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 "yuy210805": (1920, 1080, kCVPixelFormatType_422YpCbCr8_yuvs, 5),
                 "yuy2720": (1280, 720, kCVPixelFormatType_422YpCbCr8_yuvs, 5)
             ]
-            let desired = qaObserve ? modes[qaMode ?? "vga15"] : modes["vga15"]
+            // Owner's temporary low-bandwidth mode: the smallest advertised
+            // frame, then its slowest advertised rate. Never invent a rate.
+            let smallest = device.formats.min {
+                let a = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+                let b = CMVideoFormatDescriptionGetDimensions($1.formatDescription)
+                if a.width * a.height != b.width * b.height { return a.width * a.height < b.width * b.height }
+                return ($0.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? .infinity)
+                    < ($1.videoSupportedFrameRateRanges.map(\.minFrameRate).min() ?? .infinity)
+            }
+            let minimum: (Int32, Int32, UInt32, Double)? = smallest.flatMap { format in
+                guard let rate = format.videoSupportedFrameRateRanges.map(\.minFrameRate).min() else { return nil }
+                let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                return (size.width, size.height, CMFormatDescriptionGetMediaSubType(format.formatDescription), rate)
+            }
+            let desired = qaObserve && qaMode != "minimum" ? modes[qaMode ?? "vga15"] : minimum
             guard let desired else { next.commitConfiguration(); status("camera_qa_mode_invalid"); return }
             let configureAfterStart = qaObserve && CommandLine.arguments.contains("--qa-configure-after-start")
             let directRate = qaObserve ? CommandLine.arguments.first(where: { $0.hasPrefix("--qa-rate=") })?
@@ -262,16 +276,17 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     if attempt.minimumResult != 0 || attempt.maximumResult != 0 || attempt.restoreResult != 0 {
                         next.commitConfiguration(); status("camera_qa_rate_api_rejected"); return
                     }
-                } else if let range = format.videoSupportedFrameRateRanges.min(by: {
-                    abs($0.maxFrameRate - desired.3) < abs($1.maxFrameRate - desired.3)
-                }), abs(range.maxFrameRate - desired.3) < 0.1 {
-                    selectedDuration = range.minFrameDuration
+                } else if let range = format.videoSupportedFrameRateRanges.first(where: {
+                    abs($0.minFrameRate - desired.3) < 0.1 || abs($0.maxFrameRate - desired.3) < 0.1
+                }) {
+                    let duration = abs(range.minFrameRate - desired.3) < 0.1 ? range.maxFrameDuration : range.minFrameDuration
+                    selectedDuration = duration
                     if !configureAfterStart {
-                        device.activeVideoMinFrameDuration = range.minFrameDuration
-                        device.activeVideoMaxFrameDuration = range.minFrameDuration
+                        device.activeVideoMinFrameDuration = duration
+                        device.activeVideoMaxFrameDuration = duration
                     }
-                } else if qaObserve { next.commitConfiguration(); status("camera_qa_rate_unsupported"); return }
-            } else if qaObserve { next.commitConfiguration(); status("camera_qa_format_unsupported"); return }
+                } else { next.commitConfiguration(); status("camera_qa_rate_unsupported"); return }
+            } else { next.commitConfiguration(); status("camera_qa_format_unsupported"); return }
             if configureAfterStart { device.unlockForConfiguration(); deviceLocked = false }
             next.commitConfiguration()
             session = next; deviceID = device.uniqueID
@@ -375,8 +390,14 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     status("camera_snapshot_jpeg_oversized"); emit(["type": "snapshot", "id": id]); return
                 }
                 // Avoid escaping base64 slashes, so a bounded JPEG fits the framed pipe limit.
-                guard let message = try? JSONSerialization.data(withJSONObject: ["type": "snapshot", "id": id,
-                    "jpeg": jpeg.base64EncodedString(), "width": width, "height": height], options: [.withoutEscapingSlashes]),
+                // Count faces in this exact still, never a previous gaze frame. No recognition or identifiers.
+                var snapshot: [String: Any] = ["type": "snapshot", "id": id,
+                    "jpeg": jpeg.base64EncodedString(), "width": width, "height": height]
+                let faces = VNDetectFaceRectanglesRequest()
+                if (try? VNImageRequestHandler(ciImage: image, options: [:]).perform([faces])) != nil {
+                    snapshot["faceCount"] = min(100, faces.results?.count ?? 0)
+                }
+                guard let message = try? JSONSerialization.data(withJSONObject: snapshot, options: [.withoutEscapingSlashes]),
                     let line = String(data: message, encoding: .utf8) else {
                     status("camera_snapshot_encode_failed"); emit(["type": "snapshot", "id": id]); return
                 }

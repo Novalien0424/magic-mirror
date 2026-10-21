@@ -7,6 +7,7 @@ import type {
 import type { PortraitImageProvider, PortraitImageResult } from './image-provider'
 import { matchGuestNames, guestTextKey } from './guest-names'
 import { buildPortraitPrompt, buildRevisionPrompt } from './prompt-builder'
+import { IMAGE_SKILL } from '../../shared/image-skill'
 
 export interface StudioIdentity { readonly realtimeSessionId: string; readonly sessionGeneration: number }
 /** `mode` is the Mirror switch turned to Interactive Studio during a conversation. */
@@ -40,6 +41,7 @@ interface Run {
   abort?: AbortController
   holdTimer?: ReturnType<typeof setTimeout>
   activityHeld: boolean
+  photo?: StoredImage
 }
 
 // Technical guidance stays versioned; operator-editable stage prompts come from the run's avatar.
@@ -101,6 +103,7 @@ export function createStudioRuntime(input: {
     r.abort?.abort()
     clearTimeout(r.holdTimer)
     images.clear()
+    r.photo = undefined
     // Always release the idle-timer hold, on every exit path.
     release(r)
     input.dispatch({ type: 'studio_view', view: null })
@@ -149,7 +152,11 @@ export function createStudioRuntime(input: {
     const previous = r.imageId ? images.get(r.imageId) : undefined
     let result: PortraitImageResult
     try {
-      result = kind === 'edit' && previous
+      const photo = kind === 'generate' ? r.photo : undefined
+      r.photo = undefined
+      result = photo
+        ? await provider.edit({ prompt: `${IMAGE_SKILL.photo}\n\n${buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name })}`, image: photo.bytes, mimeType: photo.mimeType, quality, picture, signal: abort.signal })
+        : kind === 'edit' && previous
         ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
         : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
@@ -276,6 +283,17 @@ export function createStudioRuntime(input: {
     isActive: () => run !== null,
     activeFor: (identity: StudioIdentity) => run !== null && sameIdentity(run.identity, identity),
     phase: (): StudioPhase | null => run?.phase ?? null,
+    canUsePhoto: (identity: StudioIdentity) => !!run && sameIdentity(run.identity, identity) && ['name', 'confirm', 'question'].includes(run.phase),
+    clearPhoto(identity: StudioIdentity): boolean {
+      if (!run || !sameIdentity(run.identity, identity) || !run.photo) return false
+      run.photo = undefined; input.report('studio_photo_removed'); return true
+    },
+    usePhoto(identity: StudioIdentity, photo: StoredImage): boolean {
+      if (!run || !sameIdentity(run.identity, identity) || !['name', 'confirm', 'question'].includes(run.phase)) return false
+      run.photo = photo
+      input.report('studio_photo_attached')
+      return true
+    },
     image(id: string): StoredImage | undefined { return run ? images.get(id) : undefined },
   }
 }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AVATAR_VOICES, canUseAvatarResource, type AvatarCatalog, type AvatarWakeTuning } from '../../shared/avatar-profiles'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
 import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
+import { DEFAULT_AVATAR_SKILLS } from '../../shared/avatar-skills'
 import { defaultExperience, parseAvatarExperience, type AvatarExperience } from '../../shared/portrait-studio'
 import { isFolderMediaId } from '../../shared/media-folders'
 import { voiceEffectsSchema } from '../../shared/voice-effects-schema'
@@ -50,6 +51,7 @@ export const avatarCatalogSchema = z.object({
     voiceSpeed: z.number().finite().min(0.5).max(1.5).default(1),
     voiceEffects: voiceEffectsSchema.default(DEFAULT_VOICE_EFFECTS),
     mediaSkill: mediaSkillSchema.default(() => structuredClone(DEFAULT_MEDIA_SKILL)),
+    skills: z.object({ imageGeneration: z.boolean() }).strict().default(() => ({ ...DEFAULT_AVATAR_SKILLS })),
     experience: z.custom<AvatarExperience>(value => parseAvatarExperience(value) !== null, 'Invalid experience settings')
       .default(() => defaultExperience()),
     wakePhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake phrase').optional(),

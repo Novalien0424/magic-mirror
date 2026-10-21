@@ -43,6 +43,8 @@ import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { StudioView } from '../../shared/portrait-studio'
 import { PortraitStudioLayer, studioCoversAvatar } from './portrait-studio-layer'
 import { downscaleStudioImage } from './studio-image'
+import { ImageSkillLayer } from './image-skill-layer'
+import type { ImageSkillView } from '../../shared/image-skill'
 import {
   projectAvatarState,
   type AvatarConversationState,
@@ -76,6 +78,7 @@ type MirrorRealtimeRuntimeBridge = Pick<
   | 'findMedia'
   | 'searchYoutube'
   | 'studio'
+  | 'imageSkill'
   | 'captureCamera'
   | 'memory'
   | 'memoryInput'
@@ -483,6 +486,7 @@ function createMirrorRealtimeRuntimeOwner(
     onSearchYoutube: bridge.searchYoutube,
     onCameraCapture: identity => bridge.captureCamera(identity),
     onStudioRequest: bridge.studio,
+    onImageRequest: bridge.imageSkill,
     prepareStudioImage: url => downscaleStudioImage(url),
     onMemory: bridge.memory,
     onMemoryInput: bridge.memoryInput,
@@ -849,6 +853,7 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
   const [avatarSpeechActive, setAvatarSpeechActive] = useState(false)
   const [mediaSkillState, setMediaSkillState] = useState({ active: false, hideAvatar: false, fadeMs: 0 })
   const [studioView, setStudioView] = useState<StudioView | null>(null)
+  const [imageView, setImageView] = useState<ImageSkillView | null>(null)
   // Keeps the avatar's fade-in after the portrait frame closes (the media fade variable may be 0).
   const [studioFade, setStudioFade] = useState(false)
   const studioCoverRef = useRef(false)
@@ -1286,6 +1291,13 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
         sceneVisualControllerRef.current?.handleCommand(command)
         return
       }
+      if (command.type === 'image_view') { setImageView(command.view); return }
+      if (command.type === 'image_event') {
+        if (realtimeRuntimeOwnerRef.current?.imageEvent?.(command.event, command.identity) !== true && bridge && 'reportRealtimeMetadata' in bridge) {
+          bridge.reportRealtimeMetadata({ kind: 'session', status: 'info', reason: 'image_event_dropped' })
+        }
+        return
+      }
       if (command.type === 'studio_view') {
         const covered = studioCoversAvatar(command.view)
         if (studioCoverRef.current && !covered) {
@@ -1435,6 +1447,11 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
         </div>}
         {toolWorking && view.state === 'active' && <div className="mirror-working" role="status" aria-label="Working"><span aria-hidden="true">✧</span></div>}
         {studioShown && <PortraitStudioLayer view={studioView} />}
+        {studioShown && <ImageSkillLayer view={imageView} onDismiss={() => {
+          const identity = realtimeRuntimeOwnerRef.current?.getSnapshot().currentIdentity
+          const bridge = window.magicMirror
+          if (identity && bridge && 'imageSkill' in bridge) void bridge.imageSkill?.({ action: 'dismiss' }, identity)
+        }} />}
       </div>
     )
   }

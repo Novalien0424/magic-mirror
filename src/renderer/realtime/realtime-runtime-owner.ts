@@ -190,6 +190,8 @@ export interface RealtimeRuntimeOwner {
   /** Forwards Portrait Studio events to the current session, which ignores events for another session. False when no session took it. */
   readonly studioEvent?: (event: import('../../shared/portrait-studio').StudioSessionEvent,
     identity: import('../../shared/portrait-studio').StudioEventIdentity) => boolean
+  readonly imageEvent?: (event: import('../../shared/image-skill').ImageSkillEvent,
+    identity: import('../../shared/bridge').RealtimeSessionIdentity) => boolean
   readonly speakVerbatim: (text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void) => RealtimeSceneDialogueResult
   readonly getSnapshot: () => RealtimeRuntimeSnapshot
 }
@@ -810,6 +812,11 @@ export function createRealtimeRuntimeOwner(
     studioEvent: (event: import('../../shared/portrait-studio').StudioSessionEvent, identity: import('../../shared/portrait-studio').StudioEventIdentity) => {
       if (state !== 'active' || !current?.session.studioEvent) return false
       current.session.studioEvent(event, identity)
+      return true
+    },
+    imageEvent: (event: import('../../shared/image-skill').ImageSkillEvent, identity: import('../../shared/bridge').RealtimeSessionIdentity) => {
+      if (state !== 'active' || !current?.session.imageEvent) return false
+      current.session.imageEvent(event, identity)
       return true
     },
     speakVerbatim,

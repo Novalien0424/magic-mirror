@@ -63,6 +63,89 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     if (await evaluate<boolean>("return !!document.querySelector('.runtime-status__mode')")) throw Error('studio_journey_qa_mode_badge_in_conversation')
     await shot('journey-01-mirror-conversation.png'); pass()
 
+    step = 'journey_avatar_skill_selection'
+    await edit("click('Avatars')")
+    await wait("return !!byLabel('Editing avatar') && !!section('Skills') && !button('Duplicate').disabled")
+    const originalId = await evaluate<string>("return byLabel('Editing avatar').value")
+    await edit("section('Skills').click()")
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === true")
+    await shot('journey-skills-enabled.png', '[aria-label="Avatar skills"]')
+    await edit("click('Duplicate')")
+    const copyId = await evaluate<string>("return byLabel('Editing avatar').value")
+    await edit("section('Skills').click()")
+    await edit("check('Image generation', false)")
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === false")
+    await edit(`set(byLabel('Editing avatar'), ${JSON.stringify(originalId)})`)
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === true")
+    await edit(`set(byLabel('Editing avatar'), ${JSON.stringify(copyId)})`)
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === false")
+    pass()
+
+    step = 'journey_avatar_skill_save_reload_publish'
+    await edit("click('Save all changes')")
+    await wait("return status() === 'Saved and checked. Ready to publish.' && !button('Save all changes').disabled")
+    await new Promise<void>(resolve => { input.console.webContents.once('did-finish-load', () => resolve()); input.console.webContents.reload() })
+    await wait("return !!button('Avatars')")
+    await edit("click('Avatars')")
+    await wait("return !!byLabel('Editing avatar') && !button('Save all changes').disabled")
+    await edit(`set(byLabel('Editing avatar'), ${JSON.stringify(copyId)})`)
+    await edit("section('Skills').click()")
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === false")
+    await edit("click('Publish all changes')")
+    await wait("return !!document.querySelector('[aria-label=\"Confirm publication\"]')")
+    await shot('journey-skills-publish.png', '.profile-publish-confirmation')
+    await edit("click('Confirm publish')")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.avatars.find(a => a.id === ${JSON.stringify(copyId)})?.skills?.imageGeneration === false
+      && r.value.active.avatarCatalog.avatars.find(a => a.id === ${JSON.stringify(originalId)})?.skills?.imageGeneration === true && !button('Use on Mirror').disabled`)
+    pass()
+
+    step = 'journey_avatar_skill_inspector'
+    await evaluate("document.querySelectorAll('.prompt-launcher button').forEach(b => { if (b.textContent === 'Tools & input ↗') b.click() })")
+    let skillInspector: BrowserWindow | undefined
+    for (let i = 0; i < 100 && !skillInspector; i++) {
+      skillInspector = BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w.getTitle() === 'Magic Mirror Prompts · Tools & input')
+      if (!skillInspector) await pause(100)
+    }
+    if (!skillInspector) throw Error('studio_journey_qa_skill_inspector_missing')
+    let inspected = false
+    for (let i = 0; i < 100 && !inspected; i++) {
+      inspected = await skillInspector.webContents.executeJavaScript(`(() => { const titles = [...document.querySelectorAll('article h2')].map(e => e.textContent);
+        return titles.some(t => t.startsWith('look_at_surroundings')) && !titles.some(t => /^(create_image|edit_image|dismiss_image|start_portrait_studio|studio_)/.test(t)) })()`)
+      if (!inspected) await pause(100)
+    }
+    skillInspector.close()
+    if (!inspected) throw Error('studio_journey_qa_skill_inspector_tools')
+    pass()
+
+    step = 'journey_avatar_skill_disabled_on_mirror'
+    await edit("click('Use on Mirror')")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(copyId)}`)
+    await wait("return modeButton('Interactive Studio').disabled && !modeButton('Conversation').disabled && modeButton('Conversation').getAttribute('aria-pressed') === 'true'")
+    for (const command of [{ action: 'mode', mode: 'studio' }, { action: 'test' }]) {
+      const code = await evaluate<string>(`const r = await window.magicMirror.studio(${JSON.stringify(command)}); return r.ok ? (r.value.action ?? r.value.test)?.code : 'ipc_failed'`)
+      if (code !== 'studio_skill_disabled') throw Error('studio_journey_qa_disabled_skill_bypass')
+    }
+    if (input.runtime.getAvatarSkillsForRuntime().imageGeneration) throw Error('studio_journey_qa_disabled_main_assignment')
+    await edit("section('Interactive Studio').click()")
+    await wait("return document.body.textContent.includes('Enable it in Skills to use Interactive Studio') && !!studioSection()")
+    await edit("section('Skills').click()")
+    const [skillWidth, skillHeight] = input.console.getSize()
+    input.console.setSize(1024, 768); await pause(300)
+    await wait("return document.documentElement.scrollWidth <= innerWidth + 2")
+    await shot('journey-skills-disabled-narrow.png', '[aria-label="Avatar skills"]')
+    input.console.setSize(skillWidth!, skillHeight!)
+    pass()
+
+    step = 'journey_avatar_skill_restore_original'
+    await edit(`set(byLabel('Editing avatar'), ${JSON.stringify(originalId)})`)
+    await wait("return !button('Use on Mirror').disabled")
+    await edit("click('Use on Mirror')")
+    await wait(`const r = await window.magicMirror.getConfig(); return r.ok && r.value.active.avatarCatalog.activeAvatarId === ${JSON.stringify(originalId)}`)
+    await wait("return document.querySelector('[aria-label=\"Avatar skills\"] input')?.checked === true && !modeButton('Interactive Studio').disabled")
+    if (!input.runtime.getAvatarSkillsForRuntime().imageGeneration) throw Error('studio_journey_qa_original_skill_changed')
+    await edit("click('Mirror')")
+    pass()
+
     step = 'journey_mode_switch_dormant'
     await edit("modeButton('Interactive Studio').click()")
     await wait("return modeButton('Interactive Studio').getAttribute('aria-pressed') === 'true' && document.querySelector('.runtime-status__mode')?.textContent === 'Interactive Studio mode'")
