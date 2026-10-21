@@ -96,6 +96,19 @@ describe('portrait studio runtime', () => {
     expect(h.reports.join(' ')).not.toMatch(/王曉明|answer 1/)
   })
 
+  it('never accepts an unconfirmed name, however many times it is read back, and reads back each correction', () => {
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    const setName = (name: string, confirmed: boolean) => h.runtime.handle({ action: 'set_name', name, confirmed, language: 'zh' }, identity)
+    for (let i = 0; i < 6; i++) expect(setName('王小明', false)).toMatchObject({ code: 'studio_name_heard', next: expect.stringContaining('「王小明」') })
+    expect(setName('王曉明', false)).toMatchObject({ code: 'studio_name_heard', next: expect.stringContaining('「王曉明」') })
+    expect(h.runtime.phase()).toBe('confirm')
+    expect(h.reports).not.toContain('studio_name_confirmed')
+    expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'a1', language: 'zh' }, identity)).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
+    expect(setName('王曉明', true)).toMatchObject({ code: 'studio_name_confirmed', next: expect.stringContaining('1 of 4') })
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question', name: '王曉明' })
+  })
+
   it('offers guest-list candidates and enforces only-mode', () => {
     const experience = defaultExperience()
     experience.guests = { names: ['王曉明', '林美玲'], match: 'only' }

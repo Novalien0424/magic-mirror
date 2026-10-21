@@ -1,22 +1,16 @@
-# Open work — reconciled 2026-10-18
+# Open work — reconciled 2026-10-21
 
 Only unresolved defects, limitations and acceptance remain here. Current delivery
 and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
-The 2026-10-18 code-audit findings and media deadline limitation are fixed:
-[evidence](docs/testing/todo-audit-fixes-2026-10-18.md). Memory model and
-sign-in upkeep: [evidence](docs/testing/memory-model-signin-2026-10-18.md).
-Interactive Studio, Mirror mode switch and Stream Deck key:
-[evidence](docs/testing/interactive-studio-2026-10-18.md) ·
-[user journeys](docs/testing/user-journeys-2026-10-18.md).
 
-## Earlier unresolved reliability
+## Unresolved reliability
 
-- [ ] **Camera transport/driver stall.** Minimal capture received no frames and
-  macOS reported about 99% invalid UVC payloads. App-owned, awake-only reset
-  restores frames briefly but cannot sustain this Arducam. Obtain controlled
-  alternate cable/port, powered-hub, device or host evidence to isolate the
-  boundary; do not depend on manual unplug/replug recovery.
-  [Camera investigation](docs/testing/open-issues-2026-10-13.md#1-camera-cannot-sustain-fresh-frames).
+- [ ] **Camera transport/driver reliability.** Full-HD delivery is still corrupt
+  or intermittent; direct USB and root access work, but no production transport
+  qualifies. Require actual 1920×1080, normally fresh within five seconds; low FPS
+  is allowed. Obtain vendor-matched firmware/PCB information or alternate physical
+  cable/port/host evidence, then qualify a persistent fix across restart/reboot.
+  [Current investigation](docs/testing/camera-availability-qa-2026-10-18.md).
 - [ ] **Wake robustness under media and cold start.** Validate representative
   human positives, near negatives and startup behavior over Dormant media. The
   Jabra speech-bed stress failures remain; synthetic detection rates are not
@@ -67,11 +61,10 @@ Interactive Studio, Mirror mode switch and Stream Deck key:
   Save/check feedback, live queued-scene cancellation, Return to Avatar while
   Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
   switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] **Studio names by voice.** Since 2026-10-20 a name counts as confirmed
-  only from the visitor's reply to its read-back; the final build passed 5 of 5
-  name steps (王小明 → 王曉明 by 「破曉的曉」, spelled M-I-A → Mia). The model still
-  decides how to rebuild a described character; measure with human speakers
-  before an event that depends on exact names.
+- [ ] **Studio names by voice.** Measure corrections and spelling with human
+  speakers before an event that depends on exact names. The 2026-10-20 synthetic
+  visits passed 5 of 5 name steps, and local tests now cover repeated unconfirmed
+  calls; neither establishes human accuracy.
   [Studio stories](docs/testing/interactive-studio-stories-2026-10-20.md).
 - [ ] **Sticker print output.** Stickers are shown on the mirror only; the
   keepsake has no file or printer output yet (`KeepsakeSink` is display-only).

@@ -48,6 +48,7 @@ const ACTIONS: Readonly<Record<string, string>> = {
   studio_started: 'Interactive Studio started for the visitor.',
   studio_start_duplicate: 'Interactive Studio is already running for this conversation.',
   studio_session_replaced: 'The previous studio closed; a new one started.',
+  studio_start_cancelled: 'The studio did not start: it was closed, or Mirror mode switched to Conversation, while it was getting ready.',
   studio_requires_active_session: 'Start a conversation first. The studio runs inside the current conversation.',
   studio_unavailable: 'Interactive Studio is unavailable. Check ChatGPT sign-in in System → Studio service and that settings are published.',
   studio_not_enabled: 'Interactive Studio is turned off for this avatar.',

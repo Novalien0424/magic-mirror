@@ -1,88 +1,83 @@
-# Magic Mirror — current handoff, 2026-10-18
+# Magic Mirror — current handoff, 2026-10-21
 
-Latest delivery (**Sticker pictures and visible prompts**, 2026-10-20
-afternoon; pushed to `field/macmini-deploy` and PR #2): Interactive Studio
-pictures default to **stickers** (square transparent PNG, one emblem with a
-white die-cut border) with Console **Picture type** (Sticker / Full picture)
-and **Name font**; hidden prompt text moved to versioned files and shown in the
-Prompt Inspector (memory helpers view only); one short line before a change
-request (owner choice); order guards stop the model finishing or changing a
-picture, or recording a name or answer, without the visitor. **Live: Oracle
-24/24, Pawnshop 24/24, published 23/23 as stickers, Cartographer 18/18 as a
-full picture; full suite 2668, `--studio-journey`, `--console` pass.** No print
-output yet (TODO). Runtime 14:44 Taipei: production on this build, Dormant and
-listening, Jabra 69 % (set after restart); QA artifacts deleted.
-[Evidence](docs/testing/interactive-studio-stories-2026-10-20.md).
+Current branch: `field/macmini-deploy`. Current task: the two Interactive Studio
+audit defects are fixed, committed with the preserved camera/QA and harness edits.
+[TODO](TODO.md) owns open work; [DECISIONS](DECISIONS.md) owns rulings.
 
-Earlier (**Interactive Studio follow-up**, 2026-10-20 morning): fixes for a
-repaint spoken twice and an English last description, prompts shortened to the
-realtime prompting guide, name-confirmation and clean-up fixes.
+## Studio audit fixes — 2026-10-21
 
-Earlier (**Interactive Studio stories**, 2026-10-19 late): three spiritual
-stories and the published studio ran live end to end; QA fixed the first step
-never asked, English stories starting in Chinese, lost name corrections, the
-undescribed last picture, and Console stale mode/result line and a false
-microphone warning. [Evidence](docs/testing/interactive-studio-stories-2026-10-19.md).
+Both audit defects are fixed in Main:
+- **Cancelled startup.** Leaving the studio (Conversation switch, Console exit,
+  scene or session close) now cancels starts still checking config/sign-in, and
+  studio-mode starts recheck the live switch before opening. A cancelled Console
+  start replies `ignored studio_start_cancelled`, a visitor start is refused with
+  the unavailable line, a studio wake tells the Mirror to greet normally; each
+  reports `studio_start_cancelled`.
+  [Startup](src/main/studio/studio-ipc.ts).
+- **Name confirmation.** The four-attempt shortcut is removed; an unconfirmed
+  name is read back until the visitor accepts it, per DECISIONS 2026-10-20.
+  [Runtime](src/main/studio/studio-runtime.ts).
 
-Earlier tonight (**Remote Console QA**, 2026-10-19; pushed to
-`field/macmini-deploy` and PR #2): the Desktop app **Remote Console Magic
-Mirror** (Console on the main display beside the avatar, for Chrome Remote
-Desktop) now has user journeys O8, five new `--operator-loop` cases and three
-live studio steps. QA found and fixed a Console defect: after INTERACTIVE
-STUDIO or START while asleep, the Console kept showing the old Mirror mode; it
-now re-reads it when shown. On the stamped build **`--operator-loop` (22
-cases), full suite, `--console` and `--studio-journey` pass**; three live
-`portrait_studio` visits: console steps 9/9, two runs fully green, one with an
-unidentified provider error event. The real Desktop, CONSOLE and START apps
-were checked on production at the macOS window level. Runtime 21:50 Taipei:
-production restarted on this build, Dormant and listening, Console hidden,
-Conversation, Jabra 69 %.
-[Evidence](docs/testing/remote-console-2026-10-18.md#full-qa-and-user-journeys-2026-10-19) ·
-[journeys](docs/testing/user-journeys-2026-10-18.md#o8-check-in-from-away-remote-console).
+Four new regression tests (IPC cancellation by exit and by mode switch, Main
+repeated/corrected names, and Main behind the renderer's read-back guard) fail
+on the previous code and pass now. Typecheck passes; the stamped build
+(2026-10-21 10:53 Taipei) and full `npm test` pass: 2672 passed, 2 skipped.
+No provider, microphone or Electron QA ran. The harness cleanup's recorded
+static checks passed (17 skill frontmatters, TOML/JSON settings, 222 local
+links, 17 heading anchors; all 12 invariant texts unchanged).
 
-Previous delivery (**Interactive Studio visit flow**; pushed to
-`field/macmini-deploy` and PR #2 `feature/portrait-studio` → `main`): in
-Interactive Studio mode the mirror wakes to its own **Studio wake phrase**
-(default 「招喚渡鴉使者」, set in the Console), runs name → questions → picture,
-says the **Studio farewell** (「願你找到你所追尋 / 再會 / 人類」, pauses between lines)
-and returns to Dormant; the studio character (system prompt), rules, questions,
-every step's reply, image prompt, on-glass text and failure lines are editable
-in an editor ordered by the visit; printing has a documented seam. Built on the
-same day's Interactive Studio, Mirror mode switch and Stream Deck key delivery.
-On the stamped build: **full suite, `--studio-journey` (incl. the real wake
-listener switching to the studio phrase), `--field-help`, `--console`,
-`--profiles`, `--editor`, `--operator-loop`, `review_ui` and one live
-`portrait_studio` run of the owner flow (17 steps, farewell → Dormant) pass.**
-[Evidence](docs/testing/interactive-studio-2026-10-18.md) ·
-[user journeys](docs/testing/user-journeys-2026-10-18.md).
+## Latest delivered feature
 
-Earlier today: memory extraction on `gpt-6.1-sol` and ChatGPT sign-in upkeep
-([evidence](docs/testing/memory-model-signin-2026-10-18.md)); the nine TODO
-code-audit fixes ([evidence](docs/testing/todo-audit-fixes-2026-10-18.md)).
-Earlier: Console revamp ([evidence](docs/testing/console-ux-revamp-2026-10-17.md)),
-Portrait Studio ([QA](docs/testing/portrait-studio-2026-10-17.md)), Loop Video
-Drive save ([evidence](docs/testing/loop-video-cloud-save-2026-10-17.md)),
-portrait Console mouse ([setup](docs/testing/portrait-console-mouse-2026-10-17.md)),
-Neo operator controls ([QA](docs/testing/operator-controls-2026-10-17.md)) and
-Loop Video ([ledger](docs/testing/operator-loop-2026-10-17.md)). Prior handoff:
-[archive](docs/archive/progress-before-clockout-2026-10-18.md).
+Interactive Studio supports configurable stories, its own wake phrase and
+farewell, a persisted Mirror mode switch, sticker/full-picture output, name font
+and visible prompts. Printing remains unimplemented. Latest recorded live QA
+(2026-10-20): Oracle 24/24, Pawnshop 24/24, published studio 23/23 as stickers;
+Cartographer 18/18 as a full picture. The recorded full suite was 2668 tests,
+with `--studio-journey` and `--console` passing. These historical passes do not
+cover the new audit defects or establish human acceptance.
+[Delivery and retained failures](docs/testing/interactive-studio-stories-2026-10-20.md) ·
+[Remote Console](docs/testing/remote-console-2026-10-18.md) ·
+[Artifact cleanup record](docs/testing/qa-artifact-cleanup-2026-10-20.md).
 
-Runtime (**14:29 Taipei, 2026-10-18**): production app restarted on the new
-build after QA; Mirror mode Conversation; published config version 19. Stream
-Deck: the five-key profile is imported and selected for the Neo ("Magic Mirror
-copy"); the old four-key profile is still listed, unused. Output: Jabra (default
-device) **69 %, unmuted** (the owner's normal level); input gain 57 unchanged. The owner is away for two days.
+## Camera investigation — preserved, blocked
 
-Open gaps (all in [TODO](TODO.md)): saying 「招喚渡鴉使者」 at the mirror and a
-physical INTERACTIVE STUDIO press; a human studio visit; the QA sound wrapper
-under output-device switches; the stricter `gpt-6.1-sol` judge baseline; no real
-cold Drive download since the deadline change; Chrome Remote Desktop pointer;
-physical Neo checks; camera, wake and dialogue boundaries in the
-[open-issues ledger](docs/testing/open-issues-2026-10-13.md). No phase
-acceptance changes.
+The owner requires actual **1920×1080**, normally a fresh photo within **5 seconds**;
+low FPS and minor edge defects are allowed only with the face intact. Root/direct
+USB capture works, but usable images are not repeatable. Strict JPEG checks
+overturned the earlier ImageIO throughput result: only 2/975 MJPEG30 and 5/124
+MJPEG5 frames decoded without warnings. H264 supplied isolated clean frames at
+2.251 and 2.558 seconds, then failed the next five-second cold-start window.
+No face-safe damage bound, production transport or persistent privileged service
+is qualified. Decoder/transport success alone is not usable-image acceptance.
 
-Next: owner presses INTERACTIVE STUDIO, says the studio wake phrase at the
-mirror (if detection is weak, try 召喚 instead of 招喚 in Interactive Studio ›
-1 · Start), runs one visit to the farewell, then START MIRROR; walks user
-journeys O2–O4 on the portrait TV. Leave runtime and device state under the
-owner's control.
+Local app edits permit full-HD snapshots without upscaling and bound IPC framing.
+Recorded checks: 300 snapshot/path tests, 15 availability tests, node/web
+typechecks and a stamped build; the H264 checker has 19 focused tests and twelve
+RAM-only integration cases. These checks were not rerun for this documentation task.
+Next discriminator: vendor-matched firmware/PCB information or a different
+physical cable/port/controller/host. No matching firmware or remote VBUS switch
+is available; neither cable nor macOS is uniquely established as the cause.
+A deployed repair must survive restart/reboot and still needs app/avatar and
+48-hour/200-request acceptance.
+[Criteria, failures and restoration](docs/testing/camera-availability-qa-2026-10-18.md) ·
+[Driver/hardware research](docs/testing/arducam-driver-research-2026-10-18.md).
+
+## Runtime observation — 2026-10-21 09:49 Taipei
+
+Read-only `launchctl print gui/501/com.magicmirror.launchagent` returned exit 113:
+service not found. A PID/parent/executable-name inventory found no Magic Mirror
+Electron or native camera process. This establishes that the normal app was not
+observed running at this check; it does not establish why it stopped.
+No launch, stop, restart, device or audio setting change was made.
+
+The last recorded production state was 2026-10-20 14:44 Taipei: Dormant,
+listening, Jabra 69%. It is historical, not the current device/mode state.
+The older 2026-10-18 PID/audio snapshot and full investigation handoff are
+preserved in the [prior handoff](docs/archive/progress-before-harness-cleanup-2026-10-21.md).
+
+## Next work
+
+Keep camera research pending new vendor/hardware evidence. Human Studio visits, physical
+wake/Neo/remote-pointer checks, QA output-device restoration, live judge baseline,
+cold Drive downloads and Mac field acceptance remain in [TODO](TODO.md).
+Runtime is left under the owner's control.

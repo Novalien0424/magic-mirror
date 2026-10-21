@@ -161,6 +161,24 @@ describe('Portrait Studio IPC', () => {
     expect(h.dispatched.some(c => (c as { type: string }).type === 'studio_event')).toBe(false)
   })
 
+  it('cancels Console and visitor starts still checking config when the operator exits', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const h = harness({ experience: async () => { await gate; return defaultExperience() } })
+    const consoleStart = h.console({ action: 'start' }) as Promise<{ value: { status: { active: boolean }; action: { status: string; code: string } } }>
+    const visitorStart = h.mirror({ action: 'start', source: 'visitor' })
+    // Console replies include status, which reads the same config: settle them after the release.
+    const exited = h.console({ action: 'exit' })
+    release()
+    await exited
+    expect((await consoleStart).value).toMatchObject({ status: { active: false }, action: { status: 'ignored', code: 'studio_start_cancelled' } })
+    expect(await visitorStart).toMatchObject({ status: 'rejected', code: 'studio_start_cancelled', next: studioPrompt(defaultExperience().studio, 'unavailable') })
+    expect(h.dispatched.some(c => (c as { type: string }).type === 'studio_event')).toBe(false)
+    expect(h.reports.filter(r => r === 'studio_start_cancelled')).toHaveLength(2)
+    // A later start is not affected.
+    expect(((await h.console({ action: 'start' })) as { value: { action: { code: string } } }).value.action.code).toBe('studio_started')
+  })
+
   it('does not report a studio-default failure when a Console start won the race', async () => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -264,6 +282,43 @@ describe('Portrait Studio IPC', () => {
       normal.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
       await new Promise(resolve => setTimeout(resolve, 0))
       expect(events(normal)).toEqual([])
+    })
+
+    it('does not open a studio switched back to Conversation while its start was still checking config', async () => {
+      let release!: () => void
+      let gate = new Promise<void>(resolve => { release = resolve })
+      const experience = async () => { await gate; return defaultExperience() }
+      // Live switch: Studio, then Conversation before the checks finish.
+      const mirrorMode = store()
+      const h = harness({ mirrorMode, experience })
+      // Console replies include status, which reads the same config: settle them after the release.
+      const switched = [h.console({ action: 'mode', mode: 'studio' }), h.console({ action: 'mode', mode: 'conversation' })]
+      release()
+      await Promise.all(switched)
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const status = await h.console({ action: 'status' }) as { value: { status: { mirrorMode: string; active: boolean } } }
+      expect(status.value.status).toMatchObject({ mirrorMode: 'conversation', active: false })
+      expect(events(h)).toEqual([])
+      expect(h.reports).toContain('studio_start_cancelled')
+      // Studio wake: switched off while waking, the Mirror is told to greet normally.
+      gate = new Promise<void>(resolve => { release = resolve })
+      const waking = store('studio')
+      const w = harness({ lifecycle: 'activating', mirrorMode: waking, experience })
+      w.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
+      const off = w.console({ action: 'mode', mode: 'conversation' })
+      release()
+      await off
+      await vi.waitFor(() => expect(w.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'closed', reason: 'studio_start_cancelled' }, identity: RT1 }))
+      expect(events(w)).toEqual(['closed'])
+      // Off and on again: only the newer start opens the studio, once.
+      gate = new Promise<void>(resolve => { release = resolve })
+      const again = harness({ mirrorMode: store(), experience })
+      const toggled = (['studio', 'conversation', 'studio'] as const).map(mode => again.console({ action: 'mode', mode }))
+      release()
+      await Promise.all(toggled)
+      await vi.waitFor(() => expect(events(again)).toEqual(['enter']))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(events(again)).toEqual(['enter'])
     })
   })
 })

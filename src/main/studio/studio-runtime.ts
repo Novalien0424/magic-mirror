@@ -31,7 +31,6 @@ interface Run {
   language: StudioLanguage
   phase: StudioPhase
   name: string
-  nameAttempts: number
   answers: string[]
   revisionsLeft: number
   revision: number
@@ -181,7 +180,7 @@ export function createStudioRuntime(input: {
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
     const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: studioStartLanguage(experience.studio.startScript), phase: asksName(experience) ? 'name' : 'question',
-      name: '', nameAttempts: 0, answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
+      name: '', answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
     run = r
     input.report(`studio_started_${source}`)
     publish(r)
@@ -206,8 +205,8 @@ export function createStudioRuntime(input: {
         r.phase = 'confirm'; publish(r)
         return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
       }
-      r.nameAttempts += request.confirmed ? 0 : 1
-      if (request.confirmed || r.nameAttempts > 3) {
+      // Only the visitor's acceptance of a read-back confirms; an unconfirmed name is read back again.
+      if (request.confirmed) {
         r.name = name
         r.phase = 'question'
         input.report('studio_name_confirmed')

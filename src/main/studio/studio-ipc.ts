@@ -11,7 +11,7 @@ import type { MirrorModeStore } from '../mirror-mode'
 import type { ConsoleResponse } from '../../shared/console-types'
 import { createCodexImageProvider, type PortraitImageProvider } from './image-provider'
 import { buildPortraitPrompt } from './prompt-builder'
-import { createStudioRuntime, type KeepsakeSink, type StudioIdentity } from './studio-runtime'
+import { createStudioRuntime, type KeepsakeSink, type StudioIdentity, type StudioStartSource } from './studio-runtime'
 
 interface Registrar { handle(channel: string, handler: (event: unknown, ...args: unknown[]) => unknown): void }
 interface SnapshotLike { readonly lifecycle: string; readonly realtimeSessionId: string | null; readonly sessionGeneration: number }
@@ -70,6 +70,15 @@ export function registerStudioIpc(deps: {
   const currentIdentity = (): StudioIdentity | null => identityOf(deps.snapshot())
   const sameIdentity = (a: StudioIdentity | null, b: StudioIdentity | null) =>
     !!a && !!b && a.realtimeSessionId === b.realtimeSessionId && a.sessionGeneration === b.sessionGeneration
+  // Leaving the studio (Conversation switch, exit, scene) also cancels starts still checking config and sign-in.
+  let startEpoch = 0
+  const exit = (reason: string) => { startEpoch += 1; runtime.close(reason) }
+  /** Rechecked after the async checks: an exit since, or a studio-mode start whose switch is now off. */
+  function startCancelled(epoch: number, source: StudioStartSource): boolean {
+    const cancelled = epoch !== startEpoch || (source === 'mode' || source === 'session_default') && deps.mirrorMode?.get() === 'conversation'
+    if (cancelled) deps.report('studio_start_cancelled', 'info')
+    return cancelled
+  }
   /**
    * In Interactive Studio mode a woken session enters the studio. The mode is
    * the one captured for this session (the renderer's greeting used the same).
@@ -77,6 +86,7 @@ export function registerStudioIpc(deps: {
    * is not a new visit and never restarts the studio.
    */
   async function startDefault(identity: StudioIdentity): Promise<void> {
+    const epoch = startEpoch
     const sessionMode = deps.mirrorMode?.sessionMode(identity)
     // Switched on while this session was still waking: start it like a live switch.
     if (sessionMode === 'conversation' && deps.mirrorMode?.get() === 'studio') { await applyMode('studio'); return }
@@ -85,6 +95,11 @@ export function registerStudioIpc(deps: {
     const experience = saved && { ...saved, defaultMode: 'portrait_studio' as const }
     const ok = !!experience && await usable()
     if (!sameIdentity(identity, currentIdentity())) return
+    if (startCancelled(epoch, 'session_default')) {
+      // The Mirror greets normally, unless the switch turned back on and that start already entered the studio.
+      if (!runtime.activeFor(identity)) deps.dispatch({ type: 'studio_event', event: { event: 'closed', reason: 'studio_start_cancelled' }, identity })
+      return
+    }
     const result = ok ? runtime.start(identity, experience, 'session_default') : null
     if (experience && result?.status === 'accepted') {
       deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
@@ -99,10 +114,12 @@ export function registerStudioIpc(deps: {
   }
   /** Console or mode-switch start inside the current conversation. */
   async function startFor(identity: StudioIdentity, source: 'console' | 'mode'): Promise<{ status: StudioOutcome; code: string }> {
+    const epoch = startEpoch
     const experience = await deps.experience().catch(() => null)
     if (!experience || !await usable()) return { status: 'rejected', code: 'studio_unavailable' }
     // The session may have ended or rolled over while config and sign-in were checked.
     if (!sameIdentity(identity, currentIdentity())) return { status: 'rejected', code: 'studio_requires_active_session' }
+    if (startCancelled(epoch, source)) return { status: 'ignored', code: 'studio_start_cancelled' }
     const result = runtime.start(identity, experience, source)
     if (result.status === 'accepted') deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
         language: studioStartLanguage(experience.studio.startScript) }, identity })
@@ -110,7 +127,7 @@ export function registerStudioIpc(deps: {
   }
   /** A live switch applies to the visitor now: Interactive Studio starts, Conversation closes the studio. */
   async function applyMode(mode: MirrorMode): Promise<void> {
-    if (mode === 'conversation') { if (runtime.isActive()) runtime.close('studio_operator_exit'); return }
+    if (mode === 'conversation') { exit('studio_operator_exit'); return }
     const identity = currentIdentity()
     if (!identity || runtime.activeFor(identity)) return
     const result = await startFor(identity, 'mode')
@@ -140,10 +157,12 @@ export function registerStudioIpc(deps: {
     const identity = (envelope as Record<string, unknown>).identity
     if (!matches(identity)) { deps.report('studio_session_stale', 'info'); return { status: 'ignored', code: 'studio_session_stale' } }
     if (request.action !== 'start') return runtime.handle(request, identity)
+    const epoch = startEpoch
     const experience = await deps.experience().catch(() => null)
     if (!experience) { deps.report('studio_config_unavailable', 'degraded'); return unavailable() }
     if (!await usable()) { deps.report('studio_auth_required', 'degraded'); return unavailable(experience) }
     if (!matches(identity)) return { status: 'ignored', code: 'studio_session_stale' }
+    if (startCancelled(epoch, request.source)) return { ...unavailable(experience), code: 'studio_start_cancelled' }
     return runtime.start(identity, experience, request.source)
   })
 
@@ -163,7 +182,7 @@ export function registerStudioIpc(deps: {
     if (command.action === 'status') return { ok: true, value: { status: await status() } }
     if (command.action === 'exit') {
       const active = runtime.isActive()
-      runtime.close('studio_operator_exit')
+      exit('studio_operator_exit')
       return { ok: true, value: { status: await status(), action: { status: active ? 'accepted' : 'ignored', code: active ? 'studio_operator_exit' : 'studio_not_active' } } }
     }
     if (command.action === 'mode') {
@@ -189,7 +208,7 @@ export function registerStudioIpc(deps: {
   })
 
   return {
-    close: (reason: string) => runtime.close(reason),
+    close: exit,
     image: (id: string) => runtime.image(id),
   }
 }

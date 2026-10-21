@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { invokeFunctionTool, RunContext, type FunctionTool } from '@openai/agents'
+import type { PortraitImageProvider } from '../../src/main/studio/image-provider'
+import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
 import { createRealtimeSession, type CreateRealtimeSessionInput, type RealtimeSessionDependencies } from '../../src/renderer/realtime/realtime-session-adapter'
 import { createDeterministicRealtimeTransport } from '../../src/renderer/realtime/realtime-transport'
 import { avatarProfileSessionSettings } from '../../src/shared/avatar-prompt'
@@ -464,6 +466,34 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'input_audio_buffer.committed', item_id: 'v3' })
     await setName('王曉明', true)
     expect(confirmations()).toEqual([false, false, false, true])
+  })
+
+  it('keeps reading back an unconfirmed name in Main and the Mirror together, through repeats and corrections', async () => {
+    const p = probe()
+    const experience = defaultExperience()
+    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }) as unknown as PortraitImageProvider,
+      dispatch: () => true, activity: vi.fn(), report: vi.fn() })
+    const { requests } = session(p, request => request.action === 'start' ? main.start(ID, experience, request.source) : main.handle(request, ID))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    // A spoken reply returns the payload itself; a background one wraps it in content.
+    const setName = async (name: string, confirmed: boolean) => {
+      const result = await call(tool(p.agents[1]!, 'studio_set_name'), { name, confirmed, language: 'zh' }) as { studio?: { code: string }; content?: { studio: { code: string } } }
+      return (result.content ?? result).studio?.code
+    }
+    // The model never confirms: every visitor reply is read back again, with no attempt limit.
+    for (let turn = 1; turn <= 5; turn++) {
+      p.event({ type: 'input_audio_buffer.committed', item_id: `v${turn}` })
+      expect(await setName('王小明', false)).toBe('studio_name_heard')
+    }
+    // A correction claimed as confirmed, in the turn it is first heard and again: still a read-back.
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v6' })
+    expect(await setName('王曉明', true)).toBe('studio_name_heard')
+    expect(await setName('王曉明', true)).toBe('studio_name_heard')
+    expect(main.phase()).toBe('confirm')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'v7' })
+    expect(await setName('王曉明', true)).toBe('studio_name_confirmed')
+    expect(main.phase()).toBe('question')
+    expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, false, false, false, false, false, true])
   })
 
   it('says the repaint once: a change asked with a spoken preamble needs no second reply', async () => {
