@@ -69,7 +69,7 @@ button log `started`, `tv_awake`; LaunchAgent running, PID 54909, never exited.
 Main ready, Mirror shown fullscreen on `T749-fHD720`; no new stderr. The earlier
 09:49 absence followed the 2026-10-20 17:26 STOP (`stopped`, `tv_standby`).
 The Jabra (default output) was found at 0 % muted; after the app opened it,
-it was set to 69 % unmuted and held at a re-read 30 s later. No wake,
+it was set to 69 % unmuted and held at a re-read about 12 s later. No wake,
 conversation or Studio visit was exercised after this deploy.
 The 2026-10-18 PID/audio snapshot and full investigation handoff are
 preserved in the [prior handoff](docs/archive/progress-before-harness-cleanup-2026-10-21.md).
