@@ -62,17 +62,16 @@ A deployed repair must survive restart/reboot and still needs app/avatar and
 [Criteria, failures and restoration](docs/testing/camera-availability-qa-2026-10-18.md) ·
 [Driver/hardware research](docs/testing/arducam-driver-research-2026-10-18.md).
 
-## Runtime observation — 2026-10-21 09:49 Taipei
+## Runtime — deployed 2026-10-21 10:56 Taipei
 
-Read-only `launchctl print gui/501/com.magicmirror.launchagent` returned exit 113:
-service not found. A PID/parent/executable-name inventory found no Magic Mirror
-Electron or native camera process. This establishes that the normal app was not
-observed running at this check; it does not establish why it stopped.
-No launch, stop, restart, device or audio setting change was made.
-
-The last recorded production state was 2026-10-20 14:44 Taipei: Dormant,
-listening, Jabra 69%. It is historical, not the current device/mode state.
-The older 2026-10-18 PID/audio snapshot and full investigation handoff are
+Commit `480dfb6` (stamped build 10:53) was started with the START script:
+button log `started`, `tv_awake`; LaunchAgent running, PID 54909, never exited.
+Main ready, Mirror shown fullscreen on `T749-fHD720`; no new stderr. The earlier
+09:49 absence followed the 2026-10-20 17:26 STOP (`stopped`, `tv_standby`).
+The Jabra (default output) was found at 0 % muted; after the app opened it,
+it was set to 69 % unmuted and held at a re-read 30 s later. No wake,
+conversation or Studio visit was exercised after this deploy.
+The 2026-10-18 PID/audio snapshot and full investigation handoff are
 preserved in the [prior handoff](docs/archive/progress-before-harness-cleanup-2026-10-21.md).
 
 ## Next work
