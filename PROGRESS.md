@@ -10,6 +10,10 @@ Feature commit `96f48e3` is pushed to `origin/field/macmini-deploy` and deployed
 through the existing Mac LaunchAgent. The normal app is running; checked at
 20:28 Taipei. Raven is asleep with wake listening active. The deployed Console
 shows Image generation enabled under Avatars → Skills.
+Clocked out at **20:36 Taipei**. LaunchAgent and Main PID 87151 were freshly
+confirmed running; the app is left running without a restart or setting change.
+The last live UI check remains 20:28. Feature `96f48e3` and deployment record
+`907669a` are pushed; this handoff records the requested clock-out.
 [TODO](TODO.md) owns open acceptance; [DECISIONS](DECISIONS.md) owns rulings.
 
 ## Selectable shared image capability
