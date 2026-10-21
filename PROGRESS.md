@@ -1,7 +1,8 @@
 # Magic Mirror — current handoff, 2026-10-21
 
-Current branch: `field/macmini-deploy`. Current task: the two Interactive Studio
-audit defects are fixed, committed with the preserved camera/QA and harness edits.
+Current branch: `field/macmini-deploy`. Clocked out 2026-10-21 11:05 Taipei:
+the two Interactive Studio audit defects are fixed, committed and deployed with
+the preserved camera/QA and harness edits; the app is stopped.
 [TODO](TODO.md) owns open work; [DECISIONS](DECISIONS.md) owns rulings.
 
 ## Studio audit fixes — 2026-10-21
@@ -62,15 +63,20 @@ A deployed repair must survive restart/reboot and still needs app/avatar and
 [Criteria, failures and restoration](docs/testing/camera-availability-qa-2026-10-18.md) ·
 [Driver/hardware research](docs/testing/arducam-driver-research-2026-10-18.md).
 
-## Runtime — deployed 2026-10-21 10:56 Taipei
+## Runtime — stopped 2026-10-21 11:02 Taipei
 
-Commit `480dfb6` (stamped build 10:53) was started with the START script:
-button log `started`, `tv_awake`; LaunchAgent running, PID 54909, never exited.
-Main ready, Mirror shown fullscreen on `T749-fHD720`; no new stderr. The earlier
-09:49 absence followed the 2026-10-20 17:26 STOP (`stopped`, `tv_standby`).
-The Jabra (default output) was found at 0 % muted; after the app opened it,
-it was set to 69 % unmuted and held at a re-read about 12 s later. No wake,
-conversation or Studio visit was exercised after this deploy.
+Commit `480dfb6` (stamped build 10:53) is the deployed `out/`. It was started
+at 10:56 with the START script (`started`, `tv_awake`; Mirror fullscreen on
+`T749-fHD720`, no new stderr), then stopped at the owner's request at 11:02
+with the STOP script: button log `stopped`, `tv_standby`, `mouse_stopped`;
+`APP_EXIT code=0 reason=operator_stop`; LaunchAgent unloaded (print exit 113);
+no Electron process. The glass stays black through TV standby; Mac HDMI and
+display layout are unchanged. Press START to resume.
+The Jabra (default output) read 0 % muted this morning, after the 10-20 STOP;
+set to 69 % unmuted while the app ran, it read 0 % muted again right after this
+STOP, still the default output. No STOP code mutes it; the cause is unestablished.
+After the next START, set it to 69 % unmuted once the app has opened it.
+No wake, conversation or Studio visit was exercised on this build.
 The 2026-10-18 PID/audio snapshot and full investigation handoff are
 preserved in the [prior handoff](docs/archive/progress-before-harness-cleanup-2026-10-21.md).
 
