@@ -21,6 +21,7 @@ import { runRavenWakeAecQa } from './raven-wake-aec-qa'
 import { runRavenWakeBrowserQa } from './raven-wake-browser-qa'
 import { runReviewUiQa } from './review-ui-qa'
 import { runNativeCameraQa, runNativeCameraDeliveryQa } from './camera/native-qa'
+import { runCameraAvailabilityQa } from './camera/availability-qa'
 import { runRavenJudgeCalibrationQa, runRavenMemoryIntentCalibrationQa } from './raven-judge-calibration-qa'
 
 // This driver runs only in the isolated Phase 4 QA process. It substitutes the
@@ -59,6 +60,7 @@ const DOM = `
 `
 
 export async function runPhase4ConsoleQa(input: Phase4QaInput): Promise<Phase4QaResult> {
+  if (process.env['MIRROR_REVIEW_UI_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'camera_availability') return runCameraAvailabilityQa(input)
   if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'memory_intent_calibration') return runRavenMemoryIntentCalibrationQa(input)
   if (process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'judge_calibration') return runRavenJudgeCalibrationQa(input)
   if (process.env['MIRROR_REVIEW_UI_QA'] === '1' && process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] === 'camera_delivery') return runNativeCameraDeliveryQa(input)

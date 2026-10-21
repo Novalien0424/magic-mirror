@@ -31,6 +31,12 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var qaStallAfter: Double?
     var qaStallReported = false
     let qaDeliveryOnly = CommandLine.arguments.contains("--qa-delivery-only")
+    let qaObserve = CommandLine.arguments.contains("--qa-observe")
+    let qaMode = CommandLine.arguments.first(where: { $0.hasPrefix("--qa-mode=") })?.split(separator: "=").last.map(String.init)
+    var qaInputWidth = 0, qaInputHeight = 0
+    var qaInputPixelFormat: UInt32 = 0
+    var qaFrameDuration = 0.0
+    var qaSequence = 0
     var qaSourceTime = CMTime.invalid
     var reportedDrops = Set<String>()
     let imageContext = CIContext(options: [.cacheIntermediates: false])
@@ -183,12 +189,16 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         do {
             let next = AVCaptureSession()
             next.beginConfiguration()
-            if next.canSetSessionPreset(.vga640x480) { next.sessionPreset = .vga640x480 }
+            let defaultPreset = qaObserve && CommandLine.arguments.contains("--qa-default-preset")
+            let hdPreset = qaObserve && CommandLine.arguments.contains("--qa-hd-preset")
+            if hdPreset && next.canSetSessionPreset(.hd1280x720) { next.sessionPreset = .hd1280x720 }
+            else if !defaultPreset && next.canSetSessionPreset(.vga640x480) { next.sessionPreset = .vga640x480 }
             let input = try AVCaptureDeviceInput(device: device)
             let output = AVCaptureVideoDataOutput()
             output.alwaysDiscardsLateVideoFrames = true
             output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String:
-                kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
+                qaObserve && CommandLine.arguments.contains("--qa-native-output")
+                    ? kCVPixelFormatType_422YpCbCr8_yuvs : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
             output.setSampleBufferDelegate(self, queue: queue)
             guard next.canAddInput(input), next.canAddOutput(output) else {
                 next.commitConfiguration(); status("camera_configuration_failed"); return
@@ -198,31 +208,88 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             // Keep the device configuration lock through both operations, then
             // release it immediately once the stream has started.
             try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
+            var deviceLocked = true
+            defer { if deviceLocked { device.unlockForConfiguration() } }
             // Choose a format actually advertised by this UVC camera. Some
             // drivers reject the preset's inferred format during StartStream.
+            let modes: [String: (Int32, Int32, UInt32, Double)] = [
+                "low5": (320, 240, kCVPixelFormatType_422YpCbCr8_yuvs, 5),
+                "low15": (320, 240, kCVPixelFormatType_422YpCbCr8_yuvs, 15),
+                "vga5": (640, 480, kCVPixelFormatType_422YpCbCr8_yuvs, 5),
+                "vga15": (640, 480, kCVPixelFormatType_422YpCbCr8_yuvs, 15),
+                "mjpeg720": (1280, 720, kCVPixelFormatType_422YpCbCr8, 15),
+                "mjpeg7205": (1280, 720, kCVPixelFormatType_422YpCbCr8, 5),
+                "nv12720": (1280, 720, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, 15),
+                "mjpeg1080": (1920, 1080, kCVPixelFormatType_422YpCbCr8, 15),
+                "mjpeg10805": (1920, 1080, kCVPixelFormatType_422YpCbCr8, 5),
+                "yuy210805": (1920, 1080, kCVPixelFormatType_422YpCbCr8_yuvs, 5),
+                "yuy2720": (1280, 720, kCVPixelFormatType_422YpCbCr8_yuvs, 5)
+            ]
+            let desired = qaObserve ? modes[qaMode ?? "vga15"] : modes["vga15"]
+            guard let desired else { next.commitConfiguration(); status("camera_qa_mode_invalid"); return }
+            let configureAfterStart = qaObserve && CommandLine.arguments.contains("--qa-configure-after-start")
+            let directRate = qaObserve ? CommandLine.arguments.first(where: { $0.hasPrefix("--qa-rate=") })?
+                .split(separator: "=").last.flatMap { Int32($0) } : nil
+            var selectedFormat: AVCaptureDevice.Format?
+            var selectedDuration: CMTime?
+            if qaObserve && CommandLine.arguments.contains("--qa-output-size") {
+                output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                    kCVPixelBufferWidthKey as String: Int(desired.0), kCVPixelBufferHeightKey as String: Int(desired.1)]
+            }
             if let format = device.formats.first(where: {
                 let size = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
-                return size.width == 640 && size.height == 480
+                return size.width == desired.0 && size.height == desired.1
                     && CMFormatDescriptionGetMediaSubType($0.formatDescription)
-                        == kCVPixelFormatType_422YpCbCr8_yuvs
+                        == desired.2
             }) {
-                device.activeFormat = format
+                selectedFormat = format
+                if !configureAfterStart { device.activeFormat = format }
                 // UVC advertises 15.000015 fps, not exactly 15. Reuse the
                 // device's exact duration instead of silently staying at 30 fps
                 // or passing an unsupported rounded duration to AVFoundation.
-                if let range = format.videoSupportedFrameRateRanges.min(by: {
-                    abs($0.maxFrameRate - 15) < abs($1.maxFrameRate - 15)
-                }), abs(range.maxFrameRate - 15) < 0.1 {
-                    device.activeVideoMinFrameDuration = range.minFrameDuration
-                    device.activeVideoMaxFrameDuration = range.minFrameDuration
-                }
-            }
+                if let fps = directRate {
+                    let attempt = mirror_camera_qa_try_rate(Unmanaged.passUnretained(device).toOpaque(), fps)
+                    let minimum = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
+                    let maximum = CMTimeGetSeconds(device.activeVideoMaxFrameDuration)
+                    let advertised = format.videoSupportedFrameRateRanges.contains {
+                        Double(fps) >= $0.minFrameRate - 0.001 && Double(fps) <= $0.maxFrameRate + 0.001
+                    }
+                    emit(["type": "qa_rate_probe", "fps": Int(fps), "advertised": advertised ? 1 : 0,
+                        "minimumResult": Int(attempt.minimumResult), "maximumResult": Int(attempt.maximumResult),
+                        "restoreResult": Int(attempt.restoreResult),
+                        "minimumSeconds": minimum.isFinite ? minimum : 0,
+                        "maximumSeconds": maximum.isFinite ? maximum : 0])
+                    if attempt.minimumResult != 0 || attempt.maximumResult != 0 || attempt.restoreResult != 0 {
+                        next.commitConfiguration(); status("camera_qa_rate_api_rejected"); return
+                    }
+                } else if let range = format.videoSupportedFrameRateRanges.min(by: {
+                    abs($0.maxFrameRate - desired.3) < abs($1.maxFrameRate - desired.3)
+                }), abs(range.maxFrameRate - desired.3) < 0.1 {
+                    selectedDuration = range.minFrameDuration
+                    if !configureAfterStart {
+                        device.activeVideoMinFrameDuration = range.minFrameDuration
+                        device.activeVideoMaxFrameDuration = range.minFrameDuration
+                    }
+                } else if qaObserve { next.commitConfiguration(); status("camera_qa_rate_unsupported"); return }
+            } else if qaObserve { next.commitConfiguration(); status("camera_qa_format_unsupported"); return }
+            if configureAfterStart { device.unlockForConfiguration(); deviceLocked = false }
             next.commitConfiguration()
             session = next; deviceID = device.uniqueID
             lastFrame = ProcessInfo.processInfo.systemUptime
             status("camera_starting")
             next.startRunning()
+            if configureAfterStart, let format = selectedFormat, let duration = selectedDuration {
+                try device.lockForConfiguration(); deviceLocked = true
+                device.activeFormat = format
+                device.activeVideoMinFrameDuration = duration
+                device.activeVideoMaxFrameDuration = duration
+            }
+            if qaObserve {
+                let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+                qaInputWidth = Int(size.width); qaInputHeight = Int(size.height)
+                qaInputPixelFormat = CMFormatDescriptionGetMediaSubType(device.activeFormat.formatDescription)
+                qaFrameDuration = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
+            }
             // Starting a UVC stream may block during warmup. Count the frame
             // deadline from its return, before the queued delivery callbacks.
             lastFrame = ProcessInfo.processInfo.systemUptime
@@ -258,12 +325,21 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 return
             }
         }
-        if qaDeliveryOnly {
+        if qaDeliveryOnly || qaObserve {
             let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             guard sourceTime.isNumeric, !qaSourceTime.isValid || CMTimeCompare(sourceTime, qaSourceTime) > 0 else {
                 status("camera_qa_frame_timestamp_stale"); return
             }
             qaSourceTime = sourceTime
+            if qaObserve, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                qaSequence += 1
+                emit(["type": "qa_sample", "sequence": qaSequence,
+                    "sourceSeconds": CMTimeGetSeconds(sourceTime),
+                    "width": CVPixelBufferGetWidth(pixels), "height": CVPixelBufferGetHeight(pixels),
+                    "pixelFormat": CVPixelBufferGetPixelFormatType(pixels),
+                    "inputWidth": qaInputWidth, "inputHeight": qaInputHeight,
+                    "inputPixelFormat": qaInputPixelFormat, "frameDurationSeconds": qaFrameDuration])
+            }
         }
         lastFrame = now
         if now - lastFrameReceipt >= 0.5 {
@@ -274,16 +350,40 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         if !stopping, let id = captureID, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
             captureID = nil
             autoreleasepool {
-                // UVC drivers may ignore the requested VGA preset. The IPC
-                // snapshot contract caps both dimensions at 1280 regardless.
+                // Keep these bounds aligned with shared/camera-tracking.ts.
+                // Preserve full HD (landscape or portrait), never upscale.
+                let maximumDimension = 1920
+                let maximumPixels = 1920 * 1080
+                let maximumJPEGBytes = 4 * 1024 * 1024
+                let maximumMessageBytes = 6 * 1024 * 1024
                 let source = CIImage(cvPixelBuffer: pixels)
-                let scale = min(1, 1280 / max(source.extent.width, source.extent.height))
+                let scale = min(1, min(CGFloat(maximumDimension) / max(source.extent.width, source.extent.height),
+                    sqrt(CGFloat(maximumPixels) / (source.extent.width * source.extent.height))))
+                let width = Int((source.extent.width * scale).rounded(.down))
+                let height = Int((source.extent.height * scale).rounded(.down))
+                guard width > 0, height > 0, width <= maximumDimension, height <= maximumDimension,
+                      width * height <= maximumPixels else {
+                    status("camera_snapshot_dimensions_invalid"); emit(["type": "snapshot", "id": id]); return
+                }
                 let image = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                if let jpeg = imageContext.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(),
-                    options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]), jpeg.count <= 500000 {
-                    emit(["type": "snapshot", "id": id, "jpeg": jpeg.base64EncodedString(),
-                          "width": Int(image.extent.width.rounded()), "height": Int(image.extent.height.rounded())])
-                } else { status("camera_snapshot_encode_failed"); emit(["type": "snapshot", "id": id]) }
+                    .cropped(to: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+                guard let jpeg = imageContext.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(),
+                    options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.95]) else {
+                    status("camera_snapshot_encode_failed"); emit(["type": "snapshot", "id": id]); return
+                }
+                guard jpeg.count <= maximumJPEGBytes else {
+                    status("camera_snapshot_jpeg_oversized"); emit(["type": "snapshot", "id": id]); return
+                }
+                // Avoid escaping base64 slashes, so a bounded JPEG fits the framed pipe limit.
+                guard let message = try? JSONSerialization.data(withJSONObject: ["type": "snapshot", "id": id,
+                    "jpeg": jpeg.base64EncodedString(), "width": width, "height": height], options: [.withoutEscapingSlashes]),
+                    let line = String(data: message, encoding: .utf8) else {
+                    status("camera_snapshot_encode_failed"); emit(["type": "snapshot", "id": id]); return
+                }
+                guard message.count + 1 <= maximumMessageBytes else {
+                    status("camera_snapshot_message_oversized"); emit(["type": "snapshot", "id": id]); return
+                }
+                print(line)
             }
         }
         // An empty room needs fewer Vision passes. A newly detected face

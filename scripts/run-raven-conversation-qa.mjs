@@ -11,6 +11,7 @@ import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
 import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT } from '../src/main/raven-conversation-fixture.ts'
 import { defaultExperience } from '../src/shared/portrait-studio.ts'
 import { studioQaStory } from '../src/main/studio-qa-stories.ts'
+import { isCameraQaCase } from '../src/main/camera/qa-cases.ts'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('raven-qa')
@@ -41,6 +42,14 @@ if (variantIndex >= 0) {
   if (!['mini', 'full'].includes(variant)) throw Error('raven_qa_variant_invalid')
   args.splice(variantIndex, 2)
 }
+const cameraCaseIndex = args.indexOf('--camera-case')
+const cameraCase = cameraCaseIndex < 0 ? 'baseline' : args[cameraCaseIndex + 1]
+if (!isCameraQaCase(cameraCase)) throw Error('camera_qa_case_invalid')
+if (cameraCaseIndex >= 0) args.splice(cameraCaseIndex, 2)
+const cameraCheckIndex = args.indexOf('--camera-check')
+const cameraCheck = cameraCheckIndex < 0 ? 'screen' : args[cameraCheckIndex + 1]
+if (!['screen', 'stable', 'cycles'].includes(cameraCheck)) throw Error('camera_qa_check_invalid')
+if (cameraCheckIndex >= 0) args.splice(cameraCheckIndex, 2)
 // Interactive Studio story (portrait_studio only); --keep-transcript keeps the synthetic visit's
 // transcript and pictures in the run folder for an owner review, never by default.
 const storyIndex = args.indexOf('--studio-story')
@@ -51,9 +60,11 @@ const keepTranscript = args.includes('--keep-transcript')
 if (keepTranscript) args.splice(args.indexOf('--keep-transcript'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
 if ((storyIndex >= 0 || keepTranscript) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
+if ((cameraCaseIndex >= 0 || cameraCheckIndex >= 0) && selected !== 'camera_availability') throw Error('camera_qa_scenario_required')
 const mediaBgm = selected === 'media_bgm'
-const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery'].includes(selected)
-if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
+const nativeCamera = ['camera_native', 'camera_delivery', 'camera_availability'].includes(selected)
+const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery', 'camera_availability'].includes(selected)
+if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'camera_availability', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
 if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
 const build = await verifyBuild(repo)
@@ -159,8 +170,8 @@ await writeFile(join(root, 'raven-provenance.json'), JSON.stringify({ publishedC
     'src/main/raven-camera-input-qa.ts', 'src/main/raven-conversation-judge.ts'].map(path => readFile(join(repo, path)))))),
   modelTrial: modelTrial ? { version: modelTrial.version, variant, configVersion: config.configVersion } : null,
   name: avatar.name, rig: model.name, modelId: model.id, voice: avatar.voice, models: config.aiModels,
-  substitutions: ['isolated identity database', 'synthetic media folders', ...(physical ? [] : ['synthetic camera frame']), 'one fixture spell with mock hardware'],
-  deviceRoute: physical ? 'mac_speaker_to_jabra_microphone_and_native_camera' : 'virtual_microphone_and_camera_fixture',
+  substitutions: ['isolated identity database', 'synthetic media folders', ...(physical || nativeCamera ? [] : ['synthetic camera frame']), 'one fixture spell with mock hardware'],
+  deviceRoute: nativeCamera ? 'native_camera_only_silent' : physical ? 'mac_speaker_to_jabra_microphone_and_native_camera' : 'virtual_microphone_and_camera_fixture',
   tvShutdown: 'session_scoped_qa_exemption',
   humanAcousticAcceptance: 'not_executed', portraitAcceptance: 'not_executed' }, null, 2))
 const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_QA: '1', MIRROR_PHASE4_QA_LIVE: '1',
@@ -169,6 +180,7 @@ const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_Q
   MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: ['wake_soak', 'wake_soak_mac'].includes(selected) ? '2400000' : '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
 for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_LIVE', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR', 'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE'].includes(key)) delete env[key]
 env.MIRROR_QA_PROMPT_VARIANT = promptVariant
+if (selected === 'camera_availability') Object.assign(env, { MIRROR_CAMERA_QA_CASE: cameraCase, MIRROR_CAMERA_QA_CHECK: cameraCheck })
 if (physical) env.MIRROR_QA_PHYSICAL_DEVICES = '1'
 if (mediaBgm) Object.assign(env, { MIRROR_RAVEN_CONVERSATION_QA: '0', MIRROR_PHASE4_QA_LIVE: '0',
   MIRROR_MEDIA_SKILL_QA: '1', MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: '1' })

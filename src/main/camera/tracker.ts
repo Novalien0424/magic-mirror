@@ -1,11 +1,50 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createNearestFaceTracker, parseCameraFrame } from './nearest-face'
-import { isCameraSnapshot, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
+import { CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES, isCameraSnapshot, isCameraSnapshotDimensions, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
 
 export interface CameraTrackingService {
   stop(): Promise<void>
   capture(): Promise<CameraSnapshot | null>
   republishTarget(): void
+}
+
+/** Allowlisted numeric instrumentation, enabled only by the isolated native QA caller. */
+export interface CameraQaSample {
+  sequence: number; sourceSeconds: number; width: number; height: number; pixelFormat: number
+  inputWidth: number; inputHeight: number; inputPixelFormat: number; frameDurationSeconds: number
+}
+export function parseCameraQaSample(value: unknown): CameraQaSample | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (Object.keys(v).sort().join(',') !== 'frameDurationSeconds,height,inputHeight,inputPixelFormat,inputWidth,pixelFormat,sequence,sourceSeconds,type,width'
+    || v.type !== 'qa_sample') return null
+  for (const key of ['sequence', 'sourceSeconds', 'width', 'height', 'pixelFormat', 'inputWidth', 'inputHeight', 'inputPixelFormat', 'frameDurationSeconds']) {
+    if (typeof v[key] !== 'number' || !Number.isFinite(v[key]) || v[key] < 0) return null
+  }
+  for (const key of ['sequence', 'width', 'height', 'pixelFormat', 'inputWidth', 'inputHeight', 'inputPixelFormat']) {
+    if (!Number.isSafeInteger(v[key]) || (v[key] as number) <= 0) return null
+  }
+  if ((v.width as number) > 8192 || (v.height as number) > 8192 || (v.inputWidth as number) > 8192 || (v.inputHeight as number) > 8192
+    || (v.frameDurationSeconds as number) <= 0 || (v.frameDurationSeconds as number) > 1) return null
+  const { type: _type, ...sample } = v
+  return sample as unknown as CameraQaSample
+}
+
+export interface CameraQaRateProbe {
+  fps: number; advertised: number; minimumResult: number; maximumResult: number
+  restoreResult: number; minimumSeconds: number; maximumSeconds: number
+}
+export function parseCameraQaRateProbe(value: unknown): CameraQaRateProbe | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (Object.keys(v).sort().join(',') !== 'advertised,fps,maximumResult,maximumSeconds,minimumResult,minimumSeconds,restoreResult,type'
+    || v.type !== 'qa_rate_probe' || ![1, 2, 5].includes(v.fps as number) || ![0, 1].includes(v.advertised as number)) return null
+  for (const key of ['minimumResult', 'maximumResult', 'restoreResult']) if (![0, 1, 2].includes(v[key] as number)) return null
+  for (const key of ['minimumSeconds', 'maximumSeconds']) {
+    if (typeof v[key] !== 'number' || !Number.isFinite(v[key]) || v[key] < 0 || v[key] > 10) return null
+  }
+  const { type: _type, ...probe } = v
+  return probe as unknown as CameraQaRateProbe
 }
 
 /** Conversation input: the selected device, else the system default ('default' follows it). */
@@ -24,6 +63,8 @@ export function startCameraTracking(input: {
   onTarget(target: CameraTarget | null): void
   onStatus(status: 'ready' | 'degraded', reason: string): void
   onFrame?(): void
+  onQaSample?(sample: CameraQaSample): void
+  onQaRateProbe?(probe: CameraQaRateProbe): void
   /** Device name of the conversation microphone; a camera USB reset also resets its built-in microphone. */
   microphoneName?(): string
 }): CameraTrackingService {
@@ -88,7 +129,9 @@ export function startCameraTracking(input: {
     if (resetHeld !== null && now() - microphoneCheckedAt < 10000) return resetHeld
     microphoneCheckedAt = now()
     try {
-      return input.microphoneName().toLowerCase().includes(input.cameraName.toLowerCase())
+      const name = input.microphoneName().trim()
+      if (!name) return 'camera_usb_reset_microphone_unknown'
+      return name.toLowerCase().includes(input.cameraName.toLowerCase())
         ? 'camera_usb_reset_deferred_microphone' : null
     } catch { return 'camera_usb_reset_microphone_unknown' }
   }
@@ -172,6 +215,7 @@ export function startCameraTracking(input: {
     child = current
     current.stdin.on('error', () => capturePending?.finish(null))
     let pending = ''
+    let droppingMessage = false
     let diagnosticReported = false
     current.stderr.on('data', () => {
       if (!diagnosticReported) { diagnosticReported = true; status('degraded', 'camera_worker_diagnostic') }
@@ -179,23 +223,37 @@ export function startCameraTracking(input: {
     current.stdout.setEncoding('utf8')
     current.stdout.on('data', (chunk: string) => {
       if (stopped || child !== current || terminating === current) return
-      pending += chunk
-      if (pending.length > 750000) {
-        pending = ''; clear(); status('degraded', 'camera_worker_message_oversized'); return
+      if (droppingMessage) {
+        const newline = chunk.indexOf('\n')
+        if (newline < 0) return
+        chunk = chunk.slice(newline + 1)
+        droppingMessage = false
       }
+      pending += chunk
       let newline: number
       while ((newline = pending.indexOf('\n')) >= 0) {
         const line = pending.slice(0, newline); pending = pending.slice(newline + 1)
+        if (Buffer.byteLength(line, 'utf8') + 1 > CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES) {
+          clear(); status('degraded', 'camera_worker_message_oversized'); continue
+        }
         let value: unknown
         try { value = JSON.parse(line) } catch { status('degraded', 'camera_worker_message_invalid'); continue }
         lastMessageAt = now()
+        if (input.onQaRateProbe) {
+          const probe = parseCameraQaRateProbe(value)
+          if (probe) { input.onQaRateProbe(probe); continue }
+        }
+        if (input.onQaSample) {
+          const sample = parseCameraQaSample(value)
+          if (sample) { input.onQaSample(sample); continue }
+        }
         if (value && typeof value === 'object' && (value as { type?: unknown }).type === 'snapshot') {
           const frame = value as Record<string, unknown>
           const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height }
           if (capturePending && capturePending.id === frame.id) {
             const valid = isCameraSnapshot(snapshot)
-            if (!valid) status('degraded', typeof frame.width === 'number' && typeof frame.height === 'number'
-              && (frame.width > 1280 || frame.height > 1280) ? 'camera_snapshot_dimensions_invalid' : 'camera_snapshot_invalid')
+            if (!valid) status('degraded', !isCameraSnapshotDimensions(frame.width, frame.height)
+              ? 'camera_snapshot_dimensions_invalid' : 'camera_snapshot_invalid')
             capturePending.finish(valid ? snapshot : null)
           }
           continue
@@ -252,6 +310,10 @@ export function startCameraTracking(input: {
           }
         } else status('degraded', 'camera_worker_message_invalid')
       }
+      if (Buffer.byteLength(pending, 'utf8') >= CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES) {
+        pending = ''; droppingMessage = true
+        clear(); status('degraded', 'camera_worker_message_oversized')
+      }
     })
     current.on('error', () => status('degraded', 'camera_worker_unavailable'))
     current.once('close', () => {
@@ -306,9 +368,9 @@ export function startCameraTracking(input: {
   }, 500)
   watchdog.unref()
   launch()
-  const captureOnce = (): Promise<CameraSnapshot | null> => {
+  const captureOnce = (deadline: number): Promise<CameraSnapshot | null> => {
     const current = child
-    if (stopped || !current || capturePending) return Promise.resolve(null)
+    if (stopped || !current || capturePending || now() >= deadline) return Promise.resolve(null)
     if (terminating === current) {
       // A killed helper cannot answer; do not spend the snapshot timeout on it.
       status('degraded', 'camera_snapshot_worker_retiring')
@@ -320,19 +382,20 @@ export function startCameraTracking(input: {
         if (capturePending?.id !== id) return
         status('degraded', 'camera_snapshot_timeout')
         capturePending.finish(null)
-      }, 3000)
+      }, Math.min(3000, deadline - now()))
       capturePending = { id, finish(value) { clearTimeout(timer); capturePending = null; resolve(value) } }
       try { current.stdin.write(JSON.stringify({ type: 'capture', id }) + '\n', error => { if (error && capturePending?.id === id) capturePending.finish(null) }) }
       catch { capturePending?.finish(null) }
     })
   }
-  const waitForRecovery = (): Promise<boolean> => {
+  const waitForRecovery = (deadline: number): Promise<boolean> => {
+    if (now() >= deadline) return Promise.resolve(false)
     status('degraded', 'camera_capture_waiting_recovery')
     return new Promise<boolean>(resolve => {
       const timer = setTimeout(() => {
         status('degraded', 'camera_capture_recovery_timeout')
         recoveryWait?.finish(false)
-      }, 15000)
+      }, deadline - now())
       recoveryWait = { finish(ready) { clearTimeout(timer); recoveryWait = null; resolve(ready) } }
       if (child && !stale) recoveryWait.finish(true)
     })
@@ -346,16 +409,17 @@ export function startCameraTracking(input: {
       const unavailable = () => resetExhausted || resetHeld !== null || unavailableReason !== null
       if (stopped || captureBusy || unavailable()) return null
       captureBusy = true
+      const deadline = now() + 15000
       try {
         // A request arriving between old-worker exit and replacement must join
         // the same bounded recovery as one already pending before the exit.
-        if (!child) return await waitForRecovery() && !stopped ? await captureOnce() : null
-        const frame = await captureOnce()
+        if (!child) return await waitForRecovery(deadline) && !stopped ? await captureOnce(deadline) : null
+        const frame = await captureOnce(deadline)
         if (frame || stopped || unavailable() || !(resetNeeded || resetPending || stale && hasFrame)) return frame
         // Keep the visitor's request through one existing recovery, without
         // granting extra USB attempts or returning a cached pre-reset frame.
-        const recovered = await waitForRecovery()
-        return recovered && !stopped ? await captureOnce() : null
+        const recovered = await waitForRecovery(deadline)
+        return recovered && !stopped ? await captureOnce(deadline) : null
       } finally { captureBusy = false }
     },
     async stop() {

@@ -130,7 +130,7 @@ describe('wake native build provenance', () => {
     for (const file of ['package.json', 'package-lock.json', 'electron.vite.config.ts', 'tsconfig.json',
       'tsconfig.node.json', 'tsconfig.web.json', 'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs',
       'scripts/generate-avatar-audio.mjs', 'scripts/build-wake-score-native.ps1', 'scripts/prepare-wake-score-native.mjs',
-      'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift',
+      'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'deploy/macos/camera-rate-probe.m',
       'scripts/prepare-media-file.mjs', 'deploy/macos/media-file-prepare.swift',
       'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h', 'scripts/memory-qa-speech.swift',
       'scripts/raven-qa-transcription-comparison.swift', 'scripts/raven-qa-resample.swift',

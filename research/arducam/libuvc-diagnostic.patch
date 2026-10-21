@@ -1,0 +1,76 @@
+diff --git a/src/stream.c b/src/stream.c
+index a820132..abeb75d 100644
+--- a/src/stream.c
++++ b/src/stream.c
+@@ -221,6 +221,9 @@ uvc_error_t uvc_query_stream_ctrl(
+   else
+     len = 48;
+ 
++  extern unsigned mm_uvc_control_length(unsigned suggested);
++  len = mm_uvc_control_length(len);
++
+   /* prepare for a SET transfer */
+   if (req == UVC_SET_CUR) {
+     SHORT_TO_SW(ctrl->bmHint, buf);
+@@ -684,6 +687,9 @@ uvc_error_t uvc_probe_still_ctrl(
+ void _uvc_swap_buffers(uvc_stream_handle_t *strmh) {
+   uint8_t *tmp_buf;
+ 
++  extern void mm_uvc_frame_info(uint32_t sequence, size_t bytes, uint32_t pts);
++  mm_uvc_frame_info(strmh->seq, strmh->got_bytes, strmh->pts);
++
+   pthread_mutex_lock(&strmh->cb_mutex);
+ 
+   (void)clock_gettime(CLOCK_MONOTONIC, &strmh->capture_time_finished);
+@@ -738,6 +744,11 @@ void _uvc_process_payload(uvc_stream_handle_t *strmh, uint8_t *payload, size_t p
+   if (payload_len == 0)
+     return;
+ 
++  /* Research-only bounds check before the upstream variable-header reads. */
++  if (payload_len < 2 || payload[0] < 2 || payload[0] > payload_len ||
++      payload[0] < 2 + ((payload[1] & 4) ? 4 : 0) + ((payload[1] & 8) ? 6 : 0))
++    return;
++
+   /* Certain iSight cameras have strange behavior: They send header
+    * information in a packet with no image data, and then the following
+    * packets have only image data, with no more headers until the next frame.
+@@ -831,6 +842,9 @@ void _uvc_process_payload(uvc_stream_handle_t *strmh, uint8_t *payload, size_t p
+  * @param transfer Active transfer
+  */
+ void LIBUSB_CALL _uvc_stream_callback(struct libusb_transfer *transfer) {
++  extern void mm_uvc_observe_transfer(int status);
++  extern void mm_uvc_observe_packet(int status, const unsigned char *bytes, size_t length, size_t capacity);
++  mm_uvc_observe_transfer(transfer->status);
+   uvc_stream_handle_t *strmh = transfer->user_data;
+ 
+   int resubmit = 1;
+@@ -849,8 +863,11 @@ void LIBUSB_CALL _uvc_stream_callback(struct libusb_transfer *transfer) {
+         struct libusb_iso_packet_descriptor *pkt;
+ 
+         pkt = transfer->iso_packet_desc + packet_id;
++        mm_uvc_observe_packet(pkt->status, libusb_get_iso_packet_buffer_simple(transfer, packet_id), pkt->actual_length, pkt->length);
+ 
+         if (pkt->status != 0) {
++          extern void mm_uvc_note_gap(uint32_t sequence, size_t offset);
++          mm_uvc_note_gap(strmh->seq, strmh->got_bytes);
+           UVC_DEBUG("bad packet (isochronous transfer); pkt_id=%d status: %s(%d), actual_length=%d", packet_id, libusb_error_name(pkt->status), pkt->status, pkt->actual_length);
+           continue;
+         }
+@@ -861,8 +878,15 @@ void LIBUSB_CALL _uvc_stream_callback(struct libusb_transfer *transfer) {
+       }
+     }
+     break;
+-  case LIBUSB_TRANSFER_CANCELLED: 
+-  case LIBUSB_TRANSFER_ERROR:
++  case LIBUSB_TRANSFER_ERROR: {
++    extern int mm_uvc_retry_error(const void *transfer);
++    if (mm_uvc_retry_error(transfer)) {
++      strmh->got_bytes = 0;
++      strmh->meta_got_bytes = 0;
++      break;
++    }
++  } /* fall through */
++  case LIBUSB_TRANSFER_CANCELLED:
+   case LIBUSB_TRANSFER_NO_DEVICE: {
+     int i;
+     UVC_DEBUG("not retrying transfer, status = %d", transfer->status);

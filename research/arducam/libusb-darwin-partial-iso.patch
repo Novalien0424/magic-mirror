@@ -1,0 +1,73 @@
+diff --git a/libusb/os/darwin_usb.c b/libusb/os/darwin_usb.c
+index 22287c7..3c8dabe 100644
+--- a/libusb/os/darwin_usb.c
++++ b/libusb/os/darwin_usb.c
+@@ -748,6 +748,8 @@ static void darwin_fail_startup(void) {
+ 
+ static void *darwin_event_thread_main (void *arg0) {
+   UNUSED(arg0);
++  extern void mm_usb_thread_qos(void);
++  mm_usb_thread_qos();
+   IOReturn kresult;
+   CFRunLoopRef runloop;
+   CFRunLoopSourceRef libusb_shutdown_cfsource;
+@@ -2463,6 +2465,8 @@ static int submit_iso_transfer(struct usbi_transfer *itransfer) {
+     unsigned int length = transfer->iso_packet_desc[i].length;
+     assert(length <= UINT16_MAX);
+     tpriv->isoc_framelist[i].frReqCount = (UInt16)length;
++    tpriv->isoc_framelist[i].frActCount = 0;
++    tpriv->isoc_framelist[i].frStatus = kIOReturnInvalid;
+   }
+ 
+   /* determine the interface/endpoint to use */
+@@ -2745,14 +2749,35 @@ static int darwin_handle_transfer_completion (struct usbi_transfer *itransfer) {
+ 
+   usbi_dbg (ctx, "handling transfer completion type %s with kernel status %d", transfer_types[transfer->type], tpriv->result);
+ 
+-  if (kIOReturnSuccess == tpriv->result || kIOReturnUnderrun == tpriv->result || kIOUSBTransactionTimeout == tpriv->result) {
++  bool partial_isoc = false;
++  if (is_isoc && tpriv->isoc_framelist && tpriv->result == kIOUSBNotSent1Err) {
++    extern void mm_libusb_iso_error(unsigned aggregate, unsigned good, unsigned bad, unsigned bytes);
++    unsigned good = 0, bad = 0, bytes = 0;
++    for (int i = 0; i < transfer->num_iso_packets; ++i) {
++      IOUSBIsocFrame *f = &tpriv->isoc_framelist[i];
++      if ((f->frStatus == kIOReturnSuccess || f->frStatus == kIOReturnUnderrun) && f->frActCount <= f->frReqCount) {
++        ++good; bytes += f->frActCount;
++      } else ++bad;
++    }
++    mm_libusb_iso_error(tpriv->result, good, bad, bytes);
++    struct libusb_device_descriptor descriptor;
++    partial_isoc = good && bytes && !libusb_get_device_descriptor(transfer->dev_handle->dev, &descriptor)
++      && descriptor.idVendor == 0x0c45 && descriptor.idProduct == 0x0520;
++  }
++
++  if (partial_isoc || kIOReturnSuccess == tpriv->result || kIOReturnUnderrun == tpriv->result || kIOUSBTransactionTimeout == tpriv->result) {
+     if (is_isoc && tpriv->isoc_framelist) {
+       /* copy isochronous results back */
+ 
+       for (int i = 0; i < transfer->num_iso_packets ; i++) {
+         struct libusb_iso_packet_descriptor *lib_desc = &transfer->iso_packet_desc[i];
+-        lib_desc->status = darwin_transfer_status (itransfer, tpriv->isoc_framelist[i].frStatus);
+-        lib_desc->actual_length = tpriv->isoc_framelist[i].frActCount;
++        if (tpriv->isoc_framelist[i].frActCount > tpriv->isoc_framelist[i].frReqCount) {
++          lib_desc->status = LIBUSB_TRANSFER_OVERFLOW;
++          lib_desc->actual_length = 0;
++        } else {
++          lib_desc->status = darwin_transfer_status (itransfer, tpriv->isoc_framelist[i].frStatus);
++          lib_desc->actual_length = tpriv->isoc_framelist[i].frActCount;
++        }
+       }
+     } else if (!is_isoc) {
+       itransfer->transferred += tpriv->size;
+@@ -2760,7 +2785,10 @@ static int darwin_handle_transfer_completion (struct usbi_transfer *itransfer) {
+   }
+ 
+   /* it is ok to handle cancelled transfers without calling usbi_handle_transfer_cancellation (we catch timeout transfers) */
+-  return usbi_handle_transfer_completion (itransfer, darwin_transfer_status (itransfer, tpriv->result));
++  // The request completed with a MIX of valid and failed isochronous packets.
++  // Preserve every per-packet error; aggregate ERROR would discard valid data
++  // and make libuvc retire this request permanently. Exact-device experiment.
++  return usbi_handle_transfer_completion (itransfer, partial_isoc ? LIBUSB_TRANSFER_COMPLETED : darwin_transfer_status (itransfer, tpriv->result));
+ }
+ 
+ void usbi_get_monotonic_time(struct timespec *tp) {

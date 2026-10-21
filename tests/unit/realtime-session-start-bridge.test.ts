@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { bootSequence } from '../../src/main/boot'
 import { DEFAULT_VOICE_EFFECTS } from '../../src/shared/voice-effects'
+import { CAMERA_SNAPSHOT_MAX_JPEG_BYTES } from '../../src/shared/camera-tracking'
 import { newAvatar } from '../../src/renderer/console/profile-workspace'
 import { readFileSync } from 'node:fs'
 import {
@@ -227,6 +228,7 @@ vi.mock('electron', () => ({
 type MirrorBridgeLike = {
   requestRealtimeClientSecret(): Promise<unknown>
   reportRealtimeMetadata(report: unknown): void
+  captureCamera(identity: { realtimeSessionId: string; sessionGeneration: number }): Promise<unknown>
 }
 
 let mirrorBridgePromise: Promise<MirrorBridgeLike> | null = null
@@ -239,6 +241,25 @@ function mirrorBridge(): Promise<MirrorBridgeLike> {
 }
 
 describe('P1-U7 C2 atomic session-start bridge', () => {
+  it('passes full-HD snapshots through the preload unchanged and rejects malformed or oversized frames', async () => {
+    const bridge = await mirrorBridge(), identity = { realtimeSessionId: SESSION_ID, sessionGeneration: 1 }
+    function frame(byteLength = CAMERA_SNAPSHOT_MAX_JPEG_BYTES) {
+      const bytes = Buffer.alloc(byteLength, 0xff)
+      bytes.set([0xff, 0xd8, 0xff]); bytes.set([0xff, 0xd9], bytes.length - 2)
+      return { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`, width: 1920, height: 1080 }
+    }
+    const fullHD = frame()
+    electronHarness.invoke.mockClear()
+    electronHarness.invoke.mockResolvedValueOnce(fullHD)
+    expect(await bridge.captureCamera(identity) === fullHD).toBe(true)
+    expect(electronHarness.invoke).toHaveBeenCalledExactlyOnceWith('mirror:capture-camera', identity)
+    for (const invalid of [frame(CAMERA_SNAPSHOT_MAX_JPEG_BYTES + 1), { ...fullHD, height: 1081 },
+      { ...fullHD, dataUrl: 'data:image/jpeg;base64,/9j/AAAA' }, { ...fullHD, unexpected: true }]) {
+      electronHarness.invoke.mockResolvedValueOnce(invalid)
+      expect(await bridge.captureCamera(identity)).toBeNull()
+    }
+  })
+
   it('captures only the active avatar folder catalog for the next session without filesystem paths', async () => {
     const avatar = newAvatar('raven')
     const config = { ...JSON.parse(readFileSync('resources/config/default.json', 'utf8')),

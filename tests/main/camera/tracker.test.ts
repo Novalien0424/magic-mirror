@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectiveMicrophoneName, startCameraTracking } from '../../../src/main/camera/tracker'
+import { CAMERA_SNAPSHOT_MAX_JPEG_BYTES, CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES } from '../../../src/shared/camera-tracking'
 
 function fixture(extra: Partial<Parameters<typeof startCameraTracking>[0]> = {}) {
   vi.useFakeTimers()
@@ -22,7 +23,137 @@ function fixture(extra: Partial<Parameters<typeof startCameraTracking>[0]> = {})
 }
 afterEach(() => vi.useRealTimers())
 
+describe('Main camera snapshot bounds', () => {
+  function jpeg(byteLength = 4): string {
+    const bytes = Buffer.alloc(byteLength, 0xff)
+    bytes.set([0xff, 0xd8, 0xff])
+    bytes.set([0xff, 0xd9], byteLength - 2)
+    return bytes.toString('base64')
+  }
+  function reply(id: number, image = jpeg(), width = 1920, height = 1080): string {
+    return JSON.stringify({ type: 'snapshot', id, jpeg: image, width, height })
+  }
+
+  it.each([[1920, 1080], [1080, 1920]])('preserves a chunked 4 MiB JPEG at %sx%s', async (width, height) => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString())
+    const image = jpeg(CAMERA_SNAPSHOT_MAX_JPEG_BYTES), line = reply(id, image, width, height) + '\n'
+    for (let offset = 0; offset < line.length; offset += 65536) worker.stdout.write(line.slice(offset, offset + 65536))
+    const frame = await result
+    expect(frame?.width).toBe(width)
+    expect(frame?.height).toBe(height)
+    expect(frame?.dataUrl === `data:image/jpeg;base64,${image}`).toBe(true)
+    expect(JSON.stringify(f.onStatus.mock.calls).includes('data:image')).toBe(false)
+    expect(f.onStatus).not.toHaveBeenCalledWith('degraded', 'camera_worker_message_oversized')
+    await f.service.stop()
+  })
+
+  it.each([[1921, 1080], [1080, 1921], [1920, 1081], [1081, 1920], [0, 1080], [1920, 1.5]])(
+    'rejects snapshot dimensions %sx%s with a metadata-only reason', async (width, height) => {
+      const f = fixture(), worker = f.children[0]!, result = f.service.capture()
+      const { id } = JSON.parse(worker.stdin.read().toString())
+      worker.stdout.write(reply(id, jpeg(), width, height) + '\n')
+      expect(await result).toBeNull()
+      expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_snapshot_dimensions_invalid')
+      expect(worker.kill).not.toHaveBeenCalled()
+      await f.service.stop()
+    })
+
+  it.each(['oversized', 'malformed', 'missing_end_marker'])('rejects a %s JPEG without stopping the worker', async kind => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString())
+    const image = kind === 'oversized' ? jpeg(CAMERA_SNAPSHOT_MAX_JPEG_BYTES + 1)
+      : kind === 'malformed' ? '/9j/2R==' : '/9j/AAAA'
+    worker.stdout.write(reply(id, image) + '\n')
+    expect(await result).toBeNull()
+    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_snapshot_invalid')
+    expect(worker.kill).not.toHaveBeenCalled()
+    await f.service.stop()
+  })
+
+  it('accepts the exact 6 MiB framed-message bound including the newline', async () => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString()), line = reply(id)
+    worker.stdout.write(line + ' '.repeat(CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES - line.length - 1))
+    worker.stdout.write('\n')
+    expect((await result)?.width).toBe(1920)
+    expect(f.onStatus).not.toHaveBeenCalledWith('degraded', 'camera_worker_message_oversized')
+    await f.service.stop()
+  })
+
+  it.each(['ascii', 'utf8'])('rejects a framed message above 6 MiB (%s), then accepts a fresh frame', async encoding => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture(), resolved = vi.fn()
+    void result.then(resolved)
+    const { id } = JSON.parse(worker.stdin.read().toString()), line = reply(id)
+    const oversized = encoding === 'ascii'
+      ? line + ' '.repeat(CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES - line.length) + '\n'
+      : JSON.stringify({ ...JSON.parse(line), padding: 'é'.repeat(CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES / 2) }) + '\n'
+    worker.stdout.write(oversized)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(resolved).not.toHaveBeenCalled()
+    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_worker_message_oversized')
+    worker.stdout.write(line + '\n')
+    expect((await result)?.height).toBe(1080)
+    await f.service.stop()
+  })
+
+  it('discards an oversized partial frame through its newline instead of accepting its suffix', async () => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture(), resolved = vi.fn()
+    void result.then(resolved)
+    const { id } = JSON.parse(worker.stdin.read().toString()), line = reply(id) + '\n'
+    worker.stdout.write(' '.repeat(CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES))
+    worker.stdout.write(line)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(resolved).not.toHaveBeenCalled()
+    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_worker_message_oversized')
+    worker.stdout.write(line)
+    expect((await result)?.width).toBe(1920)
+    await f.service.stop()
+  })
+
+  it('bounds each frame rather than rejecting coalesced valid messages above the aggregate cap', async () => {
+    const f = fixture(), worker = f.children[0]!, result = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString()), line = reply(id, jpeg(CAMERA_SNAPSHOT_MAX_JPEG_BYTES)) + '\n'
+    worker.stdout.write(line + line)
+    expect((await result)?.width).toBe(1920)
+    expect(f.onStatus).not.toHaveBeenCalledWith('degraded', 'camera_worker_message_oversized')
+    await f.service.stop()
+  })
+})
+
 describe('Main-owned camera recovery', () => {
+  it('bounds the whole visitor request to 15 seconds, including the final snapshot after recovery', async () => {
+    const f = fixture(), worker = f.children[0]!
+    worker.stdout.write('{"type":"frame"}\n')
+    const pending = f.service.capture(), resolved = vi.fn()
+    void pending.then(resolved)
+    worker.stdin.read()
+    // A reset is pending; heartbeats keep the worker responsive without frames.
+    await vi.advanceTimersByTimeAsync(2500)
+    worker.stdin.read()
+    worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_usb_reset_complete"}\n')
+    for (let i = 0; i < 11; i++) {
+      worker.stdout.write('{"type":"heartbeat"}\n')
+      await vi.advanceTimersByTimeAsync(1000)
+    }
+    worker.stdout.write('{"type":"frame"}\n')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(worker.stdin.read()?.toString()).toContain('capture')
+    await vi.advanceTimersByTimeAsync(1499)
+    expect(resolved).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toBeNull()
+    expect(resolved).toHaveBeenCalledOnce()
+    await f.service.stop()
+  })
+  it('does not reset the composite USB device when the microphone route is empty', async () => {
+    const f = fixture({ microphoneName: () => '' }), worker = f.children[0]!
+    worker.stdout.write('{"type":"frame"}\n')
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(worker.stdin.read()).toBeNull()
+    expect(f.onStatus).toHaveBeenLastCalledWith('degraded', 'camera_usb_reset_microphone_unknown')
+    await f.service.stop()
+  })
   it('defers a late watchdog check after a Main stall instead of judging unread helper output', async () => {
     let stall = 0
     const f = fixture({ now: () => performance.now() + stall }), worker = f.children[0]!

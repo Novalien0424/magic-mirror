@@ -617,7 +617,9 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
   it('limits camera capture to the active Mirror session and drops frames after a session change', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'camera-session', sessionGeneration: 3 }
-    const frame = { dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 }
+    const bytes = Buffer.alloc(600_000, 0xff)
+    bytes.set([0xff, 0xd8, 0xff]); bytes.set([0xff, 0xd9], bytes.length - 2)
+    const frame = { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`, width: 1920, height: 1080 }
     const captureCamera = vi.fn(async () => frame)
     const registered = registerTestIpcHandlers(makeLifecycleNeutralMetadataRuntime([], snapshot), fixtures.windows, events, undefined, { captureCamera })
     const handler = registered.handlers.get('mirror:capture-camera')!
@@ -627,7 +629,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(await handler(event, { ...identity, path: '/private' })).toBeNull()
     expect(await handler(event, { ...identity, sessionGeneration: 2 })).toBeNull()
     expect(captureCamera).not.toHaveBeenCalled()
-    expect(await handler(event, identity)).toEqual(frame)
+    expect(await handler(event, identity) === frame).toBe(true)
     captureCamera.mockImplementation(async () => { snapshot.sessionGeneration++; return frame })
     expect(await handler(event, identity)).toBeNull()
     expect(JSON.stringify(events)).not.toContain('data:image')
@@ -635,7 +637,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const check = registered.handlers.get('console:check-camera')!
     expect(await check(event)).toMatchObject({ ok: false })
     const checked = await check({ sender: fixtures.consoleSender, senderFrame: fixtures.consoleFrame })
-    expect(checked).toEqual({ ok: true, value: { status: 'ready', width: 640, height: 480 } })
+    expect(checked).toEqual({ ok: true, value: { status: 'ready', width: 1920, height: 1080 } })
     expect(JSON.stringify(checked)).not.toContain('data:image')
   })
   it('restricts folder configuration to Console and rejects renderer-supplied paths', async () => {

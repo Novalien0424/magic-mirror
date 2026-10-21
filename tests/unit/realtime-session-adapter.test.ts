@@ -621,7 +621,7 @@ describe("RealtimeSession adapter", () => {
     probe.emit('transport_event', { type: 'conversation.item.retrieved', item: { id: 'late-background', role: 'user' } });
     expect(probe.sendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'late-background' }));
   });
-  it('adds a requested camera frame before returning a response result and drops late captures', async () => {
+  it('adds a full-HD camera frame unchanged before returning a response result and drops late captures', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let deliver!: (frame: { dataUrl: string; width: number; height: number } | null) => void;
     const capture = vi.fn(() => new Promise<{ dataUrl: string; width: number; height: number } | null>(resolve => { deliver = resolve }));
@@ -629,9 +629,14 @@ describe("RealtimeSession adapter", () => {
     const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string; invoke(context: unknown, input: string): Promise<unknown> }[] };
     const tool = agent.tools.find(t => t.name === 'capture_camera')!;
     const result = tool.invoke({}, '{}');
-    deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
+    const bytes = Buffer.alloc(600_000, 0xff);
+    bytes.set([0xff, 0xd8, 0xff]); bytes.set([0xff, 0xd9], bytes.length - 2);
+    const frame = { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`, width: 1920, height: 1080 };
+    deliver(frame);
     expect(await result).toMatchObject({ status: 'accepted', code: 'camera_image_added' });
-    expect(probe.addImage).toHaveBeenCalledExactlyOnceWith('data:image/jpeg;base64,/9j/2Q==', { triggerResponse: false });
+    expect(probe.addImage).toHaveBeenCalledOnce();
+    expect(probe.addImage.mock.lastCall?.[0] === frame.dataUrl).toBe(true);
+    expect(probe.addImage.mock.lastCall?.[1]).toEqual({ triggerResponse: false });
     const late = tool.invoke({}, '{}');
     await handle.close('manual_stop');
     deliver({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 });
