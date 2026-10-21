@@ -1,59 +1,21 @@
-# Apply the Minimal Effective Codex Control Plane
+# Repository harness
 
-## Files to replace
+The harness is already installed in this checkout.
 
-Copy these files into the repository:
+- [AGENTS](AGENTS.md): shared working contract and Codex worker routing.
+- [CLAUDE](CLAUDE.md): Claude Code entrypoint and its routing exception.
+- [PROGRESS](PROGRESS.md): current delivery, runtime evidence and next work.
+- [TODO](TODO.md): unresolved defects and acceptance.
+- [DECISIONS](DECISIONS.md): durable rulings.
+- `.agents/skills/`: maintained domain guidance; read only the selected skill.
+- `.codex/config.toml` and `.codex/agents/`: optional worker definitions.
+  Disabled `.claude/skills/` entries redirect to the maintained skills.
 
-- `AGENTS.md`
-- `.codex/config.toml`
-- `.codex/agents/surveyor.toml`
-- `.codex/agents/implementer.toml`
-- `.codex/agents/tester.toml`
-- `.codex/agents/deep-reviewer.toml` (new)
+`apply-control-plane.ps1` is a legacy Windows file-copy helper, not a session
+startup command. It copies root policy and Codex role files, not the domain
+skills or Claude settings. Use it only for an explicitly requested harness copy.
+The retired `nova-auto.config.toml.example` no longer prescribes a primary model;
+preserve the owner's selected model/profile.
 
-The included `apply-control-plane.ps1` backs up existing files to `%TEMP%` and
-copies the replacements into `C:\Project\magic-mirror` by default.
-
-## Model routing
-
-- Primary critical path: `gpt-5.6-sol / medium`, executing directly.
-- Routine delegated read or bounded implementation: `gpt-5.6-luna / high`.
-- Command-only tester: `gpt-5.6-luna / low`.
-- Difficult bounded audit: `gpt-5.6-luna / max`.
-
-Routing optimizes correctness and wall-clock time for this home PoC. Optional
-roles are tools, not workflow gates; no role must wrap routine direct work.
-
-## Retired legacy paths
-
-The repository no longer uses:
-
-- `.agents/H6_WORKER_PROTOCOL.md`
-- `scripts/invoke-codex-worker.ps1`
-
-Do not restore them. The seven repository domain skills have also been reduced
-to domain facts, relevant invariants, and proportional checks; `AGENTS.md`
-alone owns execution policy.
-
-## Profile check
-
-If your `nova-auto` profile pins a different model/effort for new primary
-threads, use
-the included `nova-auto.config.toml.example` as the user-level profile baseline
-or select Sol/medium interactively.
-
-## Reload and verify
-
-Codex reads `AGENTS.md` once per run/session. Start a fresh Codex session after
-copying the files.
-
-Suggested smoke prompts:
-
-1. `Read package.json and print only the script names.`
-   Expected: direct read; no worker and no tests.
-2. `Change one UI label and run the smallest relevant check.`
-   Expected: direct primary-thread edit and focused validation.
-3. `Stop and show the current terminal output.`
-   Expected: immediate cancellation; no replacement worker or approval loop.
-4. `Use deep_reviewer to audit one precisely named privacy boundary.`
-   Expected: one optional Luna/max read-only subagent, preferably parallel.
+Previous installation instructions and model defaults are retained in the
+[setup archive](docs/archive/harness-setup-before-cleanup-2026-10-21.md).

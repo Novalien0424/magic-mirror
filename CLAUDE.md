@@ -10,20 +10,20 @@ delegation section (user ruling, 2026-10-10); runtime model IDs are separate.
 
 ## Session entry and routing
 
-- Clock in: read PROGRESS, selected open issue/evidence, branch and `git status`.
-  Do not resume historical tasks unasked. Clock out: AGENTS Handoff; TODO is open-only.
+- Clock in/out: follow AGENTS; TODO is open-only.
 - Read project `.agents/skills/<name>/SKILL.md` directly, then only needed
   references. Prompt/persona → `roleplay-control-prompts`; tools/ASR/playback →
-  `mm-realtime-voice`; wake → `mm-wake-word`; Cubism → `mm-live2d-avatar`;
+  `mm-realtime-voice` (also Interactive Studio visits); wake → `mm-wake-word`; Cubism → `mm-live2d-avatar`;
   rig authoring → `magic-mirror-avatar-studio`; QA → `mm-ui-qa`; Main/IPC →
-  `mm-electron-foundation`. Stale `.claude/skills/mm-*` copies are hidden; never invoke.
+  `mm-electron-foundation`. Legacy `.claude/skills/mm-*` redirects are disabled;
+  read the maintained `.agents/skills` files.
 - Global superpowers/gstack chains do not override the one-agent ruling; use only
   when requested or needed. Root and every worker run Opus (`model: "opus"`).
   Never route to Codex/GPT/OpenAI CLIs or codex-rescue/gstack `/codex`.
   Delegate only independent substantial tasks with owned paths, invariant IDs
   and checks; workers preserve edits, stay scoped, never delegate and return
   metadata-only evidence.
-- Never read, print or grep `.env`.
+- Never read, print or grep `.env` or `.env.chatgpt`.
 
 ## Commands and runtime
 

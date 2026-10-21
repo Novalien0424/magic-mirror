@@ -48,25 +48,9 @@ behavior to the current wiring.
   audition are out-of-band responses (`conversation: 'none'`, `input: []`,
   `tool_choice: 'none'`, `src/shared/realtime-prompts.ts`), never persistent
   user messages.
-- **Portrait Studio (2026-10-17).** Catalog `availability` is `conversation`,
-  `studio` or `all`. `start_portrait_studio` swaps the live session to a studio
-  agent (`session.updateAgent`) with only `studio_*` tools plus sleep; Main
-  (`src/main/studio/`) owns steps, answers, images, generation and the
-  studio-default start. Studio turns are control turns; studio items are deleted
-  on exit, including late replies to Studio turns and reveals (`mirror_studio`
-  metadata), interrupted (`incomplete`) calls and inputs whose transcription failed.
-  Queued reveal/farewell work carries its run; a reveal also needs Main's latest
-  revision. Reveal/failure speech waits for an idle session. Image model and
-  studio text: `resources/config/portrait-studio.v1.json`.
-- **Interactive Studio (2026-10-18; internal name portrait studio).** The Main
-  Mirror switch (`mirror-mode.json`; Console control bar, Stream Deck
-  INTERACTIVE STUDIO) decides whether a wake starts it; the mode is captured per
-  session for both the renderer greeting and Main's start. Per-avatar edits
-  (only edits stored): stage prompts incl. `offer` (fills the catalog's
-  `{{studioOffer}}`), `askName`, question `imageLine`, `imagePrompt`
-  (frame/nameplate/painted/untitled/revision), `screenText`, `failureLines`.
-  The image-prompt guard (`imagePrompt.guard`) is fixed; visitor text is always
-  quoted data. The renderer subset omits image/glass/failure text.
+- **Interactive Studio.** `start_portrait_studio` switches to the studio agent;
+  catalog availability is `conversation`, `studio` or `all`. Visit ownership,
+  ordering, cleanup and editor sources: [Interactive Studio](interactive-studio.md).
 - Catalog edits need rebuild/restart. Console **Effective realtime prompt &
   tool** uses the same draft/published builders; every model-visible path belongs
   in that inspector.

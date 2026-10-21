@@ -11,6 +11,8 @@ spec/implementation/stack → PROGRESS → domain facts → history. DECISIONS o
 rulings; PROGRESS routes current runtime/issues/evidence. Read only the selected
 issue and relevant skill references; completed ledgers are history, not a startup
 reading list. Keep harness instructions in English and domain facts in skills.
+Clock in: inspect branch/status and the current PROGRESS handoff; the latest
+user request selects the work. Dated runtime evidence is not a fresh status check.
 
 - Explain/review/diagnose/plan: inspect/report. Fix/change/build: implement/check. Start
   at the named path/symbol/error with targeted `rg`; no adjacent cleanup.

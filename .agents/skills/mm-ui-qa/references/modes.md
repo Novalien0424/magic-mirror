@@ -38,8 +38,10 @@ model/effort and device route; comparisons never publish settings.
 | `two_visit_memory`, `identity_denial` | Actual isolated learning/confirmation; failed prerequisites skip dependent judgments. |
 | `media_stop` | 90-second Active fixture, negation, exact configured ASR stop and follow-up. |
 | `additional_capabilities` | WebGL context recreation, folder playback, image grounding, interruption. |
+| `portrait_studio` | Synthetic visitor, real Realtime/image providers; `--studio-story` selects the story. Picture/reply checks do not prove human name, wake or printing acceptance. |
 | `camera_native` | Native fresh snapshots, targeted USB reset, sustained recovery. |
 | `camera_delivery` | Same signed helper/LaunchAgent, image processing bypassed; 60 seconds of advancing-source-timestamp receipts, zero resets/restarts. Throttled receipts are not FPS. |
+| `camera_availability` | `--camera-case` selects an allowlisted native format experiment; `--camera-check screen\|stable\|cycles` measures native sample cadence or RAM-only decoded snapshots with serialized acquire/release. Metadata-only evidence; no video encoding, identity accuracy or days-long acceptance. Criteria: [camera availability](../../../../docs/testing/camera-availability-qa-2026-10-18.md). |
 | `judge_calibration` | Ten public good/bad/adversarial candidates against the existing grader; no Raven generation or physical-delivery acceptance. |
 | `memory_intent_calibration` | Six fixed request/biography/quote/negation controls through Main's configured interpreter; assessment only, no memory mutation. |
 | `wake_levels`, `wake_levels_asr` | Native level/near-negative controls; optional unhinted ASR. dBFS is not SPL/SNR; failed acoustic ASR control prevents localization. |
@@ -73,6 +75,7 @@ Select the relevant mode rather than copying all cases into a new harness:
 | `--cubism` | Motions/expressions/actual MOC parameters and replacement; hidden Mirror, no portrait. External Raven requires `MIRROR_CUBISM_QA_MODEL`; built-in Ren is insufficient. |
 | `--editor` | Console import/edit/validation/Test/Publish; hidden Mirror. |
 | `--console` | Editor plus finite-video playback and portrait Avatar return. |
+| `--studio-journey` | Isolated Studio editor/visit flow and wake-phrase switching; live provider dialogue and human speech remain separate. |
 | `--video-fades` | UI Save/Publish, computed opacity/embedded gain; no physical sound claim. |
 | Default | Cubism and still/finite/loop/embedded-audio/replacement/failure scene cases. |
 

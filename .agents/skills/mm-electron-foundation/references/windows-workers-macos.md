@@ -68,8 +68,9 @@ exactly one IOKit device. No hub reset, interface seizure or elevation is used.
 The installed Mac's user-level call has been measured; do not assume every Mac
 permits it. Apple documents the API in
 [IOUSBLib](https://github.com/apple-oss-distributions/IOUSBFamily/blob/main/IOUSBFamily/Headers/IOUSBLib.h).
-Reset completion is degraded until new frames arrive. Oversized UVC frames are
-scaled to the snapshot contract's 1280-pixel limit before JPEG encoding.
+Reset completion is degraded until new frames arrive. The current snapshot
+contract permits 1920×1080 (either orientation), with no upscaling; byte/pixel
+bounds live in `src/shared/camera-tracking.ts` and the native encoder.
 While the avatar owns the camera, Main requests recovery after 2.5 seconds without native frame receipts, sampled
 every 500 ms. Heartbeats and delayed Vision results do not extend that deadline.
 Startup/re-enumeration have a separate native grace period; permission denial
@@ -78,8 +79,9 @@ after successful delivery and records detection-to-reset and reset-to-frame time
 After USB reset, schedule rediscovery when the two-second grace ends instead of
 adding another periodic-watchdog interval. Recovery QA must wait for reset and
 fresh readiness before counting its six post-reset requested snapshots.
-A pending snapshot can wait at most 15 seconds through an existing recovery and
-retry once after fresh delivery. The wait does not grant another USB reset;
+A snapshot request has one 15-second total deadline, including its initial
+3-second attempt, existing recovery and one retry after fresh delivery. The
+wait does not grant another USB reset;
 concurrent requests, shutdown, permission loss and device absence remain bounded.
 Requests arriving between worker exit and replacement also join that wait.
 Exhausting the USB budget settles pending captures and rejects new captures
@@ -102,10 +104,10 @@ driver logs or identifiers. Reset receipts and a few initial frames do not
 establish a stable stream; see the [reliability investigation](../../../../docs/testing/camera-reliability-2026-10-13.md).
 On the deployed Arducam, hold `lockForConfiguration` through session commit and
 `startRunning`, then release it: macOS otherwise overwrites the chosen format.
-VGA YUY2 at its exact near-15-fps duration passed the Oct 11 test. Early Oct 13
-retests still stalled after reset; the final 12-snapshot test and a physical
-Realtime request recovering through a stall passed after the bounded capture
-wait repair. These passes establish recovery, not stall elimination or a soak.
+Historical VGA recovery passes do not satisfy the current 1920×1080 requirement.
+The latest full-HD investigation remains blocked on source corruption and
+repeatability; low FPS is allowed. Keep research transports out of production
+until usable-image and restart/reboot checks pass.
 Output conversion remains NV12. See Apple's
 [format guidance](https://developer.apple.com/documentation/avfoundation/capture-device-formats).
 Copy a single frame into owned RAM before asynchronous Vision analysis rather
@@ -117,7 +119,7 @@ alone does not establish fresh frames. The `camera_native` QA mode now checks
 six RAM-only snapshots spaced five seconds apart, then an injected stall and
 six further snapshots, five seconds apart, after real USB re-enumeration. Retain frame-gap and dimension
 metadata, never images. [Field evidence](../../../../docs/testing/realtime-field-followup-2026-10-11.md).
-Latest retest: [Oct 12–13 ledger](../../../../docs/testing/realtime-retest-2026-10-12.md).
+Current criteria and results: [full-HD investigation](../../../../docs/testing/camera-availability-qa-2026-10-18.md).
 
 The reset-command deadline is independent of helper heartbeat: after four seconds
 without completion, retire the blocked helper and await its close. A replacement
@@ -127,4 +129,4 @@ For processing isolation, `camera_delivery` bypasses Vision/copy/JPEG in the sam
 signed helper and LaunchAgent route. A standalone Swift process with different
 launch/signing context is not an equivalent control. Require advancing source
 timestamps and a complete stable window; reset receipts alone do not count.
-Current driver/device limits: [focused research](../../../../docs/testing/focused-research-2026-10-13.md).
+Current driver/device limits: [camera research](../../../../docs/testing/arducam-driver-research-2026-10-18.md).

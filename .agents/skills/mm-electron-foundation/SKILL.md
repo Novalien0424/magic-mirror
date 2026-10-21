@@ -8,6 +8,7 @@ description: "Implement or debug Magic Mirror Electron Main: lifecycle, IPC, SQL
 Main owns lifecycle, config, SQLite and devices. Renderers remain sandboxed with narrow typed preload APIs; every IPC handler validates its sender. Preserve the seven lifecycle states and keep Console separate from them.
 
 - Lifecycle, IPC, SQLite or atomic config: [main-process](references/main-process.md).
+- Interactive Studio state, IPC or Mirror mode: [visit ownership](../mm-realtime-voice/references/interactive-studio.md).
 - Kiosk BrowserWindows, crash recovery, worker spawning or Mac TCC: [windows/workers/macOS](references/windows-workers-macos.md). Verify TCC on the actual signed launch chain and packaged workers.
 - USB camera stalls: [camera recovery](references/windows-workers-macos.md#usb-camera-recovery). The app owns targeted reset/re-enumeration and fresh-frame verification.
 
