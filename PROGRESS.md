@@ -6,7 +6,10 @@ Console journey passed **19/19**; fresh real-provider journeys passed
 **Conversation 14/14**, **Interactive Studio with photo 24/24**, and ordinary
 camera questions **5/5**. Initial Conversation timing and camera tool-selection
 failures passed on their single retries; both failures remain recorded.
-The normal app is stopped; final runtime checked at 18:18 Taipei.
+Feature commit `96f48e3` is pushed to `origin/field/macmini-deploy` and deployed
+through the existing Mac LaunchAgent. The normal app is running; checked at
+20:28 Taipei. Raven is asleep with wake listening active. The deployed Console
+shows Image generation enabled under Avatars → Skills.
 [TODO](TODO.md) owns open acceptance; [DECISIONS](DECISIONS.md) owns rulings.
 
 ## Selectable shared image capability
@@ -87,18 +90,34 @@ sent to the cloud.
 [Rate measurement](.artifacts/phase4-qa/2026-10-21T06-39-21-718Z/camera-availability.json) ·
 [Transport investigation](docs/testing/camera-availability-qa-2026-10-18.md).
 
-## Runtime — stopped; checked 18:18 Taipei
+## Runtime — deployed and running; checked 20:28 Taipei
 
-The canonical `out/` is rebuilt. No Electron, camera helper or QA LaunchAgent
-remains; normal LaunchAgent is unloaded (`print` exit 113). Existing audio
-preference and TV-network services were left alone. All seven new sound-producing
-runs restored **Jabra output 0%, muted; input 57%**. No TV power change.
-[Final runtime snapshot](.artifacts/low-camera-journey-2026-10-21/avatar-skills-runtime-final.json).
+The source/output fingerprint confirms canonical `out/` matches the tested
+feature commit `96f48e3`. The installed LaunchAgent matches the repository field
+definition and remains the sole restart owner. Bootstrap succeeded at 20:26;
+Main PID 87151 remained unchanged through verification. Mirror and Console
+loaded and reported ready. The live Console shows Raven asleep, wake listening
+active, all modules normal, Conversation mode and ChatGPT signed in.
+Avatars → Skills → Image generation is visible and enabled. Published config
+remains v19 with no draft changes; the Console is left on Skills.
+
+Audio remained **Jabra output 0%, muted; input 57%** across startup. Existing
+audio preference and TV-network services were left alone. No TV power command,
+provider test, guest session or camera capture was started during deployment.
+This is the established checkout deployment, not a signed package acceptance.
+
+The first deployment check expected a Console renderer at startup; Console is
+created on demand. Opening it with the existing operator command completed the
+check without an app change or restart. The failed check is retained. An earlier
+temporary verifier import-path error was corrected before any launch.
+[Deployment evidence](.artifacts/low-camera-journey-2026-10-21/image-skill-deployment.json) ·
+[Initial readiness check](.artifacts/low-camera-journey-2026-10-21/image-skill-deployment-initial-check.json) ·
+[Pre-deployment stopped snapshot](.artifacts/low-camera-journey-2026-10-21/avatar-skills-runtime-final.json).
 
 ## Next action
 
-The requested per-Avatar selector, architecture audit and complete simulated
-journeys are delivered. Future field acceptance needs
+The requested per-Avatar selector, architecture audit, complete simulated
+journeys, commit, push and field deployment are delivered. Future field acceptance needs
 a willing guest for real microphone/capture/likeness checks and new physical
 or vendor evidence for the intermittent USB transport. Other field work remains
 in [TODO](TODO.md).

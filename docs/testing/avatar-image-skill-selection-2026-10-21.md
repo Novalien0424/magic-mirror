@@ -149,10 +149,32 @@ python3 .artifacts/low-camera-journey-2026-10-21/quiet-run.py avatar-skills-came
 Use fresh labels for reproduction to preserve the original logs. The sound guard
 keeps the existing mute state, tests at output 1%, then restores the previous
 device/levels in a `finally` block. No operator draft or active config is published
-by these isolated QA runs. No phase promotion, dependency/model change, commit
-or push is part of this delivery.
+by these isolated QA runs. No phase promotion or dependency/model change occurred.
+Commit, push and deployment were separately requested after this QA delivery.
 
-Final runtime checked **18:18 Taipei**: no canonical Electron, camera helper or
+Pre-deployment runtime checked **18:18 Taipei**: no canonical Electron, camera helper or
 QA LaunchAgent; normal LaunchAgent unloaded (print exit 113). Existing audio and
 TV-network background jobs were left alone. All seven runs restored Jabra output
 0%, muted, input 57%. [Runtime snapshot](../../.artifacts/low-camera-journey-2026-10-21/avatar-skills-runtime-final.json).
+
+## Requested commit, push and deployment
+
+Feature commit `96f48e3` was pushed to `origin/field/macmini-deploy`. The current
+source/output fingerprint passed before deployment; the tested build was reused.
+The existing installed LaunchAgent matches the canonical field definition.
+Bootstrap succeeded at **20:26 Taipei**. At **20:28**, Main PID 87151 remained
+unchanged, both renderers were ready, and the live Console showed Raven asleep,
+wake listening active, all modules normal and the image provider signed in.
+Avatars → Skills → Image generation was visibly enabled. No settings were edited
+or published; v19 remains current and the Console is left on Skills.
+
+The temporary verifier first had an incorrect relative import, corrected before
+launch. Its first startup check then incorrectly expected the Console to exist
+immediately. Console is created on demand; the existing `show_console_main`
+operator command opened it and completed verification without an app change or
+restart. The original failed readiness evidence is retained. Audio stayed at
+output 0%, muted, input 57%. No TV power command or new guest/provider/camera
+journey was run. This is a checkout deployment, not signed-package acceptance.
+
+[Deployment metadata](../../.artifacts/low-camera-journey-2026-10-21/image-skill-deployment.json) ·
+[Retained initial readiness check](../../.artifacts/low-camera-journey-2026-10-21/image-skill-deployment-initial-check.json).
