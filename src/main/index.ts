@@ -284,7 +284,7 @@ function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
 }
 
 async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
-  if (operatorLoop?.isLoopMode()) { await wakeSupervisor?.release(); return }
+  if (operatorLoop?.isInputSuspended()) { await wakeSupervisor?.release(); return }
   if (
     typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
     || typeof runtime.setWakeRuntimeStatus !== 'function'
@@ -345,7 +345,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
       : await wakeSupervisor.updateConfig({ package: workerPackage })
     if (updated.status !== 'success') return
     configuredWakeSignature = signature
-    if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
+    if (!operatorLoop?.isInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
       await wakeSupervisor.acquire()
     }
     return
@@ -354,7 +354,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   const supervisor = createWakeSupervisor({
     spawn: spawnWakeWorker,
     onWake: () => {
-      if (operatorLoop?.isLoopMode()) { marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_ignored' }); return }
+      if (operatorLoop?.isInputSuspended()) { marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_ignored' }); return }
       void activation?.handleWake().catch(() => reportMainDegradation('wake', 'wake_activation_failed', 'wake_activation_rejected'))
     },
     onStatus: (snapshot) => {
@@ -377,13 +377,13 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
     getLifecycle: () => runtime.snapshot().lifecycle,
     beforeStart: () => stopScenes(),
     startConversation: () => runtime.manualStart(),
-    reacquireWake: () => operatorLoop?.isLoopMode() ? Promise.resolve({ status: 'success' as const, reason: 'operator_loop_no_microphone' }) : supervisor.acquire(),
+    reacquireWake: () => operatorLoop?.isInputSuspended() ? Promise.resolve({ status: 'success' as const, reason: 'operator_loop_no_microphone' }) : supervisor.acquire(),
   })
   wakeSupervisor = supervisor
   const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
   configuredWakeSignature = signature
-  if (!operatorLoop?.isLoopMode() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
+  if (!operatorLoop?.isInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
     await supervisor.acquire()
   }
 }
@@ -512,6 +512,7 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
         return
       }
       if (!placeMirrorInitially(win)) return
+      if (operatorLoop?.isDesktopMode()) { win.hide(); return }
       if (isDarwin) win.setSimpleFullScreen(true)
       else win.maximize()
       win.show()
@@ -633,12 +634,14 @@ function rehomeMirror(trigger: DisplayTrigger): void {
       break
     case 'move_and_show':
       moveMirrorWindow(win, decision.display.bounds)
-      win.show()
+      if (operatorLoop?.isDesktopMode()) win.hide()
+      else win.show()
       raiseMirrorAboveMenuBar(win)
       if (bootRuntime !== null) startPhase4QaIfReady(bootRuntime)
       break
   }
   mirrorPlacement = decision.placement
+  if (operatorLoop?.isDesktopMode()) win.hide()
   if (consoleOnMirror && decision.action !== 'hide') placeConsoleOnMirror()
 }
 
@@ -690,7 +693,7 @@ function onRendererReady(sender: WebContents): void {
   if (kind === 'mirror') {
     mirrorRendererReady = true
     boot.lifecycle = mainLifecycle
-    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : mainLifecycle, true)
+    cameraTracking?.update(operatorLoop?.isInputSuspended() ? 'dormant' : mainLifecycle, true)
     cameraTracking?.republishTarget()
     void bootRuntime?.handleMirrorRendererReady().catch(() => fatalMainFailure('renderer_recovery_failed'))
     operatorLoop?.rendererReady()
@@ -742,6 +745,16 @@ function hideConsoleWindow(): void {
   if (win && !win.isDestroyed()) {
     win.hide()
   }
+}
+
+/** Restore the existing visitor window after Desktop without replacing its renderer. */
+function showMirrorWindow(): boolean {
+  const win = windows.get('mirror')
+  if (!win || win.isDestroyed() || !placeMirrorInitially(win)) return false
+  if (isDarwin) win.setSimpleFullScreen(true)
+  else win.maximize()
+  win.show(); raiseMirrorAboveMenuBar(win)
+  return win.isVisible()
 }
 
 /** Reuse the existing renderer so bringing Console forward preserves unsaved edits. */
@@ -1181,7 +1194,7 @@ void app.whenReady().then(async () => {
     },
     resumeAvatar: async () => {
       await configureWakeRuntime(runtime)
-      if (!operatorLoop?.isLoopMode() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+      if (!operatorLoop?.isInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
         const result = await wakeSupervisor?.acquire()
         if (result?.status === 'failed') marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_restore_failed' })
       }
@@ -1196,7 +1209,7 @@ void app.whenReady().then(async () => {
   const wakeDefaults = new Map<string, Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>>()
 
   const runtime: BootRuntime = bootSequence({
-    operatorLoopActive: () => operatorLoop?.isLoopMode() ?? false,
+    operatorLoopActive: () => operatorLoop?.isInputSuspended() ?? false,
     mirrorModeForSession: identity => mirrorMode.sessionMode(identity),
     currentMirrorMode: () => mirrorMode.get(),
     ...(phase4QaEnabled && ['baseline', 'trimmed', 'merged', 'focused'].includes(process.env['MIRROR_QA_PROMPT_VARIANT'] ?? '')
@@ -1218,7 +1231,7 @@ void app.whenReady().then(async () => {
     clientSecretBroker,
     onFatalFailure: fatalMainFailure,
     rebuildWakeOwner: () => {
-      if (operatorLoop?.isLoopMode()) return Promise.resolve({ status: 'success', reason: 'operator_loop_no_microphone' })
+      if (operatorLoop?.isInputSuspended()) return Promise.resolve({ status: 'success', reason: 'operator_loop_no_microphone' })
       if (wakeOwnerRebuild) return wakeOwnerRebuild
       const rebuilding = (async (): Promise<WakeSupervisorResult> => {
         await wakeCalibration?.stop(false)
@@ -1228,7 +1241,7 @@ void app.whenReady().then(async () => {
           platform: `${process.platform}-${process.arch}`, customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
           forceCustomKeywords: wakeTuningIsActive(wake) })
         if (!loaded.ok) return { status: 'failed', reason: loaded.reason }
-        if (operatorLoop?.isLoopMode()) return { status: 'success', reason: 'operator_loop_no_microphone' }
+        if (operatorLoop?.isInputSuspended()) return { status: 'success', reason: 'operator_loop_no_microphone' }
         return wakeSupervisor.restart({ package: createWakeWorkerPackage(loaded, wake) })
       })().finally(() => { wakeOwnerRebuild = null })
       wakeOwnerRebuild = rebuilding
@@ -1241,11 +1254,11 @@ void app.whenReady().then(async () => {
         return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
       },
       acquire: async () => {
-        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        if (operatorLoop?.isInputSuspended()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
         await wakeOwnerRebuild
         const calibration = await wakeCalibration?.stop(false)
         if (shutdownStarted || calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_microphone_acquire_cancelled' }
-        if (operatorLoop?.isLoopMode()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        if (operatorLoop?.isInputSuspended()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
         if (!wakeSupervisor) return { status: 'degraded' as const, reason: 'wake_microphone_not_configured' }
         const result = await wakeSupervisor.acquire()
         return result.status === 'failed' && (wakeSupervisor.microphoneUnowned() || isWakeMicrophoneDeviceUnavailable(result.reason))
@@ -1401,6 +1414,7 @@ void app.whenReady().then(async () => {
       if (command.action === 'save') await operatorLoop!.save(command.settings)
       if (command.action === 'play' && !await operatorLoop!.play()) throw Error('operator_loop_start_failed')
       if (command.action === 'stop' && !await operatorLoop!.normal()) throw Error('operator_loop_stop_failed')
+      if ((command.action === 'play' || command.action === 'stop') && !showMirrorWindow()) throw Error('operator_loop_display_unavailable')
       return { ok: true, value: operatorLoop!.view() }
     } catch (error) {
       const reason = error instanceof Error && /^operator_loop_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_operation_failed'
@@ -1411,8 +1425,19 @@ void app.whenReady().then(async () => {
   void startOperatorControl({
     directory: join(app.getPath('userData'), 'operator-control'),
     execute: async action => {
-      if (action === 'show_console') return showConsoleOnMirror()
       if (action === 'show_console_main') return showConsoleOnMain()
+      if (action === 'desktop') {
+        if (!await operatorLoop!.desktop()) return false
+        hideConsoleWindow()
+        const win = windows.get('mirror')
+        if (!win || win.isDestroyed()) return false
+        win.hide()
+        return !win.isVisible()
+      }
+      if (action === 'show_console') {
+        if (operatorLoop!.isDesktopMode() && (!await operatorLoop!.normal() || !showMirrorWindow())) return false
+        return showConsoleOnMirror()
+      }
       const session = runtime.snapshot()
       const skillOwner = session.lifecycle === 'active' && session.realtimeSessionId
         ? { realtimeSessionId: session.realtimeSessionId, sessionGeneration: session.sessionGeneration } : undefined
@@ -1423,8 +1448,9 @@ void app.whenReady().then(async () => {
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
       if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
       const success = await (action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
-      if (success) hideConsoleWindow()
-      return success
+      if (!success) return false
+      hideConsoleWindow()
+      return showMirrorWindow()
     },
     report: reason => marker('OPERATOR_CONTROL', { reason }),
   }).then(stop => { if (shutdownStarted) stop(); else stopOperatorControl = stop })
@@ -1576,7 +1602,7 @@ void app.whenReady().then(async () => {
     }
   })
   voicePreview = createVoicePreviewLease({
-    isDormant: () => !operatorLoop?.isLoopMode() && runtime.snapshot().lifecycle === 'dormant',
+    isDormant: () => !operatorLoop?.isInputSuspended() && runtime.snapshot().lifecycle === 'dormant',
     snapshot: () => runtime.getPublishedSessionModelSnapshotForDiagnostics(),
     broker: clientSecretBroker,
     suppressOutput: () => windows.get('console')?.webContents.setAudioMuted(true),
@@ -1641,7 +1667,7 @@ void app.whenReady().then(async () => {
       return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
     },
     wakeCalibration: async command => {
-      if (operatorLoop?.isLoopMode() && (command.type === 'start' || command.type === 'update')) throw Error('operator_loop_active')
+      if (operatorLoop?.isInputSuspended() && (command.type === 'start' || command.type === 'update')) throw Error('operator_loop_active')
       if (command.type === 'start' || command.type === 'update') await wakeConfigurationTask
       return wakeCalibration!.command(command)
     },
@@ -1856,7 +1882,7 @@ void app.whenReady().then(async () => {
     memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
-    cameraTracking?.update(operatorLoop?.isLoopMode() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
+    cameraTracking?.update(operatorLoop?.isInputSuspended() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
       stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {

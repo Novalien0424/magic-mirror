@@ -11,15 +11,15 @@ export function createOperatorLoop(input: {
   publish(snapshot: OperatorLoopSnapshot): void
   report(reason: string): void
 }) {
-  let settings = { ...DEFAULT_LOOP_VIDEO }, intent: 'avatar' | 'loop' = 'avatar'
+  let settings = { ...DEFAULT_LOOP_VIDEO }, intent: OperatorLoopSnapshot['mode'] = 'avatar'
   let loadFailed = false
   try {
     const saved = JSON.parse(readFileSync(input.path, 'utf8'))
     const parsed = parseLoopVideoSettings(saved.settings)
-    if (saved.version !== 1 || !parsed || !['avatar', 'loop'].includes(saved.intent)) throw Error()
+    if (saved.version !== 1 || !parsed || !['avatar', 'loop', 'desktop'].includes(saved.intent)) throw Error()
     settings = parsed; intent = saved.intent
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') loadFailed = true }
-  let snapshot: OperatorLoopSnapshot = { mode: intent, status: intent === 'loop' ? 'preparing' : 'idle',
+  let snapshot: OperatorLoopSnapshot = { mode: intent, status: intent !== 'avatar' ? 'preparing' : 'idle',
     reason: loadFailed ? 'operator_loop_settings_unreadable' : 'operator_loop_idle', generation: 0, settings: { ...settings } }
   let revision = 0, disposed = false, retry = 0, timer: ReturnType<typeof setTimeout> | undefined
   let lastVideo: number | undefined, lastAudio: number | undefined, lastFrames: number | undefined
@@ -61,6 +61,8 @@ export function createOperatorLoop(input: {
   const controller = {
     view,
     isLoopMode: () => intent === 'loop',
+    isDesktopMode: () => intent === 'desktop',
+    isInputSuspended: () => intent !== 'avatar',
     async save(value: LoopVideoSettings): Promise<void> {
       const parsed = parseLoopVideoSettings(value)
       if (!parsed || !await input.validate(parsed)) throw Error('operator_loop_media_unavailable')
@@ -100,32 +102,42 @@ export function createOperatorLoop(input: {
       })
       return promise
     },
-    async normal(): Promise<boolean> {
+    async normal(target: 'avatar' | 'desktop' = 'avatar'): Promise<boolean> {
       const run = ++revision
       clear(); settle(false); abandonValidation?.()
       return queue(async () => {
         if (disposed || run !== revision) return
-        const wasLoop = intent === 'loop', visibleLoop = snapshot.mode === 'loop', oldGeneration = snapshot.generation
-        // Keep the input gate closed until both old playback elements release.
-        const release = visibleLoop && oldGeneration > 0 && releasedGeneration !== oldGeneration ? new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => { released = null; reject(Error('operator_loop_release_timeout')) }, 4000)
-          released = { generation: oldGeneration, resolve: () => { clearTimeout(timeout); released = null; resolve() } }
-        }) : Promise.resolve()
-        publish({ mode: 'avatar', status: 'idle', reason: 'operator_loop_stopped', generation: oldGeneration + 1 })
+        const wasSuspended = intent !== 'avatar', previous = intent
+        const visibleLoop = snapshot.mode === 'loop', oldGeneration = snapshot.generation
+        // Desktop inhibits input before any async release. Keep the Console renderer
+        // alive so unsaved operator edits survive a trip to macOS and back.
+        if (target === 'desktop') intent = 'desktop'
         try {
+          if (target === 'desktop') await input.suspendAvatar()
+          if (disposed || run !== revision) return
+          // Keep the input gate closed until both old playback elements release.
+          const release = visibleLoop && oldGeneration > 0 && releasedGeneration !== oldGeneration ? new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => { released = null; reject(Error('operator_loop_release_timeout')) }, 4000)
+            released = { generation: oldGeneration, resolve: () => { clearTimeout(timeout); released = null; resolve() } }
+          }) : Promise.resolve()
+          publish({ mode: target, status: 'idle', reason: target === 'desktop' ? 'operator_loop_desktop' : 'operator_loop_stopped', generation: oldGeneration + 1 })
           await release
           if (disposed || run !== revision) return
-          intent = 'avatar'; persist()
-          if (wasLoop) await input.resumeAvatar()
+          intent = target; persist()
+          if (target === 'avatar' && wasSuspended) await input.resumeAvatar()
         } catch {
-          intent = 'loop'
-          fail('operator_loop_release_failed')
+          intent = target === 'desktop' || previous === 'desktop' ? 'desktop' : 'loop'
+          clear(); settle(false)
+          publish({ mode: intent, status: 'failed', reason: 'operator_loop_release_failed' })
           throw Error('operator_loop_release_failed')
         }
-      }).then(() => run === revision && intent === 'avatar', () => false)
+      }).then(() => run === revision && intent === target, () => false)
     },
+    desktop(): Promise<boolean> { return controller.normal('desktop') },
     rendererReady() {
-      if (disposed || intent !== 'loop') return
+      if (disposed) return
+      if (intent === 'desktop') { void controller.desktop(); return }
+      if (intent !== 'loop') return
       if (snapshot.generation === 0) void controller.play()
       else if (snapshot.status !== 'failed') { retry = 0; launch(true) }
     },

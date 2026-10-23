@@ -43,6 +43,17 @@ beforeEach(() => { hooks.cursor = 0; hooks.values = []; hooks.started = false; h
 afterEach(() => { cleanup?.(); vi.unstubAllGlobals() })
 
 describe('Mirror operator loop mode boundary', () => {
+  it('unmounts avatar and media in Desktop and restores only the mode Main selects', async () => {
+    const h = fixture(); mount()
+    h.resolve(snapshot({ mode: 'desktop', status: 'idle' })); await settle()
+    expect(render().type).toBe(OperatorLoopBlack)
+    h.emit(snapshot({ mode: 'avatar', status: 'idle', generation: 4 }))
+    expect((render().type as Function).name).toBe('AvatarApp')
+    h.emit(snapshot({ mode: 'desktop', status: 'idle', generation: 5 }))
+    expect(render().type).toBe(OperatorLoopBlack)
+    h.emit(snapshot({ generation: 6 }))
+    expect(render().type).toBe(OperatorLoopPlayer)
+  })
   it('keeps a restored intent black until Main validates and releases avatar resources', async () => {
     const h = fixture(); mount()
     h.resolve(snapshot({ generation: 0 })); await settle()

@@ -3,29 +3,32 @@
 The venue Mac has Elgato Stream Deck 7.6.0 (23012), verified current by its own
 updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
-disappeared afterward. Stream Deck opens automatically at login.
+disappeared afterward.
 
-The **Magic Mirror** profile has five controls. The owner revision of 2026-10-17
-moves STOP to the bottom-right key and puts CONSOLE second; PLAY LOOP stays third
-with padded artwork and a two-line label. Those four signed application wrappers
-were deployed on 2026-10-17. The amber INTERACTIVE STUDIO key (2026-10-18) sits
-bottom-left, directly under START; it needs the one-time reinstall and import below.
-Elgato's Default Profile is preserved.
+The current **Magic Mirror copy 1** profile has six controls, installed and selected
+as the Neo's default on 2026-10-23. STUDIO is shortened to fit the physical key;
+DESKTOP occupies the top-right key. Elgato's original Default Profile and the older
+Magic Mirror profiles are preserved.
 
 | Position | Button | Action |
 | --- | --- | --- |
 | First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI. |
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
 | Third (`2,0`) | Blue **PLAY LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
-| Bottom left (`0,1`) | Amber **INTERACTIVE STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
+| Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
+| Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
-START selects normal Conversation mode, including when the app was already
-playing the loop. INTERACTIVE STUDIO likewise returns from the loop to the avatar,
+START selects normal Conversation mode, including from Desktop or loop playback.
+STUDIO likewise returns from Desktop or the loop to the avatar,
 then selects Interactive Studio mode: the mirror now wakes to the avatar's Studio
 wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
 studio farewell and Dormant. PLAY LOOP and CONSOLE leave the mirror mode alone;
-STOP is unchanged.
+STOP retains its black HDMI and Jabra 70% policy.
+Every visible control first verifies the venue's Mac 90° portrait orientation.
+DESKTOP keeps Electron running with input suspended; it does not discard Console
+edits. START, STUDIO and PLAY LOOP restore their selected view. CONSOLE returns
+from Desktop to the saved avatar mode and opens its existing editor on the TV.
 An ordinary fresh start begins in reflective Dormant mode.
 It restores the last saved active avatar selection (the Console's **Use on
 Mirror** selection), currently Raven. The scripts do not hard-code an avatar or
@@ -34,27 +37,29 @@ Normal avatar wake behavior and TV presence policy still apply. STOP closes the
 application as well as sleeping the TV. Starting again bootstraps the same
 installed LaunchAgent. PLAY LOOP uses Main's approved loop; repeated LOOP is
 idempotent in Main and does not restart playback. The controls do not supply a
-media path. START, INTERACTIVE STUDIO and PLAY LOOP hide Console without
+media path. START, STUDIO, DESKTOP and PLAY LOOP hide Console without
 destroying its unsaved editor state. Repeated CONSOLE shows/focuses it; close the
-window or press START/INTERACTIVE STUDIO/PLAY LOOP to return to the mirror view.
+window or press START/STUDIO/PLAY LOOP to return to the mirror view.
 STOP sends no mode command; Main clears desired mode on deliberate TERM. STOP
 applies to Magic Mirror's programs, not unrelated Mac applications.
 
 **Standby is not complete power-off.** Android reports Asleep and display OFF,
 but the board remains powered and reachable over wired ADB so START can wake it.
-No black-desktop helper is installed. Standby consumption has not been measured;
+The signed native black cover remains active after STOP. Standby consumption has not been measured;
 wake after a full Android shutdown or removal of mains power is not established.
 The Mac mini remains running. This does not change the Mac's pre-login/boot screen.
 
-All five buttons use Elgato's built-in **System → Open** action. The targets are
+All six buttons use Elgato's built-in **System → Open** action. The targets are
 `~/Applications/Magic Mirror Controls/Start Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Stop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Play Loop Magic Mirror.app`,
-`~/Applications/Magic Mirror Controls/Console Magic Mirror.app`, and
-`~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`. The small local
+`~/Applications/Magic Mirror Controls/Console Magic Mirror.app`,
+`~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`, and
+`~/Applications/Magic Mirror Controls/Desktop Magic Mirror.app`. The small local
 apps call the executable [start](magic-mirror-start.sh),
 [stop](magic-mirror-stop.sh), [loop](magic-mirror-loop.sh),
-[Console](magic-mirror-console.sh), and [studio](magic-mirror-studio.sh) scripts
+[Console](magic-mirror-console.sh), [studio](magic-mirror-studio.sh), and
+[desktop](magic-mirror-desktop.sh) scripts
 without opening Terminal. No extra plugin, hotkey remapper, accessibility grant,
 microphone owner, or restart service is needed for these controls. Elgato's
 original Default Profile remains available.
@@ -76,10 +81,10 @@ because Stream Deck may create another copy of the profile. The generated file
 also serves as a recovery copy. The installed app and profile retained their
 configuration across a Stream Deck quit/relaunch test.
 
-**INTERACTIVE STUDIO (2026-10-18):** installer run and the regenerated profile
-imported on this Mac the same day. Stream Deck created **Magic Mirror copy** (five
-keys) and selected it for the Neo; the old four-key **Magic Mirror** profile is
-still listed and unused (delete or rename in Stream Deck when convenient).
+**Desktop / compact Studio (2026-10-23):** installer run, six signed wrappers and
+updated native helper deployed, regenerated profile imported. Stream Deck created
+**Magic Mirror copy 1**, selected it on the Neo and marked it as the default profile.
+The live UI shows both labels fully, and DESKTOP targets Desktop Magic Mirror.app.
 
 The queue and graceful/forced-stop behavior, result sounds, metadata log, and
 limits are documented in [raven-button.md](raven-button.md). Script exit zero
@@ -92,10 +97,10 @@ up the application. The helper never replaces/restarts the trusted ADB server.
 
 ## TV-connected mouse and remote desktop
 
-The Xiaomi receiver stays plugged into the TV. **CONSOLE** also connects that
+The Xiaomi receiver stays plugged into the TV. **CONSOLE** and **DESKTOP** connect that
 receiver to macOS over the direct Ethernet cable. The owner confirmed one pointer,
 correct movement and working clicks on the portrait Console. **STOP** releases
-it back to Android and closes the dedicated USB client/server. START, INTERACTIVE
+it back to Android and closes the dedicated USB client/server. START,
 STUDIO and PLAY LOOP leave an existing connection alone. No mouse-axis remapping
 is installed; keep the accepted Mac 90° / Android user_rotation 2 display settings.
 
@@ -129,7 +134,8 @@ size while the avatar keeps running on the TV. It only shows the Console: it doe
 not start Magic Mirror, wake the TV, connect the TV mouse, change the Mirror mode
 or play a sound, and if the app is not running it says so in an alert. The next
 CONSOLE press (Neo key or Console app) moves the Console back over the avatar;
-START, INTERACTIVE STUDIO and PLAY LOOP hide it as before. Install or reinstall it
+START, STUDIO, DESKTOP and PLAY LOOP hide it as before. Remote Console leaves a
+Desktop TV visible and offers Return to Avatar. Install or reinstall it
 with `zsh deploy/macos/install-remote-console.sh` (it refuses to replace any other
 app of that name).
 
@@ -141,16 +147,17 @@ main display and remote desktop host remain unchanged. Both inputs control the
 same Mac pointer; take turns using the local and remote mice. After moving the
 physical mouse, leave it still for a few seconds before controlling remotely
 (Chrome Remote Desktop gives local input temporary priority). The helper only
-places an outside pointer on the portrait display when CONSOLE is invoked, then
+places an outside pointer on the portrait display when CONSOLE or DESKTOP is invoked, then
 exits. STOP does not stop Chrome Remote Desktop. End-to-end remote acceptance and
 recovery limits are recorded in the [mouse QA ledger](../../docs/testing/portrait-console-mouse-2026-10-17.md).
 
 ## Verification
 
-The original four-key profile survived Stream Deck relaunch and the connected Neo
-was verified through IOHID. INTERACTIVE STUDIO: wrapper installed and profile
-imported (the Neo shows the five-key profile); a physical press still needs field
-acceptance. The assigned app
+The six-key profile and targets were checked in the connected Neo's editor.
+Fresh checks passed 24 isolated Electron journey cases and 10 deployed Mac/TV
+transitions, including Desktop to every mode and STOP. See the
+[Desktop QA ledger](../../docs/testing/stream-deck-desktop-2026-10-23.md).
+A physical press of the new key remains separate from this evidence. The assigned app
 wrappers were exercised on the actual Mac/TV, including playback acknowledgement,
 repeat PLAY, saved-mode return and crash restoration. Fresh unit, Electron
 playback/recovery and field evidence is

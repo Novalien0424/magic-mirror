@@ -92,7 +92,7 @@ export async function operateTv(action, io = createTvIo()) {
 
 /** The entire sequence runs inside the existing button queue/operation lease. */
 export async function operateMirrorControl(action, io) {
-  if (!['start', 'stop', 'loop', 'console', 'studio'].includes(action)) throw Error('mirror_control_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop'].includes(action)) throw Error('mirror_control_action_invalid')
   const attempt = async (fn, fallback) => { try { return await fn() } catch { return fallback } }
   if (action === 'stop') {
     // Keep the HDMI signal black even after Electron exits or TV standby fails.
@@ -105,13 +105,17 @@ export async function operateMirrorControl(action, io) {
       ? app : blackout && blackout !== 'blackout_covered' ? blackout : tv !== 'tv_standby' ? tv
         : audio && audio !== 'jabra_output_70' ? audio : mouse && !['mouse_stopped', 'mouse_not_installed'].includes(mouse) ? mouse : app }
   }
+  if (io.portrait) {
+    const portrait = await attempt(() => io.portrait(), 'portrait_failed')
+    if (portrait !== 'portrait_ready') return { portrait, tv: 'tv_wake_skipped', outcome: portrait }
+  }
   const app = await attempt(() => io.app('start'), 'start_failed')
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
   const ready = await attempt(() => io.ready(), false)
   if (!ready) return { app, tv: 'tv_wake_skipped', outcome: `${action}_not_ready` }
   // Console is a separate window; showing it must preserve the current media mode.
   // START selects Conversation and STUDIO Interactive Studio; LOOP leaves the mirror mode alone.
-  const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio' }[action]
+  const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio', desktop: 'desktop' }[action]
   const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
@@ -122,9 +126,9 @@ export async function operateMirrorControl(action, io) {
     if (blackout !== 'blackout_cleared') return { app, mode, modeReason, blackout, tv: 'tv_wake_skipped', outcome: blackout }
   }
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
-  const mouse = action === 'console' && tv === 'tv_awake' && io.mouse
+  const mouse = ['console', 'desktop'].includes(action) && tv === 'tv_awake' && io.mouse
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
   return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
     ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
-      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready' }[action] ?? app : tv }
+      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown' }[action] ?? app : tv }
 }

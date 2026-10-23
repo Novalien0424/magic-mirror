@@ -1,0 +1,239 @@
+Stream Deck Desktop QA failures — 2026-10-23
+Metadata only. Full captured stdout/stderr, unabridged.
+UI runs exit 2; first native outer audio guard exit 133.
+
+SOURCE /tmp/mm-desktop-ui-qa.log
+(node:38978) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/novalien0424/magic-mirror/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+MAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-23T08:53:23.319Z
+SHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-23T08:53:23.435Z
+WINDOW_LOADED window=console at=2026-10-23T08:53:23.537Z
+WINDOW_LOADED window=mirror at=2026-10-23T08:53:23.537Z
+WINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-23T08:53:23.548Z
+RENDERER_READY window=mirror at=2026-10-23T08:53:23.579Z
+RENDERER_READY window=console at=2026-10-23T08:53:23.579Z
+PHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-23T08:53:23.579Z
+PHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-23T08:53:23.579Z
+PHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-23T08:53:23.584Z
+PHASE4_QA_STEP step=operator_loop_scope status=metadata item={"media":"isolated_synthetic","cases":24,"provider":"not_executed","physical_audio":"not_executed","hardware":"not_executed","field_launcher":"not_executed","normal_route":"production_isolated_mailbox… at=2026-10-23T08:53:23.611Z
+PHASE4_QA_STEP step=operator_loop_avatar_authored status=passed at=2026-10-23T08:53:24.605Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:53:24.632Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:53:24.654Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=captured file=operator-remote-console-avatar.png sha256=55293ecabf4ee59456790c7da3314b66bffd17146101eb244c5eddadd490b510 nonblack_pixels=355965 at=2026-10-23T08:53:24.830Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=passed item={"beside_mirror":true,"always_on_top":false,"focused":true,"windows_over_mirror":0,"width":1888,"height":1048,"same_renderer":true,"mirror_mode_unchanged":true} at=2026-10-23T08:53:24.830Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:53:24.839Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:53:24.840Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:53:26.171Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:53:26.177Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:53:26.294Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:53:26.298Z
+PHASE4_QA_STEP step=operator_remote_console_repeat_restores_window status=passed item={"repeat_same_bounds":true,"minimized_restored":true,"maximized_restored":true,"same_renderer":true} at=2026-10-23T08:53:26.388Z
+PHASE4_QA_STEP step=operator_remote_console_display_change status=failed item={"reason":"phase4_qa_operator_loop_display_watch_not_configured","state":{"mode":"avatar","status":"idle","generation":0,"reason":"operator_loop_idle"},"completed_cases":3} at=2026-10-23T08:53:26.388Z
+PHASE4_QA_STEP step=operator_remote_console_display_change status=captured file=operator-loop-console-failure.png sha256=872ed5a4a20f971876ca3cb75530a2632dff72838d8102c9e9ff912daae68249 nonblack_pixels=331490 at=2026-10-23T08:53:26.470Z
+PHASE4_QA_RESULT status=failed reason=phase4_qa_operator_loop_display_watch_not_configured at=2026-10-23T08:53:26.470Z
+{"marker":"PHASE4_QA_ARTIFACTS","root":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T08-53-22-960Z","outputDir":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T08-53-22-960Z/screenshots","exit":2,"timedOut":false,"resultCount":1}
+qa_output_minimum
+qa_output_restored
+
+SOURCE /tmp/mm-desktop-ui-qa-retry.log
+(node:39027) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/novalien0424/magic-mirror/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+MAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-23T08:54:36.166Z
+SHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-23T08:54:36.249Z
+WINDOW_LOADED window=mirror at=2026-10-23T08:54:36.314Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:36.314Z
+WINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-23T08:54:36.320Z
+RENDERER_READY window=mirror at=2026-10-23T08:54:36.349Z
+WINDOW_LOADED window=console at=2026-10-23T08:54:36.363Z
+RENDERER_READY window=console at=2026-10-23T08:54:36.396Z
+PHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-23T08:54:36.396Z
+PHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-23T08:54:36.396Z
+PHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-23T08:54:36.435Z
+PHASE4_QA_STEP step=operator_loop_scope status=metadata item={"media":"isolated_synthetic","cases":24,"provider":"not_executed","physical_audio":"not_executed","hardware":"not_executed","field_launcher":"not_executed","normal_route":"production_isolated_mailbox… at=2026-10-23T08:54:36.449Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:37.100Z
+PHASE4_QA_STEP step=operator_loop_avatar_authored status=passed at=2026-10-23T08:54:37.370Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:37.386Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:37.387Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=captured file=operator-remote-console-avatar.png sha256=a059a6874a7891d8333c18adcac8aff2516388f7576eb78f56a21cb63e29eec7 nonblack_pixels=355983 at=2026-10-23T08:54:37.572Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=passed item={"beside_mirror":true,"always_on_top":false,"focused":true,"windows_over_mirror":0,"width":1888,"height":1048,"same_renderer":true,"mirror_mode_unchanged":true} at=2026-10-23T08:54:37.572Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:37.584Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:37.584Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:38.893Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:38.899Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:39.011Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:39.035Z
+PHASE4_QA_STEP step=operator_remote_console_repeat_restores_window status=passed item={"repeat_same_bounds":true,"minimized_restored":true,"maximized_restored":true,"same_renderer":true} at=2026-10-23T08:54:39.108Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:39.120Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:39.121Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:39.963Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:39.967Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:40.336Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:40.341Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:41.180Z
+PHASE4_QA_STEP step=operator_remote_console_display_change status=passed item={"deck_replaced_over_mirror":true,"remote_stayed_beside":true,"rehomes_observed":2} at=2026-10-23T08:54:41.543Z
+CONSOLE_OPEN_FAILED reason=console_main_display_missing at=2026-10-23T08:54:41.559Z
+OPERATOR_CONTROL reason=operator_control_failed at=2026-10-23T08:54:41.560Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:41.665Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:41.669Z
+PHASE4_QA_STEP step=operator_remote_console_no_main_display status=passed item={"reply":"failed","console_visible":false,"windows_over_mirror":0,"recovered_when_main_returns":true} at=2026-10-23T08:54:41.756Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:41.803Z
+PHASE4_QA_STEP step=operator_loop_settings_saved status=passed at=2026-10-23T08:54:42.188Z
+PHASE4_QA_STEP step=operator_loop_settings_saved status=captured file=operator-loop-console-saved.png sha256=5d13f47d37cd841f46b5033e3e218db2d1463fea446ef8812588a790ed951ce4 nonblack_pixels=143752 at=2026-10-23T08:54:42.233Z
+WINDOW_LOADED window=console at=2026-10-23T08:54:42.255Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:42.272Z
+PHASE4_QA_STEP step=operator_loop_settings_reloaded status=passed at=2026-10-23T08:54:42.274Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:42.599Z
+PHASE4_QA_STEP step=operator_loop_muted_preview status=captured file=operator-loop-console-preview.png sha256=98966540caf663b21390672d4de070a13ef14d8ad6d04fa7f585e1e2c1674f5a nonblack_pixels=523591 at=2026-10-23T08:54:42.669Z
+PHASE4_QA_STEP step=operator_loop_muted_preview status=passed at=2026-10-23T08:54:42.682Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:54:42.707Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-23T08:54:42.707Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:42.715Z
+[39030:1023/165442.715414:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[39030:1023/165442.715423:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-23T08:54:43.718Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:43.718Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:43.870Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:44.515Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=measured item={"elapsed_ms":2029,"decoded_frames":61,"dropped_frames":0,"distinct_frames":18,"video_duration_ms":3008,"audio_duration_ms":null,"video_wraps":0,"audio_wraps":0,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-23T08:54:45.903Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=measured item={"decoder_audio_meter":true,"decoded_bytes":43630} at=2026-10-23T08:54:45.903Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=captured file=operator-loop-embedded-playing.png sha256=9beb30095a7971dd9d73bd0266ec70d08be9c382e51b10530e9a5a018ac14970 nonblack_pixels=2069544 at=2026-10-23T08:54:45.988Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=passed item={"elapsed_ms":2029,"decoded_frames":61,"dropped_frames":0,"distinct_frames":18,"video_duration_ms":3008,"audio_duration_ms":null,"video_wraps":0,"audio_wraps":0,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-23T08:54:45.988Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:45.988Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:46.005Z
+PHASE4_QA_STEP step=operator_loop_duplicate_play status=passed item={"generation_unchanged":true,"media_nodes_unchanged":true,"source_loads":0,"duplicate_clicks":2} at=2026-10-23T08:54:46.020Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:46.021Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:54:46.067Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-23T08:54:46.067Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:46.068Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:46.771Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-23T08:54:47.132Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:47.134Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:47.180Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:47.287Z
+PHASE4_QA_STEP step=operator_loop_saved_replacement_button status=captured file=operator-loop-saved-replacement.png sha256=60451197b511d71f0d2114ff2da23aae3f52b517be81a02f201fb9d7e8c3456b nonblack_pixels=1840015 at=2026-10-23T08:54:47.357Z
+PHASE4_QA_STEP step=operator_loop_saved_replacement_button status=passed item={"saved_selection_used":true,"new_generation":true,"route":"production_isolated_mailbox"} at=2026-10-23T08:54:47.357Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:47.382Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:47.388Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-23T08:54:47.471Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:47.477Z
+PHASE4_QA_STEP step=operator_loop_avatar_return status=captured file=operator-loop-avatar-return.png sha256=dc56a6101b7e772bbc1f49b2cd4166b1d165a13e275622f99138cf9a89ca1988 nonblack_pixels=905779 at=2026-10-23T08:54:48.080Z
+PHASE4_QA_STEP step=operator_loop_avatar_return status=passed at=2026-10-23T08:54:48.080Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:54:48.154Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-23T08:54:48.154Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:48.161Z
+[39030:1023/165448.165512:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[39030:1023/165448.165528:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:48.256Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:48.261Z
+PHASE4_QA_STEP step=operator_loop_start_cancel status=captured file=operator-loop-console-starting.png sha256=0df120701e552ea4678177bae48c6dd77f3db4510ad9b1f0cbbdc1b1c94192bc nonblack_pixels=31690 at=2026-10-23T08:54:48.339Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-23T08:54:48.340Z
+OPERATOR_LOOP reason=operator_loop_start_failed at=2026-10-23T08:54:48.340Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:48.371Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:49.162Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:49.165Z
+PHASE4_QA_STEP step=operator_loop_start_cancel status=passed item={"return_offered_while_preparing":true,"start_failure_shown":false} at=2026-10-23T08:54:49.306Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:54:49.501Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-23T08:54:49.501Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:49.510Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:49.511Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-23T08:54:50.549Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:54:50.549Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:50.587Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:54:50.588Z
+PHASE4_QA_STEP step=operator_loop_separate_audio status=passed at=2026-10-23T08:54:50.589Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:54:51.338Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:51.346Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=measured item={"elapsed_ms":5164,"decoded_frames":148,"dropped_frames":0,"distinct_frames":50,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":2,"audio_wraps":4,"video_only_wraps":2,"audio_only_wraps… at=2026-10-23T08:54:55.753Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=captured file=operator-loop-independent-playing.png sha256=021c7734bc58a67b985dc7454f67778feb1678cb4dca009e2b06c609c8b8dda6 nonblack_pixels=2070248 at=2026-10-23T08:54:55.840Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=passed item={"elapsed_ms":5164,"decoded_frames":148,"dropped_frames":0,"distinct_frames":50,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":2,"audio_wraps":4,"video_only_wraps":2,"audio_only_wraps… at=2026-10-23T08:54:55.840Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:55.855Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:55.869Z
+PHASE4_QA_STEP step=operator_console_on_mirror status=captured file=operator-console-on-mirror.png sha256=dc95a5939bc523201b9b05464578088972478e56ec1d5dd89c82831e96ad6469 nonblack_pixels=35863 at=2026-10-23T08:54:55.987Z
+PHASE4_QA_STEP step=operator_console_on_mirror status=passed item={"on_mirror":true,"visible":true,"focused":true,"always_on_top":true} at=2026-10-23T08:54:55.987Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:54:56.001Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:56.002Z
+PHASE4_QA_STEP step=operator_console_preserves_loop_and_draft status=measured item={"elapsed_ms":2073,"decoded_frames":61,"dropped_frames":0,"distinct_frames":26,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":0,"audio_wraps":2,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-23T08:54:58.165Z
+PHASE4_QA_STEP step=operator_console_preserves_loop_and_draft status=passed item={"generation_unchanged":true,"unsaved_draft_preserved":true,"decoded_frames":61} at=2026-10-23T08:54:58.169Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:54:58.204Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:54:58.224Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=measured item={"elapsed_ms":2027,"decoded_frames":59,"dropped_frames":4,"distinct_frames":23,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":1,"audio_wraps":2,"video_only_wraps":1,"audio_only_wraps"… at=2026-10-23T08:55:00.314Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=captured file=operator-console-remote-main.png sha256=e5d3503ab6ef107aaf5c624ffa273f05d9eeaefb1b0be137bb3c2c40ca6be774 nonblack_pixels=158623 at=2026-10-23T08:55:00.430Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-23T08:55:00.449Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:00.460Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=passed item={"remote_beside_mirror":true,"remote_focused":true,"decoded_frames_beside":59,"deck_back_over_mirror":true,"generation_unchanged":true,"unsaved_draft_preserved":true} at=2026-10-23T08:55:00.532Z
+OPERATOR_LOOP reason=operator_loop_playback_stalled at=2026-10-23T08:55:09.556Z
+OPERATOR_LOOP reason=operator_loop_reloading at=2026-10-23T08:55:09.556Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:55:09.564Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:55:09.565Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-23T08:55:10.561Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=measured item={"elapsed_ms":2002,"decoded_frames":57,"dropped_frames":0,"distinct_frames":24,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":0,"audio_wraps":2,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-23T08:55:12.669Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=captured file=operator-loop-recovered-once.png sha256=4b0e58aa4f2f1415dd6513dec7038d4aa25385f8250557bd438db83ec50a4be3 nonblack_pixels=2069589 at=2026-10-23T08:55:12.779Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=passed item={"reloads":1,"decoded_frames":57,"elapsed_ms":2002} at=2026-10-23T08:55:12.780Z
+OPERATOR_LOOP reason=operator_loop_playback_stalled at=2026-10-23T08:55:21.580Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=captured file=operator-loop-failed-black.png sha256=e67dfd31e867c9131c57a237fe79f084a2e642682ed3c805f07b9dbcf5ff442c nonblack_pixels=0 at=2026-10-23T08:55:30.952Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=captured file=operator-loop-console-failed.png sha256=27f478ff917706a7e9e88919d19c7708ef1b8ecedf09c0d7b42ecc9189ce0057 nonblack_pixels=45098 at=2026-10-23T08:55:30.998Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=passed item={"reloads":1,"failure_hold_ms":8701,"nonblack_pixels":0} at=2026-10-23T08:55:30.998Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-23T08:55:31.079Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:55:31.097Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:31.120Z
+PHASE4_QA_STEP step=operator_loop_start_normal_recovery status=captured file=operator-loop-start-normal-avatar.png sha256=1258ed38444dae8b74621e8f9fcd540c1a11c65f591c43b8306c75f5d67e0ad5 nonblack_pixels=963117 at=2026-10-23T08:55:31.611Z
+PHASE4_QA_STEP step=operator_loop_start_normal_recovery status=passed item={"normal_acknowledged":true,"saved_avatar_unchanged":true} at=2026-10-23T08:55:31.611Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:55:31.630Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:31.634Z
+MIRROR_MODE reason=mirror_mode_studio_operator at=2026-10-23T08:55:31.727Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-23T08:55:31.727Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:55:31.733Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:31.748Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:55:31.829Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:31.832Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=captured file=operator-remote-console-studio-mode.png sha256=ae6f20f4d9012a501f388903fff5dd89aae7b2afcf2ee16b2fd79dd82aaf05d0 nonblack_pixels=177584 at=2026-10-23T08:55:31.989Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:55:32.405Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-23T08:55:32.405Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:55:32.411Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-23T08:55:32.411Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:55:32.497Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-23T08:55:33.408Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:55:33.415Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:33.447Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:55:33.531Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:33.538Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-23T08:55:34.198Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=measured item={"elapsed_ms":2012,"decoded_frames":60,"dropped_frames":0,"distinct_frames":22,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":1,"audio_wraps":1,"video_only_wraps":1,"audio_only_wraps"… at=2026-10-23T08:55:36.339Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=captured file=operator-remote-console-loop.png sha256=d528e9887fed947cdae6854aed8c3756af36edc679a4fca7ad16022c3bb2dfac nonblack_pixels=169117 at=2026-10-23T08:55:36.445Z
+MIRROR_MODE reason=mirror_mode_conversation_operator at=2026-10-23T08:55:36.459Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-23T08:55:36.459Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-23T08:55:37.100Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:37.141Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=passed item={"studio_hid_console":true,"studio_mode_shown":true,"play_loop_hid_console":true,"decoded_frames_beside":60,"start_hid_console":true,"mode_after_start":"conversation"} at=2026-10-23T08:55:37.167Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:55:37.184Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:37.187Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:55:37.302Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-23T08:55:37.302Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:37.315Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-23T08:55:37.389Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-23T08:55:37.389Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:37.396Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-23T08:55:37.499Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-23T08:55:37.505Z
+PHASE4_QA_STEP step=operator_desktop_preserves_draft status=failed item={"reason":"phase4_qa_operator_loop_remote_console_not_beside_avatar","state":{"mode":"desktop","status":"idle","generation":13,"reason":"operator_loop_desktop"},"completed_cases":22} at=2026-10-23T08:55:37.585Z
+PHASE4_QA_STEP step=operator_desktop_preserves_draft status=captured file=operator-loop-console-failure.png sha256=5f49da2ff13a74c3e225d5e1ed50c4d23458eff9db14a3c4dc3b8f95bf6c4c6e nonblack_pixels=157677 at=2026-10-23T08:55:37.669Z
+PHASE4_QA_RESULT status=failed reason=phase4_qa_operator_loop_remote_console_not_beside_avatar at=2026-10-23T08:55:37.673Z
+{"marker":"PHASE4_QA_ARTIFACTS","root":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T08-54-36-017Z","outputDir":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T08-54-36-017Z/screenshots","exit":2,"timedOut":false,"resultCount":1}
+qa_output_minimum
+qa_output_restored
+
+SOURCE /tmp/mm-desktop-native.log
+{"at":"2026-10-23T09:01:12.654Z","action":"desktop","app":"started","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"desktop_shown","electronVisibleWindows":0,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"desktop","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:15.565Z","action":"start","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","outcome":"already_on","electronVisibleWindows":1,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"avatar","mirrorMode":"conversation","black":false,"passed":true}
+{"at":"2026-10-23T09:01:17.370Z","action":"desktop","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"desktop_shown","electronVisibleWindows":0,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"desktop","mirrorMode":"conversation","black":false,"passed":true}
+{"at":"2026-10-23T09:01:19.842Z","action":"studio","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","outcome":"studio_ready","electronVisibleWindows":1,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"avatar","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:21.808Z","action":"desktop","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"desktop_shown","electronVisibleWindows":0,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"desktop","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:24.283Z","action":"loop","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","outcome":"loop_playing","electronVisibleWindows":1,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"loop","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:26.236Z","action":"desktop","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"desktop_shown","electronVisibleWindows":0,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"desktop","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:28.342Z","action":"console","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"console_shown","electronVisibleWindows":2,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"avatar","mirrorMode":"studio","black":false,"passed":true}
+{"at":"2026-10-23T09:01:30.240Z","action":"desktop","app":"already_on","mode":"success","modeReason":"operator_control_complete","tv":"tv_awake","mouse":"mouse_started","outcome":"desktop_shown","electronVisibleWindows":0,"tvDisplays":[{"height":1920,"rotation":90,"width":1080}],"intent":"desktop","mirrorMode":"studio","black":false,"passed":true}
+main/mm-desktop-audio-guard.swift:91: Fatal error: output_volume_failed

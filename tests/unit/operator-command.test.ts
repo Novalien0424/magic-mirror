@@ -26,10 +26,10 @@ describe('operator mailbox payload validation', () => {
   it('accepts exactly Main\'s operator action set', () => {
     const main = readFileSync(new URL('../../src/main/operator-control.ts', import.meta.url), 'utf8').match(/^export type OperatorAction = (.+)$/m)?.[1]
     expect([...main?.matchAll(/'([a-z_]+)'/g) ?? []].map(([, action]) => action)).toEqual(OPERATOR_ACTIONS)
-    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio'])
+    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])
     expect(Object.isFrozen(OPERATOR_ACTIONS)).toBe(true)
   })
-  it.each(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio'])('creates exactly the approved %s payload', action => {
+  it.each(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])('creates exactly the approved %s payload', action => {
     expect(createOperatorRequest(action, id, issuedAt)).toEqual(request({ action }))
     expect(parseOperatorRequest(JSON.stringify(request({ action })), issuedAt)).toEqual(request({ action }))
   })

@@ -79,6 +79,28 @@ describe('TV standby and wake', () => {
 })
 
 describe('combined Stream Deck sequence', () => {
+  it('acknowledges Desktop before clearing black and connects the mouse after HDMI wake', async () => {
+    const base = control()
+    const io = { ...base,
+      portrait: async () => { base.order.push('portrait'); return 'portrait_ready' },
+      blackout: async (action: string) => { base.order.push(action); return 'blackout_cleared' },
+      mouse: async (action: string) => { base.order.push(`mouse_${action}`); return 'mouse_started' } }
+    expect((await operateMirrorControl('desktop', io)).outcome).toBe('desktop_shown')
+    expect(base.order).toEqual(['portrait', 'start', 'ready', 'desktop', 'clear', 'awake', 'mouse_start'])
+  })
+  it.each(['start', 'loop', 'studio', 'console', 'desktop'])('does not expose an incorrectly oriented display on %s', async action => {
+    const io = { ...control(), portrait: vi.fn(async () => 'portrait_failed') }
+    expect((await operateMirrorControl(action, io)).outcome).toBe('portrait_failed')
+    expect(io.app).not.toHaveBeenCalled()
+    expect(io.tv).not.toHaveBeenCalled()
+  })
+  it.each(['start', 'loop', 'studio', 'console', 'stop'])('selects the requested %s function after Desktop', async action => {
+    const io = control()
+    expect((await operateMirrorControl('desktop', io)).outcome).toBe('desktop_shown')
+    await operateMirrorControl(action, io)
+    expect(io.order.slice(4)).toEqual(action === 'stop' ? ['standby', 'stop']
+      : ['start', 'ready', { start: 'normal', loop: 'play_loop', studio: 'studio', console: 'show_console' }[action], 'awake'])
+  })
   it('covers HDMI before shutdown and resets Jabra to 70% even when TV or app cleanup fails', async () => {
     const order: string[] = []
     const io = { blackout: async (action: string) => { order.push(action); return 'blackout_covered' },

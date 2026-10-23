@@ -1,4 +1,4 @@
-// Fixed STOP policy: black HDMI surface, or reset Jabra OUTPUT to 70%.
+// Fixed venue policies: black HDMI, portrait orientation, Jabra OUTPUT at 70%.
 // No microphone, input-gain, credential, default-device or restart ownership.
 import AppKit
 import CoreAudio
@@ -8,6 +8,26 @@ let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponen
 let active = root.appendingPathComponent("active")
 let ready = root.appendingPathComponent("ready.json")
 func fail(_ reason: String) -> Never { print(reason); exit(1) }
+func portrait() {
+  let screens = NSScreen.screens.filter { $0.localizedName.localizedCaseInsensitiveContains("T749") }
+  guard screens.count == 1, let id = (screens[0].deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    else { fail("portrait_display_unavailable") }
+  // Same accepted venue orientation as displayctl. Only touch the HDMI target.
+  if Int(CGDisplayRotation(id)) != 90 {
+    guard dlopen("/System/Library/PrivateFrameworks/MonitorPanel.framework/MonitorPanel", RTLD_NOW) != nil,
+      let cls = NSClassFromString("MPDisplayMgr") as? NSObject.Type,
+      let displays = cls.init().value(forKey: "displays") as? [NSObject],
+      let display = displays.first(where: { ($0.value(forKey: "displayID") as? NSNumber)?.uint32Value == id })
+      else { fail("portrait_rotation_unavailable") }
+    display.setValue(NSNumber(value: 90), forKey: "orientation")
+  }
+  for _ in 0..<40 {
+    let bounds = CGDisplayBounds(id)
+    if Int(CGDisplayRotation(id)) == 90 && bounds.height > bounds.width { print("portrait_ready"); return }
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+  }
+  fail("portrait_rotation_verify_failed")
+}
 func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
              _ element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress {
   AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
@@ -64,6 +84,7 @@ final class BlackWindow: NSWindow {
 switch CommandLine.arguments.dropFirst().first {
 case "--reset-output": volume(true)
 case "--output-status": volume(false)
+case "--portrait": portrait()
 case "--black":
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
   let lock = open(root.appendingPathComponent("owner.lock").path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)

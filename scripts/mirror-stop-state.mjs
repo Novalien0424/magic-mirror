@@ -12,6 +12,11 @@ export function createStopStateIo() {
   const read = async () => { try { return JSON.parse(await readFile(ready, 'utf8')) } catch { return null } }
   const alive = pid => { try { if (!Number.isSafeInteger(pid) || pid <= 0) return false; process.kill(pid, 0); return true } catch { return false } }
   return {
+    portrait: async () => {
+      const result = spawnSync(binary, ['--portrait'], { encoding: 'utf8', timeout: 4000, killSignal: 'SIGKILL' })
+      return result.status === 0 && !result.error && !result.signal && result.stdout.trim() === 'portrait_ready'
+        ? 'portrait_ready' : 'portrait_failed'
+    },
     blackout: async action => {
       if (!['cover', 'clear'].includes(action)) throw Error('blackout_action_invalid')
       await mkdir(root, { recursive: true, mode: 0o700 })

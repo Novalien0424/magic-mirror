@@ -1,7 +1,7 @@
 # Magic Mirror operator controls
 
 The helper operates the existing user LaunchAgent
-`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console/studio requests,
+`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console/studio/desktop requests,
 debounces successful repeated actions for three seconds, and holds the shared
 Electron operation lease. An active QA owner rejects the request with
 `electron_owner_busy`; it never takes over that owner's app. Launchd remains the
@@ -20,6 +20,7 @@ opened by Stream Deck:
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-loop.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-console.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-studio.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-desktop.sh
 ```
 
 Each fixes its action and calls the existing queue helper using canonical paths.
@@ -40,13 +41,19 @@ leaving room for a forced app stop plus the bounded TV operation ahead of them.
 
 ## Behavior and limits
 
+All visible actions first run the signed helper's fixed `--portrait` policy: find
+exactly one T749, restore Mac rotation 90° if needed and verify portrait bounds.
+It leaves the operator monitor alone. Failure reports `portrait_failed` before
+starting/changing the application or waking HDMI. The accepted Android rotation
+remains `user_rotation=2`.
+
 Start is idempotent when the job already has a PID. Otherwise it kickstarts a
 loaded job or bootstraps an unloaded job, then waits up to ten seconds for a PID.
 The combined control then waits up to ten seconds for this Main's existing
 `MAIN_READY`, Mirror `WINDOW_LOADED` and `RENDERER_READY` metadata, invalidated by
 logged mirror failure/recreation or app exit, and rechecks the Main PID. Only
 then does it send Main `normal` for START, `play_loop` for LOOP, `show_console`
-for CONSOLE, or `studio` for STUDIO. Only a successful
+for CONSOLE, `studio` for STUDIO, or `desktop` for DESKTOP. Only a successful
 acknowledgement permits TV wake and HDMI selection. Missing/ambiguous readiness
 reports `<action>_not_ready` without waking the TV; mode failure reports
 `<action>_mode_failed` plus a safe `modeReason`.
@@ -59,8 +66,17 @@ loop like START, then selects Interactive Studio mode; its success outcome is
 CONSOLE reuses the current renderer and waits at most ten seconds for its
 load/bridge readiness, then places it in the mirror display's work area above
 the kiosk window. It preserves unsaved edits and current playback. Repeats
-show/focus rather than hide it. START/STUDIO/LOOP hide the Console; STOP closes the
+show/focus rather than hide it. From Desktop, CONSOLE first resumes the saved
+avatar mode. START/STUDIO/LOOP/DESKTOP hide the Console; STOP closes the
 whole application, so all current and future owned program modes end together.
+
+DESKTOP closes the input gate before releasing voice/wake/camera/scenes, waits for
+loop playback release, then hides Mirror and Console. Electron and the Console
+renderer remain alive, preserving unsaved edits. Main persists Desktop across
+crash recovery. START/STUDIO/LOOP restore the existing Mirror window after their
+mode acknowledgement; Remote Console can open on the main monitor while the TV
+remains on Desktop. DESKTOP wakes HDMI and connects the TV mouse like CONSOLE;
+its success result is `desktop_shown`.
 
 ### Main acknowledgement mailbox
 
@@ -70,7 +86,7 @@ matching `app.getPath('userData')/operator-control` in Main. It publishes an ato
 request under `requests/<UUID>.json`:
 
 ```json
-{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|studio","issuedAt":0,"expiresAt":45000}
+{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|show_console_main|studio|desktop","issuedAt":0,"expiresAt":45000}
 ```
 
 `issuedAt` is `Date.now()` at creation; `expiresAt` is exactly 45,000 ms later.
@@ -124,7 +140,7 @@ Those failure results require inspection before another start.
 
 STOP first covers the T749 HDMI display with a native, opaque black window. It
 survives Electron shutdown, covers desktop/menu/Dock and hides the cursor only on
-that display. START/LOOP/STUDIO/CONSOLE clear it after renderer readiness and the
+that display. START/LOOP/STUDIO/CONSOLE/DESKTOP clear it after renderer readiness and the
 mode acknowledgement. The operator monitor remains usable. A missing display or
 failed cover is reported; TV, app, mouse and audio cleanup still run independently.
 The cover does not restart Electron and has no LaunchAgent.
@@ -136,7 +152,7 @@ speaker. Install the signed user-owned helper with
 `zsh deploy/macos/install-stop-state.sh` when deploying these controls.
 
 STOP first confirms Android Asleep/display OFF, sending explicit key 223 only
-when needed, then always performs the app stop. START/LOOP/CONSOLE/STUDIO send explicit wake key
+when needed, then always performs the app stop. START/LOOP/CONSOLE/STUDIO/DESKTOP send explicit wake key
 224 when needed, open `com.android.rockchip.camera2/.RockchipCamera2`, and
 verify Awake/display ON. Confirmed standby needs no repeated sleep injection.
 This is **standby, not Android shutdown or mains power-off**. The board and wired
@@ -154,7 +170,7 @@ Completion logs contain separate app/TV outcomes; command failures log only the
 step and a fixed failure/timeout reason, never raw device output.
 
 TV failure leaves app cleanup enabled and produces Basso. Successful combined
-operations retain the usual sounds. START/LOOP/CONSOLE/STUDIO do not repair full power loss or a
+operations retain the usual sounds. START/LOOP/CONSOLE/STUDIO/DESKTOP do not repair full power loss or a
 dead/untrusted ADB connection. A complete Mac login/boot screen blackout is outside
 these session controls.
 

@@ -7,6 +7,11 @@ import type { MirrorMode } from '../../shared/portrait-studio'
 /** Header status chip; it widens into a banner only when the Mirror needs attention. */
 export function RuntimeStatusStrip({ store, lifecycle, phrase, operatorLoop, mirrorMode }: { store: ConsoleRuntimeStore; lifecycle?: string; phrase?: string; operatorLoop?: OperatorLoopSnapshot | null; mirrorMode?: MirrorMode }) {
   const state = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
+  if (operatorLoop?.mode === 'desktop') return <section className={`runtime-status${operatorLoop.status === 'failed' ? ' runtime-status--attention' : ''}`} aria-label="Mirror listening status" data-lifecycle="desktop">
+    <div aria-live="polite"><span className="runtime-status__dot" aria-hidden="true" /><strong>{operatorLoop.status === 'failed' ? 'Desktop needs attention' : 'macOS desktop'}</strong> · {operatorLoop.status === 'failed'
+      ? 'Could not fully pause the Mirror. Retry DESKTOP or press STOP.'
+      : 'Voice, wake listening and camera are off. Use a Stream Deck mode button or Return to Avatar to resume.'}</div>
+  </section>
   if (operatorLoop?.mode === 'loop') return <section className={`runtime-status${operatorLoop.status === 'failed' ? ' runtime-status--attention' : ''}`}
     aria-label="Mirror listening status" data-lifecycle="loop">
     <div aria-live="polite"><span className="runtime-status__dot" aria-hidden="true" /><strong>{operatorLoop.status === 'failed' ? 'Loop video needs attention' : 'Loop Video mode'}</strong> · Voice, wake listening and camera are off.</div>

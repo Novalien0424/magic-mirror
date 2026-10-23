@@ -585,6 +585,7 @@ function OverviewPanel({
 function loopModeLabel(snapshot: OperatorLoopSnapshot | null): string {
   if (!snapshot) return 'Checking…'
   if (snapshot.mode === 'avatar') return 'Not playing'
+  if (snapshot.mode === 'desktop') return 'macOS desktop'
   return { idle: 'Starting', preparing: 'Preparing', playing: 'Playing', recovering: 'Recovering', failed: 'Failed · Mirror black' }[snapshot.status]
 }
 
@@ -2536,10 +2537,10 @@ export function App(): React.JSX.Element {
 
         <section className="live-bar" aria-label="Live controls">
           <div className="live-bar__groups">
-            {operatorLoop?.mode === 'loop' || loopStarting ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
-              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
+            {operatorLoop && operatorLoop.mode !== 'avatar' || loopStarting ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
+              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'desktop' ? 'macOS desktop' : operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
               <HelpButton placement="below" className="console__primary" disabled={!bridgeAvailable} onClick={returnToAvatar}
-                help="Stops the loop video, or cancels its start, and brings the avatar back with voice, wake listening and camera.">Return to Avatar</HelpButton>
+                help="Returns from macOS desktop or loop video to the avatar with voice, wake listening and camera.">Return to Avatar</HelpButton>
             </div> : <>
               <LifecycleControls
                 lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}

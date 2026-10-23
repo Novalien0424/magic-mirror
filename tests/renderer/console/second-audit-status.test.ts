@@ -8,6 +8,7 @@ import { RuntimeStatusStrip } from '../../../src/renderer/console/RuntimeStatusS
 import { createConsoleRuntimeStore } from '../../../src/renderer/console/runtime-store'
 import { WakeRecoveryStatus } from '../../../src/renderer/console/WakeRecoveryStatus'
 import { OperatorMessage, operatorMessageText } from '../../../src/renderer/console/reason-copy'
+import { DEFAULT_LOOP_VIDEO } from '../../../src/shared/operator-loop'
 
 beforeEach(() => vi.stubGlobal('React', React))
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
@@ -15,6 +16,15 @@ const success = { ok: true as const, value: { status: 'ready', reason: 'avatar_r
   waveform: 0, mouthOpen: 0, audioUnderruns: 0, voiceGain: 1, musicGain: 1 } satisfies AvatarRuntimeSnapshot }
 
 describe('bounded Console status polling', () => {
+  it('distinguishes a paused Desktop from a failed input release', () => {
+    const strip = (status: 'idle' | 'failed') => renderToStaticMarkup(createElement(RuntimeStatusStrip, {
+      store: createConsoleRuntimeStore(), operatorLoop: { mode: 'desktop', status, generation: 1,
+        reason: 'operator_loop_desktop', settings: { ...DEFAULT_LOOP_VIDEO } },
+    }))
+    expect(strip('idle')).toContain('Voice, wake listening and camera are off.')
+    expect(strip('failed')).toContain('Could not fully pause the Mirror')
+    expect(strip('failed')).not.toContain('camera are off')
+  })
   it('shows unavailable at two seconds, ignores a late healthy result and allows the next poll', async () => {
     vi.useFakeTimers()
     let finish!: (value: typeof success) => void

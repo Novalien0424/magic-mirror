@@ -19,6 +19,7 @@ const CASES = [
   'operator_remote_console_beside_avatar', 'operator_remote_console_repeat_restores_window',
   'operator_remote_console_display_change', 'operator_remote_console_no_main_display',
   'operator_remote_console_venue_keys',
+  'operator_desktop_preserves_draft', 'operator_desktop_return_buttons',
 ] as const
 
 const DOM = `
@@ -638,6 +639,43 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     if (JSON.parse(await modeFile()).mode !== 'conversation') fail('start_mode_not_conversation')
     pass({ studio_hid_console: true, studio_mode_shown: true, play_loop_hid_console: true,
       decoded_frames_beside: venueMotion.decoded_frames, start_hid_console: true, mode_after_start: 'conversation' })
+    step = CASES[22]
+    await remoteConsole()
+    const savedVolume = await evaluate<string>("return control('Loop volume').value")
+    await set('Loop volume', '0.23')
+    const consoleId = input.console.webContents.id
+    await operatorCommand('desktop')
+    if (input.mirror.isVisible() || input.console.isVisible()) fail('desktop_windows_visible')
+    await waitFor(() => mirror("return !document.querySelector('video,audio,.avatar-stage')"))
+    if ((await snapshot()).mode !== 'desktop') fail('desktop_not_selected')
+    await operatorCommand('desktop')
+    // Desktop intentionally hides the Mirror, so the avatar-beside-Console
+    // helper's visible-Mirror assertion does not apply to this route.
+    await operatorCommand('show_console_main')
+    if (!input.console.isVisible() || screen.getDisplayMatching(input.console.getBounds()).id === screen.getDisplayMatching(input.mirror.getBounds()).id) fail('desktop_remote_wrong_display')
+    if (input.mirror.isVisible() || input.console.webContents.id !== consoleId) fail('desktop_remote_replaced_windows')
+    await waitFor(() => evaluate("return control('Loop volume')?.value === '0.23' && document.querySelector('.runtime-status')?.textContent.includes('macOS desktop')"))
+    await shot('operator-desktop-remote-console.png', false, true)
+    await operatorCommand('show_console')
+    if (!input.mirror.isVisible() || !input.console.isVisible()) fail('desktop_console_not_restored')
+    if (await evaluate<string>("return control('Loop volume').value") !== '0.23') fail('desktop_lost_draft')
+    await set('Loop volume', savedVolume)
+    pass({ windows_hidden: true, media_released: true, repeated_desktop: true, unsaved_draft_preserved: true, console_renderer_preserved: true })
+
+    step = CASES[23]
+    for (const action of ['normal', 'studio', 'play_loop', 'show_console'] as const) {
+      await operatorCommand('desktop')
+      if (input.mirror.isVisible() || input.console.isVisible()) fail('desktop_return_start_visible')
+      await operatorCommand(action)
+      if (!input.mirror.isVisible()) fail('desktop_return_mirror_hidden')
+      if (action === 'play_loop') await playing()
+      else await returnedAvatar()
+      if (input.console.isVisible() !== (action === 'show_console')) fail('desktop_return_console_wrong')
+      if (action === 'studio' && JSON.parse(await modeFile()).mode !== 'studio') fail('desktop_return_studio_wrong')
+      if (action === 'normal' && JSON.parse(await modeFile()).mode !== 'conversation') fail('desktop_return_conversation_wrong')
+    }
+    await operatorCommand('normal')
+    pass({ normal: true, studio: true, play_loop: true, show_console: true })
     if (passed.size !== CASES.length || !CASES.every(name => passed.has(name))) fail('cases_incomplete')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 3,
       screenshotCount: screenshots, musicAnalyser: 'not_executed', consoleCheckCount: passed.size }

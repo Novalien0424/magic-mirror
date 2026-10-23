@@ -214,7 +214,7 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
       { id: 'q3', zh: '很好 -那麼說說看，現在的你有什麼事情是覺得兩件都想要，但是卻很難同時做到的事情?', en: 'What are two things you want now that are difficult to have at the same time?', slot: 'detail', imageLine: 'A tension between two wishes, represented as balanced contrasting features: {{answer}}.' },
       { id: 'q4', zh: '很好 -那麼說說看，如果可以的話 你希望生活裡多一點什麼?', en: 'If you could, what would you like a little more of in your life?', slot: 'mood', imageLine: 'A wish for life, represented in the creature’s colours or small supporting motif: {{answer}}.' },
     ],
-    artStyle: 'Bold flat vector, thick dark outlines, four or five flat colours, iconic and symbolic, like a modern enamel pin.',
+    artStyle: 'Modern minimalist multi-colour vector-style illustration. Clean geometric shapes, crisp edges, a balanced palette of distinct flat colours and generous negative space. Keep the soul creature expressive and symbolic with few thoughtful details; no photorealism, gradients or heavy textures.',
     pictureType: 'sticker',
     nameLettering: 'nameplate',
     quality: 'medium',
