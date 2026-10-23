@@ -43,12 +43,13 @@ an unavailable ASR judge is unknown. Keep diagnostic verdicts metadata-only.
   request (sample line in its tool instructions), none for other tools, and an
   Active-only nonverbal cue.
 - Avoid quoting unwanted phrases; mark useful style examples as variable.
-- Language follows the owner's complete-sentence rule: default Taiwan Mandarin
-  with Traditional characters; a complete English sentence switches to English.
-  Greetings, names, media titles and tool data do not select it. The visitor
-  language hint item (`languageHints`) retains the last complete sentence across
-  title/name turns and explicitly yields to new complete speech. It shapes the
-  rate without waiting for final ASR; measure switching as well as continuity.
+- Language follows the owner's 2026-10-23 explicit-request rule: default Taiwan
+  Mandarin with Traditional characters; only an explicit request switches the
+  selected reply language through `set_reply_language`. Chinese and English are
+  the supported choices. Ordinary sentences, names, titles and tool data do not
+  select it. The language hint item (`languageHints`) retains the explicit
+  selection; Main owns Studio selection and repeats a pending question without
+  recording an answer. Measure switching as well as continuity.
   Normalize Traditional/Simplified script before classifying Chinese sentence
   structure; ASR script choice does not change the Traditional-Chinese reply policy.
 - Give unusual-name pronunciation (渡鴉 dù yā). Persona owns character/delivery;

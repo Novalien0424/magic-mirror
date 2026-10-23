@@ -7,6 +7,7 @@ import { acquireElectronOwner } from './electron-owner.mjs'
 import { createTvIo, operateMirrorControl, operateTv } from './mirror-tv-control.mjs'
 import { sendOperatorCommand } from './operator-command.mjs'
 import { createMouseIo, operateMouse } from './mirror-mouse-control.mjs'
+import { createStopStateIo } from './mirror-stop-state.mjs'
 
 /** Parse only process metadata; never collect command arguments or environments. */
 export function parseProcessSnapshot(text) {
@@ -159,6 +160,26 @@ export function parseQueuedRequest(text) {
   } catch { return null }
 }
 
+/** Fixed launchd/process IO, shared with the bounded native STOP check. */
+export function createButtonIo() {
+  const domain = `gui/${process.getuid()}`, job = domain + '/com.magicmirror.launchagent'
+  const ctl = (args, timeout) => spawnSync('/bin/launchctl', args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' })
+  return {
+    state: async timeout => parseLaunchdState(ctl(['print', job], timeout)),
+    launch: async (action, timeout) => ctl(action === 'bootstrap' ? ['bootstrap', domain, join(homedir(), 'Library/LaunchAgents/com.magicmirror.launchagent.plist')]
+      : action === 'term' ? ['kill', 'TERM', job] : [action, job], timeout).status === 0,
+    processes: async timeout => {
+      const result = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,lstart=,stat=,comm='], {
+        encoding: 'utf8', timeout, killSignal: 'SIGKILL', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
+      })
+      if (result.status !== 0 || result.error || !result.stdout?.trim()) throw Error('process_snapshot_unavailable')
+      return parseProcessSnapshot(result.stdout)
+    },
+    wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    readLog: async () => readFileSync(join(homedir(), 'Library/Logs/MagicMirror/app.out.log'), 'utf8'),
+  }
+}
+
 const file = fileURLToPath(import.meta.url)
 if (process.argv[1] && resolve(process.argv[1]) === file) {
   if (process.platform !== 'darwin') throw Error('raven_button_macos_only')
@@ -189,22 +210,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
   } else {
     if (process.env.MIRROR_BUTTON_WORKER_LOCK !== '1') throw Error('raven_button_worker_requires_lock')
     let release
-    const domain = `gui/${process.getuid()}`, job = domain + '/com.magicmirror.launchagent'
-    const ctl = (args, timeout) => spawnSync('/bin/launchctl', args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' })
-    const io = {
-      state: async timeout => parseLaunchdState(ctl(['print', job], timeout)),
-      launch: async (action, timeout) => ctl(action === 'bootstrap' ? ['bootstrap', domain, join(homedir(), 'Library/LaunchAgents/com.magicmirror.launchagent.plist')]
-        : action === 'term' ? ['kill', 'TERM', job] : [action, job], timeout).status === 0,
-      processes: async timeout => {
-        const result = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,lstart=,stat=,comm='], {
-          encoding: 'utf8', timeout, killSignal: 'SIGKILL', env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
-        })
-        if (result.status !== 0 || result.error || !result.stdout?.trim()) throw Error('process_snapshot_unavailable')
-        return parseProcessSnapshot(result.stdout)
-      },
-      wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
-      readLog: async () => readFileSync(join(homedir(), 'Library/Logs/MagicMirror/app.out.log'), 'utf8'),
-    }
+    const io = createButtonIo()
     const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', studio_ready: 'Glass', console_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
     const feedback = outcome => {
       const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${sounds[outcome] ?? 'Basso'}.aiff`], { stdio: 'ignore' })
@@ -232,6 +238,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
         if (Date.now() - request.at > 120000) { record(request.action, 'expired'); continue }
         if (request.action === previous.action && request.at >= previous.at && request.at - previous.at < 3000) { record(request.action, 'debounced'); continue }
         const result = await operateMirrorControl(request.action, {
+          ...createStopStateIo(),
           app: action => operateButton(action, io),
           tv: action => operateTv(action, createTvIo((step, outcome) => record('tv', outcome, { step }))),
           ready: () => waitForMirrorReady(io),

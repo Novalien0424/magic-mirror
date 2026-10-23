@@ -24,18 +24,18 @@ describe('visitor-only language hints', () => {
   ])('recognizes complete English questions with modal verbs: %s', text => {
     expect(visitorSentenceLanguage(text)).toBe('english')
   })
-  it('preserves the last sentence language through a title-only turn without blocking new speech', () => {
+  it('preserves explicit language selection through ordinary speech', () => {
     const events: any[] = []
     const dialogue = new MemoryDialogue({ send: event => events.push(event), baseInstructions: 'Persona', speakingStyle: '', turnDetection: {},
       input: async () => ({ status: 'accepted', code: '' }), tail: async () => {}, interrupt: async () => {}, failed: () => {}, report: () => {} })
-    dialogue.observeVisitorSentence('I would like some music.')
+    dialogue.setReplyLanguage('english')
     const hint = events.at(-1).item.id
     const count = events.length
     dialogue.speech('title-only')
-    dialogue.observeVisitorSentence('Taylor Swift')
+    dialogue.speech('title-only')
     expect(events).toHaveLength(count)
     dialogue.speech('chinese-sentence')
-    dialogue.observeVisitorSentence('我想聽音樂。')
+    dialogue.setReplyLanguage('chinese')
     expect(events.slice(count).map(event => event.type)).toEqual(['conversation.item.delete', 'conversation.item.create'])
     expect(events[count].item_id).toBe(hint)
     expect(events.at(-1).item.content[0].text).toContain('Traditional')
@@ -51,14 +51,14 @@ describe('visitor-only language hints', () => {
   it.each(['周杰倫', 'Taylor Swift', 'The Beatles Yesterday', 'hello', 'Hello Raven', 'Good morning', '渡鴉大人', '月亮代表我的心'])('does not switch for isolated names or fragments: %s', text => {
     expect(visitorSentenceLanguage(text)).toBeNull()
   })
-  it('refreshes one fixed hint per sentence without retaining stale instructions or visitor text', () => {
+  it('replaces the explicit selection hint without retaining visitor text', () => {
     const events: any[] = []
     const dialogue = new MemoryDialogue({ send: event => events.push(event), baseInstructions: 'Persona', speakingStyle: '', turnDetection: {},
       input: async () => ({ status: 'accepted', code: '' }), tail: async () => {}, interrupt: async () => {}, failed: () => {}, report: () => {} })
-    dialogue.observeVisitorSentence('Could you play some music?')
-    dialogue.observeVisitorSentence('I want to talk about my private concern.')
-    dialogue.observeVisitorSentence('Taylor Swift')
-    dialogue.observeVisitorSentence('我想聽音樂。')
+    dialogue.setReplyLanguage('english')
+    dialogue.setReplyLanguage('english')
+    dialogue.speech('title-only')
+    dialogue.setReplyLanguage('chinese')
     expect(events.map(event => event.type)).toEqual(['conversation.item.create', 'conversation.item.delete', 'conversation.item.create', 'conversation.item.delete', 'conversation.item.create'])
     expect(events[1].item_id).toBe(events[0].item.id)
     expect(events[3].item_id).toBe(events[2].item.id)
@@ -70,9 +70,9 @@ describe('visitor-only language hints', () => {
     dialogue.speech('new-speech')
     expect(events).toHaveLength(beforeSpeech)
     const count = events.length
-    dialogue.observeVisitorSentence('Taylor Swift')
+    dialogue.speech('title-only')
     expect(events).toHaveLength(count)
-    dialogue.observeVisitorSentence('Could you play some music?')
+    dialogue.setReplyLanguage('english')
     expect(events.at(-1).type).toBe('conversation.item.create')
     expect(events.filter(event => event.item_id === priorHint)).toHaveLength(1)
     dialogue.close()

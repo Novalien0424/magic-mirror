@@ -18,7 +18,7 @@ Elgato's Default Profile is preserved.
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
 | Third (`2,0`) | Blue **PLAY LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
 | Bottom left (`0,1`) | Amber **INTERACTIVE STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
-| Bottom right (`3,1`) | Red **STOP** | Put the TV in standby, then stop the whole Magic Mirror application and owned processes, including loop/media and future program modes; unload the job so it stays stopped. |
+| Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including when the app was already
 playing the loop. INTERACTIVE STUDIO likewise returns from the loop to the avatar,

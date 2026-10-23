@@ -86,6 +86,7 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'studio_reveal_failed',
   'studio_first_step_failed',
   'studio_visitor_reply_missing',
+  'reply_language_changed',
   'studio_identity_question_pending',
   'studio_event_stale',
   'studio_speech_failed',

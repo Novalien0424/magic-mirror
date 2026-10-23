@@ -79,6 +79,32 @@ describe('TV standby and wake', () => {
 })
 
 describe('combined Stream Deck sequence', () => {
+  it('covers HDMI before shutdown and resets Jabra to 70% even when TV or app cleanup fails', async () => {
+    const order: string[] = []
+    const io = { blackout: async (action: string) => { order.push(action); return 'blackout_covered' },
+      tv: async () => { order.push('standby'); throw Error('private device failure') },
+      app: async () => { order.push('stop'); return 'stop_failed' },
+      mouse: async () => { order.push('mouse'); return 'mouse_stopped' },
+      resetAudio: async () => { order.push('audio'); return 'jabra_output_70' } }
+    expect(await operateMirrorControl('stop', io)).toMatchObject({ blackout: 'blackout_covered', audio: 'jabra_output_70', outcome: 'stop_failed' })
+    expect(order).toEqual(['cover', 'standby', 'stop', 'mouse', 'audio'])
+  })
+  it('reports failed black/audio postconditions and still completes the other STOP actions', async () => {
+    const io = { ...control('already_off'), blackout: vi.fn(async () => 'blackout_cover_failed'), resetAudio: vi.fn(async () => 'jabra_output_reset_failed') }
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('blackout_cover_failed')
+    expect(io.resetAudio).toHaveBeenCalledOnce()
+    expect(io.app).toHaveBeenCalledWith('stop')
+    io.blackout.mockResolvedValue('blackout_covered')
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('jabra_output_reset_failed')
+  })
+  it.each(['start', 'loop', 'studio', 'console'])('clears the black cover only after %s is ready and acknowledged', async action => {
+    const base = control(), io = { ...base, blackout: vi.fn(async (operation: string) => { base.order.push(operation); return 'blackout_cleared' }) }
+    await operateMirrorControl(action, io)
+    expect(base.order).toEqual(['start', 'ready', { start: 'normal', loop: 'play_loop', studio: 'studio', console: 'show_console' }[action], 'clear', 'awake'])
+    io.ready.mockResolvedValue(false); io.blackout.mockClear()
+    await operateMirrorControl(action, io)
+    expect(io.blackout).not.toHaveBeenCalled()
+  })
   function control(appResult?: string, tvResult?: string) {
     const order: string[] = []
     return { order,

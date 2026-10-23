@@ -1,84 +1,61 @@
 # Magic Mirror — current handoff, 2026-10-23
 
-Implementation **`8bc69fa`** is committed and pushed to
-`origin/field/macmini-deploy` (39 files; based on `305c1bf`). Interactive Studio
-repairs and the requested name-list control are built and deployed in the
-canonical checkout. Fresh LaunchAgent, build-fingerprint and Console checks at
-**15:12 Taipei**: normal Main PID **30434**, Raven **v20**, **Up to date · 0 changed
-areas**, original Conversation mode, Dormant with wake listening. Console is
-on Avatars → Interactive Studio, focused on the empty name list. Default Gate
-opening/four questions/one revision/farewell remain published; no synthetic
-names or QA settings were written to production. No phase promotion.
+Latest delivery on `field/macmini-deploy`: Studio addresses the name only before
+question one, renders no visitor text except the name, and defaults to Traditional
+Chinese. Only explicit requests select Chinese/English; a language request repeats
+the current question without consuming an answer. The obsolete caption editor is
+removed. Shared reply/image language selection follows the same explicit policy.
 
-The complete build is stamped **10:44:30 Taipei** (source `4d3c255a53b0401c`,
-output `2990e4918c0563f8`); Main started **10:45:09**, after that build.
-`node scripts/qa-build.mjs --verify` confirms the committed source and deployed
-output still match. No rebuild or restart was needed for Git publication.
-Existing successful QA is reused; the live acceptance limit below is unchanged.
+Stream Deck STOP now covers **T749 HDMI in black**, retains TV standby/app/mouse
+cleanup, and resets **Jabra Speak2 75 output to 70%**, with read-back. The native
+cover survives Electron shutdown; START/LOOP/STUDIO/CONSOLE clear it only after
+renderer readiness and mode acknowledgement. The signed helper is installed;
+the existing wrappers use the canonical updated scripts. No new Electron restart
+owner, input-gain/default-device change or phase promotion.
 
-[Current repair, operator/name-list journey, failures, QA and cleanup](docs/testing/soul-studio-repair-2026-10-23.md) ·
-[Original complete journey and self-review](docs/superpowers/specs/2026-10-22-soul-studio-journey.md) ·
-[Earlier requested transcript/image sample](docs/testing/soul-studio-sample-2026-10-23.md) ·
-[Original implementation QA](docs/testing/soul-studio-journey-2026-10-22.md).
-[TODO](TODO.md) owns other open acceptance; [DECISIONS](DECISIONS.md) owns rulings.
+Current normal Main **PID 37551**, started **16:25:38 Taipei** through the existing
+LaunchAgent. Fresh Console shows **Raven v20**, **Interactive Studio mode**, **Loop
+Video Playing**. The saved operator draft awaiting publication was present before
+QA and preserved; active/draft/previous config hashes remain unchanged. Jabra is
+currently **70.08%** (hardware representation of 70%), original mute state restored.
+All input gains and default devices match the pre-test capture.
 
-## Delivered
+The deployed build is **16:15:29 Taipei**, source `7b796ad8071d9c04`, output
+`e688dd12862d8a59`. `node scripts/qa-build.mjs --verify` passes. Button scripts and
+the separately compiled/signed STOP helper are deployed in their canonical paths.
 
-- Name list is directly beside name confirmation. One correctly spelled name
-  per line, up to 1,000 names/40 characters; Off, Suggest, or Only-listed mode.
-  Existing per-avatar local storage and pronunciation/spelling matching are
-  reused; only up to three candidates reach the model. A later visitor reply
-  confirms; another spelling requires a new read-back. This grants no memory
-  access. Save/Publish/reload/reset preservation and name-off validation work.
-- Fixed app speech cancellation races with natural/cleared/joined playback.
-  The previous `scene_dialogue_cancel_failed` did not recur in either new
-  complete spoken visit; both generated two images and reached farewell/Dormant.
-- Comments use a focused versioned prompt shared with Prompt Inspector,
-  preserving character/voice/operator edits. Latest spoken run: four short
-  comments, no extra questions. Fixed stage-reset scope and misleading success
-  copy. QA waits for full reveal/offer playback and visible image opacity.
-- Fixed duplicate revision announcements by using the native preamble when
-  present and awaiting its processed tail. Handles step-before/after-tool-reply
-  ordering. No-preamble requests keep the application cue.
+## Evidence
 
-## Fresh evidence and remaining boundary
+- **329** focused Studio/catalog/renderer/editor/conversation/memory tests passed;
+  **115** button/TV tests passed. Typecheck, build and diff checks passed.
+- Real Console journey **23/23**, exit 0, 17 captures. Live bilingual Studio
+  journey **27/27**, exit 0, 353.473 s, 8 captures. Real providers with synthetic
+  PCM/WebRTC: four answers, both explicit switches, 22 spoken lines/zero language
+  mismatches, first-question-only name, four short comments, two PNGs, exactly one
+  repaint announcement, deferred printer, verbatim farewell and Dormant/release.
+  Zero protocol errors. Revised-image capture was visually reviewed and fully
+  visible: the preceding live revision/fade-capture gap is now closed.
+- Native STOP sequence passed twice (`stopped`, then `already_off`), both with
+  black cover, TV standby, mouse release and Jabra 70% read-back. A CUA capture
+  showed pure black across the 1080×1920 HDMI surface. Restore returned Studio +
+  Loop Video. Physical Stream Deck press/human mic/external HDMI analyser remain
+  separate from this evidence; no new claim for them.
 
-- Final rendered Console journey: **23/23 passed**, exit 0, 17 screenshots;
-  name entry/modes/validation, all prior authoring, publication, reload, reset,
-  inspector, mode/skill controls and narrow layout. Relevant images reviewed.
-- Live silence journey: **21/21 passed**, exit 0, 256.600 seconds. Real 30-second
-  name/question/preference deadlines, pause, image, transfer/deferred printer,
-  exact farewell, Dormant and release. Zero provider protocol errors.
-- Focused final Main/adapter/name/UI checks: **232 passed**; subsequent name-off
-  validation check: **18 passed**. Earlier focused prompt checks: 81 passed.
-  Typecheck, final build/fingerprint and diff checks pass. No full suite rerun.
-- Two fresh spoken provider runs both completed the journey but **failed one
-  quality check each**: first comment brevity; bounded retry duplicate repaint
-  announcement (two lines). The retry passed all four comment checks. Both
-  failures remain recorded. The final repaint fix has deterministic playback
-  coverage, **not another live provider pass**. Earlier revision captures were
-  taken during fade-in; visible revised-image evidence remains open.
-- Acceptance is therefore still open for one fresh authorized live revision
-  check and its final image capture. No additional provider retry was silently
-  substituted. Name lookup has Main/adapter and real operator-UI coverage;
-  human microphone/pronunciation acceptance remains untested. Printing is the
-  requested no-op adapter. Virtual PCM/WebRTC is not physical acoustic evidence.
+[Studio journey, implementation, failures and QA](docs/testing/studio-language-display-2026-10-23.md) ·
+[STOP journey, implementation and native checks](docs/testing/stream-deck-stop-2026-10-23.md) ·
+[Full local failure log](docs/testing/studio-language-local-failures-2026-10-23.txt) ·
+[Earlier name-list/repair report](docs/testing/soul-studio-repair-2026-10-23.md) ·
+[Previous handoff](docs/archive/progress-before-language-stop-2026-10-23.md).
 
-## Restoration and cleanup
+## Cleanup and next action
 
-All seven task QA runs were reviewed, dry-run checked and removed with the
-marker-aware cleaner: **590 files / 118,008,142 bytes** excluding markers.
-Task scratch (39 entries) removed. Normal settings hashes remained unchanged;
-final output volume/mute matched the captured state; input gain untouched.
-The five previously requested deliverables remain under
-`.artifacts/deliverables/soul-studio-2026-10-23/` (PNG, mirror screenshot,
-readable/raw synthetic transcript, provenance). The prior Drive PNG upload
-to AI_Stuff/AI_Avatar is unchanged. Other runs/assets/credentials were preserved.
+Both owned QA runs (`2026-10-23T08-17-08-439Z`, `2026-10-23T08-17-34-520Z`) were
+reviewed, dry-run checked and cleaned: **176 files / 39,392,923 bytes**, excluding
+markers. Synthetic transcripts were not retained. All **24** task scratch files
+were removed; full local failures remain linked above. Existing five requested
+soul deliverables and the earlier AI_Stuff/AI_Avatar Drive upload are preserved.
 
-Next action: operator may enter actual names and publish. Future live acceptance
-should exercise listed-name confirmation, then verify exactly one revision
-announcement and a fully visible revised soul. Keep the existing one-retry bound.
-
-The earlier image-capability/camera transport handoff is retained in
-[the archive](docs/archive/progress-before-soul-studio-2026-10-22.md);
-intermittent USB camera reliability was outside this task.
+No required implementation remains. Operator may publish their preserved draft
+when ready. Printing remains the requested deferred/no-op skill. [TODO](TODO.md)
+owns unrelated acceptance; [DECISIONS](DECISIONS.md) owns other rulings (the latest
+owner language request supersedes the historical automatic-switch rule).

@@ -1,6 +1,5 @@
 import type { MemoryInputPhase, MemoryReply } from '../../shared/memory'
 import { buildMemoryAcknowledgment, buildMemoryState, buildSpeechResponse, REALTIME_PROMPTS, sameSpokenQuestion } from '../../shared/realtime-prompts'
-import { visitorSentenceLanguage } from '../../shared/visitor-language'
 
 interface Options {
   send(event: any): void
@@ -28,10 +27,8 @@ export class MemoryDialogue {
   private installed?: string
   constructor(private readonly options: Options) {}
   get active(): boolean { return this.phase !== 'idle' && this.phase !== 'closed' }
-  observeVisitorSentence(text: string): void {
+  setReplyLanguage(language: 'chinese' | 'english'): void {
     if (this.phase === 'closed') return
-    const language = visitorSentenceLanguage(text)
-    if (!language) return
     if (this.languageItem) this.options.send({ type: 'conversation.item.delete', event_id: `delete_language_${this.languageRevision}`, item_id: this.languageItem })
     this.languageItem = `mirror_language_${++this.languageRevision}`
     this.options.send({ type: 'conversation.item.create', item: { id: this.languageItem, type: 'message', role: 'system',
@@ -59,9 +56,7 @@ export class MemoryDialogue {
   }
   speech(itemId: string): void {
     if (this.phase === 'closed') return
-    // Keep the last complete sentence's conditional hint through names and
-    // title selections. Its catalog wording yields to a new complete sentence;
-    // ordinary speech still starts immediately, without waiting for final ASR.
+    // Explicit language selection persists through ordinary speech and tool data.
     if ((this.phase === 'awaiting' || this.phase === 'receipting') && !this.question?.answerItemId && /^[A-Za-z0-9._:-]{1,128}$/.test(itemId)) {
       this.question!.answerItemId = itemId
       // This starts at speech onset, so allow the utterance and final ASR as

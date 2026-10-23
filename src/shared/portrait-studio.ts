@@ -227,9 +227,9 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
 
 export function defaultExperience(): AvatarExperience { return structuredClone(DEFAULT_EXPERIENCE) as AvatarExperience }
 
-/** A studio starts in its start script's language (Latin letters only: English); the visitor's replies set it after that. */
-export function studioStartLanguage(startScript: string): StudioLanguage {
-  return !/\p{Script=Han}/u.test(startScript) && /[A-Za-z]/.test(startScript) ? 'en' : 'zh'
+/** Each visit starts in Traditional Chinese; only an explicit request changes it. */
+export function studioStartLanguage(_startScript: string): StudioLanguage {
+  return 'zh'
 }
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -340,6 +340,7 @@ export type StudioRequest =
   | { action: 'set_name'; name: string; confirmed: boolean; language: StudioLanguage }
   | { action: 'reject_name' }
   | { action: 'repeat' }
+  | { action: 'language'; language: StudioLanguage }
   | { action: 'step_ready' | 'step_activity' | 'paint' | 'deliver'; stepId: string }
   | { action: 'answer'; question: number; answer: string; language: StudioLanguage }
   | { action: 'revise'; change: string }
@@ -349,6 +350,8 @@ export type StudioRequest =
 export function parseStudioRequest(value: unknown): StudioRequest | null {
   if (!record(value)) return null
   switch (value.action) {
+    case 'language': return exact(value, ['action', 'language']) && (value.language === 'zh' || value.language === 'en')
+      ? { action: 'language', language: value.language } : null
     case 'step_ready': case 'step_activity': case 'paint': case 'deliver':
       return exact(value, ['action', 'stepId']) && validStepId(value.stepId) ? { action: value.action, stepId: value.stepId } : null
     case 'start': return exact(value, ['action', 'source']) && value.source === 'visitor' ? { action: 'start', source: value.source } : null

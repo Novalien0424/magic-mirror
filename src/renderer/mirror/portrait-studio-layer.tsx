@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import type { StudioPhase, StudioView } from '../../shared/portrait-studio'
 
 export interface PortraitStudioLayerProps {
@@ -12,15 +11,11 @@ export function studioCoversAvatar(view: StudioView | null): boolean {
   return !!view && COVER_PHASES.includes(view.phase)
 }
 
-type StudioText = StudioView['text']
-
-const CAPTION_MS = 6000
 const glyphs = (value: string) => Array.from(value).length
 
 /** Interactive Studio overlay above the avatar; its words come from Main. Absent whenever the studio is closed. */
 export function PortraitStudioLayer({ view }: PortraitStudioLayerProps) {
   if (!view) return null
-  const text = view.text
   const covered = studioCoversAvatar(view)
   return (
     <div className="portrait-studio" data-phase={view.phase} data-cover={covered} lang={view.language === 'en' ? 'en' : 'zh-Hant'}>
@@ -28,9 +23,8 @@ export function PortraitStudioLayer({ view }: PortraitStudioLayerProps) {
       <div className="portrait-studio__panel">
         {covered ? <PortraitFrame view={view} /> : <Feathers view={view} />}
         <div className="portrait-studio__zone" aria-live="polite">
-          <PhaseText view={view} text={text} />
+          {view.phase === 'confirm' && view.name && <p className="portrait-studio__nameplate" data-long={glyphs(view.name) > 6}>{view.name}</p>}
         </div>
-        {view.phase === 'keepsake' && view.holdEndsAt !== undefined && <Countdown endsAt={view.holdEndsAt} />}
       </div>
     </div>
   )
@@ -64,68 +58,4 @@ function PortraitFrame({ view }: { view: StudioView }) {
         && <p className="portrait-studio__banner" data-long={glyphs(view.name) > 8}>{view.name}</p>}
     </div>
   )
-}
-
-function PhaseText({ view, text }: { view: StudioView; text: StudioText }) {
-  switch (view.phase) {
-    case 'name': return <>
-      <p className="portrait-studio__label">{text.nameLabel}</p>
-      {view.prompt && <p className="portrait-studio__question">{view.prompt}</p>}
-    </>
-    case 'confirm': return <>
-      <p className="portrait-studio__label">{text.confirmLabel}</p>
-      {view.name && <p className="portrait-studio__nameplate" data-long={glyphs(view.name) > 6}>{view.name}</p>}
-      <p className="portrait-studio__question portrait-studio__question--small">{text.confirmQuestion}</p>
-    </>
-    case 'question': return <>
-      <Chips items={view.chips} />
-      <p className="portrait-studio__label">{text.questionLabel}</p>
-      {view.prompt && <p className="portrait-studio__question">{view.prompt}</p>}
-    </>
-    case 'painting': return <Caption key={view.phase} lines={text.captions} />
-    case 'revising': return <>
-      {view.change && <Chips items={[`${text.changePrefix}${view.change}`]} />}
-      <Caption key={view.phase} lines={text.captions} />
-    </>
-    case 'reveal': return <Chips hint items={view.revisionsLeft > 0 ? [text.changeHint, text.doneHint] : [text.finalHint]} />
-    case 'keepsake': return <Chips hint items={[text.photoHint]} />
-  }
-}
-
-function Chips({ items, hint = false }: { items: readonly string[]; hint?: boolean }) {
-  if (!items.length) return null
-  return (
-    <ul className={hint ? 'portrait-studio__chips portrait-studio__chips--hint' : 'portrait-studio__chips'}>
-      {items.map((item, index) => <li key={index} className="portrait-studio__chip">{item}</li>)}
-    </ul>
-  )
-}
-
-function Caption({ lines }: { lines: readonly string[] }) {
-  const [index, setIndex] = useState(0)
-  useEffect(() => {
-    const timer = window.setInterval(() => setIndex(current => (current + 1) % lines.length), CAPTION_MS)
-    return () => window.clearInterval(timer)
-  }, [lines])
-  const line = index % lines.length
-  return <p key={line} className="portrait-studio__question portrait-studio__question--small portrait-studio__caption">{lines[line]}</p>
-}
-
-export function formatHold(remainingMs: number): string {
-  const seconds = Math.max(0, Math.ceil(remainingMs / 1000))
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
-
-function Countdown({ endsAt }: { endsAt: number }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    setNow(Date.now())
-    const timer = window.setInterval(() => {
-      const current = Date.now()
-      setNow(current)
-      if (current >= endsAt) window.clearInterval(timer)
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [endsAt])
-  return <p className="portrait-studio__countdown" role="timer">{formatHold(endsAt - now)}</p>
 }

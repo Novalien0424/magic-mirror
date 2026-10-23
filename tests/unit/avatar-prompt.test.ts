@@ -57,7 +57,9 @@ describe('effective avatar prompt', () => {
     expect(prompt).toContain(config.persona.name)
     expect(prompt).toContain('return_to_dormant')
     expect(prompt).not.toContain(settings.sleepFarewell)
-    expect(avatarRealtimeTools(settings)[0]?.description).toContain('application supplies farewell audio')
+    expect(avatarRealtimeTools(settings).find(tool => tool.name === 'return_to_dormant')?.description).toContain('application supplies farewell audio')
+    expect(prompt).toContain('Only an explicit request to change the reply language')
+    expect(prompt).not.toContain('latest complete English sentence')
     expect(prompt).not.toContain('guestId')
     config.persona.instructions = 'Later edit'
     expect(buildAvatarPrompt(settings)).toBe(prompt)

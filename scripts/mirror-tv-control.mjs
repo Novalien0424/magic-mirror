@@ -95,12 +95,15 @@ export async function operateMirrorControl(action, io) {
   if (!['start', 'stop', 'loop', 'console', 'studio'].includes(action)) throw Error('mirror_control_action_invalid')
   const attempt = async (fn, fallback) => { try { return await fn() } catch { return fallback } }
   if (action === 'stop') {
-    // Hide the screen before app windows disappear. TV failure must not skip cleanup.
+    // Keep the HDMI signal black even after Electron exits or TV standby fails.
+    const blackout = io.blackout ? await attempt(() => io.blackout('cover'), 'blackout_cover_failed') : undefined
     const tv = await attempt(() => io.tv('standby'), 'tv_standby_failed')
     const app = await attempt(() => io.app('stop'), 'stop_failed')
     const mouse = io.mouse ? await attempt(() => io.mouse('stop'), 'mouse_stop_failed') : undefined
-    return { app, tv, ...(mouse === undefined ? {} : { mouse }), outcome: !['stopped', 'already_off', 'stopped_forced'].includes(app)
-      ? app : tv !== 'tv_standby' ? tv : mouse && !['mouse_stopped', 'mouse_not_installed'].includes(mouse) ? mouse : app }
+    const audio = io.resetAudio ? await attempt(() => io.resetAudio(), 'jabra_output_reset_failed') : undefined
+    return { app, tv, ...(blackout === undefined ? {} : { blackout }), ...(audio === undefined ? {} : { audio }), ...(mouse === undefined ? {} : { mouse }), outcome: !['stopped', 'already_off', 'stopped_forced'].includes(app)
+      ? app : blackout && blackout !== 'blackout_covered' ? blackout : tv !== 'tv_standby' ? tv
+        : audio && audio !== 'jabra_output_70' ? audio : mouse && !['mouse_stopped', 'mouse_not_installed'].includes(mouse) ? mouse : app }
   }
   const app = await attempt(() => io.app('start'), 'start_failed')
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
@@ -113,6 +116,11 @@ export async function operateMirrorControl(action, io) {
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
   if (mode !== 'success') return { app, mode, modeReason, tv: 'tv_wake_skipped', outcome: `${action}_mode_failed` }
+  // Remove the cover only after the actual renderer/mode acknowledgement.
+  if (io.blackout) {
+    const blackout = await attempt(() => io.blackout('clear'), 'blackout_clear_failed')
+    if (blackout !== 'blackout_cleared') return { app, mode, modeReason, blackout, tv: 'tv_wake_skipped', outcome: blackout }
+  }
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
   const mouse = action === 'console' && tv === 'tv_awake' && io.mouse
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined

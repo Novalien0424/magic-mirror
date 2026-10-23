@@ -26,6 +26,30 @@ function visit(count = 4) {
 afterEach(() => vi.useRealTimers())
 
 describe('Gate thirty-three application journey', () => {
+  it('addresses the name only in question one and changes language only through the explicit action', () => {
+    const v = visit()
+    v.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: false, language: 'en' }, identity)
+    expect(v.current()).toMatchObject({ language: 'zh', speech: '我會寫上「A m y」，對嗎？' })
+    v.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
+    expect(v.current().speech).toMatch(/^Amy啊，/)
+    v.runtime.handle({ action: 'answer', question: 1, answer: 'I travelled alone.', language: 'en' }, identity)
+    expect(v.current().language).toBe('zh')
+    expect(v.current().speech).not.toContain('Amy')
+    const switched = v.runtime.handle({ action: 'language', language: 'en' }, identity)
+    expect(switched.step).toMatchObject({ phase: 'question', language: 'en' })
+    expect(v.current().speech).toBe(defaultExperience().studio.questions[1]!.en)
+    expect(v.current().comment).toBeUndefined()
+    v.runtime.handle({ action: 'answer', question: 2, answer: '我會幫助朋友。', language: 'zh' }, identity)
+    expect(v.current().language).toBe('en')
+    expect(v.current().speech).toBe(defaultExperience().studio.questions[2]!.en)
+    v.runtime.handle({ action: 'language', language: 'zh' }, identity)
+    expect(v.current().speech).toBe(defaultExperience().studio.questions[2]!.zh)
+    v.runtime.handle({ action: 'answer', question: 3, answer: 'Peace and adventure.', language: 'en' }, identity)
+    expect(v.current().speech).toBe(defaultExperience().studio.questions[3]!.zh)
+    expect(v.current().speech).not.toContain('Amy')
+    v.runtime.close('test_complete')
+  })
+
   it('starts the silence clock only after playback, cancels for speech, rejects stale steps and uses the fallback name', async () => {
     vi.useFakeTimers()
     const v = visit()

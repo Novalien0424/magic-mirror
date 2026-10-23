@@ -46,11 +46,11 @@ describe('portrait studio runtime', () => {
     for (const text of Object.values(PORTRAIT_STUDIO.guidance)) expect(studioText(text, 2000)).toBe(true)
   })
 
-  it('starts in the start script language, so an English story asks and shows its first question in English', () => {
+  it('starts in Traditional Chinese even when the operator opening includes English', () => {
     const english = harness({ experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, askName: false,
       startScript: 'Welcome, traveller. Answer three questions.' } } })
-    expect(english.runtime.start(identity, english.experience, 'console').next).toContain(english.experience.studio.questions[0]!.en)
-    expect(english.views().at(-1)).toMatchObject({ language: 'en', prompt: english.experience.studio.questions[0]!.en })
+    expect(english.runtime.start(identity, english.experience, 'console').next).toContain(english.experience.studio.questions[0]!.zh)
+    expect(english.views().at(-1)).toMatchObject({ language: 'zh', prompt: english.experience.studio.questions[0]!.zh })
     const chinese = harness()
     expect(chinese.runtime.start(identity, chinese.experience, 'console').next).toContain('準備好的話就告訴我你的名字')
     expect(chinese.views().at(-1)).toMatchObject({ language: 'zh' })

@@ -4,7 +4,7 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 /**
  * Operator journey for the Interactive Studio, through the real Console and
  * production IPC in synthetic userData: Mirror mode switch, story setup (questions,
- * image prompt lines and instructions with preview, name step, on-glass text,
+ * image prompt lines and instructions with preview, name step, name-only display policy,
  * failure line, offer), validation, save/check/publish, prompt inspector, Studio
  * service page and narrow layout. No provider calls and no test picture.
  */
@@ -265,11 +265,10 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'journey_text_and_failure_lines'
     await edit("open('More settings')")
-    await edit("open('Text on the mirror')")
-    await edit("set(byLabel('Question counter in Traditional Chinese'), '第 {{index}} 張牌')")
+    await wait("return !studioSection().textContent.includes('Text on the mirror') && studioSection().textContent.includes('Mirror shows only the visitor’s name')")
     await edit("open('Spoken failure lines')")
     await edit("set(byLabel('Any other failure in Traditional Chinese'), '牌陣散了，我們先聊聊吧。')")
-    await wait("return studioSection().textContent.includes('1 of 10 edited.') && studioSection().textContent.includes('1 of 5 edited.')")
+    await wait("return studioSection().textContent.includes('1 of 5 edited.')")
     pass()
 
     step = 'journey_offer_prompt'
@@ -319,7 +318,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
       const avatar = r.value.active.avatarCatalog.avatars.find(a => a.experience?.studio?.questions?.[0]?.imageLine === 'Tarot card figure: {{answer}}.');
       const s = avatar?.experience?.studio;
       return !!s && avatar.experience.guests.match === 'prefer' && avatar.experience.guests.names.join('|') === '王曉明|林美玲|Amy Chen'
-        && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration') && s.screenText?.questionLabel?.zh === '第 {{index}} 張牌'
+        && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration')
         && s.prompts?.comment === '用一句話簡短回應。訪客回答：{{answer}}'
         && s.nameFont === 'gold brush lettering' && s.nameLettering === 'painted' && s.quality === 'high' && s.revisionsAllowed === 2 && s.pictureType === 'sticker'
         && s.failureLines?.default?.zh === '牌陣散了，我們先聊聊吧。' && s.prompts?.offer?.startsWith('a tarot reading') && s.askName !== false
@@ -364,7 +363,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !!section('Interactive Studio')")
     await edit("section('Interactive Studio').click()")
     await wait("return !!studioSection()")
-    await edit("open('Image prompt'); open('More settings'); open('Text on the mirror')")
+    await edit("open('Image prompt'); open('More settings'); open('Spoken failure lines')")
     await audit()
     await shot('journey-10-narrow-studio.png', '.experiences-editor')
     await edit("click('Mirror')")

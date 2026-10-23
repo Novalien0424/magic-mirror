@@ -10,6 +10,7 @@ controls="$HOME/Applications/Magic Mirror Controls"
 for action in start stop loop console studio; do
   [[ -x "$repo/deploy/macos/magic-mirror-$action.sh" ]] || { print -u2 "Missing executable $action script"; exit 1; }
 done
+/bin/zsh "$repo/deploy/macos/install-stop-state.sh"
 mkdir -p "$controls"
 stage=$(mktemp -d "$controls/.install.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT

@@ -12,7 +12,6 @@ import { playSpeechScript } from './speech-script'
 import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../shared/image-skill'
 import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
-import { visitorSentenceLanguage } from '../../shared/visitor-language'
 import { bindRealtimeTools, type RealtimeToolHandler, type ToolFailureReason } from './realtime-tool-bindings'
 import { mergedMediaTool } from './merged-media-tool'
 import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
@@ -700,11 +699,7 @@ export function createRealtimeSession(
       }
       if (memoryLatestItem) memoryInput('control', memoryLatestItem)
       if ('language' in request) {
-        // A completed visitor sentence wins over a guessed tool argument.
-        // Before final ASR (or for a short fragment), retain the native tool's hint.
-        const detected = localSearchClue?.generation === memoryTurnGeneration ? visitorSentenceLanguage(localSearchClue.text) : null
-        if (detected) request = { ...request, language: detected === 'english' ? 'en' : 'zh' }
-        replyLanguage = request.language === 'en' ? 'english' : 'chinese'
+        request = { ...request, language: replyLanguage === 'english' ? 'en' : 'zh' }
       }
       cameraViewingPending = request.action === 'camera_permission'
       const photo = request.action === 'camera_permission' || request.action === 'studio_photo' || request.action === 'generate' && request.source === 'photo'
@@ -714,6 +709,18 @@ export function createRealtimeSession(
       return { outcome: image.status, image }
     }
     const toolHandlers: Record<string, RealtimeToolHandler> = {
+      set_reply_language: async args => {
+        if (closed || commandTurnOwned || !visitorInputs || mediaPlaybackActive || returnToDormantPending || memoryDialogue.active || pendingQuestion)
+          return { outcome: 'ignored', spoken: true }
+        const language = args.language as 'zh' | 'en'
+        const result = studioActive ? await studioTool({ action: 'language', language }) : { outcome: 'accepted' as const }
+        if (result.outcome !== 'accepted') return result
+        replyLanguage = language === 'en' ? 'english' : 'chinese'
+        memoryDialogue.setReplyLanguage(replyLanguage)
+        if (memoryLatestItem) memoryInput('control', memoryLatestItem)
+        emitMetadata(input, 'realtime_observer_event', 'info', 'reply_language_changed', sessionGeneration, createdAt)
+        return result
+      },
       create_image: args => imageTool({ action: 'generate', prompt: args.prompt as string, picture: args.picture as 'portrait' | 'sticker', source: args.source as 'description' | 'photo', language: args.language as 'zh' | 'en' }),
       edit_image: args => imageTool({ action: 'edit', prompt: args.prompt as string, language: args.language as 'zh' | 'en' }),
       dismiss_image: () => imageTool({ action: 'dismiss' }),
@@ -1794,17 +1801,13 @@ export function createRealtimeSession(
         }
       }
       // Scene matching may refresh Main's catalog asynchronously. Let it claim
-      // control before this transcript affects language or private learning.
+      // control before this transcript affects private learning.
       const classified = decisions.length ? Promise.all(decisions).catch(() =>
         emitMetadata(input, 'realtime_observer_event', 'degraded', 'transcript_listener_failed', sessionGeneration, createdAt)) : undefined
       memoryInputQueue = memoryInputQueue.then(async () => {
         if (classified) await classified
         if (closed) return
         const current = !memoryLatestItem || memoryLatestItem === itemId
-        if (!commandTurnOwned && current) {
-          replyLanguage = visitorSentenceLanguage(transcript) ?? replyLanguage
-          memoryDialogue.observeVisitorSentence(transcript)
-        }
         if (commandTurnOwned && current) await input.onMemoryInput?.('control', itemId, '', { realtimeSessionId: input.sessionId, sessionGeneration })
         const result = await input.onMemoryInput?.('complete', itemId, transcript, { realtimeSessionId: input.sessionId, sessionGeneration })
         if (!closed && result && !commandTurnOwned) void memoryDialogue.answer(itemId, result)
@@ -2322,6 +2325,8 @@ export function createRealtimeSession(
           return false
         }
         studioActive = true
+        // A new visit begins with the default language, independently of prior conversation.
+        if (replyLanguage !== 'chinese') { replyLanguage = 'chinese'; memoryDialogue.setReplyLanguage(replyLanguage) }
         studioStarts++
         studioEnteredInputs = visitorInputs
         const swap = studioAgentSwap.then(() => updateAgent(studioAgent!))

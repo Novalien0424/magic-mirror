@@ -105,7 +105,7 @@ export function createStudioRuntime(input: {
     const spokenName = /^[A-Za-z -]+$/.test(r.name) ? [...r.name].join(' ') : literalSpeechText(r.name)
     const speech = r.phase === 'name' ? nameQuestion(r)
       : r.phase === 'confirm' ? renderStudioText(text.confirm, { name: spokenName })
-      : r.phase === 'question' ? (r.name ? renderStudioText(text.address, { name: literalSpeechText(r.name) }) : '') + questionText(r, r.answers.length)
+      : r.phase === 'question' ? (r.name && r.answers.length === 0 ? renderStudioText(text.address, { name: literalSpeechText(r.name) }) : '') + questionText(r, r.answers.length)
       : r.phase === 'painting' ? text.painting : r.phase === 'revising' ? text.repainting
       : r.phase === 'reveal' ? text.reveal + (r.revisionsLeft > 0 ? `[pause=1s]${text.offerChange}` : '') : text.transfer
     r.step = { id: `${r.id}-${++r.stepSequence}`, phase: r.phase, speech, guidance: currentStep(r), language: r.language,
@@ -240,6 +240,16 @@ export function createStudioRuntime(input: {
     const r = run
     if (!r || !sameIdentity(r.identity, identity)) return reply('ignored', 'studio_not_active_stale')
     if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', prompt(r, 'exited')) }
+    if (request.action === 'language') {
+      if (r.phase === 'keepsake') return reply('ignored', 'studio_language_stale')
+      r.language = request.language
+      // Repeat only a pending question. Never restart a painting or consume an answer.
+      const repeat = ['name', 'confirm', 'question', 'reveal'].includes(r.phase)
+      if (repeat) step(r)
+      else publish(r)
+      input.report('studio_language_changed')
+      return { ...reply('accepted', 'studio_language_changed'), ...(repeat ? { step: r.step } : {}) }
+    }
     if ('stepId' in request) {
       if (request.stepId !== r.step?.id) return reply('ignored', 'studio_step_stale')
       if (request.action === 'step_activity') { stopSilence(r); return reply('accepted', 'studio_wait_cancelled') }
@@ -267,7 +277,6 @@ export function createStudioRuntime(input: {
       if (!asksName(r.experience)) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
-      r.language = request.language
       const name = request.name.trim()
       const list = guests(r)
       const candidates = list.length ? matchGuestNames(name, list) : []
@@ -308,7 +317,6 @@ export function createStudioRuntime(input: {
       }
       if (request.question < expected) return reply('ignored', 'studio_answer_duplicate')
       if (request.question > expected) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
-      r.language = request.language
       recordAnswer(r, text)
       return reply('accepted', r.answers.length === r.experience.studio.questions.length ? 'studio_painting' : 'studio_answer_recorded', currentStep(r))
     }

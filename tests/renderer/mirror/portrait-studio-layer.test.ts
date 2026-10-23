@@ -1,155 +1,70 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { formatHold, PortraitStudioLayer, studioCoversAvatar } from '../../../src/renderer/mirror/portrait-studio-layer'
+import { describe, expect, it } from 'vitest'
+import { PortraitStudioLayer, studioCoversAvatar } from '../../../src/renderer/mirror/portrait-studio-layer'
 import type { StudioPhase, StudioView } from '../../../src/shared/portrait-studio'
 import { studioScreenView } from '../../../src/shared/portrait-studio-config'
 
 const IMAGE = 'magic-mirror-media://studio/abcd1234-ef56'
-// Main resolves the on-glass text; the fixture does the same with the versioned defaults.
 const view = (patch: Partial<StudioView> = {}): StudioView => {
   const base = { phase: 'name' as const, language: 'zh' as const, questionCount: 4, answered: 0, chips: [], lettering: 'nameplate' as const,
     picture: 'portrait' as const, revisionsLeft: 1, askName: true, ...patch }
   return { ...base, text: patch.text ?? studioScreenView(undefined, base.language, Math.min(base.answered + 1, base.questionCount), base.questionCount) }
 }
 const render = (value: StudioView | null) => renderToStaticMarkup(createElement(PortraitStudioLayer, { view: value }))
-const text = (html: string) => html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+const visibleText = (html: string) => html.replace(/<[^>]*>/g, '')
 const feathers = (html: string) => [...html.matchAll(/data-state="(lit|current|unlit)"/g)].map(match => match[1])
-const chips = (html: string) => [...html.matchAll(/<li class="portrait-studio__chip">([^<]*)<\/li>/g)].map(match => text(match[1]))
-
-afterEach(() => { vi.useRealTimers() })
+const phases: StudioPhase[] = ['name', 'confirm', 'question', 'painting', 'reveal', 'revising', 'keepsake']
 
 describe('PortraitStudioLayer', () => {
-  it('renders nothing without a studio view', () => {
-    expect(render(null)).toBe('')
+  it('renders nothing without a visit', () => expect(render(null)).toBe(''))
+
+  it.each(phases)('shows only the name when appropriate, never captions or answers, in %s', phase => {
+    for (const language of ['zh', 'en'] as const) {
+      const html = render(view({ phase, language, name: '王曉明', prompt: 'A spoken question', chips: ['Private answer'],
+        change: 'Make it snow', holdEndsAt: Date.now() + 38000, imageUrl: IMAGE,
+        text: { ...studioScreenView(undefined, language, 2, 4), captions: ['Custom painting caption'], questionLabel: 'Custom question label' } }))
+      expect(visibleText(html)).toBe(['confirm', 'reveal', 'keepsake'].includes(phase) ? '王曉明' : '')
+      expect(html).not.toContain('role="timer"')
+      expect(html).toContain(`lang="${language === 'en' ? 'en' : 'zh-Hant'}"`)
+    }
   })
 
-  it('shows only question feathers without a name step and renders the operator text it is given', () => {
-    expect(feathers(render(view({ phase: 'question', askName: false })))).toEqual(['current', 'unlit', 'unlit', 'unlit'])
-    const custom = { ...studioScreenView(undefined, 'zh', 1, 4), questionLabel: '第一關', captions: ['施法中'] }
-    expect(text(render(view({ phase: 'question', askName: false, text: custom })))).toContain('第一關')
-    expect(text(render(view({ phase: 'painting', text: custom })))).toContain('施法中')
-  })
-
-  it('shows name + question feathers and lights completed steps', () => {
-    expect(feathers(render(view({ phase: 'name' })))).toEqual(['current', 'unlit', 'unlit', 'unlit', 'unlit'])
-    expect(feathers(render(view({ phase: 'confirm', name: '王曉明' })))).toEqual(['current', 'unlit', 'unlit', 'unlit', 'unlit'])
-    expect(feathers(render(view({ phase: 'question', answered: 0 })))).toEqual(['lit', 'current', 'unlit', 'unlit', 'unlit'])
-    expect(feathers(render(view({ phase: 'question', answered: 2, chips: ['貓頭鷹', '海邊'] })))).toEqual(['lit', 'lit', 'lit', 'current', 'unlit'])
-    expect(feathers(render(view({ phase: 'question', questionCount: 1 })))).toHaveLength(2)
-    expect(feathers(render(view({ phase: 'question', questionCount: 8, answered: 7 })))).toHaveLength(9)
-    expect(render(view({ phase: 'question' }))).toContain('<svg')
-    expect(render(view({ phase: 'question' }))).not.toMatch(/\p{Extended_Pictographic}/u)
-  })
-
-  it('asks for the name on a bottom card', () => {
-    const html = render(view({ phase: 'name', prompt: '先告訴我，畫上要寫什麼名字？' }))
-    expect(html).toContain('lang="zh-Hant"')
-    expect(html).toContain('data-cover="false"')
-    expect(html).toContain('portrait-studio__scrim')
-    expect(html).toContain('aria-live="polite"')
-    expect(html).toContain('<p class="portrait-studio__label">名字</p>')
-    expect(html).toContain('<p class="portrait-studio__question">先告訴我，畫上要寫什麼名字？</p>')
-    expect(html).not.toContain('portrait-studio__frame')
-    expect(html).not.toContain('<img')
-    const english = render(view({ phase: 'name', language: 'en', prompt: 'First, what name should I write on the portrait?' }))
-    expect(english).toContain('lang="en"')
-    expect(english).toContain('<p class="portrait-studio__label">Name</p>')
-    expect(english).toContain('First, what name should I write on the portrait?')
-  })
-
-  it('confirms the exact name on a gold nameplate', () => {
-    const html = render(view({ phase: 'confirm', name: '王曉明' }))
-    expect(html).toContain('<p class="portrait-studio__label">我會寫上</p>')
-    expect(html).toMatch(/<p class="portrait-studio__nameplate" data-long="false">王曉明<\/p>/)
-    expect(html).toContain('對嗎？')
+  it('escapes exact name spelling and accommodates long names', () => {
+    expect(visibleText(render(view({ phase: 'confirm', name: '<Amy & Chen>' })))).toBe('&lt;Amy &amp; Chen&gt;')
     expect(render(view({ phase: 'confirm', name: '歐陽娜娜與林曉明' }))).toContain('data-long="true">歐陽娜娜與林曉明</p>')
-    const english = text(render(view({ phase: 'confirm', language: 'en', name: 'Mei-Ling' })))
-    expect(english).toContain("<p class=\"portrait-studio__label\">I'll write</p>")
-    expect(english).toContain('>Mei-Ling</p>')
-    expect(english).toContain('Is that right?')
   })
 
-  it('shows the question number, prompt and answered chips', () => {
-    const html = render(view({ phase: 'question', answered: 1, chips: ['貓頭鷹'], prompt: '你最想待在哪裡？' }))
-    expect(chips(html)).toEqual(['貓頭鷹'])
-    expect(html).toContain('<p class="portrait-studio__label">問題 2 / 4</p>')
-    expect(html).toContain('<p class="portrait-studio__question">你最想待在哪裡？</p>')
-    expect(chips(render(view({ phase: 'question' })))).toEqual([])
-    expect(render(view({ phase: 'question', language: 'en', answered: 2, chips: ['owl', 'seaside'] }))).toContain('Question 3 of 4')
+  it('keeps progress graphical with configurable question count and optional name', () => {
+    expect(feathers(render(view({ phase: 'name' })))).toEqual(['current', 'unlit', 'unlit', 'unlit', 'unlit'])
+    expect(feathers(render(view({ phase: 'question', askName: false })))).toEqual(['current', 'unlit', 'unlit', 'unlit'])
+    expect(feathers(render(view({ phase: 'question', answered: 2 })))).toEqual(['lit', 'lit', 'lit', 'current', 'unlit'])
+    expect(feathers(render(view({ phase: 'question', questionCount: 8 })))).toHaveLength(9)
   })
 
-  it('paints inside an empty gilded frame with an app-drawn ink animation', () => {
-    const html = render(view({ phase: 'painting', answered: 4, chips: ['貓頭鷹'], name: '王曉明', imageUrl: IMAGE }))
-    expect(html).toContain('data-cover="true"')
-    expect(html).toContain('portrait-studio__veil')
-    expect(html).toContain('<div class="portrait-studio__frame" data-state="painting" data-picture="portrait">')
-    expect(html).toContain('portrait-studio__ink')
-    expect(html).not.toContain('<img')
-    expect(html).not.toContain('portrait-studio__banner')
-    expect(html).not.toContain('portrait-studio__feathers')
-    expect(html).toContain('羽毛筆沾墨中……')
-    expect(chips(html)).toEqual([])
-    expect(render(view({ phase: 'painting', language: 'en' }))).toContain('Dipping the quill in ink…')
+  it('shows ink without an image at first, then dims the existing image during revision', () => {
+    const first = render(view({ phase: 'painting', imageUrl: IMAGE }))
+    expect(first).toContain('portrait-studio__ink')
+    expect(first).not.toContain('<img')
+    const revision = render(view({ phase: 'revising', imageUrl: IMAGE }))
+    expect(revision).toContain('portrait-studio__ink')
+    expect(revision).toContain('data-dim="true"')
   })
 
-  it('shows the requested change over the dimmed previous image while repainting', () => {
-    const html = render(view({ phase: 'revising', change: '海邊換成雪地', imageUrl: IMAGE, revisionsLeft: 0 }))
-    expect(chips(html)).toEqual(['修改：海邊換成雪地'])
-    expect(html).toMatch(/<img class="portrait-studio__image" src="magic-mirror-media:\/\/studio\/abcd1234-ef56" alt="" draggable="false" data-dim="true"\/>/)
-    expect(html).toContain('portrait-studio__ink')
-    expect(html).toContain('羽毛筆沾墨中……')
-    expect(render(view({ phase: 'revising', change: 'snow' }))).not.toContain('<img')
-    expect(chips(render(view({ phase: 'revising', language: 'en', change: 'make it snow' })))).toEqual(['Change: make it snow'])
-  })
-
-  it('reveals the portrait with the exact name banner and change hints', () => {
-    const html = render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, revisionsLeft: 1 }))
-    expect(html).toContain('<div class="portrait-studio__frame" data-state="done" data-picture="portrait">')
-    // A sticker gets the square frame that shows the whole see-through picture.
-    expect(render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, picture: 'sticker' }))).toContain('data-picture="sticker"')
-    expect(html).toMatch(/<img class="portrait-studio__image" src="magic-mirror-media:\/\/studio\/abcd1234-ef56" alt="" draggable="false" data-dim="false"\/>/)
-    expect(html).toMatch(/<p class="portrait-studio__banner" data-long="false">王曉明<\/p>/)
-    expect(html).not.toContain('portrait-studio__ink')
-    expect(html).toContain('portrait-studio__chips--hint')
-    expect(chips(html)).toEqual(['想改：說出要改的地方', '完成：說「很好」'])
-    expect(chips(render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, revisionsLeft: 0 })))).toEqual(['這幅畫是你的了'])
-    const painted = render(view({ phase: 'reveal', name: '王曉明', imageUrl: IMAGE, lettering: 'painted' }))
-    expect(painted).not.toContain('portrait-studio__banner')
-    expect(painted).not.toContain('王曉明')
-    expect(chips(render(view({ phase: 'reveal', language: 'en', imageUrl: IMAGE, revisionsLeft: 1 }))))
-      .toEqual(['Change it: say what to change', "Done: say 'perfect'"])
-    expect(chips(render(view({ phase: 'reveal', language: 'en', imageUrl: IMAGE, revisionsLeft: 0 })))).toEqual(['This portrait is yours'])
-  })
-
-  it('holds the keepsake with a photo hint and countdown', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(1_000_000)
-    const html = render(view({ phase: 'keepsake', name: '王曉明', imageUrl: IMAGE, revisionsLeft: 0, holdEndsAt: 1_038_000 }))
-    expect(html).toMatch(/<p class="portrait-studio__banner" data-long="false">王曉明<\/p>/)
-    expect(html).toContain('alt=""')
-    expect(chips(html)).toEqual(['可以用手機拍下這幅畫'])
-    expect(html).toContain('<p class="portrait-studio__countdown" role="timer">00:38</p>')
-    const english = render(view({ phase: 'keepsake', language: 'en', imageUrl: IMAGE, lettering: 'painted' }))
-    expect(chips(english)).toEqual(['Take a photo of your portrait'])
-    expect(english).not.toContain('portrait-studio__countdown')
-    expect(english).not.toContain('portrait-studio__banner')
-  })
-
-  it('formats the hold countdown as mm:ss', () => {
-    expect(formatHold(-500)).toBe('00:00')
-    expect(formatHold(0)).toBe('00:00')
-    expect(formatHold(38_200)).toBe('00:39')
-    expect(formatHold(125_000)).toBe('02:05')
+  it('shows the whole artwork, with a nameplate only when the name was not painted into the image', () => {
+    for (const picture of ['portrait', 'sticker'] as const) {
+      const html = render(view({ phase: 'reveal', name: '王曉明', picture, imageUrl: IMAGE }))
+      expect(html).toContain(`data-picture="${picture}"`)
+      expect(html).toContain(`src="${IMAGE}"`)
+      expect(html).toContain('data-dim="false"')
+      expect(html).not.toContain('portrait-studio__ink')
+      expect(visibleText(html)).toBe('王曉明')
+      expect(visibleText(render(view({ phase: 'reveal', name: '王曉明', lettering: 'painted', imageUrl: IMAGE })))).toBe('')
+    }
   })
 })
 
-describe('studioCoversAvatar', () => {
-  it('covers the avatar only while the portrait frame is shown', () => {
-    expect(studioCoversAvatar(null)).toBe(false)
-    const table: Record<StudioPhase, boolean> = {
-      name: false, confirm: false, question: false, painting: true, reveal: true, revising: true, keepsake: true,
-    }
-    for (const [phase, covers] of Object.entries(table)) expect(studioCoversAvatar(view({ phase: phase as StudioPhase }))).toBe(covers)
-  })
+it('covers the avatar only while displaying the portrait frame', () => {
+  expect(studioCoversAvatar(null)).toBe(false)
+  for (const phase of phases) expect(studioCoversAvatar(view({ phase }))).toBe(['painting', 'reveal', 'revising', 'keepsake'].includes(phase))
 })

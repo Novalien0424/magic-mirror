@@ -1,0 +1,271 @@
+Local pre-delivery failures retained for reproduction. Synthetic unit fixtures only; no provider transcripts.
+
+=== mm-language-typecheck.log ===
+
+> magic-mirror@0.1.0 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/renderer/realtime/realtime-session-adapter.ts(721,64): error TS2345: Argument of type '"reply_language_changed"' is not assignable to parameter of type 'RealtimeMetadataReason'.
+
+=== mm-language-tests.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/studio-runtime.test.ts (15 tests | 1 failed) 578ms
+     × starts in the start script language, so an English story asks and shows its first question in English 4ms
+ ❯ tests/unit/studio-soul-journey.test.ts (12 tests | 1 failed) 9ms
+     × addresses the name only in question one and changes language only through the explicit action 4ms
+ ❯ tests/unit/avatar-prompt.test.ts (7 tests | 1 failed) 5ms
+     × includes the published character and sleep policy without inventing private context 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/avatar-prompt.test.ts > effective avatar prompt > includes the published character and sleep policy without inventing private context
+AssertionError: expected 'Change the reply language only at the…' to contain 'application supplies farewell audio'
+
+Expected: "application supplies farewell audio"
+Received: "Change the reply language only at the visitor's explicit request. Chinese and English are the only supported languages. In Studio, repeat the current question without recording an answer or advancing."
+
+ ❯ tests/unit/avatar-prompt.test.ts:60:59
+     58|     expect(prompt).toContain('return_to_dormant')
+     59|     expect(prompt).not.toContain(settings.sleepFarewell)
+     60|     expect(avatarRealtimeTools(settings)[0]?.description).toContain('a…
+       |                                                           ^
+     61|     expect(prompt).not.toContain('guestId')
+     62|     config.persona.instructions = 'Later edit'
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/studio-runtime.test.ts > portrait studio runtime > starts in the start script language, so an English story asks and shows its first question in English
+AssertionError: expected 'Current question 1 of 4, spoken by th…' to contain 'Your soul must become a creature that…'
+
+Expected: "Your soul must become a creature that crosses worlds to enter Gate thirty-three. Let us imagine it. Which moment in the past year stayed with you most, and why?"
+Received: "Current question 1 of 4, spoken by the application: 你的靈魂唯有轉換成為度界之獸，才能進入這個Gate thirty three, 現在讓我們來嘗試描繪你的靈魂吧。說說看最近這一年裡面，有哪一個時刻最讓你印象深刻 為什麼?. The next visitor answer belongs to question 1. Immediately call studio_answer with that number and their answer, including on the FINAL question. A request to change reply language uses set_reply_language instead; it is not an answer. Never substitute a spoken acknowledgement for studio_answer. The application provides the comment and next step."
+
+ ❯ tests/unit/studio-runtime.test.ts:52:81
+     50|     const english = harness({ experience: { ...defaultExperience(), st…
+     51|       startScript: 'Welcome, traveller. Answer three questions.' } } })
+     52|     expect(english.runtime.start(identity, english.experience, 'consol…
+       |                                                                                 ^
+     53|     expect(english.views().at(-1)).toMatchObject({ language: 'en', pro…
+     54|     const chinese = harness()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/studio-soul-journey.test.ts > Gate thirty-three application journey > addresses the name only in question one and changes language only through the explicit action
+AssertionError: expected { …(5) } to match object { language: 'zh', …(1) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "language": "zh",
+-   "speech": "我會寫上「Amy」，對嗎？",
++   "speech": "我會寫上「A m y」，對嗎？",
+  }
+
+ ❯ tests/unit/studio-soul-journey.test.ts:32:25
+     30|     const v = visit()
+     31|     v.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: fal…
+     32|     expect(v.current()).toMatchObject({ language: 'zh', speech: '我會寫上「…
+       |                         ^
+     33|     v.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: tru…
+     34|     expect(v.current().speech).toMatch(/^Amy啊，/)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed | 4 passed (7)
+      Tests  3 failed | 165 passed (168)
+   Start at  16:10:25
+   Duration  6.96s (transform 274ms, setup 0ms, import 618ms, tests 5.68s, environment 0ms)
+
+
+=== mm-language-tests2.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/realtime-tools.test.ts (28 tests | 10 failed) 117ms
+     × loads and freezes the actual file and renders values once 3ms
+     × keeps the native definition identical and returns JSON through the actual SDK invocation path 1ms
+     × rejects invalid arguments before executing: { 0ms
+     × rejects invalid arguments before executing: null 0ms
+     × rejects invalid arguments before executing: [] 0ms
+     × rejects invalid arguments before executing: {"unexpected":"private fixture"} 0ms
+     × validates structured enum arguments for future explicitly bound tools 1ms
+     × returns a safe failure without disclosing exception text 0ms
+     × serializes catalog tools and background JSON through a real SDK session 52ms
+     × validates media arguments and serializes all native tools through the SDK 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > loads and freezes the actual file and renders values once
+AssertionError: expected 'Call when the visitor explicitly asks…' to contain '"{{sleepPhrase}}"'
+
+Expected: ""{{sleepPhrase}}""
+Received: "Call when the visitor explicitly asks you to speak Chinese or English, such as 請用英文 or please speak Chinese. This selection persists until another explicit request."
+
+ ❯ tests/unit/realtime-tools.test.ts:94:36
+     92|     expect(Object.isFrozen(REALTIME_TOOLS.tools[0].parameters.properti…
+     93|     const rendered = resolveRealtimeTools('{{sleepPhrase}}')[0]
+     94|     expect(rendered.rules.useWhen).toContain('"{{sleepPhrase}}"')
+       |                                    ^
+     95|   })
+     96|   it('omits disabled tools and their rules, and exposes no audition to…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > keeps the native definition identical and returns JSON through the actual SDK invocation path
+AssertionError: expected { content: { …(2) }, …(1) } to match object { content: { …(2) } }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "content": {
+-     "code": "reply_language_changed",
++     "code": "sleep_requested",
+      "status": "accepted",
+    },
+  }
+
+ ❯ tests/unit/realtime-tools.test.ts:125:20
+    123|     const result=await call(tool,'{}')
+    124|     expect(isBackgroundResult(result)).toBe(true)
+    125|     expect(result).toMatchObject({content:publicResult(REALTIME_TOOLS.…
+       |                    ^
+    126|     expect(handler).toHaveBeenCalledExactlyOnceWith({}); expect(onFail…
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > rejects invalid arguments before executing: {
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > rejects invalid arguments before executing: null
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > rejects invalid arguments before executing: []
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > rejects invalid arguments before executing: {"unexpected":"private fixture"}
+AssertionError: expected { content: { …(2) }, …(1) } to match object { content: { …(2) } }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "content": {
+-     "code": "reply_language_rejected",
++     "code": "tool_arguments_rejected",
+      "status": "rejected",
+    },
+  }
+
+ ❯ tests/unit/realtime-tools.test.ts:131:36
+    129|     const handler=vi.fn(), onFailure=vi.fn()
+    130|     const [tool]=bindRealtimeTools(specs(),{return_to_dormant:handler}…
+    131|     expect(await call(tool,input)).toMatchObject({content:publicResult…
+       |                                    ^
+    132|     expect(handler).not.toHaveBeenCalled(); expect(onFailure).toHaveBe…
+    133|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > validates structured enum arguments for future explicitly bound tools
+AssertionError: expected "vi.fn()" to be called once with arguments: [ { mode: 'calm' } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/realtime-tools.test.ts:139:57
+    137|     const [tool]=bindRealtimeTools(resolveRealtimeTools('Rest.',false,…
+    138|     await call(tool,'{"mode":"invented"}'); expect(handler).not.toHave…
+    139|     await call(tool,'{"mode":"calm"}'); expect(handler).toHaveBeenCall…
+       |                                                         ^
+    140|   })
+    141|   it('returns a safe failure without disclosing exception text', async…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > returns a safe failure without disclosing exception text
+AssertionError: expected { Object (content) } to match object { content: { status: 'failed', …(1) } }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "content": {
+-     "code": "reply_language_failed",
++     "code": "tool_execution_failed",
+      "status": "failed",
+    },
+  }
+
+ ❯ tests/unit/realtime-tools.test.ts:145:20
+    143|     const [tool]=bindRealtimeTools(specs(),{return_to_dormant:async()=…
+    144|     const result=await call(tool,'{}')
+    145|     expect(result).toMatchObject({content:publicResult(REALTIME_TOOLS.…
+       |                    ^
+    146|     expect(JSON.stringify(result)).not.toContain('private fixture')
+    147|     expect(onFailure).toHaveBeenCalledExactlyOnceWith('tool_execution_…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > serializes catalog tools and background JSON through a real SDK session
+AssertionError: expected { status: 'accepted', …(1) } to deeply equal { status: 'accepted', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "code": "reply_language_changed",
++   "code": "sleep_requested",
+    "status": "accepted",
+  }
+
+ ❯ tests/unit/realtime-tools.test.ts:163:51
+    161|       transport.emit('function_call',{type:'function_call',id:'tool-it…
+    162|       await vi.waitFor(()=>expect(output).toHaveBeenCalledOnce())
+    163|       expect(JSON.parse(output.mock.calls[0][1])).toEqual(publicResult…
+       |                                                   ^
+    164|       expect(output.mock.calls[0][2]).toBe(false)
+    165|       expect(errors).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  tests/unit/realtime-tools.test.ts > structured Realtime tool catalog > validates media arguments and serializes all native tools through the SDK
+Error: realtime_tool_handler_unavailable
+ ❯ src/renderer/realtime/realtime-tool-bindings.ts:24:55
+     22|   onInvocation?: (name: string) => (outcome: ToolOutcome) => void): Fu…
+     23|   return specs.map(spec => {
+     24|     if (!Object.hasOwn(handlers, spec.handler)) throw new Error('realt…
+       |                                                       ^
+     25|     const handler = handlers[spec.handler]!
+     26|     const validator = z.fromJSONSchema(spec.parameters)
+ ❯ bindRealtimeTools src/renderer/realtime/realtime-tool-bindings.ts:23:16
+ ❯ tests/unit/realtime-tools.test.ts:170:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+
+ Test Files  1 failed | 7 passed (8)
+      Tests  10 failed | 187 passed (197)
+   Start at  16:12:41
+   Duration  7.10s (transform 268ms, setup 0ms, import 616ms, tests 5.75s, environment 0ms)
+
+
+=== mm-studio-language-guard.log ===
+{"config_unchanged": true, "volume_restored": true, "mute_restored": true}
+Traceback (most recent call last):
+  File "/tmp/mm-studio-language-qa.py", line 18, in <module>
+    run(['/bin/launchctl','bootout',job],capture_output=True); stopped=True
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/mm-studio-language-qa.py", line 9, in run
+    def run(args, **kw): return subprocess.run(args, check=True, text=True, **kw)
+                                ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/bin/launchctl', 'bootout', 'gui/501/com.magicmirror.launchagent']' returned non-zero exit status 3.

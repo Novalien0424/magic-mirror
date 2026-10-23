@@ -19,6 +19,7 @@ export interface StudioQaStory {
     readonly silentName?: boolean
     readonly silentQuestions?: readonly number[]
     readonly silentPreference?: boolean
+    readonly languageRequests?: readonly { beforeQuestion: number; language: 'zh' | 'en'; say: string }[]
     /** One per studio question, in order. */
     readonly answers: readonly string[]
     /** Change requests after reveals, in order; never more than revisionsAllowed. */
@@ -33,6 +34,21 @@ export interface StudioQaStory {
 }
 
 export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
+  {
+    id: 'soul_language', title: 'Gate thirty-three: explicit bilingual switching and name-only display', studio: {},
+    visitor: {
+      name: { say: 'My name is Amy.', intended: 'Amy', correction: 'Please write A M Y, Amy.', confirm: 'Yes, that is correct.' },
+      languageRequests: [
+        { beforeQuestion: 2, language: 'en', say: 'Please speak English from now on. Please repeat the current question in English.' },
+        { beforeQuestion: 3, language: 'zh', say: '接下來請改用中文。請用中文重複這一題。' },
+      ],
+      answers: ['I explored a new city alone without my phone. I remember feeling free because I could finally ignore my messages.',
+        '有一次朋友搬家，我主動陪他整理到半夜。我就是很在意朋友的人。',
+        'I want to spend more time with my family and travel alone, but my holidays are limited.',
+        '我希望生活裡多一點安靜和自由。'],
+      changes: ['我很喜歡，但是請讓靈魂多一對銀色的翅膀。'], thanks: '我很喜歡，謝謝你。',
+    },
+  },
   {
     id: 'soul', title: 'Gate thirty-three: four reflective questions, name denial and one revision', studio: {},
     visitor: {

@@ -122,6 +122,19 @@ Those failure results require inspection before another start.
 
 ## TV standby/wake
 
+STOP first covers the T749 HDMI display with a native, opaque black window. It
+survives Electron shutdown, covers desktop/menu/Dock and hides the cursor only on
+that display. START/LOOP/STUDIO/CONSOLE clear it after renderer readiness and the
+mode acknowledgement. The operator monitor remains usable. A missing display or
+failed cover is reported; TV, app, mouse and audio cleanup still run independently.
+The cover does not restart Electron and has no LaunchAgent.
+
+STOP also sets the connected Jabra Speak2 75 **output** scalar to 0.70 and reads it
+back. It preserves mute, input gain and selected default devices. Missing or
+ambiguous devices and failed verification are reported instead of changing another
+speaker. Install the signed user-owned helper with
+`zsh deploy/macos/install-stop-state.sh` when deploying these controls.
+
 STOP first confirms Android Asleep/display OFF, sending explicit key 223 only
 when needed, then always performs the app stop. START/LOOP/CONSOLE/STUDIO send explicit wake key
 224 when needed, open `com.android.rockchip.camera2/.RockchipCamera2`, and
