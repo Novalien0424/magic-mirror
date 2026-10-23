@@ -1,13 +1,20 @@
 # Magic Mirror — current handoff, 2026-10-23
 
-Branch `field/macmini-deploy`; uncommitted working changes based on `305c1bf`.
-Interactive Studio repairs and the requested name-list control are built and
-deployed in the canonical checkout. Normal LaunchAgent Main PID **30434**,
-direct Console check at **10:45 Taipei**: Raven **v20**, **Up to date · 0 changed
+Implementation **`8bc69fa`** is committed and pushed to
+`origin/field/macmini-deploy` (39 files; based on `305c1bf`). Interactive Studio
+repairs and the requested name-list control are built and deployed in the
+canonical checkout. Fresh LaunchAgent, build-fingerprint and Console checks at
+**15:12 Taipei**: normal Main PID **30434**, Raven **v20**, **Up to date · 0 changed
 areas**, original Conversation mode, Dormant with wake listening. Console is
 on Avatars → Interactive Studio, focused on the empty name list. Default Gate
 opening/four questions/one revision/farewell remain published; no synthetic
-names or QA settings were written to production. No commit/push/phase promotion.
+names or QA settings were written to production. No phase promotion.
+
+The complete build is stamped **10:44:30 Taipei** (source `4d3c255a53b0401c`,
+output `2990e4918c0563f8`); Main started **10:45:09**, after that build.
+`node scripts/qa-build.mjs --verify` confirms the committed source and deployed
+output still match. No rebuild or restart was needed for Git publication.
+Existing successful QA is reused; the live acceptance limit below is unchanged.
 
 [Current repair, operator/name-list journey, failures, QA and cleanup](docs/testing/soul-studio-repair-2026-10-23.md) ·
 [Original complete journey and self-review](docs/superpowers/specs/2026-10-22-soul-studio-journey.md) ·
