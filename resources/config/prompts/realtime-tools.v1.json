@@ -242,7 +242,7 @@
       "rules": {
         "useWhen": "When the visitor explicitly asks to enter the guided Interactive Studio experience ({{studioOffer}}), call start_portrait_studio as your first output.",
         "avoidWhen": "Ordinary drawing/photo-art requests use create_image and stay in Conversation. Do not start for questions about Studio, describing a picture, or quoted, negated or hypothetical mentions.",
-        "speech": "No spoken preamble before the call. If accepted, follow the returned guidance and ask its first question. If rejected or failed, follow the returned guidance briefly and continue the conversation; never claim the studio will start."
+        "speech": "No spoken preamble. If accepted, the application speaks the opening and first question; add no speech. If rejected or failed, follow the returned guidance briefly and continue the conversation."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_started", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_start_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_unavailable", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
@@ -259,10 +259,44 @@
       "rules": {
         "useWhen": "When the visitor says the name for the picture, call studio_set_name with confirmed false; after they confirm your read-back, call it again with the same name and confirmed true.",
         "avoidWhen": "Do not call it for other people's names mentioned in passing, and do not guess a name the visitor has not said.",
-        "speech": "No preamble. Follow the returned guidance for what to say next."
+        "speech": "No preamble. On acceptance the application speaks the read-back or next question; add no speech. On rejection or failure, follow the returned guidance briefly."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_name_recorded", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_name_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_name_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
+    },
+    {
+      "name": "studio_reject_name",
+      "handler": "studio_reject_name",
+      "requiredSkill": "imageGeneration",
+      "enabled": true,
+      "availability": "studio",
+      "routing": "model_intent",
+      "description": "The visitor denies the name just read back without supplying a correction. Clear it and ask their name again.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": {
+        "useWhen": "When the visitor says the name read back is wrong and has not given the corrected name, call studio_reject_name.",
+        "avoidWhen": "If they supply a correction, use studio_set_name with confirmed false instead. Silence is handled by the application.",
+        "speech": "No preamble or follow-up speech: the application asks the name again."
+      },
+      "completion": "background_on_success",
+      "results": { "accepted": { "status": "accepted", "code": "studio_name_denied", "speech": "application" }, "ignored": { "status": "ignored", "code": "studio_not_active", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_wrong_step", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
+    },
+    {
+      "name": "studio_repeat_question",
+      "handler": "studio_repeat_question",
+      "requiredSkill": "imageGeneration",
+      "enabled": true,
+      "availability": "studio",
+      "routing": "model_intent",
+      "description": "Repeat the current name, story or image-preference question when the visitor asks for repetition or clarification without giving an answer. No answer is recorded.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": {
+        "useWhen": "When the visitor asks to hear the current question again or has not understood it, call studio_repeat_question.",
+        "avoidWhen": "A supplied answer must use studio_set_name, studio_answer, studio_revise or studio_finish instead. Silence is handled by the application.",
+        "speech": "No preamble or follow-up: the application repeats the question."
+      },
+      "completion": "background_on_success",
+      "results": { "accepted": { "status": "accepted", "code": "studio_question_repeated", "speech": "application" }, "ignored": { "status": "ignored", "code": "studio_not_active", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_wrong_step", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
     },
     {
       "name": "studio_answer",
@@ -272,11 +306,11 @@
       "availability": "studio",
       "routing": "model_intent",
       "description": "Record the visitor's answer to the current studio question.",
-      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words and language, short, up to 80 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
+      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words and language, including their reason, up to 1600 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Language the visitor is using: zh for Chinese, en for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
       "rules": {
         "useWhen": "As soon as the visitor answers the current studio question, call studio_answer with that question number and their answer.",
         "avoidWhen": "Do not invent or embellish an answer, and do not answer a question the visitor has not been asked yet.",
-        "speech": "No preamble. Follow the returned guidance for what to say next."
+        "speech": "No preamble. Always record the answer, including the final question. On acceptance the application gives the comment and next step; add no speech. On rejection or failure, follow the returned guidance briefly."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_answer_recorded", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_answer_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_answer_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
@@ -293,7 +327,7 @@
       "rules": {
         "useWhen": "After the picture is shown, when the visitor asks for a change to it, call studio_revise with that change.",
         "avoidWhen": "Do not call it before a picture is shown, or for general comments that are not a change request.",
-        "speech": "Before the call, say one short in-character line in the reply language that you are painting the change in and it takes about half a minute (for example 「我這就把它重新畫進去，等我半分鐘」). Then follow the returned guidance."
+        "speech": "You may say one short in-character line before the call, for example: 讓我再為你描繪一次，約需半分鐘. No follow-up speech. If there is no preamble, the application announces the revision."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_repainting", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_revise_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_revise_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
@@ -305,12 +339,12 @@
       "enabled": true,
       "availability": "studio",
       "routing": "model_intent",
-      "description": "Finish the studio after the visitor has seen the picture, when they are happy with it or no more changes are possible; the picture stays on the mirror for photos.",
+      "description": "Accept the displayed soul after the visitor says they are happy with it. The application speaks the transfer cue, invokes its deferred printer adapter and says farewell.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
         "useWhen": "When the visitor is satisfied with the shown picture, or the guidance says to finish, call studio_finish.",
         "avoidWhen": "Do not call it while a picture is still being painted or before one is shown.",
-        "speech": "No preamble. Follow the returned guidance."
+        "speech": "No preamble. On acceptance the application speaks the transfer and farewell; add no speech. On rejection or failure, follow the returned guidance briefly."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_finished", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_finish_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_finish_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }

@@ -7,6 +7,7 @@ import { allowPromptWindow, promptWindowName } from '../../src/shared/prompt-win
 import { REALTIME_TOOLS, resolveRealtimeTools, realtimeToolDefinition } from '../../src/shared/realtime-tools'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MEMORY_PROMPTS, MEMORY_PROMPT_SOURCE } from '../../src/shared/memory-prompts'
+import { defaultExperience } from '../../src/shared/portrait-studio'
 
 describe('file-sourced prompt inspection', () => {
   it('loads the complete versioned catalog without hidden fallback wording', () => {
@@ -37,9 +38,8 @@ describe('file-sourced prompt inspection', () => {
     expect(tools.find(section => section.title.startsWith('Memory extraction'))).toMatchObject({ content: MEMORY_PROMPTS.extractor, source: `${MEMORY_PROMPT_SOURCE}#extractor` })
     expect(tools.find(section => section.title.startsWith('Memory intent · confirmation'))!.content).toContain(MEMORY_PROMPTS.intent.tasks.confirmation)
     const first = view.pages.Session.find(section => section.title.startsWith('Interactive Studio first question'))!
-    expect(first.content).toMatch(/Speak in Taiwan Mandarin with Traditional characters\. The studio is open\. Ask this name question now: /)
-    expect(view.pages.Session.find(section => section.title.startsWith('Interactive Studio picture description'))!.content)
-      .toMatch(/\n\nSpeak in Taiwan Mandarin with Traditional characters\.$/)
+    expect(first.content).toContain('準備好的話就告訴我你的名字')
+    expect(view.pages.Session.find(section => section.title.startsWith('Interactive Studio fixed transitions'))!.content).toContain('30000')
     // No hidden wording remains in the studio agent instructions either.
     expect(view.pages.Session.find(s => s.title.startsWith('Interactive Studio agent instructions'))!.content).toContain('After the name there are 4 studio questions; the application gives each one in the tool guidance.')
   })
@@ -49,6 +49,12 @@ describe('file-sourced prompt inspection', () => {
     expect(renderPrompt('performance', { speakingStyle:value, text:'Exact.' })).toContain(value)
     expect(buildSpeechResponse(value, '').instructions.endsWith(value)).toBe(true)
     expect(renderToStaticMarkup(value)).toContain('&lt;script&gt;')
+  })
+  it('keeps the inspector usable while an authored timing marker is invalid', () => {
+    const avatar = newAvatar('fixture')
+    avatar.experience = defaultExperience()
+    avatar.experience.studio.startScript = 'Hello[pause=99s]'
+    expect(inspectAvatarPrompts(avatar, []).pages.Session.find(s => s.title.startsWith('Interactive Studio opening'))?.content).toContain('Invalid pause marker')
   })
   it('allows only the five known Console child windows with a blank local document', () => {
     for (let i = 0; i < PROMPT_TABS.length; i++) {

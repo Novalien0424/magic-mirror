@@ -3,8 +3,8 @@ import { parseRealtimeToolCatalog, resolveRealtimeTools, realtimeToolInstruction
 import baseline from '../../resources/testing/raven-prompt-baseline.v1.json' with { type: 'json' }
 import merged from '../../resources/testing/raven-merged-media.v1.json' with { type: 'json' }
 import focused from '../../resources/testing/raven-focused.v1.json' with { type: 'json' }
-import { studioPrompt, studioScriptText } from './portrait-studio-config'
-import { DEFAULT_EXPERIENCE, defaultExperience } from './portrait-studio'
+import { PORTRAIT_STUDIO, renderStudioText, studioPrompt, studioReplyLanguage, studioScriptText } from './portrait-studio-config'
+import { DEFAULT_EXPERIENCE, defaultExperience, type StudioLanguage } from './portrait-studio'
 import { avatarCatalogFor, type AvatarProfile } from './avatar-profiles'
 import { DEFAULT_PRESENTATION } from './presentation'
 import type { MirrorConfig } from './types'
@@ -102,7 +102,7 @@ export function studioToolSpecs(avatar: AvatarSessionSettings): readonly Realtim
   if (!imageGenerationEnabled(avatar)) return []
   const askName = (avatar.experience ?? DEFAULT_EXPERIENCE).studio.askName !== false
   return resolveRealtimeTools(avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE, false, REALTIME_TOOLS, 'studio')
-    .filter(spec => avatarAllowsTool(avatar, spec) && (askName || spec.handler !== 'studio_set_name'))
+    .filter(spec => avatarAllowsTool(avatar, spec) && (askName || !['studio_set_name', 'studio_reject_name'].includes(spec.handler)))
 }
 
 /** Interactive Studio agent instructions: persona plus the studio script; no private memory or media tools. */
@@ -114,6 +114,17 @@ export function buildStudioPrompt(avatar: AvatarSessionSettings): string {
   return renderPrompt('session', { name: avatar.name, personality: studio.character?.trim() || avatar.personality,
     speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,
     toolInstructions: `${realtimeToolInstructions(studioToolSpecs(avatar))}\n\n${script}` })
+}
+
+/** An application-owned comment is one response, without conversational/tool instructions. */
+export function buildStudioCommentPrompt(avatar: AvatarSessionSettings, answer: string, language: StudioLanguage): string {
+  const studio = avatar.experience?.studio ?? defaultExperience().studio
+  return renderStudioText(PORTRAIT_STUDIO.journey.commentContext, {
+    character: studio.character?.trim() || avatar.personality,
+    speakingStyle: avatar.speakingStyle || REALTIME_PROMPTS.defaults.speakingStyle,
+    comment: renderStudioText(studioPrompt(studio, 'comment'), { answer: JSON.stringify(answer) }),
+    language: studioReplyLanguage(language),
+  })
 }
 
 /** The exact application-controlled system instructions used by Realtime. */

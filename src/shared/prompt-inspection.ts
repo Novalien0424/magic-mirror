@@ -1,9 +1,10 @@
 import type { AvatarProfile } from './avatar-profiles'
 import { imageGenerationEnabled } from './avatar-skills'
 import { IMAGE_SKILL, IMAGE_SKILL_SOURCE, buildImageSkillPrompt } from './image-skill'
-import { buildAvatarPrompt, buildStudioPrompt, avatarProfileSessionSettings, avatarRealtimeTools, studioToolSpecs } from './avatar-prompt'
+import { buildAvatarPrompt, buildStudioCommentPrompt, buildStudioPrompt, avatarProfileSessionSettings, avatarRealtimeTools, studioToolSpecs, type AvatarSessionSettings } from './avatar-prompt'
 import { REALTIME_TOOLS, REALTIME_TOOL_SOURCE, realtimeToolDefinition } from './realtime-tools'
-import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, renderStudioText, studioFirstStepInstructions, studioPrompt, studioRevealInstructions } from './portrait-studio-config'
+import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, studioFarewellSpeech, studioPrompt } from './portrait-studio-config'
+import { parseSpeechScript } from './speech-script'
 import { MEMORY_PROMPTS, MEMORY_PROMPT_SOURCE } from './memory-prompts'
 import { defaultExperience, STUDIO_PROMPT_INFO, STUDIO_PROMPT_STAGES, studioStartLanguage } from './portrait-studio'
 import { buildPortraitPrompt, buildRevisionPrompt, STUDIO_SAMPLE_ANSWERS } from './studio-image-prompt'
@@ -19,6 +20,10 @@ export interface PromptInspection {
   pages: Record<PromptTab, PromptSection[]>
 }
 const json = (value: unknown): string => JSON.stringify(value, null, 2)
+const timedSpeech = (text: string, style: string): string => {
+  try { return json(parseSpeechScript(text).map(s => ({ ...(s.text ? { response: buildSpeechResponse(s.text, style) } : {}), pauseAfterPlaybackMs: s.pauseMs }))) }
+  catch { return 'Invalid pause marker in this draft. Use [pause=1s] for 0.1–10 seconds, with spoken text.' }
+}
 
 export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly SceneActionDefinition[], wakePhrase = DEFAULT_WAKE_PHRASE): PromptInspection {
   const settings = avatarProfileSessionSettings(avatar, wakePhrase)
@@ -26,7 +31,7 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
   const tools = [...avatarRealtimeTools(settings), ...studioToolSpecs(settings).filter(spec => spec.availability === 'studio')]
   const section = (title: string, content: string, source = REALTIME_PROMPT_SOURCE): PromptSection => ({ title, source, content })
   const speech = (title: string, text: string, source: string): PromptSection => section(title,
-    text ? json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
+    text ? text.includes('[pause') ? timedSpeech(text, settings.speakingStyle) : json(buildSpeechResponse(text, settings.speakingStyle)) : 'Disabled · silent wake; no request sent.', `${REALTIME_PROMPT_SOURCE}#performance + ${source}`)
   const imageEnabled = imageGenerationEnabled(settings)
   return { name: avatar.name, pages: {
     Session: [section('Assigned skills', `Image generation: ${imageEnabled ? 'enabled · Conversation and Interactive Studio' : 'disabled · Conversation remains available'}. Published changes apply on the next conversation.`, `${profileSource}.skills`),
@@ -36,14 +41,14 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
       section('Conversation image prompt · sample request', buildImageSkillPrompt('An owl over the sea', 'generate', 'portrait'), IMAGE_SKILL_SOURCE),
       section('Photo reference instruction · both modes', IMAGE_SKILL.photo, IMAGE_SKILL_SOURCE),
       section('Conversation image reveal · seen / unavailable', `${IMAGE_SKILL.reveal}\n\n${IMAGE_SKILL.revealBlind}`, IMAGE_SKILL_SOURCE),
-      ...STUDIO_PROMPT_STAGES.filter(stage => stage !== 'instructions').map(stage => {
+      ...STUDIO_PROMPT_STAGES.filter(stage => ['comment', 'unavailable', 'exited', 'offer'].includes(stage)).map(stage => {
         const studio = (avatar.experience ?? defaultExperience()).studio
         const edited = studio.prompts?.[stage] !== undefined
         return section(`Interactive Studio stage · ${STUDIO_PROMPT_INFO[stage].label}`, studioPrompt(studio, stage),
           edited ? `${profileSource}.experience.studio.prompts.${stage}` : `${PORTRAIT_STUDIO_SOURCE} (default)`)
       }),
       ...studioImagePrompts(avatar, profileSource),
-      ...studioRequests(avatar, buildStudioPrompt(settings), profileSource)] : []),
+      ...studioRequests(avatar, settings, profileSource)] : []),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
     Speech: [speech('Wake greeting · response.create', settings.wakeGreeting, `${profileSource}.presentation.wakeGreeting`),
       speech('Sleep farewell · response.create', settings.sleepFarewell, `${profileSource}.presentation.sleepFarewell`),
@@ -79,17 +84,18 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
 }
 
 /** The requests the application creates during a studio visit, with the studio's own language. */
-function studioRequests(avatar: AvatarProfile, studioInstructions: string, profileSource: string): PromptSection[] {
+function studioRequests(avatar: AvatarProfile, settings: AvatarSessionSettings, profileSource: string): PromptSection[] {
   const studio = (avatar.experience ?? defaultExperience()).studio
   const language = studioStartLanguage(studio.startScript)
-  const step = studio.askName === false
-    ? renderStudioText(studioPrompt(studio, 'askQuestion'), { index: '1', count: String(studio.questions.length), question: studio.questions[0]![language] })
-    : renderStudioText(studioPrompt(studio, 'askName'), { question: studio.nameQuestion[language] })
-  const source = `${PORTRAIT_STUDIO_SOURCE}#session + ${profileSource}.experience.studio.prompts`
+  const first = studio.askName === false ? studio.questions[0]![language] : studio.nameQuestion[language]
+  const source = `${PORTRAIT_STUDIO_SOURCE}#journey + ${profileSource}.experience.studio`
+  const fixed = (text: string) => timedSpeech(text, avatar.speakingStyle)
   return [
-    { title: 'Interactive Studio first question · response.create after the start script', source, content: studioFirstStepInstructions(studioInstructions, language, step) },
-    { title: 'Interactive Studio picture description · response.create (a change left)', source,
-      content: studioRevealInstructions(studioInstructions, studio, { seen: true, language, final: studio.revisionsAllowed === 0 }) },
+    { title: 'Interactive Studio opening · timed speech', source, content: fixed(studio.startScript) },
+    { title: 'Interactive Studio first question · after opening playback', source, content: fixed(first) },
+    { title: 'Interactive Studio answer comment · synthetic answer', source, content: buildStudioCommentPrompt(settings, 'I explored a new city without my phone.', language) },
+    { title: 'Interactive Studio fixed transitions and silence policy', source, content: json(PORTRAIT_STUDIO.journey) },
+    { title: 'Interactive Studio farewell · after transfer and deferred printer', source, content: fixed(studioFarewellSpeech(studio)) },
   ]
 }
 

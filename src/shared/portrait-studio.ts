@@ -1,4 +1,5 @@
 /** Interactive Studio contracts (internal name: portrait studio). Dependency-free: also used by the sandboxed preloads. */
+import { speechScriptIssue } from './speech-script.ts'
 
 export type ExperienceMode = 'conversation' | 'portrait_studio'
 /** The Mirror's explicit switch (Main-owned, persisted); `studio` makes every wake start the Interactive Studio. */
@@ -9,6 +10,8 @@ export type StudioLanguage = 'zh' | 'en'
 export type GuestMatchMode = 'off' | 'prefer' | 'only'
 export const STUDIO_SLOTS: readonly StudioSlot[] = Object.freeze(['subject', 'setting', 'mood', 'palette', 'companion', 'style', 'detail'])
 export const STUDIO_MAX_QUESTIONS = 8
+export const STUDIO_QUESTION_MAX = 600
+export const STUDIO_ANSWER_MAX = 1600
 export const STUDIO_MAX_GUESTS = 1000
 
 /** `imageLine` (optional) replaces the slot's default image-prompt line; it must contain `{{answer}}`. */
@@ -18,11 +21,11 @@ export interface StudioBilingual { zh: string; en: string }
 /** What the avatar is told at each studio stage, in visit order. Operators may override any of them per avatar. */
 export const STUDIO_PROMPT_STAGES = Object.freeze(['instructions', 'unavailable', 'askName', 'confirmName',
   'chooseGuest', 'guestOnly', 'askQuestion', 'painting', 'busy', 'reveal', 'revealBlind', 'offerChange', 'repainting', 'noChangesLeft',
-  'finalVersion', 'finished', 'exited', 'offer'] as const)
+  'finalVersion', 'finished', 'exited', 'offer', 'comment'] as const)
 export type StudioPromptStage = typeof STUDIO_PROMPT_STAGES[number]
 /** Placeholders each stage supports: required ones must stay in the text; any other placeholder is rejected. */
 export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { required: readonly string[]; optional: readonly string[] }>> = Object.freeze({
-  instructions: { required: [], optional: [] }, offer: { required: [], optional: [] },
+  instructions: { required: [], optional: [] }, offer: { required: [], optional: [] }, comment: { required: ['answer'], optional: [] },
   unavailable: { required: [], optional: [] }, busy: { required: [], optional: [] }, askName: { required: ['question'], optional: [] },
   confirmName: { required: ['name'], optional: [] }, chooseGuest: { required: ['candidates'], optional: [] },
   guestOnly: { required: [], optional: [] }, askQuestion: { required: ['question'], optional: ['index', 'count'] },
@@ -34,6 +37,7 @@ export const STUDIO_PROMPT_PLACEHOLDERS: Readonly<Record<StudioPromptStage, { re
 export const STUDIO_PROMPT_MAX = Object.freeze({ instructions: 4000, other: 1000 })
 /** Operator-facing name and moment of each stage prompt (Console editor and prompt inspector). */
 export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: string; when: string }>> = Object.freeze({
+  comment: { label: 'Comment on an answer', when: 'One or two short sentences after each answer. The application then asks the next question without waiting for a reply.' },
   instructions: { label: 'Studio rules', when: 'Part of the studio system prompt, after the Studio character: how the avatar runs the steps. Change the first lines if the story is not a portrait.' },
   offer: { label: 'Conversation mode: what the studio offers', when: 'Only in Conversation mode, when visitors may ask for the studio: completes “It offers …” so the avatar knows which requests open it. Include example requests.' },
   unavailable: { label: 'Studio unavailable', when: 'When the studio cannot start (for example, no ChatGPT sign-in).' },
@@ -57,6 +61,7 @@ export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.
   question: 'the question text', name: 'the name the avatar heard', candidates: 'up to three matching guest names',
   index: 'the question number', count: 'the number of questions', followUp: 'the Offer a change or Final version prompt',
   language: "the visitor's language",
+  answer: "the visitor's answer, quoted as data",
 })
 /** Per-avatar overrides; a stage without one uses the versioned default. */
 export type StudioPrompts = Partial<Record<StudioPromptStage, string>>
@@ -201,13 +206,13 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
   visitorMayRequest: true,
   afterPortrait: 'continue',
   studio: {
-    startScript: '我在。今天想讓我為你畫一幅畫像嗎？回答我幾個小問題就好。',
-    nameQuestion: { zh: '先告訴我，畫上要寫什麼名字？', en: 'First, what name should I write on the portrait?' },
+    startScript: '歡迎來到Gate thirty-three. 在這連結現實與虛幻的地方，唯有捨棄你的肉身，吾才能引渡你前往下一個世界[pause=1s]',
+    nameQuestion: { zh: '準備好的話就告訴我你的名字', en: 'When you are ready, tell me your name.' },
     questions: [
-      { id: 'q1', zh: '如果你能變成一種動物或幻想生物，會是什麼？', en: 'If you could become any animal or creature, what would it be?', slot: 'subject' },
-      { id: 'q2', zh: '你最想待在哪裡？真實或想像的地方都可以。', en: 'Where would you most like to be, real or imagined?', slot: 'setting' },
-      { id: 'q3', zh: '用一種天氣形容你現在的心情。', en: 'Describe your mood right now as a kind of weather.', slot: 'mood' },
-      { id: 'q4', zh: '挑一個代表你的顏色。', en: 'Pick a colour that feels like you.', slot: 'palette' },
+      { id: 'q1', zh: '你的靈魂唯有轉換成為度界之獸，才能進入這個Gate thirty three, 現在讓我們來嘗試描繪你的靈魂吧。說說看最近這一年裡面，有哪一個時刻最讓你印象深刻 為什麼?', en: 'Your soul must become a creature that crosses worlds to enter Gate thirty-three. Let us imagine it. Which moment in the past year stayed with you most, and why?', slot: 'subject', imageLine: 'A meaningful moment, translated symbolically into the imaginary soul creature: {{answer}}.' },
+      { id: 'q2', zh: '很好- 那麼說說看是否曾經有哪一件事情，讓你覺得 這就是我啊 這就是我會做的事情。', en: 'Was there something you did that made you think: this is who I am, this is what I would do?', slot: 'detail', imageLine: 'An action expressing the visitor’s character, represented in the creature’s gesture or form: {{answer}}.' },
+      { id: 'q3', zh: '很好 -那麼說說看，現在的你有什麼事情是覺得兩件都想要，但是卻很難同時做到的事情?', en: 'What are two things you want now that are difficult to have at the same time?', slot: 'detail', imageLine: 'A tension between two wishes, represented as balanced contrasting features: {{answer}}.' },
+      { id: 'q4', zh: '很好 -那麼說說看，如果可以的話 你希望生活裡多一點什麼?', en: 'If you could, what would you like a little more of in your life?', slot: 'mood', imageLine: 'A wish for life, represented in the creature’s colours or small supporting motif: {{answer}}.' },
     ],
     artStyle: 'Bold flat vector, thick dark outlines, four or five flat colours, iconic and symbolic, like a modern enamel pin.',
     pictureType: 'sticker',
@@ -257,7 +262,7 @@ export function studioFarewellIssue(value: unknown): string {
   if (typeof value !== 'string' || /[\u0000-\u0009\u000b-\u001f\u007f]/u.test(value)) return 'Remove tabs and other control characters.'
   const lines = value.split('\n').map(line => line.trim()).filter(Boolean)
   if (lines.length < 1 || lines.length > STUDIO_FAREWELL_LINES) return `Enter 1 to ${STUDIO_FAREWELL_LINES} lines; the avatar pauses between lines.`
-  return lines.some(line => line.length > 80) ? 'Keep each line to 80 characters.' : ''
+  return lines.some(line => line.length > 80) ? 'Keep each line to 80 characters.' : speechScriptIssue(value)
 }
 export function studioCharacterIssue(value: unknown): string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= STUDIO_CHARACTER_MAX && !/[\u0000-\u0009\u000b-\u001f\u007f]/u.test(value)
@@ -290,11 +295,12 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
     || !['low', 'medium', 'high'].includes(value.quality as string)
     || !Number.isInteger(value.revisionsAllowed) || (value.revisionsAllowed as number) < 0 || (value.revisionsAllowed as number) > 3
     || !Number.isInteger(value.holdSeconds) || (value.holdSeconds as number) < 10 || (value.holdSeconds as number) > 300) return null
+  if (speechScriptIssue(value.startScript) || speechScriptIssue(name.zh) || speechScriptIssue(name.en)) return null
   const ids = new Set<string>()
   for (const question of value.questions) {
     if (!record(question) || !(exact(question, ['id', 'zh', 'en', 'slot']) || exact(question, ['id', 'zh', 'en', 'slot', 'imageLine']))
       || typeof question.id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(question.id)
-      || ids.has(question.id) || !studioText(question.zh, 200) || !studioText(question.en, 200) || !STUDIO_SLOTS.includes(question.slot as StudioSlot)
+      || ids.has(question.id) || !studioText(question.zh, STUDIO_QUESTION_MAX, false, true) || !studioText(question.en, STUDIO_QUESTION_MAX, false, true) || speechScriptIssue(question.zh) || speechScriptIssue(question.en) || !STUDIO_SLOTS.includes(question.slot as StudioSlot)
       || 'imageLine' in question && studioImageLineIssue(question.imageLine)) return null
     ids.add(question.id)
   }
@@ -332,6 +338,9 @@ export function parseSessionExperience(value: unknown): SessionExperience | null
 export type StudioRequest =
   | { action: 'start'; source: 'visitor' }
   | { action: 'set_name'; name: string; confirmed: boolean; language: StudioLanguage }
+  | { action: 'reject_name' }
+  | { action: 'repeat' }
+  | { action: 'step_ready' | 'step_activity' | 'paint' | 'deliver'; stepId: string }
   | { action: 'answer'; question: number; answer: string; language: StudioLanguage }
   | { action: 'revise'; change: string }
   | { action: 'finish' }
@@ -340,16 +349,18 @@ export type StudioRequest =
 export function parseStudioRequest(value: unknown): StudioRequest | null {
   if (!record(value)) return null
   switch (value.action) {
+    case 'step_ready': case 'step_activity': case 'paint': case 'deliver':
+      return exact(value, ['action', 'stepId']) && validStepId(value.stepId) ? { action: value.action, stepId: value.stepId } : null
     case 'start': return exact(value, ['action', 'source']) && value.source === 'visitor' ? { action: 'start', source: value.source } : null
     case 'set_name': return exact(value, ['action', 'name', 'confirmed', 'language']) && studioText(value.name, 40) && typeof value.confirmed === 'boolean'
       && (value.language === 'zh' || value.language === 'en')
       ? { action: 'set_name', name: value.name, confirmed: value.confirmed, language: value.language } : null
     case 'answer': return exact(value, ['action', 'question', 'answer', 'language']) && Number.isInteger(value.question)
-      && (value.question as number) >= 1 && (value.question as number) <= STUDIO_MAX_QUESTIONS && studioText(value.answer, 80)
+      && (value.question as number) >= 1 && (value.question as number) <= STUDIO_MAX_QUESTIONS && studioText(value.answer, STUDIO_ANSWER_MAX)
       && (value.language === 'zh' || value.language === 'en')
       ? { action: 'answer', question: value.question as number, answer: value.answer, language: value.language } : null
     case 'revise': return exact(value, ['action', 'change']) && studioText(value.change, 120) ? { action: 'revise', change: value.change } : null
-    case 'finish': case 'exit': return exact(value, ['action']) ? { action: value.action } : null
+    case 'finish': case 'exit': case 'reject_name': case 'repeat': return exact(value, ['action']) ? { action: value.action } : null
     default: return null
   }
 }
@@ -362,14 +373,16 @@ export interface StudioReply {
   next?: string
   /** Up to three guest-list names matching the spoken name. */
   candidates?: string[]
+  step?: StudioStep
 }
 
 export function parseStudioReply(value: unknown): StudioReply | null {
   if (!record(value) || !['accepted', 'ignored', 'rejected', 'failed'].includes(value.status as string)
     || typeof value.code !== 'string' || !/^[a-z][a-z0-9_]{0,79}$/.test(value.code)) return null
   const keys = Object.keys(value)
-  if (!keys.every(key => ['status', 'code', 'next', 'candidates'].includes(key))) return null
-  if ('next' in value && !studioText(value.next, 2000)) return null
+  if (!keys.every(key => ['status', 'code', 'next', 'candidates', 'step'].includes(key))) return null
+  if ('step' in value && !parseStudioStep(value.step)) return null
+  if ('next' in value && !studioText(value.next, 2000, false, true)) return null
   if ('candidates' in value && (!Array.isArray(value.candidates) || value.candidates.length > 3 || !value.candidates.every(validGuestName))) return null
   return structuredClone(value) as unknown as StudioReply
 }
@@ -420,7 +433,7 @@ export function parseStudioView(value: unknown): StudioView | null {
     || typeof value.askName !== 'boolean' || !parseScreenView(value.text)) return null
   const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'picture', 'revisionsLeft', 'holdEndsAt', 'askName', 'text']
   if (!Object.keys(value).every(key => allowed.includes(key))) return null
-  if ('prompt' in value && !studioText(value.prompt, 200)) return null
+  if ('prompt' in value && !studioText(value.prompt, STUDIO_QUESTION_MAX, false, true)) return null
   if ('name' in value && !studioText(value.name, 40)) return null
   if ('change' in value && !studioText(value.change, 120)) return null
   if ('imageUrl' in value && (typeof value.imageUrl !== 'string' || !/^magic-mirror-media:\/\/studio\/[a-z0-9-]{8,64}$/.test(value.imageUrl))) return null
@@ -428,10 +441,30 @@ export function parseStudioView(value: unknown): StudioView | null {
   return structuredClone(value) as unknown as StudioView
 }
 
+/** Main-issued, run-specific speech/timeout token. No identity/profile data. */
+export interface StudioStep {
+  id: string
+  phase: StudioPhase
+  speech: string
+  guidance: string
+  language: StudioLanguage
+  comment?: string
+  silent?: boolean
+  final?: boolean
+}
+const validStepId = (value: unknown): value is string => typeof value === 'string' && /^studio-[a-z0-9-]{8,90}$/.test(value)
+function parseStudioStep(value: unknown): value is StudioStep {
+  return record(value) && validStepId(value.id) && ['name', 'confirm', 'question', 'painting', 'revising', 'reveal', 'keepsake'].includes(value.phase as string)
+    && studioText(value.speech, 1600, false, true) && studioText(value.guidance, 2000, false, true) && (value.language === 'zh' || value.language === 'en')
+    && Object.keys(value).every(k => ['id', 'phase', 'speech', 'guidance', 'language', 'comment', 'silent', 'final'].includes(k))
+    && (!('comment' in value) || studioText(value.comment, STUDIO_ANSWER_MAX))
+    && (!('silent' in value) || typeof value.silent === 'boolean') && (!('final' in value) || typeof value.final === 'boolean')
+}
 export type StudioSessionEvent =
   /** `firstStep`: Main's guidance for the first step (name question or question 1), asked after the start script. */
-  | { event: 'enter'; startScript: string; firstStep: string; language: StudioLanguage }
-  | { event: 'ready'; imageUrl: string; revision: number; revisionsLeft: number; language: StudioLanguage }
+  | { event: 'enter'; startScript: string; firstStep: string; language: StudioLanguage; step?: StudioStep }
+  | { event: 'step'; step: StudioStep }
+  | { event: 'ready'; imageUrl: string; revision: number; revisionsLeft: number; language: StudioLanguage; step?: StudioStep }
   | { event: 'failed'; code: StudioImageFailure; line: string; keepPortrait: boolean }
   | { event: 'keepsake_done'; afterPortrait: 'continue' | 'farewell' }
   | { event: 'closed'; reason: string }
@@ -447,14 +480,15 @@ export function parseStudioEventIdentity(value: unknown): StudioEventIdentity | 
 export function parseStudioSessionEvent(value: unknown): StudioSessionEvent | null {
   if (!record(value)) return null
   switch (value.event) {
+    case 'step': return exact(value, ['event', 'step']) && parseStudioStep(value.step) ? { event: 'step', step: structuredClone(value.step) } : null
     // Same rule as the saved start script, which may span lines.
-    case 'enter': return exact(value, ['event', 'startScript', 'firstStep', 'language']) && studioText(value.startScript, 500, false, true)
+    case 'enter': return (exact(value, ['event', 'startScript', 'firstStep', 'language']) || exact(value, ['event', 'startScript', 'firstStep', 'language', 'step']) && parseStudioStep(value.step)) && studioText(value.startScript, 500, false, true)
       && studioText(value.firstStep, 2000, true, true) && (value.language === 'zh' || value.language === 'en')
-      ? { event: 'enter', startScript: value.startScript, firstStep: value.firstStep, language: value.language } : null
-    case 'ready': return exact(value, ['event', 'imageUrl', 'revision', 'revisionsLeft', 'language']) && typeof value.imageUrl === 'string'
+      ? { event: 'enter', startScript: value.startScript, firstStep: value.firstStep, language: value.language, ...(parseStudioStep(value.step) ? { step: structuredClone(value.step) } : {}) } : null
+    case 'ready': return (exact(value, ['event', 'imageUrl', 'revision', 'revisionsLeft', 'language']) || exact(value, ['event', 'imageUrl', 'revision', 'revisionsLeft', 'language', 'step']) && parseStudioStep(value.step)) && typeof value.imageUrl === 'string'
       && /^magic-mirror-media:\/\/studio\/[a-z0-9-]{8,64}$/.test(value.imageUrl) && Number.isInteger(value.revision) && (value.revision as number) >= 0
       && Number.isInteger(value.revisionsLeft) && (value.revisionsLeft as number) >= 0 && (value.language === 'zh' || value.language === 'en')
-      ? { event: 'ready', imageUrl: value.imageUrl, revision: value.revision as number, revisionsLeft: value.revisionsLeft as number, language: value.language } : null
+      ? { event: 'ready', imageUrl: value.imageUrl, revision: value.revision as number, revisionsLeft: value.revisionsLeft as number, language: value.language, ...(parseStudioStep(value.step) ? { step: structuredClone(value.step) } : {}) } : null
     case 'failed': return exact(value, ['event', 'code', 'line', 'keepPortrait']) && typeof value.code === 'string' && /^studio_[a-z_]{1,40}$/.test(value.code)
       && studioText(value.line, 500) && typeof value.keepPortrait === 'boolean'
       ? { event: 'failed', code: value.code as StudioImageFailure, line: value.line, keepPortrait: value.keepPortrait } : null

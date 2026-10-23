@@ -7,7 +7,7 @@ import {
   studioFarewellIssue, studioWakePhraseIssue, STUDIO_PLACEHOLDER_INFO, STUDIO_PROMPT_INFO, STUDIO_PROMPT_MAX,
   STUDIO_PROMPT_PLACEHOLDERS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_INFO, STUDIO_SCREEN_KEYS, STUDIO_SLOTS, studioFailureIssue,
   studioImageLineIssue, studioImagePromptIssue, studioNameFontIssue, studioPictureType, studioPromptIssue, studioScreenIssue, validGuestName,
-  STUDIO_NAME_FONT_MAX, type StudioPictureType,
+  STUDIO_NAME_FONT_MAX, STUDIO_QUESTION_MAX, type StudioPictureType,
   type AvatarExperience, type GuestMatchMode, type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage,
   type StudioQuality, type StudioQuestion, type StudioScreenKey, type StudioSettings, type StudioSlot,
 } from '../../shared/portrait-studio'
@@ -20,6 +20,7 @@ import { HelpField } from './HelpField'
 import { HelpButton, InfoTip } from './HelpButton'
 import { NumberInput } from './NumberInput'
 import { FIELD_HELP } from './field-help-text'
+import { speechScriptIssue } from '../../shared/speech-script'
 
 export const SLOT_LABELS: Readonly<Record<StudioSlot, string>> = Object.freeze({
   subject: 'Main figure or creature', setting: 'Place', mood: 'Mood and light', palette: 'Main colour',
@@ -27,7 +28,7 @@ export const SLOT_LABELS: Readonly<Record<StudioSlot, string>> = Object.freeze({
 })
 export const QUALITY_LABELS: Readonly<Record<StudioQuality, string>> = Object.freeze({ low: 'Fast', medium: 'Standard', high: 'Best' })
 export const GUEST_MATCH_LABELS: Readonly<Record<GuestMatchMode, string>> = Object.freeze({
-  off: 'Off', prefer: 'Prefer guest list', only: 'Only guests on the list',
+  off: 'Off', prefer: 'Suggest names from the list', only: 'Only accept listed names',
 })
 const CONTROL = /[\u0000-\u001f\u007f]/u
 
@@ -181,16 +182,17 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
   const add = (key: string, message: string): void => { if (message) issues[key] = message }
   const studio = experience.studio
   add('startScript', textIssue(studio.startScript, 500, 'Enter what the avatar says when the Interactive Studio starts.', false, true))
+  if (studio.startScript.trim()) add('startScript', speechScriptIssue(studio.startScript))
   if (studio.wakePhrase !== undefined) add('wakePhrase', studioWakePhraseIssue(studio.wakePhrase))
   if (studio.farewell !== undefined) add('farewell', studioFarewellIssue(studio.farewell))
   if (studio.character !== undefined) add('character', studioCharacterIssue(studio.character))
-  add('nameQuestion.zh', textIssue(studio.nameQuestion.zh, 200, 'Enter the name question in Traditional Chinese.'))
-  add('nameQuestion.en', textIssue(studio.nameQuestion.en, 200, 'Enter the name question in English.'))
+  add('nameQuestion.zh', textIssue(studio.nameQuestion.zh, 200, 'Enter the name question in Traditional Chinese.') || speechScriptIssue(studio.nameQuestion.zh))
+  add('nameQuestion.en', textIssue(studio.nameQuestion.en, 200, 'Enter the name question in English.') || speechScriptIssue(studio.nameQuestion.en))
   if (studio.questions.length < 1 || studio.questions.length > STUDIO_MAX_QUESTIONS) add('questions', `Keep 1 to ${STUDIO_MAX_QUESTIONS} questions.`)
   const ids = new Set<string>()
   studio.questions.forEach((question, index) => {
-    add(`questions.${index}.zh`, textIssue(question.zh, 200, 'Enter this question in Traditional Chinese.'))
-    add(`questions.${index}.en`, textIssue(question.en, 200, 'Enter this question in English.'))
+    add(`questions.${index}.zh`, textIssue(question.zh, STUDIO_QUESTION_MAX, 'Enter this question in Traditional Chinese.', false, true) || (question.zh.trim() ? speechScriptIssue(question.zh) : ''))
+    add(`questions.${index}.en`, textIssue(question.en, STUDIO_QUESTION_MAX, 'Enter this question in English.', false, true) || (question.en.trim() ? speechScriptIssue(question.en) : ''))
     if (!STUDIO_SLOTS.includes(question.slot)) add(`questions.${index}.slot`, 'Choose what this answer shapes.')
     if (question.imageLine !== undefined) add(`questions.${index}.imageLine`, studioImageLineIssue(question.imageLine))
     if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(question.id) || ids.has(question.id)) add(`questions.${index}.id`, 'This question has an invalid or repeated id. Remove it and add it again.')
@@ -202,7 +204,7 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
   add('holdSeconds', wholeIssue(studio.holdSeconds, 10, 300, 'seconds'))
   const guests = experience.guests.names
   // An empty list cannot restrict names, so Only guests on the list would accept anyone.
-  if (experience.guests.match === 'only' && guests.length === 0) add('guests.names', 'Only guests on the list needs at least one name. Add guest names or choose Prefer guest list.')
+  if (studio.askName !== false && experience.guests.match === 'only' && guests.length === 0) add('guests.names', 'Only accept listed names needs at least one name. Add names or choose Suggest names from the list.')
   if (guests.length > STUDIO_MAX_GUESTS || !guests.every(validGuestName)) {
     add('guests.names', guestIssueText([
       ...(guests.length > STUDIO_MAX_GUESTS ? [`The list has ${guests.length.toLocaleString('en-US')} names; the limit is ${STUDIO_MAX_GUESTS.toLocaleString('en-US')}.`] : []),
@@ -256,7 +258,13 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
         {issues.experience ? ` ${issues.experience}` : ''}</>}
     </p>
     <p className="console__muted experiences-editor__intro">In Interactive Studio mode (control bar › Mirror mode, or INTERACTIVE STUDIO on the Stream Deck) the mirror wakes to the studio
-      wake phrase, runs these steps in order, shows the picture, says the farewell and returns to Dormant.</p>
+      wake phrase, runs these steps in order, shows the soul, speaks the transfer and farewell, and returns to Dormant.</p>
+    <button type="button" disabled={disabled} onClick={() => {
+      const defaults = defaultExperience().studio
+      setStudio({ startScript: defaults.startScript, askName: true, nameQuestion: defaults.nameQuestion,
+        questions: defaults.questions, revisionsAllowed: defaults.revisionsAllowed, farewell: undefined })
+    }}>Restore default script and questions</button>
+    <p className="console__muted">Restores the opening, name question, four story questions, one allowed change and farewell. Character, voice, name list and picture settings keep their current values.</p>
 
     <fieldset disabled={disabled} aria-label="Start">
       <legend>1 · Start</legend>
@@ -270,6 +278,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
         </div>
         <HelpField help={FIELD_HELP.experienceStudioScript} error={issues.startScript}>Studio start script<textarea
           lang="zh-Hant" rows={2} maxLength={500} value={studio.startScript} onChange={e => setStudio({ startScript: e.currentTarget.value })} /></HelpField>
+        <p className="console__muted">Insert <code>[pause=1s]</code> for a timed pause in spoken scripts or questions (0.1–10 seconds). The marker is never spoken.</p>
       </div>
     </fieldset>
 
@@ -294,6 +303,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
         help="The avatar asks these questions in order (after the name, when it is asked). Each answer enters the image prompt through its own image prompt line." /></legend>
       <HelpField help={FIELD_HELP.studioAskName}><input type="checkbox" checked={askName}
         onChange={e => setStudio({ askName: e.currentTarget.checked })} /> Ask for a name first</HelpField>
+      <p className="console__muted">Each question waits for up to 30 seconds of silence after speech finishes. No name: 無名之人. No answer: 未回答, followed by “不回答 也是一種回答”.</p>
       <div className="experiences-editor__question experiences-editor__question--name" role="group" aria-label="Name question, asked first" data-off={!askName || undefined}>
         <div className="experiences-editor__question-head"><strong>{askName ? 'Name question · asked first' : 'Name question · off'}</strong></div>
         <div className="experiences-editor__grid experiences-editor__grid--2">
@@ -305,6 +315,19 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
             onChange={e => setStudio({ nameQuestion: { ...studio.nameQuestion, en: e.currentTarget.value } })} /></HelpField>
         </div>
       </div>
+      <fieldset disabled={disabled || !askName} aria-label="Name list">
+        <legend>Name list for confirmation</legend>
+        <p className="console__muted">Enter names with their correct spelling, one per line. The avatar searches its local list by spelling and pronunciation, reads back a suggested name, and waits for the visitor to confirm. A correction is read back again.</p>
+        <div className="experiences-editor__grid experiences-editor__grid--guests">
+          <HelpField help={FIELD_HELP.guestMatch}>Name matching<select aria-label="Name matching" value={experience.guests.match}
+            onChange={e => { const match = (['off', 'prefer', 'only'] as const).find(m => m === e.currentTarget.value); if (match) set({ ...experience, guests: { ...experience.guests, match } }) }}>
+            {(['off', 'prefer', 'only'] as const).map(match => <option key={match} value={match}>{GUEST_MATCH_LABELS[match]}</option>)}
+          </select></HelpField>
+          <GuestListField names={experience.guests.names} fallbackIssue={issues['guests.names']}
+            onNames={names => set({ ...experience, guests: { ...experience.guests, names } })} />
+        </div>
+        <p className="console__muted">{!askName ? 'Turn on “Ask for a name first” to use this list.' : experience.guests.match === 'off' ? 'Matching is off; saved names are kept for later.' : !experience.guests.names.length ? 'The list is empty. Add names to enable suggestions.' : experience.guests.match === 'only' ? 'Unlisted names are asked again. After 30 seconds of silence, the visit continues as 無名之人.' : 'If no name matches, the avatar confirms the name the visitor gives.'} Save and publish to apply the list to the next visit. Names are used for this visit’s caption, not private memory access.</p>
+      </fieldset>
       <ol className="experiences-editor__questions">
         {studio.questions.map((question, index) => {
           const n = index + 1
@@ -327,10 +350,10 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
             </div>
             {issues[`questions.${index}.id`] && <p className="field-error">{issues[`questions.${index}.id`]}</p>}
             <div className="experiences-editor__grid experiences-editor__grid--2">
-              <HelpField help={FIELD_HELP.studioQuestionZh} helpLabel={`Question ${n} in Traditional Chinese`} error={issues[`questions.${index}.zh`]}>Traditional Chinese<input type="text" lang="zh-Hant" maxLength={200}
+              <HelpField help={FIELD_HELP.studioQuestionZh} helpLabel={`Question ${n} in Traditional Chinese`} error={issues[`questions.${index}.zh`]}>Traditional Chinese<textarea rows={3} lang="zh-Hant" maxLength={STUDIO_QUESTION_MAX}
                 aria-label={`Question ${n} in Traditional Chinese`} value={question.zh}
                 onChange={e => set(updateQuestion(experience, index, { zh: e.currentTarget.value }))} /></HelpField>
-              <HelpField help={FIELD_HELP.studioQuestionEn} helpLabel={`Question ${n} in English`} error={issues[`questions.${index}.en`]}>English<input type="text" lang="en" maxLength={200}
+              <HelpField help={FIELD_HELP.studioQuestionEn} helpLabel={`Question ${n} in English`} error={issues[`questions.${index}.en`]}>English<textarea rows={3} lang="en" maxLength={STUDIO_QUESTION_MAX}
                 aria-label={`Question ${n} in English`} value={question.en}
                 onChange={e => set(updateQuestion(experience, index, { en: e.currentTarget.value }))} /></HelpField>
             </div>
@@ -381,14 +404,13 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
         </select></HelpField>
         <HelpField help={FIELD_HELP.studioRevisions} error={issues.revisionsAllowed}>Changes allowed<NumberInput min={0} max={3} step={1}
           value={studio.revisionsAllowed} onChange={e => setStudio({ revisionsAllowed: Number(e.currentTarget.value) })} /></HelpField>
-        <HelpField help={FIELD_HELP.studioHoldSeconds} error={issues.holdSeconds}>Show final for (seconds)<NumberInput min={10} max={300} step={1}
-          value={studio.holdSeconds} onChange={e => setStudio({ holdSeconds: Number(e.currentTarget.value) })} /></HelpField>
       </div>
       <ImagePromptEditor experience={experience} issues={issues} disabled={disabled} onChange={set} />
     </fieldset>
 
     <fieldset disabled={disabled} aria-label="Ending">
       <legend>5 · Ending</legend>
+      <p className="console__muted">The avatar says “現在讓我們把你的靈魂傳遞出去”, calls the future printer skill, then says the farewell below and sleeps. Printing is not connected yet.</p>
       <HelpField help={FIELD_HELP.studioFarewell} error={issues.farewell}>Studio farewell{studio.farewell !== undefined ? ' · edited' : ''}<textarea lang="zh-Hant"
         rows={STUDIO_FAREWELL_LINES} value={studio.farewell ?? STUDIO_DEFAULT_FAREWELL}
         onChange={e => setStudio({ farewell: e.currentTarget.value === STUDIO_DEFAULT_FAREWELL ? undefined : e.currentTarget.value })} /></HelpField>
@@ -398,28 +420,16 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
       <p className="console__muted">One phrase per line; the avatar pauses about a second between lines, then the mirror returns to Dormant. A printer for the final picture can be added later.</p>
     </fieldset>
 
-    <details className="experiences-editor__more" open={Object.keys(issues).some(key => /^(prompts\.(?!instructions)|screenText|failureLines|guests)/.test(key)) || undefined}>
-      <summary>More settings <span className="experiences-editor__count">What the avatar says at each step, text on the mirror, failure lines, guest list, Conversation mode</span></summary>
+    <details className="experiences-editor__more" open={Object.keys(issues).some(key => /^(prompts\.(?!instructions)|screenText|failureLines)/.test(key)) || undefined}>
+      <summary>More settings <span className="experiences-editor__count">What the avatar says at each step, text on the mirror, failure lines, Conversation mode</span></summary>
       <StagePrompts experience={experience} issues={issues} disabled={disabled} onChange={set} />
       <BilingualTexts experience={experience} issues={issues} disabled={disabled} onChange={set} map="screenText" />
       <BilingualTexts experience={experience} issues={issues} disabled={disabled} onChange={set} map="failureLines" />
-      <fieldset disabled={disabled || !askName} aria-label="Guest list">
-        <legend>Guest list <InfoTip label="Guest list"
-          help="The guest list stays on this Mac. The model only ever sees up to three names that match what the visitor said. It is used only when Ask for a name first is on." /></legend>
-        <div className="experiences-editor__grid experiences-editor__grid--guests">
-          <HelpField help={FIELD_HELP.guestMatch}>Match mode<select value={experience.guests.match}
-            onChange={e => { const match = (['off', 'prefer', 'only'] as const).find(m => m === e.currentTarget.value); if (match) set({ ...experience, guests: { ...experience.guests, match } }) }}>
-            {(['off', 'prefer', 'only'] as const).map(match => <option key={match} value={match}>{GUEST_MATCH_LABELS[match]}</option>)}
-          </select></HelpField>
-          <GuestListField names={experience.guests.names} fallbackIssue={issues['guests.names']}
-            onNames={names => set({ ...experience, guests: { ...experience.guests, names } })} />
-        </div>
-      </fieldset>
       <fieldset disabled={disabled} aria-label="Conversation mode">
         <legend>In Conversation mode</legend>
         <HelpField help={FIELD_HELP.experienceVisitorMayRequest}><input type="checkbox" checked={experience.visitorMayRequest}
           onChange={e => set({ ...experience, visitorMayRequest: e.currentTarget.checked })} /> Visitors may ask for the studio during conversation</HelpField>
-        <p className="console__muted">“Conversation mode: what the studio offers” (last in What the avatar says at each step) tells the avatar which requests open it. After the picture such a visit returns to conversation.</p>
+        <p className="console__muted">“Conversation mode: what the studio offers” tells the avatar which requests open it. A completed visit ends with the Studio farewell and sleep. Visitors can exit early to keep talking.</p>
       </fieldset>
     </details>
   </div>
@@ -546,7 +556,7 @@ export function StagePrompts({ experience, issues, disabled, onChange }: {
 }): React.JSX.Element {
   const prompts = experience.studio.prompts ?? {}
   // Studio rules (the `instructions` stage) are edited under Character.
-  const stages = STUDIO_PROMPT_STAGES.filter(stage => stage !== 'instructions')
+  const stages: readonly StudioPromptStage[] = ['unavailable', 'comment', 'exited', 'offer']
   const edited = stages.filter(stage => prompts[stage] !== undefined).length
   const attention = stages.some(stage => issues[`prompts.${stage}`])
   return <details className="experiences-editor__stages" open={attention || undefined}>
@@ -554,8 +564,8 @@ export function StagePrompts({ experience, issues, disabled, onChange }: {
       ? `${edited} of ${stages.length} steps edited.` : 'All steps use the default.'}</span></summary>
     <fieldset disabled={disabled} aria-label="What the avatar says at each step">
       <div className="experiences-editor__stages-head">
-        <p className="console__muted">What the avatar is told to say or do at each step of a visit, in order. The questions themselves are in 3 · Name and questions. Edits apply to this avatar only; keep each step’s required placeholders.</p>
-        <button type="button" disabled={disabled || !edited} onClick={() => onChange(resetStagePrompts(experience))}>Reset all to default</button>
+        <p className="console__muted">These instructions control comments and exceptional replies. Questions are in 3 · Name and questions; confirmation, painting, reveal and transfer use the fixed journey script. Edits apply to this avatar only; keep each required placeholder.</p>
+        <button type="button" disabled={disabled || !edited} onClick={() => onChange(stages.reduce((value, stage) => resetStagePrompts(value, stage), experience))}>Reset these prompts to default</button>
       </div>
       <ol className="experiences-editor__prompts">
         {stages.map((stage, index) => {

@@ -919,6 +919,50 @@ describe("RealtimeSession adapter", () => {
     await handle.close('user_requested');
   });
 
+  it.each(['stopped', 'cleared'] as const)('accepts an already drained cue when abort races output %s', async boundary => {
+    vi.useFakeTimers();
+    try {
+      const probe = makeAdapterProbe(), finished = vi.fn(), onFailure = vi.fn();
+      const abort = new AbortController();
+      const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFailure });
+      handle.speakVerbatim('Reveal.', abort.signal, finished);
+      const requests = () => probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create');
+      const response = { id: 'reveal', status: 'completed', metadata: (requests()[0][0] as any).response.metadata };
+      probe.emit('transport_event', { type: 'response.created', response });
+      // Playback can finish before the final generation event, then a visitor interrupts.
+      probe.emit('transport_event', { type: `output_audio_buffer.${boundary}`, response_id: 'reveal' });
+      abort.abort();
+      probe.emit('transport_event', { type: 'response.done', response });
+      handle.speakVerbatim('Repainting.');
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(finished).toHaveBeenCalledExactlyOnceWith(false);
+      expect(requests()).toHaveLength(2);
+      expect(onFailure).not.toHaveBeenCalled();
+      await handle.close('test_complete');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('accepts a matching normal playback stop after cancellation without waiting for a redundant clear', async () => {
+    vi.useFakeTimers();
+    try {
+      const probe = makeAdapterProbe(), finished = vi.fn(), onFailure = vi.fn(), abort = new AbortController();
+      const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFailure });
+      handle.speakVerbatim('Reveal.', abort.signal, finished);
+      const request = probe.sendEvent.mock.calls.find(([e]) => e.type === 'response.create')![0] as any;
+      const response = { id: 'reveal', status: 'completed', metadata: request.response.metadata };
+      probe.emit('transport_event', { type: 'response.created', response });
+      probe.emit('transport_event', { type: 'response.done', response });
+      abort.abort();
+      probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'unrelated' });
+      expect(finished).not.toHaveBeenCalled();
+      probe.emit('transport_event', { type: 'output_audio_buffer.stopped', response_id: 'reveal' });
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(finished).toHaveBeenCalledExactlyOnceWith(false);
+      expect(onFailure).not.toHaveBeenCalled();
+      await handle.close('test_complete');
+    } finally { vi.useRealTimers(); }
+  });
+
   it('holds the speech queue until prior generated audio is stopped or cleared', async () => {
     const probe = makeAdapterProbe()
     const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe))

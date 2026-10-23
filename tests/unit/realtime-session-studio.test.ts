@@ -30,7 +30,7 @@ function probe() {
   }
   const event = (value: Record<string, unknown>) => { for (const listener of listeners.get('transport_event') ?? []) listener(value) }
   const sessionEvent = (name: string, value: unknown) => { for (const listener of listeners.get(name) ?? []) listener(value) }
-  return { agents, sent, updateAgent, dependencies, event, sessionEvent }
+  return { agents, sent, updateAgent, dependencies, event, sessionEvent, interrupt: session.interrupt }
 }
 
 const snapshot: SessionModelSnapshot = Object.freeze({ configVersion: 1, fingerprint: 'f', sdkVersion: '0.20.0', realtimeDialogue: 'm', inputTranscription: 't',
@@ -39,7 +39,7 @@ const snapshot: SessionModelSnapshot = Object.freeze({ configVersion: 1, fingerp
 function avatar(mode: 'conversation' | 'portrait_studio' = 'conversation') {
   const catalog = avatarCatalogFor({ persona: { name: 'Raven', instructions: 'A sage raven.' }, voice: 'v', idleSeconds: 60, presentation: {}, scenes: [], spells: [],
     wake: { phrase: '魔鏡阿魔鏡' } } as unknown as MirrorConfig)
-  const profile = { ...catalog.avatars[0]!, experience: { ...defaultExperience(), defaultMode: mode } }
+  const profile = { ...catalog.avatars[0]!, experience: { ...defaultExperience(), defaultMode: mode, studio: { ...defaultExperience().studio, startScript: '我在。今天想讓我為你畫一幅畫像嗎？回答我幾個小問題就好。' } } }
   return avatarProfileSessionSettings(profile, '魔鏡阿魔鏡')
 }
 
@@ -61,6 +61,88 @@ const accepted = (code: string, next?: string): StudioReply => ({ status: 'accep
 const responses = (p: ReturnType<typeof probe>) => p.sent.filter(e => e.type === 'response.create').map(e => e.response as Record<string, unknown>)
 
 describe('Portrait Studio in the Realtime session', () => {
+  it('sequences the comment, next question, painting and printer from processed playback completion', async () => {
+    const p = probe(), tails: (() => void)[] = []
+    const drainTail = () => tails.splice(0).forEach(resolve => resolve())
+    const { handle, requests } = session(p, () => accepted('ok'), { waitForOutputTail: () => new Promise<void>(resolve => tails.push(resolve)) })
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    let responseIndex = 0
+    const finish = async () => {
+      await vi.waitFor(() => expect(responses(p).length).toBeGreaterThan(responseIndex))
+      const response = responses(p)[responseIndex++]!, id = `tail-${responseIndex}`
+      p.event({ type: 'response.created', response: { id, metadata: response.metadata } })
+      p.event({ type: 'output_audio_buffer.started', response_id: id })
+      p.event({ type: 'response.done', response: { id, status: 'completed', output: [], metadata: response.metadata } })
+      p.event({ type: 'output_audio_buffer.stopped', response_id: id })
+      return response
+    }
+    handle.studioEvent!({ event: 'step', step: { id: 'studio-testquestion-1', phase: 'question', language: 'zh', speech: '王曉明啊，下一題？', guidance: 'Question 2.', comment: '我獨自旅行。' } }, ID)
+    expect(p.sent).toContainEqual({ type: 'session.update', session: { type: 'realtime', tool_choice: 'required' } })
+    expect((await finish()).metadata).toMatchObject({ mirror_studio: 'comment' })
+    expect(responses(p)).toHaveLength(1)
+    drainTail()
+    expect((await finish()).instructions).toContain('王曉明啊，下一題？')
+    expect(requests.some(r => r.action === 'step_ready')).toBe(false)
+    drainTail()
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'step_ready', stepId: 'studio-testquestion-1' }))
+    for (const [phase, action] of [['painting', 'paint'], ['keepsake', 'deliver']] as const) {
+      handle.studioEvent!({ event: 'step', step: { id: `studio-test-${phase}`, phase, language: 'zh', speech: phase === 'painting' ? '現在畫靈魂。' : '現在傳遞靈魂。', guidance: 'Application cue.' } }, ID)
+      await finish()
+      expect(requests.some(r => r.action === action)).toBe(false)
+      drainTail()
+      await vi.waitFor(() => expect(requests.some(r => r.action === action)).toBe(true))
+      if (phase === 'painting') { await finish(); drainTail(); await new Promise(resolve => setTimeout(resolve, 0)); drainTail() }
+    }
+    await handle.close('test_complete')
+  })
+  it('finishes both reveal segments and their processed tails before accepting a preference', async () => {
+    const p = probe(), tails: (() => void)[] = []
+    const { handle, requests } = session(p, () => accepted('ok'), { waitForOutputTail: () => new Promise<void>(resolve => tails.push(resolve)) })
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'step', step: { id: 'offer-step', phase: 'reveal', language: 'zh', speech: '看看靈魂。[pause=0.1s]還喜歡嗎？', guidance: 'Ask preference.' } }, ID)
+    for (let index = 0; index < 2; index++) {
+      await vi.waitFor(() => expect(responses(p)).toHaveLength(index + 1))
+      const response = { id: `reveal-${index}`, metadata: responses(p)[index]!.metadata, status: 'completed' }
+      p.event({ type: 'response.created', response })
+      p.event({ type: 'output_audio_buffer.started', response_id: response.id })
+      p.event({ type: 'response.done', response })
+      p.event({ type: 'output_audio_buffer.stopped', response_id: response.id })
+      expect(requests.some(r => r.action === 'step_ready')).toBe(false)
+      tails.splice(0).forEach(resolve => resolve())
+    }
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'step_ready', stepId: 'offer-step' }))
+    await handle.close('test_complete')
+  })
+
+  it('releases a completed application cue when a joined WebRTC buffer stops at its later response', async () => {
+    const p = probe(), finished = vi.fn(), { handle } = session(p, () => accepted('ok'))
+    handle.speakVerbatim('Reveal cue.', undefined, finished)
+    const response = { id: 'reveal-cue', metadata: responses(p)[0]!.metadata, status: 'completed' }
+    p.event({ type: 'response.created', response })
+    p.event({ type: 'output_audio_buffer.started', response_id: response.id })
+    p.event({ type: 'response.done', response })
+    p.event({ type: 'response.created', response: { id: 'joined-reply' } })
+    p.event({ type: 'response.done', response: { id: 'joined-reply', status: 'completed', output: [] } })
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'unknown' })
+    expect(finished).not.toHaveBeenCalled()
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'joined-reply' })
+    await vi.waitFor(() => expect(finished).toHaveBeenCalledExactlyOnceWith(true))
+    await handle.close('test_complete')
+  })
+
+  it('interrupts painting conversation when Main announces a ready soul', async () => {
+    const p = probe(), { handle } = session(p, () => accepted('ok'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    p.event({ type: 'response.created', response: { id: 'painting-chat' } })
+    p.event({ type: 'output_audio_buffer.started', response_id: 'painting-chat' })
+    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh',
+      step: { id: 'studio-test-reveal', phase: 'reveal', language: 'zh', speech: '讓我們來看看描繪出來的靈魂形狀', guidance: 'Reveal.' } }, ID)
+    expect(p.interrupt).toHaveBeenCalledOnce()
+    p.event({ type: 'response.done', response: { id: 'painting-chat', status: 'cancelled', output: [] } })
+    p.event({ type: 'output_audio_buffer.cleared', response_id: 'painting-chat' })
+    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, string>)?.mirror_studio === 'reveal')).toBe(true))
+    await handle.close('test_complete')
+  })
   it('releases joined reply playback before revealing an image, while retaining newer playback ownership', async () => {
     const p = probe(), { handle } = session(p, () => accepted('x'))
     const done = (id: string) => p.event({ type: 'response.done', response: { id, status: 'completed', output: [{ type: 'message', content: [{ type: 'audio' }] }] } })
@@ -174,9 +256,9 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(conversation!.tools.map(t => t.name)).toContain('start_portrait_studio')
     expect(conversation!.tools.map(t => t.name)).not.toContain('studio_answer')
     expect(studio!.name).toBe('magic-mirror-portrait-studio')
-    expect(studio!.tools.map(t => t.name).sort()).toEqual(['return_to_dormant', 'studio_answer', 'studio_exit', 'studio_finish', 'studio_revise', 'studio_set_name'])
-    expect(studio!.instructions).toContain('# Portrait studio')
-    expect(studio!.instructions).toContain('畫上要寫什麼名字')
+    expect(studio!.tools.map(t => t.name).sort()).toEqual(['return_to_dormant', 'studio_answer', 'studio_exit', 'studio_finish', 'studio_reject_name', 'studio_repeat_question', 'studio_revise', 'studio_set_name'])
+    expect(studio!.instructions).toContain('# Interactive Studio')
+    expect(studio!.instructions).toContain('準備好的話就告訴我你的名字')
   })
 
   it('swaps to the studio agent before the start tool returns its guidance, and back on exit', async () => {
@@ -272,7 +354,7 @@ describe('Portrait Studio in the Realtime session', () => {
     await vi.waitFor(() => expect(responses(q).some(r => typeof (r.metadata as Record<string, unknown>)?.mirror_sleep_cue === 'string')).toBe(true))
     // The studio's own farewell (pauses between lines), not the avatar's sleep farewell.
     expect(responses(q).find(r => typeof (r.metadata as Record<string, unknown>)?.mirror_sleep_cue === 'string')!.instructions)
-      .toContain('願你找到你所追尋。……再會。……人類。')
+      .toContain('願你的靈魂順利穿越')
   })
 
   it('deletes studio conversation items after the studio closes', async () => {
@@ -577,13 +659,32 @@ describe('Portrait Studio in the Realtime session', () => {
   it('keeps reading back an unconfirmed name in Main and the Mirror together, through repeats and corrections', async () => {
     const p = probe()
     const experience = defaultExperience()
+    let mirror: ReturnType<typeof createRealtimeSession>
     const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }) as unknown as PortraitImageProvider,
-      dispatch: () => true, activity: vi.fn(), report: vi.fn() })
-    const { requests } = session(p, request => request.action === 'start' ? main.start(ID, experience, request.source) : main.handle(request, ID))
+      dispatch: command => { if (command.type === 'studio_event') mirror?.studioEvent?.(command.event, ID); return true }, activity: vi.fn(), report: vi.fn() })
+    const { requests, handle } = session(p, request => request.action === 'start' ? main.start(ID, experience, request.source) : main.handle(request, ID))
+    mirror = handle
+    const played = new Set<unknown>()
+    const finishSpeech = async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      for (const response of responses(p)) {
+        if (played.has(response)) continue
+        played.add(response)
+        const id = `played-${played.size}`
+        p.event({ type: 'response.created', response: { id, metadata: response.metadata } })
+        p.event({ type: 'output_audio_buffer.started', response_id: id })
+        p.event({ type: 'response.done', response: { id, status: 'completed', output: [], metadata: response.metadata } })
+        p.event({ type: 'output_audio_buffer.stopped', response_id: id })
+      }
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
     await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    await finishSpeech()
+    await finishSpeech()
     // A spoken reply returns the payload itself; a background one wraps it in content.
     const setName = async (name: string, confirmed: boolean) => {
       const result = await call(tool(p.agents[1]!, 'studio_set_name'), { name, confirmed, language: 'zh' }) as { studio?: { code: string }; content?: { studio: { code: string } } }
+      await finishSpeech()
       return (result.content ?? result).studio?.code
     }
     // The model never confirms: every visitor reply is read back again, with no attempt limit.
@@ -600,6 +701,67 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(await setName('王曉明', true)).toBe('studio_name_confirmed')
     expect(main.phase()).toBe('question')
     expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, false, false, false, false, false, true])
+    main.close('test_complete'); await handle.close('test_complete')
+  })
+
+  it('uses the local name shortlist and reads back a different listed candidate before confirmation', async () => {
+    const p = probe(), experience = defaultExperience()
+    experience.guests = { names: ['王曉明', '王小敏', '林美玲'], match: 'prefer' }
+    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }), dispatch: () => true, activity: vi.fn(), report: vi.fn() })
+    const { handle, requests } = session(p, r => r.action === 'start' ? main.start(ID, experience, r.source) : main.handle(r, ID))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    for (let i = 0; i < 2; i++) {
+      await vi.waitFor(() => expect(responses(p).length).toBeGreaterThan(i))
+      const response = responses(p)[i]!, id = `name-intro-${i}`
+      p.event({ type: 'response.created', response: { id, metadata: response.metadata } })
+      p.event({ type: 'output_audio_buffer.started', response_id: id })
+      p.event({ type: 'response.done', response: { id, status: 'completed', output: [], metadata: response.metadata } })
+      p.event({ type: 'output_audio_buffer.stopped', response_id: id })
+    }
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const setName = async (name: string, confirmed: boolean) => {
+      const result = await call(tool(p.agents[1]!, 'studio_set_name'), { name, confirmed, language: 'zh' }) as { studio?: StudioReply; content?: { studio: StudioReply } }
+      return (result.content ?? result).studio!
+    }
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'name-1' })
+    expect(await setName('王小明', true)).toMatchObject({ code: 'studio_name_candidates', candidates: ['王曉明', '王小敏'] })
+    expect(main.phase()).toBe('confirm')
+    // Another candidate is a correction, even if the model labels it confirmed.
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'name-2' })
+    expect(await setName('王小敏', true)).toMatchObject({ code: 'studio_name_heard' })
+    expect(main.phase()).toBe('confirm')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'name-3' })
+    expect(await setName('王小敏', true)).toMatchObject({ code: 'studio_name_confirmed' })
+    expect(main.phase()).toBe('question')
+    expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, true])
+    expect(JSON.stringify(p.agents)).not.toContain('林美玲')
+    main.close('test_complete'); await handle.close('test_complete')
+  })
+
+  it.each([false, true])('does not duplicate a revision preamble and waits for its tail (step after reply: %s)', async delayedStep => {
+    const p = probe(), tails: (() => void)[] = []
+    let mirror: ReturnType<typeof createRealtimeSession>
+    const step = () => mirror.studioEvent!({ event: 'step', step: { id: 'revision-step', phase: 'revising', language: 'zh', speech: '再描繪一次', guidance: 'Wait for the image.' } }, ID)
+    const { handle, requests } = session(p, request => {
+      if (request.action === 'revise' && !delayedStep) step()
+      return accepted('ok')
+    }, { waitForOutputTail: () => new Promise<void>(resolve => tails.push(resolve)) })
+    mirror = handle
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    p.event({ type: 'response.created', response: { id: 'preamble-revision' } })
+    p.event({ type: 'response.output_item.added', response_id: 'preamble-revision', item: { type: 'message', role: 'assistant' } })
+    p.event({ type: 'response.output_item.added', response_id: 'preamble-revision', item: { type: 'function_call', name: 'studio_revise' } })
+    await call(tool(p.agents[1]!, 'studio_revise'), { change: 'snow' })
+    if (delayedStep) step()
+    p.event({ type: 'output_audio_buffer.started', response_id: 'preamble-revision' })
+    p.event({ type: 'response.done', response: { id: 'preamble-revision', status: 'completed', output: [] } })
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'preamble-revision' })
+    await vi.waitFor(() => expect(tails.length).toBeGreaterThan(0))
+    expect(requests.some(r => r.action === 'paint')).toBe(false)
+    tails.splice(0).forEach(resolve => resolve())
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'paint', stepId: 'revision-step' }))
+    expect(responses(p)).toHaveLength(0)
+    await handle.close('test_complete')
   })
 
   it('says the repaint once: a change asked with a spoken preamble needs no second reply', async () => {
@@ -769,7 +931,7 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'response.done', response: { id: 'start-r', status: 'completed', output: [], metadata: { mirror_scene_cue: cueId } } })
     p.event({ type: 'output_audio_buffer.stopped', response_id: 'start-r' })
     await vi.waitFor(() => expect(firstSteps()).toHaveLength(1))
-    expect(String(firstSteps()[0]!.instructions)).toContain('# Portrait studio')
+    expect(String(firstSteps()[0]!.instructions)).toContain('# Interactive Studio')
     expect(String(firstSteps()[0]!.instructions)).toContain(step)
     expect(String(firstSteps()[0]!.instructions)).toContain('Speak in Taiwan Mandarin with Traditional characters.')
   })

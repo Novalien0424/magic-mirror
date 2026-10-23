@@ -15,6 +15,10 @@ export interface StudioQaStory {
   readonly visitor: {
     /** Name step: what the visitor says, the characters they mean, a correction and a confirmation. */
     readonly name?: { readonly say: string; readonly intended: string; readonly correction: string; readonly confirm: string }
+    readonly denyName?: string
+    readonly silentName?: boolean
+    readonly silentQuestions?: readonly number[]
+    readonly silentPreference?: boolean
     /** One per studio question, in order. */
     readonly answers: readonly string[]
     /** Change requests after reveals, in order; never more than revisionsAllowed. */
@@ -29,6 +33,30 @@ export interface StudioQaStory {
 }
 
 export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
+  {
+    id: 'soul', title: 'Gate thirty-three: four reflective questions, name denial and one revision', studio: {},
+    visitor: {
+      name: { say: '我叫王曉明。', intended: '王曉明', correction: '是破曉的曉，明天的明，王曉明。', confirm: '對，就是這個名字。' },
+      denyName: '不對，這不是我的名字。請重新問我名字。',
+      answers: ['我沒有帶手機，自己在陌生城市冒險了一天。我記得很清楚，因為終於不必一直看訊息。',
+        '有一次朋友搬家，我主動陪他整理到半夜。我就是很在意朋友的人。',
+        '我想多陪伴家人，也想獨自去遠方旅行，但是假期很有限。',
+        '我希望生活裡多一點安靜和自由。'],
+      changes: ['我很喜歡，但是請讓靈魂多一對銀色的翅膀。'], thanks: '我喜歡，謝謝你。',
+      request: '請開始互動工作室，帶我完成靈魂問答體驗。',
+    },
+  },
+  {
+    id: 'soul_silence', title: 'Gate thirty-three: two edited questions, silent name and silent answers',
+    studio: { questions: [
+      { id: 'quiet', zh: '說說你最珍惜的一段安靜時光。[pause=1s]為什麼呢？', en: 'What quiet moment do you cherish, and why?', slot: 'mood' },
+      { id: 'wish', zh: '接下來，你希望多一點什麼？', en: 'What would you like more of next?', slot: 'detail' },
+    ] },
+    visitor: {
+      name: { say: '我叫王曉明。', intended: '無名之人', correction: '我叫王曉明。', confirm: '對。' },
+      silentName: true, silentQuestions: [1, 2], silentPreference: true, answers: ['保持沉默。', '保持沉默。'], changes: [], thanks: '我很喜歡這個靈魂，不需要修改，謝謝你。',
+    },
+  },
   {
     id: 'default',
     title: 'Published Raven studio',

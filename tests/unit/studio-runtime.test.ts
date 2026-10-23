@@ -33,6 +33,11 @@ function harness(options: { experience?: AvatarExperience; results?: PortraitIma
 }
 async function answerAll(h: ReturnType<typeof harness>, count = 4) {
   for (let i = 1; i <= count; i++) h.runtime.handle({ action: 'answer', question: i, answer: `answer ${i}`, language: 'zh' }, identity)
+  completeCue(h, 'paint')
+}
+function completeCue(h: ReturnType<typeof harness>, action: 'paint' | 'deliver') {
+  const step = (h.events().filter(e => e.event === 'step').at(-1) as unknown as { step: { id: string } }).step
+  h.runtime.handle({ action, stepId: step.id }, identity)
 }
 afterEach(() => { vi.useRealTimers() })
 
@@ -44,22 +49,24 @@ describe('portrait studio runtime', () => {
   it('starts in the start script language, so an English story asks and shows its first question in English', () => {
     const english = harness({ experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, askName: false,
       startScript: 'Welcome, traveller. Answer three questions.' } } })
-    expect(english.runtime.start(identity, english.experience, 'console').next).toContain('If you could become any animal or creature')
-    expect(english.views().at(-1)).toMatchObject({ language: 'en', prompt: 'If you could become any animal or creature, what would it be?' })
+    expect(english.runtime.start(identity, english.experience, 'console').next).toContain(english.experience.studio.questions[0]!.en)
+    expect(english.views().at(-1)).toMatchObject({ language: 'en', prompt: english.experience.studio.questions[0]!.en })
     const chinese = harness()
-    expect(chinese.runtime.start(identity, chinese.experience, 'console').next).toContain('畫上要寫什麼名字')
+    expect(chinese.runtime.start(identity, chinese.experience, 'console').next).toContain('準備好的話就告訴我你的名字')
     expect(chinese.views().at(-1)).toMatchObject({ language: 'zh' })
   })
 
   it('runs name → questions → painting → reveal → change → keepsake with valid views and events', async () => {
     vi.useFakeTimers()
     const h = harness()
-    expect(h.runtime.start(identity, h.experience, 'visitor')).toMatchObject({ status: 'accepted', next: expect.stringContaining('畫上要寫什麼名字') })
+    expect(h.runtime.start(identity, h.experience, 'visitor')).toMatchObject({ status: 'accepted', next: expect.stringContaining('準備好的話就告訴我你的名字') })
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: false, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_heard', next: expect.stringContaining('「王曉明」') })
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_confirmed', next: expect.stringContaining('1 of 4') })
     for (let i = 1; i < 4; i++) expect(h.runtime.handle({ action: 'answer', question: i, answer: `a${i}`, language: 'zh' }, identity).next).toContain(`${i + 1} of 4`)
     expect(h.runtime.handle({ action: 'answer', question: 4, answer: 'a4', language: 'zh' }, identity)).toMatchObject({ code: 'studio_painting' })
     expect(h.runtime.phase()).toBe('painting')
+    expect(h.calls).toHaveLength(0)
+    completeCue(h, 'paint')
     expect(h.activity).toHaveLength(1)
     h.release()
     await vi.runAllTimersAsync()
@@ -70,6 +77,7 @@ describe('portrait studio runtime', () => {
     expect(parseStudioSessionEvent(ready)).not.toBeNull()
     expect(h.runtime.image(ready.imageUrl.split('/').pop()!)?.bytes.equals(PNG)).toBe(true)
     expect(h.runtime.handle({ action: 'revise', change: '把海邊換成雪地', language: 'zh' } as never, identity)).toMatchObject({ code: 'studio_repainting' })
+    completeCue(h, 'paint')
     await vi.runAllTimersAsync()
     expect(h.calls.map(c => c.kind)).toEqual(['generate', 'edit'])
     expect(h.runtime.handle({ action: 'revise', change: 'again' } as never, identity)).toMatchObject({ code: 'studio_no_changes_left' })
@@ -77,7 +85,9 @@ describe('portrait studio runtime', () => {
     expect(h.runtime.phase()).toBe('keepsake')
     for (const view of h.views()) if (view) expect(parseStudioView(view)).not.toBeNull()
     await vi.advanceTimersByTimeAsync(45_000)
-    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'continue' })
+    expect(h.runtime.isActive()).toBe(true)
+    completeCue(h, 'deliver')
+    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
     expect(h.runtime.isActive()).toBe(false)
     // Held while painting, repainting and the keepsake countdown; released after each.
     expect(h.activity.map(a => a.split(':')[0])).toEqual(['started', 'finished', 'started', 'finished', 'started', 'finished'])
@@ -154,8 +164,9 @@ describe('portrait studio runtime', () => {
     edit.release()
     await vi.waitFor(() => expect(edit.runtime.phase()).toBe('reveal'))
     edit.runtime.handle({ action: 'revise', change: 'snow' }, identity)
+    completeCue(edit, 'paint')
     await vi.waitFor(() => expect(edit.runtime.phase()).toBe('keepsake'))
-    expect(edit.events().at(-1)).toMatchObject({ event: 'failed', keepPortrait: true })
+    expect(edit.events()).toContainEqual(expect.objectContaining({ event: 'failed', keepPortrait: true }))
   })
 
   it('aborts painting on close and ignores a late image; unavailable provider rejects start', async () => {
@@ -199,7 +210,7 @@ describe('portrait studio runtime', () => {
     expect(h.reports).toContain('studio_session_ended')
   })
 
-  it('gives keepsake guidance, not painting guidance, during the photo countdown', async () => {
+  it('gives transfer guidance while the final cue is playing', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
     h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)
@@ -208,15 +219,15 @@ describe('portrait studio runtime', () => {
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     h.runtime.handle({ action: 'finish' }, identity)
     const reply = h.runtime.handle({ action: 'set_name', name: '李小華', confirmed: false, language: 'zh' }, identity)
-    expect(reply.next).toContain('photograph')
+    expect(reply.next).toContain('deferred printer')
     expect(reply.next).not.toContain('being painted')
   })
 
-  it("guides the avatar with this avatar's stage prompts where the operator edited them", () => {
+  it('keeps application-owned questions authoritative over legacy stage prompts', () => {
     const h = harness()
     const experience = { ...h.experience, studio: { ...h.experience.studio, prompts: { askName: 'Open warmly, then ask: {{question}}', confirmName: 'Spell out 「{{name}}」.' } } }
-    expect(h.runtime.start(identity, experience, 'visitor').next).toBe(`Open warmly, then ask: ${experience.studio.nameQuestion.zh}`)
-    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: false, language: 'zh' }, identity).next).toBe('Spell out 「王曉明」.')
+    expect(h.runtime.start(identity, experience, 'visitor').next).toContain(`The application asks the visitor: ${experience.studio.nameQuestion.zh}`)
+    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: false, language: 'zh' }, identity).next).toContain('The application has read back 「王曉明」')
     // Stages without an override keep the versioned default.
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity).next).toContain('1 of 4')
   })
@@ -238,17 +249,17 @@ describe('portrait studio runtime', () => {
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
     expect(h.reports).toContain('studio_started_mode')
     await answerAll(h)
-    // While painting, a stray step gets this avatar's While painting guidance.
-    expect(h.runtime.handle({ action: 'answer', question: 5, answer: 'x', language: 'zh' }, identity).next).toContain('還在洗牌')
+    // The app owns painting; old stage instructions cannot ask more questions.
+    expect(h.runtime.handle({ action: 'answer', question: 5, answer: 'x', language: 'zh' }, identity).next).toContain('Do not record more story answers')
     expect(h.calls[0]!.prompt).toContain('Card figure: "answer 1".')
     expect(h.calls[0]!.prompt).not.toContain('王曉明')
     h.release()
     await vi.waitFor(() => expect(h.events().at(-1)).toMatchObject({ event: 'failed', line: '牌卡散了，我們聊聊吧。' }))
   })
 
-  it('ends a studio-mode run with the farewell and a visitor-asked run with conversation', async () => {
+  it('ends completed visits through every entry route with the farewell after transfer', async () => {
     vi.useFakeTimers()
-    for (const [source, after] of [['session_default', 'farewell'], ['mode', 'farewell'], ['visitor', 'continue'], ['console', 'continue']] as const) {
+    for (const source of ['session_default', 'mode', 'visitor', 'console'] as const) {
       const experience = { ...defaultExperience(), defaultMode: 'portrait_studio' as const }
       const h = harness({ experience })
       h.release()
@@ -258,7 +269,8 @@ describe('portrait studio runtime', () => {
       await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
       h.runtime.handle({ action: 'finish' }, identity)
       await vi.advanceTimersByTimeAsync(45_000)
-      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: after })
+      completeCue(h, 'deliver')
+      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
     }
   })
 })

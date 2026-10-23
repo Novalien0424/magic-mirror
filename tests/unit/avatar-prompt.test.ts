@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { buildAvatarPrompt, buildStudioPrompt, avatarSessionSettings, avatarRealtimeTools, parseAvatarSessionSettings } from '../../src/shared/avatar-prompt'
+import { buildAvatarPrompt, buildStudioCommentPrompt, buildStudioPrompt, avatarSessionSettings, avatarRealtimeTools, parseAvatarSessionSettings } from '../../src/shared/avatar-prompt'
 import { defaultExperience, sessionExperience } from '../../src/shared/portrait-studio'
 import { readFileSync } from 'node:fs'
 import type { MirrorConfig } from '../../src/shared/types'
 
 describe('effective avatar prompt', () => {
+  it('gives comments the chosen character and delivery without ordinary conversation length or tool instructions', () => {
+    const experience = defaultExperience()
+    experience.studio.character = 'An ancient guardian.'
+    experience.studio.prompts = { comment: 'One sentence about {{answer}}.' }
+    const prompt = buildStudioCommentPrompt({ name: 'Raven', personality: 'General personality.', speakingStyle: 'Calm and slow.',
+      wakeGreeting: '', sleepFarewell: '', experience: sessionExperience(experience) }, 'I explored {{language}}.', 'en')
+    expect(prompt).toContain('An ancient guardian.')
+    expect(prompt).toContain('Calm and slow.')
+    expect(prompt).toContain('One sentence about "I explored {{language}}.".')
+    expect(prompt).toContain('Speak in English.')
+    expect(prompt).not.toContain('General personality.')
+    expect(prompt).not.toContain('1–3 short sentences')
+    expect(prompt).not.toContain('studio_answer')
+  })
   it('uses the studio character instead of the Persona personality only inside the studio', () => {
     const base = { name: 'Raven', personality: 'Persona personality text.', speakingStyle: 'Calm.', wakeGreeting: '', sleepFarewell: '' }
     const experience = defaultExperience()

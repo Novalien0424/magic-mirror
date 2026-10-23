@@ -10,6 +10,7 @@ import type { MirrorModeStore } from '../mirror-mode'
 import type { ConsoleResponse } from '../../shared/console-types'
 import { buildPortraitPrompt } from './prompt-builder'
 import { createStudioRuntime, type KeepsakeSink, type StudioIdentity, type StudioStartSource } from './studio-runtime'
+import { deferredPrinterSkill } from './printer-skill'
 
 interface Registrar { handle(channel: string, handler: (event: unknown, ...args: unknown[]) => unknown): void }
 interface SnapshotLike { readonly lifecycle: string; readonly realtimeSessionId: string | null; readonly sessionGeneration: number }
@@ -51,7 +52,7 @@ export function registerStudioIpc(deps: {
     activity: (kind, runId) => deps.activity(kind, runId),
     report: (reason, status, timingMs) => deps.report(reason, status ?? 'info', timingMs),
     stopMedia: () => deps.stopMedia(),
-    keepsakeSinks: deps.keepsakeSinks ?? [],
+    keepsakeSinks: deps.keepsakeSinks ?? [deferredPrinterSkill(reason => deps.report(reason, 'info'))],
   })
   const identityOf = (snapshot: SnapshotLike): StudioIdentity | null => snapshot.lifecycle === 'active' && snapshot.realtimeSessionId !== null
     ? { realtimeSessionId: snapshot.realtimeSessionId, sessionGeneration: snapshot.sessionGeneration } : null
@@ -96,7 +97,7 @@ export function registerStudioIpc(deps: {
     const result = ok ? runtime.start(identity, experience, 'session_default') : null
     if (experience && result?.status === 'accepted') {
       deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
-        language: studioStartLanguage(experience.studio.startScript) }, identity })
+        language: studioStartLanguage(experience.studio.startScript), step: result.step }, identity })
       return
     }
     // A Console or visitor start won the race; that start already entered the studio.
@@ -116,7 +117,7 @@ export function registerStudioIpc(deps: {
     if (startCancelled(epoch, source)) return { status: 'ignored', code: 'studio_start_cancelled' }
     const result = runtime.start(identity, experience, source)
     if (result.status === 'accepted') deps.dispatch({ type: 'studio_event', event: { event: 'enter', startScript: experience.studio.startScript, firstStep: result.next ?? '',
-        language: studioStartLanguage(experience.studio.startScript) }, identity })
+        language: studioStartLanguage(experience.studio.startScript), step: result.step }, identity })
     return { status: result.status, code: result.code }
   }
   /** A live switch applies to the visitor now: Interactive Studio starts, Conversation closes the studio. */
@@ -153,7 +154,7 @@ export function registerStudioIpc(deps: {
     if (request.action !== 'exit' && !deps.imageEnabled(identity)) {
       deps.report('studio_skill_disabled', 'info'); return { status: 'rejected', code: 'studio_skill_disabled' }
     }
-    if (request.action !== 'exit' && deps.photoPending?.()) return { status: 'ignored', code: 'studio_photo_pending' }
+    if (request.action !== 'exit' && request.action !== 'step_activity' && deps.photoPending?.()) return { status: 'ignored', code: 'studio_photo_pending' }
     if (request.action !== 'start') return runtime.handle(request, identity)
     const epoch = startEpoch
     const experience = await deps.experience().catch(() => null)

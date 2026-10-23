@@ -1,5 +1,6 @@
 import { PORTRAIT_STUDIO, renderStudioText, STUDIO_DEFAULT_NAME_FONT, studioImagePrompt, studioQuestionLine } from './portrait-studio-config'
 import type { StudioQuestion, StudioSettings } from './portrait-studio'
+import { STUDIO_ANSWER_MAX } from './portrait-studio'
 
 /** Visitor text enters the image prompt only as quoted, bounded data. */
 export function quoteVisitorText(value: string, max = 80): string {
@@ -22,8 +23,8 @@ const nameLine = (studio: ImageSettings, name: string) => !name ? studioImagePro
 export function buildPortraitPrompt(input: { studio: ImageSettings; answers: readonly PortraitAnswers[]; name: string }): string {
   // The frame supplies its own punctuation after {{style}}.
   const style = input.studio.artStyle.trim().replace(/[.。]+$/u, '')
-  const parts = [renderStudioText(studioImagePrompt(input.studio, 'frame'), { style }), PORTRAIT_STUDIO.imagePrompt.guard]
-  for (const answer of input.answers) parts.push(renderStudioText(studioQuestionLine(answer), { answer: quoteVisitorText(answer.answer) }))
+  const parts = [renderStudioText(studioImagePrompt(input.studio, 'frame'), { style }), PORTRAIT_STUDIO.imagePrompt.guard, PORTRAIT_STUDIO.imagePrompt.soul]
+  for (const answer of input.answers) parts.push(renderStudioText(studioQuestionLine(answer), { answer: quoteVisitorText(answer.answer, STUDIO_ANSWER_MAX) }))
   parts.push(nameLine(input.studio, input.name))
   return parts.join(' ')
 }

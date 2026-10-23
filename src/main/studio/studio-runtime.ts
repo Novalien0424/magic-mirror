@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt, studioScreenView } from '../../shared/portrait-studio-config'
-import { studioPictureType, studioStartLanguage } from '../../shared/portrait-studio'
+import { STUDIO_ANSWER_MAX, studioPictureType, studioStartLanguage } from '../../shared/portrait-studio'
+import { literalSpeechText, speechScriptText } from '../../shared/speech-script'
 import type {
-  AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioView,
+  AvatarExperience, StudioImageFailure, StudioLanguage, StudioPhase, StudioPromptStage, StudioReply, StudioRequest, StudioSessionEvent, StudioStep, StudioView,
 } from '../../shared/portrait-studio'
 import type { PortraitImageProvider, PortraitImageResult } from './image-provider'
 import { matchGuestNames, guestTextKey } from './guest-names'
@@ -14,10 +15,8 @@ export interface StudioIdentity { readonly realtimeSessionId: string; readonly s
 export type StudioStartSource = 'visitor' | 'session_default' | 'console' | 'mode'
 
 /**
- * Output seam for the finished picture. Display is the only sink today.
- * PRINTING (owner request 2026-10-18, to be added): a printer skill implements
- * this interface and is passed in `keepsakeSinks` (see studio-ipc). Every final
- * picture is handed to each sink when the keepsake starts; a failing sink only
+ * Output seam for the finished picture. The deferred printer is a no-op today.
+ * Every final picture is handed to each sink after the transfer cue plays; a failing sink only
  * reports `studio_keepsake_<name>_failed` and never blocks the farewell.
  */
 export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void }
@@ -42,6 +41,10 @@ interface Run {
   holdTimer?: ReturnType<typeof setTimeout>
   activityHeld: boolean
   photo?: StoredImage
+  step?: StudioStep
+  stepSequence: number
+  silenceTimer?: ReturnType<typeof setTimeout>
+  delivered: boolean
 }
 
 // Technical guidance stays versioned; operator-editable stage prompts come from the run's avatar.
@@ -63,24 +66,25 @@ export function createStudioRuntime(input: {
   keepsakeSinks?: readonly KeepsakeSink[]
   now?: () => number
 }) {
-  const now = input.now ?? Date.now
   const images = new Map<string, StoredImage>()
   let run: Run | null = null
 
   const question = (r: Run, index: number) => r.experience.studio.questions[index]!
   const questionText = (r: Run, index: number) => question(r, index)[r.language]
   const nameQuestion = (r: Run) => r.experience.studio.nameQuestion[r.language]
+  const lines = (r: Run) => PORTRAIT_STUDIO.journey[r.language]
   const guests = (r: Run) => r.experience.guests.match === 'off' ? [] : r.experience.guests.names
   const asksName = (experience: AvatarExperience) => experience.studio.askName !== false
-  const currentStep = (r: Run): string => r.phase === 'name' || r.phase === 'confirm' ? renderStudioText(prompt(r, 'askName'), { question: nameQuestion(r) })
-    : r.phase === 'question' ? renderStudioText(prompt(r, 'askQuestion'), { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: questionText(r, r.answers.length) })
-    : r.phase === 'reveal' ? prompt(r, 'offerChange') : r.phase === 'keepsake' ? prompt(r, 'finished') : prompt(r, 'busy')
+  const currentStep = (r: Run): string => r.phase === 'confirm' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.confirm, { name: r.name })
+    : r.phase === 'name' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.name, { question: speechScriptText(nameQuestion(r)) })
+    : r.phase === 'question' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.question, { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: speechScriptText(questionText(r, r.answers.length)) })
+    : r.phase === 'reveal' ? PORTRAIT_STUDIO.journey.steps.reveal : r.phase === 'keepsake' ? PORTRAIT_STUDIO.journey.steps.keepsake : PORTRAIT_STUDIO.journey.steps.painting
 
   function view(r: Run): StudioView {
     const count = r.experience.studio.questions.length
     return {
       phase: r.phase, language: r.language, questionCount: count, answered: r.answers.length,
-      ...(r.phase === 'name' ? { prompt: nameQuestion(r) } : r.phase === 'question' ? { prompt: questionText(r, r.answers.length) } : {}),
+      ...(r.phase === 'name' ? { prompt: speechScriptText(nameQuestion(r)) } : r.phase === 'question' ? { prompt: speechScriptText(questionText(r, r.answers.length)) } : {}),
       ...(r.name && r.phase !== 'name' ? { name: r.name } : {}),
       chips: r.answers.map(answer => answer.slice(0, 24)),
       ...(r.change && r.phase === 'revising' ? { change: r.change.slice(0, 120) } : {}),
@@ -91,10 +95,47 @@ export function createStudioRuntime(input: {
     }
   }
   const publish = (r: Run) => { if (run === r) input.dispatch({ type: 'studio_view', view: view(r) }) }
-  // Painting and the keepsake countdown are bounded silent waits, so they pause
-  // the idle timer. Reveal is a spoken step: an absent visitor idles out normally.
+  // Painting and transfer own their completion, independently of conversation idle.
   const hold = (r: Run) => { if (!r.activityHeld) { r.activityHeld = true; input.activity('started', r.id) } }
   const release = (r: Run) => { if (r.activityHeld) { r.activityHeld = false; input.activity('finished', r.id) } }
+  const stopSilence = (r: Run) => { clearTimeout(r.silenceTimer); r.silenceTimer = undefined }
+  function step(r: Run, extra: Pick<StudioStep, 'comment' | 'silent'> = {}, dispatch = true): StudioStep {
+    stopSilence(r)
+    const text = lines(r)
+    const spokenName = /^[A-Za-z -]+$/.test(r.name) ? [...r.name].join(' ') : literalSpeechText(r.name)
+    const speech = r.phase === 'name' ? nameQuestion(r)
+      : r.phase === 'confirm' ? renderStudioText(text.confirm, { name: spokenName })
+      : r.phase === 'question' ? (r.name ? renderStudioText(text.address, { name: literalSpeechText(r.name) }) : '') + questionText(r, r.answers.length)
+      : r.phase === 'painting' ? text.painting : r.phase === 'revising' ? text.repainting
+      : r.phase === 'reveal' ? text.reveal + (r.revisionsLeft > 0 ? `[pause=1s]${text.offerChange}` : '') : text.transfer
+    r.step = { id: `${r.id}-${++r.stepSequence}`, phase: r.phase, speech, guidance: currentStep(r), language: r.language,
+      ...(r.phase === 'reveal' ? { final: r.revisionsLeft <= 0 } : {}), ...extra }
+    publish(r)
+    if (dispatch) input.dispatch({ type: 'studio_event', event: { event: 'step', step: r.step }, identity: r.identity })
+    return r.step
+  }
+  function armSilence(r: Run): void {
+    if (r.silenceTimer || !['name', 'confirm', 'question', 'reveal'].includes(r.phase)) return
+    const stepId = r.step?.id
+    r.silenceTimer = setTimeout(() => {
+      r.silenceTimer = undefined
+      if (run !== r || r.step?.id !== stepId) return
+      input.report(`studio_${r.phase}_timeout`)
+      if (r.phase === 'name' || r.phase === 'confirm') {
+        r.name = PORTRAIT_STUDIO.journey.fallbackName
+        r.phase = 'question'
+        step(r)
+      } else if (r.phase === 'question') recordAnswer(r, PORTRAIT_STUDIO.journey.unanswered, true)
+      else if (r.phase === 'reveal') startKeepsake(r, true)
+    }, PORTRAIT_STUDIO.journey.silenceMs)
+    input.report('studio_wait_started')
+  }
+  function recordAnswer(r: Run, answer: string, silent = false): void {
+    r.answers.push(answer.trim().slice(0, STUDIO_ANSWER_MAX))
+    input.report(silent ? 'studio_answer_unanswered' : 'studio_answer_recorded')
+    if (r.answers.length === r.experience.studio.questions.length) r.phase = 'painting'
+    step(r, silent ? { silent: true } : { comment: answer })
+  }
 
   function close(reason: string, notify = true): void {
     const r = run
@@ -102,6 +143,7 @@ export function createStudioRuntime(input: {
     run = null
     r.abort?.abort()
     clearTimeout(r.holdTimer)
+    stopSilence(r)
     images.clear()
     r.photo = undefined
     // Always release the idle-timer hold, on every exit path.
@@ -123,21 +165,22 @@ export function createStudioRuntime(input: {
     close(`studio_failed_${code.replace(/^studio_/, '')}`, false)
   }
 
-  function startKeepsake(r: Run): void {
+  function startKeepsake(r: Run, silent = false): void {
     r.phase = 'keepsake'
     hold(r)
-    r.holdEndsAt = now() + r.experience.studio.holdSeconds * 1000
+    step(r, silent ? { silent: true } : {})
+  }
+  function deliver(r: Run): StudioReply {
+    if (r.delivered) return reply('ignored', 'studio_finish_duplicate')
+    r.delivered = true
     const image = r.imageId ? images.get(r.imageId) : undefined
     if (image) for (const sink of input.keepsakeSinks ?? []) {
       try { sink.deliver({ bytes: image.bytes, mimeType: image.mimeType }) } catch { input.report(`studio_keepsake_${sink.name}_failed`, 'degraded') }
     }
-    publish(r)
-    r.holdTimer = setTimeout(() => {
-      if (run !== r) return
-      const studioMode = r.source === 'session_default' || r.source === 'mode'
-      input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: studioMode ? 'farewell' : 'continue' }, identity: r.identity })
-      close('studio_completed', false)
-    }, r.experience.studio.holdSeconds * 1000)
+    input.report('studio_transfer_completed')
+    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: 'farewell' }, identity: r.identity })
+    close('studio_completed', false)
+    return reply('accepted', 'studio_delivered')
   }
 
   async function paint(r: Run, kind: 'generate' | 'edit'): Promise<void> {
@@ -171,9 +214,9 @@ export function createStudioRuntime(input: {
     r.revision += kind === 'edit' ? 1 : 0
     r.phase = 'reveal'
     release(r)
-    publish(r)
+    const revealStep = step(r, {}, false)
     input.dispatch({ type: 'studio_event', event: { event: 'ready', imageUrl: `magic-mirror-media://studio/${id}`,
-      revision: r.revision, revisionsLeft: r.revisionsLeft, language: r.language }, identity: r.identity })
+      revision: r.revision, revisionsLeft: r.revisionsLeft, language: r.language, step: revealStep }, identity: r.identity })
   }
 
   function start(identity: StudioIdentity, experience: AvatarExperience, source: StudioStartSource): StudioReply {
@@ -187,17 +230,39 @@ export function createStudioRuntime(input: {
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
     const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: studioStartLanguage(experience.studio.startScript), phase: asksName(experience) ? 'name' : 'question',
-      name: '', answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false }
+      name: '', answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false, stepSequence: 0, delivered: false }
     run = r
     input.report(`studio_started_${source}`)
-    publish(r)
-    return reply('accepted', 'studio_started', currentStep(r))
+    return { ...reply('accepted', 'studio_started', currentStep(r)), step: step(r, {}, false) }
   }
 
   function handle(request: Exclude<StudioRequest, { action: 'start' }>, identity: StudioIdentity): StudioReply {
     const r = run
     if (!r || !sameIdentity(r.identity, identity)) return reply('ignored', 'studio_not_active_stale')
     if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', prompt(r, 'exited')) }
+    if ('stepId' in request) {
+      if (request.stepId !== r.step?.id) return reply('ignored', 'studio_step_stale')
+      if (request.action === 'step_activity') { stopSilence(r); return reply('accepted', 'studio_wait_cancelled') }
+      if (request.action === 'step_ready') { armSilence(r); return reply('accepted', 'studio_step_ready') }
+      if (request.action === 'deliver') return r.phase === 'keepsake' ? deliver(r) : reply('rejected', 'studio_wrong_step')
+      if (request.action === 'paint') {
+        if (!['painting', 'revising'].includes(r.phase) || r.abort) return reply('ignored', 'studio_paint_duplicate')
+        input.report(r.phase === 'painting' ? 'studio_painting_started' : 'studio_revision_started')
+        void paint(r, r.phase === 'painting' ? 'generate' : 'edit')
+        return reply('accepted', 'studio_painting')
+      }
+    }
+    if (request.action === 'reject_name') {
+      if (r.phase !== 'confirm') return reply('rejected', 'studio_wrong_step')
+      r.name = ''; r.phase = 'name'; step(r)
+      input.report('studio_name_denied')
+      return reply('accepted', 'studio_name_denied', currentStep(r))
+    }
+    if (request.action === 'repeat') {
+      if (!['name', 'confirm', 'question', 'reveal'].includes(r.phase)) return reply('rejected', 'studio_wrong_step', currentStep(r))
+      step(r); input.report('studio_question_repeated')
+      return reply('accepted', 'studio_question_repeated', currentStep(r))
+    }
     if (request.action === 'set_name') {
       if (!asksName(r.experience)) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
@@ -208,8 +273,9 @@ export function createStudioRuntime(input: {
       const candidates = list.length ? matchGuestNames(name, list) : []
       const listed = list.some(guest => guest === name)
       if (r.experience.guests.match === 'only' && list.length && !listed) {
-        if (!candidates.length) { r.phase = 'name'; publish(r); return reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')) }
-        r.phase = 'confirm'; publish(r)
+        if (!candidates.length) { r.name = ''; r.phase = 'name'; step(r); input.report('studio_name_not_listed'); return { ...reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')), step: r.step } }
+        r.name = candidates[0]!
+        r.phase = 'confirm'; step(r)
         return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
       }
       // Only the visitor's acceptance of a read-back confirms; an unconfirmed name is read back again.
@@ -217,16 +283,16 @@ export function createStudioRuntime(input: {
         r.name = name
         r.phase = 'question'
         input.report('studio_name_confirmed')
-        publish(r)
+        step(r)
         return reply('accepted', 'studio_name_confirmed', currentStep(r))
       }
-      r.name = name
+      r.name = candidates.length && !listed ? candidates[0]! : name
       r.phase = 'confirm'
-      publish(r)
+      step(r)
       if (candidates.length && !listed) {
         return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
       }
-      return reply('accepted', 'studio_name_heard', renderStudioText(prompt(r, 'confirmName'), { name }))
+      return reply('accepted', 'studio_name_heard', currentStep(r))
     }
     if (request.action === 'answer') {
       const expected = r.answers.length + 1
@@ -234,22 +300,17 @@ export function createStudioRuntime(input: {
         : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       // A different answer to the question just recorded replaces it (a visitor's correction, or a
       // reply the model recorded too early); the same answer again stays silent.
-      const text = request.answer.trim().slice(0, 80)
+      const text = request.answer.trim().slice(0, STUDIO_ANSWER_MAX)
       if (request.question === expected - 1 && r.answers.length && text !== r.answers.at(-1)) {
         r.answers[r.answers.length - 1] = text
-        publish(r)
+        step(r, { comment: text })
         return reply('accepted', 'studio_answer_replaced', currentStep(r))
       }
       if (request.question < expected) return reply('ignored', 'studio_answer_duplicate')
       if (request.question > expected) return reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       r.language = request.language
-      r.answers.push(request.answer.trim().slice(0, 80))
-      input.report('studio_answer_recorded')
-      if (r.answers.length < r.experience.studio.questions.length) { publish(r); return reply('accepted', 'studio_answer_recorded', currentStep(r)) }
-      r.phase = 'painting'
-      input.report('studio_painting_started')
-      void paint(r, 'generate')
-      return reply('accepted', 'studio_painting', prompt(r, 'painting'))
+      recordAnswer(r, text)
+      return reply('accepted', r.answers.length === r.experience.studio.questions.length ? 'studio_painting' : 'studio_answer_recorded', currentStep(r))
     }
     if (request.action === 'revise') {
       if (r.phase === 'revising' || r.phase === 'painting') return reply('ignored', 'studio_revise_duplicate')
@@ -258,8 +319,9 @@ export function createStudioRuntime(input: {
       r.revisionsLeft -= 1
       r.change = request.change.trim()
       r.phase = 'revising'
+      r.abort = undefined
       input.report('studio_revision_requested')
-      void paint(r, 'edit')
+      step(r)
       return reply('accepted', 'studio_repainting', prompt(r, 'repainting'))
     }
     // finish

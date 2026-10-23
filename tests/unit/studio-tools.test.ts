@@ -13,7 +13,7 @@ describe('Portrait Studio tool availability', () => {
     expect(conversation).toContain('start_portrait_studio')
     expect(conversation).toContain('return_to_dormant')
     expect(conversation.some(name => name.startsWith('studio_'))).toBe(false)
-    expect([...studio].sort()).toEqual(['dismiss_image', 'return_to_dormant', 'studio_answer', 'studio_exit', 'studio_finish', 'studio_revise', 'studio_set_name', 'studio_use_photo'])
+    expect([...studio].sort()).toEqual(['dismiss_image', 'return_to_dormant', 'studio_answer', 'studio_exit', 'studio_finish', 'studio_reject_name', 'studio_repeat_question', 'studio_revise', 'studio_set_name', 'studio_use_photo'])
     expect(conversation).toEqual(expect.arrayContaining(['create_image', 'edit_image', 'dismiss_image']))
     const bad = structuredClone(REALTIME_TOOLS) as unknown as { tools: { availability: string }[] }
     bad.tools[0]!.availability = 'everywhere'

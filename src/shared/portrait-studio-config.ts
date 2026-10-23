@@ -20,6 +20,7 @@ function freeze<T>(value: T): Readonly<T> {
 }
 const config = freeze(source)
 const variables: [string, string, string[]][] = [
+  ['journey', 'commentContext', ['character', 'comment', 'language', 'speakingStyle']],
   ['imagePrompt', 'frame', ['style']], ['imagePrompt', 'painted', ['font', 'name']], ['imagePrompt', 'revision', ['change']],
   ['session', 'scriptNamed', ['count', 'en', 'zh']], ['session', 'scriptUnnamed', ['count']], ['session', 'replyLanguage', ['language']],
   ['agent', 'reveal', ['followUp']], ['agent', 'revealBlind', ['followUp']], ['guidance', 'askName', ['question']], ['guidance', 'confirmName', ['name']],
@@ -48,6 +49,7 @@ export const STUDIO_PROMPT_DEFAULTS: Readonly<Record<StudioPromptStage, string>>
   painting: config.guidance.painting, reveal: config.agent.reveal, revealBlind: config.agent.revealBlind,
   offerChange: config.agent.offerChange, repainting: config.guidance.repainting, noChangesLeft: config.guidance.noChangesLeft,
   finalVersion: config.agent.finalVersion, finished: config.guidance.finished, exited: config.guidance.exited,
+  comment: config.journey.comment,
 })
 for (const stage of STUDIO_PROMPT_STAGES) if (studioPromptIssue(stage, STUDIO_PROMPT_DEFAULTS[stage])) throw new Error('invalid_portrait_studio_variables')
 
@@ -76,9 +78,9 @@ export function studioWakePhrase(settings: Pick<StudioSettings, 'wakePhrase'> | 
 export function studioFarewellLines(settings: Pick<StudioSettings, 'farewell'> | undefined): string[] {
   return (settings?.farewell ?? STUDIO_DEFAULT_FAREWELL).split('\n').map(line => line.trim()).filter(Boolean)
 }
-/** One verbatim cue: a sentence end and an ellipsis between lines make the voice pause (about a second). */
+/** Authored line breaks are deterministic one-second gaps between speech cues. */
 export function studioFarewellSpeech(settings: Pick<StudioSettings, 'farewell'> | undefined): string {
-  return studioFarewellLines(settings).map(line => /[。！？.!?…]$/u.test(line) ? line : `${line}。`).join('……')
+  return studioFarewellLines(settings).join('[pause=1s]')
 }
 
 /** The spoken line for a failure: the avatar's edit, else the versioned default. */

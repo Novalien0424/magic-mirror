@@ -170,11 +170,49 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("const box = [...document.querySelectorAll('label')].find(l => visible(l) && l.textContent.trim().startsWith('Ask for a name first'))?.querySelector('input'); return !!box && box.checked")
     await shot('journey-03-studio-section.png', '.experiences-editor'); pass()
 
+    step = 'journey_name_list'
+    await wait("return !!byLabel('Guest names, one per line') && !byLabel('Guest names, one per line').closest('details')")
+    await edit("set(byLabel('Name matching'), 'only')")
+    await wait("return studioSection().textContent.includes('needs at least one name')")
+    await edit("check('Ask for a name first', false)")
+    await wait("return document.querySelector('fieldset[aria-label=\"Name list\"]').disabled && !document.querySelector('.experiences-editor__status').textContent.includes('attention')")
+    await edit("check('Ask for a name first', true)")
+    await wait("return studioSection().textContent.includes('needs at least one name')")
+    await edit("set(byLabel('Guest names, one per line'), '王曉明\\n林美玲\\nAmy Chen\\n')")
+    await wait("return studioSection().textContent.includes('Guest names · 3 of 1,000') && !document.querySelector('.experiences-editor__status').textContent.includes('attention')")
+    await edit("set(byLabel('Name matching'), 'off')")
+    await wait("return studioSection().textContent.includes('Matching is off; saved names are kept for later.') && byLabel('Guest names, one per line').value.includes('Amy Chen')")
+    await edit("set(byLabel('Name matching'), 'prefer')")
+    await shot('journey-name-list.png', 'fieldset[aria-label="Name list"]'); pass()
+
     step = 'journey_start_character_ending'
     const field = (label: string) => `[...document.querySelectorAll('.experiences-editor label')].find(l => visible(l) && l.textContent.trim().startsWith(${JSON.stringify(label)}))?.querySelector('input, textarea')`
+    await edit("click('Restore default script and questions')")
+    step = 'journey_question_count_limits'
+    for (let n = 5; n <= 8; n++) await edit("click('Add question')")
+    await wait("return button('Add question').disabled && !!byLabel('Question 8 in Traditional Chinese') && !byLabel('Question 9 in Traditional Chinese')")
+    await edit("click('Restore default script and questions')")
+    await wait("return !button('Add question').disabled && !byLabel('Question 5 in Traditional Chinese')")
+    pass()
+    step = 'journey_start_character_ending'
+    await wait(`return ${field('Studio start script')}.value.includes('歡迎來到Gate thirty-three.') && byLabel('Question 4 in Traditional Chinese').value.includes('生活裡多一點什麼')`)
+    await edit("click('Add question')")
+    await edit("set(byLabel('Question 5 in Traditional Chinese'), '測試第五題。[pause=1s]請說說看。')")
+    await edit("set(byLabel('Question 5 in English'), 'Test question five. [pause=1s] Tell me more.')")
+    await edit("click('Move question 5 up')")
+    await wait("return byLabel('Question 4 in Traditional Chinese').value.startsWith('測試第五題')")
+    await edit("click('Remove question 4')")
+    await wait("return !byLabel('Question 5 in Traditional Chinese') && byLabel('Question 4 in Traditional Chinese').value.includes('生活裡多一點什麼')")
+    for (let n = 4; n > 1; n--) await edit(`click('Remove question ${n}')`)
+    await wait("return byLabel('Remove question 1').disabled && !byLabel('Question 2 in Traditional Chinese')")
+    await edit("click('Restore default script and questions')")
+    await edit(`set(${field('Studio start script')}, '歡迎。[pause=99s]我們開始。')`)
+    await wait("return document.querySelector('.experiences-editor__status').textContent.includes('attention before saving')")
+    await edit(`set(${field('Studio start script')}, '歡迎來到測試工作室。[pause=1s]我們開始吧。')`)
+    await edit("set(byLabel('Name question in Traditional Chinese'), '準備好了嗎？[pause=1s]告訴我你的名字。')")
     await wait(`return ${field('Studio wake phrase')}?.value === '招喚渡鴉使者' && ${field('Studio character (system prompt) · from Persona')}?.value.length > 0`)
     await edit(`set(${field('Studio character')}, '你是渡鴉使者：神秘、簡短，帶著古老的口吻。')`)
-    await edit(`set(${field('Studio farewell')}, '願你找到你所追尋\\n再會\\n旅人')`)
+    await edit(`set(${field('Studio farewell')}, '願你找到你所追尋[pause=1s]再會旅人')`)
     await wait("const t = studioSection().textContent; return t.includes('Studio character (system prompt) · edited') && t.includes('Studio farewell · edited')")
     await shot('journey-03b-character-ending.png', 'fieldset[aria-label="Character"]'); pass()
 
@@ -202,12 +240,27 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'journey_name_step_off'
     await edit("check('Ask for a name first', false)")
-    await wait(`return byLabel('Name question in Traditional Chinese').disabled && document.querySelector('fieldset[aria-label="Guest list"]').disabled
+    await wait(`return byLabel('Name question in Traditional Chinese').disabled && document.querySelector('fieldset[aria-label="Name list"]').disabled
       && studioSection().textContent.includes('Name question · off')
       && (document.querySelector('.experiences-editor__preview-text')?.textContent ?? '').includes('Do not draw any text')`)
     await shot('journey-06-no-name.png', '.experiences-editor')
     await edit("check('Ask for a name first', true)")
     await wait("return !byLabel('Name question in Traditional Chinese').disabled")
+    pass()
+
+    step = 'journey_picture_controls'
+    const pictureField = (label: string) => `[...document.querySelectorAll('fieldset[aria-label="Picture"] label')].find(l => l.textContent.trim().startsWith(${JSON.stringify(label)}))?.querySelector('input, select, textarea')`
+    await edit(`set(${pictureField('Picture type')}, 'portrait')`)
+    await wait(`return ${pictureField('Picture type')}.value === 'portrait' && byLabel('Opening instruction').value.startsWith('Create one tarot card illustration')`)
+    await edit(`set(${pictureField('Picture type')}, 'sticker')`)
+    await edit(`set(${pictureField('Name lettering')}, 'painted')`)
+    await wait(`return !${pictureField('Name font')}.disabled`)
+    await edit(`set(${pictureField('Name font')}, 'gold brush lettering')`)
+    await edit(`set(${pictureField('Quality')}, 'high')`)
+    await edit(`set(${pictureField('Changes allowed')}, '4')`)
+    await wait("return studioSection().textContent.includes('whole number of changes from 0 to 3')")
+    await edit(`set(${pictureField('Changes allowed')}, '2')`)
+    await wait("return document.querySelector('.experiences-editor__preview-text').textContent.includes('gold brush lettering') && !document.querySelector('.experiences-editor__status').textContent.includes('attention')")
     pass()
 
     step = 'journey_text_and_failure_lines'
@@ -221,6 +274,15 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'journey_offer_prompt'
     await edit("open('What the avatar says at each step')")
+    await edit("open('Comment on an answer')")
+    await edit("set(byLabel('Comment on an answer prompt'), '用一句話簡短回應。訪客回答：{{answer}}')")
+    const rules = await evaluate<string>(`return ${field('Studio rules')}.value`)
+    await edit(`set(${field('Studio rules')}, ${JSON.stringify('Keep the Studio journey in character.\n')} + ${JSON.stringify(rules)})`)
+    await edit("click('Reset these prompts to default')")
+    await wait(`return byLabel('Comment on an answer prompt').value.includes('60 Chinese characters') && ${field('Studio rules')}.value.startsWith('Keep the Studio journey')`)
+    await edit("click('Reset rules to default')")
+    await wait(`return ${field('Studio rules')}.value === ${JSON.stringify(rules)}`)
+    await edit("set(byLabel('Comment on an answer prompt'), '用一句話簡短回應。訪客回答：{{answer}}')")
     await edit("open('Conversation mode: what the studio offers')")
     await edit("set(byLabel('Conversation mode: what the studio offers prompt'), 'a tarot reading with one card painted on the mirror, for example when they say 幫我抽一張牌 or read my cards')")
     await wait("return studioSection().textContent.includes('steps edited.')")
@@ -229,7 +291,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
 
     step = 'journey_inspector'
     // One window per tab; every expected text is checked in it (no reopening a closing window).
-    for (const [tab, expected] of [['Session', ['Create one tarot card illustration', '你是渡鴉使者：神秘、簡短']], ['Tools & input', ['a tarot reading with one card painted on the mirror']]] as const) {
+    for (const [tab, expected] of [['Session', ['Create one tarot card illustration', '你是渡鴉使者：神秘、簡短', '用一句話簡短回應。訪客回答："I explored a new city without my phone."']], ['Tools & input', ['a tarot reading with one card painted on the mirror']]] as const) {
       const title = `Magic Mirror Prompts · ${tab}`
       await evaluate(`document.querySelectorAll('.prompt-launcher button').forEach(b => { if (b.textContent === ${JSON.stringify(`${tab} ↗`)}) b.click() })`)
       const deadline = Date.now() + 10000
@@ -256,10 +318,35 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait(`const r = await window.magicMirror.getConfig(); if (!r.ok) return false;
       const avatar = r.value.active.avatarCatalog.avatars.find(a => a.experience?.studio?.questions?.[0]?.imageLine === 'Tarot card figure: {{answer}}.');
       const s = avatar?.experience?.studio;
-      return !!s && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration') && s.screenText?.questionLabel?.zh === '第 {{index}} 張牌'
+      return !!s && avatar.experience.guests.match === 'prefer' && avatar.experience.guests.names.join('|') === '王曉明|林美玲|Amy Chen'
+        && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration') && s.screenText?.questionLabel?.zh === '第 {{index}} 張牌'
+        && s.prompts?.comment === '用一句話簡短回應。訪客回答：{{answer}}'
+        && s.nameFont === 'gold brush lettering' && s.nameLettering === 'painted' && s.quality === 'high' && s.revisionsAllowed === 2 && s.pictureType === 'sticker'
         && s.failureLines?.default?.zh === '牌陣散了，我們先聊聊吧。' && s.prompts?.offer?.startsWith('a tarot reading') && s.askName !== false
-        && s.character === '你是渡鴉使者：神秘、簡短，帶著古老的口吻。' && s.farewell === '願你找到你所追尋\\n再會\\n旅人' && !('wakePhrase' in s)
+        && s.character === '你是渡鴉使者：神秘、簡短，帶著古老的口吻。' && s.farewell === '願你找到你所追尋[pause=1s]再會旅人' && !('wakePhrase' in s)
+        && s.startScript === '歡迎來到測試工作室。[pause=1s]我們開始吧。' && s.nameQuestion.zh === '準備好了嗎？[pause=1s]告訴我你的名字。'
         && s.questions[0].zh === '你最想成為哪一張塔羅牌上的角色？'`, 30000)
+    pass()
+
+    step = 'journey_reload_and_restore_defaults'
+    await new Promise<void>(resolve => { input.console.webContents.once('did-finish-load', () => resolve()); input.console.webContents.reload() })
+    await wait("return !!button('Avatars')")
+    await edit("click('Avatars')")
+    await edit("section('Interactive Studio').click()")
+    await wait(`return ${field('Studio start script')}?.value === '歡迎來到測試工作室。[pause=1s]我們開始吧。' && byLabel('Question 1 in Traditional Chinese').value.includes('塔羅牌')`)
+    await wait("return byLabel('Name matching').value === 'prefer' && byLabel('Guest names, one per line').value === '王曉明\\n林美玲\\nAmy Chen'")
+    await edit("click('Restore default script and questions')")
+    await wait("return byLabel('Guest names, one per line').value.includes('Amy Chen')")
+    await edit("set(byLabel('Guest names, one per line'), '')")
+    await wait(`return ${field('Studio start script')}.value.includes('捨棄你的肉身') && ${field('Studio farewell')}.value === '願你的靈魂順利穿越'
+      && byLabel('Name question in Traditional Chinese').value === '準備好的話就告訴我你的名字' && byLabel('Question 4 in Traditional Chinese').value.includes('生活裡多一點什麼')`)
+    await shot('journey-default-soul-script.png', '.experiences-editor')
+    await edit("click('Save all changes')")
+    await wait("return status() === 'Saved and checked. Ready to publish.' && !button('Publish all changes').disabled")
+    await edit("click('Publish all changes')")
+    await wait("return !!document.querySelector('[aria-label=\"Confirm publication\"]')")
+    await edit("click('Confirm publish')")
+    await wait("return document.querySelector('.console__publish-bar').textContent.includes('Up to date')")
     pass()
 
     step = 'journey_studio_service_page'

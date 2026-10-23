@@ -156,9 +156,15 @@ describe('shared image skill ownership and photo consent', () => {
     runtime.start(ID, experience, 'visitor')
     expect(runtime.usePhoto(ID, { bytes: Buffer.from('guest-photo'), mimeType: 'image/jpeg' })).toBe(true)
     runtime.handle({ action: 'answer', question: 1, answer: 'a wizard', language: 'en' }, ID)
+    const paint = () => {
+      const event = commands.findLast(c => (c as { type: string; event?: { event: string } }).event?.event === 'step') as { event: { step: { id: string } } }
+      runtime.handle({ action: 'paint', stepId: event.event.step.id }, ID)
+    }
+    paint()
     await vi.waitFor(() => expect(runtime.phase()).toBe('reveal'))
     expect(h.provider.generate).not.toHaveBeenCalled(); expect(h.provider.edit).toHaveBeenCalledWith(expect.objectContaining({ image: Buffer.from('guest-photo') }))
     runtime.handle({ action: 'revise', change: 'purple sky' }, ID)
+    paint()
     await vi.waitFor(() => expect(h.provider.edit).toHaveBeenCalledTimes(2))
     expect(h.provider.edit.mock.calls[1]![0]).toMatchObject({ image: Buffer.from('synthetic-png') })
     runtime.close('studio_exited')

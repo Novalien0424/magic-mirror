@@ -7,6 +7,8 @@ import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
 import { besideMirror, consolePlacement, overMirror, sendQaOperatorCommand, type ConsolePlacement } from './operator-command-qa'
 import { sameStudioName, studioQaStory } from './studio-qa-stories'
 import { studioPictureType, studioStartLanguage } from '../shared/portrait-studio'
+import { PORTRAIT_STUDIO, STUDIO_DEFAULT_FAREWELL } from '../shared/portrait-studio-config'
+import { speechScriptText } from '../shared/speech-script'
 import { ravenConversationProbe } from './raven-conversation-probe'
 import { RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT, RAVEN_SYNTHETIC_VISITORS, RAVEN_MEMORY_IDENTITY_REPAIR,
   RavenMemoryQaIdentity, ravenMemoryQaComparisons, ravenMemoryQuestionProbe, parseRavenQualityAssessment, renderRavenVisitorText,
@@ -23,7 +25,7 @@ import { visitorSentenceLanguage } from '../shared/visitor-language'
 import { convertWakeQaPcm } from './raven-wake-asr-qa'
 import { createConfiguredSherpaDetector, WAKE_MAX_ACTIVE_PATHS } from './wake/sherpa-detector'
 
-interface Turn { stage: string; visit: number; role: 'visitor' | 'avatar'; text: string; at: number; audible?: boolean; delivery?: 'buffer_start' | 'continuous_stream' | 'generation_only' }
+interface Turn { stage: string; visit: number; role: 'visitor' | 'avatar'; text: string; at: number; responseId?: string; audible?: boolean; delivery?: 'buffer_start' | 'continuous_stream' | 'generation_only' }
 interface Call { stage: string; direction: 'call' | 'result'; callId: string; name?: string; args?: Record<string, unknown>; result?: unknown; at: number }
 /** QA observes merged tool results as application operations, while the judge
  * and per-call metrics retain the real provider tool name `play`. */
@@ -103,6 +105,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     customPaintingPromptFollowed?: boolean; story?: string; nameCorrections?: number; nameAsIntended?: boolean
     promptMarkersFollowed?: Partial<Record<'painting' | 'finished', boolean>>; farewellVerbatim?: boolean
     repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number }
+    commentShape?: { sentences: number; characters: number; question: boolean; delivered: boolean }[]
     pictures?: { type: string; width: number; height: number; cornerAlpha: number }[] }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
@@ -402,6 +405,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       ...Object.fromEntries(story.visitor.answers.map((answer, i) => [`studioAnswer${i + 1}`, texts.push(answer) - 1])),
       ...Object.fromEntries(story.visitor.changes.map((change, i) => [`studioChange${i + 1}`, texts.push(change) - 1])),
       studioThanks: texts.push(story.visitor.thanks) - 1,
+      ...(story.visitor.denyName ? { studioDenyName: texts.push(story.visitor.denyName) - 1 } : {}),
       ...(storyFile?.photo ? { studioPhoto: texts.push('請先拍我的新照片，用我的樣子來畫這次工作室的畫。') - 1,
         studioPhotoNo: texts.push('取消。') - 1, studioPhotoYes: texts.push('使用我的照片。') - 1 } : {}),
     } : {}),
@@ -824,7 +828,23 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const calls = async (stage: string) => (await observe()).tools.filter(c => c.stage === stage && c.direction === 'call').map(c => c.name)
       const settled = async () => { const s = await state(); return !s.active && !s.audio && Date.now() - s.last > 1800 }
       const reveals = () => evaluate<number>('return window.__ravenQa.studioReveals')
-      const shot = async (name: string) => { if (!nativeCameraJourney || publicPortraitFixture) { await capture(input.mirror, input.outputDir, `studio-${name}.png`); screenshots++ } }
+      const waitForReveal = async (index: number) => {
+        await wait(async () => {
+          const entries = await studio(), revealAt = entries.filter(s => s.event === 'ready')[index]?.at
+          if (entries.some(s => s.event === 'closed') && !entries.some(s => s.phase === 'keepsake')) throw Error('raven_qa_studio_closed_during_reveal')
+          if (!revealAt) return false
+          // Main arms the preference timer only after BOTH reveal segments and
+          // the processed tail. A provider-idle gap inside [pause] is not ready.
+          return studioSettings.revisionsAllowed > index
+            ? events(revealAt).some(e => e.reason === 'studio_wait_started')
+            : entries.some(s => s.phase === 'keepsake' && s.at >= revealAt)
+        }, 'studio_reveal_playback', 60000)
+      }
+      const shot = async (name: string) => {
+        if (name === 'reveal' || name.startsWith('revision-')) await wait(() => evaluate<boolean>(`const img=document.querySelector('.portrait-studio__image');
+          return !!img?.complete&&img.naturalWidth>0&&img.getBoundingClientRect().width>0&&Number(getComputedStyle(img).opacity)>=0.99`), 'studio_picture_visible', 10000)
+        if (!nativeCameraJourney || publicPortraitFixture) { await capture(input.mirror, input.outputDir, `studio-${name}.png`); screenshots++ }
+      }
       // The picture itself, only for an owner review of a synthetic visit.
       const picture = async (name: string) => {
         if (!keepTranscript) return
@@ -846,7 +866,11 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const studioStarted = Date.now()
       const turn = async (index: number, stage: string, tool: string) => {
         await speak(index, stage)
-        if (!(await calls(stage)).includes(tool)) throw Error('raven_qa_studio_' + tool + '_missing')
+        if (!(await calls(stage)).includes(tool)) throw Error('raven_qa_' + stage + '_' + tool + '_missing')
+        if (['name', 'confirm', 'question'].includes(await phase() ?? '')) {
+          const stepAt = (await studio()).filter(s => 'phase' in s).at(-1)!.at
+          await wait(async () => events(stepAt).some(e => e.reason === 'studio_wait_started'), 'studio_question_playback', 60000)
+        }
       }
       const mode = (label: string) => input.console.webContents.executeJavaScript(`(()=>{const b=[...document.querySelectorAll('.studio-live__switch button')]
         .find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('raven_qa_mode_switch_missing');if(b.disabled)return false;b.click();return true})()`, true) as Promise<boolean>
@@ -859,13 +883,25 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const asksName = studioSettings.askName !== false
       const entered = ready && await check('studio_wake_entry', async () => {
         await wait(async () => await phase() === (asksName ? 'name' : 'question'), 'studio_first_phase', 15000)
+        await wait(async () => events(studioStarted).some(e => e.reason === 'studio_wait_started'), 'studio_first_question_played', 60000)
         if (!events(studioStarted).some(e => e.reason === 'studio_started_session_default')) throw Error('raven_qa_studio_wake_start_unreported')
         await shot(asksName ? 'name' : 'question')
       })
       const named = entered && (!asksName || await check('studio_name', async () => {
         const name = story.visitor.name!
+        if (story.visitor.silentName) {
+          await wait(async () => await phase() === 'question', 'studio_name_silence', 45000)
+          if (!(await studio()).some(s => s.phase === 'question' && s.name === '無名之人')) throw Error('raven_qa_studio_fallback_name')
+          await wait(settled, 'studio_fallback_question', 60000)
+          return
+        }
         const shown = () => evaluate<string>("return document.querySelector('.portrait-studio__nameplate')?.textContent ?? ''")
         await turn(extra.studioName!, 'studio_name', 'studio_set_name')
+        if (extra.studioDenyName !== undefined) {
+          await turn(extra.studioDenyName, 'studio_name_denial', 'studio_reject_name')
+          if (await phase() !== 'name') throw Error('raven_qa_studio_denial_not_reasked')
+          await turn(extra.studioName!, 'studio_name_again', 'studio_set_name')
+        }
         // Like a visitor reading the glass: confirm the right characters, otherwise correct them.
         let corrections = 0
         while (await phase() === 'confirm') {
@@ -909,7 +945,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const remoteChecked = photoReady && await check('studio_remote_console', () => operator('show_console_main', besideMirror, ['question']))
       let answered = remoteChecked
       for (let i = 0; answered && i < story.visitor.answers.length; i++) {
-        answered = await check(`studio_answer_${i + 1}`, async () => turn(extra[`studioAnswer${i + 1}`]!, `studio_answer_${i + 1}`, 'studio_answer'))
+        answered = await check(`studio_answer_${i + 1}`, async () => {
+          if (!story.visitor.silentQuestions?.includes(i + 1)) return turn(extra[`studioAnswer${i + 1}`]!, `studio_answer_${i + 1}`, 'studio_answer')
+          await evaluate(`window.__ravenQa.stage='studio_answer_${i + 1}'`)
+          await wait(async () => events(studioStarted).filter(e => e.reason === 'studio_answer_unanswered').length >= i + 1, 'studio_question_silence', 50000)
+          await wait(settled, 'studio_silence_acknowledged', 60000)
+          if (!(await observe()).records.some(r => r.stage === `studio_answer_${i + 1}` && r.role === 'avatar' && normalizeTranscript(r.text) === normalizeTranscript('不回答 也是一種回答'))) throw Error('raven_qa_studio_silence_line')
+        })
       }
       const said = async (stage: string, words: string) => (await observe()).records.some(r => r.stage === stage && r.role === 'avatar' && r.text.includes(words))
       // Stories edit stage prompts; record (booleans only) whether the avatar followed them.
@@ -927,6 +969,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await evaluate(`window.__ravenQa.stage='studio_reveal'`)
         await wait(async () => await readyEvents() >= 1, 'studio_image_ready', 240000)
         await wait(async () => await reveals() >= 1, 'studio_reveal_response', 60000)
+        await waitForReveal(0)
         await wait(settled, 'studio_reveal_settled', 60000)
         const observation = await observe()
         if (!observation.records.some(r => r.stage === 'studio_reveal' && r.role === 'avatar' && r.audible !== false)) throw Error('raven_qa_studio_reveal_silent')
@@ -942,25 +985,28 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
           // The visitor's own change was painted, not refused because another took its place.
           const results = (await observe()).tools.filter(c => c.stage === stage && c.direction === 'result')
           if (!results.some(c => JSON.stringify(c.result ?? '').includes('studio_repainting'))) throw Error('raven_qa_studio_change_not_accepted')
-          await wait(async () => await readyEvents() >= i + 2, 'studio_revision_ready', 240000)
+          await wait(async () => {
+            if ((await studio()).some(s => s.event === 'closed')) throw Error('raven_qa_studio_closed_during_revision')
+            return await readyEvents() >= i + 2
+          }, 'studio_revision_ready', 240000)
+          await shot(`revision-${i + 1}`)
+          await pictureFormat()
+          await picture(`revision-${i + 1}`)
           // Lines the visitor heard while the change was painted (checked after the visit).
           const readyAt = (await studio()).filter(s => s.event === 'ready')[i + 1]!.at
           studioEvidence.repaintLines = [...studioEvidence.repaintLines ?? [],
             (await observe()).records.filter(r => r.stage === stage && r.role === 'avatar' && r.audible !== false && r.at < readyAt).length]
           await wait(async () => await reveals() >= i + 2, 'studio_second_reveal', 60000)
+          await waitForReveal(i + 1)
           await wait(settled, 'studio_second_reveal_settled', 60000)
-          await shot(`revision-${i + 1}`)
-          await pictureFormat()
-          await picture(`revision-${i + 1}`)
         })
       }
       const finished = revised && await check('studio_finish', async () => {
         // The final reveal asks the avatar to finish; a thank-you finishes it otherwise.
-        if (await phase() !== 'keepsake') await turn(extra.studioThanks!, 'studio_finish', 'studio_finish')
-        await wait(async () => await phase() === 'keepsake', 'studio_keepsake', 15000)
-        await shot('keepsake')
-        await picture('final')
-        await wait(async () => (await studio()).some(s => s.event === 'keepsake_done'), 'studio_keepsake_done', 330000)
+        if (await phase() === 'reveal' && !story.visitor.silentPreference) await turn(extra.studioThanks!, 'studio_finish', 'studio_finish')
+        await wait(async () => (await studio()).some(s => s.phase === 'keepsake'), 'studio_keepsake', story.visitor.silentPreference ? 45000 : 15000)
+        await wait(async () => (await studio()).some(s => s.event === 'keepsake_done'), 'studio_keepsake_done', 60000)
+        if (!events(studioStarted).some(e => e.reason === 'studio_printer_deferred')) throw Error('raven_qa_studio_printer_not_called')
         await wait(async () => await phase() === null, 'studio_closed', 10000)
       })
       if (finished && story.promptMarkers?.finished) studioEvidence.promptMarkersFollowed = { ...studioEvidence.promptMarkersFollowed,
@@ -974,7 +1020,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (events(studioStarted).some(e => e.reason === 'memory_saved')) throw Error('raven_qa_studio_memory_saved')
         // Spoken word for word (punctuation and spacing aside): the configured farewell or the versioned default.
         const words = (text: string) => text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
-        const farewell = words(studioSettings.farewell ?? '願你找到你所追尋\n再會\n人類')
+        const farewell = words(speechScriptText(studioSettings.farewell ?? STUDIO_DEFAULT_FAREWELL))
         studioEvidence.farewellVerbatim = (await observe()).records.some(r => r.role === 'avatar' && r.at >= studioStarted && words(r.text) === farewell)
       })
       // Every studio line, farewell included, is in the studio's language (scripts counted
@@ -986,6 +1032,42 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const lines = (await observe()).records.filter(r => r.role === 'avatar' && r.at >= studioStarted).map(r => language(r.text)).filter(l => l !== null)
         studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l !== expected).length }
         if (studioEvidence.language.mismatched) throw Error('raven_qa_studio_language_mismatch')
+      })
+      if (finished && story.id.startsWith('soul')) await check('studio_comments_then_next_question', async () => {
+        const cues = await evaluate<{ responseId: string; kind: string; step: string; at: number }[]>('return window.__ravenQa.studioCues')
+        const comments = cues.filter(c => c.kind === 'comment')
+        const expected = story.visitor.answers.length - (story.visitor.silentQuestions?.length ?? 0)
+        const records = (await observe()).records
+        studioEvidence.commentShape = comments.map(comment => {
+          const line = records.find(r => r.role === 'avatar' && r.responseId === comment.responseId), text = line?.text ?? ''
+          return { sentences: [...new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(text)].filter(s => s.segment.trim()).length,
+            characters: text.length, question: /[?？]/u.test(text), delivered: !!line && line.audible !== false }
+        })
+        if (comments.length !== expected) throw Error('raven_qa_studio_comment_count')
+        for (const comment of comments) {
+          const line = records.find(r => r.role === 'avatar' && r.responseId === comment.responseId)
+          if (!line || line.audible === false || line.text.length > 200) throw Error('raven_qa_studio_comment_delivery')
+          const sentences = [...new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(line.text)].filter(s => s.segment.trim())
+          if (sentences.length > 2 || /[?？]/u.test(line.text)) throw Error('raven_qa_studio_comment_brevity')
+          if (!cues.some(c => c.step === comment.step && ['question', 'painting'].includes(c.kind) && c.at > comment.at)) throw Error('raven_qa_studio_comment_next_question')
+        }
+        input.onEvidence({ step: 'studio_comment_counts', status: 'info', item: `expected=${expected};delivered=${comments.length}` })
+      })
+      if (revealed && story.id.startsWith('soul') && studioSettings.revisionsAllowed > 0) await check('studio_feedback_offer_spoken', async () => {
+        const cues = await evaluate<{ responseId: string; kind: string; step: string; at: number }[]>('return window.__ravenQa.studioCues')
+        const revealStep = cues.find(c => c.kind === 'reveal')?.step
+        const ids = new Set(cues.filter(c => c.kind === 'reveal' && c.step === revealStep).map(c => c.responseId))
+        const text = (await observe()).records.filter(r => r.role === 'avatar' && r.audible !== false && ids.has(r.responseId ?? '')).map(r => r.text).join('')
+        const words = (s: string) => s.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '')
+        const offer = PORTRAIT_STUDIO.journey[studioStartLanguage(studioSettings.startScript)].offerChange
+        if (!words(text).includes(words(offer))) throw Error('raven_qa_studio_feedback_offer_missing')
+      })
+      if (finished && story.id === 'soul_silence') await check('studio_authored_pause', async () => {
+        const gap = await evaluate<number | null>(`const q=window.__ravenQa,c=q.studioCues.filter(c=>c.kind==='question');
+          const first=c.find((x,i)=>c[i+1]?.step===x.step),second=first&&c[c.indexOf(first)+1],stop=first&&q.studioStops.find(s=>s.responseId===first.responseId);
+          return second&&stop?second.at-stop.at:null`)
+        if (gap === null || gap < 1000) throw Error('raven_qa_studio_pause_short')
+        input.onEvidence({ step: 'studio_pause_timing', status: 'info', item: `provider_stop_to_next_request_ms=${gap};minimum_ms=1000;physical_audio=not_measured` })
       })
       // Shape/format are integration gates. Keep measured alpha metadata; provider
       // transparency variability is not an app defect (owner ruling 2026-10-21).
