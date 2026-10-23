@@ -7,7 +7,7 @@ import type { AvatarMediaResource } from '../../src/shared/media-skill'
 import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
 import { folderMediaSkill } from '../../src/shared/media-folders'
 
-const resource = (assetId: string, name: string, aliases: string[] = [], kind: 'music' | 'video' = 'music'): AvatarMediaResource =>
+const resource = (assetId: string, name: string, aliases: string[] = [], kind: AvatarMediaResource['kind'] = 'music'): AvatarMediaResource =>
   ({ kind, assetId, name, aliases })
 const request = (query = '', kind: MediaDiscoveryRequest['kind'] = 'all'): MediaDiscoveryRequest => ({ query, kind })
 const reply = (patch: Partial<MediaDiscoveryReply> = {}): MediaDiscoveryReply =>
@@ -19,6 +19,15 @@ describe('Mandarin voice media discovery', () => {
   const songs = [resource('intro', '天使_intro'), priestess]
   const find = (query: string, catalog = songs, kind: MediaDiscoveryRequest['kind'] = 'music') =>
     rankMediaResources(catalog, request(query, kind), mediaClueKey, mediaPhoneticKey)
+
+  it.each(['music', 'video', 'image'] as const)('finds %s by title and alias pronunciation while preserving type and exact priority', kind => {
+    const catalog = [resource('sounds', '星河夜空', ['靈魂形狀'], kind), resource('exact', '欣河夜空', [], kind),
+      resource('other-kind', '星河夜空', [], kind === 'music' ? 'image' : 'music')]
+    expect(ids(find('欣河夜空', catalog, kind))).toEqual(['exact', 'sounds'])
+    expect(find('林魂形狀', catalog, kind)).toMatchObject({ code: 'media_discovery_phonetic', total: 1, resources: [{ assetId: 'sounds', kind }] })
+    expect(find('星河夜空', catalog, 'all')).toMatchObject({ code: 'media_discovery_ambiguous', total: 3 })
+    expect(parseMediaDiscoveryReply(find('林魂形狀', catalog, kind))).not.toBeNull()
+  })
 
   it.each(['天使葛麗果女祭司版本', '天使格里果女祭祀版本', '天使格力果女技師版本',
     '请播放天使葛丽果女祭司版本。', '女祭祀版本 葛麗果', '葛麗果'])('finds the priestess version from sound-alike clues: %s', query => {
@@ -57,7 +66,7 @@ describe('Mandarin voice media discovery', () => {
 
 describe('media discovery request boundary', () => {
   it('accepts exactly the two fields, empty queries, CJK and the 200-character boundary without changing text', () => {
-    for (const kind of ['all', 'music', 'video'] as const) {
+    for (const kind of ['all', 'music', 'video', 'image'] as const) {
       for (const query of ['', '   ', '  雨夜・鋼琴  ', 'a'.repeat(200)]) {
         expect(parseMediaDiscoveryRequest({ query, kind })).toEqual({ query, kind })
       }
@@ -65,7 +74,7 @@ describe('media discovery request boundary', () => {
   })
   it.each([
     null, [], 'rain', {}, { query: 'rain' }, { kind: 'all' }, { query: 1, kind: 'all' },
-    { query: 'rain', kind: 'image' }, { query: 'a'.repeat(201), kind: 'all' },
+    { query: 'rain', kind: 'document' }, { query: 'a'.repeat(201), kind: 'all' },
     { query: 'rain', kind: 'all', path: '/private/media' },
     { query: 'rain', kind: 'all', action: 'play' },
     ...['\u0000', '\t', '\n', '\u001f', '\u007f', '\u0085', '\u009f', '\u202e', '\u200b']
@@ -104,7 +113,7 @@ describe('media discovery reply boundary', () => {
     ...[
       null, [], { ...resource('rain', 'Rain'), path: '/private/media' },
       { ...resource('rain', 'Rain'), profileId: 'private' },
-      { ...resource('rain', 'Rain'), kind: 'image' },
+      { ...resource('rain', 'Rain'), kind: 'document' },
       resource('/private/rain.mp3', 'Rain'), resource('https://example.invalid/rain', 'Rain'),
       resource('a'.repeat(97), 'Rain'), resource('rain', ''), resource('rain', ' '), resource('rain', 'a'.repeat(121)),
       resource('rain', 'Bad\nname'), resource('rain', 'Rain\u0085'),

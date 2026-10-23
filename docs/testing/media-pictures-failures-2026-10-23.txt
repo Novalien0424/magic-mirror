@@ -1,0 +1,42 @@
+Development failure metadata — local media pictures, 2026-10-23
+No Electron QA case failed. These failures were in newly added test code.
+
+1. npm run typecheck:node (22:05 Taipei), exit 2
+tests/unit/boot-ipc.test.ts(585,21): error TS2571: Object is of type 'unknown'.
+Cause: the generic registered IPC handler has an unknown return type; the new
+test called .then directly. Corrected with Promise.resolve(handler(...)).
+Subsequent Node and web typechecks passed.
+
+2. npx vitest run tests/unit/realtime-session-adapter.test.ts
+   tests/unit/realtime-tools.test.ts tests/unit/field-help.test.ts
+   (22:09:53 Taipei), exit 1: 154 passed, 1 failed, 3 files.
+FAIL RealtimeSession adapter > finds and displays local pictures but never
+suggests YouTube for a missing picture
+AssertionError: expected last "vi.fn()" call to have been called with
+[ { query: '欣河夜空', kind: 'image' } ]
+Expected:
+  [{ kind: 'image', query: '欣河夜空' }]
+Received:
+  [{ kind: 'image', query: '欣河夜空' },
+   { realtimeSessionId: 'session-a', sessionGeneration: 14 }]
+At tests/unit/realtime-session-adapter.test.ts:249:25
+The production callback correctly supplied session authorization; the new
+assertion omitted its second argument. Corrected the assertion, not runtime.
+
+3. npx vitest run tests/unit/realtime-session-adapter.test.ts
+   -t 'finds and displays local pictures'
+   (22:10:28 Taipei), exit 1: 1 failed, 122 unselected.
+FAIL RealtimeSession adapter > finds and displays local pictures but never
+suggests YouTube for a missing picture
+AssertionError: expected last "vi.fn()" call to have been called with [ …(2) ]
+Expected second argument:
+  { realtimeSessionId: 'session-a', sessionGeneration: 14 }
+Received second argument:
+  { realtimeSessionId: 'session-a', sessionGeneration: 1 }
+At tests/unit/realtime-session-adapter.test.ts:249:25
+Cause: the generation is monotonic across tests, so hardcoding the generation
+from the full run was order-dependent. The assertion now requires the session
+ID plus numeric generation on both lookup and playback callbacks.
+The individual case passed at 22:10:40. The full affected three-file run passed
+155/155 at 22:11:15, exit 0. No production behavior was changed to satisfy these
+test-authoring mistakes.

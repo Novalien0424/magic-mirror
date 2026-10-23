@@ -1876,7 +1876,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL,
           options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? [])
         const resources = skill.enabled ? skill.resources.filter(resource => !catalog || canUseAvatarResource(catalog, catalog.activeAvatarId,
-          resource.kind === 'video' ? 'visual' : 'music', resource.assetId)) : []
+          resource.kind === 'music' ? 'music' : 'visual', resource.assetId)) : []
         result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest, mediaClueKey, mediaPhoneticKey)
         // A model-guessed type must not hide an otherwise available local title.
         // Return cross-kind choices for clarification; never dispatch playback.
@@ -1927,9 +1927,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const folderEntries = options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? []
       const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL, folderEntries)
       const available = request.action === 'play_youtube' ? !!options.youtube : skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)
-        && (folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind === 'video'
-          ? config.visualAssets.some(a => a.id === request.assetId && a.kind === 'video') : config.musicAssets.some(a => a.id === request.assetId)))
-        && (!catalog || canUseAvatarResource(catalog, catalog.activeAvatarId, request.kind === 'video' ? 'visual' : 'music', request.assetId))
+        && (folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind !== 'music'
+          ? config.visualAssets.some(a => a.id === request.assetId && a.kind === request.kind) : config.musicAssets.some(a => a.id === request.assetId)))
+        && (!catalog || canUseAvatarResource(catalog, catalog.activeAvatarId, request.kind === 'music' ? 'music' : 'visual', request.assetId))
       if (!skill.enabled || !available) {
         failureCode = request.action === 'play_youtube' && !options.youtube ? 'media_youtube_not_configured' : 'media_not_found'
         emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_resource_unavailable' })

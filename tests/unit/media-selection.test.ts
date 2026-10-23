@@ -12,9 +12,11 @@ describe('avatar media selection', () => {
     expect(next.mediaSkill!.resources.map(r => r.name)).toEqual(['Night', 'RAIN (2)', 'Night (2)'])
     expect(avatar.mediaSkill!.resources).toHaveLength(1)
   })
-  it('excludes still images and media locked to another avatar', () => {
+  it('selects pictures while excluding music and images locked to another avatar', () => {
     const avatar = newAvatar('guide')
-    const catalog = { avatars: [avatar, newAvatar('host')], activeAvatarId: 'guide', models: [], locks: [{ kind: 'music' as const, resourceId: 'locked', avatarId: 'host' }] }
-    expect(addAvatarMedia(avatar, [asset('locked', 'Locked'), { ...asset('still', 'Still'), kind: 'image' } as ImportedMedia], catalog).mediaSkill!.resources).toEqual([])
+    const catalog = { avatars: [avatar, newAvatar('host')], activeAvatarId: 'guide', models: [], locks: [{ kind: 'music' as const, resourceId: 'locked', avatarId: 'host' }, { kind: 'visual' as const, resourceId: 'private', avatarId: 'host' }] }
+    expect(addAvatarMedia(avatar, [asset('locked', 'Locked'), { ...asset('still', 'Still'), kind: 'image' } as ImportedMedia,
+      { ...asset('private', 'Private'), kind: 'image' } as ImportedMedia], catalog).mediaSkill!.resources)
+      .toEqual([{ kind: 'image', assetId: 'still', name: 'Still', aliases: [] }])
   })
 })

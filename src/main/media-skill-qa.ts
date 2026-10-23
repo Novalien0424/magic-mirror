@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { mkdir, copyFile, unlink, writeFile } from 'node:fs/promises'
 import { capture, type Phase4QaInput, type Phase4QaResult } from './phase4-qa'
-import type { MediaSkillRequest, MediaSkillResult } from '../shared/media-skill'
+import { MEDIA_IMAGE_DURATION_MS, type LocalMediaKind, type MediaSkillRequest, type MediaSkillResult } from '../shared/media-skill'
 import type { MediaDiscoveryReply, MediaDiscoveryRequest } from '../shared/media-discovery'
 import type { ToolOutcome } from '../shared/realtime-tools'
 
@@ -13,6 +13,7 @@ interface MediaPlaybackState {
 interface MediaQaState {
   active: boolean; hidden?: string; phase?: string; mode?: string; opacity: number; avatarVisible: boolean
   video: MediaPlaybackState | null; music: MediaPlaybackState | null
+  image: { complete: boolean; width: number; height: number; fit: string } | null
 }
 
 /** Isolated local fixture: production Console authoring, IPC and actual decoded media. No provider call. */
@@ -50,10 +51,11 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
   }
   const pass = () => { checks++; input.onEvidence({ step, status: 'passed' }) }
   const state = () => input.mirror.webContents.executeJavaScript(`(()=>{
-    const p=document.querySelector('.mirror-presentation'),a=p?.querySelector('.presentation__avatar'),canvas=a?.querySelector('.avatar-stage__canvas'),v=document.querySelector('.scene-visual video');
+    const p=document.querySelector('.mirror-presentation'),a=p?.querySelector('.presentation__avatar'),canvas=a?.querySelector('.avatar-stage__canvas'),v=document.querySelector('.scene-visual video'),img=document.querySelector('.scene-visual img');
     const probe=window.magicMirrorMediaSkillQa.snapshot();
     return {...probe,hidden:p?.dataset.mediaVideo,phase:p?.dataset.phase,mode:p?.querySelector('.presentation')?.dataset.mode,opacity:p?Number(getComputedStyle(p.querySelector('.presentation')).opacity):-1,
       avatarVisible:!!a&&p.dataset.loading==='false'&&a.querySelector('.avatar-stage')?.dataset.rendererState==='ready'&&Number(getComputedStyle(a).opacity)===1&&getComputedStyle(a).visibility==='visible'&&!!canvas&&canvas.width>0&&canvas.height>0&&canvas.getBoundingClientRect().height>0,
+      image:img?{complete:img.complete,width:img.naturalWidth,height:img.naturalHeight,fit:getComputedStyle(img).objectFit}:null,
       video:v?{time:v.currentTime,duration:v.duration,loop:v.loop,paused:v.paused,ready:v.readyState,frames:v.getVideoPlaybackQuality().totalVideoFrames}:null};})()`, true) as Promise<MediaQaState>
   const session = () => {
     const snapshot = input.runtime.snapshot()
@@ -81,12 +83,12 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => input.runtime.snapshot().lifecycle === 'active' && !!input.runtime.snapshot().realtimeSessionId && (await state()).phase === 'awake')
     if (session().sessionGeneration <= before.sessionGeneration) throw Error('media_qa_wake_session_not_fresh')
   }
-  const play = async (kind: 'video' | 'music', assetId: string, mode: 'once' | 'loop') => {
+  const play = async (kind: LocalMediaKind, assetId: string, mode: 'once' | 'loop') => {
     if (await request({ action: 'play', kind, assetId, mode }) !== 'accepted') throw Error('media_qa_request_rejected')
   }
   const returned = async () => {
     const s = await state()
-    return !s.active && s.hidden === 'false' && s.opacity === 1 && s.avatarVisible && s.video === null && (!s.music || s.music.paused)
+    return !s.active && s.hidden === 'false' && s.opacity === 1 && s.avatarVisible && s.video === null && s.image === null && (!s.music || s.music.paused)
   }
   const loopBoundary = async (kind: 'video' | 'music') => {
     await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && input.runtime.snapshot().realtimeSessionId === null && (await state()).active)
@@ -154,12 +156,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     input.console.webContents.reload()
     await wait(() => evaluate("return !!button('System')")); await edit("click('System')")
     await wait(() => evaluate("return field('BGM volume')?.value==='37'")); pass()
-    await edit("click('Avatars')"); await edit("click('Music & video')")
+    await edit("click('Avatars')"); await edit("click('Media')")
     step = 'media_folder_link_and_discovery'
     const ownFolder = join(input.outputDir, '../folder-fixtures/own'), sharedFolder = join(input.outputDir, '../folder-fixtures/shared')
     await mkdir(ownFolder, { recursive: true }); await mkdir(sharedFolder, { recursive: true })
-    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky.webm'))
-    await copyFile(join(input.outputDir, '../user-data/assets/music/phase4-qa-tone.wav'), join(sharedFolder, 'Rain.wav'))
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky 星河影片.webm'))
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-still.png'), join(ownFolder, '星河夜空.png'))
+    await copyFile(join(input.outputDir, '../user-data/assets/music/phase4-qa-tone.wav'), join(sharedFolder, 'Rain 星河音樂.wav'))
     await copyFile(join(input.outputDir, '../user-data/assets/music/phase4-qa-tone.wav'), join(ownFolder, 'Own rain tune.wav'))
     await edit("click('System')"); await edit("click('Media folders')")
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [sharedFolder] })) as typeof dialog.showOpenDialog
@@ -174,10 +177,11 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [ownFolder] })) as typeof dialog.showOpenDialog
     await wait(() => evaluate("return !button('Choose avatar folder')?.disabled"))
     await edit("click('Choose avatar folder')")
-    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===3 && !button('Choose avatar folder').disabled"))
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===4 && !button('Choose avatar folder').disabled"))
     dialog.showOpenDialog = picker
     const folderVideo = await evaluate<string>("return document.querySelector('[data-folder-media-kind=video]').dataset.folderMediaId")
-    const folderMusic = await evaluate<string>("return [...document.querySelectorAll('[data-folder-media-kind=music]')].find(e=>e.textContent==='Rain').dataset.folderMediaId")
+    const folderImage = await evaluate<string>("return document.querySelector('[data-folder-media-kind=image]').dataset.folderMediaId")
+    const folderMusic = await evaluate<string>("return [...document.querySelectorAll('[data-folder-media-kind=music]')].find(e=>e.textContent==='Rain 星河音樂').dataset.folderMediaId")
     const ownMusic = await evaluate<string>("return [...document.querySelectorAll('[data-folder-media-kind=music]')].find(e=>e.textContent==='Own rain tune').dataset.folderMediaId")
     await edit("document.querySelector('.media-folder-settings summary').click()")
     await shot('media-folder-avatar.png'); pass()
@@ -185,7 +189,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     step = 'media_large_file_transfer'
     await writeFile(join(sharedFolder, 'Transfer.wav'), Buffer.alloc(8 * 1024 * 1024, 37))
     await edit("click('Refresh files')")
-    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===4"))
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===5"))
     const transferId = await evaluate<string>("return [...document.querySelectorAll('[data-folder-media-id]')].find(e=>e.textContent==='Transfer').dataset.folderMediaId")
     const transferred = await input.mirror.webContents.executeJavaScript(`(async()=>{try{const r=await fetch('magic-mirror-media://music/${transferId}');return (await r.arrayBuffer()).byteLength}catch{return -1}})()`)
     if (transferred !== 8 * 1024 * 1024) throw Error('media_large_file_transfer_incomplete')
@@ -193,7 +197,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     if (rangeResult) throw Error('media_large_file_range_failed_' + JSON.stringify(rangeResult))
     await unlink(join(sharedFolder, 'Transfer.wav'))
     await edit("click('Refresh files')")
-    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===3")); pass()
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===4")); pass()
 
     step = 'media_console_authoring'
     await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings').click()")
@@ -207,7 +211,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     })
     await shot('media-skills-console.png'); pass()
     input.console.webContents.reload()
-    await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Music & video')")
+    await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Media')")
     await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings').click()")
     await wait(() => evaluate("return field('Media fade duration')?.value==='400'"))
     step = 'media_console_persisted'; pass()
@@ -215,7 +219,12 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await edit("document.querySelector('.media-playback-settings summary').click()")
     if (!await evaluate("return [...document.querySelectorAll('[data-folder-media-id]')].every(e=>e.tagName==='LI'&&e.children.length===0)&&!document.querySelector('.media-folder-settings').open&&!document.querySelector('.media-playback-settings').open")) throw Error('media_list_not_filenames_only')
     await edit("set('Find folder media','Sky')")
-    if (!await evaluate("return document.querySelectorAll('[data-folder-media-id]').length===1&&document.querySelector('[data-folder-media-id]').textContent==='Sky'")) throw Error('media_filename_search_failed')
+    if (!await evaluate("return document.querySelectorAll('[data-folder-media-id]').length===1&&document.querySelector('[data-folder-media-id]').textContent==='Sky 星河影片'")) throw Error('media_filename_search_failed')
+    await edit("set('Find folder media','')")
+    for (const [query, kind] of [['欣河夜空', 'image'], ['欣河影片', 'video'], ['欣河音樂', 'music']]) {
+      await edit(`set('Find folder media',${JSON.stringify(query)})`)
+      if (!await evaluate(`return document.querySelectorAll('[data-folder-media-id]').length===1&&document.querySelector('[data-folder-media-id]').dataset.folderMediaKind===${JSON.stringify(kind)}`)) throw Error('media_console_phonetic_search_failed_' + kind)
+    }
     await edit("set('Find folder media','')")
     await shot('media-file-list.png')
     pass()
@@ -224,15 +233,46 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await edit(`set('Dormant music',${JSON.stringify(folderMusic)});set('Active BGM volume','0.2')`)
     await edit("click('Save & apply all changes')")
     await wait(async () => (await bgm())?.paused === false)
-    await edit("click('Music & video')")
+    await edit("click('Media')")
     await wake()
     step = 'media_authenticated_local_discovery'
-    await found('', 'all', [folderVideo, ownMusic, folderMusic])
+    await found('', 'all', [folderVideo, ownMusic, folderMusic, folderImage])
     await found('Rain', 'music', [ownMusic, folderMusic])
     await found('Sky', 'video', [folderVideo])
-    await found('Rain', 'video', [])
+    const mismatch = await find('Rain', 'video')
+    if (mismatch.code !== 'media_discovery_kind_mismatch' || mismatch.total !== 2) throw Error('media_type_mismatch_not_clarified')
+    for (const [query, kind, id] of [['欣河夜空', 'image', folderImage], ['欣河影片', 'video', folderVideo], ['欣河音樂', 'music', folderMusic]] as const) {
+      const result = await find(query, kind)
+      if (result.code !== 'media_discovery_phonetic' || result.total !== 1 || result.resources[0]?.assetId !== id) throw Error('media_phonetic_discovery_failed_' + kind)
+    }
     if (!await returned()) throw Error('media_qa_discovery_started_playback')
     pass()
+    step = 'media_image_once_decode_and_return'
+    await play('image', folderImage, 'once')
+    const imageReadyAt = Date.now()
+    await wait(async () => { const s = await state(); return s.active && s.opacity === 0 && !!s.image?.complete && s.image.width === 360 && s.image.height === 640 && s.image.fit === 'contain' && s.video === null })
+    await shot('media-picture-displayed.png', true)
+    await wait(returned, MEDIA_IMAGE_DURATION_MS + 3000)
+    if (Date.now() - imageReadyAt < MEDIA_IMAGE_DURATION_MS - 250) throw Error('media_image_returned_early')
+    await shot('media-picture-return.png', true); pass()
+    step = 'media_image_loop_and_wake_stop'
+    await play('image', folderImage, 'loop')
+    await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && input.runtime.snapshot().realtimeSessionId === null && !!(await state()).image?.complete)
+    await delay(MEDIA_IMAGE_DURATION_MS + 500)
+    if (!(await state()).active || !(await state()).image?.complete) throw Error('media_image_loop_ended')
+    await shot('media-picture-loop.png', true)
+    await wake()
+    if (await request({ action: 'stop' }) !== 'accepted') throw Error('media_image_stop_failed')
+    await wait(returned); pass()
+    step = 'media_image_decode_failure_returns_avatar'
+    await writeFile(join(ownFolder, '星河夜空.png'), 'synthetic invalid picture')
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return !button('Refresh files').disabled"))
+    if (await requestStatus({ action: 'play', kind: 'image', assetId: folderImage, mode: 'once' }) !== 'failed') throw Error('media_invalid_image_accepted')
+    await wait(returned)
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-still.png'), join(ownFolder, '星河夜空.png'))
+    await edit("click('Refresh files')")
+    await wait(() => evaluate("return !button('Refresh files').disabled")); pass()
     step = 'media_video_fade_and_once'
     visualReports.length = 0
     const starting = play('video', videoId, 'once')
@@ -272,13 +312,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await shot('media-video-wake-return.png', true)
     pass()
     step = 'media_embedded_audio_suppresses_bgm'
-    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-embedded-audio.webm'), join(ownFolder, 'Sky.webm'))
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-embedded-audio.webm'), join(ownFolder, 'Sky 星河影片.webm'))
     await evaluate("return window.magicMirror.mediaFolders({action:'refresh'})")
     await play('video', videoId, 'once')
     await wait(async () => { const v = (await state()).video; return !!v && !v.paused && v.time > .2 })
     if ((await bgm())?.paused !== true || (await bgm())?.volume !== 0) throw Error('media_qa_embedded_audio_bgm_overlap')
     await wait(returned)
-    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky.webm'))
+    await copyFile(join(process.cwd(), 'resources/phase4-trial-assets/phase4-finite-silent.webm'), join(ownFolder, 'Sky 星河影片.webm'))
     await evaluate("return window.magicMirror.mediaFolders({action:'refresh'})")
     await wait(async () => { const b = await bgm(); return !!b && !b.paused && b.volume > 0 })
     pass()
@@ -322,8 +362,8 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     pass()
     step = 'media_folder_persistence_and_discovery'
     input.console.webContents.reload()
-    await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Music & video')")
-    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===3"))
+    await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Media')")
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===4"))
     await wake()
     await found('own rain', 'music', [ownMusic])
     await found('Rain', 'music', [ownMusic, folderMusic])
@@ -344,7 +384,7 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => !!persistedMusicRun && reports.some(r => r.runId === persistedMusicRun && r.status === 'completed'))
     await wait(returned); pass()
     step = 'media_failed_file_returns_failure'
-    await writeFile(join(ownFolder, 'Sky.webm'), 'synthetic invalid video')
+    await writeFile(join(ownFolder, 'Sky 星河影片.webm'), 'synthetic invalid video')
     await edit("click('Refresh files')")
     await wait(() => evaluate("return !button('Refresh files').disabled"))
     const invalidStatus = await requestStatus({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' })
@@ -352,9 +392,9 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(async () => { const s=await state(),b=await bgm();return s.opacity===1&&s.video===null&&!!b&&!b.paused&&b.volume>0 })
     pass()
     step = 'media_folder_removal_revokes_playback'
-    await unlink(join(ownFolder, 'Sky.webm'))
+    await unlink(join(ownFolder, 'Sky 星河影片.webm'))
     await edit("click('Refresh files')")
-    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===2 && !button('Refresh files').disabled"))
+    await wait(() => evaluate("return document.querySelectorAll('[data-folder-media-id]').length===3 && !button('Refresh files').disabled"))
     const removedStatus = await requestStatus({ action: 'play', kind: 'video', assetId: folderVideo, mode: 'once' })
     if (removedStatus !== 'rejected') throw Error(`media_folder_removed_reported_${removedStatus}`)
     await found('Sky', 'video', [])
@@ -397,13 +437,13 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await wait(() => evaluate("return !!button('Avatars')")); await edit("click('Avatars')"); await edit("click('Appearance')")
     await wait(() => evaluate(`return field('Dormant music')?.value===${JSON.stringify(bgmId)}`)); pass()
     step = 'media_folder_unlink'
-    await edit("click('Music & video')")
+    await edit("click('Media')")
     await edit("document.querySelector('.media-folder-settings summary').click()")
     await wait(() => evaluate("return !button('Unlink avatar folder')?.disabled"))
     await edit("click('Unlink avatar folder')")
     await wait(() => evaluate("return document.querySelector('[aria-label=\"Avatar media folder\"]').textContent.includes('No folder linked.')"))
     pass()
-    return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: screenshots, musicAnalyser: 'active', visualCount: 2, consoleCheckCount: checks }
+    return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: screenshots, musicAnalyser: 'active', visualCount: 3, consoleCheckCount: checks }
   } catch (error) {
     input.onEvidence({ step, status: 'failed', item: error instanceof Error ? error.message.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0,160) : 'unknown' })
     await shot('media-failure.png')

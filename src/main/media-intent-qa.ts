@@ -57,7 +57,7 @@ void app.whenReady().then(async () => {
     const tools = bindRealtimeTools(resolveRealtimeTools('Rest.'), {
       find_media: async args => {
         record('find_media')
-        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' }, mediaClueKey, mediaPhoneticKey)
+        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' | 'image' }, mediaClueKey, mediaPhoneticKey)
         return { outcome: media.status, media, ...('cloud' in scenario && media.code === 'media_discovery_no_match' ? { next: 'search_youtube' as const } : {}) }
       },
       search_youtube: async () => {

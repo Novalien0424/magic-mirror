@@ -1490,7 +1490,7 @@ export function ScenesPanel({
     if (first?.section) setSection(first.section)
   }
   const hasModelChanges = payload?.publishDiff.changed.some(change => change.kind === 'model') ?? false
-  const applyOnSave = (section === 'Music & video' || section === 'Appearance') && !hasModelChanges
+  const applyOnSave = (section === 'Media' || section === 'Appearance') && !hasModelChanges
   const voiceOnly = section === 'Voice'
   const dialogueOnly = PROFILE_SECTIONS.includes(section as typeof PROFILE_SECTIONS[number]) && section !== 'Spells & scenes'
   const personaOnly = section === 'Persona'
@@ -1533,7 +1533,7 @@ export function ScenesPanel({
           }),
         }
       })
-      setResult(response.cancelled ? 'Media import cancelled.' : `Imported ${response.assets.length} file(s)${response.failures.length ? `; ${response.failures.length} failed` : ''}. ${mediaAvatarId ? 'Music and videos selected. Save & apply below.' : `${actionId && response.assets.length ? 'Selected in this action. ' : ''}Save all changes to keep the links.`}`)
+      setResult(response.cancelled ? 'Media import cancelled.' : `Imported ${response.assets.length} file(s)${response.failures.length ? `; ${response.failures.length} failed` : ''}. ${mediaAvatarId ? 'Media selected. Save & apply below.' : `${actionId && response.assets.length ? 'Selected in this action. ' : ''}Save all changes to keep the links.`}`)
     } finally { setBusy(false) }
   }
 
@@ -1760,7 +1760,7 @@ export function ScenesPanel({
         {confirmDiscard ? <><span>This replaces your unsaved edits with the latest saved draft.</span><button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false); setConfirmDiscard(false) }}>Discard edits</button><button onClick={() => setConfirmDiscard(false)}>Keep editing</button></>
           : <button onClick={() => setConfirmDiscard(true)}>Discard my edits and reload saved changes</button>}
       </div> : null}
-      <div className={`profile-workspace${section === 'Music & video' ? ' profile-workspace--media' : ''}`}>
+      <div className={`profile-workspace${section === 'Media' ? ' profile-workspace--media' : ''}`}>
       <div className="profile-workspace__editor">
       {rawDraft?.avatarCatalog && editingAvatar && <header className="avatar-header" aria-label="Current avatar being edited">
         <HelpField className="avatar-header__picker" help={FIELD_HELP.editingAvatar}>Editing avatar<select aria-label="Editing avatar" disabled={busy || memoryEditing} value={editingId} onChange={e => setEditingAvatarId(e.currentTarget.value)}>
@@ -1795,7 +1795,7 @@ export function ScenesPanel({
             if (resourceId && !canUseAvatarResource(rawDraft.avatarCatalog!, next.id, 'visual', resourceId)) next.presentation[key] = ''
           }
           if (next.mediaSkill) next.mediaSkill.resources = next.mediaSkill.resources.filter(resource =>
-            canUseAvatarResource(rawDraft.avatarCatalog!, next.id, resource.kind === 'video' ? 'visual' : 'music', resource.assetId))
+            canUseAvatarResource(rawDraft.avatarCatalog!, next.id, resource.kind === 'music' ? 'music' : 'visual', resource.assetId))
           setRawDraft({ ...rawDraft, avatarCatalog: { ...rawDraft.avatarCatalog!, avatars: [...rawDraft.avatarCatalog!.avatars, next] } }); setEditingAvatarId(next.id)
           setNameFocusId(next.id); setSection('Persona'); setResult('Avatar duplicated. Shared links retained; owner-locked scenes/media were not copied.')
         }}>Duplicate</HelpButton>
@@ -1816,12 +1816,12 @@ export function ScenesPanel({
       {LIBRARY_SECTIONS.includes(section as typeof LIBRARY_SECTIONS[number])
         ? <p className="profile-save-note">Shared resource · changes can affect every avatar that uses it.</p>
         : section === 'Memories' ? <p className="profile-save-note">Memory changes save immediately.</p>
-          : section === 'Music & video' ? <p className="profile-save-note">Folder links save immediately. Playback settings apply after Save &amp; apply.</p> : null}
+          : section === 'Media' ? <p className="profile-save-note">Folder links save immediately. Playback settings apply after Save &amp; apply.</p> : null}
 
       {visible && voiceOnly && editingAvatar ? <VoiceStudio key={`${editingId}-${previewRevision}`} avatar={editingAvatar} model={editingModel} bridge={bridge} disabled={disabled} onChange={updateAvatar} /> : null}
-      {visible && section === 'Music & video' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
+      {visible && section === 'Media' && editingAvatar && <MediaFoldersPanel key={`folders-${editingId}`} bridge={bridge} avatarId={editingId} avatarName={editingAvatar.name} legacyCount={editingAvatar.mediaSkill?.resources.length} onSharedSettings={onSharedMedia} />}
       {section === 'Memories' && editingAvatar && <MemoryPanel key={`memory-${editingId}`} bridge={bridge} avatarId={editingId} onEditingChange={setMemoryEditing} />}
-      {visible && section === 'Music & video' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
+      {visible && section === 'Media' && editingAvatar && draft ? <MediaSkillEditor key={editingId} avatar={editingAvatar} draft={draft} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Skills' && editingAvatar ? <SkillsEditor avatar={editingAvatar} disabled={editorDisabled} onChange={updateAvatar} /> : null}
       {visible && section === 'Interactive Studio' && editingAvatar && !imageGenerationEnabled(editingAvatar) && <p role="status">Image generation is off for this Avatar. Enable it in Skills to use Interactive Studio. You can still edit the story below.</p>}
       {visible && section === 'Interactive Studio' && <StudioServiceSummary bridge={bridge} visible={visible} onOpen={() => onPortraitImages?.()} />}
@@ -1860,7 +1860,7 @@ export function ScenesPanel({
         <HelpField fieldPath={`${avatarFieldPath}.presentation.wakeGreeting`} help={FIELD_HELP.wakeGreeting}>Wake greeting<textarea maxLength={500} value={draft.presentation?.wakeGreeting ?? DEFAULT_PRESENTATION.wakeGreeting} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, wakeGreeting: e.currentTarget.value } })} /></HelpField>
         <HelpField fieldPath={`${avatarFieldPath}.presentation.sleepFarewell`} error={!((draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell) ?? '').trim() ? 'Enter a sleep farewell.' : undefined} help={FIELD_HELP.sleepFarewell}>Sleep farewell (verbatim)<textarea maxLength={500} value={draft.presentation?.sleepFarewell ?? DEFAULT_PRESENTATION.sleepFarewell} onChange={e => setDraft({ ...draft, presentation: { ...DEFAULT_PRESENTATION, ...draft.presentation, sleepFarewell: e.currentTarget.value } })} /></HelpField>
       </div></fieldset> : null}
-      {(!dialogueOnly || section === 'Music & video') && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
+      {(!dialogueOnly || section === 'Media') && importFailures.length ? <div className="media-import-results" role="alert"><strong>Some files were not imported</strong><ul>{importFailures.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul></div> : null}
       {visible && !dialogueOnly && draft && bridge && editorView === 'media' ? <MediaLibrary draft={draft} bridge={bridge} disabled={disabled} avatarId={editingId} onCatalogChange={updateCatalog} onImport={() => void importMedia({ kind: 'all', multiple: true })} /> : null}
       {!dialogueOnly && resourceDraft && payload && editorView === 'scenes' ? <SceneComposer key={editingId} avatarId={editingAvatar?.id} draft={resourceDraft} active={editingId === payload.active.avatarCatalog?.activeAvatarId ? payload.active : { ...payload.active, scenes: [] }} disabled={disabled} onChange={mergeResourceDraft}
         onSave={(id, stepId) => void saveScene(id, stepId)} isSaved={isSceneSaved}
@@ -1896,7 +1896,7 @@ export function ScenesPanel({
           <button onClick={() => setPublishReview(false)}>Keep editing</button>
         </div>}
         {hasModelChanges && <p className="console__notice">AI model changes are included. Save, then review Publish all changes before applying.</p>}
-        {!(section === 'Music & video' && result === 'Edits stay in draft until you publish.') && <div className="console__scene-result"><OperatorMessage text={section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result} /></div>}
+        {!(section === 'Media' && result === 'Edits stay in draft until you publish.') && <div className="console__scene-result"><OperatorMessage text={section === 'Appearance' && result === 'Edits stay in draft until you publish.' ? 'Save & apply all changes to use this presentation on the mirror.' : result} /></div>}
       </div>
       </div></div>
       {deletingAvatar && <DeleteAvatarDialog key={deletingAvatar.id} name={deletingAvatar.name || 'Unnamed avatar'}

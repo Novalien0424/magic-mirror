@@ -1,6 +1,6 @@
-import { parseMediaSkill, type AvatarMediaResource } from './media-skill'
+import { parseMediaSkill, type AvatarMediaResource, type LocalMediaKind } from './media-skill'
 
-export interface MediaDiscoveryRequest { query: string; kind: 'all' | 'music' | 'video' }
+export interface MediaDiscoveryRequest { query: string; kind: 'all' | LocalMediaKind }
 export interface MediaDiscoveryReply {
   status: 'accepted' | 'rejected' | 'failed'
   code: string
@@ -23,8 +23,8 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
 export function parseMediaDiscoveryRequest(value: unknown): MediaDiscoveryRequest | null {
   if (!record(value) || !keys(value, ['query', 'kind']) || typeof value.query !== 'string'
     || value.query.length > 200 || CONTROLS.test(value.query)
-    || (value.kind !== 'all' && value.kind !== 'music' && value.kind !== 'video')) return null
-  return { query: value.query, kind: value.kind }
+    || !['all', 'music', 'video', 'image'].includes(value.kind as string)) return null
+  return { query: value.query, kind: value.kind as MediaDiscoveryRequest['kind'] }
 }
 
 function parseResources(value: unknown, max: number): AvatarMediaResource[] | null {

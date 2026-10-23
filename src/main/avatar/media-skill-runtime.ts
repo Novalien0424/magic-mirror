@@ -1,5 +1,5 @@
 import type { AvatarControlCommand } from '../../shared/bridge'
-import type { AvatarMediaSkill, MediaSkillRequest } from '../../shared/media-skill'
+import { MEDIA_IMAGE_DURATION_MS, type AvatarMediaSkill, type LocalMediaKind, type MediaSkillRequest } from '../../shared/media-skill'
 import type { ToolOutcome } from '../../shared/realtime-tools'
 import type { SceneActionCommandContext, SceneActionRendererReport, SceneVisualPlaybackReport } from '../../shared/types'
 import { youtubeVideoId, type YoutubePlayer } from '../../shared/youtube-media'
@@ -14,11 +14,12 @@ export function createMediaSkillRuntime(input: {
   youtube?: YoutubePlayer
 }) {
   let sequence = 0
-  let active: { context: SceneActionCommandContext; kind: 'music' | 'video'; youtube: boolean; mode: 'once' | 'loop'; fadeMs: number; position?: number; started: boolean; completeStart?: (outcome: ToolOutcome) => void } | null = null
+  let active: { context: SceneActionCommandContext; kind: LocalMediaKind; youtube: boolean; mode: 'once' | 'loop'; fadeMs: number; position?: number; started: boolean; completeStart?: (outcome: ToolOutcome) => void } | null = null
   let launch: ReturnType<typeof setTimeout> | undefined
   let watchdog: ReturnType<typeof setTimeout> | undefined
+  let imageEnd: ReturnType<typeof setTimeout> | undefined
   const failures = new Map<string, string>()
-  const clear = () => { clearTimeout(launch); clearTimeout(watchdog); launch = watchdog = undefined }
+  const clear = () => { clearTimeout(launch); clearTimeout(watchdog); clearTimeout(imageEnd); launch = watchdog = imageEnd = undefined }
   const stop = (reason = 'media_stopped'): ToolOutcome => {
     if (!active) return 'ignored'
     const old = active
@@ -31,7 +32,7 @@ export function createMediaSkillRuntime(input: {
     old.completeStart?.(/failed|timeout|unavailable/.test(reason) ? 'failed' : 'ignored')
     // Immediate release avoids old audio/fade timers leaking into the next item.
     if (old.youtube) input.youtube?.stop()
-    else input.dispatch(old.kind === 'video'
+    else input.dispatch(old.kind !== 'music'
       ? { type: 'scene_visual', action: 'stop', runId: old.context.runId, sceneId: old.context.sceneId }
       : { type: 'scene_music', action: 'stop', fadeDurationMs: 0 })
     input.dispatch({ type: 'media_skill_state', active: false, hideAvatar: false, fadeMs: old.fadeMs })
@@ -71,19 +72,19 @@ export function createMediaSkillRuntime(input: {
         try {
           const sent = request.action === 'play_youtube'
             ? input.youtube!.play({ videoId: videoId!, kind: request.kind, mode: request.mode, gain: skill.gain, context }, report => { this.reportAction(report) })
-            : input.dispatch(request.kind === 'video'
-            ? { type: 'scene_visual', action: 'start', assetId: request.assetId, fit: 'cover', playback: request.mode,
-                audio: 'embedded', gain: skill.gain, fadeInMs: skill.fadeMs, fadeOutMs: 0, context }
+            : input.dispatch(request.kind !== 'music'
+            ? { type: 'scene_visual', action: 'start', assetId: request.assetId, fit: request.kind === 'image' ? 'contain' : 'cover', playback: request.kind === 'image' ? 'still' : request.mode,
+                audio: request.kind === 'image' ? 'muted' : 'embedded', gain: skill.gain, fadeInMs: skill.fadeMs, fadeOutMs: 0, context }
             : { type: 'scene_music', action: 'play', assetId: request.assetId, gain: skill.gain, loop: request.mode === 'loop', context })
           if (!sent) stop('media_renderer_unavailable')
           else if (active?.context === context && !active.started) watch(request.action === 'play_youtube' ? 60000 : 15000)
         } catch { stop('media_playback_failed') }
       }
       const takeOver = (): boolean => {
-        if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind === 'video', fadeMs: skill.fadeMs })) {
+        if (!input.dispatch({ type: 'media_skill_state', active: true, hideAvatar: request.kind !== 'music', fadeMs: skill.fadeMs })) {
           stop('media_renderer_unavailable'); return false
         }
-        if (request.kind === 'video' && skill.fadeMs > 0) launch = setTimeout(begin, skill.fadeMs)
+        if (request.kind !== 'music' && skill.fadeMs > 0) launch = setTimeout(begin, skill.fadeMs)
         else begin()
         return true
       }
@@ -116,6 +117,11 @@ export function createMediaSkillRuntime(input: {
         input.report('media_report_stale'); return true
       }
       if (report.type === 'failed') stop('media_playback_failed')
+      else if (report.type === 'ready' && active?.kind === 'image' && !active.started) {
+        active.started = true; active.completeStart?.('accepted'); active.completeStart = undefined
+        clearTimeout(watchdog); input.report('media_playing')
+        if (active.mode === 'once') imageEnd = setTimeout(() => stop('media_completed'), MEDIA_IMAGE_DURATION_MS)
+      }
       else if (report.type === 'ended' && active?.mode === 'once') stop('media_completed')
       else if (report.type === 'playing' && active) { active.started = true; active.completeStart?.('accepted'); active.completeStart = undefined; watch(); input.report('media_playing') }
       else if (report.type === 'progress' && active && active.position !== report.currentTimeMs) {

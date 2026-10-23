@@ -27,8 +27,8 @@ export function MediaSkillEditor({ avatar, draft, disabled, onChange }: {
     {skill.resources.length > 0 && <details><summary>Previously imported files · {skill.resources.length}</summary>
       {!skill.enabled && <p>These older entries are disabled. Linked folders remain available.</p>}
       {skill.resources.map((resource, index) => {
-        const asset = (resource.kind === 'video' ? draft.visualAssets.filter(a => a.kind === 'video') : draft.musicAssets).find(a => a.id === resource.assetId)
-        const available = asset && (!draft.avatarCatalog || canUseAvatarResource(draft.avatarCatalog, avatar.id, resource.kind === 'video' ? 'visual' : 'music', resource.assetId))
+        const asset = (resource.kind === 'music' ? draft.musicAssets : draft.visualAssets.filter(a => a.kind === resource.kind)).find(a => a.id === resource.assetId)
+        const available = asset && (!draft.avatarCatalog || canUseAvatarResource(draft.avatarCatalog, avatar.id, resource.kind === 'music' ? 'music' : 'visual', resource.assetId))
         return <article key={resource.kind + ':' + resource.assetId}>
           <strong>{resource.name}</strong>
           {!available ? <p role="alert">This imported file is unavailable. Remove it or update its library access before saving.</p> : <MediaPreview kind={resource.kind} id={resource.assetId} name={resource.name} gain={skill.gain} />}

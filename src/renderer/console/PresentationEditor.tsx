@@ -36,9 +36,9 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
       try {
         const result = await bridge.mediaFolders({ action: 'get', ...(avatarId ? { avatarId } : {}) })
         if (cancelled) return
-        if (result.ok) { setFolderMusic(result.value.entries.filter(entry => entry.kind === 'music')); setFolderError(result.value.reason ? 'Folder library unavailable. Check Music & video folder settings.' : '') }
-        else setFolderError('Could not read media folders. Check Music & video folder settings.')
-      } catch { if (!cancelled) setFolderError('Could not read media folders. Check Music & video folder settings.') }
+        if (result.ok) { setFolderMusic(result.value.entries.filter(entry => entry.kind === 'music')); setFolderError(result.value.reason ? 'Folder library unavailable. Check Media folder settings.' : '') }
+        else setFolderError('Could not read media folders. Check Media folder settings.')
+      } catch { if (!cancelled) setFolderError('Could not read media folders. Check Media folder settings.') }
     }
     void refresh(); const timer = setInterval(() => void refresh(), 30000)
     return () => { cancelled = true; clearInterval(timer) }
@@ -72,7 +72,7 @@ export function PresentationEditor({ draft, onChange, disabled, model, bridge, a
     config.revealStartMs, config.entranceVideoId, config.exitVideoId, config.entranceBlend, config.exitBlend,
     config.ambienceId, config.ambienceGain, config.activeAmbienceGain, config.backgroundId, model?.id])
   return <fieldset className="presentation-editor">
-    <legend>Avatar presentation <InfoTip label="Avatar presentation" help={`Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep. Videos are muted. Music mutes during avatar speech, then fades back in, through your selected speakers.${reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''} Music is listed from this avatar’s folder and the common folder; link folders in Music & video.`} /></legend>
+    <legend>Avatar presentation <InfoTip label="Avatar presentation" help={`Choose what visitors see before waking the mirror, during conversation, and when it goes back to sleep. Videos are muted. Music mutes during avatar speech, then fades back in, through your selected speakers.${reflective ? ' Dormant music returns only when the exit is complete and the mirror is black.' : ''} Music is listed from this avatar’s folder and the common folder; link folders in Media.`} /></legend>
     <div className="presentation-editor__layout">
       <fieldset className="console__form-grid" disabled={disabled}>
         <HelpField fieldPath={fieldPath('mode')} help={FIELD_HELP.visibility}>Visibility mode<select value={config.mode} onChange={e => edit({ mode: e.currentTarget.value as typeof config.mode })}>

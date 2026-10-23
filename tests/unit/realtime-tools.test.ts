@@ -48,6 +48,7 @@ describe('structured Realtime tool catalog', () => {
   })
   it.each([
     ['play_media', { kind: 'video', assetId: 'clip', mode: 'once' }],
+    ['play_media', { kind: 'image', assetId: 'picture', mode: 'loop' }],
     ['play_youtube', { kind: 'music', url: 'https://www.youtube.com/watch?v=abcdefghijk', mode: 'once' }],
   ] as const)('keeps %s silent after a clarification selection but lets playback failures respond', async (name, arguments_) => {
     const spec = resolveRealtimeTools('Rest.').filter(t => t.name === name)

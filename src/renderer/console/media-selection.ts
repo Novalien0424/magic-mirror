@@ -10,11 +10,10 @@ export function addAvatarMedia(avatar: AvatarProfile, assets: ImportedMedia[], c
   const resources = [...skill.resources]
   const names = new Set(resources.flatMap(r => [r.name, ...r.aliases]).map(normalized))
   for (const asset of assets) {
-    if ('kind' in asset && asset.kind !== 'video') continue
-    const kind = 'kind' in asset ? 'video' : 'music'
+    const kind = 'kind' in asset ? asset.kind : 'music'
     if (resources.length >= 512 || resources.some(r => r.kind === kind && r.assetId === asset.id)
-      || catalog && !canUseAvatarResource(catalog, avatar.id, kind === 'video' ? 'visual' : 'music', asset.id)) continue
-    const base = asset.name.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 110) || (kind === 'video' ? 'Video' : 'Music')
+      || catalog && !canUseAvatarResource(catalog, avatar.id, kind === 'music' ? 'music' : 'visual', asset.id)) continue
+    const base = asset.name.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 110) || (kind === 'image' ? 'Picture' : kind === 'video' ? 'Video' : 'Music')
     let name = base, suffix = 2
     while (names.has(normalized(name))) name = `${base} (${suffix++})`
     names.add(normalized(name))

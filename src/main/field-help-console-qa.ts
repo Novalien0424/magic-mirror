@@ -76,7 +76,7 @@ export async function runFieldHelpConsoleQa(input: Phase4QaInput): Promise<Phase
     await wait("return !!button('Avatars')", 'tour_ready'); await pause(800)
     await full('tour-mirror.png')
     await click('Avatars')
-    for (const page of ['Persona', 'Appearance', 'Voice', 'Music & video', 'Interactive Studio', 'Memories', 'Spells & scenes']) {
+    for (const page of ['Persona', 'Appearance', 'Voice', 'Media', 'Interactive Studio', 'Memories', 'Spells & scenes']) {
       await click(page); await pause(300); await full(`tour-avatars-${page.replace(/\W+/g, '-').toLowerCase()}.png`)
     }
     await click('Loop Video'); await pause(300); await full('tour-loop-video.png')

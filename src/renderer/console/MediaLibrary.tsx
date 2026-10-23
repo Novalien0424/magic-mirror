@@ -52,7 +52,7 @@ export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '',
   }, [playing, bridge])
   return <section className="media-library" aria-label="Media library">
     <div className="console__action-row"><button type="button" className="console__primary" disabled={disabled || isWebConsole()} onClick={onImport}>Browse & upload media…</button><span className="console__muted">{isWebConsole() ? 'Import files in Console on the Mac.' : 'Select images, videos and audio together · up to 32 files'}</span></div>
-    <p className="console__muted">Files are copied locally. Save all changes to keep their links; Publish is separate. To let an avatar play music or video on request, select it in that avatar’s Music & video page.</p>
+    <p className="console__muted">Files are copied locally. Save all changes to keep their links; Publish is separate. To let an avatar present music, videos or pictures on request, select it in that avatar’s Media page.</p>
     {reason ? <p role="status">{reason}</p> : null}
     {playing ? <audio key={playing} ref={audioRef} src={mediaUrl(`magic-mirror-media://music-draft/${encodeURIComponent(playing)}`)} data-library-audio="true"
       onEnded={() => { setPlaying(''); setReason('Preview finished.') }} onError={() => { setPlaying(''); setReason('Audio preview failed: this file could not be decoded.') }} /> : null}

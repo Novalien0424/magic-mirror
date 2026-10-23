@@ -348,7 +348,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly ? 190_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly || mediaSkillOnly ? 190_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)

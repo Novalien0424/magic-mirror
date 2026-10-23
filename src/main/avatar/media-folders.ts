@@ -4,12 +4,15 @@ import { lstat, mkdir, readFile, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 const writeFileAtomic = require('write-file-atomic') as (path: string, value: string, options: { mode: number }) => Promise<void>
 import type { FolderMediaEntry, MediaFolderStatus, MediaFoldersView } from '../../shared/media-folders'
+import type { LocalMediaKind } from '../../shared/media-skill'
 import { prepareDeadlineSeconds } from './prepare-media-file'
 
-const formats: Record<string, { kind: 'video' | 'music'; mimeType: string }> = {
+const formats: Record<string, { kind: LocalMediaKind; mimeType: string }> = {
   '.mp4': { kind: 'video', mimeType: 'video/mp4' }, '.webm': { kind: 'video', mimeType: 'video/webm' },
   '.mp3': { kind: 'music', mimeType: 'audio/mpeg' }, '.wav': { kind: 'music', mimeType: 'audio/wav' },
   '.ogg': { kind: 'music', mimeType: 'audio/ogg' }, '.m4a': { kind: 'music', mimeType: 'audio/mp4' },
+  '.png': { kind: 'image', mimeType: 'image/png' }, '.jpg': { kind: 'image', mimeType: 'image/jpeg' },
+  '.jpeg': { kind: 'image', mimeType: 'image/jpeg' }, '.webp': { kind: 'image', mimeType: 'image/webp' },
 }
 const inside = (root: string, path: string) => { const child = relative(root, path); return child === '' || (!child.startsWith(`..${sep}`) && child !== '..' && !isAbsolute(child)) }
 const validOwner = (owner: string) => owner === 'shared' || /^avatar:[a-z0-9][a-z0-9._-]{0,95}$/.test(owner)

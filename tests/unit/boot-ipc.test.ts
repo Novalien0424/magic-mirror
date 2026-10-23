@@ -558,6 +558,39 @@ function makeLifecycleNeutralMetadataRuntime(
 }
 
 describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
+  it('discovers and displays authorized pictures, denies locked or wrong-kind assets, and waits for decode', async () => {
+    const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
+    const send = vi.spyOn(fixtures.mirrorSender, 'send')
+    const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'image-session', sessionGeneration: 3 }
+    const image = { kind: 'image', assetId: 'night-sky', name: '星河夜空', aliases: ['靈魂形狀'] }
+    const config = { musicAssets: [], visualAssets: [{ id: image.assetId, kind: 'image' }], avatarCatalog: {
+      activeAvatarId: 'raven', locks: [] as { kind: string; resourceId: string; avatarId: string }[],
+      avatars: [{ id: 'raven', mediaSkill: { enabled: true, fadeMs: 0, gain: .5, resources: [image] } }],
+    } }
+    const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), getPublishedSceneConfigForRuntime: async () => config } as never, fixtures.windows, events)
+    const event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }, identity = { realtimeSessionId: 'image-session', sessionGeneration: 3 }
+    const find = registered.handlers.get(MIRROR_IPC_CHANNELS.findMedia)!, play = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!
+    const envelope = { request: { action: 'play', kind: 'image', assetId: image.assetId, mode: 'once' }, identity }
+    config.avatarCatalog.locks = [{ kind: 'visual', resourceId: image.assetId, avatarId: 'other' }]
+    expect(await find(event, { request: { query: '欣河夜空', kind: 'image' }, identity })).toMatchObject({ total: 0 })
+    expect(await play(event, envelope)).toMatchObject({ status: 'rejected', code: 'media_not_found' })
+    config.avatarCatalog.locks = []
+    expect(await find(event, { request: { query: '欣河夜空', kind: 'image' }, identity }))
+      .toMatchObject({ code: 'media_discovery_phonetic', total: 1, resources: [{ kind: 'image', assetId: image.assetId }] })
+    expect(send).not.toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_visual' }))
+    config.visualAssets[0]!.kind = 'video'
+    expect(await play(event, envelope)).toMatchObject({ status: 'rejected', code: 'media_not_found' })
+    config.visualAssets[0]!.kind = 'image'
+    let settled = false
+    const pending = Promise.resolve(play(event, envelope)).then(result => { settled = true; return result })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('mirror:avatar-control', expect.objectContaining({ type: 'scene_visual', playback: 'still', fit: 'contain' })))
+    expect(settled).toBe(false)
+    const command = send.mock.calls.find(call => (call[1] as any)?.type === 'scene_visual' && (call[1] as any)?.action === 'start')![1] as any
+    registered.handlers.get(MIRROR_IPC_CHANNELS.reportSceneVisual)!(event, { ...command.context, type: 'ready' })
+    expect(await pending).toBe('accepted')
+    expect(await play(event, { request: { action: 'stop' }, identity })).toBe('accepted')
+    expect(JSON.stringify(events)).not.toMatch(/星河|欣河|靈魂/)
+  })
   it('discovers only current authorized local resources and discards stale YouTube searches without logging clues', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = []
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'discovery-session', sessionGeneration: 3 }

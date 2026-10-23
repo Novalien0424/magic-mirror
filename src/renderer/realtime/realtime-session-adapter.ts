@@ -858,9 +858,9 @@ export function createRealtimeSession(
         const generation = memoryTurnGeneration
         const stale = () => ({ outcome: 'ignored' as const, media: { status: 'rejected' as const, code: 'media_discovery_stale', resources: [], total: 0 } })
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending) return stale()
-        const media = await findLocalMedia({ query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' }, generation)
+        const media = await findLocalMedia({ query: args.query as string, kind: args.kind as import('../../shared/media-discovery').MediaDiscoveryRequest['kind'] }, generation)
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
-        const online = media.code === 'media_discovery_no_match' && !await onlineMediaRestriction()
+        const online = args.kind !== 'image' && media.code === 'media_discovery_no_match' && !await onlineMediaRestriction()
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
         return { outcome: media.status, media, ...(['media_discovery_weak', 'media_discovery_kind_mismatch'].includes(media.code) ? { next: 'ask' as const }
           : online ? { next: 'search_youtube' as const } : {}) }
@@ -902,7 +902,7 @@ export function createRealtimeSession(
       },
       play_media: async args => {
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
-        return requestMedia({ action: 'play', kind: args.kind as 'video' | 'music', assetId: args.assetId as string,
+        return requestMedia({ action: 'play', kind: args.kind as import('../../shared/media-skill').LocalMediaKind, assetId: args.assetId as string,
           mode: args.mode as 'once' | 'loop' })
       },
       stop_media: async () => {

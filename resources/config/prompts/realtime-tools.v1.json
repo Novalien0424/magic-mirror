@@ -31,9 +31,9 @@
       "enabled": true,
       "availability": "conversation",
       "routing": "model_intent",
-      "description": "Play a discovered local asset; video hides the avatar, music keeps it visible.",
+      "description": "Present a discovered local asset. Music keeps the avatar visible; video or pictures replace it. A picture shows uncropped for 15 seconds with once, or stays displayed with loop.",
       "parameters": { "type": "object", "properties": {
-        "kind": { "type": "string", "enum": ["video", "music"] },
+        "kind": { "type": "string", "enum": ["video", "music", "image"] },
         "assetId": { "type": "string", "description": "Exact assetId returned by find_media." },
         "mode": { "type": "string", "enum": ["once", "loop"] }
       }, "required": ["kind", "assetId", "mode"], "additionalProperties": false },
@@ -55,10 +55,10 @@
       "description": "Find local filenames and aliases matching the visitor's title or Mandarin pronunciation in this avatar's own and shared folders.",
       "parameters": { "type": "object", "properties": {
         "query": { "type": "string", "description": "Copy the visitor's title, artist or alias clues in their original language; empty lists candidates." },
-        "kind": { "type": "string", "enum": ["all", "video", "music"], "description": "Use all unless the visitor explicitly asks for music or video. A title or version alone does not specify media kind." }
+        "kind": { "type": "string", "enum": ["all", "video", "music", "image"], "description": "Use all unless the visitor explicitly asks for music, video or a picture (image). A title or version alone does not specify media kind." }
       }, "required": ["query", "kind"], "additionalProperties": false },
       "rules": {
-        "useWhen": "Search local first for every media request; after a clear match call play_media in this turn.",
+        "useWhen": "Search local first for requests to play existing music, videos or pictures; after a clear match call play_media in this turn. Requests to create a new picture belong to the image skill.",
         "avoidWhen": "For multiple plausible matches or media_discovery_kind_mismatch ask one short question using the returned names and media kind.",
         "speech": "On a miss follow the result's next field; list up to three returned names only if asked."
       }, "completion": "response",

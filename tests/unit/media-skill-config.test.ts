@@ -11,6 +11,7 @@ import type { MirrorConfig } from '../../src/shared/types'
 
 const video: AvatarMediaResource = { kind: 'video', assetId: 'clip', name: 'Lantern show', aliases: ['Lanterns'] }
 const music: AvatarMediaResource = { kind: 'music', assetId: 'track', name: 'Quiet melody', aliases: ['Evening song'] }
+const image: AvatarMediaResource = { kind: 'image', assetId: 'still', name: 'Night sky', aliases: ['Stars'] }
 function fixture(): MirrorConfig {
   const { schemaVersion: _version, ...baseline } = JSON.parse(readFileSync('resources/config/default.json', 'utf8'))
   return { ...baseline, avatarCatalog: { activeAvatarId: 'guide', avatars: [newAvatar('guide'), newAvatar('host')], locks: [], models: [] },
@@ -37,7 +38,7 @@ describe('per-avatar media skill configuration', () => {
     expect(skill(mirrorConfigSchema.parse(config) as MirrorConfig).resources[0]!.aliases).toEqual(['Lanterns'])
   })
   it('has an independent default for new profiles and fills omitted skill fields', () => {
-    expect(PROFILE_SECTIONS).toContain('Music & video')
+    expect(PROFILE_SECTIONS).toContain('Media')
     const first = newAvatar('first'), second = newAvatar('second')
     expect(first.mediaSkill).toEqual(DEFAULT_MEDIA_SKILL)
     first.mediaSkill!.resources.push(structuredClone(video))
@@ -50,7 +51,7 @@ describe('per-avatar media skill configuration', () => {
   })
   it('round-trips names, aliases and independent skill settings across activation', () => {
     const config = fixture()
-    skill(config).resources = [structuredClone(video), structuredClone(music)]
+    skill(config).resources = [structuredClone(video), structuredClone(music), structuredClone(image)]
     skill(config).fadeMs = 1200
     skill(config).gain = 0.4
     skill(config, 1).enabled = false
@@ -65,18 +66,18 @@ describe('per-avatar media skill configuration', () => {
     copy.avatars[0]!.mediaSkill!.resources[0]!.aliases.push('Different alias')
     expect(skill(switched).resources[0]!.aliases).toEqual(['Lanterns'])
   })
-  it.each([['video', 'missing'], ['video', 'still'], ['video', 'track'], ['music', 'missing'], ['music', 'clip']] as const)(
+  it.each([['video', 'missing'], ['video', 'still'], ['video', 'track'], ['music', 'missing'], ['music', 'clip'], ['image', 'missing'], ['image', 'clip'], ['image', 'track']] as const)(
     'rejects unavailable or wrong-kind resources: %s %s', (kind, assetId) => {
       const config = fixture()
       skill(config).resources = [{ kind, assetId, name: 'Requested media', aliases: [] }]
       expect(errors(config)).toContainEqual(expect.objectContaining({ path: ['avatarCatalog', 'avatars', 0, 'mediaSkill', 'resources', 0, 'assetId'] }))
     },
   )
-  it.each(['video', 'music'] as const)('honors %s locks even when the media skill is disabled', kind => {
+  it.each(['video', 'music', 'image'] as const)('honors %s locks even when the media skill is disabled', kind => {
     const config = fixture()
-    const resource = structuredClone(kind === 'video' ? video : music)
+    const resource = structuredClone(kind === 'image' ? image : kind === 'video' ? video : music)
     skill(config).resources = [resource]
-    config.avatarCatalog!.locks = [{ kind: kind === 'video' ? 'visual' : 'music', resourceId: resource.assetId, avatarId: 'guide' }]
+    config.avatarCatalog!.locks = [{ kind: kind === 'music' ? 'music' : 'visual', resourceId: resource.assetId, avatarId: 'guide' }]
     expect(mirrorConfigSchema.safeParse(config).success).toBe(true)
     skill(config).enabled = false
     config.avatarCatalog!.locks[0]!.avatarId = 'host'

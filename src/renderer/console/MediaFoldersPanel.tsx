@@ -2,6 +2,9 @@ import * as React from 'react'
 import { isWebConsole } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { folderMediaSkill, type MediaFolderCommand, type MediaFolderStatus, type MediaFoldersView } from '../../shared/media-folders'
+import { rankMediaResources } from '../../shared/media-discovery'
+import { mediaClueKey } from '../../shared/media-clue'
+import { mediaPhoneticKey } from '../../shared/media-phonetics'
 
 const explanations: Record<string, string> = {
   media_folder_overlap: 'Choose separate folders. A shared folder cannot contain an avatar’s folder, and avatars cannot link overlapping folders.',
@@ -48,13 +51,15 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
   </section>
   const entries = view?.entries ?? []
   const resources = folderMediaSkill(undefined, entries).resources
+  const matches = query.trim() ? rankMediaResources(resources, { query, kind: 'all' }, mediaClueKey, mediaPhoneticKey) : null
+  const visible = matches ? matches.resources : resources
   return <section aria-label={avatarId ? 'Avatar folder library' : 'Global media folders'}>
     {!avatarId && <h3>Common media</h3>}
     {!avatarId && <div className="console__device-save console__action-row"><button type="button" className="console__primary" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('save')}>Save folder settings</button>{saved && <span role="status">Folder settings saved.</span>}</div>}
     <details className="media-folder-settings" open={!avatarId || undefined}><summary>Folders</summary><div className="media-folder-grid">
       {avatarId && folder('own', view?.own, true)}
       {folder('shared', view?.shared, !avatarId)}
-    </div><p className="console__muted">Folder choices save automatically. All music and videos inside are available, including subfolders.</p></details>
+    </div><p className="console__muted">Folder choices save automatically. Music, videos and pictures inside are available, including subfolders.</p></details>
     <div className="media-file-toolbar"><input type="search" aria-label="Find folder media" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder="Find a file…" />
       <button type="button" disabled={busy || !bridge?.mediaFolders} onClick={() => void run('refresh')}>Refresh files</button></div>
     {!bridge?.mediaFolders && <p role="alert">Folder linking is unavailable. Restart the updated application.</p>}
@@ -62,13 +67,15 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
     {avatarId && [view?.own, view?.shared].some(status => status && status.status !== 'ready') && <p role="alert">Some media is unavailable. Open Folders to check the connection.</p>}
     {entries.length + legacyCount > 512 && <p role="alert">This avatar has more than 512 media entries. Folder files take priority; some previously imported files are omitted. Remove unused imported entries below.</p>}
     {busy && <p role="status">Reading folders…</p>}
-    {!resources.length && !busy && <p>No music or videos found. Choose a folder above, then put media files in it.</p>}
-    <ul className="media-file-list" aria-label="Media files">{resources.filter(entry => entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(entry => <li key={entry.assetId} data-folder-media-id={entry.assetId} data-folder-media-kind={entry.kind}>{entry.name}</li>)}</ul>
-    {resources.length > 0 && !resources.some(entry => entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) && <p role="status">No matching files.</p>}
+    {!resources.length && !busy && <p>No music, videos or pictures found. Choose a folder above, then put media files in it.</p>}
+    <ul className="media-file-list" aria-label="Media files">{visible.map(entry => <li key={entry.assetId} data-folder-media-id={entry.assetId} data-folder-media-kind={entry.kind}>{entry.name}</li>)}</ul>
+    {resources.length > 0 && !visible.length && <p role="status">No matching files.</p>}
+    {matches && matches.total > matches.resources.length && <p role="status">Showing the first 20 matches. Add more of the title to narrow the search.</p>}
     <details className="console__technical"><summary>Help</summary>
-      <p>Say “Play [filename]”, “Loop [filename]” or “Stop media”. Video fades the avatar out; music leaves it visible.</p>
+      <p>Ask to play music, a video or a picture by name. Similar Mandarin sounds and aliases can also find a file; exact names come first. Say “停止播放” to stop.</p>
+      <p>Music leaves the avatar visible. Videos and pictures fade it out. Pictures show uncropped for 15 seconds; ask to loop one to keep it displayed until stopped.</p>
       <p>New files appear within 30 seconds. Start a new conversation to give the avatar the updated list. Unlinking never deletes files.</p>
-      <p>MP4, WebM, MP3, WAV, OGG and M4A; up to 200 files per folder. Keep Google Drive files available offline.</p>
+      <p>MP4, WebM, MP3, WAV, OGG, M4A, PNG, JPG, JPEG and WebP; up to 200 files per folder. Keep Google Drive files available offline.</p>
     </details>
   </section>
 }

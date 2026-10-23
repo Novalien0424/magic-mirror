@@ -922,7 +922,7 @@ th {
 .media-folder-settings summary, .media-playback-settings summary { cursor: pointer; padding: .35rem 0; }
 .media-playback-settings legend { display: none; }
 .profile-workspace--media .profile-publish-actions .console-help { flex: 0 1 auto; }
-.media-skill-preview video { width: calc(100% - 1.6rem); max-height: 260px; background: #000; }
+.media-skill-preview video, .media-skill-preview img { width: calc(100% - 1.6rem); max-height: 260px; object-fit: contain; background: #000; }
 .media-skill-preview audio { width: calc(100% - 1.6rem); }
 .media-skill-preview summary { cursor: pointer; padding: 8px 0; }
 .media-folder-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }

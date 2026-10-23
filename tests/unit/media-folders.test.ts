@@ -22,6 +22,22 @@ async function fixture(prepareCloudFile?: (path: string, size: number, mtime: nu
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 describe('linked media folders', () => {
+  it('indexes supported pictures, resolves their MIME types and enforces avatar ownership', async () => {
+    const { root, store } = await fixture()
+    const formats = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+    for (const extension of Object.keys(formats)) await writeFile(join(root, 'raven', `${extension}.${extension}`), 'synthetic image')
+    await store.link('avatar:raven', join(root, 'raven'))
+    const images = store.resources('raven')
+    expect(images).toHaveLength(4)
+    expect(store.resources('other')).toEqual([])
+    for (const resource of images) {
+      expect(resource.kind).toBe('image')
+      expect(await store.resolve(resource.assetId, 'raven')).toMatchObject({ mimeType: formats[resource.name as keyof typeof formats] })
+      expect(await store.resolve(resource.assetId, 'other')).toBeNull()
+    }
+    await store.unlink('avatar:raven')
+    expect(await store.resolve(images[0]!.assetId, 'raven')).toBeNull()
+  })
   it('uses a prepared local path on demand and rechecks source ownership afterwards', async () => {
     let finish!: (path: string) => void
     const prepare = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))

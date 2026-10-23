@@ -236,6 +236,26 @@ describe("RealtimeSession adapter", () => {
     complete(); await pending;
     await handle.close('manual_stop');
   });
+  it('finds and displays local pictures but never suggests YouTube for a missing picture', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn()
+    const picture = { kind: 'image' as const, assetId: 'night-sky', name: '星河夜空', aliases: [] }
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_phonetic', resources: [picture], total: 1 }))
+    const onMediaRequest = vi.fn(async () => 'accepted' as const)
+    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }))
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onFindMedia, onMediaRequest, onSearchYoutube })
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
+    const find = () => tools.find(t => t.name === 'find_media').invoke({}, '{"query":"欣河夜空","kind":"image"}')
+    expect(await find()).toMatchObject({ media: { code: 'media_discovery_phonetic', resources: [picture] } })
+    expect(onFindMedia).toHaveBeenLastCalledWith({ query: '欣河夜空', kind: 'image' }, { realtimeSessionId: 'session-a', sessionGeneration: expect.any(Number) })
+    await tools.find(t => t.name === 'play_media').invoke({}, '{"kind":"image","assetId":"night-sky","mode":"once"}')
+    expect(onMediaRequest).toHaveBeenCalledExactlyOnceWith({ action: 'play', kind: 'image', assetId: 'night-sky', mode: 'once' }, { realtimeSessionId: 'session-a', sessionGeneration: expect.any(Number) })
+    onFindMedia.mockResolvedValue({ status: 'accepted', code: 'media_discovery_no_match', resources: [], total: 0 })
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'picture-cloud' })
+    probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: 'picture-cloud', transcript: '在雲上找找星河夜空的圖片' })
+    expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaNoMatch })
+    expect(onSearchYoutube).not.toHaveBeenCalled()
+    await handle.close('manual_stop')
+  })
   it('allows online media only when a final transcript opens with the hidden phrase', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const found = 'https://www.youtube.com/watch?v=M7lc1UVf-VE', other = 'https://youtu.be/abcdefghijk';

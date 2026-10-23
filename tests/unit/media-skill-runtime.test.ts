@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createMediaSkillRuntime } from '../../src/main/avatar/media-skill-runtime'
-import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
+import { DEFAULT_MEDIA_SKILL, MEDIA_IMAGE_DURATION_MS } from '../../src/shared/media-skill'
 import type { AvatarControlCommand } from '../../src/shared/bridge'
 
 describe('avatar media playback ownership', () => {
@@ -9,9 +9,66 @@ describe('avatar media playback ownership', () => {
     vi.useFakeTimers()
     const commands: AvatarControlCommand[] = [], reasons: string[] = []
     const runtime = createMediaSkillRuntime({ dispatch: command => { commands.push(command); return true }, report: reason => reasons.push(reason) })
-    const skill = { ...DEFAULT_MEDIA_SKILL, resources: [{ kind: 'video' as const, assetId: 'fog', name: 'Mist', aliases: [] }, { kind: 'music' as const, assetId: 'song', name: 'Song', aliases: [] }] }
+    const skill = { ...DEFAULT_MEDIA_SKILL, resources: [{ kind: 'video' as const, assetId: 'fog', name: 'Mist', aliases: [] }, { kind: 'music' as const, assetId: 'song', name: 'Song', aliases: [] }, { kind: 'image' as const, assetId: 'sky', name: 'Night sky', aliases: [] }] }
     return { runtime, commands, reasons, skill }
   }
+  it('waits for picture decode, shows it uncropped and silent, then returns after 15 seconds of display', async () => {
+    const { runtime, commands, reasons, skill } = setup()
+    let settled = false
+    const result = runtime.playConfirmed({ action: 'play', kind: 'image', assetId: 'sky', mode: 'once' }, skill)
+    void result.then(() => { settled = true })
+    expect(commands.at(-1)).toMatchObject({ type: 'media_skill_state', active: true, hideAvatar: true })
+    await vi.advanceTimersByTimeAsync(skill.fadeMs + 5000)
+    expect(settled).toBe(false)
+    const image = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_visual'; action: 'start' }>
+    expect(image).toMatchObject({ playback: 'still', fit: 'contain', audio: 'muted' })
+    runtime.reportVisual({ ...image.context, type: 'ready' })
+    await expect(result).resolves.toBe('accepted')
+    await vi.advanceTimersByTimeAsync(MEDIA_IMAGE_DURATION_MS - 1)
+    expect(runtime.isActive()).toBe(true)
+    // Duplicate ready must not extend the display duration.
+    runtime.reportVisual({ ...image.context, type: 'ready' })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(runtime.isActive()).toBe(false)
+    expect(commands.at(-2)).toMatchObject({ type: 'scene_visual', action: 'stop', runId: image.context.runId })
+    expect(commands.at(-1)).toMatchObject({ active: false, hideAvatar: false })
+    expect(reasons).toContain('media_completed')
+  })
+  it('holds a looping picture without a progress watchdog; replacement cancels the old timer', async () => {
+    const { runtime, commands, reasons, skill } = setup()
+    const start = async (mode: 'once' | 'loop') => {
+      const result = runtime.playConfirmed({ action: 'play', kind: 'image', assetId: 'sky', mode }, skill)
+      await vi.advanceTimersByTimeAsync(skill.fadeMs)
+      const image = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_visual'; action: 'start' }>
+      runtime.reportVisual({ ...image.context, type: 'ready' })
+      await expect(result).resolves.toBe('accepted')
+      return image
+    }
+    const old = await start('once')
+    await vi.advanceTimersByTimeAsync(5000)
+    await start('loop')
+    runtime.reportVisual({ ...old.context, type: 'ready' })
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(runtime.isActive()).toBe(true)
+    expect(reasons).not.toContain('media_playback_timeout')
+    expect(reasons).toContain('media_report_stale')
+    runtime.stop()
+    expect(runtime.isActive()).toBe(false)
+  })
+  it('returns a failed picture load without claiming display and cancels pending startup on Stop', async () => {
+    const { runtime, commands, skill } = setup()
+    const result = runtime.playConfirmed({ action: 'play', kind: 'image', assetId: 'sky', mode: 'once' }, skill)
+    await vi.advanceTimersByTimeAsync(skill.fadeMs)
+    const image = commands.at(-1) as Extract<AvatarControlCommand, { type: 'scene_visual'; action: 'start' }>
+    runtime.reportVisual({ ...image.context, type: 'failed', errorCode: 'visual_image_decode_failed' })
+    await expect(result).resolves.toBe('failed')
+    expect(runtime.isActive()).toBe(false)
+    const pending = runtime.playConfirmed({ action: 'play', kind: 'image', assetId: 'sky', mode: 'loop' }, skill)
+    runtime.stop()
+    await expect(pending).resolves.toBe('ignored')
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(commands.filter(c => c.type === 'scene_visual' && c.action === 'start')).toHaveLength(1)
+  })
   it('uses the same once/loop ownership for YouTube and releases the isolated player on Stop', async () => {
     const { commands, reasons, skill } = setup()
     let report!: (value: import('../../src/shared/types').SceneActionRendererReport) => void

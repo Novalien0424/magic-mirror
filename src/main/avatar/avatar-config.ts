@@ -21,7 +21,7 @@ const mediaSkillSchema = z.object({
   fadeMs: z.number().int().min(0).max(10000).default(DEFAULT_MEDIA_SKILL.fadeMs),
   gain: z.number().finite().min(0).max(1).default(DEFAULT_MEDIA_SKILL.gain),
   resources: z.array(z.object({
-    kind: z.enum(['video', 'music']), assetId: id, name: mediaSpokenName,
+    kind: z.enum(['video', 'music', 'image']), assetId: id, name: mediaSpokenName,
     aliases: z.array(z.string()).transform(values => values.filter(value => value.trim() !== '')).pipe(z.array(mediaSpokenName).max(16)).default([]),
   }).strict()).max(512).default([]),
 }).strict().superRefine((value, context) => {
@@ -105,8 +105,8 @@ export function validateAvatarReferences(config: Pick<MirrorConfig, 'wake' | 'vi
     const allowed = (kind: 'visual' | 'music' | 'action', resourceId: string) =>
       resources[kind].some(item => item.id === resourceId) && canUseAvatarResource(catalog, avatar.id, kind, resourceId)
     for (const [resourceIndex, resource] of (avatar.mediaSkill?.resources ?? []).entries()) {
-      const available = resource.kind === 'video'
-        ? allowed('visual', resource.assetId) && config.visualAssets.some(asset => asset.id === resource.assetId && asset.kind === 'video')
+      const available = resource.kind !== 'music'
+        ? allowed('visual', resource.assetId) && config.visualAssets.some(asset => asset.id === resource.assetId && asset.kind === resource.kind)
         : allowed('music', resource.assetId)
       if (!available) fail(['avatars', index, 'mediaSkill', 'resources', resourceIndex, 'assetId'])
     }
