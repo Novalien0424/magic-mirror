@@ -57,8 +57,8 @@ function literalClueKey(value: string): string {
 }
 function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0 }
 
-/** Match literal public clues only; punctuation/spacing differences also work for unsegmented CJK titles. */
-function labelScore(label: string, query: string, compactQuery: string, clues: string[], normalize: (value: string) => string): number {
+/** Compare normalized public clues, preserving title/alias confidence levels. */
+function labelScore(label: string, query: string, compactQuery: string, clues: string[], normalize: (value: string) => string, phonetic = false): number {
   const normalized = normalize(label), compact = normalized.replace(/ /g, '')
   if (normalized === query || compact === compactQuery) return 4
   if (normalized.includes(query) || compact.includes(compactQuery)) return 3
@@ -67,11 +67,12 @@ function labelScore(label: string, query: string, compactQuery: string, clues: s
   // Return a weak candidate, never select it or drop stronger matches. Latin
   // word boundaries prevent "Rain" from matching "Rainbow".
   return (normalized.includes(' ') && ` ${query} `.includes(` ${normalized} `)
-    || /\p{Script=Han}/u.test(normalized) && compact.length >= 2 && compactQuery.includes(compact)) ? 1 : 0
+    || (phonetic || /\p{Script=Han}/u.test(normalized)) && compact.length >= 2 && compactQuery.includes(compact)) ? 1 : 0
 }
 
 /** Pure discovery: retain ambiguous candidates and never select a resource or dispatch playback. */
-export function rankMediaResources(resources: readonly AvatarMediaResource[], request: MediaDiscoveryRequest, normalize = literalClueKey): MediaDiscoveryReply {
+export function rankMediaResources(resources: readonly AvatarMediaResource[], request: MediaDiscoveryRequest, normalize = literalClueKey,
+  pronunciation?: (value: string) => string): MediaDiscoveryReply {
   const parsedRequest = parseMediaDiscoveryRequest(request)
   if (!parsedRequest) return { status: 'rejected', code: 'media_discovery_invalid_request', resources: [], total: 0 }
   if (!Array.isArray(resources) || resources.length > MAX_RESOURCES) {
@@ -85,6 +86,9 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
 
   const listing = !parsedRequest.query.trim()
   const query = normalize(parsedRequest.query), compactQuery = query.replace(/ /g, ''), clues = query.split(' ')
+  const hasTitleSounds = (value: string) => (value.match(/\p{Script=Han}/gu)?.length ?? 0) >= 2
+  const soundQuery = pronunciation && hasTitleSounds(parsedRequest.query) ? pronunciation(parsedRequest.query) : ''
+  const soundClues = soundQuery.split(' '), compactSoundQuery = soundQuery.replace(/ /g, '')
   const ranked = publicResources.filter(resource => parsedRequest.kind === 'all' || resource.kind === parsedRequest.kind)
     .map(resource => {
       let score = 0
@@ -92,6 +96,16 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
         const nameScore = labelScore(resource.name, query, compactQuery, clues, normalize)
         score = nameScore ? nameScore * 2 + 1 : 0
         for (const alias of resource.aliases) score = Math.max(score, labelScore(alias, query, compactQuery, clues, normalize) * 2)
+        // Literal title/alias matches outrank pronunciation. An artist alias
+        // merely contained in a sentence stays weak, below a complete sound match.
+        if (score >= 3) score *= 10
+        if (soundQuery && pronunciation) {
+          const sounds = (label: string) => hasTitleSounds(label)
+            ? labelScore(label, soundQuery, compactSoundQuery, soundClues, pronunciation, true) : 0
+          const nameSound = sounds(resource.name)
+          score = Math.max(score, nameSound ? nameSound * 2 + 1 : 0)
+          for (const alias of resource.aliases) score = Math.max(score, sounds(alias) * 2)
+        }
       }
       return { resource, score, name: normalize(resource.name) }
     })
@@ -104,6 +118,6 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
   const weak = !listing && total > 0 && ranked[0]!.score <= 2
   return { status: 'accepted', code: total > MAX_RESULTS ? 'media_discovery_truncated'
     : listing ? 'media_discovery_listed' : ambiguous ? 'media_discovery_ambiguous' : weak ? 'media_discovery_weak'
-      : total ? 'media_discovery_matches' : 'media_discovery_no_match',
+      : !total ? 'media_discovery_no_match' : ranked[0]!.score < 10 ? 'media_discovery_phonetic' : 'media_discovery_matches',
   resources: ranked.slice(0, MAX_RESULTS).map(candidate => candidate.resource), total }
 }

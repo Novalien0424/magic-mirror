@@ -33,7 +33,7 @@ describe('bounded synthetic Raven fixture', () => {
   it('has immutable independent scenarios, unique turn/category codes and bounded catalog routes', () => {
     expect(recursivelyFrozen(RAVEN_CONVERSATION_FIXTURE)).toBe(true)
     expect(new Set(RAVEN_CONVERSATION_SCENARIOS.map(s => s.id)).size).toBe(RAVEN_CONVERSATION_SCENARIOS.length)
-    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(11)
+    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(12)
     for (const s of RAVEN_CONVERSATION_SCENARIOS) {
       expect(s.turns.length).toBeGreaterThan(1)
       expect(s.turns.length).toBeLessThanOrEqual(12)

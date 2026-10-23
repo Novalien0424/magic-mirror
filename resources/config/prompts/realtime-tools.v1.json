@@ -52,14 +52,14 @@
     },
     {
       "name": "find_media", "handler": "find_media", "enabled": true, "availability": "conversation", "routing": "model_intent",
-      "description": "Find local candidates by filename or alias in this avatar's own and shared folders.",
+      "description": "Find local filenames and aliases matching the visitor's title or Mandarin pronunciation in this avatar's own and shared folders.",
       "parameters": { "type": "object", "properties": {
         "query": { "type": "string", "description": "Copy the visitor's title, artist or alias clues in their original language; empty lists candidates." },
-        "kind": { "type": "string", "enum": ["all", "video", "music"] }
+        "kind": { "type": "string", "enum": ["all", "video", "music"], "description": "Use all unless the visitor explicitly asks for music or video. A title or version alone does not specify media kind." }
       }, "required": ["query", "kind"], "additionalProperties": false },
       "rules": {
         "useWhen": "Search local first for every media request; after a clear match call play_media in this turn.",
-        "avoidWhen": "For multiple plausible matches ask one distinguishing question.",
+        "avoidWhen": "For multiple plausible matches or media_discovery_kind_mismatch ask one short question using the returned names and media kind.",
         "speech": "On a miss follow the result's next field; list up to three returned names only if asked."
       }, "completion": "response",
       "results": {

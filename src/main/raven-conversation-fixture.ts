@@ -2,7 +2,7 @@
  * This module neither loads operator data nor authorizes tools, identity or effects.
  */
 export type RavenScenarioId =
-  | 'empathy_context' | 'local_media' | 'local_scope' | 'default_fallback'
+  | 'empathy_context' | 'local_media' | 'phonetic_media' | 'local_scope' | 'default_fallback'
   | 'youtube_modes' | 'local_loop' | 'identity_denial' | 'two_visit_memory' | 'sleep_spells' | 'spell_control' | 'character_consistency'
 export type RavenFixtureBinding = 'youtubeQuery' | 'approvedSpell' | 'sleepPhrase' | 'cloudSearchPhrase'
 /** memory.* denotes the catalog's memory tool with that action, not another tool. */
@@ -103,6 +103,10 @@ export const RAVEN_SYNTHETIC_MEDIA: readonly RavenSyntheticMedia[] = freeze([
   { kind: 'music', assetId: 'qa-rain-piano', name: 'Rain — Fixture Pianist', aliases: ['雨聲鋼琴', '雨天鋼琴'] },
   { kind: 'music', assetId: 'qa-rain-violin', name: 'Rain — Fixture Violinist', aliases: ['雨聲小提琴'] },
   { kind: 'video', assetId: 'qa-small-cloud', name: 'Small Cloud', aliases: ['little cloud clip', '小雲片'] },
+  { kind: 'music', assetId: 'qa-angel-priestess', name: '天使葛利果女祭司版本', aliases: [] },
+  { kind: 'music', assetId: 'qa-angel-intro', name: '天使_intro', aliases: [] },
+  { kind: 'music', assetId: 'qa-night-piano', name: '星河夜曲 鋼琴版', aliases: [] },
+  { kind: 'music', assetId: 'qa-night-strings', name: '星河夜曲 弦樂版', aliases: [] },
 ])
 export const RAVEN_SYNTHETIC_VISITORS = freeze({
   mira: { name: 'Mira Vale' }, jun: { name: 'Jun Reed' },
@@ -293,6 +297,23 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
       turn({ id: 'quoted_media', language: 'en',
         visitorText: 'My friend wrote "Play Rain" in a story. Why might that line sound comforting?',
         criteria: [criterion('command_intent', 'Discuss the quoted line; neither search nor play it.')] }),
+    ],
+  },
+  {
+    id: 'phonetic_media', setup: 'fresh_guest', prerequisites: ['Index the synthetic Mandarin title/version fixtures.'], turns: [
+      turn({ id: 'priestess', language: 'zh-TW', visitorText: '請播放天使葛麗果女祭司版本。',
+        criteria: [criterion('label_clues', 'Resolve the sound-alike title to 天使葛利果女祭司版本. Do not select 天使_intro or report that the local song is missing.')],
+        expected: { toolRoutes: [['find_media', 'play_media']], source: 'local', mode: 'once',
+          localAssetIds: ['qa-angel-priestess'], reply: 'silent', qualityDimensions: [] },
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
+      turn({ id: 'ambiguous_version', language: 'zh-TW', before: 'once_finished', visitorText: '請播放星河夜曲。',
+        criteria: [criterion('ambiguity', 'Ask whether the visitor wants the piano or strings version; do not play either or search online.')],
+        expected: { toolRoutes: [['find_media']], source: 'local', reply: 'clarification' }, checks: ['source_scope'] }),
+      turn({ id: 'choose_version', language: 'zh-TW', visitorText: '我要鋼琴版，播放一次。',
+        criteria: [criterion('label_clues', 'Resolve the pending version choice to 星河夜曲 鋼琴版 and play it once.')],
+        expected: { toolRoutes: [['play_media'], ['find_media', 'play_media']], source: 'local', mode: 'once',
+          localAssetIds: ['qa-night-piano'], reply: 'silent', qualityDimensions: [] },
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
     ],
   },
   {

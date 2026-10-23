@@ -37,6 +37,7 @@ model/effort and device route; comparisons never publish settings.
 | `character_consistency` | Ten opt-in character stress turns; transcript grades do not prove vocal acting. |
 | `two_visit_memory`, `identity_denial` | Actual isolated learning/confirmation; failed prerequisites skip dependent judgments. |
 | `media_stop` | 90-second Active fixture, negation, exact configured ASR stop and follow-up. |
+| `phonetic_media` | Mandarin sound-alike title → correct local playback; ambiguous versions → clarification → chosen version. Synthetic audio/real providers; does not prove human recognition or force a particular ASR spelling. |
 | `additional_capabilities` | WebGL context recreation, folder playback, image grounding, interruption. |
 | `portrait_studio` | Synthetic visitor, real Realtime/image providers; `--studio-story` selects the story. `--studio-name-only` checks name correction/confirmation and name input after restart, without painting; combine with `--physical` for actual Jabra capture. Sender-track readiness does not establish recognition. Picture/reply checks do not prove human name, wake or printing acceptance. |
 | `camera_native` | Native fresh snapshots, targeted USB reset, sustained recovery. |

@@ -9,6 +9,7 @@ import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-ski
 import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
 import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
 import { mediaClueKey } from '../shared/media-clue'
+import { mediaPhoneticKey } from '../shared/media-phonetics'
 import { parseYoutubeSearchRequest, type YoutubeSearchReply } from '../shared/youtube-search'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
@@ -1876,7 +1877,13 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
           options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? [])
         const resources = skill.enabled ? skill.resources.filter(resource => !catalog || canUseAvatarResource(catalog, catalog.activeAvatarId,
           resource.kind === 'video' ? 'visual' : 'music', resource.assetId)) : []
-        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest, mediaClueKey)
+        result = rankMediaResources(resources, request as import('../shared/media-discovery').MediaDiscoveryRequest, mediaClueKey, mediaPhoneticKey)
+        // A model-guessed type must not hide an otherwise available local title.
+        // Return cross-kind choices for clarification; never dispatch playback.
+        if (result.code === 'media_discovery_no_match' && 'kind' in request && request.kind !== 'all') {
+          const alternatives = rankMediaResources(resources, { query: request.query, kind: 'all' }, mediaClueKey, mediaPhoneticKey)
+          if (alternatives.total) result = { ...alternatives, code: 'media_discovery_kind_mismatch' }
+        }
       }
     } catch { result = reply(`${prefix}_unavailable`, 'failed') as MediaDiscoveryReply | YoutubeSearchReply }
     if (!current()) return stale()

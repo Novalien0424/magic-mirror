@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mediaClueKey } from '../../src/shared/media-clue'
+import { mediaPhoneticKey } from '../../src/shared/media-phonetics'
 import { parseMediaDiscoveryReply, parseMediaDiscoveryRequest, rankMediaResources,
   type MediaDiscoveryReply, type MediaDiscoveryRequest } from '../../src/shared/media-discovery'
 import type { AvatarMediaResource } from '../../src/shared/media-skill'
@@ -12,6 +13,47 @@ const request = (query = '', kind: MediaDiscoveryRequest['kind'] = 'all'): Media
 const reply = (patch: Partial<MediaDiscoveryReply> = {}): MediaDiscoveryReply =>
   ({ status: 'accepted', code: 'media_discovery_matches', resources: [resource('rain', 'Rain')], total: 1, ...patch })
 const ids = (value: MediaDiscoveryReply): string[] => value.resources.map(candidate => candidate.assetId)
+
+describe('Mandarin voice media discovery', () => {
+  const priestess = resource('priestess', '天使葛利果女祭司版本')
+  const songs = [resource('intro', '天使_intro'), priestess]
+  const find = (query: string, catalog = songs, kind: MediaDiscoveryRequest['kind'] = 'music') =>
+    rankMediaResources(catalog, request(query, kind), mediaClueKey, mediaPhoneticKey)
+
+  it.each(['天使葛麗果女祭司版本', '天使格里果女祭祀版本', '天使格力果女技師版本',
+    '请播放天使葛丽果女祭司版本。', '女祭祀版本 葛麗果', '葛麗果'])('finds the priestess version from sound-alike clues: %s', query => {
+    expect(find(query)).toMatchObject({ code: 'media_discovery_phonetic', total: 1 })
+    expect(ids(find(query))).toEqual(['priestess'])
+  })
+  it('ranks exact names and configured aliases ahead of pronunciation', () => {
+    const exact = resource('exact', '天使葛麗果女祭司版本')
+    expect(ids(find(exact.name, [...songs, exact]))).toEqual(['exact', 'priestess'])
+    expect(find(exact.name, [...songs, exact]).code).toBe('media_discovery_matches')
+    expect(ids(find('葛麗果', [...songs, resource('alias', 'Other', ['葛麗果'])]))).toEqual(['alias', 'priestess'])
+  })
+  it('retains equally plausible versions and resolves an explicit version clue', () => {
+    const versions = [resource('piano', '星河夜曲 鋼琴版'), resource('strings', '星河夜曲 弦樂版')]
+    expect(find('欣河夜曲', versions)).toMatchObject({ code: 'media_discovery_ambiguous', total: 2 })
+    expect(ids(find('欣河夜曲 剛琴版', versions))).toEqual(['piano'])
+    expect(find('天使', songs)).toMatchObject({ code: 'media_discovery_ambiguous', total: 2 })
+  })
+  it('keeps a sound-alike artist in an unrelated title request weak', () => {
+    expect(find('播放舟傑倫的晴天', [resource('other-song', '七里香', ['周杰倫'])]))
+      .toMatchObject({ code: 'media_discovery_weak', total: 1 })
+    expect(ids(find(priestess.name, [resource('other-song', '七里香', ['天使']), priestess]))[0]).toBe('priestess')
+  })
+  it('does not discard unknown text, mismatch a version, or match part of a syllable', () => {
+    for (const query of ['天使葛麗果爵士版本', '葛麗果xyz', '祀', '🦊葛麗果']) expect(find(query).total, query).toBe(0)
+    expect(find('西安', [resource('xian', '仙樂')]).total).toBe(0)
+    expect(find('play rainbow', [resource('rain', 'Rain')]).total).toBe(0)
+    expect(find('葛麗果', songs, 'video').total).toBe(0)
+  })
+  it('uses contextual readings and tolerates media-only initial/final sound confusion', () => {
+    expect(mediaPhoneticKey('重慶')).toBe(mediaPhoneticKey('崇慶'))
+    expect(find('雨夜剛琴', [resource('piano', '雨夜鋼琴')]).total).toBe(1)
+    expect(find('春森', [resource('morning', '春聲')]).total).toBe(1)
+  })
+})
 
 describe('media discovery request boundary', () => {
   it('accepts exactly the two fields, empty queries, CJK and the 200-character boundary without changing text', () => {

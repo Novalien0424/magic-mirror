@@ -862,7 +862,7 @@ export function createRealtimeSession(
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
         const online = media.code === 'media_discovery_no_match' && !await onlineMediaRestriction()
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
-        return { outcome: media.status, media, ...(media.code === 'media_discovery_weak' ? { next: 'ask' as const }
+        return { outcome: media.status, media, ...(['media_discovery_weak', 'media_discovery_kind_mismatch'].includes(media.code) ? { next: 'ask' as const }
           : online ? { next: 'search_youtube' as const } : {}) }
       },
       search_youtube: async args => {

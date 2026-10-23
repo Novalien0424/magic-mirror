@@ -66,6 +66,18 @@ behavior to the current wiring.
   a phrase turn is a control turn for memory. `media_discovery_weak` (an alias
   merely contained in the sentence, often an artist) returns `next: ask`; a title
   contained in the sentence still matches.
+  Local Mandarin discovery now has a separate pronunciation index (owner request,
+  2026-10-23): homophones, tones, in/ing, en/eng and zh/z, ch/c, sh/s can find
+  title/alias candidates. Literal matches rank first; tied versions remain
+  ambiguous and contained artist aliases remain weak. Unknown text and syllable
+  boundaries are preserved. This reuses pinned public pronunciation data, never
+  the command matcher or its authorization rules. `media_discovery_phonetic`
+  reports the fallback without retaining query text.
+  The tool uses `all` unless a visitor specifies a media type. On a type-filter
+  miss Main also checks the authorized local catalog across types and returns
+  `media_discovery_kind_mismatch` plus `next: ask` when a title exists in another
+  type. This prevents a guessed video filter from hiding a music track; it never
+  dispatches playback or grants online access.
 
 ## Spoken commands
 

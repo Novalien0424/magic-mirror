@@ -8,6 +8,7 @@ import { buildAvatarPrompt } from '../shared/avatar-prompt'
 import { resolveRealtimeTools } from '../shared/realtime-tools'
 import { rankMediaResources } from '../shared/media-discovery'
 import { mediaClueKey } from '../shared/media-clue'
+import { mediaPhoneticKey } from '../shared/media-phonetics'
 import { bindRealtimeTools } from '../renderer/realtime/realtime-tool-bindings'
 import { createEnvironmentCredentialSource } from './environment-credential-source'
 import { createClientSecretBroker } from './realtime/client-secret-broker'
@@ -56,7 +57,7 @@ void app.whenReady().then(async () => {
     const tools = bindRealtimeTools(resolveRealtimeTools('Rest.'), {
       find_media: async args => {
         record('find_media')
-        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' }, mediaClueKey)
+        const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' }, mediaClueKey, mediaPhoneticKey)
         return { outcome: media.status, media, ...('cloud' in scenario && media.code === 'media_discovery_no_match' ? { next: 'search_youtube' as const } : {}) }
       },
       search_youtube: async () => {

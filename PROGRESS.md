@@ -1,68 +1,72 @@
 # Magic Mirror — current handoff, 2026-10-23
 
-Latest delivery on `field/macmini-deploy`: fixed Studio losing name input after
-microphone recovery during opening/name narration. The narration guard temporarily
-disabled capture; recovery copied that temporary state and left the replacement
-disabled. Recovery now uses the intended state saved before narration. Capture
-remains paused during speech and resumes afterward, including delayed acquisition.
-The reported production visit and two failing regression tests establish this
-cause. No transcript/audio retention, model-ID or production configuration change.
+Latest delivery on `field/macmini-deploy`: Mandarin pronunciation-tolerant local
+media discovery. The owner's title「天使葛麗果女祭司版本」now finds the catalog
+entry「天使葛利果女祭司版本」without renaming it or adding aliases. Literal
+filenames/aliases rank first; homophones and common Mandarin sound confusions
+use a separate pronunciation index. Tied versions remain choices; artist-only
+clues remain weak. Spoken-command authorization and model IDs are unchanged.
 
-Normal canonical LaunchAgent runtime is **running** in Interactive Studio mode.
-Main/renderer/web server became ready at **20:36:06 Taipei**; the physical Studio
-button route acknowledged mode success/TV awake at 20:36:13. It was Dormant with
-fresh wake-input blocks at the last direct capture; no subsequent visitor session
-appeared in metadata through 20:42. Owner agreed to a human name trial and received
-the wake/name instructions; **the human result is pending**. Leave this runtime
-available for the trial rather than restarting it.
+Real QA exposed a second false-miss path: the model guessed `video` for a
+title-only request and hid the music result. The tool now requests `all` for
+unspecified type; on a filtered miss Main returns authorized cross-type title
+candidates as `media_discovery_kind_mismatch`, and the adapter asks for
+clarification. Neither approximate matching nor this fallback dispatches playback
+or authorizes online search. No transcript/audio/private context retention.
 
-Canonical build **20:31:07 Taipei**: source `20023ee7ce9f699d`, output
-`7ed6700559849daa`. Node/web typechecks and build verification pass; deployment
-runs that output. Production active/draft hashes match task entry: Raven v21,
-four questions, Chinese opening/name collection, name database and modern
-minimalist multicolour vector style. The unrelated saved operator draft is
-preserved. Jabra output reads **70.08%** after cleanup and a fresh read-back at
-20:42. Owner-requested QA output remains 1%; cleanup must always restore 70%,
-including failure/cancellation. Input gain was unchanged; internal speakers
-remain at their prior 1%.
+## Current runtime
 
-Tailnet Console remains available while Magic Mirror runs:
-**https://macmini-m6-33.tailf9113c.ts.net:8443/**. Existing public Funnel 443 is
-unchanged; Console 8443 is private. Its preceding browser/operator QA is linked
-from the archived handoff below, not claimed as a fresh test for this repair.
+Normal canonical LaunchAgent is **running in Conversation mode**, ready for
+music requests. Main/renderer/web server were ready at **21:25:12 Taipei**;
+the normal Start button acknowledged mode success/TV awake at 21:25:14.
+Tailnet HTTPS returned 200; own/shared indexes are ready and the actual priestess
+track is available. Console:
+**https://macmini-m6-33.tailf9113c.ts.net:8443/** (private; existing public Funnel
+443 unchanged).
 
-## Evidence and limits
+Final build **21:24:40 Taipei**: source `5f478d8945a9f010`, output
+`3da92977c263790b`; verification passes. Production active/draft hashes match
+task entry: Raven v21, Studio defaults and the unrelated saved draft are
+preserved. Jabra is **70.08%**, unmuted, confirmed after both QA runs and after
+normal startup. QA used requested 1% output, preserving input gain and other
+outputs. The owner was invited to test the deployed song; result pending.
 
-- Two regression tests failed before the fix with the replacement microphone
-  disabled after narration. Final Studio/microphone recovery selection **61/61**.
-- Physical Jabra run, exit 2: two actual recoveries during narration; the WebRTC
-  sender was **live, enabled and unmuted** at name input. One ASR completion
-  arrived, but the quiet synthetic name was unrecognized and Raven repeated the
-  question. This verifies the repaired device handoff, not human name acceptance.
-  Full failure metadata is retained; no louder/repeated acoustic trial.
-- Clear synthetic microphone with real providers, **8/8**, exit 0: name,
-  denial/correction/confirmation, question one and a fresh name after restart.
-  Six ASR completions; all six input checkpoints had exactly one live, enabled,
-  unmuted sender. No provider errors or images generated. The confirmation
-  screenshot showed only the test name as text.
-- Added bounded `--studio-name-only` QA to exercise this journey without image
-  generation, and metadata-only actual sender-state checks for Studio input.
+## Verification and limits
 
-[Diagnosis, journey and QA](docs/testing/studio-name-microphone-2026-10-23.md) ·
-[Retained failures](docs/testing/studio-name-microphone-failures-2026-10-23.txt) ·
-[Preceding Studio/web delivery](docs/archive/progress-before-name-microphone-2026-10-23.md).
+- Final focused test union **356/356**; after the type-filter fix, four affected
+  files passed **290/290**. Node/web typechecks and build pass. Tests exercise
+  homophones, tone/initial/final confusion, exact ranking, version ambiguity,
+  wrong-version rejection, Main scope/privacy, cross-type clarification, adapter
+  no-online behavior and unchanged command matching.
+- Real provider run `2026-10-23T13-17-58-622Z`: **8/9 runtime steps**, exit 2.
+  The priestess lookup actually used `media_discovery_phonetic`, played the
+  correct fixture, clarified versions and played the chosen piano version.
+  Quality judging flagged mechanism narration and weak naturalness/character.
+- One provider retry `2026-10-23T13-21-17-189Z`: **7/9 runtime steps**, exit 2.
+  The erroneous video filter caused the priestess miss; subsequent version
+  lookup/piano playback passed runtime checks, but spoken quality also failed.
+  This led to the deterministic Main/adapter repair above. The final type-filter
+  repair has **unit/integration evidence only, no fresh provider or human pass**.
+  No third provider retry: AGENTS limits external/flaky retries to one.
+- Both runs used synthetic visitor audio through real WebRTC/ASR/tools/IPC and
+  fixture playback, not the owner's physical voice or original music recording.
+  Both Raven screenshots were inspected; portrait correct, no captions.
+
+[Research, diagnosis, journey and QA](docs/testing/media-phonetics-2026-10-23.md) ·
+[Full retained failure metadata](docs/testing/media-phonetic-failures-2026-10-23.txt) ·
+[Previous name-microphone repair](docs/archive/progress-before-media-phonetics-2026-10-23.md).
 
 ## Cleanup and next action
 
-Both exact owned QA runs were reviewed and deleted: **190 files / 39,660,818
-bytes**, excluding markers. Nine task scratch/helper files were removed. Existing
-owner soul deliverables and Drive upload remain untouched; no test settings were
-published to production.
+Both exact owned QA runs were reviewed and deleted: **190 files / 44,197,831
+bytes**, excluding markers. Eleven task scratch/helper files were removed.
+Owner deliverables and Drive upload are untouched. No test settings were
+published.
 
-Await the owner's live name result; use only fresh metadata to investigate any
-remaining failure. Human microphone acceptance and the prior second-computer
-browser trial remain open. Known Arducam missing-frame/recovery errors occurred
-during physical QA and were not addressed by this microphone repair. Printing
-remains the requested deferred/no-op skill. [TODO](TODO.md) owns unrelated
-acceptance; [DECISIONS](DECISIONS.md) owns other rulings. No phase promotion or
-additional Electron restart owner.
+Listen for the owner's deployed music result; investigate fresh metadata if it
+still fails. **Full voice quality acceptance remains open**; do not turn the
+successful lookup/playback sample or passing unit tests into a claim of fully
+green live QA. Prior human name acceptance, second-computer browser acceptance,
+Arducam missing frames and deferred/no-op printing remain as previously recorded.
+[TODO](TODO.md) owns unrelated acceptance and [DECISIONS](DECISIONS.md) owns
+rulings. No phase promotion or added restart owner.

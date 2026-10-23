@@ -391,10 +391,10 @@ describe("RealtimeSession adapter", () => {
     expect(events.map(e => e.reason).filter(r => r.startsWith('tool_find_media_'))).toEqual(['tool_find_media_accepted_preamble_no', 'tool_find_media_accepted_preamble_yes']);
     await handle.close('manual_stop');
   });
-  it('asks about a weak local candidate and keeps a phrase-less request local', async () => {
+  it.each(['media_discovery_weak', 'media_discovery_kind_mismatch'])('asks about %s and keeps a phrase-less request local', async code => {
     const probe = makeAdapterProbe();
     const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
-    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_weak', total: 1,
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code, total: 1,
       resources: [{ kind: 'music' as const, assetId: 'other-song', name: 'Other song', aliases: ['Fixture Artist'] }] }));
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube, onFindMedia });
     const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
