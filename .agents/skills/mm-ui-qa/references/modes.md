@@ -38,7 +38,7 @@ model/effort and device route; comparisons never publish settings.
 | `two_visit_memory`, `identity_denial` | Actual isolated learning/confirmation; failed prerequisites skip dependent judgments. |
 | `media_stop` | 90-second Active fixture, negation, exact configured ASR stop and follow-up. |
 | `additional_capabilities` | WebGL context recreation, folder playback, image grounding, interruption. |
-| `portrait_studio` | Synthetic visitor, real Realtime/image providers; `--studio-story` selects the story. Picture/reply checks do not prove human name, wake or printing acceptance. |
+| `portrait_studio` | Synthetic visitor, real Realtime/image providers; `--studio-story` selects the story. `--studio-name-only` checks name correction/confirmation and name input after restart, without painting; combine with `--physical` for actual Jabra capture. Sender-track readiness does not establish recognition. Picture/reply checks do not prove human name, wake or printing acceptance. |
 | `camera_native` | Native fresh snapshots, targeted USB reset, sustained recovery. |
 | `camera_delivery` | Same signed helper/LaunchAgent, image processing bypassed; 60 seconds of advancing-source-timestamp receipts, zero resets/restarts. Throttled receipts are not FPS. |
 | `camera_availability` | `--camera-case` selects an allowlisted native format experiment; `--camera-check screen\|stable\|cycles` measures native sample cadence or RAM-only decoded snapshots with serialized acquire/release. Metadata-only evidence; no video encoding, identity accuracy or days-long acceptance. Criteria: [camera availability](../../../../docs/testing/camera-availability-qa-2026-10-18.md). |

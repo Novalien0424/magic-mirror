@@ -3,6 +3,8 @@ interface Input {
   stream: MediaStream
   mediaDevices: Pick<MediaDevices, 'getUserMedia' | 'enumerateDevices' | 'addEventListener' | 'removeEventListener'>
   getConstraints(): Promise<true | MediaTrackConstraints>
+  /** The owner's intended state before a temporary narration pause. */
+  getTrackEnabled?(track: MediaStreamTrack): boolean
   replaceTrack(track: MediaStreamTrack): Promise<void>
   onStatus(reason: MicrophoneRecoveryReason): void
 }
@@ -64,7 +66,7 @@ export function watchMicrophone(input: Input): Lease {
       if (stopped || (!force && !(await needsReplacement(constraints)))) return
       if (stopped) return
       const old = stream.getAudioTracks()
-      if (old.length) enabled = old.some(t => t.enabled)
+      if (old.length) enabled = old.some(t => current()?.getTrackEnabled?.(t) ?? t.enabled)
       // Stop all old physical capture before getUserMedia. Main still grants
       // the single microphone lease to Realtime throughout this device change.
       for (const track of old) {

@@ -30,7 +30,7 @@ function probe() {
   }
   const event = (value: Record<string, unknown>) => { for (const listener of listeners.get('transport_event') ?? []) listener(value) }
   const sessionEvent = (name: string, value: unknown) => { for (const listener of listeners.get(name) ?? []) listener(value) }
-  return { agents, sent, updateAgent, dependencies, event, sessionEvent, interrupt: session.interrupt }
+  return { agents, sent, transport, updateAgent, dependencies, event, sessionEvent, interrupt: session.interrupt }
 }
 
 const snapshot: SessionModelSnapshot = Object.freeze({ configVersion: 1, fingerprint: 'f', sdkVersion: '0.20.0', realtimeDialogue: 'm', inputTranscription: 't',
@@ -61,6 +61,54 @@ const accepted = (code: string, next?: string): StudioReply => ({ status: 'accep
 const responses = (p: ReturnType<typeof probe>) => p.sent.filter(e => e.type === 'response.create').map(e => e.response as Record<string, unknown>)
 
 describe('Portrait Studio in the Realtime session', () => {
+  it.each(['during', 'after'] as const)('restores a recovered microphone acquired %s the name question, without inheriting narration mute', async timing => {
+    vi.useFakeTimers()
+    class Track extends EventTarget {
+      kind = 'audio'; enabled = true; readyState = 'live'
+      stop() { this.readyState = 'ended' }
+      getSettings() { return { deviceId: 'jabra' } }
+    }
+    const p = probe(), old = new Track(), next = new Track(), tracks = [old]
+    const stream = { getAudioTracks: () => [...tracks], getTracks: () => [...tracks],
+      removeTrack: (t: Track) => { tracks.splice(tracks.indexOf(t), 1) }, addTrack: (t: Track) => tracks.push(t) } as unknown as MediaStream
+    const devices = new EventTarget() as MediaDevices
+    let acquired!: (s: MediaStream) => void
+    devices.getUserMedia = vi.fn(() => new Promise<MediaStream>(r => { acquired = r }))
+    devices.enumerateDevices = vi.fn(async () => [])
+    const sender = { track: old, replaceTrack: vi.fn(async (t: Track) => { sender.track = t }) }
+    Object.defineProperty(p.transport, 'connectionState', { value: { peerConnection: { getSenders: () => [sender] } } })
+    const { handle, requests } = session(p, () => accepted('ok'), { mediaStream: stream,
+      avatar: avatar('portrait_studio'), wakeGreeting: '我在。',
+      microphoneRecovery: { mediaDevices: devices, getConstraints: async () => true } })
+    try {
+      await handle.connect()
+      handle.studioEvent!({ event: 'enter', startScript: '歡迎。', firstStep: 'Ask name.', language: 'zh',
+        step: { id: 'recovery-name', phase: 'name', language: 'zh', speech: '請告訴我你的名字。', guidance: 'Ask name.' } }, ID)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(old.enabled).toBe(false)
+      old.dispatchEvent(new Event('ended'))
+      await vi.advanceTimersByTimeAsync(1300)
+      expect(old.readyState).toBe('ended')
+      const finishRecovery = async () => { acquired({ getAudioTracks: () => [next], getTracks: () => [next] } as unknown as MediaStream); await vi.advanceTimersByTimeAsync(1) }
+      if (timing === 'during') { await finishRecovery(); expect(next.enabled).toBe(false) }
+      for (let i = 0; i < 2; i++) {
+        const response = { id: `recovery-cue-${i}`, status: 'completed', metadata: responses(p)[i]!.metadata }
+        p.event({ type: 'response.created', response })
+        p.event({ type: 'output_audio_buffer.started', response_id: response.id })
+        p.event({ type: 'response.done', response })
+        p.event({ type: 'output_audio_buffer.stopped', response_id: response.id })
+        await vi.advanceTimersByTimeAsync(1)
+      }
+      expect(requests).toContainEqual({ action: 'step_ready', stepId: 'recovery-name' })
+      if (timing === 'after') await finishRecovery()
+      expect(sender.track).toBe(next)
+      expect(next.enabled).toBe(true)
+      p.event({ type: 'input_audio_buffer.committed', item_id: 'recovered-name' })
+      await call(tool(p.agents[1]!, 'studio_set_name'), { name: '測試', confirmed: false, language: 'zh' })
+      expect(requests).toContainEqual({ action: 'set_name', name: '測試', confirmed: false, language: 'zh' })
+    } finally { await handle.close('test_complete'); vi.useRealTimers() }
+  })
+
   it('owns the complete default opening and name question despite early input, then restores the microphone', async () => {
     const p = probe(), track = { enabled: true }, tails: (() => void)[] = []
     const { handle, requests, reasons } = session(p, () => accepted('ok'), {

@@ -1990,6 +1990,7 @@ export function createRealtimeSession(
           stream: input.mediaStream,
           mediaDevices: options.mediaDevices,
           getConstraints: options.getConstraints,
+          getTrackEnabled: track => studioMutedTracks.get(track) ?? track.enabled,
           replaceTrack: async track => {
             if (closed) throw new Error('session_closed')
             const state = (transport as { connectionState?: { peerConnection?: RTCPeerConnection } }).connectionState

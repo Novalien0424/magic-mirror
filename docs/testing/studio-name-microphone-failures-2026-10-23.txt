@@ -1,0 +1,251 @@
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/realtime-session-studio.test.ts (57 tests | 2 failed | 55 skipped) 10ms
+     × restores a recovered microphone acquired during the name question, without inheriting narration mute 8ms
+     × restores a recovered microphone acquired after the name question, without inheriting narration mute 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > restores a recovered microphone acquired during the name question, without inheriting narration mute
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > restores a recovered microphone acquired after the name question, without inheriting narration mute
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/realtime-session-studio.test.ts:105:28
+    103|       if (timing === 'after') await finishRecovery()
+    104|       expect(sender.track).toBe(next)
+    105|       expect(next.enabled).toBe(true)
+       |                            ^
+    106|       p.event({ type: 'input_audio_buffer.committed', item_id: 'recove…
+    107|       await call(tool(p.agents[1]!, 'studio_set_name'), { name: '測試', …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 55 skipped (57)
+   Start at  20:28:46
+   Duration  511ms (transform 177ms, setup 0ms, import 410ms, tests 10ms, environment 0ms)
+
+
+
+=== Physical Jabra QA: 2026-10-23T12-31-35-236Z ===
+{
+  "selection": "portrait_studio",
+  "running": false,
+  "passed": false,
+  "elapsedMs": 51195,
+  "results": [
+    {
+      "step": "studio_mode_on",
+      "status": "passed",
+      "durationMs": 6,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_start",
+      "status": "passed",
+      "durationMs": 19124,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "camera_usb_reset_complete",
+        "camera_usb_resetting",
+        "camera_usb_reset_releasing",
+        "camera_usb_reset_requested",
+        "camera_usb_recovery_backoff",
+        "camera_frames_missing",
+        "camera_starting",
+        "wake_worker_ready",
+        "wake_worker_released",
+        "camera_worker_starting"
+      ]
+    },
+    {
+      "step": "studio_wake_entry",
+      "status": "passed",
+      "durationMs": 6097,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "camera_starting"
+      ]
+    },
+    {
+      "step": "studio_name",
+      "status": "failed",
+      "reason": "raven_qa_studio_name_studio_set_name_missing",
+      "durationMs": 20895,
+      "calls": [
+        "unknown_tool"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": true,
+        "outputPhases": [
+          "commentary",
+          "unknown",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": false,
+        "literalExact": false,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "transcript_unavailable",
+        "memory_turn_observed",
+        "memory_turn_unowned",
+        "camera_usb_recovery_exhausted",
+        "camera_frames_missing"
+      ]
+    },
+    {
+      "step": "studio_release",
+      "status": "passed",
+      "durationMs": 1028,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "camera_worker_released",
+        "camera_avatar_inactive"
+      ]
+    },
+    {
+      "step": "real_audio_route",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "provider_errors",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    }
+  ],
+  "quality": [],
+  "qualityDiagnostics": [],
+  "capabilityQuality": {},
+  "acousticEvidence": [],
+  "spellRecognition": [],
+  "controlSpeech": [],
+  "protocol": {
+    "inputText": 0,
+    "asr": 1,
+    "errors": [],
+    "speechPlayback": [],
+    "errorStages": [],
+    "repeatedDeletes": 0,
+    "duplicateTranscriptEvents": 0
+  },
+  "toolTimingEvidence": [],
+  "screenshots": 1,
+  "studioEvidence": {
+    "phases": [
+      "name",
+      "name"
+    ],
+    "events": [
+      "enter",
+      "step"
+    ],
+    "main": [
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_question_repeated",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_session_default",
+        "status": "info"
+      }
+    ],
+    "reveals": 0,
+    "deletedItems": 0,
+    "imagesAttached": 0,
+    "nameOnly": true,
+    "story": "soul",
+    "microphones": [
+      {
+        "stage": "studio_name",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 2
+      }
+    ]
+  },
+  "route": "mac_speaker_jabra_microphone_real_webrtc_and_native_camera",
+  "transcriptRetention": "none",
+  "humanAcousticAcceptance": "not_executed"
+}

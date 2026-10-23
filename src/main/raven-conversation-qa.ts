@@ -107,6 +107,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number; mismatchKinds?: string[] }
     commentShape?: { sentences: number; characters: number; question: boolean; delivered: boolean }[]
     feedbackOffer?: { audibleSegments: number; segmentCharacters: number[]; expectedCharacters: number; exact: boolean }
+    nameOnly?: boolean; microphones?: { stage: string; tracks: number; enabled: boolean; live: boolean; muted: boolean; recoveries: number }[]
     pictures?: { type: string; width: number; height: number; cornerAlpha: number }[] }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
@@ -871,8 +872,18 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (format) studioEvidence.pictures = [...studioEvidence.pictures ?? [], format]
       }
       const studioStarted = Date.now()
+      const nameOnly = storyFile?.nameOnly === true
+      studioEvidence.nameOnly = nameOnly
       const selectedLanguages: { at: number; language: 'zh' | 'en' }[] = [{ at: studioStarted, language: 'zh' }]
+      const microphoneReady = async (stage: string) => {
+        const mic = await evaluate<{ tracks: number; enabled: boolean; live: boolean; muted: boolean }>(`const tracks=window.__ravenQa.connections.at(-1)?.getSenders().map(s=>s.track).filter(t=>t?.kind==='audio')??[];
+          return {tracks:tracks.length,enabled:tracks.every(t=>t.enabled),live:tracks.every(t=>t.readyState==='live'),muted:tracks.some(t=>t.muted)}`)
+        studioEvidence.microphones = [...studioEvidence.microphones ?? [], { stage, ...mic,
+          recoveries: events(studioStarted).filter(e => e.reason === 'microphone_recovery_ready').length }]
+        if (mic.tracks !== 1 || !mic.enabled || !mic.live || mic.muted) throw Error('raven_qa_studio_microphone_not_listening')
+      }
       const turn = async (index: number, stage: string, tool: string) => {
+        await microphoneReady(stage)
         await speak(index, stage)
         if (!(await calls(stage)).includes(tool)) throw Error('raven_qa_' + stage + '_' + tool + '_missing')
         if (['name', 'confirm', 'question'].includes(await phase() ?? '')) {
@@ -931,6 +942,17 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (!studioEvidence.nameAsIntended) throw Error('raven_qa_studio_name_not_as_intended')
         await shot('question')
       }))
+      if (nameOnly) {
+        if (named) await check('studio_name_restart', async () => {
+          await stop()
+          const at = Date.now()
+          await start()
+          await wait(async () => events(at).some(e => e.reason === 'studio_wait_started'), 'studio_restart_name_playback', 60000)
+          if (await phase() !== 'name') throw Error('raven_qa_studio_restart_stale_name')
+          await turn(extra.studioName!, 'studio_restarted_name', 'studio_set_name')
+          if (await phase() !== 'confirm') throw Error('raven_qa_studio_restart_name_not_heard')
+        })
+      } else {
       // The owner checks in over Chrome Remote Desktop mid-visit: Remote Console opens beside
       // the avatar and the visit carries on; a CONSOLE press while painting covers it as always.
       const operator = async (action: 'show_console' | 'show_console_main', placed: (p: ConsolePlacement) => boolean, phases: string[]) => {
@@ -1146,6 +1168,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await wait(async () => await phase() === (asksName ? 'name' : 'question'), 'studio_request_first_phase', 15000)
         if (!events(studioStarted).some(e => e.reason === 'studio_started_visitor')) throw Error('raven_qa_studio_visitor_start_unreported')
       })
+      }
       const timeline = await studio()
       studioEvidence.phases = timeline.filter(s => 'phase' in s).map(s => s.phase ?? null)
       studioEvidence.events = timeline.flatMap(s => s.event ? [s.event] : [])
