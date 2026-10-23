@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { mediaUrl } from '../shared/media-url'
 import { getAudioDeviceRouter } from '../audio-devices'
 
 /** Operator-only preview, disposed on avatar/tab changes. Never starts Mirror playback. */
@@ -19,7 +20,7 @@ export function MediaPreview({ kind, id, name, gain }: { kind: 'video' | 'music'
   }, [gain])
   const props = {
     controls: true, preload: 'none', 'aria-label': `Preview ${name}`, 'data-media-preview': true,
-    src: `magic-mirror-media://${kind === 'video' ? 'visual' : 'music'}-draft/${encodeURIComponent(id)}`,
+    src: mediaUrl(`magic-mirror-media://${kind === 'video' ? 'visual' : 'music'}-draft/${encodeURIComponent(id)}`),
     onPlay: (event: React.SyntheticEvent<HTMLMediaElement>) => {
       document.querySelectorAll<HTMLMediaElement>('[data-media-preview]').forEach(media => { if (media !== event.currentTarget) media.pause() })
     },

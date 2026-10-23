@@ -1,4 +1,5 @@
 import { allowPromptWindow } from '../shared/prompt-window'
+import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
 import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
@@ -38,6 +39,7 @@ import { runMemoryLiveQa } from './memory/live-qa'
 import { runMemoryCalendarQa } from './memory/calendar-live-qa'
 import { registerMemoryIpc } from './memory/ipc'
 import { bootSequence, type BootRuntime } from './boot'
+import { projectAppSnapshot } from './boot'
 import { initializeAudioPreferences, getAudioPreferences } from './audio-preferences'
 import { createCrashRecovery } from './crash-recovery'
 import { createRendererLiveness, startMainLiveness } from './liveness'
@@ -187,6 +189,8 @@ let memoryLearningSettledQa: (() => boolean) | undefined
 let wakeSupervisor: WakeSupervisor | null = null
 let wakeCalibration: ReturnType<typeof createWakeCalibration> | null = null
 let wakeOwnerRebuild: Promise<WakeSupervisorResult> | null = null
+const webConsoleRegistry = createWebConsoleRegistry(ipcMain)
+let webConsole: Awaited<ReturnType<typeof startWebConsole>> | undefined
 let shutdownPromise: Promise<void> | null = null
 let shutdownMemory: (() => Promise<void>) | undefined
 let willQuitHandled = false
@@ -1405,7 +1409,7 @@ void app.whenReady().then(async () => {
     }
     operatorLoop!.report(report)
   })
-  ipcMain.handle('console:loop-video', async (event, ...args) => {
+  webConsoleRegistry.registrar.handle('console:loop-video', async (event, ...args) => {
     const command = args.length === 1 ? parseLoopVideoCommand(args[0]) : null
     if (!authorizeSender(event, 'console', windows).ok || !command) {
       return { ok: false, error: 'console_request_rejected', reason: 'operator_loop_request_rejected' }
@@ -1523,7 +1527,7 @@ void app.whenReady().then(async () => {
       }),
     })
   }
-  protocol.handle('magic-mirror-media', async (request) => {
+  const serveManagedMedia = async (request: Request): Promise<Response> => {
     try {
       await visualAssetReady
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'request', status: 'received' })
@@ -1600,7 +1604,8 @@ void app.whenReady().then(async () => {
       if (phase4QaEnabled) marker('PHASE4_MEDIA_PROTOCOL', { stage: 'handler', status: 'failed' })
       return new Response(null, { status: 404 })
     }
-  })
+  }
+  protocol.handle('magic-mirror-media', serveManagedMedia)
   voicePreview = createVoicePreviewLease({
     isDormant: () => !operatorLoop?.isInputSuspended() && runtime.snapshot().lifecycle === 'dormant',
     snapshot: () => runtime.getPublishedSessionModelSnapshotForDiagnostics(),
@@ -1617,6 +1622,7 @@ void app.whenReady().then(async () => {
   stopYoutube = () => youtubePlayer.stop()
   app.once('before-quit', () => youtubePlayer.stop())
   sceneRuntimeControl = registerIpcHandlers({
+    onConsoleSceneStatus: status => webConsole?.publish('console:scene-status', status),
     isShuttingDown: () => shutdownStarted,
     youtube: youtubePlayer,
     searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
@@ -1673,7 +1679,7 @@ void app.whenReady().then(async () => {
     },
     voicePreview,
     getWakeInput: () => wakeSupervisor?.snapshot().input,
-    ipcMain,
+    ipcMain: webConsoleRegistry.registrar,
     runtime,
     console: runtime.console,
     windows,
@@ -1879,6 +1885,7 @@ void app.whenReady().then(async () => {
   }
   runtime.subscribe((snapshot) => {
     if (shutdownStarted) return
+    webConsole?.publish('console:snapshot', projectAppSnapshot(snapshot))
     memory.observe()
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
@@ -1930,6 +1937,18 @@ void app.whenReady().then(async () => {
     phase1LiveSmokeCoordinator.start()
   }
 
+  // A deployment config enables this endpoint; isolated QA profiles stay closed.
+  try {
+    const config = parseWebConsoleConfig(JSON.parse(await readFile(join(app.getPath('userData'), 'web-console.json'), 'utf8')))
+    if (config) {
+      webConsole = await startWebConsole({ config, rendererRoot: join(__dirname, '../renderer'),
+        invoke: webConsoleRegistry.invoke, media: serveManagedMedia,
+        report: reason => reportMainDegradation('app', 'web_console_failed', reason) })
+      marker('WEB_CONSOLE', { status: 'ready', port: config.port })
+    } else reportMainDegradation('app', 'web_console_failed', 'web_console_config_invalid')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') reportMainDegradation('app', 'web_console_failed', 'web_console_start_failed')
+  }
   registerConsoleShortcut()
 
   if (smokeMode.kind === 'on') setTimeout(finishSmokeRun, smokeMode.ms)
@@ -1937,6 +1956,7 @@ void app.whenReady().then(async () => {
 
 function shutdownBootRuntime(): Promise<void> {
   shutdownStarted = true
+  webConsole?.close(); webConsole = undefined
   stopOperatorControl?.(); operatorLoop?.dispose()
   if (shutdownPromise !== null) return shutdownPromise
   const runtime = bootRuntime

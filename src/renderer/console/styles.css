@@ -1197,3 +1197,5 @@ html { scroll-padding-top: calc(var(--console-top-height, 0px) + .75rem); }
 .console .experiences-editor__slot select { min-width: 13rem; }
 @media (min-width: 1001px) { .experiences-editor__grid--4 { grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); } }
 .avatar-header__live { color: #bbc9d7; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
+.web-console-notice { padding: 10px 20px; background: #172c3d; color: #e6f5ff; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.web-console-notice span { opacity: .85; }

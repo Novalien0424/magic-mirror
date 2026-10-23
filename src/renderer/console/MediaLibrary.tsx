@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { mediaUrl, isWebConsole } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { ConsoleConfigDraftInput } from '../../shared/console-types'
 import type { ManagedVisualAsset } from '../../shared/types'
@@ -8,7 +9,7 @@ import type { AvatarCatalog } from '../../shared/avatar-profiles'
 
 export function VisualThumbnail({ asset }: { asset: ManagedVisualAsset }) {
   const [failed, setFailed] = useState(false)
-  const url = `magic-mirror-media://visual-draft/${encodeURIComponent(asset.id)}`
+  const url = mediaUrl(`magic-mirror-media://visual-draft/${encodeURIComponent(asset.id)}`)
   return <div className="media-thumbnail">
     {failed ? <span role="status">Preview unavailable</span> : asset.kind === 'image'
       ? <img src={url} alt={asset.name} loading="lazy" onError={() => setFailed(true)} />
@@ -39,8 +40,10 @@ export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '',
       if (runtime.ok && runtime.value.audioDevices) await router.select(runtime.value.audioDevices.preferences)
       const outputId = router.snapshot().preferences.outputId
       let fallback = false
-      try { await audio.setSinkId(outputId) }
-      catch { await audio.setSinkId(''); fallback = true }
+      if (typeof audio.setSinkId === 'function') {
+        try { await audio.setSinkId(isWebConsole() ? '' : outputId) }
+        catch { await audio.setSinkId(''); fallback = true }
+      }
       if (cancelled) return
       await audio.play()
       if (!cancelled) setReason(fallback ? 'Playing locally · 50% preview level × BGM volume · Selected speakers unavailable; using the system default.' : 'Playing locally · 50% preview level × BGM volume')
@@ -48,10 +51,10 @@ export function MediaLibrary({ draft, bridge, disabled, onImport, avatarId = '',
     return () => { cancelled = true; stopVolumes(); audio.pause(); audio.removeAttribute('src'); audio.load() }
   }, [playing, bridge])
   return <section className="media-library" aria-label="Media library">
-    <div className="console__action-row"><button type="button" className="console__primary" disabled={disabled} onClick={onImport}>Browse & upload media…</button><span className="console__muted">Select images, videos and audio together · up to 32 files</span></div>
+    <div className="console__action-row"><button type="button" className="console__primary" disabled={disabled || isWebConsole()} onClick={onImport}>Browse & upload media…</button><span className="console__muted">{isWebConsole() ? 'Import files in Console on the Mac.' : 'Select images, videos and audio together · up to 32 files'}</span></div>
     <p className="console__muted">Files are copied locally. Save all changes to keep their links; Publish is separate. To let an avatar play music or video on request, select it in that avatar’s Music & video page.</p>
     {reason ? <p role="status">{reason}</p> : null}
-    {playing ? <audio key={playing} ref={audioRef} src={`magic-mirror-media://music-draft/${encodeURIComponent(playing)}`} data-library-audio="true"
+    {playing ? <audio key={playing} ref={audioRef} src={mediaUrl(`magic-mirror-media://music-draft/${encodeURIComponent(playing)}`)} data-library-audio="true"
       onEnded={() => { setPlaying(''); setReason('Preview finished.') }} onError={() => { setPlaying(''); setReason('Audio preview failed: this file could not be decoded.') }} /> : null}
     <fieldset><legend>Managed visuals</legend><ul className="media-cards">
       {draft.visualAssets.map(asset => <li key={asset.id} className="media-card"><VisualThumbnail asset={asset} /><strong>{asset.name}</strong>

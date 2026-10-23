@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { isWebConsole } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { folderMediaSkill, type MediaFolderCommand, type MediaFolderStatus, type MediaFoldersView } from '../../shared/media-folders'
 
@@ -41,7 +42,7 @@ export function MediaFoldersPanel({ bridge, avatarId, avatarName, legacyCount = 
     {status ? <><span title={status.path}>{status.label}</span>
       {status.status !== 'ready' && <p role="status">{status.status === 'unavailable' ? 'Folder unavailable — reconnect the drive or choose another folder.' : 'Some files could not be listed, or the folder limit was reached.'}</p>}</> : <p>No folder linked.</p>}
     <div className="console__action-row">{editable ? <>
-      <button disabled={busy || !bridge?.mediaFolders} type="button" aria-label={scope === 'own' ? 'Choose avatar folder' : 'Choose shared folder'} onClick={() => void run('choose', scope)}>{status ? 'Change folder…' : 'Choose folder…'}</button>
+      <button disabled={busy || !bridge?.mediaFolders || isWebConsole()} title={isWebConsole() ? 'Choose folders in Console on the Mac.' : undefined} type="button" aria-label={scope === 'own' ? 'Choose avatar folder' : 'Choose shared folder'} onClick={() => void run('choose', scope)}>{status ? 'Change folder…' : 'Choose folder…'}</button>
       {status && <button disabled={busy} type="button" aria-label={scope === 'own' ? 'Unlink avatar folder' : 'Unlink shared folder'} onClick={() => void run('unlink', scope)}>Unlink folder</button>}
     </> : <button type="button" onClick={onSharedSettings} disabled={!onSharedSettings}>Configure shared folder</button>}</div>
   </section>

@@ -135,15 +135,17 @@ export function VoiceStudio({ avatar, model, disabled, bridge, onChange }: {
       </details></fieldset></div>
       <div className="voice-studio__preview"><div className="presentation-preview"><AvatarCanvas embedded preview model={model ? { id: model.id, manifestFileName: model.manifestFileName } : undefined}
         state={running ? 'Speaking' : 'Listening'} onRenderer={onRenderer} onMetrics={() => undefined} onEvent={event => { if (event.status === 'failed') setStatus(event.reason) }} /></div>
+        {!bridge?.acquireVoicePreview ? <p role="status">Edit and publish voice settings here. Audition the voice in Console on the Mac.</p> : <>
         <div className="voice-file-picker"><HelpField help={FIELD_HELP.localSpeech} descriptionId={localSpeechHelpId}>Local speech sample
           <input ref={fileInput} hidden aria-label="Local speech sample" type="file" accept="audio/*" onChange={e => { stop(); setFile(e.currentTarget.files?.[0]) }} /></HelpField>
           <button aria-describedby={localSpeechHelpId} onClick={() => fileInput.current?.click()}>Choose audio file</button>
           <p className="console__muted" style={{overflowWrap:'anywhere'}}>{file?.name ?? 'No audio selected'}</p>
         </div>
         <HelpField help={FIELD_HELP.loopFixture}><input type="checkbox" checked={loop} onChange={e => { stop(); setLoop(e.currentTarget.checked) }} /> Loop local fixture</HelpField>
-        <div className="console__action-row"><button disabled={disabled || !file || running} onClick={() => void start(false)}>Play local fixture</button><HelpButton help="Sends this draft voice and style to the provider for one audition, up to 20 seconds. No microphone. Changing voice, speed or style needs Generate again." disabled={disabled || running} onClick={() => void start(true)}>Generate test voice</HelpButton><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
+        <div className="console__action-row"><button disabled={disabled || !file || running || !bridge?.acquireVoicePreview} onClick={() => void start(false)}>Play local fixture</button><HelpButton help="Sends this draft voice and style to the provider for one audition, up to 20 seconds. No microphone. Changing voice, speed or style needs Generate again." disabled={disabled || running || !bridge?.acquireVoicePreview} onClick={() => void start(true)}>Generate test voice</HelpButton><button disabled={!running} onClick={() => { stop(); setStatus('Preview stopped.') }}>Stop</button></div>
         <div className="console__action-row"><button aria-pressed={original} onClick={() => setOriginal(true)}>Original</button><button aria-pressed={!original} onClick={() => setOriginal(false)}>Processed</button></div>
         <div role="status"><OperatorMessage text={status} /></div>
+        </>}
       </div></div>
   </section>
 }

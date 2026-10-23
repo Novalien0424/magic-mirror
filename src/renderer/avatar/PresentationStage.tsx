@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react'
+import { mediaUrl as resolveMediaUrl } from '../shared/media-url'
 import type { LifecycleState } from '../../shared/types'
 import type { PresentationPayload } from '../../shared/presentation'
 import { getAudioDeviceRouter } from '../audio-devices'
@@ -85,7 +86,7 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
     const video = ritualRef.current
     if (!ritualVideo || !video) { failure.current?.('presentation_ritual_video_missing'); return }
     return playRitualVideo({ video,
-      src: `magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(ritualVideo.id)}`,
+      src: resolveMediaUrl(`magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(ritualVideo.id)}`),
       delayMs: ritualKind === 'entrance' ? config.blackHoldMs ?? 400 : 0,
       durationMs: ritualKind === 'entrance' ? config.entranceMs : config.exitMs,
       onVisible: setRitualVisible, onFailure: reason => failure.current?.(reason) })
@@ -121,12 +122,12 @@ export function PresentationStage({ payload, lifecycle, children, onPhase, onFai
   const backgroundReady = !background || readyId === background.id
   const hidden = config.mode === 'reflective' && (phase === 'asleep' || phase === 'inactive')
     || config.mode === 'emerge' && phase === 'asleep' && backgroundReady
-  const mediaUrl = background ? `magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(background.id)}` : undefined
+  const mediaUrl = background ? resolveMediaUrl(`magic-mirror-media://visual${draft ? '-draft' : ''}/${encodeURIComponent(background.id)}`) : undefined
   return <div className="presentation" data-phase={phase} data-mode={config.mode}
     data-background-ready={backgroundReady} style={{ '--entrance-ms': `${config.entranceMs}ms`, '--exit-ms': `${config.exitMs}ms`,
       '--reveal-delay-ms': `${config.revealStartMs ?? 1500}ms`, '--reveal-duration-ms': `${config.entranceMs - (config.revealStartMs ?? 1500)}ms`,
       '--ritual-exit-opacity': exitOpacity } as CSSProperties}>
-    {!silent && config.ambienceId ? <audio key={config.ambienceId} ref={audioRef} src={`magic-mirror-media://music${draft ? '-draft' : ''}/${encodeURIComponent(config.ambienceId)}`} data-presentation-ambience="true" /> : null}
+    {!silent && config.ambienceId ? <audio key={config.ambienceId} ref={audioRef} src={resolveMediaUrl(`magic-mirror-media://music${draft ? '-draft' : ''}/${encodeURIComponent(config.ambienceId)}`)} data-presentation-ambience="true" /> : null}
     {config.mode !== 'reflective' ? <div className="presentation__background" aria-hidden="true">
       {background?.kind === 'video' ? <video key={background.id} ref={videoRef} src={mediaUrl} muted loop playsInline preload="auto"
         onLoadedData={() => setReadyId(background.id)} onPlaying={() => setReadyId(background.id)} onError={() => { setReadyId(null); failure.current?.('presentation_background_failed') }} /> : null}

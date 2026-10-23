@@ -1,4 +1,5 @@
 import type { ManagedVisualAsset, PendingVisualAsset, VisualAssetProbe } from '../../shared/types'
+import { mediaUrl } from '../shared/media-url'
 
 interface ProbeImageElement {
   src: string
@@ -33,7 +34,7 @@ export interface VisualAssetProbeDependencies {
 const PROBE_TIMEOUT_MS = 10_000
 
 function pendingUrl(token: string): string {
-  return `magic-mirror-media://visual-pending/${encodeURIComponent(token)}`
+  return mediaUrl(`magic-mirror-media://visual-pending/${encodeURIComponent(token)}`)
 }
 
 export function probePendingVisualAsset(
@@ -47,7 +48,7 @@ export function probeDraftVisualAsset(
   asset: ManagedVisualAsset,
   dependencies: VisualAssetProbeDependencies = {},
 ): Promise<VisualAssetProbe> {
-  return probeVisualAsset(asset.kind, `magic-mirror-media://visual-draft/${encodeURIComponent(asset.id)}`, dependencies)
+  return probeVisualAsset(asset.kind, mediaUrl(`magic-mirror-media://visual-draft/${encodeURIComponent(asset.id)}`), dependencies)
 }
 
 function probeVisualAsset(

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { mediaUrl } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { isFolderMediaId, type FolderMediaEntry } from '../../shared/media-folders'
 import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoCommand, type LoopVideoSettings,
@@ -34,7 +35,7 @@ function MutedLoopPreview({ videoId, visible, fit }: { videoId: string; visible:
     setFailed(false)
     if (!video) return
     video.muted = true; video.volume = 0
-    if (visible && videoId) video.src = `magic-mirror-media://visual-draft/${encodeURIComponent(videoId)}`
+    if (visible && videoId) video.src = mediaUrl(`magic-mirror-media://visual-draft/${encodeURIComponent(videoId)}`)
     return () => { video.pause(); video.removeAttribute('src'); video.load() }
   }, [visible, videoId])
   return <details className="loop-video-preview" onToggle={event => { if (!event.currentTarget.open) ref.current?.pause() }}>

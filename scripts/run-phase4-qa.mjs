@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 import { verifyBuild } from './qa-build.mjs'
 import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
@@ -12,7 +13,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseOwner = acquireElectronOwner('phase4-qa')
 process.once('exit', releaseOwner)
 assertElectronStopped()
-const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--operator-loop', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation', '--studio-journey']
+const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--operator-loop', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation', '--studio-journey', '--web-console']
 const args = process.argv.slice(2)
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
@@ -21,7 +22,8 @@ const musicOnly = process.argv.includes('--music-only')
 const spellsLive = process.argv.includes('--spells-live')
 const lifecycleLive = process.argv.includes('--lifecycle-live') || spellsLive
 const live = process.argv.includes('--live') || lifecycleLive
-const manual = process.argv.includes('--manual')
+const webConsole = process.argv.includes('--web-console')
+const manual = process.argv.includes('--manual') || webConsole
 const cubismOnly = process.argv.includes('--cubism')
 const profileOnly = process.argv.includes('--profiles')
 const audioOnly = process.argv.includes('--audio')
@@ -35,7 +37,7 @@ const memoryConversation = process.argv.includes('--memory-conversation')
 const memoryOnly = process.argv.includes('--memory') || memoryLive || memoryConversation
 const fieldHelpOnly = process.argv.includes('--field-help')
 const studioJourneyOnly = process.argv.includes('--studio-journey')
-const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly || studioJourneyOnly
+const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly || studioJourneyOnly || webConsole
 const videoFades = process.argv.includes('--video-fades')
 const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || operatorLoopOnly || mediaSkillOnly || memoryOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
@@ -57,6 +59,7 @@ const musicDir = join(userDataDir, 'assets', 'music')
 const visualDir = join(userDataDir, 'assets', 'visual')
 await Promise.all([mkdir(configDir, { recursive: true }), mkdir(musicDir, { recursive: true }), mkdir(visualDir, { recursive: true }), mkdir(outputDir, { recursive: true })])
 await writeFile(join(root, 'build.json'), JSON.stringify(buildProvenance))
+if (webConsole) await writeFile(join(userDataDir, 'web-console.json'), await readFile(join(homedir(), 'Library/Application Support/magic-mirror/web-console.json')))
 
 function makeToneWav(durationSeconds = 4, sampleRate = 48_000) {
   const sampleCount = durationSeconds * sampleRate

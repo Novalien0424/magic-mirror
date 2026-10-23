@@ -1,4 +1,5 @@
 import type { AvatarControlCommand } from '../../../shared/bridge'
+import { mediaUrl } from '../../shared/media-url'
 import type { LifecycleState, SceneActionCommandContext } from '../../../shared/types'
 import type { RealtimeAudioOutput } from '../../realtime/realtime-audio-output'
 import type { AvatarAudioActivity, AvatarAudioOutput } from './avatar-audio-coordinator'
@@ -286,7 +287,7 @@ export function createAvatarMediaController(
   }
 
   const loadManagedMusic = async (assetId: string, preview: boolean, generation: number): Promise<boolean> => {
-    const response = await fetch(`magic-mirror-media://${preview ? 'music-draft' : 'music'}/${encodeURIComponent(assetId)}`)
+    const response = await fetch(mediaUrl(`magic-mirror-media://${preview ? 'music-draft' : 'music'}/${encodeURIComponent(assetId)}`))
     if (!response.ok) throw new Error('managed_music_fetch_failed')
     const blob = await response.blob()
     if (disposed || generation !== sceneMusicLoadGeneration) return false

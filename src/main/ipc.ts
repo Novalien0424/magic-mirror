@@ -1,4 +1,5 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
+import { isWebConsoleEvent } from './web-console'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { registerStudioIpc } from './studio/studio-ipc'
 import { registerImageSkillIpc } from './studio/image-skill-ipc'
@@ -166,6 +167,7 @@ export type SenderRejectionReason =
   | 'window_destroyed'
 
 export interface RegisterIpcHandlersOptions {
+  readonly onConsoleSceneStatus?: (status: SceneStatusEvent) => void
   readonly isShuttingDown?: () => boolean
   readonly youtube?: import('../shared/youtube-media').YoutubePlayer
   readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
@@ -490,6 +492,7 @@ export function authorizeSender(
   expectedKind: MirrorWindowKind,
   windows: TrackedWindows,
 ): SenderAuthResult {
+  if (expectedKind === 'console' && isWebConsoleEvent(event)) return { ok: true }
   const expectedWindow = getTrackedWindow(windows, expectedKind)
   if (expectedWindow === null) return { ok: false, reason: 'unknown_sender' }
 
@@ -1384,6 +1387,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
 
   const dispatchSceneStatus = (status: SceneStatusEvent): void => {
+    options.onConsoleSceneStatus?.(status)
     for (const kind of ['mirror', 'console'] as const) {
       const tracked = getTrackedWindow(windows, kind)
       if (tracked === null || isTrackedWindowDestroyed(tracked)) continue

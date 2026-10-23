@@ -1,54 +1,69 @@
 # Magic Mirror — current handoff, 2026-10-23
 
-Latest delivery on `field/macmini-deploy`: six-key Neo profile **Magic Mirror
-copy 1**, selected/default. **STUDIO** replaces the clipped label; top-right
-**DESKTOP** shows the portrait macOS desktop, suspends voice/wake/camera/media and
-preserves Console edits. START/STUDIO/PLAY LOOP/CONSOLE return to their selected
-functions. Every visible control checks Mac T749 orientation 90°; Android remains
-`user_rotation=2`. STOP retains black HDMI, TV standby, process/mouse cleanup and
-Jabra output 70% read-back.
+Latest delivery on `field/macmini-deploy`: Studio narration owns the full Chinese
+opening/name question and processed audio tail before listening or starting the
+30-second deadline. Early/echo input cannot skip steps. A fresh visit asks the
+name again. The Avatar remains visible until the drawing announcement finishes.
+Review requires a new heard reply; silence cannot authorize a revision. Edits
+carry the published art style, and byte-identical provider edits retain the old
+picture with a failure reason. No transcript/audio retention or model-ID change.
 
-Default soul art is now **modern minimalist multicolour vector-style illustration**.
-Published Raven **v21** and code default match. Only the style/version changed;
-unrelated saved draft edits and the previous active config were preserved.
+Tailnet web Console is deployed at
+**https://macmini-m6-33.tailf9113c.ts.net:8443/** while Magic Mirror is running.
+It uses the existing Console UI and validated Main controls behind private
+Tailscale Serve. Browser editing/save/publish, mode changes, managed media,
+Avatar previews and reconnect work. Host file selection/import, private memories,
+voice audition, wake calibration and simulator remain on the Mac with visible
+guidance. Existing public Funnel 443 is unchanged; Console 8443 is private.
 
-Final runtime: normal Electron **stopped**, T749 black cover active, TV standby,
-mouse released, matching task-entry state. Jabra output reads **70.08%**, unmuted;
-Jabra remains default input/output. The temporary QA audio guard lost the initial
-internal Mac speaker volume after device IDs changed; its final value is **1%**.
-The guard was repaired and the native rerun restored its captured values; the
-original internal-speaker level is unknown. No input-gain changes were made.
+Normal canonical LaunchAgent runtime is **running**, Raven **v21**, Interactive
+Studio mode, Dormant/listening. Main/renderer/web server were ready at 18:43
+Taipei; HTTPS returned 200 and the Studio button route acknowledged mode success
+and TV awake. Production active/draft hashes match task entry. Four questions,
+Chinese opening/name collection, modern minimalist multicolour vector style and
+default farewell remain configured. The unrelated saved draft is preserved and
+still awaits publication. Jabra output reads **70.08%**, unmuted, after reset and
+subsequent read-back. A final 6.25% reading was corrected; its cause was not
+established. The previously unknown original internal-speaker volume remains 1%.
 
-Canonical build **17:11:31 Taipei**: source `b71a30bdc7a71f12`, output
-`0605c6026f90f125`. Build verification passes. Six signed wrappers and the updated
-native helper are installed; next start uses this build. No extra restart owner.
+Canonical build **18:33:38 Taipei**: source `3b4a1b97354b8d0e`, output
+`c6f00fed3d61befed`. Build verification passes; deployment runs that output.
 
-## Evidence
+## Evidence and limits
 
-- **269 distinct focused tests**, node/web typecheck, syntax and build checks pass.
-- Real isolated Electron operator journey **24/24**, exit 0, 17 captures.
-  Desktop hides both windows/media, retains unsaved edits and returns through all
-  mode buttons. Desktop status/Return to Avatar visually reviewed.
-- Deployed Mac/TV sequence **10/10**, exit 0: Desktop interleaved with START,
-  STUDIO, PLAY LOOP, CONSOLE and final STOP. Expected mode/window counts, TV awake
-  or standby, portrait 1080×1920, mouse and black/audio read-backs passed.
-- Connected Neo editor shows readable STUDIO/DESKTOP and the correct Desktop app
-  target. Physical new-key press and human-microphone acceptance remain separate.
+- Final focused Studio/runtime/tools/HTTP selection **79/79**; subsequent HTTP
+  authentication, SSE and media checks pass. Node/web typechecks and build pass.
+- Real provider four-question journey **26/26**, exit 0: name correction and
+  confirmation, four brief comments, drawing order, a visible silver-wing edit,
+  exact feedback/farewell, transfer and a fresh name question on restart. All 22
+  classified lines Chinese. The earlier verbatim-offer mismatch is retained.
+- Real provider silent journey **23/23**, exit 0: stop during opening/restart,
+  name fallback after 30 seconds, two configured unanswered questions, one image,
+  **zero visitor ASR and zero revisions**, review timeout and normal farewell.
+- Isolated editor journey **23/23**, exit 0: name list, question limits/content,
+  validation/save/reload/publish/default restoration and narrow layout.
+- Actual Safari HTTPS journey: save/publish persisted, media played, Ren preview
+  rendered at 60 FPS and its motion control worked. Backend outage/recovery kept
+  unsaved edits and restored Connected automatically. Production UI also checked.
+- Speech QA uses synthetic visitor audio through real WebRTC/ASR/tools/playback;
+  human Jabra microphone acceptance and a second tailnet computer were not run.
+  No second-peer SSH details were supplied. Existing Chrome profile blocked the
+  URL client-side; Safari worked with normal certificate verification.
 
-[Desktop journey, failures, preservation and QA](docs/testing/stream-deck-desktop-2026-10-23.md) ·
-[Full failures](docs/testing/stream-deck-desktop-failures-2026-10-23.txt) ·
-[Prior Studio/STOP delivery](docs/archive/progress-before-desktop-2026-10-23.md).
-
-The preceding USB camera check enumerated Arducam but received zero frames in
-40-second minimum-mode and 20-second 1080p captures (`camera_frames_missing`).
-That hardware/runtime issue remains unresolved and was not retested here.
+[Full journey, QA and deployment record](docs/testing/studio-field-repair-2026-10-23.md) ·
+[Retained failures](docs/testing/studio-field-repair-failures-2026-10-23.txt) ·
+[Previous Desktop/STOP/style delivery](docs/archive/progress-before-studio-field-2026-10-23.md).
 
 ## Cleanup and next action
 
-Three owned QA runs were reviewed and cleaned: **252 files / 37,182,094 bytes**,
-excluding markers. Task scratch files are cleaned; failure metadata stays linked
-above. Existing soul deliverables and AI_Stuff/AI_Avatar Drive upload are
-preserved. No implementation remains for Desktop/label/style. Operator can start
-with the Neo and may publish their preserved unrelated draft when ready.
-Printing remains the requested deferred/no-op skill. [TODO](TODO.md) owns unrelated
-acceptance; [DECISIONS](DECISIONS.md) owns other rulings. No phase promotion.
+Ten exact owned QA runs were reviewed and deleted: **803 files / 160,016,689
+bytes**, excluding markers. Task scratch files are removed; metadata failure
+evidence remains. Existing owner soul deliverables and AI_Stuff/AI_Avatar Drive
+upload are preserved. Test configurations did not overwrite production defaults.
+
+Operator can use the tailnet URL or Studio button. Remaining acceptance is a
+second-computer browser visit and human microphone trial; provider verbatim
+speech remains variable despite the final passing sample. Printing remains the
+requested deferred/no-op skill. The prior Arducam zero-frame issue was not
+retested. [TODO](TODO.md) owns unrelated acceptance; [DECISIONS](DECISIONS.md) owns
+other rulings. No phase promotion or additional Electron restart owner.

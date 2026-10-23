@@ -3,6 +3,7 @@ import { ReasonDetail } from './reason-copy'
 import { FIELD_HELP, cubismParameterHelp } from './field-help-text'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { isWebConsole } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import type { AvatarModel } from '../../shared/avatar-profiles'
 import { parseAvatarLibraryLabel, type AvatarLibraryLabel } from '../../shared/avatar-library'
@@ -165,7 +166,7 @@ export function CubismStudio({ bridge, visible, assignedModel }: { bridge: Conso
         {models.map(model => <option key={model.id} value={model.id}>{modelTitle(model)}</option>)}
       </select></HelpField>
       <button type="button" disabled={!selected || busy || loaded?.id === selected.id} onClick={load}>Load preview</button>
-      <button type="button" disabled={!bridge || busy} onClick={() => void importModel()}>Browse & import Cubism…</button>
+      <button type="button" disabled={!bridge || busy || isWebConsole()} title={isWebConsole() ? 'Import files in Console on the Mac.' : undefined} onClick={() => void importModel()}>Browse & import Cubism…</button>
       <button type="button" disabled={!bridge || busy} onClick={() => void refresh()}>Refresh library</button>
     </div>
     {!bound && selected && selected.id !== BUILTIN.id && <fieldset disabled={busy}>

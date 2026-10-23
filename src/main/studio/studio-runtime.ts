@@ -94,7 +94,11 @@ export function createStudioRuntime(input: {
       askName: asksName(r.experience), text: studioScreenView(r.experience.studio, r.language, Math.min(r.answers.length + 1, count), count),
     }
   }
-  const publish = (r: Run) => { if (run === r) input.dispatch({ type: 'studio_view', view: view(r) }) }
+  const publish = (r: Run) => {
+    // The last answer/revision queues speech first. Keep the existing visitor
+    // view until the renderer acknowledges completed drawing-cue playback.
+    if (run === r && (!['painting', 'revising'].includes(r.phase) || r.abort)) input.dispatch({ type: 'studio_view', view: view(r) })
+  }
   // Painting and transfer own their completion, independently of conversation idle.
   const hold = (r: Run) => { if (!r.activityHeld) { r.activityHeld = true; input.activity('started', r.id) } }
   const release = (r: Run) => { if (r.activityHeld) { r.activityHeld = false; input.activity('finished', r.id) } }
@@ -205,6 +209,10 @@ export function createStudioRuntime(input: {
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return
     if (!result.ok) { fail(r, result.code, kind === 'edit'); return }
+    if (kind === 'edit' && previous?.bytes.equals(result.image)) {
+      input.report('studio_revision_unchanged', 'degraded')
+      fail(r, 'studio_provider_contract', true); return
+    }
     input.report(kind === 'edit' ? 'studio_revision_ready' : 'studio_image_ready', 'info', result.elapsedMs)
     const id = randomUUID()
     if (r.imageId && kind === 'generate') images.delete(r.imageId)

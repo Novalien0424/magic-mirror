@@ -1,4 +1,5 @@
 import { DEFAULT_AUDIO_PREFERENCES, DEFAULT_AUDIO_VOLUMES, type AudioDeviceState, type AudioPreferences, type AudioVolumes } from '../shared/audio-devices'
+import { isWebConsole } from './shared/media-url'
 
 interface AudioSink { setSinkId(id: string): Promise<void> }
 
@@ -37,7 +38,10 @@ export class AudioDeviceRouter {
     return this.preferences.inputId ? { deviceId: { exact: this.preferences.inputId } } : true
   }
   private async route(sink: AudioSink): Promise<void> {
-    try { await sink.setSinkId(this.preferences.outputId) } catch {
+    // Mac device IDs are not browser device IDs. Remote previews use that
+    // computer's default output; device settings still control the Mirror.
+    if (isWebConsole() && typeof sink.setSinkId !== 'function') return
+    try { await sink.setSinkId(isWebConsole() ? '' : this.preferences.outputId) } catch {
       this.reason = 'audio_output_unavailable_using_default'
       try { await sink.setSinkId('') } catch { this.reason = 'audio_output_routing_failed' }
       this.changed()

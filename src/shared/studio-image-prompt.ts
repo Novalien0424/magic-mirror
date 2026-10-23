@@ -31,6 +31,7 @@ export function buildPortraitPrompt(input: { studio: ImageSettings; answers: rea
 
 export function buildRevisionPrompt(input: { studio: ImageSettings; change: string; name: string }): string {
   return [renderStudioText(studioImagePrompt(input.studio, 'revision'), { change: quoteVisitorText(input.change, 120) }),
+    `Art direction (operator style): ${input.studio.artStyle.trim()}`,
     PORTRAIT_STUDIO.imagePrompt.guard, nameLine(input.studio, input.name)].join(' ')
 }
 

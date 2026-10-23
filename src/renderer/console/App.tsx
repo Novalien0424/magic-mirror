@@ -1,4 +1,6 @@
 import { PromptInspector } from './PromptInspector'
+import { isWebConsole } from '../shared/media-url'
+import { WebConsoleNotice } from './WebConsoleNotice'
 import { HelpField } from './HelpField'
 import { WakeRecoveryStatus } from './WakeRecoveryStatus'
 import { FIELD_HELP } from './field-help-text'
@@ -1804,7 +1806,7 @@ export function ScenesPanel({
         </div>
       </header>}
       <nav className="console__subnav profile-sections" aria-label="Avatar settings">
-        {AVATAR_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        {AVATAR_SECTIONS.map(label => <button key={label} type="button" disabled={memoryEditing && section !== label || isWebConsole() && label === 'Memories'} title={isWebConsole() && label === 'Memories' ? 'Private memories are managed in Console on the Mac.' : undefined} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
         {rawDraft?.avatarCatalog && editingAvatar && <>
           <span className="profile-sections__divider" aria-hidden="true">Shared</span>
           {LIBRARY_SECTIONS.map(label => <button key={label} type="button" className="profile-sections__library" disabled={memoryEditing} aria-pressed={section === label} onClick={() => setSection(label)}>{label}</button>)}
@@ -1837,7 +1839,7 @@ export function ScenesPanel({
             avatars: catalog.avatars.map(avatar => avatar.id === editingAvatar.id ? { ...avatar, modelId } : avatar) })
         }}>
           <option value="builtin-ren">Built-in Ren</option>{availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select></HelpField><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32} onClick={() => {
+        </select></HelpField><button type="button" disabled={disabled || rawDraft.avatarCatalog.models.length >= 32 || isWebConsole()} title={isWebConsole() ? 'Import files in Console on the Mac.' : undefined} onClick={() => {
           if (!bridge) return
           setBusy(true)
           void bridge.importAvatarModel().then(response => {
@@ -2524,6 +2526,7 @@ export function App(): React.JSX.Element {
   return (
     <main className="console">
       <div className="console__top" ref={topBar}>
+        <WebConsoleNotice />
         <header className="console__header">
           <h1 className="console__title">Magic Mirror</h1>
           <nav className="console__tabs" aria-label="Console pages">
@@ -2618,7 +2621,7 @@ export function App(): React.JSX.Element {
         <div hidden={activePage !== 'System' || systemPage !== 'Simulator'}>
           <SimulatorPanel
             developerMode={developerMode}
-            bridgeAvailable={bridgeAvailable}
+            bridgeAvailable={bridgeAvailable && !isWebConsole()}
             state={simulatorState}
             onSimulate={runSimulation}
           />

@@ -128,7 +128,7 @@ if (selected === 'portrait_studio') {
   const experience = avatar.experience ?? defaultExperience()
   avatar.experience = { ...experience, studio: story.id === 'default'
     ? { ...experience.studio, prompts: { ...experience.studio.prompts, ...story.studio.prompts } }
-    : { ...defaultExperience().studio, ...story.studio } }
+    : { ...(story.id === 'soul' ? experience.studio : defaultExperience().studio), ...story.studio } }
 }
 const presentationIds = new Set([avatar.presentation.backgroundId, avatar.presentation.entranceVideoId, avatar.presentation.exitVideoId])
 config.visualAssets = config.visualAssets.filter(a => presentationIds.has(a.id))

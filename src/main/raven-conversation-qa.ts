@@ -104,8 +104,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const studioEvidence: { phases: (string | null)[]; events: string[]; main: { reason: string; status: string; durationMs?: number }[]; reveals: number; deletedItems: number; imagesAttached: number
     customPaintingPromptFollowed?: boolean; story?: string; nameCorrections?: number; nameAsIntended?: boolean
     promptMarkersFollowed?: Partial<Record<'painting' | 'finished', boolean>>; farewellVerbatim?: boolean
-    repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number }
+    repaintLines?: number[]; language?: { expected: 'zh' | 'en'; lines: number; mismatched: number; mismatchKinds?: string[] }
     commentShape?: { sentences: number; characters: number; question: boolean; delivered: boolean }[]
+    feedbackOffer?: { audibleSegments: number; segmentCharacters: number[]; expectedCharacters: number; exact: boolean }
     pictures?: { type: string; width: number; height: number; cornerAlpha: number }[] }
     = { phases: [], events: [], main: [], reveals: 0, deletedItems: 0, imagesAttached: 0 }
   let learningBarrier: { settled: boolean | null; listingAccepted: boolean; materialPresent: boolean; samplesPresent: boolean } | undefined
@@ -832,7 +833,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const waitForReveal = async (index: number) => {
         await wait(async () => {
           const entries = await studio(), revealAt = entries.filter(s => s.event === 'ready')[index]?.at
-          if (entries.some(s => s.event === 'closed') && !entries.some(s => s.phase === 'keepsake')) throw Error('raven_qa_studio_closed_during_reveal')
+          const enteredAt = entries.findLast(s => s.event === 'enter')?.at ?? studioStarted
+          if (entries.some(s => s.event === 'closed' && s.at >= enteredAt) && !entries.some(s => s.phase === 'keepsake' && s.at >= enteredAt)) throw Error('raven_qa_studio_closed_during_reveal')
           if (!revealAt) return false
           // Main arms the preference timer only after BOTH reveal segments and
           // the processed tail. A provider-idle gap inside [pause] is not ready.
@@ -885,7 +887,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await wait(async () => await mode('Interactive Studio'), 'studio_mode_switch_ready', 10000)
         await wait(async () => (await input.runtime.getPublishedWakeConfigForRuntime()).phrase !== (await input.runtime.getPublishedSceneConfigForRuntime()).wake.phrase, 'studio_wake_phrase', 10000)
       })
-      const ready = switched && await check('studio_start', start)
+      const restartChecked = switched && (story.id !== 'soul_silence' || await check('studio_stop_during_opening', async () => {
+        await button('Start Conversation')
+        await wait(async () => (await state()).audio && await evaluate<boolean>("return window.__ravenQa.studioCues.some(c=>c.kind==='opening')"), 'studio_opening_playing', 45000)
+        await stop()
+        if (await phase() !== null) throw Error('raven_qa_studio_stop_kept_visit')
+      }))
+      const ready = restartChecked && await check('studio_start', start)
       const asksName = studioSettings.askName !== false
       const entered = ready && await check('studio_wake_entry', async () => {
         await wait(async () => await phase() === (asksName ? 'name' : 'question'), 'studio_first_phase', 15000)
@@ -981,7 +989,11 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       }
       const painting = answered && await check('studio_painting', async () => {
         await evaluate(`window.__ravenQa.stage='studio_painting'`)
-        await wait(async () => ['painting', 'reveal'].includes(await phase() ?? ''), 'studio_painting_phase', 10000)
+        await wait(async () => ['painting', 'reveal'].includes(await phase() ?? ''), 'studio_painting_phase', 60000)
+        const order = await evaluate<boolean>(`const q=window.__ravenQa,cue=q.studioCues.find(c=>c.kind==='painting');
+          const stop=cue&&q.studioStops.find(s=>s.responseId===cue.responseId),view=q.studio.find(s=>s.phase==='painting');
+          return !!stop&&!!view&&view.at>=stop.at`)
+        if (!order) throw Error('raven_qa_studio_render_before_drawing_cue')
         if (await phase() === 'painting') await shot('painting')
       })
       const deckPainting = painting && await check('studio_deck_console_painting', () => operator('show_console', overMirror, ['painting', 'reveal']))
@@ -1006,7 +1018,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
           const results = (await observe()).tools.filter(c => c.stage === stage && c.direction === 'result')
           if (!results.some(c => JSON.stringify(c.result ?? '').includes('studio_repainting'))) throw Error('raven_qa_studio_change_not_accepted')
           await wait(async () => {
-            if ((await studio()).some(s => s.event === 'closed')) throw Error('raven_qa_studio_closed_during_revision')
+            const entries = await studio(), enteredAt = entries.findLast(s => s.event === 'enter')?.at ?? studioStarted
+            if (entries.some(s => s.event === 'closed' && s.at >= enteredAt)) throw Error('raven_qa_studio_closed_during_revision')
             return await readyEvents() >= i + 2
           }, 'studio_revision_ready', 240000)
           await shot(`revision-${i + 1}`)
@@ -1049,9 +1062,12 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const expected = studioStartLanguage(studioSettings.startScript)
         const language = (text: string) => { const han = (text.match(/\p{Script=Han}/gu) ?? []).length, latin = (text.match(/[A-Za-z]/g) ?? []).length
           return han >= 2 && han >= latin / 4 ? 'zh' : !han && latin >= 8 ? 'en' : null }
+        const cues = await evaluate<{ responseId: string; kind: string }[]>('return window.__ravenQa.studioCues')
         const lines = (await observe()).records.filter(r => r.role === 'avatar' && r.at >= studioStarted)
-          .map(r => ({ actual: language(r.text), selected: selectedLanguages.findLast(s => s.at <= r.at)?.language ?? expected })).filter(l => l.actual !== null)
-        studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l.actual !== l.selected).length }
+          .map(r => ({ actual: language(r.text), selected: selectedLanguages.findLast(s => s.at <= r.at)?.language ?? expected,
+            kind: cues.find(c => c.responseId === r.responseId)?.kind ?? 'dialogue_or_farewell' })).filter(l => l.actual !== null)
+        studioEvidence.language = { expected, lines: lines.length, mismatched: lines.filter(l => l.actual !== l.selected).length,
+          mismatchKinds: lines.filter(l => l.actual !== l.selected).map(l => l.kind) }
         if (studioEvidence.language.mismatched) throw Error('raven_qa_studio_language_mismatch')
       })
       if (finished && story.id.startsWith('soul')) await check('studio_comments_then_next_question', async () => {
@@ -1085,10 +1101,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         const cues = await evaluate<{ responseId: string; kind: string; step: string; at: number }[]>('return window.__ravenQa.studioCues')
         const revealStep = cues.find(c => c.kind === 'reveal')?.step
         const ids = new Set(cues.filter(c => c.kind === 'reveal' && c.step === revealStep).map(c => c.responseId))
-        const text = (await observe()).records.filter(r => r.role === 'avatar' && r.audible !== false && ids.has(r.responseId ?? '')).map(r => r.text).join('')
+        const parts = (await observe()).records.filter(r => r.role === 'avatar' && r.audible !== false && ids.has(r.responseId ?? '')).map(r => r.text)
+        const text = parts.join('')
         const words = (s: string) => s.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '')
         const offer = PORTRAIT_STUDIO.journey[studioStartLanguage(studioSettings.startScript)].offerChange
-        if (!words(text).includes(words(offer))) throw Error('raven_qa_studio_feedback_offer_missing')
+        studioEvidence.feedbackOffer = { audibleSegments: parts.length, segmentCharacters: parts.map(p => words(p).length),
+          expectedCharacters: words(offer).length, exact: words(text).includes(words(offer)) }
+        if (!studioEvidence.feedbackOffer.exact) throw Error('raven_qa_studio_feedback_offer_missing')
       })
       if (finished && story.id === 'soul_silence') await check('studio_authored_pause', async () => {
         const gap = await evaluate<number | null>(`const q=window.__ravenQa,c=q.studioCues.filter(c=>c.kind==='question');
@@ -1107,6 +1126,16 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       // Each repaint is announced once: a spoken preamble, or else the change result's reply.
       if (studioEvidence.repaintLines) await check('studio_repaint_once', async () => {
         if (studioEvidence.repaintLines!.some(lines => lines !== 1)) throw Error('raven_qa_studio_repaint_lines')
+      })
+      if (finished && story.id.startsWith('soul')) await check('studio_restart_fresh_name', async () => {
+        await stop()
+        const at = Date.now()
+        await start()
+        await wait(async () => events(at).some(e => e.reason === 'studio_wait_started'), 'studio_restart_name_playback', 60000)
+        if (await phase() !== (asksName ? 'name' : 'question') || events(at).some(e => e.reason === 'studio_name_timeout')) throw Error('raven_qa_studio_restart_stale_name')
+        const cues = await evaluate<{ kind: string; at: number }[]>('return window.__ravenQa.studioCues')
+        if (!cues.some(c => c.at >= at && c.kind === 'opening') || asksName && !cues.some(c => c.at >= at && c.kind === 'name')) throw Error('raven_qa_studio_restart_opening_missing')
+        await stop()
       })
       // Conversation mode: the normal wake, and a visitor who asks for the studio opens it.
       if (finished && extra.studioRequest !== undefined) await check('studio_conversation_request', async () => {

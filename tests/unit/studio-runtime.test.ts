@@ -12,7 +12,7 @@ function harness(options: { experience?: AvatarExperience; results?: PortraitIma
   const commands: { type: string; view?: unknown; event?: unknown }[] = []
   const activity: string[] = []
   const reports: string[] = []
-  const results = [...(options.results ?? [okImage, okImage])]
+  const results = [...(options.results ?? [okImage, { ...okImage, image: Buffer.concat([PNG, Buffer.from([1])]) }])]
   let release: (() => void) | undefined
   const gate = new Promise<void>(resolve => { release = resolve })
   const calls: { kind: string; prompt: string; signal?: AbortSignal }[] = []
@@ -42,6 +42,42 @@ function completeCue(h: ReturnType<typeof harness>, action: 'paint' | 'deliver')
 afterEach(() => { vi.useRealTimers() })
 
 describe('portrait studio runtime', () => {
+  it('reports an unchanged provider edit as a failed revision and retains the original picture', async () => {
+    const h = harness({ results: [okImage, okImage] })
+    h.runtime.start(identity, h.experience, 'visitor')
+    h.runtime.handle({ action: 'set_name', name: '測試', confirmed: true, language: 'zh' }, identity)
+    await answerAll(h); h.release()
+    await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+    h.runtime.handle({ action: 'revise', change: 'red wings' }, identity)
+    completeCue(h, 'paint')
+    await vi.waitFor(() => expect(h.runtime.phase()).toBe('keepsake'))
+    expect(h.reports).toContain('studio_revision_unchanged')
+    expect(h.reports).not.toContain('studio_revision_ready')
+    expect(h.events()).toContainEqual(expect.objectContaining({ event: 'failed', keepPortrait: true }))
+    h.runtime.close('test_complete')
+  })
+  it('keeps the Avatar visible through the last comment and drawing cue, and the picture visible through the revision cue', async () => {
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    h.runtime.handle({ action: 'set_name', name: '測試', confirmed: true, language: 'zh' }, identity)
+    for (let question = 1; question <= 4; question++) h.runtime.handle({ action: 'answer', question, answer: 'synthetic answer', language: 'zh' }, identity)
+    expect(h.runtime.phase()).toBe('painting')
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question' })
+    expect(h.calls).toHaveLength(0)
+    completeCue(h, 'paint')
+    expect(h.views().at(-1)).toMatchObject({ phase: 'painting' })
+    expect(h.calls).toHaveLength(1)
+    h.release()
+    await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+    h.runtime.handle({ action: 'revise', change: 'Make the wings red' }, identity)
+    expect(h.views().at(-1)).toMatchObject({ phase: 'reveal' })
+    expect(h.calls).toHaveLength(1)
+    completeCue(h, 'paint')
+    expect(h.views().at(-1)).toMatchObject({ phase: 'revising' })
+    await vi.waitFor(() => expect(h.calls).toHaveLength(2))
+    h.runtime.close('test_complete')
+  })
+
   it('keeps every versioned guidance prompt valid as a studio reply (one line)', () => {
     for (const text of Object.values(PORTRAIT_STUDIO.guidance)) expect(studioText(text, 2000)).toBe(true)
   })

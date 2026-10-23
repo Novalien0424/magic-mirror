@@ -6,7 +6,7 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioCommentPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
-import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioRevealInstructions } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioReplyLanguage, studioRevealInstructions } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent, StudioStep } from '../../shared/portrait-studio'
 import { playSpeechScript } from './speech-script'
 import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../shared/image-skill'
@@ -574,6 +574,10 @@ export function createRealtimeSession(
   let studioStep: StudioStep | undefined
   let studioStepAbort = new AbortController()
   let studioStepSpeaking = false
+  let studioListeningStep: string | undefined
+  let studioCapturePaused = false
+  const studioMutedTracks = new Map<MediaStreamTrack, boolean>()
+  const studioIgnoredInputs = new Set<string>()
   let studioRevisionAnnounced = false
   let studioStepInputs = -1
   let studioStepBeforeQuestion = false
@@ -679,6 +683,8 @@ export function createRealtimeSession(
       // A spoken command owns this turn; a studio call from its cancelled reply is stale.
       if (closed || !studioActive || commandTurnOwned) return { outcome: 'ignored' as const, studio: { status: 'ignored' as const, code: 'studio_not_active_stale' } }
       if ((imagePhotoPending || studioStepSpeaking) && request.action !== 'exit') return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: imagePhotoPending ? 'studio_photo_pending' : 'studio_step_speaking' } }
+      if (studioStep && ['set_name', 'reject_name', 'answer', 'revise', 'finish', 'language'].includes(request.action)
+        && (studioListeningStep !== studioStep.id || visitorInputs <= studioStepInputs)) return awaitingVisitor()
       const reply = await studioRequest(request)
       if (!reply) return { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable' } }
       return { outcome: reply.status, studio: reply, ...(reply.step ? { spoken: true } : {}) }
@@ -774,6 +780,9 @@ export function createRealtimeSession(
       studio_revise: async args => {
         // A change is the visitor's request after seeing the picture, never the reveal's own idea.
         if (visitorInputs === studioRevealInputs) return awaitingVisitor()
+        // Echo/noise captured during the offer is not a new preference. Wait for
+        // a nonempty final transcript of this later visitor turn, never its text.
+        if (studioStep && !await studioReplyHeard()) return awaitingVisitor()
         // A preamble already told the visitor about the repaint; the result's own reply would repeat it.
         const preamble = spokenResponses.has(toolCallResponse)
         studioRevisionAnnounced = preamble
@@ -786,6 +795,7 @@ export function createRealtimeSession(
       // The visitor is happy only if they said so after the picture was shown.
       studio_finish: async () => {
         if (visitorInputs === studioRevealInputs) return awaitingVisitor()
+        if (studioStep && !await studioReplyHeard()) return awaitingVisitor()
         const result = await studioTool({ action: 'finish' })
         return { ...result, ...(studioStep && result.outcome === 'accepted' ? { spoken: true } : {}) }
       },
@@ -1004,9 +1014,12 @@ export function createRealtimeSession(
     }
     if (!studioDefaultStart) { speak(input.wakeGreeting ?? ''); return }
     // Studio-default sessions greet with the studio start script once Main started the studio.
-    void studioDefaultStart.then(started => started
-      ? speak(input.avatar!.experience!.studio.startScript, completed => { if (completed) askStudioFirstStep(studioStarts) })
-      : speak(input.wakeGreeting ?? ''))
+    void studioDefaultStart.then(started => {
+      if (closed) return
+      if (started && studioStep) queueStudioStep(studioStep, undefined, false, input.avatar!.experience!.studio.startScript)
+      else if (started) speak(input.avatar!.experience!.studio.startScript, completed => { if (completed) askStudioFirstStep(studioStarts) })
+      else { setStudioCapturePaused(false); speak(input.wakeGreeting ?? '') }
+    })
   }
   const scheduleGreeting = () => {
     if (greetingState !== 'pending') return
@@ -1196,6 +1209,7 @@ export function createRealtimeSession(
   const closeLegacySession = (): void => {
     if (closed) return
     closed = true
+    setStudioCapturePaused(false)
     clearCommandCandidate()
     memoryDialogue.close()
     for (const done of memoryInputWaiters) done()
@@ -1339,7 +1353,7 @@ export function createRealtimeSession(
         applicationResponses.add(ownedResponseId)
         if (applicationResponses.size > 128) applicationResponses.delete(applicationResponses.values().next().value!)
       }
-      if (type === 'response.created' && commandTurnOwned && !applicationOwned) {
+      if (type === 'response.created' && (commandTurnOwned || studioCapturePaused) && !applicationOwned) {
         const responseId = readProperty(response, 'id')
         if (typeof responseId === 'string') {
           // Keep cancellation in the queue until response.done, including a
@@ -1355,7 +1369,7 @@ export function createRealtimeSession(
           } catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt) }
           // Creation is not playback. A global clear here can cut an already
           // playing application cue; clear only if this reply starts audio.
-          emitMetadata(input, 'realtime_observer_event', 'info', 'command_reply_suppressed', sessionGeneration, createdAt)
+          emitMetadata(input, 'realtime_observer_event', 'info', studioCapturePaused ? 'studio_narration_input_ignored' : 'command_reply_suppressed', sessionGeneration, createdAt)
         }
         return
       }
@@ -1468,7 +1482,7 @@ export function createRealtimeSession(
     }
     if (type === 'output_audio_buffer.stopped') {
       releaseFinishedCues()
-      if (studioActive && studioStep && !studioStepSpeaking && !imagePhotoPending) {
+      if (studioActive && studioStep && studioListeningStep === studioStep.id && !studioStepSpeaking && !imagePhotoPending) {
         const step = studioStep
         whenIdle(() => {
           if (studioStep?.id === step.id && !studioStepSpeaking && !imagePhotoPending) void Promise.resolve(input.waitForOutputTail?.())
@@ -1594,6 +1608,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.speech_started') {
+      if (ignoreStudioInput(event)) return
       if (greetingState === 'sent') greetingAbort.abort()
       if (studioActive && studioStep) {
         void studioRequest({ action: 'step_activity', stepId: studioStep.id })
@@ -1629,6 +1644,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.speech_stopped') {
+      if (ignoreStudioInput(event)) return
       if (mediaPlaybackActive) return
       visitorSpeaking = false
       // The server normally answers this turn itself; let its response start first.
@@ -1638,7 +1654,7 @@ export function createRealtimeSession(
         whenIdle(() => {
           if (!studioActive || studioStep?.id !== step.id || visitorSpeaking || imagePhotoPending) return false
           if (studioResumeStep?.id === step.id) queueStudioStep(studioResumeStep)
-          else if (!studioStepSpeaking) void studioRequest({ action: 'step_ready', stepId: step.id })
+          else if (!studioStepSpeaking && studioListeningStep === step.id) void studioRequest({ action: 'step_ready', stepId: step.id })
           return true
         })
       }
@@ -1647,6 +1663,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'input_audio_buffer.committed') {
+      if (ignoreStudioInput(event)) return
       visitorInputs++
       const itemId = readProperty(event, 'item_id')
       notifyInputItemCreated(itemId)
@@ -1694,6 +1711,7 @@ export function createRealtimeSession(
       return
     }
     if (type === 'conversation.item.input_audio_transcription.completed') {
+      if (ignoreStudioInput(event)) return
       const transcript = readProperty(event, 'transcript')
       const itemId = readProperty(event, 'item_id')
       if (
@@ -1951,6 +1969,9 @@ export function createRealtimeSession(
       createdAt,
     )
     try {
+      // No post-wake audio may generate an ordinary reply before Main supplies
+      // the Studio opening/name sequence. Keep ownership of the existing track.
+      if (studioDefaultMode) setStudioCapturePaused(true, false)
       await session.connect({ apiKey: clientSecret })
       if (closed) {
         // Stop may run while the SDK is still establishing its transport.
@@ -1961,6 +1982,7 @@ export function createRealtimeSession(
       if (failureReported) {
         throw new RealtimeSessionAdapterError('connect_failed')
       }
+      if (studioCapturePaused) setStudioCapturePaused(true)
       latestConnectFailureToken = undefined
       if (input.microphoneRecovery && !closed) {
         const options = input.microphoneRecovery
@@ -1973,6 +1995,7 @@ export function createRealtimeSession(
             const state = (transport as { connectionState?: { peerConnection?: RTCPeerConnection } }).connectionState
             const sender = state?.peerConnection?.getSenders().find(s => s.track?.kind === 'audio')
             if (!sender) throw new Error('audio_sender_unavailable')
+            if (studioCapturePaused) { studioMutedTracks.set(track, track.enabled); track.enabled = false }
             await sender.replaceTrack(track)
           },
           onStatus: reason => emitMetadata(input, 'realtime_observer_event',
@@ -2020,6 +2043,7 @@ export function createRealtimeSession(
     if (closePromise !== null) return closePromise
     cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
+    setStudioCapturePaused(false)
     studioStepAbort.abort()
     for (const controller of speechScripts) controller.abort()
     imageCues.abort(); imageConsent?.abort.abort(); imageConsent = undefined; imagePhotoPending = false; imageClosed = true
@@ -2083,6 +2107,11 @@ export function createRealtimeSession(
     if (text.trim().length === 0 || text.length > 1000) {
       throw new RealtimeSessionAdapterError('scene_dialogue_invalid')
     }
+    const language = metadata?.mirror_studio && studioStep ? studioReplyLanguage(studioStep.language) : ''
+    const responseFor = (segment: string) => {
+      const response = buildSpeechResponse(segment, input.avatar?.speakingStyle ?? '')
+      return language ? { ...response, instructions: `${language}\n\n${response.instructions}` } : response
+    }
     if (text.includes('[pause')) {
       const controller = new AbortController()
       const cancel = () => controller.abort()
@@ -2090,14 +2119,14 @@ export function createRealtimeSession(
       if (signal?.aborted) controller.abort()
       speechScripts.add(controller)
       const playback = playSpeechScript(text, controller.signal, (segment, last) => new Promise(resolve =>
-        queueSpeechResponse(buildSpeechResponse(segment, input.avatar?.speakingStyle ?? ''), controller.signal, resolve,
+        queueSpeechResponse(responseFor(segment), controller.signal, resolve,
           last ? metadata : metadata?.mirror_sleep_cue ? { mirror_sleep_part: metadata.mirror_sleep_cue } : metadata)))
       if (metadata?.mirror_sleep_cue) farewellScript = playback
       void playback.then(completed => onFinished?.(completed), () => onFinished?.(false))
         .finally(() => { signal?.removeEventListener('abort', cancel); speechScripts.delete(controller); if (idleTasks.length) queueMicrotask(runIdleTasks) })
       return
     }
-    queueSpeechResponse(buildSpeechResponse(text, input.avatar?.speakingStyle ?? ''), signal, onFinished, metadata)
+    queueSpeechResponse(responseFor(text), signal, onFinished, metadata)
   }
   function queueSpeechResponse(response: ReturnType<typeof buildSpeechResponse>, signal?: AbortSignal,
     onFinished?: (completed: boolean) => void, metadata?: Record<string, string>): void {
@@ -2186,6 +2215,41 @@ export function createRealtimeSession(
       ...(turnDetection.threshold !== undefined ? { threshold: turnDetection.threshold,
         prefix_padding_ms: turnDetection.prefixPaddingMs, silence_duration_ms: turnDetection.silenceDurationMs } : {}),
     } } } } })
+  }
+  /** Application narration is a listen-after-speaking turn, including its DSP tail. */
+  function setStudioCapturePaused(paused: boolean, notify = true): void {
+    const changed = studioCapturePaused !== paused
+    if (changed) {
+      studioCapturePaused = paused
+      if (paused) {
+        for (const track of input.mediaStream.getAudioTracks?.() ?? []) { studioMutedTracks.set(track, track.enabled); track.enabled = false }
+      } else {
+        for (const [track, enabled] of studioMutedTracks) track.enabled = enabled
+        studioMutedTracks.clear()
+      }
+    }
+    if (notify && !closed && (changed || paused)) transport.sendEvent({ type: 'session.update', session: { type: 'realtime', audio: { input: { turn_detection: {
+      ...wireTurnDetection, create_response: !paused && !mediaPlaybackActive, interrupt_response: !paused,
+    } } } } })
+  }
+  function ignoreStudioInput(event: unknown): boolean {
+    const item = readProperty(event, 'item_id')
+    if (!studioCapturePaused && !(typeof item === 'string' && studioIgnoredInputs.has(item))) return false
+    if (typeof item === 'string') {
+      studioIgnoredInputs.add(item); rememberStudioTurn(item)
+      if (studioIgnoredInputs.size > 128) studioIgnoredInputs.delete(studioIgnoredInputs.values().next().value!)
+    }
+    emitMetadata(input, 'realtime_observer_event', 'info', 'studio_narration_input_ignored', sessionGeneration, createdAt)
+    return true
+  }
+  async function studioReplyHeard(): Promise<boolean> {
+    const item = memoryLatestItem, step = studioListeningStep
+    if (!item || !step || visitorInputs <= studioStepInputs) return false
+    if (!finalCommandInputs.has(item)) await new Promise<void>(resolve => {
+      const done = () => { clearTimeout(timer); memoryInputWaiters.delete(done); resolve() }
+      const timer = setTimeout(done, 1500); memoryInputWaiters.add(done)
+    })
+    return !closed && studioListeningStep === step && memoryLatestItem === item && finalCommandInputs.has(item) && !studioIgnoredInputs.has(item)
   }
   function setMediaPlayback(active: boolean): void {
     if (closed || mediaPlaybackActive === active) return
@@ -2348,6 +2412,8 @@ export function createRealtimeSession(
     if (studioEnter) await studioEnter
     if (closed || !studioActive || !conversationAgent) return
     studioActive = false
+    studioListeningStep = undefined
+    setStudioCapturePaused(false)
     studioStepAbort.abort(); studioStep = undefined; studioStepSpeaking = false; studioResumeStep = undefined; studioRevisionAnnounced = false
     const swap = studioAgentSwap.then(() => updateAgent(conversationAgent!))
     studioAgentSwap = swap.catch(() => undefined)
@@ -2366,6 +2432,7 @@ export function createRealtimeSession(
     try {
       if (brief) memoryDialogue.reapply()
       if (mediaPlaybackActive) sendMediaTurnDetection(true)
+      if (studioCapturePaused) setStudioCapturePaused(true)
     } catch { emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_agent_swap_failed', sessionGeneration, createdAt) }
   }
   function settleStudioDefault(started: boolean): void {
@@ -2398,6 +2465,8 @@ export function createRealtimeSession(
     studioStepAbort.abort()
     const controller = new AbortController()
     studioStepAbort = controller; studioStep = step; studioStepSpeaking = true; studioStepInputs = visitorInputs
+    studioListeningStep = undefined
+    setStudioCapturePaused(true)
     studioStepBeforeQuestion = !!opening || !!step.comment || !!step.silent; studioResumeStep = undefined
     // Required structured turns cannot silently become an unrecorded chat reply.
     // Clarification/repetition has its own non-recording tool; painting stays conversational.
@@ -2430,16 +2499,20 @@ export function createRealtimeSession(
         if (revisionAnnounced) await input.waitForOutputTail?.()
         else if (!await say(step.speech, step.phase === 'keepsake' ? 'transfer' : step.phase)) return
         if (!current()) return
-        studioStepSpeaking = false
         if (step.phase === 'painting' || step.phase === 'revising') {
           const result = await studioRequest({ action: 'paint', stepId: step.id })
           if (!current() || result?.status !== 'accepted') return
           if (step.phase === 'painting') await say(PORTRAIT_STUDIO.journey[step.language].waiting, 'waiting')
         } else if (step.phase === 'keepsake') await studioRequest({ action: 'deliver', stepId: step.id })
         else if (step.phase === 'reveal' && step.final) await studioRequest({ action: 'finish' })
-        else await studioRequest({ action: 'step_ready', stepId: step.id })
+        else {
+          studioListeningStep = step.id
+          studioStepInputs = visitorInputs
+          if (step.phase === 'reveal') studioRevealInputs = visitorInputs
+          await studioRequest({ action: 'step_ready', stepId: step.id })
+        }
       } catch { if (current()) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_speech_failed', sessionGeneration, createdAt) }
-      finally { if (current()) studioStepSpeaking = false }
+      finally { if (current()) { studioStepSpeaking = false; setStudioCapturePaused(false) } }
     }
     if (step.phase === 'reveal') studioRevealInputs = visitorInputs
     const schedule = () => whenIdle(() => { if (!current()) return false; void perform(); return true })
@@ -2572,6 +2645,7 @@ export function createRealtimeSession(
         if (!entered) void studioRequest({ action: 'exit' })
         if (entered) { studioFirstLanguage = event.language; noteStudioFirstStep(event.firstStep); studioStep = event.step }
         if (greets) settleStudioDefault(entered)
+        else if (entered && event.step) queueStudioStep(event.step, undefined, false, event.startScript)
         else if (entered) {
           const run = studioStarts
           whenIdle(() => sameStudioRun(run) && speakStudioLine(event.startScript, completed => { if (completed) askStudioFirstStep(run) }))

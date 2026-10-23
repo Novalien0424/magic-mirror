@@ -1,0 +1,2245 @@
+Studio field repair — full retained failures, 2026-10-23
+All conversation evidence is metadata-only. Unit fixtures are synthetic.
+
+=== mm-field-studio-first-tests.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/realtime-session-studio.test.ts (53 tests | 1 failed) 4839ms
+     × keeps reading back an unconfirmed name in Main and the Mirror together, through repeats and corrections 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > keeps reading back an unconfirmed name in Main and the Mirror together, through repeats and corrections
+AssertionError: expected 'studio_visitor_reply_missing' to be 'studio_name_heard' // Object.is equality
+
+Expected: "studio_name_heard"
+Received: "studio_visitor_reply_missing"
+
+ ❯ tests/unit/realtime-session-studio.test.ts:725:40
+    723|     p.event({ type: 'input_audio_buffer.committed', item_id: 'v6' })
+    724|     expect(await setName('王曉明', true)).toBe('studio_name_heard')
+    725|     expect(await setName('王曉明', true)).toBe('studio_name_heard')
+       |                                        ^
+    726|     expect(main.phase()).toBe('confirm')
+    727|     p.event({ type: 'input_audio_buffer.committed', item_id: 'v7' })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 67 passed (68)
+   Start at  17:33:32
+   Duration  6.17s (transform 245ms, setup 0ms, import 521ms, tests 5.42s, environment 0ms)
+
+
+=== mm-field-studio-tests.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/realtime-session-studio.test.ts (55 tests | 3 failed) 5271ms
+     × owns the complete default opening and name question despite early input, then restores the microphone 6ms
+     × requires a fresh heard reply after the image offer, not silence or its own narration 119ms
+     × waits for media to end before revealing, even past the forced fallback, and keeps media in no-reply mode across swaps 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > owns the complete default opening and name question despite early input, then restores the microphone
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/realtime-session-studio.test.ts:71:27
+     69|     })
+     70|     await handle.connect()
+     71|     expect(track.enabled).toBe(false)
+       |                           ^
+     72|     p.event({ type: 'input_audio_buffer.speech_started', item_id: 'ope…
+     73|     p.event({ type: 'input_audio_buffer.committed', item_id: 'opening-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > requires a fresh heard reply after the image offer, not silence or its own narration
+AssertionError: expected [] to deeply equal [ { action: 'revise', …(1) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "action": "revise",
+-     "change": "red wings",
+-   },
+- ]
++ []
+
+ ❯ tests/unit/realtime-session-studio.test.ts:125:57
+    123|     p.event({ type: 'conversation.item.input_audio_transcription.compl…
+    124|     await pending
+    125|     expect(requests.filter(r => r.action === 'revise')).toEqual([{ act…
+       |                                                         ^
+    126|     await handle.close('test_complete')
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > waits for media to end before revealing, even past the forced fallback, and keeps media in no-reply mode across swaps
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ tests/unit/realtime-session-studio.test.ts:971:25
+    969|       await vi.advanceTimersByTimeAsync(0)
+    970|       expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectCont…
+    971|       expect(noReply()).toBe(before + 1)
+       |                         ^
+    972|       handle.setMediaPlayback!(false)
+    973|       await vi.advanceTimersByTimeAsync(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  3 failed | 68 passed (71)
+   Start at  17:40:35
+   Duration  6.49s (transform 187ms, setup 0ms, import 351ms, tests 5.93s, environment 0ms)
+
+
+=== mm-field-studio-tests-2.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/realtime-session-studio.test.ts (55 tests | 1 failed) 6318ms
+     × owns the complete default opening and name question despite early input, then restores the microphone 1018ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/realtime-session-studio.test.ts > Portrait Studio in the Realtime session > owns the complete default opening and name question despite early input, then restores the microphone
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/unit/realtime-session-studio.test.ts:78:51
+     76|       step: { id: 'fresh-name', phase: 'name', language: 'zh', speech:…
+     77|     for (let i = 0; i < 2; i++) {
+     78|       await vi.waitFor(() => expect(responses(p)).toHaveLength(i + 1))
+       |                                                   ^
+     79|       const r = responses(p)[i]!, id = `narration-${i}`
+     80|       expect(r.metadata).toMatchObject({ mirror_studio: i === 0 ? 'ope…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 70 passed (71)
+   Start at  17:41:23
+   Duration  7.54s (transform 187ms, setup 0ms, import 355ms, tests 6.98s, environment 0ms)
+
+
+=== mm-field-tests-3.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/web-console.test.ts (3 tests | 1 failed) 18ms
+     × serves the Console, opaque media and validated calls behind tailnet identity and CSRF checks 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/web-console.test.ts > tailnet browser Console > serves the Console, opaque media and validated calls behind tailnet identity and CSRF checks
+AssertionError: expected '{"error":"tailnet_authentication_requ…' to contain '<title>Console</title>'
+
+Expected: "<title>Console</title>"
+Received: "{"error":"tailnet_authentication_required"}"
+
+ ❯ tests/unit/web-console.test.ts:47:58
+     45|     expect((await fetch(url, { headers: { Host: headers.Host } })).sta…
+     46|     expect((await fetch(url, { headers: { ...headers, Host: 'localhost…
+     47|     expect(await (await fetch(url, { headers })).text()).toContain('<t…
+       |                                                          ^
+     48|     const session = await (await fetch(`${url}/api/session`, { headers…
+     49|     const post = (body: unknown, extra: Record<string, string> = {}) =…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 73 passed (74)
+   Start at  17:45:30
+   Duration  6.93s (transform 329ms, setup 0ms, import 597ms, tests 5.98s, environment 0ms)
+
+
+=== mm-field-tests-broad.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/studio-tools.test.ts (3 tests | 1 failed) 5ms
+     × keeps studio tools out of the conversation agent and gives the studio agent only studio tools plus sleep 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/studio-tools.test.ts > Portrait Studio tool availability > keeps studio tools out of the conversation agent and gives the studio agent only studio tools plus sleep
+AssertionError: expected [ 'dismiss_image', …(10) ] to deeply equal [ 'dismiss_image', …(9) ]
+
+- Expected
++ Received
+
+@@ -1,8 +1,9 @@
+  [
+    "dismiss_image",
+    "return_to_dormant",
++   "set_reply_language",
+    "studio_answer",
+    "studio_exit",
+    "studio_finish",
+    "studio_reject_name",
+    "studio_repeat_question",
+
+ ❯ tests/unit/studio-tools.test.ts:16:32
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 12 passed (13)
+      Tests  1 failed | 336 passed (337)
+   Start at  17:52:15
+   Duration  21.54s (transform 406ms, setup 0ms, import 1.06s, tests 19.31s, environment 0ms)
+
+
+=== mm-field-typecheck-2.log ===
+
+> magic-mirror@0.1.0 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/main/web-console.ts(99,63): error TS2488: Type 'Headers' must have a '[Symbol.iterator]()' method that returns an iterator.
+
+=== mm-field-typecheck-3.log ===
+
+> magic-mirror@0.1.0 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+tests/unit/web-console.test.ts(65,34): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+
+=== mm-field-ui-qa.log ===
+QA output volume: minimum; original levels retained in RAM; mute and input gain untouched.
+(node:42899) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/novalien0424/magic-mirror/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+MAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-23T09:49:39.310Z
+SHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-23T09:49:39.410Z
+WINDOW_LOADED window=mirror at=2026-10-23T09:49:39.461Z
+WINDOW_KEPT_HIDDEN window=mirror reason=smoke_mode at=2026-10-23T09:49:39.461Z
+RENDERER_READY window=mirror at=2026-10-23T09:49:39.463Z
+WINDOW_LOADED window=console at=2026-10-23T09:49:39.464Z
+RENDERER_READY window=console at=2026-10-23T09:49:39.484Z
+PHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-23T09:49:39.484Z
+PHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-23T09:49:39.484Z
+PHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=mirror_not_executed at=2026-10-23T09:49:39.491Z
+PHASE4_QA_STEP step=journey_mirror_overview status=captured file=journey-01-mirror-conversation.png sha256=c4a26baa0e680035b0d17569e6506ad97e4232be79b613a59f06df747ec6d767 at=2026-10-23T09:49:39.896Z
+PHASE4_QA_STEP step=journey_mirror_overview status=passed at=2026-10-23T09:49:39.896Z
+PHASE4_QA_STEP step=journey_avatar_skill_selection status=captured file=journey-skills-enabled.png sha256=6836b060155113fd7d811b06842a7a67051b4f693f435574722a7aeda3831a5e at=2026-10-23T09:49:40.386Z
+PHASE4_QA_STEP step=journey_avatar_skill_selection status=passed at=2026-10-23T09:49:40.998Z
+WINDOW_LOADED window=console at=2026-10-23T09:49:41.141Z
+PHASE4_QA_STEP step=journey_avatar_skill_save_reload_publish status=captured file=journey-skills-publish.png sha256=2f7c5948358f1bfb10146ee9f02f5fd4400baee294673ee0c4c4fe8be0368af5 at=2026-10-23T09:49:41.899Z
+PHASE4_QA_STEP step=journey_avatar_skill_save_reload_publish status=passed at=2026-10-23T09:49:42.024Z
+PHASE4_QA_STEP step=journey_avatar_skill_inspector status=passed at=2026-10-23T09:49:42.153Z
+PHASE4_QA_STEP step=journey_avatar_skill_disabled_on_mirror status=captured file=journey-skills-disabled-narrow.png sha256=c7b2406f330bcf6eecf3354921c204bb4dc68a5bb74ec5ea518d798aee0ebc52 at=2026-10-23T09:49:47.097Z
+PHASE4_QA_STEP step=journey_avatar_skill_disabled_on_mirror status=passed at=2026-10-23T09:49:47.098Z
+PHASE4_QA_STEP step=journey_avatar_skill_restore_original status=passed at=2026-10-23T09:49:51.395Z
+MIRROR_MODE reason=mirror_mode_studio_console at=2026-10-23T09:49:51.401Z
+PHASE4_QA_STEP step=journey_mode_switch_dormant status=captured file=journey-02-mirror-studio-mode.png sha256=f66ec33f5e8147e7333871e775d18b33b9102de42185df528b81ae854b6d644f at=2026-10-23T09:49:51.767Z
+MIRROR_MODE reason=mirror_mode_conversation_console at=2026-10-23T09:49:51.771Z
+PHASE4_QA_STEP step=journey_mode_switch_dormant status=passed at=2026-10-23T09:49:51.893Z
+PHASE4_QA_STEP step=journey_studio_section status=captured file=journey-03-studio-section.png sha256=9d73899ce9052ef18e41720c68b9b25383d1f39e5073f4dba0b399667dba93b9 at=2026-10-23T09:49:52.417Z
+PHASE4_QA_STEP step=journey_studio_section status=passed at=2026-10-23T09:49:52.417Z
+PHASE4_QA_STEP step=journey_name_list status=captured file=journey-name-list.png sha256=2c1834de00547463201c48417cac8cd146f4d6b68f22205c7c0abade319abfa0 at=2026-10-23T09:49:53.431Z
+PHASE4_QA_STEP step=journey_name_list status=passed at=2026-10-23T09:49:53.431Z
+PHASE4_QA_STEP step=journey_question_count_limits status=passed at=2026-10-23T09:49:54.190Z
+PHASE4_QA_STEP step=journey_start_character_ending status=captured file=journey-03b-character-ending.png sha256=0a0237da3312e4f042c6021190889e1a0e7c3fb3b895a063de270adcf181e7e2 at=2026-10-23T09:49:56.220Z
+PHASE4_QA_STEP step=journey_start_character_ending status=passed at=2026-10-23T09:49:56.220Z
+PHASE4_QA_STEP step=journey_question_and_line status=passed at=2026-10-23T09:49:56.469Z
+PHASE4_QA_STEP step=journey_image_prompt_preview status=failed item=studio_journey_qa_journey_image_prompt_preview at=2026-10-23T09:50:11.865Z
+PHASE4_QA_RESULT status=failed reason=phase4_qa_failed at=2026-10-23T09:50:11.946Z
+{"marker":"PHASE4_QA_ARTIFACTS","root":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T09-49-39-149Z","outputDir":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-23T09-49-39-149Z/screenshots","exit":2,"timedOut":false,"resultCount":1}
+QA output volume restored and verified by device UID.
+
+=== First live soul visit: full metadata result ===
+{
+  "selection": "portrait_studio",
+  "running": false,
+  "passed": false,
+  "elapsedMs": 430291,
+  "results": [
+    {
+      "step": "studio_mode_on",
+      "status": "passed",
+      "durationMs": 5,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_start",
+      "status": "passed",
+      "durationMs": 21371,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_wake_entry",
+      "status": "passed",
+      "durationMs": 6195,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_name",
+      "status": "passed",
+      "durationMs": 70563,
+      "calls": [
+        "studio_set_name"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 1,
+        "audible": 1
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": false,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_remote_console",
+      "status": "passed",
+      "durationMs": 408,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_answer_1",
+      "status": "passed",
+      "durationMs": 36480,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_2",
+      "status": "passed",
+      "durationMs": 46793,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese",
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "commentary",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 3,
+        "audible": 3
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_3",
+      "status": "passed",
+      "durationMs": 28509,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_4",
+      "status": "passed",
+      "durationMs": 32187,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese",
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 3,
+        "audible": 3
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_painting",
+      "status": "passed",
+      "durationMs": 216,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_deck_console_painting",
+      "status": "passed",
+      "durationMs": 205,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_reveal",
+      "status": "passed",
+      "durationMs": 66905,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 3,
+        "audible": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_remote_console_reveal",
+      "status": "passed",
+      "durationMs": 621,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_change",
+      "status": "passed",
+      "durationMs": 77699,
+      "calls": [
+        "studio_revise"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          null,
+          null,
+          null
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 4,
+        "audible": 4
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_finish",
+      "status": "passed",
+      "durationMs": 3,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_farewell_dormant",
+      "status": "passed",
+      "durationMs": 4,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_language",
+      "status": "failed",
+      "reason": "raven_qa_studio_language_mismatch",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_comments_then_next_question",
+      "status": "failed",
+      "reason": "raven_qa_studio_comment_brevity",
+      "durationMs": 2,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_feedback_offer_spoken",
+      "status": "passed",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_picture_format",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_repaint_once",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_conversation_request",
+      "status": "passed",
+      "durationMs": 37396,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned",
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_release",
+      "status": "passed",
+      "durationMs": 828,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup"
+      ]
+    },
+    {
+      "step": "real_audio_route",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "provider_errors",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    }
+  ],
+  "quality": [],
+  "qualityDiagnostics": [],
+  "capabilityQuality": {},
+  "acousticEvidence": [],
+  "spellRecognition": [],
+  "controlSpeech": [],
+  "protocol": {
+    "inputText": 0,
+    "asr": 11,
+    "errors": [],
+    "speechPlayback": [
+      {
+        "stage": "studio_name",
+        "expectedMs": 1330,
+        "wallMs": 1330,
+        "clockMs": 1333,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_denial",
+        "expectedMs": 4035,
+        "wallMs": 4034,
+        "clockMs": 4037,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_again",
+        "expectedMs": 1330,
+        "wallMs": 1331,
+        "clockMs": 1333,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_correction_1",
+        "expectedMs": 3526,
+        "wallMs": 3528,
+        "clockMs": 3531,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_confirm",
+        "expectedMs": 1821,
+        "wallMs": 1823,
+        "clockMs": 1824,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_1",
+        "expectedMs": 8296,
+        "wallMs": 8310,
+        "clockMs": 8309,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_2",
+        "expectedMs": 6138,
+        "wallMs": 6137,
+        "clockMs": 6139,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_3",
+        "expectedMs": 5755,
+        "wallMs": 5759,
+        "clockMs": 5760,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_4",
+        "expectedMs": 3327,
+        "wallMs": 3328,
+        "clockMs": 3328,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_change",
+        "expectedMs": 4303,
+        "wallMs": 4302,
+        "clockMs": 4304,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_request",
+        "expectedMs": 4410,
+        "wallMs": 4411,
+        "clockMs": 4411,
+        "state": "running",
+        "ended": true
+      }
+    ],
+    "errorStages": [],
+    "repeatedDeletes": 0,
+    "duplicateTranscriptEvents": 0
+  },
+  "toolTimingEvidence": [],
+  "screenshots": 6,
+  "studioEvidence": {
+    "phases": [
+      "name",
+      "confirm",
+      "name",
+      "confirm",
+      "confirm",
+      "question",
+      "question",
+      "question",
+      "question",
+      "painting",
+      "reveal",
+      "revising",
+      "reveal",
+      "keepsake",
+      null,
+      "name"
+    ],
+    "events": [
+      "enter",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "ready",
+      "step",
+      "ready",
+      "step",
+      "keepsake_done"
+    ],
+    "main": [
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_visitor",
+        "status": "info"
+      },
+      {
+        "reason": "studio_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_transfer_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_printer_deferred",
+        "status": "info"
+      },
+      {
+        "reason": "studio_finished",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_ready",
+        "status": "info",
+        "durationMs": 44360
+      },
+      {
+        "reason": "studio_revision_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_requested",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_image_ready",
+        "status": "info",
+        "durationMs": 49777
+      },
+      {
+        "reason": "studio_painting_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      }
+    ],
+    "reveals": 2,
+    "deletedItems": 38,
+    "imagesAttached": 0,
+    "story": "soul",
+    "nameCorrections": 1,
+    "nameAsIntended": true,
+    "pictures": [
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      },
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      }
+    ],
+    "repaintLines": [
+      1
+    ],
+    "farewellVerbatim": true,
+    "language": {
+      "expected": "zh",
+      "lines": 24,
+      "mismatched": 1
+    },
+    "commentShape": [
+      {
+        "sentences": 1,
+        "characters": 37,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 3,
+        "characters": 56,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 2,
+        "characters": 36,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 37,
+        "question": false,
+        "delivered": true
+      }
+    ]
+  },
+  "route": "synthetic_audio_real_webrtc_asr_tools_ipc_playback",
+  "transcriptRetention": "none",
+  "humanAcousticAcceptance": "not_executed"
+}
+=== Second live soul visit: full metadata result ===
+{
+  "selection": "portrait_studio",
+  "running": false,
+  "passed": false,
+  "elapsedMs": 450356,
+  "results": [
+    {
+      "step": "studio_mode_on",
+      "status": "passed",
+      "durationMs": 8,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_start",
+      "status": "passed",
+      "durationMs": 20518,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_wake_entry",
+      "status": "passed",
+      "durationMs": 6410,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_name",
+      "status": "passed",
+      "durationMs": 69562,
+      "calls": [
+        "studio_set_name"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 1,
+        "audible": 1
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": false,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_remote_console",
+      "status": "passed",
+      "durationMs": 102,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_answer_1",
+      "status": "passed",
+      "durationMs": 37395,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_2",
+      "status": "passed",
+      "durationMs": 42730,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          null,
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "commentary",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 3,
+        "audible": 3
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_3",
+      "status": "passed",
+      "durationMs": 30558,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_4",
+      "status": "passed",
+      "durationMs": 31086,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese",
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 3,
+        "audible": 3
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_painting",
+      "status": "passed",
+      "durationMs": 232,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_deck_console_painting",
+      "status": "passed",
+      "durationMs": 506,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_reveal",
+      "status": "passed",
+      "durationMs": 52460,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 2,
+        "audible": 2
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_remote_console_reveal",
+      "status": "passed",
+      "durationMs": 349,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_change",
+      "status": "passed",
+      "durationMs": 87668,
+      "calls": [
+        "studio_revise"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          null,
+          null,
+          "chinese",
+          null
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer",
+          "commentary",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 5,
+        "audible": 5
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "memory_guest_excluded",
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_finish",
+      "status": "passed",
+      "durationMs": 2,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_farewell_dormant",
+      "status": "passed",
+      "durationMs": 2,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_language",
+      "status": "passed",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_comments_then_next_question",
+      "status": "passed",
+      "durationMs": 2,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_feedback_offer_spoken",
+      "status": "failed",
+      "reason": "raven_qa_studio_feedback_offer_missing",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_picture_format",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_repaint_once",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_restart_fresh_name",
+      "status": "passed",
+      "durationMs": 27672,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_conversation_request",
+      "status": "passed",
+      "durationMs": 37676,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned",
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_release",
+      "status": "passed",
+      "durationMs": 1434,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup"
+      ]
+    },
+    {
+      "step": "real_audio_route",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "provider_errors",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    }
+  ],
+  "quality": [],
+  "qualityDiagnostics": [],
+  "capabilityQuality": {},
+  "acousticEvidence": [],
+  "spellRecognition": [],
+  "controlSpeech": [],
+  "protocol": {
+    "inputText": 0,
+    "asr": 11,
+    "errors": [],
+    "speechPlayback": [
+      {
+        "stage": "studio_name",
+        "expectedMs": 1330,
+        "wallMs": 1331,
+        "clockMs": 1333,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_denial",
+        "expectedMs": 4035,
+        "wallMs": 4036,
+        "clockMs": 4037,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_again",
+        "expectedMs": 1330,
+        "wallMs": 1332,
+        "clockMs": 1333,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_correction_1",
+        "expectedMs": 3526,
+        "wallMs": 3529,
+        "clockMs": 3531,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_confirm",
+        "expectedMs": 1821,
+        "wallMs": 1823,
+        "clockMs": 1824,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_1",
+        "expectedMs": 8296,
+        "wallMs": 8305,
+        "clockMs": 8309,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_2",
+        "expectedMs": 6138,
+        "wallMs": 6137,
+        "clockMs": 6139,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_3",
+        "expectedMs": 5755,
+        "wallMs": 5759,
+        "clockMs": 5760,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_4",
+        "expectedMs": 3327,
+        "wallMs": 3326,
+        "clockMs": 3328,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_change",
+        "expectedMs": 4303,
+        "wallMs": 4300,
+        "clockMs": 4304,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_request",
+        "expectedMs": 4410,
+        "wallMs": 4408,
+        "clockMs": 4411,
+        "state": "running",
+        "ended": true
+      }
+    ],
+    "errorStages": [],
+    "repeatedDeletes": 0,
+    "duplicateTranscriptEvents": 0
+  },
+  "toolTimingEvidence": [],
+  "screenshots": 6,
+  "studioEvidence": {
+    "phases": [
+      "name",
+      "confirm",
+      "name",
+      "confirm",
+      "confirm",
+      "question",
+      "question",
+      "question",
+      "question",
+      "painting",
+      "reveal",
+      "revising",
+      "reveal",
+      "keepsake",
+      null,
+      "name",
+      null,
+      "name"
+    ],
+    "events": [
+      "enter",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "ready",
+      "step",
+      "ready",
+      "step",
+      "keepsake_done",
+      "enter",
+      "closed"
+    ],
+    "main": [
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_visitor",
+        "status": "info"
+      },
+      {
+        "reason": "studio_session_ended",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_session_default",
+        "status": "info"
+      },
+      {
+        "reason": "studio_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_transfer_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_printer_deferred",
+        "status": "info"
+      },
+      {
+        "reason": "studio_finished",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_ready",
+        "status": "info",
+        "durationMs": 49958
+      },
+      {
+        "reason": "studio_revision_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_requested",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_image_ready",
+        "status": "info",
+        "durationMs": 41390
+      },
+      {
+        "reason": "studio_painting_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      }
+    ],
+    "reveals": 2,
+    "deletedItems": 40,
+    "imagesAttached": 0,
+    "story": "soul",
+    "nameCorrections": 1,
+    "nameAsIntended": true,
+    "pictures": [
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      },
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      }
+    ],
+    "repaintLines": [
+      1
+    ],
+    "farewellVerbatim": true,
+    "language": {
+      "expected": "zh",
+      "lines": 24,
+      "mismatched": 0,
+      "mismatchKinds": []
+    },
+    "commentShape": [
+      {
+        "sentences": 2,
+        "characters": 51,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 35,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 40,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 33,
+        "question": false,
+        "delivered": true
+      }
+    ]
+  },
+  "route": "synthetic_audio_real_webrtc_asr_tools_ipc_playback",
+  "transcriptRetention": "none",
+  "humanAcousticAcceptance": "not_executed"
+}
+=== First silent visit: full metadata result (harness matched the intentionally stopped earlier visit) ===
+{
+  "selection": "portrait_studio",
+  "running": false,
+  "passed": false,
+  "elapsedMs": 199951,
+  "results": [
+    {
+      "step": "studio_mode_on",
+      "status": "passed",
+      "durationMs": 7,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_stop_during_opening",
+      "status": "passed",
+      "durationMs": 5376,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_start",
+      "status": "passed",
+      "durationMs": 19396,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_wake_entry",
+      "status": "passed",
+      "durationMs": 6304,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_name",
+      "status": "passed",
+      "durationMs": 37335,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_remote_console",
+      "status": "passed",
+      "durationMs": 107,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_answer_1",
+      "status": "passed",
+      "durationMs": 44387,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 3,
+        "audible": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_answer_2",
+      "status": "passed",
+      "durationMs": 46339,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 3,
+        "audible": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_painting",
+      "status": "passed",
+      "durationMs": 220,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_deck_console_painting",
+      "status": "passed",
+      "durationMs": 102,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_reveal",
+      "status": "failed",
+      "reason": "raven_qa_studio_closed_during_reveal",
+      "durationMs": 36589,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_release",
+      "status": "passed",
+      "durationMs": 624,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup"
+      ]
+    },
+    {
+      "step": "real_audio_route",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "provider_errors",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    }
+  ],
+  "quality": [],
+  "qualityDiagnostics": [],
+  "capabilityQuality": {},
+  "acousticEvidence": [],
+  "spellRecognition": [],
+  "controlSpeech": [],
+  "protocol": {
+    "inputText": 0,
+    "asr": 0,
+    "errors": [],
+    "speechPlayback": [],
+    "errorStages": [],
+    "repeatedDeletes": 0,
+    "duplicateTranscriptEvents": 0
+  },
+  "toolTimingEvidence": [],
+  "screenshots": 2,
+  "studioEvidence": {
+    "phases": [
+      "name",
+      null,
+      "name",
+      "question",
+      "question",
+      "painting",
+      "reveal"
+    ],
+    "events": [
+      "enter",
+      "closed",
+      "enter",
+      "step",
+      "step",
+      "step",
+      "ready"
+    ],
+    "main": [
+      {
+        "reason": "studio_image_ready",
+        "status": "info",
+        "durationMs": 42555
+      },
+      {
+        "reason": "studio_painting_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_unanswered",
+        "status": "info"
+      },
+      {
+        "reason": "studio_question_timeout",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_unanswered",
+        "status": "info"
+      },
+      {
+        "reason": "studio_question_timeout",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_name_timeout",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_session_default",
+        "status": "info"
+      },
+      {
+        "reason": "studio_session_ended",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_session_default",
+        "status": "info"
+      }
+    ],
+    "reveals": 1,
+    "deletedItems": 0,
+    "imagesAttached": 0,
+    "story": "soul_silence"
+  },
+  "route": "synthetic_audio_real_webrtc_asr_tools_ipc_playback",
+  "transcriptRetention": "none",
+  "humanAcousticAcceptance": "not_executed"
+}

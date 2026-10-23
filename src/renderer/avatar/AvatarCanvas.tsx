@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { mediaUrl } from '../shared/media-url'
 import { createPortal } from 'react-dom'
 import type { AvatarState } from './avatar-state'
 import type {
@@ -87,7 +88,7 @@ export function AvatarCanvas({
         if (!mounted) return
         renderer = createCubismAvatarRenderer({
           preview,
-          ...(model ? { assetBaseUrl: `magic-mirror-media://avatar/${model.id}/`, manifestFileName: model.manifestFileName } : {}),
+          ...(model ? { assetBaseUrl: mediaUrl(`magic-mirror-media://avatar/${model.id}/`), manifestFileName: model.manifestFileName } : {}),
           canvas,
           eventSink: (event) => {
             if (!mounted) return

@@ -61,6 +61,73 @@ const accepted = (code: string, next?: string): StudioReply => ({ status: 'accep
 const responses = (p: ReturnType<typeof probe>) => p.sent.filter(e => e.type === 'response.create').map(e => e.response as Record<string, unknown>)
 
 describe('Portrait Studio in the Realtime session', () => {
+  it('owns the complete default opening and name question despite early input, then restores the microphone', async () => {
+    const p = probe(), track = { enabled: true }, tails: (() => void)[] = []
+    const { handle, requests, reasons } = session(p, () => accepted('ok'), {
+      avatar: avatar('portrait_studio'), wakeGreeting: '我在。', mediaStream: { getAudioTracks: () => [track] } as unknown as MediaStream,
+      waitForOutputTail: () => new Promise<void>(resolve => tails.push(resolve)),
+    })
+    await handle.connect()
+    expect(track.enabled).toBe(false)
+    p.event({ type: 'input_audio_buffer.speech_started', item_id: 'opening-echo' })
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'opening-echo' })
+    p.event({ type: 'response.created', response: { id: 'unwanted-english' } })
+    p.event({ type: 'response.done', response: { id: 'unwanted-english', status: 'cancelled' } })
+    handle.studioEvent!({ event: 'enter', startScript: '歡迎來到Gate thirty-three。', firstStep: 'Ask name.', language: 'zh',
+      step: { id: 'fresh-name', phase: 'name', language: 'zh', speech: '準備好的話就告訴我你的名字', guidance: 'Ask name.' } }, ID)
+    for (let i = 0; i < 2; i++) {
+      await vi.waitFor(() => expect(responses(p)).toHaveLength(i + 1))
+      const r = responses(p)[i]!, id = `narration-${i}`
+      expect(r.metadata).toMatchObject({ mirror_studio: i === 0 ? 'opening' : 'name' })
+      p.event({ type: 'response.created', response: { id, metadata: r.metadata } })
+      p.event({ type: 'output_audio_buffer.started', response_id: id })
+      p.event({ type: 'input_audio_buffer.speech_started', item_id: `echo-${i}` })
+      p.event({ type: 'input_audio_buffer.committed', item_id: `echo-${i}` })
+      p.event({ type: 'response.done', response: { id, status: 'completed', metadata: r.metadata } })
+      p.event({ type: 'output_audio_buffer.stopped', response_id: id })
+      expect(requests.some(r => r.action === 'step_ready')).toBe(false)
+      expect(track.enabled).toBe(false)
+      tails.splice(0).forEach(resolve => resolve())
+    }
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'step_ready', stepId: 'fresh-name' }))
+    expect(track.enabled).toBe(true)
+    expect(reasons()).toContain('studio_narration_input_ignored')
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'echo-1', transcript: '無名之人' })
+    await call(tool(p.agents[1]!, 'studio_set_name'), { name: '無名之人', confirmed: true, language: 'zh' })
+    expect(requests.some(r => r.action === 'set_name')).toBe(false)
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'real-name' })
+    await call(tool(p.agents[1]!, 'studio_set_name'), { name: '測試', confirmed: false, language: 'zh' })
+    expect(requests).toContainEqual({ action: 'set_name', name: '測試', confirmed: false, language: 'zh' })
+    await handle.close('test_complete')
+    expect(track.enabled).toBe(true)
+  })
+
+  it('requires a fresh heard reply after the image offer, not silence or its own narration', async () => {
+    const p = probe(), { handle, requests } = session(p, () => accepted('ok'))
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    handle.studioEvent!({ event: 'step', step: { id: 'review-fresh', phase: 'reveal', language: 'zh', speech: '還喜歡嗎？', guidance: 'Ask preference.' } }, ID)
+    await vi.waitFor(() => expect(responses(p)).toHaveLength(1))
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'review-echo' })
+    const response = { id: 'offer', metadata: responses(p)[0]!.metadata, status: 'completed' }
+    p.event({ type: 'response.created', response })
+    p.event({ type: 'output_audio_buffer.started', response_id: 'offer' })
+    p.event({ type: 'response.done', response })
+    p.event({ type: 'output_audio_buffer.stopped', response_id: 'offer' })
+    await vi.waitFor(() => expect(requests).toContainEqual({ action: 'step_ready', stepId: 'review-fresh' }))
+    const revise = () => call(tool(p.agents[1]!, 'studio_revise'), { change: 'red wings' })
+    await revise()
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'review-echo', transcript: '重畫' })
+    await revise()
+    expect(requests.some(r => r.action === 'revise')).toBe(false)
+    p.event({ type: 'input_audio_buffer.speech_started', item_id: 'preference' })
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'preference' })
+    const pending = revise()
+    p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'preference', transcript: '請把翅膀改成紅色。' })
+    await pending
+    expect(requests.filter(r => r.action === 'revise')).toEqual([{ action: 'revise', change: 'red wings' }])
+    await handle.close('test_complete')
+  })
+
   it('changes language only through the explicit tool, retains it across other-language sentences and rejects unsupported languages', async () => {
     const p = probe(), image = vi.fn(async () => ({ status: 'accepted' as const, code: 'image_started' }))
     const { handle, requests, memoryInput } = session(p, () => accepted('studio_language_changed'), { onImageRequest: image })
@@ -722,12 +789,12 @@ describe('Portrait Studio in the Realtime session', () => {
     // A correction claimed as confirmed, in the turn it is first heard and again: still a read-back.
     p.event({ type: 'input_audio_buffer.committed', item_id: 'v6' })
     expect(await setName('王曉明', true)).toBe('studio_name_heard')
-    expect(await setName('王曉明', true)).toBe('studio_name_heard')
+    expect(await setName('王曉明', true)).toBe('studio_visitor_reply_missing')
     expect(main.phase()).toBe('confirm')
     p.event({ type: 'input_audio_buffer.committed', item_id: 'v7' })
     expect(await setName('王曉明', true)).toBe('studio_name_confirmed')
     expect(main.phase()).toBe('question')
-    expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, false, false, false, false, false, true])
+    expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, false, false, false, false, true])
     main.close('test_complete'); await handle.close('test_complete')
   })
 
