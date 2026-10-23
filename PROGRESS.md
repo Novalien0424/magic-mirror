@@ -23,8 +23,11 @@ and TV awake. Production active/draft hashes match task entry. Four questions,
 Chinese opening/name collection, modern minimalist multicolour vector style and
 default farewell remain configured. The unrelated saved draft is preserved and
 still awaits publication. Jabra output reads **70.08%**, unmuted, after reset and
-subsequent read-back. A final 6.25% reading was corrected; its cause was not
-established. The previously unknown original internal-speaker volume remains 1%.
+subsequent read-back. Owner clarified that **1% during QA is intentional; cleanup
+must always restore Jabra to 70%**, including failure/cancellation, rather than
+restore a captured low test level. This rule is recorded in `mm-ui-qa`; a fresh
+native output-status check confirmed 70.08%. The previously unknown original
+internal-speaker volume remains 1%.
 
 Canonical build **18:33:38 Taipei**: source `3b4a1b97354b8d0e`, output
 `c6f00fed3d61befed`. Build verification passes; deployment runs that output.

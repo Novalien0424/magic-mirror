@@ -175,11 +175,14 @@ zero ASR, one picture and no unrequested revision.
   Default restoration was exercised in the isolated editor; synthetic edits
   never entered the production configuration.
 - QA audio guards restored their captured levels after each run. Final deployment
-  read-back nevertheless found Jabra at 6.25%; the cause of that later change was
-  not established. The existing native output-reset helper restored **70.08%**,
-  unmuted, and a later read-back after Studio startup confirmed it. Input gain was
-  not changed. The previously recorded unknown original internal-speaker level
-  remains 1%; it was not guessed or reset.
+  read-back found Jabra at 6.25%; the existing native output-reset helper restored
+  **70.08%**, unmuted, and a later read-back after Studio startup confirmed it.
+  The owner subsequently clarified that **1% during testing is intentional and
+  Jabra must always return to 70% afterward**. The persistent QA instructions now
+  require that target on success, failure or cancellation, even when the captured
+  starting level was low; a fresh native read-back confirmed 70.08%. Input gain
+  was not changed. Other outputs retain their captured settings; the previously
+  unknown original internal-speaker level remains 1%.
 - Serve 8443 remains private and targets loopback 38433. Existing public Funnel
   443 → loopback 8000 is unchanged. No Tailscale identity response, token,
   transcript, audio or generated image is retained in this report.
