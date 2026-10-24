@@ -1,9 +1,23 @@
 # Magic Mirror — current handoff, 2026-10-24
 
 Delivered the **Chinese/English guest-name matching repair** on
-`field/macmini-deploy`. The canonical `out/` is built and ready for the next START;
-normal Electron remains stopped, preserving the owner's STOP state.
+`field/macmini-deploy`. The canonical `out/` is built. The owner subsequently
+started normal Electron at 16:58:31 Taipei; the latest observed conversation
+returned to Dormant at 17:04:09. No runtime changes during the music audit.
 [Previous audit handoff](docs/archive/progress-before-name-repair-2026-10-24.md).
+
+## Latest request — music search audit
+
+[Field sequence, matcher probes and proposed repair](docs/testing/music-search-audit-2026-10-24.md).
+First local lookup and final-ASR fallback missed; three visitor turns had replies
+without another search; the second search returned ambiguous candidates and
+music started 2.077 seconds later. First lookup to playback was 88.238 seconds.
+Transcript had cleared at Dormant, so exact wording and selected-song identity
+are unverified. Twelve read-only synthetic probes confirmed natural-phrase
+matching gaps despite working homophones. Preserve Raven's wit; proposed next
+work is clue parsing, session-only refinement and consistent match/ask guidance.
+Audit only: no production behavior change. Two camera-related microphone
+recoveries were observed near the first lookup; causality remains unproven.
 
 ## Delivery
 
@@ -39,8 +53,9 @@ normal Electron remains stopped, preserving the owner's STOP state.
   refinement leaves those tested paths unchanged and has separate unit evidence.
 - Final build source `252f2b640c3bc2a6`, output `f193d345f1968221`, built
   2026-10-24 12:39:41 Taipei; full hashes in the report.
-- Jabra output restored/read back **70.08%** after each run; no mute/input-gain
-  edits. Normal Electron is stopped. Black-HDMI cover PID 80539 remains active.
+- At completion of the name QA: Jabra output restored/read back **70.08%** after
+  each run; no mute/input-gain edits. Electron was stopped and black-HDMI cover
+  PID 80539 active. The owner later started Electron as recorded above.
 - Active config unchanged: `336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d`.
   Saved draft unchanged: `d9c62c4a890794741a0a95396585587422c46187b697fd2aba88cb5638758b07`.
 - Six owned QA roots cleaned: **480 files / 96,280,063 bytes**, excluding retained
