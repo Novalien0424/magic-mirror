@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mediaClueKey } from '../../src/shared/media-clue'
 import { mediaPhoneticKey } from '../../src/shared/media-phonetics'
-import { parseMediaDiscoveryReply, parseMediaDiscoveryRequest, rankMediaResources,
+import { mediaDiscoveryNext, parseMediaDiscoveryReply, parseMediaDiscoveryRequest, rankMediaResources,
   type MediaDiscoveryReply, type MediaDiscoveryRequest } from '../../src/shared/media-discovery'
 import type { AvatarMediaResource } from '../../src/shared/media-skill'
 import { DEFAULT_MEDIA_SKILL } from '../../src/shared/media-skill'
@@ -19,6 +19,27 @@ describe('Mandarin voice media discovery', () => {
   const songs = [resource('intro', '天使_intro'), priestess]
   const find = (query: string, catalog = songs, kind: MediaDiscoveryRequest['kind'] = 'music') =>
     rankMediaResources(catalog, request(query, kind), mediaClueKey, mediaPhoneticKey)
+
+  it.each(['天使的女祭司版本', '播放天使女祭司版本', '女祭司唱的天使', '葛麗果的女祭司版本'])('recovers natural title/version wording: %s', query => {
+    const result = find(query)
+    expect(result).toMatchObject({ code: 'media_discovery_clues', total: 1 })
+    expect(ids(result)).toEqual(['priestess'])
+    expect(mediaDiscoveryNext(result)).toBe('play_media')
+  })
+  it('preserves conflicting clues, ambiguity and aliases across music, video and pictures', () => {
+    expect(ids(find('Rain Singer', [resource('rain', 'Rain', ['Singer'])]))).toEqual(['rain'])
+    expect(find('Rain UnknownSinger', [resource('rain', 'Rain', ['Singer'])]).total).toBe(0)
+    for (const kind of ['music', 'video', 'image'] as const) {
+      const catalog = [resource('piano', '星河夜曲 鋼琴版', ['Starlight piano'], kind), resource('strings', '星河夜曲 弦樂版', [], kind)]
+      expect(ids(find('Starlight piano', catalog, kind))).toEqual(['piano'])
+      expect(find('播放星河夜曲的爵士版', catalog, kind).total).toBe(0)
+      expect(mediaDiscoveryNext(find('星河夜曲', catalog, kind))).toBe('ask')
+      expect(mediaDiscoveryNext(find('星河夜曲的剛琴版', catalog, kind))).toBe('play_media')
+    }
+    expect(find('女祭司唱的天使爵士版').total).toBe(0)
+    expect(find('🦊葛麗果').total).toBe(0)
+    expect(find('不是天使的女祭司版本').total).toBe(0)
+  })
 
   it.each(['music', 'video', 'image'] as const)('finds %s by title and alias pronunciation while preserving type and exact priority', kind => {
     const catalog = [resource('sounds', '星河夜空', ['靈魂形狀'], kind), resource('exact', '欣河夜空', [], kind),

@@ -21,6 +21,8 @@ import { normalizeTranscript } from './scenes/spell-trigger'
 import { spokenCommandKey } from '../shared/spoken-command'
 import { DEFAULT_CLOUD_SEARCH_PHRASE } from '../shared/avatar-commands'
 import { mediaClueKey } from '../shared/media-clue'
+import { mediaPhoneticKey } from '../shared/media-phonetics'
+import { rankMediaResources } from '../shared/media-discovery'
 import { visitorSentenceLanguage } from '../shared/visitor-language'
 import { convertWakeQaPcm } from './raven-wake-asr-qa'
 import { createConfiguredSherpaDetector, WAKE_MAX_ACTIVE_PATHS } from './wake/sherpa-detector'
@@ -146,8 +148,14 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const lookups = observation?.tools.filter(c => c.stage === name && c.direction === 'call' && c.name === 'find_media').map(c => {
         const query = String(c.args?.query ?? '').normalize('NFKC').toLowerCase().trim()
         const aliases = avatar?.mediaSkill?.resources.flatMap(r => r.aliases).map(a => a.normalize('NFKC').toLowerCase()) ?? []
-        const result = observation.tools.find(r => r.direction === 'result' && r.callId === c.callId)?.result as { media?: { total?: number } } | undefined
+        const result = observation.tools.find(r => r.direction === 'result' && r.callId === c.callId)?.result as { media?: { total?: number; code?: string } } | undefined
         return { kind: ['all', 'music', 'video'].includes(String(c.args?.kind)) ? String(c.args?.kind) : 'unknown', words: query.split(/\s+/u).filter(Boolean).length,
+          ...(name.startsWith('phonetic_media_') ? {
+            context: ['new', 'refine'].includes(String(c.args?.context)) ? String(c.args?.context) : 'unknown',
+            resultCode: /^media_discovery_[a-z_]+$/.test(result?.media?.code ?? '') ? result!.media!.code : 'unknown',
+            queryMatches: rankMediaResources(avatar?.mediaSkill?.resources ?? [], { query, kind: 'all' }, mediaClueKey, mediaPhoneticKey).total,
+            asrMatches: rankMediaResources(avatar?.mediaSkill?.resources ?? [], { query: heard, kind: 'all' }, mediaClueKey, mediaPhoneticKey).total,
+          } : {}),
           ...(name === 'chineseFolder' ? { requestedTitleMatched: mediaClueKey(query).includes(mediaClueKey('雨夜鋼琴')),
             requestedTitleTranscribed: mediaClueKey(heard).includes(mediaClueKey('雨夜鋼琴')) } : {}),
           aliasExact: aliases.includes(query), aliasContained: aliases.some(a => query.includes(a)), count: Number.isInteger(result?.media?.total) ? result!.media!.total! : -1 }

@@ -1,7 +1,7 @@
 import { youtubeVideoId } from './youtube-media'
 import type { ToolOutcome } from './realtime-tools'
 
-export const MEDIA_FAILURE_CODES = ['media_request_rejected', 'media_not_found', 'media_youtube_not_configured', 'media_playback_timeout', 'media_loop_unavailable', 'media_playback_failed', 'media_source_restricted', 'media_source_unconfirmed'] as const
+export const MEDIA_FAILURE_CODES = ['media_request_rejected', 'media_not_found', 'media_youtube_not_configured', 'media_playback_timeout', 'media_loop_unavailable', 'media_playback_failed', 'media_source_restricted', 'media_source_unconfirmed', 'media_selection_required'] as const
 export type MediaFailureCode = typeof MEDIA_FAILURE_CODES[number]
 export type MediaSkillResult = ToolOutcome | { status: 'failed' | 'rejected'; code: MediaFailureCode }
 export function parseMediaSkillResult(value: unknown): MediaSkillResult | null {

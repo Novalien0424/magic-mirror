@@ -14,6 +14,8 @@ import { MemoryDialogue } from './memory-dialogue'
 import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
 import { bindRealtimeTools, type RealtimeToolHandler, type ToolFailureReason } from './realtime-tool-bindings'
 import { mergedMediaTool } from './merged-media-tool'
+import { MediaSearchContext } from './media-search-context'
+import { mediaDiscoveryNext } from '../../shared/media-discovery'
 import { DEFAULT_CLOUD_SEARCH_PHRASE, DEFAULT_WAKE_PHRASE, LEGACY_SLEEP_PHRASE } from '../../shared/avatar-commands'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import type { SessionModelSnapshot } from '../../shared/types'
@@ -484,6 +486,7 @@ export function createRealtimeSession(
   const onlineCandidates = new Set<string>()
   let localSearchClue: { generation: number; text: string } | undefined
   let lastLocalSearch: { generation: number; query: string; media: import('../../shared/media-discovery').MediaDiscoveryReply } | undefined
+  const mediaSearch = new MediaSearchContext()
   let memoryInputQueue: Promise<unknown> = Promise.resolve()
   let memoryInputRevision = 0
   let memoryTurnGeneration = 0
@@ -865,12 +868,14 @@ export function createRealtimeSession(
         const generation = memoryTurnGeneration
         const stale = () => ({ outcome: 'ignored' as const, media: { status: 'rejected' as const, code: 'media_discovery_stale', resources: [], total: 0 } })
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending) return stale()
-        const media = await findLocalMedia({ query: args.query as string, kind: args.kind as import('../../shared/media-discovery').MediaDiscoveryRequest['kind'] }, generation)
+        const request = mediaSearch.prepare({ query: args.query as string, kind: args.kind as import('../../shared/media-discovery').MediaDiscoveryRequest['kind'] }, args.context === 'refine' ? 'refine' : 'new', generation)
+        if (!request) return { outcome: 'accepted', media: { status: 'accepted', code: 'media_discovery_context_missing', resources: [], total: 0 }, next: 'ask' }
+        let media = await findLocalMedia(request, generation)
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
+        media = mediaSearch.remember(request, media, generation, args.context === 'refine')
         const online = args.kind !== 'image' && media.code === 'media_discovery_no_match' && !await onlineMediaRestriction()
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
-        return { outcome: media.status, media, ...(['media_discovery_weak', 'media_discovery_kind_mismatch'].includes(media.code) ? { next: 'ask' as const }
-          : online ? { next: 'search_youtube' as const } : {}) }
+        return { outcome: media.status, media, next: online ? 'search_youtube' : mediaDiscoveryNext(media) }
       },
       search_youtube: async args => {
         const generation = memoryTurnGeneration
@@ -885,7 +890,8 @@ export function createRealtimeSession(
             ? lastLocalSearch.media : undefined) ?? await findLocalMedia({ query: args.query as string, kind: 'all' }, generation)
           if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
           if (media.status !== 'accepted') return { outcome: media.status, code: 'media_discovery_unavailable', media, next: 'explain' }
-          if (media.resources.length) return { outcome: 'accepted', code: 'media_discovery_results', media, next: media.code === 'media_discovery_matches' ? 'play_media' : 'ask' }
+          mediaSearch.remember({ query: args.query as string, kind: 'all' }, media, generation, false)
+          if (media.resources.length) return { outcome: 'accepted', code: 'media_discovery_results', media, next: mediaDiscoveryNext(media) }
           emitMetadata(input, 'realtime_observer_event', 'info', restriction, sessionGeneration, createdAt)
           return { outcome: 'rejected', code: restriction, media }
         }
@@ -909,8 +915,16 @@ export function createRealtimeSession(
       },
       play_media: async args => {
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
-        return requestMedia({ action: 'play', kind: args.kind as import('../../shared/media-skill').LocalMediaKind, assetId: args.assetId as string,
+        const generation = memoryTurnGeneration
+        const selection = mediaSearch.selection(args.kind as string, args.assetId as string, generation)
+        if (selection !== 'ready') {
+          emitMetadata(input, 'realtime_observer_event', 'info', 'media_selection_required', sessionGeneration, createdAt)
+          return { outcome: 'rejected', code: 'media_selection_required', next: selection === 'clarify' ? 'ask' : 'find_media' }
+        }
+        const result = await requestMedia({ action: 'play', kind: args.kind as import('../../shared/media-skill').LocalMediaKind, assetId: args.assetId as string,
           mode: args.mode as 'once' | 'loop' })
+        if (result === 'accepted') mediaSearch.played(args.kind as string, args.assetId as string, generation)
+        return result
       },
       stop_media: async () => {
         if (closed || commandTurnOwned || !input.onMediaRequest) return 'ignored'
@@ -942,6 +956,7 @@ export function createRealtimeSession(
     }
     // Preamble diagnostics for both agents' tools.
     const onToolInvocation = (name: string) => {
+      if (!mediaToolNames.has(name)) mediaSearch.clear()
       const preamble = modelAudioResponses.has(toolCallResponse) || spokenResponses.has(toolCallResponse) ? 'yes' : 'no'
       return (outcome: import('../../shared/realtime-tools').ToolOutcome) => {
         const known = OBSERVED_TOOL_NAMES.find(value => value === name)
@@ -1396,6 +1411,8 @@ export function createRealtimeSession(
           const itemId = memoryResponses.get(memoryResponseId)
           memoryResponses.delete(memoryResponseId)
           const output = readProperty(response, 'output')
+          if (!applicationOwned && itemId === memoryLatestItem && readProperty(response, 'status') === 'completed'
+            && Array.isArray(output) && !output.some(item => readProperty(item, 'type') === 'function_call')) mediaSearch.endReply(memoryTurnGeneration)
           if (!finishedMemoryAudio.has(memoryResponseId) && readProperty(response, 'status') === 'completed' && Array.isArray(output) && output.some(item => {
             const content = readProperty(item, 'content')
             return Array.isArray(content) && content.some(part => ['audio', 'output_audio'].includes(readProperty(part, 'type') as string))
@@ -1641,6 +1658,7 @@ export function createRealtimeSession(
         pendingQuestion = undefined; questionToolEnded = false
       }
       memoryTurnGeneration++
+      mediaSearch.expire(memoryTurnGeneration)
       memoryLatestItem = typeof itemId === 'string' ? itemId : ''
       memoryInput('speech', memoryLatestItem)
       if (imageConsent) { commandTurnOwned = true; memoryInput('control', memoryLatestItem) }
@@ -2051,6 +2069,7 @@ export function createRealtimeSession(
     if (closePromise !== null) return closePromise
     cancelPendingGreeting('wake_greeting_cancelled_close')
     closed = true
+    mediaSearch.reset(); lastLocalSearch = undefined; localSearchClue = undefined
     setStudioCapturePaused(false)
     studioStepAbort.abort()
     for (const controller of speechScripts) controller.abort()
@@ -2262,6 +2281,7 @@ export function createRealtimeSession(
   function setMediaPlayback(active: boolean): void {
     if (closed || mediaPlaybackActive === active) return
     mediaPlaybackActive = active
+    if (active) mediaSearch.clear()
     if (active) void imageRequest({ action: 'dismiss' })
     // speech_stopped is ignored during media; never keep a stale speaking flag across it.
     visitorSpeaking = false

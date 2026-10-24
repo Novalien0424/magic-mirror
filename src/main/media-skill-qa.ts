@@ -186,6 +186,25 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await edit("document.querySelector('.media-folder-settings summary').click()")
     await shot('media-folder-avatar.png'); pass()
 
+    step = 'media_folder_alias_authoring'
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Search aliases').click()")
+    await edit(`set('File for search aliases',${JSON.stringify(folderMusic)})`)
+    await edit("set('Media search aliases','x'.repeat(121))")
+    if (!await evaluate("return button('Save search aliases').disabled")) throw Error('media_alias_validation_missing')
+    await edit("set('Media search aliases','Night river\\n夜河別名')")
+    await edit("click('Save search aliases')")
+    await wait(() => evaluate("return !field('Media search aliases') && [...document.querySelectorAll('[role=status]')].some(e=>e.textContent.includes('Search aliases saved'))"))
+    await edit("set('Find folder media','Night river')")
+    if (!await evaluate(`return document.querySelectorAll('[data-folder-media-id]').length===1&&document.querySelector('[data-folder-media-id]').dataset.folderMediaId===${JSON.stringify(folderMusic)}`)) throw Error('media_alias_search_failed')
+    await edit(`set('File for search aliases',${JSON.stringify(folderMusic)})`)
+    await shot('media-folder-aliases.png')
+    await edit("set('Media search aliases','Unsaved cancelled alias');click('Cancel alias edits')")
+    await edit(`set('File for search aliases',${JSON.stringify(folderMusic)})`)
+    if (!await evaluate("return field('Media search aliases').value==='Night river\\n夜河別名'")) throw Error('media_alias_cancel_changed_saved')
+    await edit("click('Cancel alias edits');set('Find folder media','')")
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Search aliases').click()")
+    pass()
+
     step = 'media_large_file_transfer'
     await writeFile(join(sharedFolder, 'Transfer.wav'), Buffer.alloc(8 * 1024 * 1024, 37))
     await edit("click('Refresh files')")
@@ -215,6 +234,16 @@ export async function runMediaSkillQa(input: Phase4QaInput): Promise<Phase4QaRes
     await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Playback settings').click()")
     await wait(() => evaluate("return field('Media fade duration')?.value==='400'"))
     step = 'media_console_persisted'; pass()
+    step = 'media_folder_alias_persisted_and_removed'
+    await edit("[...document.querySelectorAll('summary')].find(e=>e.textContent==='Search aliases').click()")
+    await edit(`set('File for search aliases',${JSON.stringify(folderMusic)})`)
+    if (!await evaluate("return field('Media search aliases').value==='Night river\\n夜河別名'")) throw Error('media_alias_persistence_failed')
+    await edit("set('Media search aliases','')"); await edit("click('Save search aliases')")
+    await wait(() => evaluate("return !field('Media search aliases')"))
+    await edit("set('Find folder media','Night river')")
+    if (!await evaluate("return document.querySelectorAll('[data-folder-media-id]').length===0")) throw Error('media_alias_remove_failed')
+    await edit("set('Find folder media','');[...document.querySelectorAll('summary')].find(e=>e.textContent==='Search aliases').click()")
+    pass()
     step = 'media_compact_file_list'
     await edit("document.querySelector('.media-playback-settings summary').click()")
     if (!await evaluate("return [...document.querySelectorAll('[data-folder-media-id]')].every(e=>e.tagName==='LI'&&e.children.length===0)&&!document.querySelector('.media-folder-settings').open&&!document.querySelector('.media-playback-settings').open")) throw Error('media_list_not_filenames_only')

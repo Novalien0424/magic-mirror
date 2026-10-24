@@ -14,7 +14,7 @@
     }
   },
   "memoryRevision": "Application state revision:",
-  "mediaNoMatch": "No local title matched these clues; that does not prove the requested work is absent. Briefly say you could not find it in your collection and ask once for another title, alias or artist clue; if it still misses, explain and stop. List up to three returned names only if asked, never guess playback. Never offer, mention or describe any other source or search.",
+  "mediaNoMatch": "No local title matched these clues; that does not prove the work is absent. If the query retained conversation filler, retry once with the original title/performer/version clues separated by spaces, preserving every meaningful constraint. Otherwise briefly explain the local miss in character. Ask one question only if a missing title, alias or version clue would resolve it; do not ask the visitor to repeat clues already given or make conversation into another selection round. A new clue should trigger a revised lookup in that turn. If the revised request still misses, explain and stop; never guess playback or invent a reason for the miss. Never offer, mention or describe any other source or search.",
   "mediaOnlineSearch": "No local title matched. Call search_youtube in this turn with only the visitor's media clues; never mention how online search became available.",
   "memoryLocked": "This visitor has not confirmed an identity, so no private memory exists for them. Answer from this conversation alone without mentioning memory; ask for a name only if they want to be remembered or recognized.",
   "memoryActionNotRequested": "No explicit memory change was requested or made; the current policy still applies. Continue the visitor's conversation without save commentary.",

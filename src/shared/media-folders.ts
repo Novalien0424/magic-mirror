@@ -18,6 +18,12 @@ export interface MediaFoldersView {
   reason?: string
 }
 export type MediaFolderCommand = { action: 'get' | 'refresh' | 'save' | 'choose' | 'unlink'; avatarId?: string; scope?: 'own' | 'shared' }
+  | { action: 'aliases'; avatarId?: string; assetId: string; aliases: string[] }
+
+export function validMediaAliases(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 16 && value.every(alias => typeof alias === 'string'
+    && alias.trim().length > 0 && alias.length <= 120 && !/[\p{Cc}\p{Cf}]/u.test(alias))
+}
 
 /** Shared by Main authorization/session creation and the Console prompt inspector. */
 export function folderMediaSkill(skill: AvatarMediaSkill = DEFAULT_MEDIA_SKILL, entries: readonly FolderMediaEntry[]): AvatarMediaSkill {
@@ -34,10 +40,9 @@ export function folderMediaSkill(skill: AvatarMediaSkill = DEFAULT_MEDIA_SKILL, 
     if (names.has(normalize(name)) && 'origin' in entry) name = `${base.slice(0, 100)} (${entry.origin})`
     while (names.has(normalize(name))) name = `${base.slice(0, 100)} (${suffix++})`
     names.add(normalize(name))
-    const aliases = entry.aliases.filter(alias => {
-      if (!alias.trim() || names.has(normalize(alias))) return false
-      names.add(normalize(alias)); return true
-    })
+    // An alias can intentionally describe several versions. Preserve that
+    // ambiguity for discovery instead of silently hiding later candidates.
+    const aliases = [...new Map(entry.aliases.filter(alias => alias.trim()).map(alias => [normalize(alias), alias])).values()]
     resources.push({ kind: entry.kind, assetId: entry.assetId, name, aliases })
   }
   return { ...skill, enabled: true, resources }

@@ -57,6 +57,22 @@ function literalClueKey(value: string): string {
 }
 function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0 }
 
+let segmenter: Intl.Segmenter | undefined
+// Search syntax only, never a speech/intent/command filter. Apply after the
+// original lookup misses, so titles containing these words retain priority.
+const searchSyntax = new Set(['請', '请', '幫', '帮', '我', '想', '要', '聽', '听', '看', '播放', '放', '一下', '的', '唱', '唱的', '那個', '那个'])
+function queryClues(query: string): string[] {
+  segmenter ??= new Intl.Segmenter('zh-TW', { granularity: 'word' })
+  return [...segmenter.segment(query)].filter(part => part.isWordLike && !searchSyntax.has(part.segment))
+    .map(part => part.segment)
+}
+
+/** Explicit result policy shared by every local-search route. */
+export function mediaDiscoveryNext(media: MediaDiscoveryReply): 'play_media' | 'ask' | 'explain' {
+  if (media.status !== 'accepted' || !media.total) return 'explain'
+  return ['media_discovery_matches', 'media_discovery_phonetic', 'media_discovery_clues'].includes(media.code) ? 'play_media' : 'ask'
+}
+
 /** Compare normalized public clues, preserving title/alias confidence levels. */
 function labelScore(label: string, query: string, compactQuery: string, clues: string[], normalize: (value: string) => string, phonetic = false): number {
   const normalized = normalize(label), compact = normalized.replace(/ /g, '')
@@ -89,7 +105,8 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
   const hasTitleSounds = (value: string) => (value.match(/\p{Script=Han}/gu)?.length ?? 0) >= 2
   const soundQuery = pronunciation && hasTitleSounds(parsedRequest.query) ? pronunciation(parsedRequest.query) : ''
   const soundClues = soundQuery.split(' '), compactSoundQuery = soundQuery.replace(/ /g, '')
-  const ranked = publicResources.filter(resource => parsedRequest.kind === 'all' || resource.kind === parsedRequest.kind)
+  const eligible = publicResources.filter(resource => parsedRequest.kind === 'all' || resource.kind === parsedRequest.kind)
+  let ranked = eligible
     .map(resource => {
       let score = 0
       if (!listing && query) {
@@ -112,12 +129,31 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
     .filter(candidate => listing || candidate.score > 0)
     .sort((a, b) => b.score - a.score || compare(a.name, b.name)
       || compare(a.resource.kind, b.resource.kind) || compare(a.resource.assetId, b.resource.assetId))
+  let segmented = false
+  if (!listing && !ranked.length && !/[^\p{L}\p{N}\p{P}\p{Z}\s]/u.test(parsedRequest.query)) {
+    const parts = queryClues(parsedRequest.query)
+    // Keep every substantive clue, including a conflicting artist/version.
+    // Never degrade a whole unknown sentence to one coincidental title token.
+    if (parts.length >= 2 && parts.some(part => [...part].length >= 2)) {
+      const matches = (resource: AvatarMediaResource, key: (value: string) => string) => {
+        const labels = [resource.name, ...resource.aliases].map(key)
+        const clues = parts.map(key)
+        return labels.some(label => clues.every(clue => label.includes(clue)))
+          || clues.every(clue => labels[0]!.includes(clue) || labels.slice(1).includes(clue))
+      }
+      ranked = eligible.map(resource => ({ resource, name: normalize(resource.name),
+        score: matches(resource, normalize) ? 2 : pronunciation && matches(resource, pronunciation) ? 1 : 0 }))
+        .filter(candidate => candidate.score > 0)
+        .sort((a, b) => b.score - a.score || compare(a.name, b.name) || compare(a.resource.assetId, b.resource.assetId))
+      segmented = ranked.length > 0
+    }
+  }
   const total = ranked.length
   const ambiguous = !listing && total > 1 && ranked[0]!.score === ranked[1]!.score
   // An alias merely contained in a sentence (often an artist) is not the requested title.
-  const weak = !listing && total > 0 && ranked[0]!.score <= 2
+  const weak = !segmented && !listing && total > 0 && ranked[0]!.score <= 2
   return { status: 'accepted', code: total > MAX_RESULTS ? 'media_discovery_truncated'
     : listing ? 'media_discovery_listed' : ambiguous ? 'media_discovery_ambiguous' : weak ? 'media_discovery_weak'
-      : !total ? 'media_discovery_no_match' : ranked[0]!.score < 10 ? 'media_discovery_phonetic' : 'media_discovery_matches',
+      : !total ? 'media_discovery_no_match' : segmented ? 'media_discovery_clues' : ranked[0]!.score < 10 ? 'media_discovery_phonetic' : 'media_discovery_matches',
   resources: ranked.slice(0, MAX_RESULTS).map(candidate => candidate.resource), total }
 }

@@ -38,7 +38,7 @@
         "mode": { "type": "string", "enum": ["once", "loop"] }
       }, "required": ["kind", "assetId", "mode"], "additionalProperties": false },
       "rules": {
-        "useWhen": "Play the selected find_media assetId, including a clarification selection, with no extra confirmation.",
+        "useWhen": "After find_media returns next=play_media, play its first resource in this turn. After next=ask, wait for the visitor's choice, then play that returned assetId with no extra confirmation. A later explicit request to replay a successfully played resource can reuse its assetId without searching again. media_selection_required means search again or resolve the pending choice; never invent an assetId.",
         "avoidWhen": "Use once unless repeat is explicit.",
         "speech": "Stay silent on accepted playback; explain a failure briefly."
       },
@@ -52,15 +52,16 @@
     },
     {
       "name": "find_media", "handler": "find_media", "enabled": true, "availability": "conversation", "routing": "model_intent",
-      "description": "Find local filenames and aliases matching the visitor's title or Mandarin pronunciation in this avatar's own and shared folders.",
+      "description": "Search this avatar's local music, videos and pictures by original title, performer, version or alias clues. Returns ranked real resources and next: play_media, ask or explain. Matching includes Mandarin pronunciation.",
       "parameters": { "type": "object", "properties": {
-        "query": { "type": "string", "description": "Copy the visitor's title, artist or alias clues in their original language; empty lists candidates." },
+        "query": { "type": "string", "description": "Extract the visitor's title, performer and version clues in their original language, separated by spaces. Preserve all meaningful constraints; omit conversation filler. Do not translate or invent titles. Empty lists candidates." },
+        "context": { "type": "string", "enum": ["new", "refine"], "description": "new starts/replaces a request, including a correction of an earlier title; refine narrows the immediately pending search with a new version/performer clue. The application retains that shortlist. If it has expired, these clues are searched fresh; include the known title when returning after a conversational detour." },
         "kind": { "type": "string", "enum": ["all", "video", "music", "image"], "description": "Use all unless the visitor explicitly asks for music, video or a picture (image). A title or version alone does not specify media kind." }
-      }, "required": ["query", "kind"], "additionalProperties": false },
+      }, "required": ["query", "kind", "context"], "additionalProperties": false },
       "rules": {
-        "useWhen": "Search local first for requests to play existing music, videos or pictures; after a clear match call play_media in this turn. Requests to create a new picture belong to the image skill.",
-        "avoidWhen": "For multiple plausible matches or media_discovery_kind_mismatch ask one short question using the returned names and media kind.",
-        "speech": "On a miss follow the result's next field; list up to three returned names only if asked."
+        "useWhen": "Search local when asked to play existing media, and search again in the same turn when the visitor supplies a useful new clue for an unresolved request. Follow next: play_media completes a play request now; ask needs one discriminating question using at most two returned titles/versions. Requests to create a new picture belong to the image skill.",
+        "avoidWhen": "Do not play an ambiguous result before the visitor chooses. Do not repeat an unchanged failed query, discard a conflicting artist/version, or resume a cancelled request. For media_discovery_context_missing, start a new lookup using the complete known clues; ask only if they are missing.",
+        "speech": "Keep the configured character naturally through search and recovery. A short in-character line may accompany a lookup; conversation does not replace the lookup. No fixed joke or catchphrase is required. On a miss follow next; offer actual alternatives only to resolve ambiguity or when asked."
       }, "completion": "response",
       "results": {
         "accepted": { "status": "accepted", "code": "media_discovery_results", "speech": "model" },

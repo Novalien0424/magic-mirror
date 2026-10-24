@@ -6,7 +6,7 @@ import { registerImageSkillIpc } from './studio/image-skill-ipc'
 import { createAvatarImageService } from './avatar/image-service'
 import { defaultExperience } from '../shared/portrait-studio'
 import { DEFAULT_MEDIA_SKILL, parseMediaSkillRequest } from '../shared/media-skill'
-import { folderMediaSkill, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
+import { folderMediaSkill, isFolderMediaId, validMediaAliases, type FolderMediaEntry, type MediaFolderCommand, type MediaFoldersView } from '../shared/media-folders'
 import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryReply } from '../shared/media-discovery'
 import { mediaClueKey } from '../shared/media-clue'
 import { mediaPhoneticKey } from '../shared/media-phonetics'
@@ -2138,8 +2138,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     if (!authorizeSender(event, 'console', windows).ok) return consoleFailure('console_request_rejected', 'cause=sender_rejected')
     const value = args[0]
     if (args.length !== 1 || !value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['action', 'avatarId', 'scope'].includes(key))
-      || !['get', 'refresh', 'save', 'choose', 'unlink'].includes(readProperty(value, 'action') as string)
+      || Object.keys(value).some(key => !(readProperty(value, 'action') === 'aliases' ? ['action', 'avatarId', 'assetId', 'aliases'] : ['action', 'avatarId', 'scope']).includes(key))
+      || !['get', 'refresh', 'save', 'choose', 'unlink', 'aliases'].includes(readProperty(value, 'action') as string)
+      || readProperty(value, 'action') === 'aliases' && (typeof readProperty(value, 'assetId') !== 'string'
+        || !isFolderMediaId(readProperty(value, 'assetId') as string) || !validMediaAliases(readProperty(value, 'aliases')))
       || ('avatarId' in value && (typeof value.avatarId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(value.avatarId)))
       || ('scope' in value && !['own', 'shared'].includes(value.scope as string))
       || ['choose', 'unlink'].includes(readProperty(value, 'action') as string) && (!readProperty(value, 'scope') || readProperty(value, 'scope') === 'own' && !readProperty(value, 'avatarId'))) {

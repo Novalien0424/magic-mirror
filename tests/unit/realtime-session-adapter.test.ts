@@ -256,6 +256,37 @@ describe("RealtimeSession adapter", () => {
     expect(onSearchYoutube).not.toHaveBeenCalled()
     await handle.close('manual_stop')
   })
+  it('blocks same-turn ambiguous playback, refines a later clue and consumes the selection', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn()
+    const resources = ['piano', 'strings'].map(assetId => ({ kind: 'music' as const, assetId, name: assetId, aliases: [] }))
+    const onFindMedia = vi.fn(async () => ({ status: 'accepted' as const, code: 'media_discovery_ambiguous', resources, total: 2 }))
+    const onMediaRequest = vi.fn(async () => 'accepted' as const)
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), onFindMedia, onMediaRequest })
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools
+    const find = tools.find(t => t.name === 'find_media'), play = tools.find(t => t.name === 'play_media')
+    try {
+      expect(await find.invoke({}, JSON.stringify({ query: 'Night', kind: 'music', context: 'new' }))).toMatchObject({ next: 'ask' })
+      expect(await play.invoke({}, '{"kind":"music","assetId":"piano","mode":"once"}')).toMatchObject({ code: 'media_selection_required' })
+      expect(onMediaRequest).not.toHaveBeenCalled()
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'version-choice' })
+      onFindMedia.mockResolvedValue({ status: 'accepted', code: 'media_discovery_phonetic', resources: [resources[0]!], total: 1 })
+      expect(await find.invoke({}, JSON.stringify({ query: 'piano', kind: 'all', context: 'refine' }))).toMatchObject({ next: 'play_media', media: { total: 1 } })
+      expect(onFindMedia).toHaveBeenLastCalledWith({ query: 'piano', kind: 'music' }, expect.anything())
+      expect(await play.invoke({}, '{"kind":"music","assetId":"invented","mode":"once"}')).toMatchObject({ code: 'media_selection_required', next: 'find_media' })
+      await play.invoke({}, '{"kind":"music","assetId":"piano","mode":"once"}')
+      expect(onMediaRequest).toHaveBeenCalledTimes(1)
+      await play.invoke({}, '{"kind":"music","assetId":"piano","mode":"once"}')
+      expect(onMediaRequest).toHaveBeenCalledTimes(1)
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'play-that-track-again' })
+      await play.invoke({}, '{"kind":"music","assetId":"piano","mode":"once"}')
+      expect(onMediaRequest).toHaveBeenCalledTimes(2)
+      expect(onFindMedia).toHaveBeenCalledTimes(2)
+      // Consumed/expired context must not add a clarification round when the
+      // model supplies a fresh query but still calls it a refinement.
+      expect(await find.invoke({}, JSON.stringify({ query: 'Night piano', kind: 'music', context: 'refine' }))).toMatchObject({ next: 'play_media' })
+      expect(onFindMedia).toHaveBeenLastCalledWith({ query: 'Night piano', kind: 'music' }, expect.anything())
+    } finally { await handle.close('manual_stop') }
+  })
   it('allows online media only when a final transcript opens with the hidden phrase', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const found = 'https://www.youtube.com/watch?v=M7lc1UVf-VE', other = 'https://youtu.be/abcdefghijk';

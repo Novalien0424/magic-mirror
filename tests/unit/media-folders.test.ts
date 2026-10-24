@@ -22,6 +22,24 @@ async function fixture(prepareCloudFile?: (path: string, size: number, mtime: nu
 }
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 describe('linked media folders', () => {
+  it('saves editable aliases across refresh/reload, clears them, and enforces scope', async () => {
+    const { root, store } = await fixture()
+    await writeFile(join(root, 'shared', 'Song.wav'), 'synthetic media')
+    await writeFile(join(root, 'other', 'Other.wav'), 'synthetic media')
+    await store.link('shared', join(root, 'shared')); await store.link('avatar:other', join(root, 'other'))
+    const shared = store.resources()[0]!, own = store.resources('other')[0]!
+    await store.saveAliases(shared.assetId, ['女祭司版', 'Priestess version', '女祭司版'])
+    await store.refresh()
+    expect(store.resources()[0]!.aliases).toEqual(['女祭司版', 'Priestess version'])
+    const reloaded = new MediaFolders(join(root, 'links.json')); await reloaded.load()
+    expect(reloaded.resources()[0]!.aliases).toEqual(['女祭司版', 'Priestess version'])
+    await expect(store.saveAliases(own.assetId, ['wrong scope'], 'raven')).rejects.toThrow('media_folder_aliases_unavailable')
+    await expect(store.saveAliases(shared.assetId, ['bad\nline'])).rejects.toThrow('media_folder_aliases_invalid')
+    await store.saveAliases(shared.assetId, [])
+    expect(store.resources()[0]!.aliases).toEqual([])
+    await store.unlink('shared')
+    await expect(store.saveAliases(shared.assetId, ['gone'])).rejects.toThrow('media_folder_aliases_unavailable')
+  })
   it('indexes supported pictures, resolves their MIME types and enforces avatar ownership', async () => {
     const { root, store } = await fixture()
     const formats = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
@@ -154,5 +172,7 @@ describe('linked media folders', () => {
     const legacy = { ...DEFAULT_MEDIA_SKILL, resources: [{ kind: 'video' as const, assetId: 'old', name: 'a'.repeat(120), aliases: ['Alias'] }] }
     expect(folderMediaSkill(legacy, []).resources).toEqual(legacy.resources)
     expect(folderMediaSkill(legacy, entries).resources.at(-1)).toEqual(legacy.resources[0])
+    expect(folderMediaSkill(undefined, entries.map(entry => ({ ...entry, aliases: ['Shared song'] }))).resources.map(resource => resource.aliases))
+      .toEqual([['Shared song'], ['Shared song']])
   })
 })

@@ -8,7 +8,7 @@ import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 type ToolResultCode = import('../../shared/media-skill').MediaFailureCode | 'media_discovery_results' | 'media_discovery_unavailable'
 export type RealtimeToolHandler = (arguments_: Readonly<Record<string, unknown>>) => Promise<ToolOutcome | { outcome: ToolOutcome;
   code?: ToolResultCode;
-  next?: 'ask' | 'explain' | 'play_media' | 'search_youtube'; playback?: import('../../shared/media-skill').MediaSkillRequest;
+  next?: 'ask' | 'explain' | 'find_media' | 'play_media' | 'search_youtube'; playback?: import('../../shared/media-skill').MediaSkillRequest;
   memory?: import('../../shared/memory').MemoryReply; media?: import('../../shared/media-discovery').MediaDiscoveryReply;
   youtube?: import('../../shared/youtube-search').YoutubeSearchReply; studio?: import('../../shared/portrait-studio').StudioReply
   image?: import('../../shared/image-skill').ImageSkillReply
@@ -26,7 +26,7 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
     const validator = z.fromJSONSchema(spec.parameters)
     const result = (outcome: ToolOutcome, memory?: import('../../shared/memory').MemoryReply,
       media?: import('../../shared/media-discovery').MediaDiscoveryReply, youtube?: import('../../shared/youtube-search').YoutubeSearchReply,
-      failureCode?: ToolResultCode, next?: 'ask' | 'explain' | 'play_media' | 'search_youtube', playback?: import('../../shared/media-skill').MediaSkillRequest,
+      failureCode?: ToolResultCode, next?: 'ask' | 'explain' | 'find_media' | 'play_media' | 'search_youtube', playback?: import('../../shared/media-skill').MediaSkillRequest,
       studio?: import('../../shared/portrait-studio').StudioReply, spoken = false, image?: import('../../shared/image-skill').ImageSkillReply) => {
       // Speech routing stays in application code, not in model-visible results.
       // The confirmation receipt belongs to the application-owned dialogue.
@@ -62,6 +62,12 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
         let arguments_: Record<string, unknown>
         try {
           let parsed = JSON.parse(rawInput)
+          // Older saved QA/operator callers used the two-field search schema.
+          // The current model schema explicitly requires new/refine context.
+          if (spec.handler === 'find_media' && Object.hasOwn(spec.parameters.properties ?? {}, 'context')
+            && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsed = { context: 'new', ...parsed }
+          }
           if (spec.handler === 'memory' && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             parsed = { name: '', topic: '', text: '', query: '', ...parsed }
           }

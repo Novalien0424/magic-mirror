@@ -1,0 +1,397 @@
+{
+  "focusedCoverage": {
+    "distinctTests": 413,
+    "allPassedAfterRepairs": true,
+    "suites": {
+      "realtime-session-adapter": 124,
+      "media-discovery": 99,
+      "boot-ipc": 50,
+      "media-skill-config": 37,
+      "raven-conversation-fixture": 35,
+      "realtime-tools": 29,
+      "media-skill-runtime": 11,
+      "media-folders": 9,
+      "avatar-prompt": 7,
+      "web-console": 4,
+      "media-search-context": 6,
+      "preload-bundle-boundary": 2
+    },
+    "latestAffectedCommand": "node node_modules/vitest/vitest.mjs run tests/unit/media-search-context.test.ts tests/unit/realtime-session-adapter.test.ts tests/unit/realtime-tools.test.ts tests/unit/raven-conversation-fixture.test.ts",
+    "latestAffectedExit": 0,
+    "latestAffectedTests": 194,
+    "priorUnchangedPassesReused": true
+  },
+  "typecheck": {
+    "command": "npm run typecheck",
+    "exit": 0,
+    "projects": [
+      "node",
+      "web"
+    ]
+  },
+  "build": {
+    "command": "npm run build",
+    "exit": 0,
+    "manifest": {
+      "version": 1,
+      "status": "complete",
+      "source": "5da9746c55d736c4e7bdbe0addd2f7473fbba2bcbf3741e79d617fa4e4966211",
+      "output": "ada4d477c3c241ca10b5ccdcadd957cf12c84295feb93ba6359a8eabf8242628",
+      "builtAt": "2026-10-24T11:30:37.855Z"
+    }
+  },
+  "ui": {
+    "command": "node scripts/run-phase4-qa.mjs --media-skill-functional",
+    "exit": 0,
+    "runId": "2026-10-24T11-12-34-532Z",
+    "build": {
+      "version": 1,
+      "status": "complete",
+      "source": "c3eb46e2dc011babd5ab71835908aace7bc2c4f9720995bc9fd14e5eaf90d210",
+      "output": "61bc56c4a60c36ce0d746a955e3595f4af2641aae30abbae0f11e8821ef25483",
+      "builtAt": "2026-10-24T11:12:06.531Z"
+    },
+    "evidence": {
+      "platform": "darwin",
+      "mode": "media_skill_functional",
+      "live": false,
+      "display": {
+        "count": 2,
+        "mirror": 3,
+        "width": 1080,
+        "height": 1920,
+        "verified": false,
+        "console": 5
+      },
+      "result": {
+        "status": "passed",
+        "motion_count": 0,
+        "expression_count": 0,
+        "scene_count": 0,
+        "visual_count": 3,
+        "screenshot_count": 15,
+        "music_analyser": "active",
+        "console_check_count": 23
+      },
+      "evidence": [
+        {
+          "step": "system_device_save_and_scroll",
+          "status": "captured",
+          "file": "system-save-bottom.png",
+          "sha256": "45ac279adecdef207e4255eae721809b97130ee8cf9fbe80438442e81c341803"
+        },
+        {
+          "step": "system_device_save_and_scroll",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_link_and_discovery",
+          "status": "captured",
+          "file": "media-folder-global.png",
+          "sha256": "cbca901825f74a7fca49469ebfc01e4b75dce88d653d15e822eadb5879a17db4"
+        },
+        {
+          "step": "media_folder_link_and_discovery",
+          "status": "captured",
+          "file": "media-folder-avatar.png",
+          "sha256": "17711f5cd5d85039db050263f3a4962ae0a1eb1816e5cdadf854f8209871dfe4"
+        },
+        {
+          "step": "media_folder_link_and_discovery",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_alias_authoring",
+          "status": "captured",
+          "file": "media-folder-aliases.png",
+          "sha256": "b7b77dcbf5aa78e6a49a46a0f502b1dcb86c453666676adc691d5440dd9c8bad"
+        },
+        {
+          "step": "media_folder_alias_authoring",
+          "status": "passed"
+        },
+        {
+          "step": "media_large_file_transfer",
+          "status": "passed"
+        },
+        {
+          "step": "media_console_authoring",
+          "status": "captured",
+          "file": "media-skills-console.png",
+          "sha256": "3c9f1ee7c69df0cee31c81156da40bff144667a8d369058e735ca8885f11431b"
+        },
+        {
+          "step": "media_console_authoring",
+          "status": "passed"
+        },
+        {
+          "step": "media_console_persisted",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_alias_persisted_and_removed",
+          "status": "passed"
+        },
+        {
+          "step": "media_compact_file_list",
+          "status": "captured",
+          "file": "media-file-list.png",
+          "sha256": "0b636f435dd82c9ec32bb7e546af902aeddbae4f0c72e1024676cc95d3dfa25b"
+        },
+        {
+          "step": "media_compact_file_list",
+          "status": "passed"
+        },
+        {
+          "step": "media_authenticated_local_discovery",
+          "status": "passed"
+        },
+        {
+          "step": "media_image_once_decode_and_return",
+          "status": "captured",
+          "file": "media-picture-displayed.png",
+          "sha256": "65cfc5861fb35dfba9d279997becc8de33e4bb54dcb799f4c61e8f3e4ad8c12c"
+        },
+        {
+          "step": "media_image_once_decode_and_return",
+          "status": "captured",
+          "file": "media-picture-return.png",
+          "sha256": "1eeac43bb15e88b611b5ef806104a84380ac28d3d7e61231bf7e9ae42fd21870"
+        },
+        {
+          "step": "media_image_once_decode_and_return",
+          "status": "passed"
+        },
+        {
+          "step": "media_image_loop_and_wake_stop",
+          "status": "captured",
+          "file": "media-picture-loop.png",
+          "sha256": "65cfc5861fb35dfba9d279997becc8de33e4bb54dcb799f4c61e8f3e4ad8c12c"
+        },
+        {
+          "step": "media_image_loop_and_wake_stop",
+          "status": "passed"
+        },
+        {
+          "step": "media_image_decode_failure_returns_avatar",
+          "status": "passed"
+        },
+        {
+          "step": "media_video_fade_and_once",
+          "status": "captured",
+          "file": "media-video-playing.png",
+          "sha256": "5b09d49455ad2572452dd419f3914b65916273e3c092b9eb0752909b3e5bbfee"
+        },
+        {
+          "step": "media_video_fade_and_once",
+          "status": "passed"
+        },
+        {
+          "step": "media_video_loop_dormant_and_wake_stop",
+          "status": "captured",
+          "file": "media-video-loop-dormant.png",
+          "sha256": "6b654e09d4554401edaf4454411a68d9cc605ca9f31be253747e68f60e293969"
+        },
+        {
+          "step": "media_video_loop_dormant_and_wake_stop",
+          "status": "captured",
+          "file": "media-video-wake-return.png",
+          "sha256": "045a329be941deda6b62121b49f100c562cb0601663c74c367d397a8f311ce54"
+        },
+        {
+          "step": "media_video_loop_dormant_and_wake_stop",
+          "status": "passed"
+        },
+        {
+          "step": "media_embedded_audio_suppresses_bgm",
+          "status": "passed"
+        },
+        {
+          "step": "media_music_once_visible",
+          "status": "captured",
+          "file": "media-music-avatar-visible.png",
+          "sha256": "c6644bc59aad7413058671a30e474dfdac835b353b88b68410f8a305f2997143"
+        },
+        {
+          "step": "media_music_once_visible",
+          "status": "passed"
+        },
+        {
+          "step": "media_music_loop_dormant_and_console_stop",
+          "status": "captured",
+          "file": "media-music-loop-dormant.png",
+          "sha256": "884917aa91a722908ee32c1d0b7fa7f360c67c7e6c8bc07eb5fbe00bd9439ff3"
+        },
+        {
+          "step": "media_music_loop_dormant_and_console_stop",
+          "status": "captured",
+          "file": "media-music-console-stop.png",
+          "sha256": "5cb177aea6d5efce0f60e84a16353dcec7b17a233092fe9a2c31ab2a5730ecec"
+        },
+        {
+          "step": "media_music_loop_dormant_and_console_stop",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_persistence_and_discovery",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_runtime_playback",
+          "status": "passed"
+        },
+        {
+          "step": "media_failed_file_returns_failure",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_removal_revokes_playback",
+          "status": "passed"
+        },
+        {
+          "step": "folder_bgm_black_dormant_ms",
+          "status": "measured",
+          "item": "1202"
+        },
+        {
+          "step": "folder_bgm_selection_and_black_dormant",
+          "status": "passed"
+        },
+        {
+          "step": "media_folder_unlink",
+          "status": "passed"
+        }
+      ],
+      "humanAcceptance": "not_executed",
+      "physicalHardware": "not_executed"
+    },
+    "inspected": [
+      "media-folder-aliases.png",
+      "media-music-avatar-visible.png",
+      "media-picture-displayed.png",
+      "media-video-playing.png"
+    ]
+  },
+  "developmentFailures": [
+    {
+      "log": "mm-media-typecheck.log",
+      "command": "npm run typecheck",
+      "output": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\nsrc/renderer/realtime/realtime-session-adapter.ts(925,68): error TS2367: This comparison appears to be unintentional because the types '\"rejected\" | \"failed\"' and '\"accepted\"' have no overlap.\n",
+      "resolved": true
+    },
+    {
+      "log": "mm-media-new-checks.log",
+      "command": "focused Vitest: media-discovery/media-folders/media-search-context",
+      "output": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n ❯ tests/unit/media-discovery.test.ts (99 tests | 1 failed) 24ms\n     × recovers natural title/version wording: 女祭司唱的天使 2ms\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  tests/unit/media-discovery.test.ts > Mandarin voice media discovery > recovers natural title/version wording: 女祭司唱的天使\nAssertionError: expected { status: 'accepted', …(3) } to match object { code: 'media_discovery_clues', …(1) }\n(2 matching properties omitted from actual)\n\n- Expected\n+ Received\n\n  {\n-   \"code\": \"media_discovery_clues\",\n-   \"total\": 1,\n+   \"code\": \"media_discovery_no_match\",\n+   \"total\": 0,\n  }\n\n ❯ tests/unit/media-discovery.test.ts:25:20\n     23|   it.each(['天使的女祭司版本', '播放天使女祭司版本', '女祭司唱的天使', '葛麗果的女祭司版本'])('recovers…\n     24|     const result = find(query)\n     25|     expect(result).toMatchObject({ code: 'media_discovery_clues', tota…\n       |                    ^\n     26|     expect(ids(result)).toEqual(['priestess'])\n     27|     expect(mediaDiscoveryNext(result)).toBe('play_media')\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n\n Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 111 passed (112)\n   Start at  19:08:21\n   Duration  557ms (transform 46ms, setup 0ms, import 68ms, tests 230ms, environment 0ms)\n\n",
+      "resolved": true
+    },
+    {
+      "log": "mm-media-typecheck-3.log",
+      "command": "npm run typecheck",
+      "output": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\nsrc/main/raven-conversation-fixture.ts(313,30): error TS2345: Argument of type '\"character\"' is not assignable to parameter of type 'RavenSemanticCategory'.\nsrc/main/raven-conversation-fixture.ts(314,39): error TS2322: Type '\"helpful\"' is not assignable to type '\"conversation\" | \"silent\" | \"clarification\" | \"local_unavailable\" | \"application_identity\" | \"application_policy\" | \"application_spell\" | \"application_retry\" | \"application_farewell\" | undefined'.\n",
+      "resolved": true
+    },
+    {
+      "log": "mm-media-final-focused.log",
+      "command": "focused Vitest: 11 boundary suites",
+      "output": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n ❯ tests/unit/media-discovery.test.ts (99 tests | 1 failed) 25ms\n     × returns empty results for absent clues, punctuation-only queries, and empty catalogs without inventing metadata 2ms\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  tests/unit/media-discovery.test.ts > public local media ranking > returns empty results for absent clues, punctuation-only queries, and empty catalogs without inventing metadata\nAssertionError: expected { status: 'accepted', …(3) } to deeply equal { status: 'accepted', …(3) }\n\n- Expected\n+ Received\n\n  {\n-   \"code\": \"media_discovery_no_match\",\n-   \"resources\": [],\n+   \"code\": \"media_discovery_clues\",\n+   \"resources\": [\n+     {\n+       \"aliases\": [\n+         \"Evening song\",\n+       ],\n+       \"assetId\": \"secret-id\",\n+       \"kind\": \"music\",\n+       \"name\": \"Quiet melody\",\n+     },\n+   ],\n    \"status\": \"accepted\",\n-   \"total\": 0,\n+   \"total\": 1,\n  }\n\n ❯ tests/unit/media-discovery.test.ts:237:61\n    235|     const resources = [resource('secret-id', 'Quiet melody', ['Evening…\n    236|     for (const query of ['missing', 'secret-id', '。。。', 'quiet ocean',…\n    237|       expect(rankMediaResources(resources, request(query))).toEqual({ …\n       |                                                             ^\n    238|     }\n    239|     expect(rankMediaResources([], request('rain'))).toEqual({ status: …\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n\n Test Files  1 failed | 10 passed (11)\n      Tests  1 failed | 403 passed (404)\n   Start at  19:11:15\n   Duration  14.67s (transform 377ms, setup 0ms, import 735ms, tests 13.03s, environment 0ms)\n\n",
+      "resolved": true
+    },
+    {
+      "log": "mm-media-context-typecheck.log",
+      "command": "npm run typecheck",
+      "output": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\nsrc/main/raven-conversation-qa.ts(156,46): error TS18048: 'avatar' is possibly 'undefined'.\nsrc/main/raven-conversation-qa.ts(156,46): error TS18048: 'avatar.mediaSkill' is possibly 'undefined'.\nsrc/main/raven-conversation-qa.ts(157,44): error TS18048: 'avatar' is possibly 'undefined'.\nsrc/main/raven-conversation-qa.ts(157,44): error TS18048: 'avatar.mediaSkill' is possibly 'undefined'.\n",
+      "resolved": true
+    }
+  ],
+  "passSummaries": {
+    "mm-media-affected-final.log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  4 passed (4)\n      Tests  236 passed (236)\n   Start at  19:11:59\n   Duration  13.05s (transform 115ms, setup 0ms, import 224ms, tests 12.47s, environment 0ms)\n\n",
+    "mm-media-catalog-final.log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  3 passed (3)\n      Tests  160 passed (160)\n   Start at  19:14:29\n   Duration  13.02s (transform 125ms, setup 0ms, import 397ms, tests 12.35s, environment 0ms)\n\n",
+    "mm-media-context-repair-tests.log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  4 passed (4)\n      Tests  193 passed (193)\n   Start at  19:21:32\n   Duration  13.02s (transform 121ms, setup 0ms, import 313ms, tests 12.37s, environment 0ms)\n\n",
+    "mm-media-context-typecheck-2.log": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\n\n> magic-mirror@0.1.0 typecheck:web\n> tsc --noEmit -p tsconfig.web.json\n\n",
+    "mm-media-replay-final-tests.log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  4 passed (4)\n      Tests  194 passed (194)\n   Start at  19:30:27\n   Duration  12.98s (transform 120ms, setup 0ms, import 315ms, tests 12.33s, environment 0ms)\n\n",
+    "mm-media-replay-final-typecheck.log": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\n\n> magic-mirror@0.1.0 typecheck:web\n> tsc --noEmit -p tsconfig.web.json\n\n"
+  },
+  "cleanup": {
+    "roots": [
+      {
+        "runId": "2026-10-24T11-12-34-532Z",
+        "root": "/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-24T11-12-34-532Z",
+        "report": "docs/testing/music-search-repair-2026-10-24.md",
+        "exitCode": 0,
+        "fingerprint": "c36cd8cea01b79eecdb0f30d0702211877524783d153a889f640e5a923bb23e0",
+        "files": 97,
+        "bytes": 24196095,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-24T11-14-43-177Z",
+        "root": "/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-24T11-14-43-177Z",
+        "report": "docs/testing/music-search-repair-2026-10-24.md",
+        "exitCode": 2,
+        "fingerprint": "89b8d193d25791757a2a9bc5ab461f098818b5dad77ba84efc300a6e45ac487e",
+        "files": 95,
+        "bytes": 22119739,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-24T11-22-21-137Z",
+        "root": "/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-24T11-22-21-137Z",
+        "report": "docs/testing/music-search-repair-2026-10-24.md",
+        "exitCode": 2,
+        "fingerprint": "ffd9b45c99c61fdd8b171d8d5464ea743e47ed277e9d67ff6529dfd50fc4812a",
+        "files": 95,
+        "bytes": 22122234,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-24T11-25-25-941Z",
+        "root": "/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-24T11-25-25-941Z",
+        "report": "docs/testing/music-search-repair-2026-10-24.md",
+        "exitCode": 2,
+        "fingerprint": "9ce3962f6673f0edd1b81678c72851702b82ddacb1feda9c32dbb1a7768adcb3",
+        "files": 95,
+        "bytes": 22121897,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-24T11-31-06-154Z",
+        "root": "/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-24T11-31-06-154Z",
+        "report": "docs/testing/music-search-repair-2026-10-24.md",
+        "exitCode": 2,
+        "fingerprint": "23b3ca3dd58b3aafd3c2de8cbd64dbaad93633ac40e681077933241167d26c5e",
+        "files": 95,
+        "bytes": 22124679,
+        "deleted": true
+      }
+    ],
+    "totalFiles": 477,
+    "totalBytes": 112684644,
+    "scratchFilesRemoved": 31,
+    "ownerDeliverablesUntouched": true
+  },
+  "runtime": {
+    "normalElectron": "owner_stopped",
+    "blackHdmiCoverPid": 91006,
+    "jabraOutput": 0.7007718682289124,
+    "jabraMuted": false,
+    "otherOutput": {
+      "name": "Mac mini Speakers",
+      "volume": 0.009999996051192284,
+      "muted": false
+    },
+    "inputGainEdited": false
+  },
+  "boundaries": {
+    "normalElectronWasOwnerStopped": true,
+    "physicalHumanSpeechAcceptance": false,
+    "publishedPersonaChanged": false,
+    "retainedTranscripts": false,
+    "retainedAudio": false
+  },
+  "preservedProductionHashes": {
+    "config/active.json": "336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d",
+    "config/draft.json": "d9c62c4a890794741a0a95396585587422c46187b697fd2aba88cb5638758b07",
+    "media-folders.json": "d0fe1035b267cbe6c054bca6992362b936675946288c11adb24736e6135b9444"
+  }
+}

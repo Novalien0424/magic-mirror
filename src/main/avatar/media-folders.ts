@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 const writeFileAtomic = require('write-file-atomic') as (path: string, value: string, options: { mode: number }) => Promise<void>
-import type { FolderMediaEntry, MediaFolderStatus, MediaFoldersView } from '../../shared/media-folders'
+import { isFolderMediaId, validMediaAliases, type FolderMediaEntry, type MediaFolderStatus, type MediaFoldersView } from '../../shared/media-folders'
 import type { LocalMediaKind } from '../../shared/media-skill'
 import { prepareDeadlineSeconds } from './prepare-media-file'
 
@@ -22,6 +22,7 @@ type Source = { status: MediaFolderStatus; files: Indexed[] }
 /** Only explicit operator-selected roots are read. Paths stay in Main and Console. */
 export class MediaFolders {
   private links: Record<string, string> = {}
+  private aliases: Record<string, string[]> = {}
   private sources = new Map<string, Source>()
   private queue: Promise<unknown> = Promise.resolve()
   private failure = ''
@@ -39,16 +40,31 @@ export class MediaFolders {
       this.links = value.links
       const paths = Object.values(this.links)
       if (paths.some((path, i) => paths.some((other, j) => i !== j && inside(path, other)))) throw Error()
+      if (value.aliases !== undefined && (!value.aliases || typeof value.aliases !== 'object' || Array.isArray(value.aliases)
+        || Object.keys(value.aliases).length > 6600 || !Object.entries(value.aliases).every(([id, aliases]) => isFolderMediaId(id) && validMediaAliases(aliases)))) throw Error()
+      this.aliases = value.aliases ?? {}
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { this.links = {}; this.failure = 'media_folder_config_unreadable' }
     }
     await this.refresh()
   }
-  private async save(links: Record<string, string>): Promise<void> {
+  private async save(links: Record<string, string>, aliases = this.aliases): Promise<void> {
     if (this.failure) throw Error(this.failure)
     await mkdir(dirname(this.configPath), { recursive: true })
-    await writeFileAtomic(this.configPath, JSON.stringify({ version: 1, links }), { mode: 0o600 })
+    await writeFileAtomic(this.configPath, JSON.stringify({ version: 1, links, aliases }), { mode: 0o600 })
     this.links = links
+    this.aliases = aliases
+  }
+  saveAliases(assetId: string, aliases: string[], avatarId?: string): Promise<void> {
+    return this.run(async () => {
+      if (!isFolderMediaId(assetId) || !validMediaAliases(aliases)) throw Error('media_folder_aliases_invalid')
+      if (!this.resources(avatarId).some(resource => resource.assetId === assetId)) throw Error('media_folder_aliases_unavailable')
+      const next = { ...this.aliases }
+      if (aliases.length) next[assetId] = [...new Set(aliases.map(alias => alias.trim()))]
+      else delete next[assetId]
+      if (Object.keys(next).length > 6600) throw Error('media_folder_aliases_limit')
+      await this.save({ ...this.links }, next)
+    })
   }
   link(owner: string, path: string): Promise<void> {
     return this.run(async () => {
@@ -115,8 +131,8 @@ export class MediaFolders {
   }
   resources(avatarId?: string): FolderMediaEntry[] {
     return [
-      ...(avatarId ? this.sources.get(`avatar:${avatarId}`)?.files ?? [] : []).map(f => ({ ...f.entry, origin: 'own' as const })),
-      ...(this.sources.get('shared')?.files ?? []).map(f => ({ ...f.entry, origin: 'shared' as const })),
+      ...(avatarId ? this.sources.get(`avatar:${avatarId}`)?.files ?? [] : []).map(f => ({ ...f.entry, aliases: [...(this.aliases[f.entry.assetId] ?? [])], origin: 'own' as const })),
+      ...(this.sources.get('shared')?.files ?? []).map(f => ({ ...f.entry, aliases: [...(this.aliases[f.entry.assetId] ?? [])], origin: 'shared' as const })),
     ]
   }
   view(avatarId?: string): MediaFoldersView {

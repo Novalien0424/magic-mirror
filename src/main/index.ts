@@ -1658,8 +1658,8 @@ void app.whenReady().then(async () => {
       const config = await runtime.console.getConfig()
       if (!config.ok) throw Error('media_folder_config_unavailable')
       const knownAvatar = !request.avatarId || config.value.draft.avatarCatalog?.avatars.some(avatar => avatar.id === request.avatarId)
-      if (!knownAvatar && ['choose', 'unlink'].includes(request.action) && request.scope === 'own') throw Error('media_folder_save_avatar_first')
-      const owner = request.scope === 'shared' ? 'shared' : `avatar:${request.avatarId}`
+      if (!knownAvatar && (request.action === 'aliases' || ['choose', 'unlink'].includes(request.action) && request.scope === 'own')) throw Error('media_folder_save_avatar_first')
+      const owner = 'scope' in request && request.scope === 'shared' ? 'shared' : `avatar:${request.avatarId}`
       if (request.action === 'choose') {
         const options: Electron.OpenDialogOptions = { title: request.scope === 'shared' ? 'Choose shared media folder for all avatars' : 'Choose this avatar’s media folder', properties: ['openDirectory'],
           defaultPath: (request.scope === 'shared' ? mediaFolders.view().shared : mediaFolders.view(request.avatarId).own)?.path ?? app.getPath('home') }
@@ -1669,6 +1669,7 @@ void app.whenReady().then(async () => {
       } else if (request.action === 'unlink') await mediaFolders.unlink(owner)
       else if (request.action === 'refresh') await mediaFolders.refresh()
       else if (request.action === 'save') await mediaFolders.saveCurrent()
+      else if (request.action === 'aliases') await mediaFolders.saveAliases(request.assetId, request.aliases, request.avatarId)
       reportFolderHealth()
       return mediaFolders.view(knownAvatar ? request.avatarId : undefined)
     },

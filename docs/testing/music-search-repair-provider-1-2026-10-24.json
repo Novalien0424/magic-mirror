@@ -1,0 +1,863 @@
+{
+  "runId": "2026-10-24T11-14-43-177Z",
+  "command": "node scripts/run-raven-conversation-qa.mjs --launch-agent --scenario phonetic_media",
+  "exit": 2,
+  "build": {
+    "version": 1,
+    "status": "complete",
+    "source": "5f18c797c4928b7e1af53969c7177dbb118e5200921e7537dd49b2e32e7abb0b",
+    "output": "3cf8e7239946c3e7e06d0e19ba457b7ef3cc469f6fcc1d7182cc95bce3561ec9",
+    "builtAt": "2026-10-24T11:14:34.529Z"
+  },
+  "provenance": {
+    "publishedConfigSha256": "336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d",
+    "avatarFingerprint": "e411c1ca986f21327d3b6fd3b6179f08a4b48d300c0dd8295f828ac6ece67c41",
+    "promptVariant": "trimmed",
+    "personaVariant": "published",
+    "reasoningEffort": "low",
+    "promptCatalogSha256": "b981d695ddb807766c319b956f3a1740ebe76456d9e99046e29005fdaa2fb45a",
+    "toolCatalogSha256": "93a71dafe8f51e0992eb1a0fe6c8c915400226f6a606e6b9333f376d1bfea496",
+    "judgeVersion": "raven-quality.v8",
+    "probeSha256": "a78a4fcb3fbfaf252430764bf7dd6ccaad2a8ffd83e9e194691edbe4df6ace25",
+    "judgeCriteriaSha256": "f75ddb31655d677239aef847b92ca4fa7b231c5c26185938bfa110ea0f2e5b73",
+    "modelTrial": null,
+    "name": "Raven",
+    "rig": "Raven · v11",
+    "modelId": "model-290002c3-7e18-466c-b547-d98a67e054eb",
+    "voice": "cedar",
+    "models": {
+      "realtimeDialogue": {
+        "modelId": "gpt-realtime-2.1-mini"
+      },
+      "inputTranscription": {
+        "modelId": "gpt-live-transcribe"
+      },
+      "memoryExtractor": {
+        "modelId": "gpt-6.1-sol"
+      }
+    },
+    "substitutions": [
+      "isolated identity database",
+      "synthetic media folders",
+      "synthetic camera frame",
+      "one fixture spell with mock hardware"
+    ],
+    "deviceRoute": "virtual_microphone_and_camera_fixture",
+    "imageRetention": "synthetic_or_public_fixture_qa_screenshots",
+    "portraitFixtureSha256": null,
+    "tvShutdown": "session_scoped_qa_exemption",
+    "humanAcousticAcceptance": "not_executed",
+    "portraitAcceptance": "not_executed",
+    "renderedPromptSha256": "1dcfcd84bd9c81ec0e053d3f8578a6eccacec99665464e30f8d3cad9b719b387",
+    "renderedPromptHashes": [
+      "1dcfcd84bd9c81ec0e053d3f8578a6eccacec99665464e30f8d3cad9b719b387"
+    ]
+  },
+  "results": {
+    "selection": "phonetic_media",
+    "running": false,
+    "passed": false,
+    "elapsedMs": 205485,
+    "results": [
+      {
+        "step": "phonetic_media_start",
+        "status": "passed",
+        "durationMs": 9600,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": [
+          "wake_worker_released"
+        ]
+      },
+      {
+        "step": "raven_visible",
+        "status": "passed",
+        "durationMs": 219,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": []
+      },
+      {
+        "step": "phonetic_media_natural_priestess",
+        "status": "passed",
+        "durationMs": 15351,
+        "calls": [
+          "find_media",
+          "play_media"
+        ],
+        "lookups": [
+          {
+            "kind": "all",
+            "words": 2,
+            "aliasExact": false,
+            "aliasContained": false,
+            "count": 1
+          }
+        ],
+        "language": {
+          "scripted": "chinese",
+          "asr": "chinese",
+          "replies": [
+            "chinese"
+          ],
+          "finalBeforeAudio": true,
+          "outputPhases": [
+            "commentary",
+            "unknown",
+            "unknown"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 1,
+          "audible": 1
+        },
+        "recognition": {
+          "exact": true,
+          "literalExact": true,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "media_completed",
+          "media_playing",
+          "memory_turn_settled",
+          "memory_control_excluded",
+          "memory_learning_control_excluded",
+          "media_requested",
+          "media_discovery_matches",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_missing_version",
+        "status": "passed",
+        "durationMs": 38647,
+        "calls": [
+          "find_media"
+        ],
+        "lookups": [
+          {
+            "kind": "music",
+            "words": 2,
+            "aliasExact": false,
+            "aliasContained": false,
+            "count": 0
+          }
+        ],
+        "language": {
+          "scripted": null,
+          "asr": null,
+          "replies": [
+            "chinese"
+          ],
+          "finalBeforeAudio": true,
+          "outputPhases": [
+            "unknown",
+            "final_answer"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 1,
+          "audible": 1
+        },
+        "recognition": {
+          "exact": false,
+          "literalExact": false,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "memory_turn_settled",
+          "memory_control_excluded",
+          "memory_learning_control_excluded",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_search_banter",
+        "status": "passed",
+        "durationMs": 28842,
+        "calls": [],
+        "lookups": [],
+        "language": {
+          "scripted": null,
+          "asr": null,
+          "replies": [
+            "chinese"
+          ],
+          "finalBeforeAudio": false,
+          "outputPhases": [
+            "final_answer"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 1,
+          "audible": 1
+        },
+        "recognition": {
+          "exact": true,
+          "literalExact": true,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "memory_turn_settled",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_priestess",
+        "status": "failed",
+        "reason": "raven_qa_tool_route",
+        "durationMs": 46527,
+        "calls": [
+          "find_media"
+        ],
+        "lookups": [
+          {
+            "kind": "music",
+            "words": 2,
+            "aliasExact": false,
+            "aliasContained": false,
+            "count": 0
+          }
+        ],
+        "language": {
+          "scripted": "chinese",
+          "asr": "chinese",
+          "replies": [
+            "chinese",
+            "chinese"
+          ],
+          "finalBeforeAudio": true,
+          "outputPhases": [
+            "commentary",
+            "unknown",
+            "final_answer"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 2,
+          "audible": 2
+        },
+        "recognition": {
+          "exact": true,
+          "literalExact": false,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "memory_turn_settled",
+          "memory_control_excluded",
+          "memory_learning_control_excluded",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_ambiguous_version",
+        "status": "passed",
+        "durationMs": 22938,
+        "calls": [
+          "find_media"
+        ],
+        "lookups": [
+          {
+            "kind": "all",
+            "words": 1,
+            "aliasExact": false,
+            "aliasContained": false,
+            "count": 2
+          }
+        ],
+        "language": {
+          "scripted": "chinese",
+          "asr": "chinese",
+          "replies": [
+            null,
+            "chinese"
+          ],
+          "finalBeforeAudio": true,
+          "outputPhases": [
+            "commentary",
+            "unknown",
+            "final_answer"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 2,
+          "audible": 2
+        },
+        "recognition": {
+          "exact": true,
+          "literalExact": true,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "memory_turn_settled",
+          "memory_control_excluded",
+          "memory_learning_control_excluded",
+          "media_discovery_ambiguous",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_choose_version",
+        "status": "passed",
+        "durationMs": 12691,
+        "calls": [
+          "play_media"
+        ],
+        "lookups": [],
+        "language": {
+          "scripted": "chinese",
+          "asr": "chinese",
+          "replies": [],
+          "finalBeforeAudio": false,
+          "outputPhases": [
+            "unknown"
+          ]
+        },
+        "utterances": {
+          "visitor": 1,
+          "avatar": 0,
+          "audible": 0
+        },
+        "recognition": {
+          "exact": true,
+          "literalExact": true,
+          "youtube": false,
+          "loop": false
+        },
+        "diagnostics": [
+          "media_completed",
+          "media_playing",
+          "memory_turn_settled",
+          "memory_control_excluded",
+          "memory_learning_control_excluded",
+          "media_requested",
+          "memory_guest_excluded",
+          "memory_turn_observed",
+          "memory_turn_unowned"
+        ]
+      },
+      {
+        "step": "phonetic_media_quality",
+        "status": "failed",
+        "reason": "raven_qa_quality_failed",
+        "durationMs": 26425,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": []
+      },
+      {
+        "step": "phonetic_media_release",
+        "status": "passed",
+        "durationMs": 824,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": [
+          "wake_worker_listening",
+          "wake_worker_acquiring",
+          "realtime_session_cleanup"
+        ]
+      },
+      {
+        "step": "real_audio_route",
+        "status": "passed",
+        "durationMs": 0,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": []
+      },
+      {
+        "step": "provider_errors",
+        "status": "passed",
+        "durationMs": 0,
+        "calls": [],
+        "lookups": [],
+        "utterances": {
+          "visitor": 0,
+          "avatar": 0,
+          "audible": 0
+        },
+        "diagnostics": []
+      }
+    ],
+    "quality": [
+      {
+        "version": "raven-quality.v8",
+        "scenarioId": "phonetic_media",
+        "passed": false,
+        "turns": [
+          {
+            "turnId": "natural_priestess",
+            "passed": true,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": true
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "label_clues",
+                "passed": true
+              }
+            ],
+            "scores": []
+          },
+          {
+            "turnId": "missing_version",
+            "passed": false,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": false
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "label_clues",
+                "passed": false
+              }
+            ],
+            "scores": [
+              {
+                "category": "relevance",
+                "score": 2
+              },
+              {
+                "category": "naturalness",
+                "score": 1
+              },
+              {
+                "category": "completeness",
+                "score": 2
+              },
+              {
+                "category": "character",
+                "score": 2
+              }
+            ]
+          },
+          {
+            "turnId": "search_banter",
+            "passed": false,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": true
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "character_boundary",
+                "passed": false
+              }
+            ],
+            "scores": [
+              {
+                "category": "relevance",
+                "score": 3
+              },
+              {
+                "category": "naturalness",
+                "score": 2
+              },
+              {
+                "category": "completeness",
+                "score": 3
+              },
+              {
+                "category": "character",
+                "score": 2
+              }
+            ]
+          },
+          {
+            "turnId": "priestess",
+            "passed": false,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": false
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "label_clues",
+                "passed": false
+              }
+            ],
+            "scores": []
+          },
+          {
+            "turnId": "ambiguous_version",
+            "passed": false,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": true
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "ambiguity",
+                "passed": true
+              }
+            ],
+            "scores": [
+              {
+                "category": "relevance",
+                "score": 4
+              },
+              {
+                "category": "naturalness",
+                "score": 2
+              },
+              {
+                "category": "completeness",
+                "score": 4
+              },
+              {
+                "category": "character",
+                "score": 2
+              }
+            ]
+          },
+          {
+            "turnId": "choose_version",
+            "passed": true,
+            "criteria": [
+              {
+                "category": "grounding",
+                "passed": true
+              },
+              {
+                "category": "tool_silence",
+                "passed": true
+              },
+              {
+                "category": "completion_truth",
+                "passed": true
+              },
+              {
+                "category": "label_clues",
+                "passed": true
+              }
+            ],
+            "scores": []
+          }
+        ]
+      }
+    ],
+    "qualityDiagnostics": [
+      {
+        "scenario": "phonetic_media",
+        "turn": "natural_priestess",
+        "codes": []
+      },
+      {
+        "scenario": "phonetic_media",
+        "turn": "missing_version",
+        "codes": [
+          "invented_fact",
+          "unnecessary_question"
+        ]
+      },
+      {
+        "scenario": "phonetic_media",
+        "turn": "search_banter",
+        "codes": [
+          "unnecessary_question"
+        ]
+      },
+      {
+        "scenario": "phonetic_media",
+        "turn": "priestess",
+        "codes": [
+          "invented_fact",
+          "incomplete_answer",
+          "unnecessary_question"
+        ]
+      },
+      {
+        "scenario": "phonetic_media",
+        "turn": "ambiguous_version",
+        "codes": []
+      },
+      {
+        "scenario": "phonetic_media",
+        "turn": "choose_version",
+        "codes": []
+      }
+    ],
+    "capabilityQuality": {},
+    "acousticEvidence": [],
+    "spellRecognition": [],
+    "controlSpeech": [],
+    "protocol": {
+      "inputText": 0,
+      "asr": 6,
+      "errors": [],
+      "speechPlayback": [
+        {
+          "stage": "phonetic_media_natural_priestess",
+          "expectedMs": 3596,
+          "wallMs": 3601,
+          "clockMs": 3600,
+          "state": "running",
+          "ended": true
+        },
+        {
+          "stage": "phonetic_media_missing_version",
+          "expectedMs": 2203,
+          "wallMs": 2206,
+          "clockMs": 2208,
+          "state": "running",
+          "ended": true
+        },
+        {
+          "stage": "phonetic_media_search_banter",
+          "expectedMs": 1936,
+          "wallMs": 1933,
+          "clockMs": 1936,
+          "state": "running",
+          "ended": true
+        },
+        {
+          "stage": "phonetic_media_priestess",
+          "expectedMs": 2958,
+          "wallMs": 2958,
+          "clockMs": 2960,
+          "state": "running",
+          "ended": true
+        },
+        {
+          "stage": "phonetic_media_ambiguous_version",
+          "expectedMs": 1751,
+          "wallMs": 1752,
+          "clockMs": 1755,
+          "state": "running",
+          "ended": true
+        },
+        {
+          "stage": "phonetic_media_choose_version",
+          "expectedMs": 2468,
+          "wallMs": 2469,
+          "clockMs": 2469,
+          "state": "running",
+          "ended": true
+        }
+      ],
+      "errorStages": [],
+      "repeatedDeletes": 0,
+      "duplicateTranscriptEvents": 0
+    },
+    "toolTimingEvidence": [
+      {
+        "stage": "phonetic_media_natural_priestess",
+        "quickToolCalls": 1,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      },
+      {
+        "stage": "phonetic_media_missing_version",
+        "quickToolCalls": 0,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      },
+      {
+        "stage": "phonetic_media_search_banter",
+        "quickToolCalls": 0,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      },
+      {
+        "stage": "phonetic_media_priestess",
+        "quickToolCalls": 0,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      },
+      {
+        "stage": "phonetic_media_ambiguous_version",
+        "quickToolCalls": 0,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      },
+      {
+        "stage": "phonetic_media_choose_version",
+        "quickToolCalls": 1,
+        "unattributedQuickToolCalls": 0,
+        "quickToolPreambles": 0
+      }
+    ],
+    "screenshots": 1,
+    "route": "synthetic_audio_real_webrtc_asr_tools_ipc_playback",
+    "transcriptRetention": "none",
+    "humanAcousticAcceptance": "not_executed"
+  },
+  "evidence": {
+    "platform": "darwin",
+    "mode": "raven_conversation",
+    "live": true,
+    "display": {
+      "count": 2,
+      "mirror": 3,
+      "width": 1080,
+      "height": 1920,
+      "verified": false,
+      "console": 5
+    },
+    "result": {
+      "status": "failed",
+      "reason": "phase4_qa_failed"
+    },
+    "evidence": [
+      {
+        "step": "speech_synthesis",
+        "status": "started"
+      },
+      {
+        "step": "phonetic_media_start",
+        "status": "passed"
+      },
+      {
+        "step": "raven_visible",
+        "status": "captured",
+        "file": "raven-live.png",
+        "sha256": "35cae64149b1f5b0c2808e70eb69fd08872c6774e16339e1a75346fb6a95c042"
+      },
+      {
+        "step": "raven_visible",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_natural_priestess",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_missing_version",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_search_banter",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_priestess",
+        "status": "failed",
+        "item": "raven_qa_tool_route"
+      },
+      {
+        "step": "phonetic_media_ambiguous_version",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_choose_version",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media_quality",
+        "status": "failed",
+        "item": "raven_qa_quality_failed"
+      },
+      {
+        "step": "phonetic_media_release",
+        "status": "passed"
+      },
+      {
+        "step": "phonetic_media",
+        "status": "completed",
+        "item": "duration_ms=202106"
+      },
+      {
+        "step": "real_audio_route",
+        "status": "passed"
+      },
+      {
+        "step": "provider_errors",
+        "status": "passed"
+      },
+      {
+        "step": "usage",
+        "status": "info",
+        "item": "realtime_tokens=42259"
+      }
+    ],
+    "humanAcceptance": "not_executed",
+    "physicalHardware": "not_executed"
+  },
+  "visualReview": "Raven correctly framed on portrait black background; no captions. This image does not establish voice quality."
+}
