@@ -1,0 +1,364 @@
+{
+  "baseline": "2b59a22",
+  "production_source": "f3957b0",
+  "fixtures": "synthetic name strings; not visitor transcripts or microphone recordings",
+  "measurements": [
+    {
+      "kind": "matrix",
+      "value": [
+        {
+          "id": "zh_exact",
+          "heard": "王曉明",
+          "listed": "王曉明",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "王曉明"
+          ]
+        },
+        {
+          "id": "zh_script",
+          "heard": "陈晓明",
+          "listed": "陳曉明",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "陳曉明"
+          ]
+        },
+        {
+          "id": "zh_homophone",
+          "heard": "王小明",
+          "listed": "王曉明",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "王曉明"
+          ]
+        },
+        {
+          "id": "zh_tone",
+          "heard": "陳晶",
+          "listed": "陳靜",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "陳靜"
+          ]
+        },
+        {
+          "id": "zh_in_ing",
+          "heard": "王小敏",
+          "listed": "王曉明",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "王曉明"
+          ]
+        },
+        {
+          "id": "zh_en_eng",
+          "heard": "程美玲",
+          "listed": "陳美玲",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "陳美玲"
+          ]
+        },
+        {
+          "id": "zh_given",
+          "heard": "曉明",
+          "listed": "王曉明",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "王曉明"
+          ]
+        },
+        {
+          "id": "zh_sibilant",
+          "heard": "張自豪",
+          "listed": "張志豪",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "zh_polyphonic_shan",
+          "heard": "山雅婷",
+          "listed": "單雅婷",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "zh_polyphonic_yue",
+          "heard": "岳明",
+          "listed": "樂明",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "zh_romanized",
+          "heard": "Wang Xiao Ming",
+          "listed": "王曉明",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "zh_unrelated",
+          "heard": "林雅婷",
+          "listed": "王曉明",
+          "expected": false,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_exact",
+          "heard": "Amy Chen",
+          "listed": "Amy Chen",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "Amy Chen"
+          ]
+        },
+        {
+          "id": "en_case",
+          "heard": "AMY CHEN",
+          "listed": "Amy Chen",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "Amy Chen"
+          ]
+        },
+        {
+          "id": "en_punctuation",
+          "heard": "OConnor",
+          "listed": "O’Connor",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "O’Connor"
+          ]
+        },
+        {
+          "id": "en_given",
+          "heard": "Amy",
+          "listed": "Amy Chen",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "Amy Chen"
+          ]
+        },
+        {
+          "id": "en_amy",
+          "heard": "Aimee",
+          "listed": "Amy",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_sean",
+          "heard": "Shawn",
+          "listed": "Sean",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_shaun",
+          "heard": "Shaun",
+          "listed": "Sean",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_stephen",
+          "heard": "Steven",
+          "listed": "Stephen",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_katherine",
+          "heard": "Catherine",
+          "listed": "Katherine",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_marc",
+          "heard": "Mark",
+          "listed": "Marc",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_jon",
+          "heard": "John",
+          "listed": "Jon",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_accent",
+          "heard": "Jose",
+          "listed": "José",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_spelling",
+          "heard": "A M Y",
+          "listed": "Amy",
+          "expected": true,
+          "found": true,
+          "candidates": [
+            "Amy"
+          ]
+        },
+        {
+          "id": "en_unrelated",
+          "heard": "John",
+          "listed": "Mary",
+          "expected": false,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "en_prefix",
+          "heard": "Jo",
+          "listed": "John",
+          "expected": false,
+          "found": false,
+          "candidates": []
+        },
+        {
+          "id": "bilingual_alias",
+          "heard": "艾米",
+          "listed": "Amy",
+          "expected": true,
+          "found": false,
+          "candidates": []
+        }
+      ]
+    },
+    {
+      "kind": "lexicon",
+      "value": {
+        "englishEntries": 126052,
+        "englishCoverage": {
+          "amy": true,
+          "aimee": true,
+          "sean": true,
+          "shawn": true,
+          "shaun": true,
+          "steven": true,
+          "stephen": true,
+          "catherine": true,
+          "katherine": true,
+          "john": true,
+          "jon": true
+        },
+        "chineseKeys": {
+          "單": [
+            "dan"
+          ],
+          "山": [
+            "shan"
+          ],
+          "樂": [
+            "le"
+          ],
+          "岳": [
+            "yue"
+          ]
+        }
+      }
+    },
+    {
+      "kind": "ambiguity",
+      "value": {
+        "toneAndNasal": [
+          "王小敏",
+          "王曉明",
+          "王曉銘"
+        ],
+        "givenName": [
+          "黃曉明",
+          "王曉明",
+          "李曉明"
+        ],
+        "englishSurname": [
+          "Amy Chen",
+          "David Chen",
+          "John Chen"
+        ],
+        "duplicate": [
+          "王曉明",
+          "王曉明",
+          "王曉明"
+        ]
+      }
+    },
+    {
+      "kind": "timing",
+      "value": {
+        "kind": "zh",
+        "entries": 1000,
+        "samples": 50,
+        "medianMs": 1.339125000000024,
+        "p95Ms": 2.089916999999957,
+        "maxMs": 4.6267500000000155
+      }
+    },
+    {
+      "kind": "timing",
+      "value": {
+        "kind": "en",
+        "entries": 1000,
+        "samples": 50,
+        "medianMs": 0.7142080000000419,
+        "p95Ms": 0.7458330000000046,
+        "maxMs": 0.7482090000000312
+      }
+    },
+    {
+      "kind": "denial",
+      "value": {
+        "firstCandidates": [
+          "黃曉明",
+          "王曉明",
+          "李曉明"
+        ],
+        "secondCandidates": [
+          "黃曉明",
+          "王曉明",
+          "李曉明"
+        ],
+        "firstDisplayed": "黃曉明",
+        "secondDisplayed": "黃曉明"
+      }
+    }
+  ],
+  "focusedTests": {
+    "command": "node node_modules/vitest/vitest.mjs run tests/unit/studio-guest-names.test.ts tests/unit/realtime-session-studio.test.ts tests/unit/studio-runtime.test.ts",
+    "passed": 78,
+    "failed": 0,
+    "exitCode": 0
+  },
+  "faultProbeOutput": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  11:24:11\n   Duration  413ms (transform 144ms, setup 0ms, import 174ms, tests 161ms, environment 0ms)\n\n"
+}

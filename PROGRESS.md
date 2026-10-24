@@ -1,10 +1,18 @@
 # Magic Mirror — current handoff, 2026-10-24
 
-Latest work is an **audit**, not a repair: the owner's field visit was stuck in
-name confirmation. Production remains `f3957b0` on `field/macmini-deploy`; the
+Latest work is a **guest-name matching audit**, following the field visit stuck
+in name confirmation. Production remains `f3957b0` on `field/macmini-deploy`; the
 previous media/picture delivery is preserved. [Previous handoff](docs/archive/progress-before-studio-audit-2026-10-24.md).
 
 ## Findings and next action
+
+**Bilingual guest matching is not ready for field acceptance.** Raven's active
+and draft name lists are empty. Chinese has limited homophone/nasal folding;
+English uses spelling/word matching and misses all seven selected English
+sound-alike pairs. Polyphonic readings/aliases are absent. Rejected ambiguous
+names return the same first suggestion; duplicates can consume all three slots.
+[UI location, measured cases and repair criteria](docs/testing/guest-name-audit-2026-10-24.md) ·
+[Synthetic matching measurements](docs/testing/guest-name-audit-2026-10-24.json).
 
 The 10:35–10:38 Taipei field log shows seven transcription events, three accepted
 name submissions, five rejected story-answer calls while confirmation remained
@@ -25,6 +33,12 @@ Do not clear the field issue because one synthetic visit passed.
 
 ## Fresh evidence
 
+- Guest-name audit: **78/78 focused tests, exit 0**, plus 28 synthetic matching
+  cases and Main denial/re-entry probes. Twelve of 25 intended positive probes
+  matched; three negative controls rejected. This is feature coverage, not an
+  accuracy rate. A warmed 1,000-name lookup takes roughly 1–2 ms. No new provider,
+  human-microphone or rendered UI run for this follow-up; unchanged UI evidence
+  below reused. Production code/settings unchanged.
 - Real provider `soul` journey: **26/26, exit 0**, one attempt. Name denial,
   correction, confirmation, all four answers/comments, generation, visible silver
   wing revision, transfer/printer no-op, verbatim farewell, Dormant, fresh restart
@@ -55,6 +69,8 @@ No test configuration was published to production. Both exact owned QA roots wer
 reviewed and deleted with the artifact tool: **178 files, 40,178,787 bytes**,
 excluding retained markers. Four task scratch/helper files and the temporary
 fault-probe test were removed. Owner deliverables and synced media untouched.
+The follow-up name-audit temporary test and its two scratch files were also
+removed after preserving synthetic results; no Electron/audio changes were made.
 
 Unrelated unresolved camera, human voice, physical hardware and second-computer
 acceptance remain in [TODO](TODO.md). [DECISIONS](DECISIONS.md) owns rulings.
