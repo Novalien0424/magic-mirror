@@ -1,0 +1,221 @@
+{
+  "platform": "darwin",
+  "mode": "editor",
+  "live": false,
+  "display": {
+    "count": 2,
+    "mirror": 3,
+    "width": 1080,
+    "height": 1920,
+    "verified": false,
+    "console": 5
+  },
+  "result": {
+    "status": "passed",
+    "motion_count": 0,
+    "expression_count": 0,
+    "scene_count": 0,
+    "visual_count": 0,
+    "screenshot_count": 17,
+    "music_analyser": "not_executed",
+    "console_check_count": 23
+  },
+  "evidence": [
+    {
+      "step": "journey_mirror_overview",
+      "status": "captured",
+      "file": "journey-01-mirror-conversation.png",
+      "sha256": "c4a26baa0e680035b0d17569e6506ad97e4232be79b613a59f06df747ec6d767"
+    },
+    {
+      "step": "journey_mirror_overview",
+      "status": "passed"
+    },
+    {
+      "step": "journey_avatar_skill_selection",
+      "status": "captured",
+      "file": "journey-skills-enabled.png",
+      "sha256": "c13fd2f0e892e56e83a2b016e194b57647cdccc5f586ace6fab3e3ca863a31d5"
+    },
+    {
+      "step": "journey_avatar_skill_selection",
+      "status": "passed"
+    },
+    {
+      "step": "journey_avatar_skill_save_reload_publish",
+      "status": "captured",
+      "file": "journey-skills-publish.png",
+      "sha256": "7dc2401dbee0eab09a810f1c0277348616ad802f69a8571394508b7a00751061"
+    },
+    {
+      "step": "journey_avatar_skill_save_reload_publish",
+      "status": "passed"
+    },
+    {
+      "step": "journey_avatar_skill_inspector",
+      "status": "passed"
+    },
+    {
+      "step": "journey_avatar_skill_disabled_on_mirror",
+      "status": "captured",
+      "file": "journey-skills-disabled-narrow.png",
+      "sha256": "f940bd6e9a767ebfffde18ea79c94762fdc207e40efc2e68ea371219cd2836b3"
+    },
+    {
+      "step": "journey_avatar_skill_disabled_on_mirror",
+      "status": "passed"
+    },
+    {
+      "step": "journey_avatar_skill_restore_original",
+      "status": "passed"
+    },
+    {
+      "step": "journey_mode_switch_dormant",
+      "status": "captured",
+      "file": "journey-02-mirror-studio-mode.png",
+      "sha256": "f66ec33f5e8147e7333871e775d18b33b9102de42185df528b81ae854b6d644f"
+    },
+    {
+      "step": "journey_mode_switch_dormant",
+      "status": "passed"
+    },
+    {
+      "step": "journey_studio_section",
+      "status": "captured",
+      "file": "journey-03-studio-section.png",
+      "sha256": "26128689bd538477ec5123cb6f84e96d30cc40fb4a7134511fb07b237a5d78be"
+    },
+    {
+      "step": "journey_studio_section",
+      "status": "passed"
+    },
+    {
+      "step": "journey_name_list",
+      "status": "captured",
+      "file": "journey-name-list.png",
+      "sha256": "2c1834de00547463201c48417cac8cd146f4d6b68f22205c7c0abade319abfa0"
+    },
+    {
+      "step": "journey_name_list",
+      "status": "passed"
+    },
+    {
+      "step": "journey_question_count_limits",
+      "status": "passed"
+    },
+    {
+      "step": "journey_start_character_ending",
+      "status": "captured",
+      "file": "journey-03b-character-ending.png",
+      "sha256": "0a0237da3312e4f042c6021190889e1a0e7c3fb3b895a063de270adcf181e7e2"
+    },
+    {
+      "step": "journey_start_character_ending",
+      "status": "passed"
+    },
+    {
+      "step": "journey_question_and_line",
+      "status": "passed"
+    },
+    {
+      "step": "journey_image_prompt_preview",
+      "status": "captured",
+      "file": "journey-04-image-prompt.png",
+      "sha256": "7fa5e2c431749546cba76ad108c80cf8d0bce388e347ad451f42b4649fe51aa1"
+    },
+    {
+      "step": "journey_image_prompt_preview",
+      "status": "passed"
+    },
+    {
+      "step": "journey_validation",
+      "status": "captured",
+      "file": "journey-05-validation.png",
+      "sha256": "6947d8413b8211e89d200fefb4adfe3dc4c6459be39ea4a8315aa345ecd2cf1e"
+    },
+    {
+      "step": "journey_validation",
+      "status": "passed"
+    },
+    {
+      "step": "journey_name_step_off",
+      "status": "captured",
+      "file": "journey-06-no-name.png",
+      "sha256": "f9525a9c99bc420bcaaa90c0f2e8a8e522ac11e0ce64006ba26e1573be3aa300"
+    },
+    {
+      "step": "journey_name_step_off",
+      "status": "passed"
+    },
+    {
+      "step": "journey_picture_controls",
+      "status": "passed"
+    },
+    {
+      "step": "journey_text_and_failure_lines",
+      "status": "passed"
+    },
+    {
+      "step": "journey_offer_prompt",
+      "status": "captured",
+      "file": "journey-07-stage-prompts.png",
+      "sha256": "b9ce7904692e04456098e3610ace5fab18084cdab8f78da8006126be4867c01b"
+    },
+    {
+      "step": "journey_offer_prompt",
+      "status": "passed"
+    },
+    {
+      "step": "journey_inspector",
+      "status": "passed"
+    },
+    {
+      "step": "journey_save_publish",
+      "status": "captured",
+      "file": "journey-08-publish-review.png",
+      "sha256": "a86202f4ebe6ea1a3b1f0122e2d09ddec7a381a89b76caf985a860fb87d568e0"
+    },
+    {
+      "step": "journey_save_publish",
+      "status": "passed"
+    },
+    {
+      "step": "journey_reload_and_restore_defaults",
+      "status": "captured",
+      "file": "journey-default-soul-script.png",
+      "sha256": "da56730a6536cfe63aa44f84b0ddb13eb45b41df3ac3635b8a0f3b02c738b783"
+    },
+    {
+      "step": "journey_reload_and_restore_defaults",
+      "status": "passed"
+    },
+    {
+      "step": "journey_studio_service_page",
+      "status": "captured",
+      "file": "journey-09-studio-service.png",
+      "sha256": "34ccb7949cf4178f5c7cf849833afe92991ec4889d1c172a70861930df6b539a"
+    },
+    {
+      "step": "journey_studio_service_page",
+      "status": "passed"
+    },
+    {
+      "step": "journey_narrow_layout",
+      "status": "captured",
+      "file": "journey-10-narrow-studio.png",
+      "sha256": "09a5910bd086eabb8e76d383e6f07c6d3f40c9660b1665fe744b81c7df40db73"
+    },
+    {
+      "step": "journey_narrow_layout",
+      "status": "captured",
+      "file": "journey-11-narrow-mirror.png",
+      "sha256": "4411e21966be055ab029e2940be0342a4e615f6d544eac838c4b9badc631846f"
+    },
+    {
+      "step": "journey_narrow_layout",
+      "status": "passed"
+    }
+  ],
+  "humanAcceptance": "not_executed",
+  "physicalHardware": "not_executed"
+}

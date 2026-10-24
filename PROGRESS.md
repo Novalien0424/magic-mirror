@@ -1,64 +1,60 @@
-# Magic Mirror — current handoff, 2026-10-23
+# Magic Mirror — current handoff, 2026-10-24
 
-Latest delivery on `field/macmini-deploy`: local **music, video and picture**
-discovery/presentation, with Mandarin sound-alike matching across all three types
-and the Console file search. The avatar page is now **Media**. PNG/JPG/JPEG/WebP
-pictures display uncropped for 15 seconds after actual decode; explicit loop holds
-until stopped. Completion, Stop and decode failure restore the avatar. Exact
-names/aliases outrank pronunciation; ambiguous versions/type mismatches remain
-choices. Missing pictures do not suggest YouTube. New image creation stays with
-the image skill. Spoken-command authorization is unchanged.
+Latest work is an **audit**, not a repair: the owner's field visit was stuck in
+name confirmation. Production remains `f3957b0` on `field/macmini-deploy`; the
+previous media/picture delivery is preserved. [Previous handoff](docs/archive/progress-before-studio-audit-2026-10-24.md).
 
-## Current runtime
+## Findings and next action
 
-Normal canonical LaunchAgent is **running in Conversation mode**. Mirror renderer
-ready **22:11:56 Taipei**; normal Start acknowledged mode success and TV awake at
-22:11:58. Portrait target T749/display 3 selected. Final build **22:11:20 Taipei**:
-source `afade18e8be63055`, output `b53cc6350748189d`; build verification passes.
+The 10:35–10:38 Taipei field log shows seven transcription events, three accepted
+name submissions, five rejected story-answer calls while confirmation remained
+pending, three repeats and **no accepted name confirmation**. Camera trouble
+caused two earlier mic recoveries; later speech did reach the session.
 
-Private tailnet Console **https://macmini-m6-33.tailf9113c.ts.net:8443/** returned
-HTTP 200 after deployment. Production own/shared libraries are ready with **4
-videos, 3 music files and 2 pictures**. The actual priestess track remains present.
-Raven v21 active/draft hashes equal task entry; Studio defaults and the unrelated
-saved draft are preserved. No test setting was published. Jabra **70.08%**,
-unmuted; read back after QA and normal startup. QA used 0.97% output and preserved
-mute/input gain/other outputs.
+Two fault probes confirmed recovery defects: repeat accepts no fresh visitor
+input, and a failed opening can leave no listening step/silence deadline while
+rejecting later names. Operator UI has no way to rescue that name step without
+abandoning the visit. Tool exposure/rejection recovery, fresh-turn guarding,
+failed-cue recovery and metadata-only diagnostics are the next bounded repair.
+Do not clear the field issue because one synthetic visit passed.
 
-## Evidence and boundaries
+[Full visitor/operator journey audit and repair criteria](docs/testing/studio-journey-audit-2026-10-24.md) ·
+[Provider metadata](docs/testing/studio-journey-audit-provider-2026-10-24.json) ·
+[Operator metadata](docs/testing/studio-journey-audit-operator-2026-10-24.json) ·
+[Retained failure/probe evidence](docs/testing/studio-journey-audit-failures-2026-10-24.txt).
 
-- Rendered canonical Electron QA: **21/21 checks, exit 0**, run
-  `2026-10-23T14-07-59-026Z`, 22:07:59–22:09:20 Taipei. Actual decoded
-  music/video/picture, pronunciation search in Console and authenticated lookup,
-  picture timing/loop/wake-stop/failure recovery, Save/apply/reload, BGM,
-  removed-file denial and black Dormant pixels. Portrait 1080×1920 verified.
-  Six relevant Console/media/returned-avatar screenshots inspected; 14 captured.
-- Focused unit checks **353/353**, additional renderer/Main/tool checks **90/90**;
-  after final image-miss routing/help changes, affected tests **155/155**. Node/web
-  typechecks and final build pass. Existing nonfatal build warnings unchanged.
-- Final build differs from rendered-QA build only in the reviewed image-miss
-  routing guard, tool guidance and help wording, verified with focused tests.
-  Display code is unchanged. QA used built-in Ren/synthetic local fixtures,
-  **not fresh Raven provider dialogue or human microphone/acoustic acceptance**.
-- The earlier provider spoken-quality failures remain open. The previous sample
-  proved correct priestess playback once, then exposed model type guessing; the
-  deterministic type-mismatch repair has integration evidence, not a new provider
-  pass. No third retry of that provider scenario was made.
+## Fresh evidence
 
-[Journey, implementation, self-review and QA](docs/testing/media-pictures-2026-10-23.md) ·
-[Development failure metadata](docs/testing/media-pictures-failures-2026-10-23.txt) ·
-[Previous pronunciation delivery/provider limits](docs/archive/progress-before-media-pictures-2026-10-23.md).
+- Real provider `soul` journey: **26/26, exit 0**, one attempt. Name denial,
+  correction, confirmation, all four answers/comments, generation, visible silver
+  wing revision, transfer/printer no-op, verbatim farewell, Dormant, fresh restart
+  and visitor-requested entry. Synthetic microphone/camera; not human acceptance.
+- Rendered operator journey: **23/23, exit 0**; Save/Publish/reload, name list,
+  question limits/order, prompts/picture controls, mode switching and narrow UI.
+  This runner does not execute a visitor conversation. Three UI screenshots and
+  both real generated-picture screenshots inspected.
+- Focused tests: **219 passed, one failed**. Failure is an old image-prompt text
+  assertion; current guard exists. Two temporary fault probes confirmed defects
+  and were removed. No source fix, typecheck/build rerun or deployment claimed.
+- Existing build verifies: source `afade18e8be63055`, output `b53cc6350748189d`,
+  built 2026-10-23 22:11:20 Taipei. Full hashes/commands are in the audit.
 
-## Cleanup and next action
+## Runtime and cleanup
 
-Reviewed and deleted the exact owned QA run through the artifact tool: **96 files,
-23,938,055 bytes**, excluding markers. Three task scratch/helper files removed.
-Owner deliverables, synced media and Drive upload untouched. Production active
-hash `336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d`,
+Normal Electron remains **stopped**, preserving the owner's 10:38:15 STOP state.
+Native black-HDMI cover process is active. Jabra output **70.08%** read back after
+both sequential QA runs; QA used 0.97% by device identity, with EXIT-trap resets.
+No mute/input-gain edits. Production tailnet Console is unavailable while the app
+is stopped; no second-computer test was performed.
+
+Production active/draft settings unchanged, including modern multicolour vector
+style, the four questions, and the unrelated saved draft:
+active `336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d`,
 draft `d9c62c4a890794741a0a95396585587422c46187b697fd2aba88cb5638758b07`.
+No test configuration was published to production. Both exact owned QA roots were
+reviewed and deleted with the artifact tool: **178 files, 40,178,787 bytes**,
+excluding retained markers. Four task scratch/helper files and the temporary
+fault-probe test were removed. Owner deliverables and synced media untouched.
 
-Next: owner voice acceptance of a music/video/picture title, including a similar
-pronunciation. Inspect fresh metadata if a request fails; do not equate this
-rendered pass with complete conversational-quality acceptance. Prior human-name,
-second-computer browser, Arducam-frame and deferred/no-op printing items remain
-in [TODO](TODO.md); [DECISIONS](DECISIONS.md) owns rulings. No phase promotion,
-new restart owner, dependency or runtime-model change.
+Unrelated unresolved camera, human voice, physical hardware and second-computer
+acceptance remain in [TODO](TODO.md). [DECISIONS](DECISIONS.md) owns rulings.

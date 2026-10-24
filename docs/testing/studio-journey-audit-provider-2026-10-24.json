@@ -1,0 +1,928 @@
+{
+  "selection": "portrait_studio",
+  "running": false,
+  "passed": true,
+  "elapsedMs": 405918,
+  "results": [
+    {
+      "step": "studio_mode_on",
+      "status": "passed",
+      "durationMs": 7,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_start",
+      "status": "passed",
+      "durationMs": 20135,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_wake_entry",
+      "status": "passed",
+      "durationMs": 5981,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_name",
+      "status": "passed",
+      "durationMs": 73673,
+      "calls": [
+        "studio_set_name"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 1,
+        "audible": 1
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": false,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_remote_console",
+      "status": "passed",
+      "durationMs": 305,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_answer_1",
+      "status": "passed",
+      "durationMs": 31259,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_2",
+      "status": "passed",
+      "durationMs": 29694,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_3",
+      "status": "passed",
+      "durationMs": 27594,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 2,
+        "audible": 2
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_answer_4",
+      "status": "passed",
+      "durationMs": 28609,
+      "calls": [
+        "studio_answer"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": null,
+        "asr": null,
+        "replies": [
+          "chinese",
+          null,
+          "chinese"
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 3,
+        "audible": 3
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_painting",
+      "status": "passed",
+      "durationMs": 213,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_deck_console_painting",
+      "status": "passed",
+      "durationMs": 304,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_reveal",
+      "status": "passed",
+      "durationMs": 50492,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 2,
+        "audible": 2
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_remote_console_reveal",
+      "status": "passed",
+      "durationMs": 631,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_change",
+      "status": "passed",
+      "durationMs": 62436,
+      "calls": [
+        "studio_revise"
+      ],
+      "lookups": [],
+      "language": {
+        "scripted": "chinese",
+        "asr": "chinese",
+        "replies": [
+          "chinese",
+          null,
+          null,
+          null
+        ],
+        "finalBeforeAudio": false,
+        "outputPhases": [
+          "unknown",
+          "final_answer",
+          "final_answer",
+          "final_answer",
+          "final_answer"
+        ]
+      },
+      "utterances": {
+        "visitor": 1,
+        "avatar": 4,
+        "audible": 4
+      },
+      "recognition": {
+        "exact": true,
+        "literalExact": true,
+        "youtube": false,
+        "loop": false
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned"
+      ]
+    },
+    {
+      "step": "studio_finish",
+      "status": "passed",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_farewell_dormant",
+      "status": "passed",
+      "durationMs": 3,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_language",
+      "status": "passed",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_comments_then_next_question",
+      "status": "passed",
+      "durationMs": 2,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_feedback_offer_spoken",
+      "status": "passed",
+      "durationMs": 1,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_picture_format",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_repaint_once",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "studio_restart_fresh_name",
+      "status": "passed",
+      "durationMs": 27465,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_conversation_request",
+      "status": "passed",
+      "durationMs": 42288,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "memory_turn_settled",
+        "memory_control_excluded",
+        "memory_learning_control_excluded",
+        "memory_guest_excluded",
+        "memory_turn_observed",
+        "memory_turn_unowned",
+        "wake_worker_ready",
+        "wake_worker_released"
+      ]
+    },
+    {
+      "step": "studio_release",
+      "status": "passed",
+      "durationMs": 821,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": [
+        "wake_worker_listening",
+        "wake_worker_acquiring",
+        "realtime_session_cleanup"
+      ]
+    },
+    {
+      "step": "real_audio_route",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    },
+    {
+      "step": "provider_errors",
+      "status": "passed",
+      "durationMs": 0,
+      "calls": [],
+      "lookups": [],
+      "utterances": {
+        "visitor": 0,
+        "avatar": 0,
+        "audible": 0
+      },
+      "diagnostics": []
+    }
+  ],
+  "quality": [],
+  "qualityDiagnostics": [],
+  "capabilityQuality": {},
+  "acousticEvidence": [],
+  "spellRecognition": [],
+  "controlSpeech": [],
+  "protocol": {
+    "inputText": 0,
+    "asr": 11,
+    "errors": [],
+    "speechPlayback": [
+      {
+        "stage": "studio_name",
+        "expectedMs": 1330,
+        "wallMs": 1355,
+        "clockMs": 1355,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_denial",
+        "expectedMs": 4035,
+        "wallMs": 4036,
+        "clockMs": 4037,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_again",
+        "expectedMs": 1330,
+        "wallMs": 1333,
+        "clockMs": 1333,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_name_correction_1",
+        "expectedMs": 3526,
+        "wallMs": 3527,
+        "clockMs": 3531,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_confirm",
+        "expectedMs": 1821,
+        "wallMs": 1824,
+        "clockMs": 1824,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_1",
+        "expectedMs": 8296,
+        "wallMs": 8304,
+        "clockMs": 8309,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_2",
+        "expectedMs": 6138,
+        "wallMs": 6139,
+        "clockMs": 6139,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_3",
+        "expectedMs": 5755,
+        "wallMs": 5758,
+        "clockMs": 5760,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_answer_4",
+        "expectedMs": 3327,
+        "wallMs": 3324,
+        "clockMs": 3328,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_change",
+        "expectedMs": 4303,
+        "wallMs": 4303,
+        "clockMs": 4304,
+        "state": "running",
+        "ended": true
+      },
+      {
+        "stage": "studio_request",
+        "expectedMs": 4410,
+        "wallMs": 4411,
+        "clockMs": 4411,
+        "state": "running",
+        "ended": true
+      }
+    ],
+    "errorStages": [],
+    "repeatedDeletes": 0,
+    "duplicateTranscriptEvents": 0
+  },
+  "toolTimingEvidence": [],
+  "screenshots": 6,
+  "studioEvidence": {
+    "phases": [
+      "name",
+      "confirm",
+      "name",
+      "confirm",
+      "confirm",
+      "question",
+      "question",
+      "question",
+      "question",
+      "painting",
+      "reveal",
+      "revising",
+      "reveal",
+      "keepsake",
+      null,
+      "name",
+      null,
+      "name"
+    ],
+    "events": [
+      "enter",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "ready",
+      "step",
+      "ready",
+      "step",
+      "keepsake_done",
+      "enter",
+      "closed"
+    ],
+    "main": [
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_visitor",
+        "status": "info"
+      },
+      {
+        "reason": "studio_session_ended",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_started_session_default",
+        "status": "info"
+      },
+      {
+        "reason": "studio_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_transfer_completed",
+        "status": "info"
+      },
+      {
+        "reason": "studio_printer_deferred",
+        "status": "info"
+      },
+      {
+        "reason": "studio_finished",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_ready",
+        "status": "info",
+        "durationMs": 29026
+      },
+      {
+        "reason": "studio_revision_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_revision_requested",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_image_ready",
+        "status": "info",
+        "durationMs": 37236
+      },
+      {
+        "reason": "studio_painting_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      },
+      {
+        "reason": "studio_wait_started",
+        "status": "info"
+      },
+      {
+        "reason": "studio_answer_recorded",
+        "status": "info"
+      }
+    ],
+    "reveals": 2,
+    "deletedItems": 40,
+    "imagesAttached": 0,
+    "nameOnly": false,
+    "story": "soul",
+    "microphones": [
+      {
+        "stage": "studio_name",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_name_denial",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_name_again",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_name_correction_1",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_confirm",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_answer_1",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_answer_2",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_answer_3",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_answer_4",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_change",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      },
+      {
+        "stage": "studio_request",
+        "tracks": 1,
+        "enabled": true,
+        "live": true,
+        "muted": false,
+        "recoveries": 0
+      }
+    ],
+    "nameCorrections": 1,
+    "nameAsIntended": true,
+    "pictures": [
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      },
+      {
+        "type": "image/png",
+        "width": 1254,
+        "height": 1254,
+        "cornerAlpha": 0
+      }
+    ],
+    "repaintLines": [
+      1
+    ],
+    "farewellVerbatim": true,
+    "language": {
+      "expected": "zh",
+      "lines": 23,
+      "mismatched": 0,
+      "mismatchKinds": []
+    },
+    "commentShape": [
+      {
+        "sentences": 1,
+        "characters": 24,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 2,
+        "characters": 32,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 29,
+        "question": false,
+        "delivered": true
+      },
+      {
+        "sentences": 1,
+        "characters": 29,
+        "question": false,
+        "delivered": true
+      }
+    ],
+    "feedbackOffer": {
+      "audibleSegments": 2,
+      "segmentCharacters": [
+        15,
+        30
+      ],
+      "expectedCharacters": 30,
+      "exact": true
+    }
+  },
+  "route": "synthetic_audio_real_webrtc_asr_tools_ipc_playback",
+  "transcriptRetention": "none",
+  "humanAcousticAcceptance": "not_executed"
+}
