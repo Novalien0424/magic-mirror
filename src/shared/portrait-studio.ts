@@ -183,8 +183,9 @@ export interface StudioSettings {
   screenText?: Partial<Record<StudioScreenKey, StudioBilingual>>
   failureLines?: Partial<Record<StudioFailureKey, StudioBilingual>>
 }
-/** Operator-entered event guests. Stays in Main; never sent to renderers or the model as a list. */
-export interface GuestListSettings { names: string[]; match: GuestMatchMode }
+/** Operator-authored in Console; the list and aliases never enter Mirror/model session settings. */
+export interface GuestNameAliases { name: string; aliases: string[] }
+export interface GuestListSettings { names: string[]; match: GuestMatchMode; aliases?: GuestNameAliases[] }
 export interface AvatarExperience {
   defaultMode: ExperienceMode
   visitorMayRequest: boolean
@@ -240,6 +241,16 @@ export function studioText(value: unknown, max: number, allowEmpty = false, mult
   return typeof value === 'string' && value.length <= max && !(multiline ? controlExceptNewline : control).test(value) && (allowEmpty || value.trim().length > 0)
 }
 export function validGuestName(value: unknown): value is string { return studioText(value, 40) && value.trim() === value }
+
+export function parseGuestSettings(value: unknown): GuestListSettings | null {
+  if (!record(value) || !exact(value, ['names', 'match', ...('aliases' in value ? ['aliases'] : [])]) || !['off', 'prefer', 'only'].includes(value.match as string)
+    || !Array.isArray(value.names) || value.names.length > STUDIO_MAX_GUESTS || !value.names.every(validGuestName)) return null
+  if (value.aliases !== undefined && (!Array.isArray(value.aliases) || value.aliases.length > STUDIO_MAX_GUESTS
+    || !value.aliases.every(entry => record(entry) && exact(entry, ['name', 'aliases']) && validGuestName(entry.name)
+      && (value.names as string[]).includes(entry.name) && Array.isArray(entry.aliases) && entry.aliases.length > 0
+      && entry.aliases.length <= 8 && entry.aliases.every(validGuestName)))) return null
+  return structuredClone(value) as unknown as GuestListSettings
+}
 
 function parseStudioPrompts(value: unknown): StudioPrompts | null {
   if (!record(value)) return null
@@ -313,8 +324,7 @@ export function parseAvatarExperience(value: unknown): AvatarExperience | null {
   const studio = parseStudioSettings(value.studio)
   if ((value.defaultMode !== 'conversation' && value.defaultMode !== 'portrait_studio') || typeof value.visitorMayRequest !== 'boolean'
     || (value.afterPortrait !== 'continue' && value.afterPortrait !== 'farewell') || !studio
-    || !record(guests) || !exact(guests, ['names', 'match']) || !['off', 'prefer', 'only'].includes(guests.match as string)
-    || !Array.isArray(guests.names) || guests.names.length > STUDIO_MAX_GUESTS || !guests.names.every(validGuestName)) return null
+    || !parseGuestSettings(guests)) return null
   return { ...structuredClone(value), studio } as unknown as AvatarExperience
 }
 
@@ -338,6 +348,7 @@ export function parseSessionExperience(value: unknown): SessionExperience | null
 export type StudioRequest =
   | { action: 'start'; source: 'visitor' }
   | { action: 'set_name'; name: string; confirmed: boolean; language: StudioLanguage }
+  | { action: 'confirm_name'; stepId: string }
   | { action: 'reject_name' }
   | { action: 'repeat' }
   | { action: 'language'; language: StudioLanguage }
@@ -352,7 +363,7 @@ export function parseStudioRequest(value: unknown): StudioRequest | null {
   switch (value.action) {
     case 'language': return exact(value, ['action', 'language']) && (value.language === 'zh' || value.language === 'en')
       ? { action: 'language', language: value.language } : null
-    case 'step_ready': case 'step_activity': case 'paint': case 'deliver':
+    case 'step_ready': case 'step_activity': case 'paint': case 'deliver': case 'confirm_name':
       return exact(value, ['action', 'stepId']) && validStepId(value.stepId) ? { action: value.action, stepId: value.stepId } : null
     case 'start': return exact(value, ['action', 'source']) && value.source === 'visitor' ? { action: 'start', source: value.source } : null
     case 'set_name': return exact(value, ['action', 'name', 'confirmed', 'language']) && studioText(value.name, 40) && typeof value.confirmed === 'boolean'
@@ -509,6 +520,7 @@ export const STUDIO_MIRROR_CHANNEL = 'mirror:studio'
 export const STUDIO_CONSOLE_CHANNEL = 'console:studio'
 export type StudioAuthStatus = 'signed_in' | 'missing' | 'invalid' | 'expired' | 'refresh_failed'
 export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'test' } | { action: 'mode'; mode: MirrorMode }
+  | { action: 'match_name'; name: string; guests: GuestListSettings }
 export interface StudioConsoleStatus {
   imageSkillEnabled?: boolean
   auth: StudioAuthStatus
@@ -526,11 +538,17 @@ export interface StudioConsoleResult {
   action?: { status: StudioOutcome; code: string }
   /** Test portrait for the Console only; never saved. */
   test?: { ok: boolean; code?: string; elapsedMs: number; dataUrl?: string }
+  nameMatches?: string[]
 }
 
 export function parseStudioConsoleCommand(value: unknown): StudioConsoleCommand | null {
+  if (record(value) && value.action === 'match_name') {
+    const guests = parseGuestSettings(value.guests)
+    return exact(value, ['action', 'name', 'guests']) && validGuestName(value.name) && guests
+      ? { action: 'match_name', name: value.name, guests } : null
+  }
   if (record(value) && value.action === 'mode') return exact(value, ['action', 'mode']) && (value.mode === 'conversation' || value.mode === 'studio')
     ? { action: 'mode', mode: value.mode } : null
   return record(value) && exact(value, ['action']) && ['status', 'start', 'exit', 'test'].includes(value.action as string)
-    ? { action: value.action as Exclude<StudioConsoleCommand['action'], 'mode'> } : null
+    ? { action: value.action as Exclude<StudioConsoleCommand['action'], 'mode' | 'match_name'> } : null
 }

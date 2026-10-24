@@ -8,7 +8,7 @@ import {
   STUDIO_PROMPT_PLACEHOLDERS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_INFO, STUDIO_SCREEN_KEYS, STUDIO_SLOTS, studioFailureIssue,
   studioImageLineIssue, studioImagePromptIssue, studioNameFontIssue, studioPictureType, studioPromptIssue, studioScreenIssue, validGuestName,
   STUDIO_NAME_FONT_MAX, STUDIO_QUESTION_MAX, type StudioPictureType,
-  type AvatarExperience, type GuestMatchMode, type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage,
+  type AvatarExperience, type GuestMatchMode, type GuestNameAliases, type GuestListSettings, type StudioFailureKey, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage,
   type StudioQuality, type StudioQuestion, type StudioScreenKey, type StudioSettings, type StudioSlot,
 } from '../../shared/portrait-studio'
 import {
@@ -148,11 +148,28 @@ export function parseGuestList(text: string): GuestListParse {
   text.split(/\r\n|\r|\n/).forEach((line, index) => {
     const name = line.trim()
     if (!name) return
-    names.push(name)
+    if (!names.includes(name)) names.push(name)
     if (!validGuestName(name)) issues.push(`Line ${index + 1} ${guestNameProblem(name)}`)
   })
   if (names.length > STUDIO_MAX_GUESTS) issues.unshift(`The list has ${names.length.toLocaleString('en-US')} names; the limit is ${STUDIO_MAX_GUESTS.toLocaleString('en-US')}.`)
   return { names, issues }
+}
+
+export function parseGuestAliases(text: string): GuestNameAliases[] {
+  return text.split(/\r\n|\r|\n/).filter(line => line.trim()).map(line => {
+    const [name = '', ...aliases] = line.split('|').map(part => part.trim())
+    return { name, aliases: [...new Set(aliases.filter(Boolean))] }
+  })
+}
+const aliasText = (aliases: readonly GuestNameAliases[]) => aliases.map(entry => [entry.name, ...entry.aliases].join(' | ')).join('\n')
+export function guestAliasIssue(aliases: readonly GuestNameAliases[], names: readonly string[]): string {
+  if (aliases.length > STUDIO_MAX_GUESTS) return 'Use no more than 1,000 alias lines.'
+  for (const [i, entry] of aliases.entries()) {
+    if (!names.includes(entry.name)) return `Alias line ${i + 1}: add the correct name to Guest names first.`
+    if (!entry.aliases.length || entry.aliases.length > 8 || !entry.aliases.every(validGuestName))
+      return `Alias line ${i + 1}: use Correct name | Alias, with 1–8 aliases of up to 40 characters each.`
+  }
+  return ''
 }
 
 const guestNameProblem = (name: string): string => name.length > 40 ? `is longer than 40 characters (${name.length}).` : 'contains a tab or another control character.'
@@ -203,6 +220,7 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
   add('revisionsAllowed', wholeIssue(studio.revisionsAllowed, 0, 3, 'changes'))
   add('holdSeconds', wholeIssue(studio.holdSeconds, 10, 300, 'seconds'))
   const guests = experience.guests.names
+  add('guests.aliases', guestAliasIssue(experience.guests.aliases ?? [], guests))
   // An empty list cannot restrict names, so Only guests on the list would accept anyone.
   if (studio.askName !== false && experience.guests.match === 'only' && guests.length === 0) add('guests.names', 'Only accept listed names needs at least one name. Add names or choose Suggest names from the list.')
   if (guests.length > STUDIO_MAX_GUESTS || !guests.every(validGuestName)) {
@@ -318,7 +336,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
       </div>
       <fieldset disabled={disabled || !askName} aria-label="Name list">
         <legend>Name list for confirmation</legend>
-        <p className="console__muted">Enter names with their correct spelling, one per line. The avatar searches its local list by spelling and pronunciation, reads back a suggested name, and waits for the visitor to confirm. A correction is read back again.</p>
+        <p className="console__muted">Enter names with their correct spelling, one per line. Chinese and English pronunciation matching suggests names for confirmation. Rejected suggestions are skipped for the rest of the visit. Use aliases for unusual readings or bilingual names.</p>
         <div className="experiences-editor__grid experiences-editor__grid--guests">
           <HelpField help={FIELD_HELP.guestMatch}>Name matching<select aria-label="Name matching" value={experience.guests.match}
             onChange={e => { const match = (['off', 'prefer', 'only'] as const).find(m => m === e.currentTarget.value); if (match) set({ ...experience, guests: { ...experience.guests, match } }) }}>
@@ -327,6 +345,9 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
           <GuestListField names={experience.guests.names} fallbackIssue={issues['guests.names']}
             onNames={names => set({ ...experience, guests: { ...experience.guests, names } })} />
         </div>
+        <GuestAliasesField names={experience.guests.names} aliases={experience.guests.aliases ?? []}
+          onAliases={aliases => set({ ...experience, guests: { ...experience.guests, aliases } })} />
+        <GuestNamePreview guests={experience.guests} />
         <p className="console__muted">{!askName ? 'Turn on “Ask for a name first” to use this list.' : experience.guests.match === 'off' ? 'Matching is off; saved names are kept for later.' : !experience.guests.names.length ? 'The list is empty. Add names to enable suggestions.' : experience.guests.match === 'only' ? 'Unlisted names are asked again. After 30 seconds of silence, the visit continues as 無名之人.' : 'If no name matches, the avatar confirms the name the visitor gives.'} Save and publish to apply the list to the next visit. Names are used for this visit’s caption, not private memory access.</p>
       </fieldset>
       <ol className="experiences-editor__questions">
@@ -621,4 +642,38 @@ export function GuestListField({ names, onNames, fallbackIssue }: {
       aria-label="Guest names, one per line" value={shown}
       onChange={e => { const value = e.currentTarget.value; setText(value); onNames(parseGuestList(value).names) }} />
   </HelpField>
+}
+
+function GuestAliasesField({ names, aliases, onAliases }: { names: readonly string[]; aliases: GuestNameAliases[]; onAliases(value: GuestNameAliases[]): void }): React.JSX.Element {
+  const [text, setText] = useState(() => aliasText(aliases))
+  const shown = JSON.stringify(parseGuestAliases(text)) === JSON.stringify(aliases) ? text : aliasText(aliases)
+  return <HelpField help={FIELD_HELP.guestAliases} error={guestAliasIssue(aliases, names) || undefined}>
+    Pronunciation and bilingual aliases (optional)<textarea rows={3} spellCheck={false} aria-label="Name aliases, one per line"
+      placeholder={'單雅婷 | 山雅婷 | Shan Ya Ting\nAmy | Aimee | 艾米'} value={shown}
+      onChange={event => { const value = event.currentTarget.value; setText(value); onAliases(parseGuestAliases(value)) }} />
+  </HelpField>
+}
+
+function GuestNamePreview({ guests }: { guests: GuestListSettings }): React.JSX.Element {
+  const [name, setName] = useState(''), [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ key: string; text: string }>()
+  const key = JSON.stringify([name.trim(), guests])
+  const test = async () => {
+    setBusy(true)
+    try {
+      const bridge = window.magicMirror
+      if (!bridge || !('simulate' in bridge) || !bridge.studio) throw Error('studio_console_unavailable')
+      const response = await bridge.studio({ action: 'match_name', name: name.trim(), guests })
+      setResult({ key, text: response.ok ? response.value.nameMatches?.length ? `Suggestions, in order: ${response.value.nameMatches.join('、')}`
+        : guests.match === 'off' ? 'Matching is off.' : 'No match. Add an alias or check the name list.' : 'Could not test these names. Check the fields and try again.' })
+    } catch { setResult({ key, text: 'Name matching test is unavailable. Try again.' }) }
+    finally { setBusy(false) }
+  }
+  return <div>
+    <HelpField help={FIELD_HELP.guestNameTest}>Test a heard name<input aria-label="Test a heard name" value={name} maxLength={40}
+      onChange={event => setName(event.currentTarget.value)} /></HelpField>
+    <button type="button" disabled={busy || !validGuestName(name.trim()) || !guests.names.length || !!guestAliasIssue(guests.aliases ?? [], guests.names)}
+      onClick={() => { void test() }}>{busy ? 'Testing name…' : 'Test name matching'}</button>
+    <p role="status" aria-live="polite">{result?.key === key ? result.text : 'Test the current edits without saving, publishing or starting a visit.'}</p>
+  </div>
 }

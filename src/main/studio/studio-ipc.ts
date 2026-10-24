@@ -11,6 +11,7 @@ import type { ConsoleResponse } from '../../shared/console-types'
 import { buildPortraitPrompt } from './prompt-builder'
 import { createStudioRuntime, type KeepsakeSink, type StudioIdentity, type StudioStartSource } from './studio-runtime'
 import { deferredPrinterSkill } from './printer-skill'
+import { matchGuestNames } from './guest-names'
 
 interface Registrar { handle(channel: string, handler: (event: unknown, ...args: unknown[]) => unknown): void }
 interface SnapshotLike { readonly lifecycle: string; readonly realtimeSessionId: string | null; readonly sessionGeneration: number }
@@ -180,6 +181,8 @@ export function registerStudioIpc(deps: {
     const command = parseStudioConsoleCommand(args[0])
     if (args.length !== 1 || !command) { deps.payloadRejected(); return { ok: false, error: 'console_request_invalid', reason: 'cause=payload_schema_invalid' } }
     if (command.action === 'status') return { ok: true, value: { status: await status() } }
+    if (command.action === 'match_name') return { ok: true, value: { status: await status(), nameMatches: command.guests.match === 'off' ? []
+      : matchGuestNames(command.name, command.guests.names, 3, command.guests.aliases) } }
     if (command.action === 'exit') {
       const active = runtime.isActive()
       exit('studio_operator_exit')

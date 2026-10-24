@@ -138,9 +138,11 @@ export const FIELD_HELP = {
   studioQuality: 'Image quality for each picture. Fast paints quickest; Best takes the longest. Use Generate test picture after publishing to check timing and detail on this Mac’s ChatGPT plan.',
   studioRevisions: 'How many changes a visitor may request after seeing the picture, from 0 to 3. Each change repaints it, so the visitor waits again. 0 shows the first picture as final.',
   studioHoldSeconds: "Legacy setting retained for saved configurations. The current Studio ending uses transfer, printer handoff and farewell without a timed photo hold.",
-  guestMatch: 'Off ignores the list. Suggest names from the list uses matching spellings but also accepts unlisted names. Only accept listed names asks again when no listed name matches. Matching compares spelling and pronunciation; the visitor must still confirm. Silence for 30 seconds continues as 無名之人 in either mode.',
+  guestMatch: 'Off ignores the list. Suggest names from the list also accepts unlisted names. Only accept listed names asks again on a miss. Chinese syllables and English dictionary pronunciations produce suggestions, never automatic confirmation. Rejected names are skipped for the visit. Silence for 30 seconds continues as 無名之人.',
   studioStagePrompt: 'Write it in English or Chinese; the avatar still replies in the visitor’s language. Keep every required placeholder: the mirror replaces it with the live value, such as the visitor’s name or the current question. Reset to default restores the tested wording. Save, check and publish to use it in the next visit.',
   guestNames: 'Event guest names, one per line, up to 1,000 names of 40 characters each. Blank lines are ignored. The list stays on this Mac; the model only ever sees up to three names that match what the visitor said.',
+  guestAliases: 'Optional: Correct name | Spoken alias | Another alias, one guest per line. Add the correct name to Guest names first. Use up to eight aliases, each up to 40 characters. For a special Chinese reading, enter a same-sounding Chinese spelling or spaced pinyin. For bilingual names, enter the English or Chinese equivalent explicitly. The caption keeps the correct name.',
+  guestNameTest: 'Enter a spelling the microphone might hear, then test the current name list and aliases. This uses the real local matcher without saving or publishing. It tests text-to-name suggestions, not microphone recognition. At most three suggestions appear; the visitor must still confirm during a visit.',
 } as const
 
 export const VOICE_FIELD_HELP = {

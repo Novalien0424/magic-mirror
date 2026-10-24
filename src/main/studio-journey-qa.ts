@@ -183,6 +183,23 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("set(byLabel('Name matching'), 'off')")
     await wait("return studioSection().textContent.includes('Matching is off; saved names are kept for later.') && byLabel('Guest names, one per line').value.includes('Amy Chen')")
     await edit("set(byLabel('Name matching'), 'prefer')")
+    step = 'journey_name_alias_validation'
+    await edit("set(byLabel('Name aliases, one per line'), 'Missing | Amy')")
+    await wait("return studioSection().textContent.includes('add the correct name')")
+    await edit("set(byLabel('Name aliases, one per line'), 'Amy Chen | 艾米 | Aimee Chen')")
+    step = 'journey_name_alias_preview'
+    await edit("set(byLabel('Test a heard name'), '艾米')")
+    await wait("return !button('Test name matching').disabled")
+    await edit("click('Test name matching')")
+    await wait("return studioSection().textContent.includes('Suggestions, in order: Amy Chen')")
+    await edit("set(byLabel('Test a heard name'), 'Aimee')")
+    await wait("return !studioSection().textContent.includes('Suggestions, in order:')")
+    await edit("click('Test name matching')")
+    await wait("return studioSection().textContent.includes('Suggestions, in order: Amy Chen')")
+    await edit("set(byLabel('Test a heard name'), '王小明')")
+    await wait("return !button('Test name matching').disabled")
+    await edit("click('Test name matching')")
+    await wait("return studioSection().textContent.includes('Suggestions, in order: 王曉明')")
     await shot('journey-name-list.png', 'fieldset[aria-label="Name list"]'); pass()
 
     step = 'journey_start_character_ending'
@@ -318,6 +335,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
       const avatar = r.value.active.avatarCatalog.avatars.find(a => a.experience?.studio?.questions?.[0]?.imageLine === 'Tarot card figure: {{answer}}.');
       const s = avatar?.experience?.studio;
       return !!s && avatar.experience.guests.match === 'prefer' && avatar.experience.guests.names.join('|') === '王曉明|林美玲|Amy Chen'
+        && avatar.experience.guests.aliases?.[0]?.aliases.join('|') === '艾米|Aimee Chen'
         && s.imagePrompt?.frame?.startsWith('Create one tarot card illustration')
         && s.prompts?.comment === '用一句話簡短回應。訪客回答：{{answer}}'
         && s.nameFont === 'gold brush lettering' && s.nameLettering === 'painted' && s.quality === 'high' && s.revisionsAllowed === 2 && s.pictureType === 'sticker'
@@ -334,8 +352,10 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await edit("section('Interactive Studio').click()")
     await wait(`return ${field('Studio start script')}?.value === '歡迎來到測試工作室。[pause=1s]我們開始吧。' && byLabel('Question 1 in Traditional Chinese').value.includes('塔羅牌')`)
     await wait("return byLabel('Name matching').value === 'prefer' && byLabel('Guest names, one per line').value === '王曉明\\n林美玲\\nAmy Chen'")
+    await wait("return byLabel('Name aliases, one per line').value === 'Amy Chen | 艾米 | Aimee Chen'")
     await edit("click('Restore default script and questions')")
     await wait("return byLabel('Guest names, one per line').value.includes('Amy Chen')")
+    await edit("set(byLabel('Name aliases, one per line'), '')")
     await edit("set(byLabel('Guest names, one per line'), '')")
     await wait(`return ${field('Studio start script')}.value.includes('捨棄你的肉身') && ${field('Studio farewell')}.value === '願你的靈魂順利穿越'
       && byLabel('Name question in Traditional Chinese').value === '準備好的話就告訴我你的名字' && byLabel('Question 4 in Traditional Chinese').value.includes('生活裡多一點什麼')`)
@@ -374,6 +394,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
   } catch (error) {
     input.onEvidence({ step, status: 'failed', item: error instanceof Error ? error.message.replace(/[^\w:,-]/g, '_').slice(0, 160) : 'studio_journey_failed' })
     // The rendered state at the failure is the fastest reproduction aid (synthetic data only).
+    if (step.startsWith('journey_name_')) await evaluate("document.querySelector('fieldset[aria-label=\"Name list\"]')?.scrollIntoView({ block: 'start' })").catch(() => undefined)
     await capture(input.console, input.outputDir, `journey-failure-${step}.png`).catch(() => undefined)
     throw error
   }

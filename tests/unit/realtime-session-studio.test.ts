@@ -398,7 +398,7 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(conversation!.tools.map(t => t.name)).toContain('start_portrait_studio')
     expect(conversation!.tools.map(t => t.name)).not.toContain('studio_answer')
     expect(studio!.name).toBe('magic-mirror-portrait-studio')
-    expect(studio!.tools.map(t => t.name).sort()).toEqual(['return_to_dormant', 'set_reply_language', 'studio_answer', 'studio_exit', 'studio_finish', 'studio_reject_name', 'studio_repeat_question', 'studio_revise', 'studio_set_name'])
+    expect(studio!.tools.map(t => t.name).sort()).toEqual(['return_to_dormant', 'set_reply_language', 'studio_answer', 'studio_confirm_name', 'studio_exit', 'studio_finish', 'studio_reject_name', 'studio_repeat_question', 'studio_revise', 'studio_set_name'])
     expect(studio!.instructions).toContain('# Interactive Studio')
     expect(studio!.instructions).toContain('準備好的話就告訴我你的名字')
   })
@@ -843,6 +843,56 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(await setName('王曉明', true)).toBe('studio_name_confirmed')
     expect(main.phase()).toBe('question')
     expect(requests.filter(r => r.action === 'set_name').map(r => (r as { confirmed: boolean }).confirmed)).toEqual([false, false, false, false, false, false, true])
+    main.close('test_complete'); await handle.close('test_complete')
+  })
+
+  it('confirms the application-owned spelling after fresh agreement, and clears stale confirmation after denial', async () => {
+    const p = probe(), experience = defaultExperience()
+    experience.guests = { names: ['Sean', 'Shawn'], match: 'only' }
+    let mirror: ReturnType<typeof createRealtimeSession>
+    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }),
+      dispatch: command => { if (command.type === 'studio_event') mirror?.studioEvent?.(command.event, ID); return true }, activity: vi.fn(), report: vi.fn() })
+    const { handle, requests } = session(p, r => r.action === 'start' ? main.start(ID, experience, r.source) : main.handle(r, ID))
+    mirror = handle
+    const played = new Set<unknown>()
+    const finishSpeech = async () => {
+      for (let pass = 0; pass < 2; pass++) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        for (const response of responses(p)) {
+          if (played.has(response)) continue
+          played.add(response)
+          const id = `receipt-cue-${played.size}`
+          p.event({ type: 'response.created', response: { id, metadata: response.metadata } })
+          p.event({ type: 'output_audio_buffer.started', response_id: id })
+          p.event({ type: 'response.done', response: { id, status: 'completed', output: [], metadata: response.metadata } })
+          p.event({ type: 'output_audio_buffer.stopped', response_id: id })
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
+    const invoke = async (name: string, args = {}) => {
+      const result = await call(tool(p.agents[1]!, name), args) as { studio?: StudioReply; content?: { studio: StudioReply } }
+      return (result.content ?? result).studio!
+    }
+    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
+    await finishSpeech()
+    expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-name' })
+    expect((await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).candidates).toEqual(['Sean', 'Shawn'])
+    await finishSpeech()
+    expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
+    expect((await invoke('studio_repeat_question')).code).toBe('studio_visitor_reply_missing')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-denial' })
+    await invoke('studio_reject_name'); await finishSpeech()
+    expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-new-name' })
+    expect((await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).candidates).toEqual(['Shawn'])
+    await finishSpeech()
+    p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-agreement' })
+    expect((await invoke('studio_confirm_name')).code).toBe('studio_name_confirmed')
+    expect(main.phase()).toBe('question')
+    expect(requests.filter(r => r.action === 'confirm_name')).toHaveLength(1)
+    expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
     main.close('test_complete'); await handle.close('test_complete')
   })
 

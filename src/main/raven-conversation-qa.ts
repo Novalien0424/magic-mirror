@@ -134,7 +134,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const observation = installed ? await observe().catch(() => null) : null
       const calls = observation?.tools.filter(c => c.stage === name && c.direction === 'call').map(c =>
         ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'look_at_surroundings', 'return_to_dormant',
-          'start_portrait_studio', 'studio_set_name', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit', 'create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'].includes(c.name ?? '') ? c.name!
+          'start_portrait_studio', 'studio_set_name', 'studio_confirm_name', 'studio_reject_name', 'studio_repeat_question', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit', 'create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'].includes(c.name ?? '') ? c.name!
           : c.name === 'memory' && ['identify', 'remember', 'recall', 'forget', 'policy', 'temporary'].includes(String(c.args?.action)) ? 'memory.' + String(c.args?.action) : 'unknown_tool') ?? []
       const records = observation?.records.filter(r => r.stage === name) ?? []
       const heard = records.filter(r => r.role === 'visitor').map(r => r.text).join(' '), spoken = spokenTexts.get(name)
@@ -931,7 +931,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         let corrections = 0
         while (await phase() === 'confirm') {
           await wait(async () => !!await shown(), 'studio_name_shown', 10000)
-          if (sameStudioName(await shown(), name.intended)) { await shot('confirm'); await turn(extra.studioConfirm!, 'studio_confirm', 'studio_set_name'); break }
+          if (sameStudioName(await shown(), name.intended)) { await shot('confirm'); await turn(extra.studioConfirm!, 'studio_confirm', 'studio_confirm_name'); break }
           if (++corrections > 2) throw Error('raven_qa_studio_name_uncorrectable')
           await turn(extra.studioCorrection!, `studio_name_correction_${corrections}`, 'studio_set_name')
         }

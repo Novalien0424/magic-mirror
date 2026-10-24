@@ -31,6 +31,7 @@ interface Run {
   language: StudioLanguage
   phase: StudioPhase
   name: string
+  rejectedNames: Set<string>
   answers: string[]
   revisionsLeft: number
   revision: number
@@ -238,7 +239,7 @@ export function createStudioRuntime(input: {
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
     const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: studioStartLanguage(experience.studio.startScript), phase: asksName(experience) ? 'name' : 'question',
-      name: '', answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false, stepSequence: 0, delivered: false }
+      name: '', rejectedNames: new Set(), answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false, stepSequence: 0, delivered: false }
     run = r
     input.report(`studio_started_${source}`)
     return { ...reply('accepted', 'studio_started', currentStep(r)), step: step(r, {}, false) }
@@ -260,6 +261,13 @@ export function createStudioRuntime(input: {
     }
     if ('stepId' in request) {
       if (request.stepId !== r.step?.id) return reply('ignored', 'studio_step_stale')
+      if (request.action === 'confirm_name') {
+        if (r.phase !== 'confirm' || !r.name) return reply('rejected', 'studio_wrong_step', currentStep(r))
+        r.phase = 'question'
+        input.report('studio_name_confirmed')
+        step(r)
+        return reply('accepted', 'studio_name_confirmed', currentStep(r))
+      }
       if (request.action === 'step_activity') { stopSilence(r); return reply('accepted', 'studio_wait_cancelled') }
       if (request.action === 'step_ready') { armSilence(r); return reply('accepted', 'studio_step_ready') }
       if (request.action === 'deliver') return r.phase === 'keepsake' ? deliver(r) : reply('rejected', 'studio_wrong_step')
@@ -272,6 +280,7 @@ export function createStudioRuntime(input: {
     }
     if (request.action === 'reject_name') {
       if (r.phase !== 'confirm') return reply('rejected', 'studio_wrong_step')
+      r.rejectedNames.add(guestTextKey(r.name))
       r.name = ''; r.phase = 'name'; step(r)
       input.report('studio_name_denied')
       return reply('accepted', 'studio_name_denied', currentStep(r))
@@ -287,13 +296,14 @@ export function createStudioRuntime(input: {
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       const name = request.name.trim()
       const list = guests(r)
-      const candidates = list.length ? matchGuestNames(name, list) : []
-      const listed = list.some(guest => guest === name)
+      if (r.phase === 'confirm' && !request.confirmed && guestTextKey(name) !== guestTextKey(r.name)) r.rejectedNames.add(guestTextKey(r.name))
+      const candidates = list.length ? matchGuestNames(name, list, 3, r.experience.guests.aliases, r.rejectedNames) : []
+      const listed = candidates.find(guest => guestTextKey(guest) === guestTextKey(name))
       if (r.experience.guests.match === 'only' && list.length && !listed) {
         if (!candidates.length) { r.name = ''; r.phase = 'name'; step(r); input.report('studio_name_not_listed'); return { ...reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')), step: r.step } }
         r.name = candidates[0]!
         r.phase = 'confirm'; step(r)
-        return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
+        return { ...reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates), step: r.step }
       }
       // Only the visitor's acceptance of a read-back confirms; an unconfirmed name is read back again.
       if (request.confirmed) {
@@ -303,13 +313,13 @@ export function createStudioRuntime(input: {
         step(r)
         return reply('accepted', 'studio_name_confirmed', currentStep(r))
       }
-      r.name = candidates.length && !listed ? candidates[0]! : name
+      r.name = listed ?? candidates[0] ?? name
       r.phase = 'confirm'
       step(r)
       if (candidates.length && !listed) {
-        return reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates)
+        return { ...reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates), step: r.step }
       }
-      return reply('accepted', 'studio_name_heard', currentStep(r))
+      return { ...reply('accepted', 'studio_name_heard', currentStep(r)), step: r.step }
     }
     if (request.action === 'answer') {
       const expected = r.answers.length + 1

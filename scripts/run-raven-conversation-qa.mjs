@@ -132,6 +132,7 @@ if (selected === 'portrait_studio') {
   avatar.experience = { ...experience, studio: story.id === 'default'
     ? { ...experience.studio, prompts: { ...experience.studio.prompts, ...story.studio.prompts } }
     : { ...(story.id === 'soul' ? experience.studio : defaultExperience().studio), ...story.studio } }
+  if (story.guests) avatar.experience.guests = structuredClone(story.guests)
 }
 const presentationIds = new Set([avatar.presentation.backgroundId, avatar.presentation.entranceVideoId, avatar.presentation.exitVideoId])
 config.visualAssets = config.visualAssets.filter(a => presentationIds.has(a.id))

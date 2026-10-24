@@ -1,4 +1,4 @@
-import type { StudioSettings } from '../shared/portrait-studio'
+import type { GuestListSettings, StudioSettings } from '../shared/portrait-studio'
 
 /**
  * Live Interactive Studio QA stories: one studio setup each, plus what the
@@ -12,6 +12,7 @@ export interface StudioQaStory {
   readonly title: string
   /** Replaces the studio settings; `default` merges into the published studio instead. */
   readonly studio: Partial<StudioSettings>
+  readonly guests?: GuestListSettings
   readonly visitor: {
     /** Name step: what the visitor says, the characters they mean, a correction and a confirmation. */
     readonly name?: { readonly say: string; readonly intended: string; readonly correction: string; readonly confirm: string }
@@ -34,6 +35,19 @@ export interface StudioQaStory {
 }
 
 export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
+  {
+    id: 'guest_names_zh', title: 'Chinese guest shortlist: denial skips the first homophone', studio: {},
+    guests: { names: ['黃曉明', '王曉明', '林美玲'], match: 'only' },
+    visitor: { name: { say: '我叫曉明。', intended: '王曉明', correction: '我姓王，名字是破曉的曉，明天的明，王曉明。', confirm: '對，就是這個名字。' },
+      denyName: '不對，這不是我的名字。請重新問我名字。',
+      answers: ['我自己去海邊看日出。', '我會留下來幫朋友收拾。', '我想旅行，也想多陪家人。', '我希望生活多一點安靜。'], changes: [], thanks: '謝謝。' },
+  },
+  {
+    id: 'guest_names_en', title: 'English guest phonetics: canonical spelling and application confirmation', studio: {},
+    guests: { names: ['Katherine', 'Sean', 'Stephen'], match: 'only' },
+    visitor: { name: { say: 'My name is Catherine.', intended: 'Katherine', correction: 'The spelling is K A T H E R I N E, Katherine.', confirm: 'Yes, that is correct.' },
+      answers: ['I went to the beach alone to see the sunrise.', 'I stayed to help my friend clean up.', 'I want to travel and also spend time with family.', 'I wish for more quiet time.'], changes: [], thanks: 'Thank you.' },
+  },
   {
     id: 'soul_language', title: 'Gate thirty-three: explicit bilingual switching and name-only display', studio: {},
     visitor: {

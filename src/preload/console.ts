@@ -208,6 +208,9 @@ bridge.memoryImport = request => ipcRenderer.invoke('console:memory-import', req
 // Rollup chunk that sandboxed preloads cannot require. Main validates again.
 const studioConsoleCommand = (value: unknown): value is StudioConsoleCommand => !!value && typeof value === 'object' && !Array.isArray(value)
   && (Object.keys(value).length === 1 && ['status', 'start', 'exit', 'test'].includes((value as { action?: unknown }).action as string)
+    || Object.keys(value).length === 3 && (value as { action?: unknown }).action === 'match_name'
+      && typeof (value as { name?: unknown }).name === 'string' && !!(value as { guests?: unknown }).guests
+      && typeof (value as { guests?: unknown }).guests === 'object' && !Array.isArray((value as { guests?: unknown }).guests)
     || Object.keys(value).length === 2 && (value as { action?: unknown }).action === 'mode'
       && ['conversation', 'studio'].includes((value as { mode?: unknown }).mode as string))
 bridge.studio = command => studioConsoleCommand(command)

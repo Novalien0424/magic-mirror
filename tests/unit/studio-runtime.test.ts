@@ -42,6 +42,45 @@ function completeCue(h: ReturnType<typeof harness>, action: 'paint' | 'deliver')
 afterEach(() => { vi.useRealTimers() })
 
 describe('portrait studio runtime', () => {
+  it('skips rejected ambiguous candidates, reaches the fourth, and confirms only the pending step', () => {
+    const experience = defaultExperience()
+    experience.guests = { names: ['黃曉明', '王曉明', '李曉明', '張曉明'], match: 'only' }
+    const h = harness({ experience })
+    const first = h.runtime.start(identity, experience, 'visitor')
+    expect(h.runtime.handle({ action: 'confirm_name', stepId: first.step!.id }, identity).status).toBe('rejected')
+    let oldStep = first.step!.id
+    for (const [index, candidate] of experience.guests.names.entries()) {
+      const heard = h.runtime.handle({ action: 'set_name', name: '曉明', confirmed: false, language: 'zh' }, identity)
+      expect(heard.candidates?.[0]).toBe(candidate)
+      expect(heard.candidates?.length).toBeLessThanOrEqual(3)
+      expect(h.runtime.handle({ action: 'confirm_name', stepId: oldStep }, identity).code).toBe('studio_step_stale')
+      oldStep = heard.step!.id
+      if (index < 3) h.runtime.handle({ action: 'reject_name' }, identity)
+      else expect(h.runtime.handle({ action: 'confirm_name', stepId: heard.step!.id }, identity).code).toBe('studio_name_confirmed')
+    }
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question', name: '張曉明' })
+    expect(h.runtime.handle({ action: 'confirm_name', stepId: oldStep }, identity).code).toBe('studio_step_stale')
+    h.runtime.close('test_complete')
+    h.runtime.start(identity, experience, 'visitor')
+    expect(h.runtime.handle({ action: 'set_name', name: '曉明', confirmed: false, language: 'zh' }, identity).candidates?.[0]).toBe('黃曉明')
+    h.runtime.close('test_complete')
+  })
+
+  it('uses aliases and English phonetics in only-mode, and reasks when all candidates were denied', () => {
+    const experience = defaultExperience()
+    experience.guests = { names: ['Stephen', '單雅婷'], aliases: [{ name: '單雅婷', aliases: ['山雅婷'] }], match: 'only' }
+    const h = harness({ experience })
+    h.runtime.start(identity, experience, 'visitor')
+    expect(h.runtime.handle({ action: 'set_name', name: 'Steven', confirmed: false, language: 'zh' }, identity).candidates).toEqual(['Stephen'])
+    h.runtime.handle({ action: 'reject_name' }, identity)
+    expect(h.runtime.handle({ action: 'set_name', name: 'Steven', confirmed: false, language: 'zh' }, identity).code).toBe('studio_name_not_listed')
+    const aliased = h.runtime.handle({ action: 'set_name', name: '山雅婷', confirmed: false, language: 'zh' }, identity)
+    expect(aliased.candidates).toEqual(['單雅婷'])
+    h.runtime.handle({ action: 'confirm_name', stepId: aliased.step!.id }, identity)
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question', name: '單雅婷', language: 'zh' })
+    expect(h.reports.join(' ')).not.toMatch(/Stephen|單雅婷|山雅婷|Steven/)
+    h.runtime.close('test_complete')
+  })
   it('reports an unchanged provider edit as a failed revision and retains the original picture', async () => {
     const h = harness({ results: [okImage, okImage] })
     h.runtime.start(identity, h.experience, 'visitor')

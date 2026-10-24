@@ -102,7 +102,7 @@ export function studioToolSpecs(avatar: AvatarSessionSettings): readonly Realtim
   if (!imageGenerationEnabled(avatar)) return []
   const askName = (avatar.experience ?? DEFAULT_EXPERIENCE).studio.askName !== false
   return resolveRealtimeTools(avatar.sleepPhrase ?? LEGACY_SLEEP_PHRASE, false, REALTIME_TOOLS, 'studio')
-    .filter(spec => avatarAllowsTool(avatar, spec) && (askName || !['studio_set_name', 'studio_reject_name'].includes(spec.handler)))
+    .filter(spec => avatarAllowsTool(avatar, spec) && (askName || !['studio_set_name', 'studio_confirm_name', 'studio_reject_name'].includes(spec.handler)))
 }
 
 /** Interactive Studio agent instructions: persona plus the studio script; no private memory or media tools. */

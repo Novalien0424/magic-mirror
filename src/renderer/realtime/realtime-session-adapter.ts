@@ -565,7 +565,7 @@ export function createRealtimeSession(
   let studioRevealImageItem: string | undefined
   // A studio started by Main (wake, Mirror mode switch, Console) gets its first step with `enter`;
   // a visitor's own request gets it in the tool result instead.
-  let studioNameReadBack: { run: number; name: string; inputs: number } | undefined, visitorInputs = 0, studioEnteredInputs = -1, studioRevealInputs = -1
+  let studioNameReadBack: { run: number; name: string; inputs: number; stepId?: string } | undefined, visitorInputs = 0, studioEnteredInputs = -1, studioRevealInputs = -1
   // Items the server added to the conversation; out-of-band replies never are (they may still get item.done).
   const listedItems = new Set<string>()
   let studioFirstStep = '', studioFirstStepPending = false, studioFirstLanguage: 'zh' | 'en' = 'zh'
@@ -683,7 +683,7 @@ export function createRealtimeSession(
       // A spoken command owns this turn; a studio call from its cancelled reply is stale.
       if (closed || !studioActive || commandTurnOwned) return { outcome: 'ignored' as const, studio: { status: 'ignored' as const, code: 'studio_not_active_stale' } }
       if ((imagePhotoPending || studioStepSpeaking) && request.action !== 'exit') return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: imagePhotoPending ? 'studio_photo_pending' : 'studio_step_speaking' } }
-      if (studioStep && ['set_name', 'reject_name', 'answer', 'revise', 'finish', 'language'].includes(request.action)
+      if (studioStep && ['set_name', 'confirm_name', 'reject_name', 'repeat', 'answer', 'revise', 'finish', 'language'].includes(request.action)
         && (studioListeningStep !== studioStep.id || visitorInputs <= studioStepInputs)) return awaitingVisitor()
       const reply = await studioRequest(request)
       if (!reply) return { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable' } }
@@ -757,9 +757,16 @@ export function createRealtimeSession(
         const name = (args.name as string).trim(), readBack = studioNameReadBack
         const confirmed = args.confirmed === true && readBack?.run === studioStarts && readBack.name === name && visitorInputs > readBack.inputs
         const result = await studioTool({ action: 'set_name', name, confirmed, language: args.language as 'zh' | 'en' })
-        if (result.outcome === 'accepted' && result.studio.code === 'studio_name_heard') studioNameReadBack = { run: studioStarts, name, inputs: visitorInputs }
-        if (result.outcome === 'accepted' && result.studio.code === 'studio_name_candidates') studioNameReadBack = { run: studioStarts, name: result.studio.candidates?.[0] ?? name, inputs: visitorInputs }
+        if (result.outcome === 'accepted' && ['studio_name_heard', 'studio_name_candidates'].includes(result.studio.code))
+          studioNameReadBack = { run: studioStarts, name: result.studio.candidates?.[0] ?? name, inputs: visitorInputs, stepId: result.studio.step?.id }
         return { ...result, ...(studioStep && result.outcome === 'accepted' ? { spoken: true } : {}) }
+      },
+      studio_confirm_name: async () => {
+        const readBack = studioNameReadBack
+        if (!readBack?.stepId || readBack.run !== studioStarts || visitorInputs <= readBack.inputs) return awaitingVisitor()
+        const result = await studioTool({ action: 'confirm_name', stepId: studioStep?.phase === 'confirm' ? studioStep.id : readBack.stepId })
+        if (result.outcome === 'accepted') studioNameReadBack = undefined
+        return { ...result, ...(result.outcome === 'accepted' ? { spoken: true } : {}) }
       },
       studio_reject_name: async () => {
         if (visitorInputs <= studioStepInputs) return awaitingVisitor()

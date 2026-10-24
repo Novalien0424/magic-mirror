@@ -1,9 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { guestSoundKey, matchGuestNames } from '../../src/main/studio/guest-names'
+import { guestSoundKey, guestTextKey, matchGuestNames } from '../../src/main/studio/guest-names'
 import { buildPortraitPrompt, buildRevisionPrompt, quoteVisitorText } from '../../src/main/studio/prompt-builder'
 import { defaultExperience } from '../../src/shared/portrait-studio'
 
 describe('guest name shortlist', () => {
+  it.each([
+    ['Aimee', 'Amy'], ['Shawn', 'Sean'], ['Shaun', 'Sean'], ['Steven', 'Stephen'],
+    ['Catherine', 'Katherine'], ['Mark', 'Marc'], ['John', 'Jon'], ['Jose', 'José'],
+    ['Steven Chen', 'Stephen Chen'], ['Aimee', 'Amy Chen'], ['AMY CHEN', 'Amy Chen'],
+    ['王小明', '王曉明'], ['陈晓明', '陳曉明'], ['陳晶', '陳靜'], ['王小敏', '王曉明'],
+    ['程美玲', '陳美玲'], ['張自豪', '張志豪'], ['Wang Xiao Ming', '王曉明'],
+  ])('suggests %s as %s for visitor confirmation', (spoken, listed) => {
+    expect(matchGuestNames(spoken, [listed])).toEqual([listed])
+  })
+
+  it.each([['Tim', 'Tom'], ['Sam', 'Sean'], ['Ann', 'Joanne'], ['John Smith', 'Jon Jones'],
+    ['張志豪', '王志豪'], ['林美玲', '王曉明'], ['呂明', '陸明'], ['Xqz', 'Amy'], ['艾米', 'Amy']])(
+    'does not guess %s is %s', (spoken, listed) => expect(matchGuestNames(spoken, [listed])).toEqual([]))
+
+  it('uses only operator aliases for exceptional readings and bilingual equivalents', () => {
+    const names = ['單雅婷', '樂明', 'Amy', 'Xqz']
+    const aliases = [{ name: '單雅婷', aliases: ['山雅婷', 'Shan Ya Ting'] }, { name: '樂明', aliases: ['岳明'] },
+      { name: 'Amy', aliases: ['艾米'] }, { name: 'Xqz', aliases: ['Alex'] }]
+    for (const [spoken, name] of [['山雅婷', '單雅婷'], ['Shan Ya Ting', '單雅婷'], ['岳明', '樂明'], ['艾米', 'Amy'], ['Alex', 'Xqz']])
+      expect(matchGuestNames(spoken!, names, 3, aliases)).toEqual([name])
+  })
+
+  it('deduplicates before capping and keeps exact spelling ahead of phonetic candidates', () => {
+    expect(matchGuestNames('王小明', ['王曉明', '王曉明', '王曉明', '王筱明'])).toEqual(['王曉明', '王筱明'])
+    expect(matchGuestNames('Shawn', ['Sean', 'Shaun', 'Shawn', 'Shawn'], 100)).toEqual(['Shawn', 'Sean', 'Shaun'])
+    expect(matchGuestNames('Amy', ['AMY', 'Amy', 'Aimee'])).toEqual(['AMY', 'Aimee'])
+    // Sound equivalence must not erase the spelling a visitor may be correcting.
+    expect(matchGuestNames('José', ['Jose', 'José'])).toEqual(['José', 'Jose'])
+    expect(matchGuestNames('Jose', ['Jose', 'José'], 3, [], new Set([guestTextKey('Jose')]))).toEqual(['José'])
+  })
+
   it('folds script, tones and accepted in/ing and en/eng merges', () => {
     expect(guestSoundKey('王曉明')).toEqual(guestSoundKey('王小明'))
     expect(guestSoundKey('陳靜')).toEqual(guestSoundKey('陈晶'))

@@ -1,76 +1,62 @@
 # Magic Mirror — current handoff, 2026-10-24
 
-Latest work is a **guest-name matching audit**, following the field visit stuck
-in name confirmation. Production remains `f3957b0` on `field/macmini-deploy`; the
-previous media/picture delivery is preserved. [Previous handoff](docs/archive/progress-before-studio-audit-2026-10-24.md).
+Delivered the **Chinese/English guest-name matching repair** on
+`field/macmini-deploy`. The canonical `out/` is built and ready for the next START;
+normal Electron remains stopped, preserving the owner's STOP state.
+[Previous audit handoff](docs/archive/progress-before-name-repair-2026-10-24.md).
 
-## Findings and next action
+## Delivery
 
-**Bilingual guest matching is not ready for field acceptance.** Raven's active
-and draft name lists are empty. Chinese has limited homophone/nasal folding;
-English uses spelling/word matching and misses all seven selected English
-sound-alike pairs. Polyphonic readings/aliases are absent. Rejected ambiguous
-names return the same first suggestion; duplicates can consume all three slots.
-[UI location, measured cases and repair criteria](docs/testing/guest-name-audit-2026-10-24.md) ·
-[Synthetic matching measurements](docs/testing/guest-name-audit-2026-10-24.json).
+- English dictionary phonetics, bounded Chinese/English near-sounds, distinct
+  candidate deduplication and exact-spelling priority. All seven English pairs
+  missed in the audit now match. Jose/José remain separate caption choices.
+- Console → Avatars → Raven → Interactive Studio → **3 · Name and questions**
+  now has optional pronunciation/bilingual aliases and **Test name matching**.
+  Preview uses unsaved edits without starting a visit or calling a provider.
+  Save/Publish applies the roster to the next visit. Raven's production list is
+  still empty; no synthetic roster was published.
+- Main owns the pending spelling. `studio_confirm_name` accepts it only after
+  read-back and a later visitor agreement, with a current-step receipt. Rejected
+  candidates are skipped for the visit; restart clears them. Repetition also
+  requires fresh visitor input. Names remain captions, never private identity.
 
-The 10:35–10:38 Taipei field log shows seven transcription events, three accepted
-name submissions, five rejected story-answer calls while confirmation remained
-pending, three repeats and **no accepted name confirmation**. Camera trouble
-caused two earlier mic recoveries; later speech did reach the session.
+[Research, user journeys, repair and QA](docs/testing/guest-name-repair-2026-10-24.md) ·
+[Checks and retained failures](docs/testing/guest-name-repair-checks-2026-10-24.json) ·
+[Chinese provider](docs/testing/guest-name-repair-provider-zh-2026-10-24.json) ·
+[English provider](docs/testing/guest-name-repair-provider-en-2026-10-24.json).
 
-Two fault probes confirmed recovery defects: repeat accepts no fresh visitor
-input, and a failed opening can leave no listening step/silence deadline while
-rejecting later names. Operator UI has no way to rescue that name step without
-abandoning the visit. Tool exposure/rejection recovery, fresh-turn guarding,
-failed-cue recovery and metadata-only diagnostics are the next bounded repair.
-Do not clear the field issue because one synthetic visit passed.
+## Fresh evidence and runtime
 
-[Full visitor/operator journey audit and repair criteria](docs/testing/studio-journey-audit-2026-10-24.md) ·
-[Provider metadata](docs/testing/studio-journey-audit-provider-2026-10-24.json) ·
-[Operator metadata](docs/testing/studio-journey-audit-operator-2026-10-24.json) ·
-[Retained failure/probe evidence](docs/testing/studio-journey-audit-failures-2026-10-24.txt).
+- **215/215 distinct focused/boundary tests**, plus **52/52** affected tests rerun
+  after the accent refinement. Both TypeScript projects and build pass.
+- Final-build rendered operator journey **23/23, exit 0**: aliases, previews,
+  invalid references, Save/Publish/reload, restoration, disabled controls and
+  narrow layout. Two earlier development failures are retained and repaired.
+- Real-provider name visits **8/8 Chinese + 8/8 English, exits 0**, one attempt
+  each: intended caption, agreement → question one, fresh restart. Chinese also
+  denies the first ambiguous candidate and reaches the next. Zero spelling
+  corrections. Synthetic speech, not human Jabra acceptance. The later accent
+  refinement leaves those tested paths unchanged and has separate unit evidence.
+- Final build source `252f2b640c3bc2a6`, output `f193d345f1968221`, built
+  2026-10-24 12:39:41 Taipei; full hashes in the report.
+- Jabra output restored/read back **70.08%** after each run; no mute/input-gain
+  edits. Normal Electron is stopped. Black-HDMI cover PID 80539 remains active.
+- Active config unchanged: `336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d`.
+  Saved draft unchanged: `d9c62c4a890794741a0a95396585587422c46187b697fd2aba88cb5638758b07`.
+- Six owned QA roots cleaned: **480 files / 96,280,063 bytes**, excluding retained
+  markers. Failure/results metadata retained; scratch helpers removed. No
+  conversation transcripts/audio retained. Owner deliverables untouched.
 
-## Fresh evidence
+## Remaining boundary
 
-- Guest-name audit: **78/78 focused tests, exit 0**, plus 28 synthetic matching
-  cases and Main denial/re-entry probes. Twelve of 25 intended positive probes
-  matched; three negative controls rejected. This is feature coverage, not an
-  accuracy rate. A warmed 1,000-name lookup takes roughly 1–2 ms. No new provider,
-  human-microphone or rendered UI run for this follow-up; unchanged UI evidence
-  below reused. Production code/settings unchanged.
-- Real provider `soul` journey: **26/26, exit 0**, one attempt. Name denial,
-  correction, confirmation, all four answers/comments, generation, visible silver
-  wing revision, transfer/printer no-op, verbatim farewell, Dormant, fresh restart
-  and visitor-requested entry. Synthetic microphone/camera; not human acceptance.
-- Rendered operator journey: **23/23, exit 0**; Save/Publish/reload, name list,
-  question limits/order, prompts/picture controls, mode switching and narrow UI.
-  This runner does not execute a visitor conversation. Three UI screenshots and
-  both real generated-picture screenshots inspected.
-- Focused tests: **219 passed, one failed**. Failure is an old image-prompt text
-  assertion; current guard exists. Two temporary fault probes confirmed defects
-  and were removed. No source fix, typecheck/build rerun or deployment claimed.
-- Existing build verifies: source `afade18e8be63055`, output `b53cc6350748189d`,
-  built 2026-10-23 22:11:20 Taipei. Full hashes/commands are in the audit.
+Next acceptance: enter the real event roster/aliases, preview likely spellings,
+then test human names through Jabra. Dictionary coverage and personal readings
+are finite; aliases cover exceptions. One passing provider sample per story is
+not an accuracy rate. No new image-generation or full four-question provider run
+was needed for this scoped repair.
 
-## Runtime and cleanup
-
-Normal Electron remains **stopped**, preserving the owner's 10:38:15 STOP state.
-Native black-HDMI cover process is active. Jabra output **70.08%** read back after
-both sequential QA runs; QA used 0.97% by device identity, with EXIT-trap resets.
-No mute/input-gain edits. Production tailnet Console is unavailable while the app
-is stopped; no second-computer test was performed.
-
-Production active/draft settings unchanged, including modern multicolour vector
-style, the four questions, and the unrelated saved draft:
-active `336abd36578bd17422ff80fdbf0e532bcc8411fae5a7a59078e6a97dd82ad64d`,
-draft `d9c62c4a890794741a0a95396585587422c46187b697fd2aba88cb5638758b07`.
-No test configuration was published to production. Both exact owned QA roots were
-reviewed and deleted with the artifact tool: **178 files, 40,178,787 bytes**,
-excluding retained markers. Four task scratch/helper files and the temporary
-fault-probe test were removed. Owner deliverables and synced media untouched.
-The follow-up name-audit temporary test and its two scratch files were also
-removed after preserving synthetic results; no Electron/audio changes were made.
-
-Unrelated unresolved camera, human voice, physical hardware and second-computer
-acceptance remain in [TODO](TODO.md). [DECISIONS](DECISIONS.md) owns rulings.
+The broader [journey audit](docs/testing/studio-journey-audit-2026-10-24.md) still
+has failed-opening recovery and operator-rescue gaps. Unrelated camera, physical
+hardware and second-computer acceptance remain in [TODO](TODO.md). The repeat
+without-fresh-input and name shortlist/confirmation defects are repaired here;
+do not claim every field-loop cause is closed. [DECISIONS](DECISIONS.md) owns rulings.

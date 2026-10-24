@@ -257,12 +257,29 @@
       "description": "Record the name to write on the visitor's picture. The name is only a caption, never an identity confirmation.",
       "parameters": { "type": "object", "properties": { "name": { "type": "string", "description": "The name as it should be written on the picture, up to 40 characters, following any spelling or described characters." }, "confirmed": { "type": "boolean", "description": "true only when the visitor simply accepts your read-back; false when first heard or when they spell, describe or otherwise correct it." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Selected reply language: zh by default, en only after an explicit request for English." } }, "required": ["name", "confirmed", "language"], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor says the name for the picture, call studio_set_name with confirmed false; after they confirm your read-back, call it again with the same name and confirmed true.",
+        "useWhen": "When the visitor says or corrects their own name, call studio_set_name with confirmed false. For later agreement to the application's read-back, use studio_confirm_name instead of reconstructing the name.",
         "avoidWhen": "Do not call it for other people's names mentioned in passing, and do not guess a name the visitor has not said.",
         "speech": "No preamble. On acceptance the application speaks the read-back or next question; add no speech. On rejection or failure, follow the returned guidance briefly."
       },
       "completion": "response",
       "results": { "accepted": { "status": "accepted", "code": "studio_name_recorded", "speech": "model" }, "ignored": { "status": "ignored", "code": "studio_name_duplicate", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_name_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
+    },
+    {
+      "name": "studio_confirm_name",
+      "handler": "studio_confirm_name",
+      "requiredSkill": "imageGeneration",
+      "enabled": true,
+      "availability": "studio",
+      "routing": "model_intent",
+      "description": "Accept the exact name the application just read back, only when the visitor subsequently agrees. The application owns the pending spelling; no name parameter is needed. This confirms a picture caption, never identity or memory access.",
+      "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+      "rules": {
+        "useWhen": "The visitor agrees with the pending name read-back. Call once; the application proceeds to the first story question.",
+        "avoidWhen": "Never call before a read-back, for silence, denial, a spelling explanation or a corrected name. Corrections use studio_set_name confirmed false; denial uses studio_reject_name.",
+        "speech": "No preamble or follow-up speech: the application addresses the visitor and asks the first question."
+      },
+      "completion": "background_on_success",
+      "results": { "accepted": { "status": "accepted", "code": "studio_name_confirmed", "speech": "application" }, "ignored": { "status": "ignored", "code": "studio_step_stale", "speech": "none" }, "rejected": { "status": "rejected", "code": "studio_wrong_step", "speech": "model" }, "failed": { "status": "failed", "code": "studio_failed", "speech": "model" } }
     },
     {
       "name": "studio_reject_name",

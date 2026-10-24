@@ -35,9 +35,13 @@ describe('Portrait Studio configuration', () => {
   })
 
   it('keeps the guest list out of renderer session settings', () => {
-    const profile = { ...newAvatar('guide'), experience: { ...defaultExperience(), guests: { names: ['王曉明'], match: 'prefer' as const } } }
+    const profile = { ...newAvatar('guide'), experience: { ...defaultExperience(), guests: { names: ['王曉明'], match: 'prefer' as const,
+      aliases: [{ name: '王曉明', aliases: ['Wang Xiao Ming'] }] } } }
     const settings = avatarProfileSessionSettings(profile, '魔鏡阿魔鏡')
     expect(JSON.stringify(settings)).not.toContain('王曉明')
+    expect(JSON.stringify(settings)).not.toContain('Wang Xiao Ming')
+    expect(parseAvatarExperience(profile.experience)).toEqual(profile.experience)
+    expect(parseAvatarExperience({ ...profile.experience, guests: { ...profile.experience.guests, names: [] } })).toBeNull()
     expect(settings.experience?.guestMatch).toBe('prefer')
     expect(parseAvatarSessionSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings)
   })
@@ -110,6 +114,18 @@ describe('Portrait Studio IPC', () => {
     return { mirror, console, dispatched, reports, move, fetchImpl }
   }
   const RT1 = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
+
+  it('previews unsaved guest aliases through Console only, without persistence, speech or provider use', async () => {
+    const h = harness({ lifecycle: 'dormant', auth: 'missing' })
+    const command = { action: 'match_name', name: '艾米', guests: { names: ['Amy'], match: 'only', aliases: [{ name: 'Amy', aliases: ['艾米'] }] } }
+    expect(await h.console(command)).toMatchObject({ ok: true, value: { nameMatches: ['Amy'] } })
+    expect(await h.console({ ...command, guests: { ...command.guests, match: 'off' } })).toMatchObject({ ok: true, value: { nameMatches: [] } })
+    expect(await h.console(command, 'mirror')).toMatchObject({ ok: false })
+    expect(await h.console({ ...command, guests: { ...command.guests, names: [] } })).toMatchObject({ ok: false })
+    expect(h.dispatched).toEqual([])
+    expect(h.fetchImpl).not.toHaveBeenCalled()
+    expect(h.reports.join(' ')).not.toMatch(/Amy|艾米/)
+  })
 
   it('rejects disabled Studio entry through visitor, Console, mode and test routes without generation', async () => {
     const h = harness({ enabled: false, experience: async () => ({ ...defaultExperience(), defaultMode: 'portrait_studio' }) })
