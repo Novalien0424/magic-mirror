@@ -5,6 +5,20 @@ and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
 
 ## Unresolved reliability
 
+- [ ] **Venue ADB transport unavailable (2026-10-26).** MusicLoop's final STOP
+  check verified black HDMI cover, Jabra 70% and no playback processes, but TV
+  standby and mouse disconnect failed because the board transport was missing.
+  Recheck the board connection, then verify standby/mouse release and a physical
+  MUSIC LOOP → STOP journey. [Evidence](docs/testing/music-loop-2026-10-26.md).
+
+- [ ] **LLM-led local media selection (roadmap, 2026-10-26).** Replace the rigid
+  alias/matcher admission path with the existing LLM selecting from the compact
+  authorized catalog. No operator-maintained aliases required. Compare at 50,
+  200 and 512 items; preserve versions, natural Raven character, execution checks
+  and explicit online authorization. Address current folder/catalog limits before
+  larger-library claims. Deferred while the owner prioritizes MusicLoop.
+  [Research, journeys and acceptance plan](docs/testing/llm-media-catalog-design-2026-10-25.md).
+
 - [ ] **Camera transport/driver reliability.** The owner's temporary minimum
   mode is 96×96 at 5 fps. It returned six native snapshots, but strict stability
   failed; a separate 72-frame sample delivered about 2.18 fps. The earlier zero-frame

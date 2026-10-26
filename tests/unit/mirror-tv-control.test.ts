@@ -79,6 +79,13 @@ describe('TV standby and wake', () => {
 })
 
 describe('combined Stream Deck sequence', () => {
+  it('routes the MusicLoop button through Main and global STOP through application shutdown', async () => {
+    const io = control()
+    expect((await operateMirrorControl('music', io)).outcome).toBe('music_playing')
+    expect(io.order).toEqual(['start', 'ready', 'music_loop', 'awake'])
+    expect((await operateMirrorControl('stop', io)).outcome).toBe('stopped')
+    expect(io.app).toHaveBeenLastCalledWith('stop')
+  })
   it('acknowledges Desktop before clearing black and connects the mouse after HDMI wake', async () => {
     const base = control()
     const io = { ...base,

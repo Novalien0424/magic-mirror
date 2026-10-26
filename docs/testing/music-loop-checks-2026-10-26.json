@@ -1,0 +1,315 @@
+{
+  "date": "2026-10-26",
+  "tests": {
+    "distinct_passed": 290,
+    "first_pass": {
+      "files": 11,
+      "tests": 288,
+      "log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  11 passed (11)\n      Tests  288 passed (288)\n   Start at  14:37:29\n   Duration  2.48s (transform 218ms, setup 0ms, import 398ms, tests 1.16s, environment 0ms)\n\n"
+    },
+    "latest_affected_pass": {
+      "files": 2,
+      "tests": 26,
+      "log": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n\n Test Files  2 passed (2)\n      Tests  26 passed (26)\n   Start at  14:52:50\n   Duration  1.19s (transform 26ms, setup 0ms, import 40ms, tests 970ms, environment 0ms)\n\n"
+    }
+  },
+  "build": {
+    "version": 1,
+    "status": "complete",
+    "source": "41f766685bacb443eb4e5b9ad63755c39ec4960e400ff2468f3ce20cd2fb6266",
+    "output": "8482e5376d1980d10a9066efba12c086668d86659b91580e64435e3ee76b5f8d",
+    "builtAt": "2026-10-26T06:52:47.347Z"
+  },
+  "typecheck": "both projects exit 0",
+  "electron_runs": [
+    {
+      "run_id": "2026-10-26T06-37-44-210Z",
+      "exit": 2,
+      "timed_out": false,
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "d5ceb1e40b0091ba44adc78378769b3173be54921e6c1faa9ad759cd1d741286",
+        "output": "faa4acce53915e6d9e746991798373eb839600bf919cac9820ce8405f907b01e",
+        "builtAt": "2026-10-26T06:36:46.171Z"
+      },
+      "passed_cases": [
+        "operator_loop_avatar_authored",
+        "operator_remote_console_beside_avatar",
+        "operator_remote_console_repeat_restores_window",
+        "operator_remote_console_display_change",
+        "operator_remote_console_no_main_display"
+      ],
+      "results": [
+        "PHASE4_QA_RESULT status=failed reason=phase4_qa_operator_loop_settings_saved_timeout at=2026-10-26T06:38:05.264Z"
+      ],
+      "music_metadata": [],
+      "jabra_70_restored": true
+    },
+    {
+      "run_id": "2026-10-26T06-41-30-856Z",
+      "exit": 2,
+      "timed_out": false,
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "bcbff595926979bdd43fa3c23535212705242721ea6a78ce881bad53d814fa63",
+        "output": "6d9d0a41e0dcc4289d60e64595baf04885fb924a0fe920e088c9806a5cebf6a6",
+        "builtAt": "2026-10-26T06:39:00.805Z"
+      },
+      "passed_cases": [
+        "operator_loop_avatar_authored",
+        "operator_remote_console_beside_avatar",
+        "operator_remote_console_repeat_restores_window",
+        "operator_remote_console_display_change",
+        "operator_remote_console_no_main_display",
+        "operator_loop_settings_saved",
+        "operator_loop_settings_reloaded",
+        "operator_loop_muted_preview",
+        "operator_loop_embedded_audio",
+        "operator_loop_duplicate_play",
+        "operator_loop_saved_replacement_button",
+        "operator_loop_avatar_return",
+        "operator_loop_start_cancel",
+        "operator_loop_separate_audio",
+        "operator_loop_independent_wraps",
+        "operator_console_on_mirror",
+        "operator_console_preserves_loop_and_draft",
+        "operator_console_remote_main_then_deck",
+        "operator_loop_single_reload",
+        "operator_loop_failed_black",
+        "operator_loop_start_normal_recovery",
+        "operator_remote_console_venue_keys",
+        "operator_desktop_preserves_draft",
+        "operator_desktop_return_buttons"
+      ],
+      "results": [
+        "PHASE4_QA_RESULT status=failed reason=phase4_qa_operator_loop_normal_command_failed at=2026-10-26T06:42:44.019Z"
+      ],
+      "music_metadata": [
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:42:38.606Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:42:38.927Z",
+        "MUSIC_LOOP reason=operator_loop_music_decode_skipped at=2026-10-26T06:42:38.951Z",
+        "MUSIC_LOOP reason=operator_loop_music_decode_skipped at=2026-10-26T06:42:38.960Z",
+        "MUSIC_LOOP reason=operator_loop_music_no_playable_tracks at=2026-10-26T06:42:38.960Z"
+      ],
+      "jabra_70_restored": true
+    },
+    {
+      "run_id": "2026-10-26T06-46-33-103Z",
+      "exit": 0,
+      "timed_out": false,
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "ccf4247b2b8e41a2256499e5931df3990c7d1d61ec2e04f6e4057525a62ff0ea",
+        "output": "dc1bd7a188580e9aa8e4c0ce9bde2f52d3a7ae1803bb4e742a334881c837824e",
+        "builtAt": "2026-10-26T06:45:42.612Z"
+      },
+      "passed_cases": [
+        "operator_loop_avatar_authored",
+        "operator_remote_console_beside_avatar",
+        "operator_remote_console_repeat_restores_window",
+        "operator_remote_console_display_change",
+        "operator_remote_console_no_main_display",
+        "operator_loop_settings_saved",
+        "operator_loop_settings_reloaded",
+        "operator_loop_muted_preview",
+        "operator_loop_embedded_audio",
+        "operator_loop_duplicate_play",
+        "operator_loop_saved_replacement_button",
+        "operator_loop_avatar_return",
+        "operator_loop_start_cancel",
+        "operator_loop_separate_audio",
+        "operator_loop_independent_wraps",
+        "operator_console_on_mirror",
+        "operator_console_preserves_loop_and_draft",
+        "operator_console_remote_main_then_deck",
+        "operator_loop_single_reload",
+        "operator_loop_failed_black",
+        "operator_loop_start_normal_recovery",
+        "operator_remote_console_venue_keys",
+        "operator_desktop_preserves_draft",
+        "operator_desktop_return_buttons",
+        "operator_music_loop_play_repeat_console",
+        "operator_music_loop_transitions",
+        "operator_music_loop_empty_recovery"
+      ],
+      "results": [
+        "PHASE4_QA_RESULT status=passed motion_count=0 expression_count=0 scene_count=0 visual_count=3 screenshot_count=19 music_analyser=not_executed console_check_count=27 at=2026-10-26T06:47:55.099Z"
+      ],
+      "music_metadata": [
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:40.921Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:40.962Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:41.538Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=2 cycles=0 at=2026-10-26T06:47:43.034Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_repeated cycles=1 at=2026-10-26T06:47:44.144Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=1 at=2026-10-26T06:47:44.533Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=2 cycles=1 at=2026-10-26T06:47:46.032Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_repeated cycles=2 at=2026-10-26T06:47:47.228Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:48.218Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:48.263Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:48.839Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:49.982Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:50.021Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:50.592Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:51.986Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:52.040Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:52.367Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:52.622Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:52.679Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:53.249Z",
+        "MUSIC_LOOP reason=operator_loop_music_empty at=2026-10-26T06:47:54.178Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:47:54.594Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:47:54.632Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:47:54.958Z"
+      ],
+      "jabra_70_restored": true
+    },
+    {
+      "run_id": "2026-10-26T06-53-06-830Z",
+      "exit": 0,
+      "timed_out": false,
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "41f766685bacb443eb4e5b9ad63755c39ec4960e400ff2468f3ce20cd2fb6266",
+        "output": "8482e5376d1980d10a9066efba12c086668d86659b91580e64435e3ee76b5f8d",
+        "builtAt": "2026-10-26T06:52:47.347Z"
+      },
+      "passed_cases": [
+        "operator_loop_avatar_authored",
+        "operator_remote_console_beside_avatar",
+        "operator_remote_console_repeat_restores_window",
+        "operator_remote_console_display_change",
+        "operator_remote_console_no_main_display",
+        "operator_loop_settings_saved",
+        "operator_loop_settings_reloaded",
+        "operator_loop_muted_preview",
+        "operator_loop_embedded_audio",
+        "operator_loop_duplicate_play",
+        "operator_loop_saved_replacement_button",
+        "operator_loop_avatar_return",
+        "operator_loop_start_cancel",
+        "operator_loop_separate_audio",
+        "operator_loop_independent_wraps",
+        "operator_console_on_mirror",
+        "operator_console_preserves_loop_and_draft",
+        "operator_console_remote_main_then_deck",
+        "operator_loop_single_reload",
+        "operator_loop_failed_black",
+        "operator_loop_start_normal_recovery",
+        "operator_remote_console_venue_keys",
+        "operator_desktop_preserves_draft",
+        "operator_desktop_return_buttons",
+        "operator_music_loop_play_repeat_console",
+        "operator_music_loop_transitions",
+        "operator_music_loop_empty_recovery"
+      ],
+      "results": [
+        "PHASE4_QA_RESULT status=passed motion_count=0 expression_count=0 scene_count=0 visual_count=3 screenshot_count=19 music_analyser=not_executed console_check_count=27 at=2026-10-26T06:54:29.778Z"
+      ],
+      "music_metadata": [
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:15.309Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:15.629Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:16.203Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=2 cycles=0 at=2026-10-26T06:54:17.451Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_repeated cycles=1 at=2026-10-26T06:54:18.680Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=1 at=2026-10-26T06:54:19.204Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=2 cycles=1 at=2026-10-26T06:54:20.451Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_repeated cycles=2 at=2026-10-26T06:54:21.754Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:22.945Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:22.987Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:23.560Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:24.667Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:24.710Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:25.285Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:26.475Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:26.526Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:26.852Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:27.107Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:27.161Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:27.735Z",
+        "MUSIC_LOOP reason=operator_loop_music_empty at=2026-10-26T06:54:28.664Z",
+        "MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T06:54:29.080Z",
+        "MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T06:54:29.121Z",
+        "MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T06:54:29.694Z"
+      ],
+      "jabra_70_restored": true
+    }
+  ],
+  "native_cached_wav": [
+    "{\"release\": \"term\", \"result\": \"passed\", \"events\": [{\"event\": \"ready\", \"outputs\": 3}, {\"event\": \"playing\", \"id\": 1, \"outputs\": 3}, {\"event\": \"ended\", \"id\": 1}]}",
+    "{\"release\": \"eof\", \"result\": \"passed\", \"events\": [{\"event\": \"ready\", \"outputs\": 3}, {\"event\": \"playing\", \"id\": 1, \"outputs\": 3}, {\"event\": \"ended\", \"id\": 1}]}",
+    "qa_outputs_restored_jabra_70"
+  ],
+  "native_cached_mp3": [
+    "{\"mp3_cache_playback\": \"passed\", \"outputs\": 3}",
+    "qa_outputs_restored_jabra_70"
+  ],
+  "stop_check": [
+    {
+      "app": "already_off",
+      "tv": "tv_standby_failed",
+      "blackout": "blackout_covered",
+      "audio": "jabra_output_70",
+      "mouse": "mouse_stop_failed",
+      "outcome": "tv_standby_failed"
+    },
+    {
+      "launchAgentLoaded": false,
+      "mainPresent": false,
+      "playbackProcessesRemaining": 0
+    }
+  ],
+  "hardware_probe": {
+    "trustedServiceAvailable": true,
+    "exit": 1,
+    "signal": null,
+    "reason": "tv_transport_missing",
+    "power": null
+  },
+  "jabra_output_final": 0.7007718682289124,
+  "stream_deck": {
+    "profile": "Magic Mirror copy 1",
+    "slot": [
+      1,
+      1
+    ],
+    "title": "MUSIC\nLOOP",
+    "action": "System/Open",
+    "target": "~/Applications/Magic Mirror Controls/Music Loop Magic Mirror.app",
+    "assigned_through_ui": true,
+    "other_six_preserved": true,
+    "physical_press": "not tested"
+  },
+  "folder": {
+    "relative_to_shared": "MusicLoop",
+    "created": true,
+    "entries": 0
+  },
+  "visual_review": {
+    "inspected": [
+      "operator-music-loop-console.png",
+      "operator-music-loop-empty.png"
+    ],
+    "result": "Readable playback status and recovery copy; controls fit portrait; no clipping. Live Neo two-line label and music-note icon fit."
+  },
+  "limits": [
+    "No human acoustic or inter-device latency acceptance",
+    "No physical output hotplug acceptance",
+    "TV standby and mouse disconnect could not be confirmed: board ADB transport missing",
+    "Normal installation left stopped; isolated QA only"
+  ],
+  "cleanup": {
+    "status": "complete",
+    "qa_files_removed": 365,
+    "qa_bytes_removed": 53119588,
+    "qa_markers_retained": 4,
+    "qa_runs": [{"runId":"2026-10-26T06-37-44-210Z","report":"docs/testing/music-loop-2026-10-26.md","exitCode":2,"fingerprint":"0ccaae4dabe4844c7cdf3b564222a6c0c3d77829132b31b7228e64edb047638e","files":64,"bytes":9732964,"deleted":true},{"runId":"2026-10-26T06-41-30-856Z","report":"docs/testing/music-loop-2026-10-26.md","exitCode":2,"fingerprint":"272f39c004335ac361c9206b70447f64eab1c5ed6133116ae23c9d3ddf246776","files":99,"bytes":13664103,"deleted":true},{"runId":"2026-10-26T06-46-33-103Z","report":"docs/testing/music-loop-2026-10-26.md","exitCode":0,"fingerprint":"102b461b52e7187af5855097cd4722ba659e482736d2c8a15742322901aabda1","files":101,"bytes":14865865,"deleted":true},{"runId":"2026-10-26T06-53-06-830Z","report":"docs/testing/music-loop-2026-10-26.md","exitCode":0,"fingerprint":"751e4bff7d352eb1cf4a16c3cd846aa632bf7b36de5077987e5387f5dc095a4d","files":101,"bytes":14856656,"deleted":true}],
+    "scratch": {
+      "files": 27,
+      "bytes": 209909
+    }
+  }
+}

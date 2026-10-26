@@ -813,6 +813,7 @@ export function App(props: AppProps = {}): React.JSX.Element {
   if (failure || !loop) return <OperatorLoopBlack reason={failure || undefined} />
   if (loop.mode === 'avatar') return <AvatarApp {...props} />
   if (loop.mode === 'desktop') return <OperatorLoopBlack reason="operator_loop_desktop" />
+  if (loop.mode === 'music') return <OperatorLoopBlack reason={loop.reason} />
   if (loop.generation === 0) return <OperatorLoopBlack reason={loop.reason} />
   if (loop.status === 'failed' || loop.status === 'idle') return <OperatorLoopBlack reason="operator_loop_failed" />
   return <OperatorLoopPlayer key={loop.generation} snapshot={loop} />

@@ -8,7 +8,7 @@ export interface LoopVideoSettings {
 }
 export const DEFAULT_LOOP_VIDEO: LoopVideoSettings = { videoId: '', audioMode: 'embedded', audioId: '', fit: 'contain', volume: 0.7 }
 export interface OperatorLoopSnapshot {
-  mode: 'avatar' | 'loop' | 'desktop'
+  mode: 'avatar' | 'loop' | 'desktop' | 'music'
   status: 'idle' | 'preparing' | 'playing' | 'recovering' | 'failed'
   reason: string
   generation: number
@@ -27,7 +27,7 @@ export interface OperatorLoopReport {
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const mediaId = (v: unknown): v is string => typeof v === 'string' && (v === '' || /^folder-[a-f0-9]{40}$/.test(v))
 export function parseOperatorLoopSnapshot(value: unknown): OperatorLoopSnapshot | null {
-  if (!record(value) || Object.keys(value).length !== 5 || !['avatar', 'loop', 'desktop'].includes(value.mode as string)
+  if (!record(value) || Object.keys(value).length !== 5 || !['avatar', 'loop', 'desktop', 'music'].includes(value.mode as string)
     || !['idle', 'preparing', 'playing', 'recovering', 'failed'].includes(value.status as string)
     || typeof value.reason !== 'string' || !/^operator_loop_[a-z0-9_]{1,80}$/.test(value.reason)
     || !Number.isSafeInteger(value.generation) || (value.generation as number) < 0) return null

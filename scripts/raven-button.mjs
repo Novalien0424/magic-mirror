@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquireElectronOwner } from './electron-owner.mjs'
 import { createTvIo, operateMirrorControl, operateTv } from './mirror-tv-control.mjs'
-import { sendOperatorCommand } from './operator-command.mjs'
+import { createOperatorIo, sendOperatorCommand } from './operator-command.mjs'
 import { createMouseIo, operateMouse } from './mirror-mouse-control.mjs'
 import { createStopStateIo } from './mirror-stop-state.mjs'
 
@@ -156,7 +156,7 @@ export async function operateButton(action, io) {
 export function parseQueuedRequest(text) {
   try {
     const request = JSON.parse(text)
-    return request && ['start', 'stop', 'loop', 'console', 'studio', 'desktop'].includes(request.action) && Number.isFinite(request.at) ? request : null
+    return request && ['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music'].includes(request.action) && Number.isFinite(request.at) ? request : null
   } catch { return null }
 }
 
@@ -184,7 +184,7 @@ const file = fileURLToPath(import.meta.url)
 if (process.argv[1] && resolve(process.argv[1]) === file) {
   if (process.platform !== 'darwin') throw Error('raven_button_macos_only')
   const action = process.argv[2]
-  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
   const root = join(homedir(), 'Library/Caches/MagicMirror/button'), queue = join(root, 'queue')
   const log = join(homedir(), 'Library/Logs/MagicMirror/button.log')
   mkdirSync(queue, { recursive: true, mode: 0o700 }); mkdirSync(dirname(log), { recursive: true })
@@ -211,7 +211,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
     if (process.env.MIRROR_BUTTON_WORKER_LOCK !== '1') throw Error('raven_button_worker_requires_lock')
     let release
     const io = createButtonIo()
-    const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', studio_ready: 'Glass', console_shown: 'Pop', desktop_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
+    const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', music_playing: 'Glass', studio_ready: 'Glass', console_shown: 'Pop', desktop_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
     const feedback = outcome => {
       const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${sounds[outcome] ?? 'Basso'}.aiff`], { stdio: 'ignore' })
       child.on('error', () => record('press', 'feedback_unavailable'))
@@ -227,7 +227,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
       let previous = { action: '', at: 0 }
       try {
         const saved = JSON.parse(readFileSync(lastPress, 'utf8'))
-        if (['start', 'stop', 'loop', 'console', 'studio', 'desktop'].includes(saved.action) && Number.isFinite(saved.at)) previous = saved
+        if (['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music'].includes(saved.action) && Number.isFinite(saved.at)) previous = saved
       } catch (error) { if (error.code !== 'ENOENT') record('press', 'debounce_state_invalid') }
       while (release) {
         const name = readdirSync(queue).filter(n => /^\d+-\d+\.json$/.test(n)).sort()[0]
@@ -242,7 +242,14 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           app: action => operateButton(action, io),
           tv: action => operateTv(action, createTvIo((step, outcome) => record('tv', outcome, { step }))),
           ready: () => waitForMirrorReady(io),
-          mode: action => sendOperatorCommand(action),
+          // Let a queued STOP reach Main even while a cold MusicLoop file is
+          // preparing. The normal STOP path owns shutdown; no extra kill owner.
+          mode: action => sendOperatorCommand(action, { ...createOperatorIo(), cancelled: () => action === 'music_loop'
+            && readdirSync(queue).filter(n => /^\d+-\d+\.json$/.test(n)).some(name => {
+              try { const next = parseQueuedRequest(readFileSync(join(queue, name), 'utf8'))
+                return next?.action === 'stop' && Date.now() - next.at <= 120000
+              } catch { return false }
+            }) }),
           mouse: async action => {
             const mouse = await operateMouse(action, createMouseIo((step, outcome) => record('mouse', outcome, { step })))
             if (action === 'start' && mouse === 'mouse_started') {
@@ -260,7 +267,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           writeFileSync(lastPress + '.tmp', JSON.stringify(previous), { mode: 0o600 })
           renameSync(lastPress + '.tmp', lastPress)
         }
-        feedback(outcome)
+        if (outcome !== 'music_cancelled') feedback(outcome)
       }
     } catch { record('press', 'helper_failed'); process.exitCode = 1 }
     finally {

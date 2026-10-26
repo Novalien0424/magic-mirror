@@ -1,5 +1,13 @@
 const COPY: Readonly<Record<string, [string, string]>> = {
   runtime_command_delivered: ['The requested control was applied.', ''],
+  operator_loop_music_folder_missing: ['The MusicLoop folder is missing.', 'Create MusicLoop inside the linked shared avatar folder and add music, then press MUSIC LOOP.'],
+  operator_loop_music_shared_missing: ['No shared avatar folder is linked.', 'Link the shared folder in Avatars → Media, add its MusicLoop subfolder, then press MUSIC LOOP.'],
+  operator_loop_music_empty: ['MusicLoop is empty.', 'Add audio files to the shared folder’s MusicLoop subfolder, then press MUSIC LOOP again.'],
+  operator_loop_music_no_playable_tracks: ['None of the MusicLoop tracks could play.', 'Check that the audio files are playable and downloaded from Drive, then press MUSIC LOOP again.'],
+  operator_loop_music_start_timeout: ['MusicLoop could not finish preparing in time.', 'Make the music available offline in Drive, then press MUSIC LOOP again.'],
+  operator_loop_music_no_outputs: ['No connected audio output is available.', 'Connect a speaker, then press MUSIC LOOP again.'],
+  operator_loop_music_route_failed: ['MusicLoop could not connect all audio outputs.', 'Check the connected speakers, then press MUSIC LOOP again.'],
+  operator_loop_music_route_incomplete: ['Some connected audio outputs could not join MusicLoop.', 'Check their connection, then press MUSIC LOOP again.'],
   operator_loop_media_unavailable: ['The selected loop media is unavailable.', 'Check the Common folder and select an available video and music track.'],
   operator_loop_operation_timeout: ['Preparing the loop media took too long.', 'A large Google Drive file keeps downloading in the background. Keep this selection and press Save settings again in a moment.'],
   operator_loop_playback_stalled: ['Loop playback stopped advancing after its recovery attempt.', 'The Mirror stays black. Try Play on Mirror again or Return to Avatar.'],

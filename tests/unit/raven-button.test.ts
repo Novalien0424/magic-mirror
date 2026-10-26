@@ -235,7 +235,7 @@ describe('Raven launchd button', () => {
     expect(processes[0].command).toBe('/fixture/Electron App')
     expect(() => parseProcessSnapshot('partial process row')).toThrow('process_snapshot_invalid')
   })
-  it.each(['start', 'stop', 'loop', 'console', 'studio', 'desktop'])('provides an executable canonical %s wrapper without launching it', action => {
+  it.each(['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music'])('provides an executable canonical %s wrapper without launching it', action => {
     const path = new URL(`../../deploy/macos/magic-mirror-${action}.sh`, import.meta.url)
     expect(statSync(path).mode & 0o111).not.toBe(0)
     expect(readFileSync(path, 'utf8')).toBe(`#!/bin/zsh\nset -eu\nexec /bin/zsh /Users/novalien0424/magic-mirror/deploy/macos/raven-button.sh ${action}\n`)
@@ -243,13 +243,14 @@ describe('Raven launchd button', () => {
   it('installs a signed wrapper for every Stream Deck profile key, with STUDIO under START', () => {
     const installer = readFileSync(new URL('../../deploy/macos/install-stream-deck-controls.sh', import.meta.url), 'utf8')
     const profile = readFileSync(new URL('../../scripts/prepare-stream-deck-profile.py', import.meta.url), 'utf8')
-    expect(installer.match(/^for action in (.+); do$/gm)).toEqual(Array(2).fill('for action in start stop loop console studio desktop; do'))
-    for (const [action, label] of [['start', 'Start'], ['stop', 'Stop'], ['loop', 'Play Loop'], ['console', 'Console'], ['studio', 'Studio'], ['desktop', 'Desktop']]) {
+    expect(installer.match(/^for action in (.+); do$/gm)).toEqual(Array(2).fill('for action in start stop loop console studio desktop music; do'))
+    for (const [action, label] of [['start', 'Start'], ['stop', 'Stop'], ['loop', 'Play Loop'], ['console', 'Console'], ['studio', 'Studio'], ['desktop', 'Desktop'], ['music', 'Music Loop']]) {
       expect(installer).toContain(`    ${action}) label='${label} Magic Mirror' ;;`)
       expect(profile).toContain(`, "${label}", `)
     }
     expect(profile).toContain('(0, 1, "Studio", "STUDIO", "#b26a00", ')
     expect(profile).toContain('(3, 0, "Desktop", "DESKTOP", ')
+    expect(profile).toContain('(1, 1, "Music Loop", "MUSIC\\nLOOP", ')
   })
   it('keeps Remote Console off the button queue, the TV, the mouse and the Stream Deck', () => {
     const path = new URL('../../deploy/macos/magic-mirror-remote-console.sh', import.meta.url)

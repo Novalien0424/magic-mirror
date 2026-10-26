@@ -13,7 +13,7 @@ export const prepareDeadlineSeconds = (size: number): number => Math.min(600, Ma
 /** Keep playback outside File Provider. Drive remains the versioned source. */
 export function createMacMediaFilePreparer(executable: string, directory: string,
   onStatus?: (reason: Status) => void,
-): (path: string, size: number, mtime: number) => Promise<string> {
+): (path: string, size: number, mtime: number, signal?: AbortSignal) => Promise<string> {
   const report = (reason: Status) => { try { onStatus?.(reason) } catch { /* diagnostics only */ } }
   const pending = new Map<string, Promise<string>>()
   let initialized: Promise<string> | undefined
@@ -50,8 +50,9 @@ export function createMacMediaFilePreparer(executable: string, directory: string
     try { const info = await lstat(path); return info.isFile() && info.size === size && await realpath(path) === path }
     catch { return false }
   }
-  return async (path, size, mtime) => {
+  return async (path, size, mtime, signal) => {
     try {
+      signal?.throwIfAborted()
       const root = await (initialized ??= initialize().catch(error => { initialized = undefined; throw error }))
       const key = createHash('sha256').update(`${path}\0${size}\0${mtime}`).digest('hex')
       const target = join(root, `${key}.media`)
@@ -69,7 +70,7 @@ export function createMacMediaFilePreparer(executable: string, directory: string
           const deadline = prepareDeadlineSeconds(size)
           await new Promise<void>((resolve, reject) => {
             execFile(executable, [path, String(size), staging, String(deadline)],
-              { timeout: (deadline + 1) * 1000, killSignal: 'SIGKILL', maxBuffer: 1024, encoding: 'utf8' }, (error, stdout) => {
+              { timeout: (deadline + 1) * 1000, ...(signal ? { signal } : {}), killSignal: 'SIGKILL', maxBuffer: 1024, encoding: 'utf8' }, (error, stdout) => {
                 if (error || stdout.trim() !== `media_file_prepared bytes=${size}`) reject(Error('media_file_prepare_failed'))
                 else resolve()
               })

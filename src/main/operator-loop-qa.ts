@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { BrowserWindow, screen } from 'electron'
 import type { LoopVideoSettings, LoopVideoView, OperatorLoopSnapshot } from '../shared/operator-loop'
@@ -20,6 +20,7 @@ const CASES = [
   'operator_remote_console_display_change', 'operator_remote_console_no_main_display',
   'operator_remote_console_venue_keys',
   'operator_desktop_preserves_draft', 'operator_desktop_return_buttons',
+  'operator_music_loop_play_repeat_console', 'operator_music_loop_transitions', 'operator_music_loop_empty_recovery',
 ] as const
 
 const DOM = `
@@ -387,7 +388,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     step = CASES[1]
     await click('Loop Video')
     await waitFor(() => evaluate(`const r = await bridge.mediaFolders({action:'get'});
-      return r.ok && r.value.shared?.status === 'ready' && r.value.entries.length === 3
+      return r.ok && r.value.shared?.status === 'ready' && r.value.entries.length === 5
         && ['operator-loop-qa-video','operator-loop-qa-music'].every(name => r.value.entries.some(e => e.origin === 'shared' && e.name === name))
         && !!control('Loop video') && !control('Loop video').matches(':disabled')
         && [...control('Loop video').options].some(o => o.textContent === 'operator-loop-qa-video');`))
@@ -676,6 +677,46 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     }
     await operatorCommand('normal')
     pass({ normal: true, studio: true, play_loop: true, show_console: true })
+    step = CASES[24]
+    await operatorCommand('music_loop')
+    const musicGeneration = (await snapshot()).generation
+    if ((await snapshot()).status !== 'playing') fail('music_not_playing')
+    await operatorCommand('music_loop')
+    if ((await snapshot()).generation !== musicGeneration) fail('music_duplicate_restarted')
+    await waitFor(() => mirror("return !document.querySelector('video,audio,.avatar-stage')"))
+    await operatorCommand('show_console')
+    await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('MusicLoop · playing on all outputs')"))
+    await new Promise(resolve => setTimeout(resolve, 5500))
+    if ((await snapshot()).status !== 'playing') fail('music_repeat_failed')
+    await shot('operator-music-loop-console.png', false, true)
+    pass({ native_playback_acknowledged: true, repeated_press: true, black_mirror: true, console_preserves_playback: true })
+
+    step = CASES[25]
+    for (const action of ['normal', 'studio', 'play_loop', 'desktop'] as const) {
+      await operatorCommand('music_loop')
+      await operatorCommand(action)
+      if ((await snapshot()).mode === 'music') fail('music_not_released')
+      if (action === 'play_loop') await playing()
+    }
+    await operatorCommand('music_loop'); await operatorCommand('show_console')
+    await click('Return to Avatar'); await returnedAvatar()
+    pass({ normal: true, studio: true, video_loop: true, desktop: true, console_return: true })
+
+    step = CASES[26]
+    const musicDirectory = join(userData, 'operator-loop-shared', 'MusicLoop'), moved = musicDirectory + '-saved'
+    await rename(musicDirectory, moved); await mkdir(musicDirectory)
+    try {
+      const reply = await sendQaOperatorCommand(userData, 'music_loop')
+      if (reply !== 'failed' || (await snapshot()).reason !== 'operator_loop_music_empty') fail('music_empty_not_reported')
+      await operatorCommand('show_console')
+      await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('MusicLoop is empty.')"))
+      await shot('operator-music-loop-empty.png', false, true)
+    } finally { await rm(musicDirectory, { recursive: true }); await rename(moved, musicDirectory) }
+    await operatorCommand('music_loop')
+    if ((await snapshot()).status !== 'playing') fail('music_empty_retry_failed')
+    // Finish while native music is playing: the runner's ordinary Main shutdown
+    // must release it. The outer check verifies that no music worker remains.
+    pass({ empty_visible: true, retry_after_files_added: true, shutdown_with_music_active: true })
     if (passed.size !== CASES.length || !CASES.every(name => passed.has(name))) fail('cases_incomplete')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 3,
       screenshotCount: screenshots, musicAnalyser: 'not_executed', consoleCheckCount: passed.size }

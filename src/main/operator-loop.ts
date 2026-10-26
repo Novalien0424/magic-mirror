@@ -10,13 +10,14 @@ export function createOperatorLoop(input: {
   resumeAvatar(): Promise<void>
   publish(snapshot: OperatorLoopSnapshot): void
   report(reason: string): void
+  music?: { start(): Promise<boolean>; stop(): Promise<void> }
 }) {
   let settings = { ...DEFAULT_LOOP_VIDEO }, intent: OperatorLoopSnapshot['mode'] = 'avatar'
   let loadFailed = false
   try {
     const saved = JSON.parse(readFileSync(input.path, 'utf8'))
     const parsed = parseLoopVideoSettings(saved.settings)
-    if (saved.version !== 1 || !parsed || !['avatar', 'loop', 'desktop'].includes(saved.intent)) throw Error()
+    if (saved.version !== 1 || !parsed || !['avatar', 'loop', 'desktop', 'music'].includes(saved.intent)) throw Error()
     settings = parsed; intent = saved.intent
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') loadFailed = true }
   let snapshot: OperatorLoopSnapshot = { mode: intent, status: intent !== 'avatar' ? 'preparing' : 'idle',
@@ -75,12 +76,18 @@ export function createOperatorLoop(input: {
       if (intent === 'loop' && snapshot.status === 'playing' && JSON.stringify(snapshot.settings) === JSON.stringify(settings)) return true
       if (pending) return pending.promise
       const run = ++revision
+      // Keep an already-playing playlist until the requested video validates.
+      // A pending music start must still be cancelled before joining its queue.
+      const keepMusic = intent === 'music' && snapshot.status === 'playing'
+      const musicReleased = keepMusic ? Promise.resolve() : input.music?.stop() ?? Promise.resolve()
+      void musicReleased.catch(() => undefined)
       const chosen = { ...settings }
       let resolve!: (value: boolean) => void
       const promise = new Promise<boolean>(done => { resolve = done })
       pending = { promise, resolve }
       void queue(async () => {
         try {
+          await musicReleased
           const valid = await new Promise<boolean>((resolve, reject) => {
             abandonValidation = () => resolve(false)
             input.validate(chosen).then(resolve, reject)
@@ -88,6 +95,7 @@ export function createOperatorLoop(input: {
           if (!valid) throw Error('operator_loop_media_unavailable')
           if (disposed || run !== revision) return
           intent = 'loop'; persist()
+          await input.music?.stop()
           // Inhibit wake before ending Realtime so sleep cannot reacquire a mic.
           await input.suspendAvatar()
           if (disposed || run !== revision) return
@@ -97,45 +105,64 @@ export function createOperatorLoop(input: {
           const reason = error instanceof Error && /^operator_loop_[a-z0-9_]+$/.test(error.message) ? error.message : 'operator_loop_start_failed'
           settle(false)
           if (intent === 'loop') fail(reason)
-          else publish({ reason })
+          else publish({ reason, ...(intent === 'music' && !keepMusic ? { status: 'failed' as const } : {}) })
         }
       })
       return promise
     },
-    async normal(target: 'avatar' | 'desktop' = 'avatar'): Promise<boolean> {
+    async normal(target: 'avatar' | 'desktop' | 'music' = 'avatar'): Promise<boolean> {
+      if (target === 'music' && intent === 'music' && snapshot.status === 'playing') return true
       const run = ++revision
       clear(); settle(false); abandonValidation?.()
+      // Cancel a slow native start/cloud copy before entering the transition queue.
+      const musicReleased = input.music?.stop() ?? Promise.resolve()
+      void musicReleased.catch(() => undefined)
       return queue(async () => {
         if (disposed || run !== revision) return
         const wasSuspended = intent !== 'avatar', previous = intent
         const visibleLoop = snapshot.mode === 'loop', oldGeneration = snapshot.generation
         // Desktop inhibits input before any async release. Keep the Console renderer
         // alive so unsaved operator edits survive a trip to macOS and back.
-        if (target === 'desktop') intent = 'desktop'
+        if (target !== 'avatar') intent = target
         try {
-          if (target === 'desktop') await input.suspendAvatar()
+          await musicReleased
+          if (target !== 'avatar') await input.suspendAvatar()
           if (disposed || run !== revision) return
           // Keep the input gate closed until both old playback elements release.
           const release = visibleLoop && oldGeneration > 0 && releasedGeneration !== oldGeneration ? new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => { released = null; reject(Error('operator_loop_release_timeout')) }, 4000)
             released = { generation: oldGeneration, resolve: () => { clearTimeout(timeout); released = null; resolve() } }
           }) : Promise.resolve()
-          publish({ mode: target, status: 'idle', reason: target === 'desktop' ? 'operator_loop_desktop' : 'operator_loop_stopped', generation: oldGeneration + 1 })
+          publish({ mode: target, status: target === 'music' ? 'preparing' : 'idle', reason: target === 'music' ? 'operator_loop_music_preparing' : target === 'desktop' ? 'operator_loop_desktop' : 'operator_loop_stopped', generation: oldGeneration + 1 })
           await release
           if (disposed || run !== revision) return
           intent = target; persist()
+          if (target === 'music') {
+            const success = await input.music?.start()
+            if (disposed || run !== revision) return
+            if (!success) {
+              if (snapshot.status !== 'failed') publish({ status: 'failed', reason: 'operator_loop_music_start_failed' })
+              return
+            }
+            publish({ status: 'playing', reason: 'operator_loop_music_playing' })
+          }
           if (target === 'avatar' && wasSuspended) await input.resumeAvatar()
         } catch {
-          intent = target === 'desktop' || previous === 'desktop' ? 'desktop' : 'loop'
+          intent = target !== 'avatar' ? target : previous !== 'avatar' ? previous : 'loop'
           clear(); settle(false)
           publish({ mode: intent, status: 'failed', reason: 'operator_loop_release_failed' })
           throw Error('operator_loop_release_failed')
         }
-      }).then(() => run === revision && intent === target, () => false)
+      }).then(() => run === revision && intent === target && snapshot.status !== 'failed', () => false)
     },
     desktop(): Promise<boolean> { return controller.normal('desktop') },
+    music(): Promise<boolean> { return controller.normal('music') },
+    musicFailed(reason: string) {
+      if (!disposed && intent === 'music') publish({ status: 'failed', reason })
+    },
     rendererReady() {
       if (disposed) return
+      if (intent === 'music') { if (snapshot.generation === 0) void controller.music(); return }
       if (intent === 'desktop') { void controller.desktop(); return }
       if (intent !== 'loop') return
       if (snapshot.generation === 0) void controller.play()
@@ -164,7 +191,10 @@ export function createOperatorLoop(input: {
       }
     },
     clearIntent() { intent = 'avatar'; try { persist() } catch { input.report('operator_loop_save_failed') } },
-    dispose() { disposed = true; ++revision; clear(); settle(false); abandonValidation?.(); released?.resolve() },
+    dispose() {
+      disposed = true; ++revision; clear(); settle(false); abandonValidation?.(); released?.resolve()
+      void input.music?.stop().catch(() => input.report('operator_loop_music_stop_failed'))
+    },
   }
   return controller
 }

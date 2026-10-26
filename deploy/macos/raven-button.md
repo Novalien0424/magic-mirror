@@ -1,7 +1,7 @@
 # Magic Mirror operator controls
 
 The helper operates the existing user LaunchAgent
-`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console/studio/desktop requests,
+`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console/studio/desktop/music requests,
 debounces successful repeated actions for three seconds, and holds the shared
 Electron operation lease. An active QA owner rejects the request with
 `electron_owner_busy`; it never takes over that owner's app. Launchd remains the
@@ -21,6 +21,7 @@ opened by Stream Deck:
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-console.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-studio.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-desktop.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-music.sh
 ```
 
 Each fixes its action and calls the existing queue helper using canonical paths.
@@ -53,7 +54,7 @@ The combined control then waits up to ten seconds for this Main's existing
 `MAIN_READY`, Mirror `WINDOW_LOADED` and `RENDERER_READY` metadata, invalidated by
 logged mirror failure/recreation or app exit, and rechecks the Main PID. Only
 then does it send Main `normal` for START, `play_loop` for LOOP, `show_console`
-for CONSOLE, `studio` for STUDIO, or `desktop` for DESKTOP. Only a successful
+for CONSOLE, `studio` for STUDIO, `music_loop` for MUSIC LOOP, or `desktop` for DESKTOP. Only a successful
 acknowledgement permits TV wake and HDMI selection. Missing/ambiguous readiness
 reports `<action>_not_ready` without waking the TV; mode failure reports
 `<action>_mode_failed` plus a safe `modeReason`.
@@ -78,6 +79,13 @@ mode acknowledgement; Remote Console can open on the main monitor while the TV
 remains on Desktop. DESKTOP wakes HDMI and connects the TV mouse like CONSOLE;
 its success result is `desktop_shown`.
 
+MUSIC LOOP selects Main's native all-output music mode and reports `music_playing`
+only after playback progress. The operator supplies files through shared
+`MusicLoop`, never a command argument. A queued STOP cancels this command's
+acknowledgement wait within a poll interval, allowing ordinary global shutdown to
+cancel a cloud preparation. Cancellation has no failure chime. Main releases the
+native child on mode change/quit; stdin EOF and parent loss also release it.
+
 ### Main acknowledgement mailbox
 
 The import-safe [operator client](../../scripts/operator-command.mjs) uses only
@@ -86,7 +94,7 @@ matching `app.getPath('userData')/operator-control` in Main. It publishes an ato
 request under `requests/<UUID>.json`:
 
 ```json
-{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|show_console_main|studio|desktop","issuedAt":0,"expiresAt":45000}
+{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|show_console_main|studio|desktop|music_loop","issuedAt":0,"expiresAt":45000}
 ```
 
 `issuedAt` is `Date.now()` at creation; `expiresAt` is exactly 45,000 ms later.

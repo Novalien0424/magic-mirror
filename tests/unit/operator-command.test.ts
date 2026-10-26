@@ -26,7 +26,7 @@ describe('operator mailbox payload validation', () => {
   it('accepts exactly Main\'s operator action set', () => {
     const main = readFileSync(new URL('../../src/main/operator-control.ts', import.meta.url), 'utf8').match(/^export type OperatorAction = (.+)$/m)?.[1]
     expect([...main?.matchAll(/'([a-z_]+)'/g) ?? []].map(([, action]) => action)).toEqual(OPERATOR_ACTIONS)
-    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])
+    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop', 'music_loop'])
     expect(Object.isFrozen(OPERATOR_ACTIONS)).toBe(true)
   })
   it.each(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])('creates exactly the approved %s payload', action => {
@@ -102,6 +102,13 @@ describe('operator mailbox lifecycle', () => {
     const io = mailbox(); io.prepare.mockImplementation(async () => { io.jumpWall(-60000) })
     expect((await sendOperatorCommand('normal', io)).reason).toBe('operator_command_timeout')
     expect(io.monotonicNow()).toBe(45000)
+  })
+  it('lets a queued STOP cancel MusicLoop preparation without waiting for expiry', async () => {
+    const io = mailbox()
+    expect(await sendOperatorCommand('music_loop', { ...io, cancelled: () => io.monotonicNow() >= 100 }))
+      .toEqual({ status: 'failed', reason: 'operator_command_cancelled' })
+    expect(io.monotonicNow()).toBe(100)
+    expect(io.cleanup).toHaveBeenCalledWith(id)
   })
   it.each([response({ id: otherId }), response({ reason: 'private raw message' }), '{'])('fails closed on invalid response %s', async value => {
     const io = mailbox(); io.readResponse.mockResolvedValueOnce(value)

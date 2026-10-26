@@ -101,6 +101,9 @@ if (operatorLoopOnly) {
     await readFile(join(trialVisualDir, 'phase4-loop-silent.webm')))
   // Deliberately unlike the ~3.008 s video: independent wraps are observable.
   await writeFile(join(sharedDir, 'operator-loop-qa-music.wav'), makeToneWav(1.25))
+  await mkdir(join(sharedDir, 'MusicLoop'))
+  await writeFile(join(sharedDir, 'MusicLoop', '01.wav'), makeToneWav(1.0))
+  await writeFile(join(sharedDir, 'MusicLoop', '02.wav'), makeToneWav(1.25))
   await writeFile(join(userDataDir, 'media-folders.json'),
     JSON.stringify({ version: 1, links: { shared: await realpath(sharedDir) } }), { mode: 0o600 })
 }

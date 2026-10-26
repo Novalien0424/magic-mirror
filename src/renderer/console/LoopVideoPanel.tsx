@@ -56,6 +56,7 @@ function playbackCopy(snapshot: OperatorLoopSnapshot | null, starting: boolean):
   if (starting && snapshot?.mode !== 'loop') return 'Starting loop video… Checking the saved media. Return to Avatar in the control bar cancels.'
   if (!snapshot) return 'Reading Mirror playback status…'
   if (snapshot.mode === 'avatar') return 'Not playing'
+  if (snapshot.mode === 'music') return 'MusicLoop is selected. Play on Mirror switches to the saved loop video.'
   if (snapshot.mode === 'desktop') return snapshot.status === 'failed'
     ? 'Desktop needs attention. Retry DESKTOP or press STOP.' : 'macOS desktop. Voice and camera are off.'
   if (snapshot.status === 'failed') return 'Loop video failed. Mirror stays black. Use Return to Avatar in the control bar to exit.'

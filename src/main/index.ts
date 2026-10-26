@@ -1,6 +1,7 @@
 import { allowPromptWindow } from '../shared/prompt-window'
 import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
+import { createMusicLoop } from './music-loop'
 import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { createMirrorMode } from './mirror-mode'
@@ -201,6 +202,7 @@ let stopMainLiveness: (() => void) | undefined
 let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
+let musicLoop: ReturnType<typeof createMusicLoop> | undefined
 let stopOperatorControl: (() => void) | undefined
 let consoleOnMirror = false
 
@@ -1163,8 +1165,20 @@ void app.whenReady().then(async () => {
     finally { clearTimeout(timer) }
   }
   const mirrorMode = createMirrorMode({ path: join(app.getPath('userData'), 'mirror-mode.json'), report: reason => marker('MIRROR_MODE', { reason }) })
+  const musicPrepare = createMacMediaFilePreparer(app.isPackaged
+    ? join(process.resourcesPath, 'app.asar.unpacked/out/native/media-file-prepare')
+    : join(app.getAppPath(), 'out/native/media-file-prepare'), join(app.getPath('userData'), 'music-loop-cache-v1'))
+  musicLoop = createMusicLoop({
+    executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
+    sharedRoot: async () => { await mediaFoldersReady; return mediaFolders.view().shared?.path },
+    prepare: musicPrepare,
+    ...(phase4QaEnabled ? { gain: 0.01 } : {}),
+    report: (reason, details) => marker('MUSIC_LOOP', { reason, ...details }),
+    failed: reason => operatorLoop?.musicFailed(reason),
+  })
   operatorLoop = createOperatorLoop({
     path: join(app.getPath('userData'), 'operator-loop.json'),
+    music: musicLoop,
     validate: async settings => {
       await mediaFoldersReady
       await bounded(mediaFolders.refresh(), 12000)
@@ -1450,8 +1464,8 @@ void app.whenReady().then(async () => {
       }
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
-      if (action !== 'play_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
-      const success = await (action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      if (action !== 'play_loop' && action !== 'music_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
+      const success = await (action === 'music_loop' ? operatorLoop!.music() : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       if (!success) return false
       hideConsoleWindow()
       return showMirrorWindow()
@@ -1970,6 +1984,7 @@ function shutdownBootRuntime(): Promise<void> {
   const runtimeShutdown = runtime.shutdown()
   shutdownPromise = (async () => {
     const steps = [
+      () => musicLoop?.stop(),
       () => stopYoutube?.(),
       () => cameraTracking?.stop(),
       () => sceneRuntimeControl?.stopAll(),

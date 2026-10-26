@@ -3,12 +3,12 @@ import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node
 import { join } from 'node:path'
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-export type OperatorAction = 'normal' | 'play_loop' | 'show_console' | 'show_console_main' | 'studio' | 'desktop'
+export type OperatorAction = 'normal' | 'play_loop' | 'show_console' | 'show_console_main' | 'studio' | 'desktop' | 'music_loop'
 export function parseOperatorRequest(value: unknown, now = Date.now()): { id: string; action: OperatorAction; expiresAt: number } | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   return Object.keys(v).length === 5 && v.version === 1 && typeof v.id === 'string' && ID.test(v.id)
-    && (v.action === 'normal' || v.action === 'play_loop' || v.action === 'show_console' || v.action === 'show_console_main' || v.action === 'studio' || v.action === 'desktop') && typeof v.issuedAt === 'number' && Number.isFinite(v.issuedAt)
+    && (v.action === 'normal' || v.action === 'play_loop' || v.action === 'show_console' || v.action === 'show_console_main' || v.action === 'studio' || v.action === 'desktop' || v.action === 'music_loop') && typeof v.issuedAt === 'number' && Number.isFinite(v.issuedAt)
     && typeof v.expiresAt === 'number' && Number.isFinite(v.expiresAt) && v.issuedAt <= now + 1000 && now < v.expiresAt
     && v.expiresAt > v.issuedAt && v.expiresAt - v.issuedAt <= 45000
     ? { id: v.id, action: v.action, expiresAt: v.expiresAt } : null

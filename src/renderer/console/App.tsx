@@ -588,6 +588,7 @@ function loopModeLabel(snapshot: OperatorLoopSnapshot | null): string {
   if (!snapshot) return 'Checking…'
   if (snapshot.mode === 'avatar') return 'Not playing'
   if (snapshot.mode === 'desktop') return 'macOS desktop'
+  if (snapshot.mode === 'music') return snapshot.status === 'failed' ? 'MusicLoop · failed' : snapshot.status === 'playing' ? 'MusicLoop · playing on all outputs' : 'MusicLoop · preparing'
   return { idle: 'Starting', preparing: 'Preparing', playing: 'Playing', recovering: 'Recovering', failed: 'Failed · Mirror black' }[snapshot.status]
 }
 
@@ -2541,9 +2542,10 @@ export function App(): React.JSX.Element {
         <section className="live-bar" aria-label="Live controls">
           <div className="live-bar__groups">
             {operatorLoop && operatorLoop.mode !== 'avatar' || loopStarting ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
-              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'desktop' ? 'macOS desktop' : operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
+              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'music' ? loopModeLabel(operatorLoop) : operatorLoop?.mode === 'desktop' ? 'macOS desktop' : operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
+              {operatorLoop?.mode === 'music' && operatorLoop.status === 'failed' ? <OperatorMessage text={operatorLoop.reason} /> : null}
               <HelpButton placement="below" className="console__primary" disabled={!bridgeAvailable} onClick={returnToAvatar}
-                help="Returns from macOS desktop or loop video to the avatar with voice, wake listening and camera.">Return to Avatar</HelpButton>
+                help="Stops MusicLoop or loop video, or returns from macOS desktop, to the avatar with voice, wake listening and camera.">Return to Avatar</HelpButton>
             </div> : <>
               <LifecycleControls
                 lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}

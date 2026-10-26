@@ -9,7 +9,7 @@ export const OPERATOR_COMMAND_TTL_MS = 45000
 export const OPERATOR_COMMAND_POLL_MS = 100
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Must equal Main's OperatorAction set in src/main/operator-control.ts.
-export const OPERATOR_ACTIONS = Object.freeze(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])
+export const OPERATOR_ACTIONS = Object.freeze(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop', 'music_loop'])
 const failed = reason => ({ status: 'failed', reason })
 const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
@@ -96,7 +96,7 @@ export function createOperatorIo(fs = filesystem) {
 export async function sendOperatorCommand(action, io = createOperatorIo()) {
   const request = createOperatorRequest(action, io.uuid(), io.now())
   const deadline = io.monotonicNow() + OPERATOR_COMMAND_TTL_MS
-  const expired = () => io.now() >= request.expiresAt || io.monotonicNow() >= deadline
+  const expired = () => io.now() >= request.expiresAt || io.monotonicNow() >= deadline || io.cancelled?.() === true
   let result = failed('operator_command_timeout')
   try {
     await io.prepare()
@@ -112,6 +112,7 @@ export async function sendOperatorCommand(action, io = createOperatorIo()) {
         await io.wait(Math.min(OPERATOR_COMMAND_POLL_MS, deadline - io.monotonicNow(), request.expiresAt - io.now()))
       }
     }
+    if (io.cancelled?.() === true) result = failed('operator_command_cancelled')
   } catch { result = failed('operator_command_failed') }
   finally {
     try { await io.cleanup(request.id) } catch { result = failed('operator_cleanup_failed') }

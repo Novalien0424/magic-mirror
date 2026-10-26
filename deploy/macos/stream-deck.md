@@ -5,8 +5,9 @@ updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 
-The current **Magic Mirror copy 1** profile has six controls, installed and selected
-as the Neo's default on 2026-10-23. STUDIO is shortened to fit the physical key;
+The current **Magic Mirror copy 1** profile has seven controls. MUSIC LOOP was
+added to its unused bottom-row second key on 2026-10-26; the existing default
+profile and six assignments were preserved. STUDIO is shortened to fit the key;
 DESKTOP occupies the top-right key. Elgato's original Default Profile and the older
 Magic Mirror profiles are preserved.
 
@@ -17,6 +18,7 @@ Magic Mirror profiles are preserved.
 | Third (`2,0`) | Blue **PLAY LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Play every supported audio file in shared `MusicLoop`, in filename order, repeating the playlist on all connected physical Mac outputs. TV black; voice and camera off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
@@ -49,20 +51,45 @@ The signed native black cover remains active after STOP. Standby consumption has
 wake after a full Android shutdown or removal of mains power is not established.
 The Mac mini remains running. This does not change the Mac's pre-login/boot screen.
 
-All six buttons use Elgato's built-in **System → Open** action. The targets are
+All seven buttons use Elgato's built-in **System → Open** action. The targets are
 `~/Applications/Magic Mirror Controls/Start Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Stop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Play Loop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Console Magic Mirror.app`,
-`~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`, and
+`~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`,
+`~/Applications/Magic Mirror Controls/Music Loop Magic Mirror.app`, and
 `~/Applications/Magic Mirror Controls/Desktop Magic Mirror.app`. The small local
 apps call the executable [start](magic-mirror-start.sh),
 [stop](magic-mirror-stop.sh), [loop](magic-mirror-loop.sh),
 [Console](magic-mirror-console.sh), [studio](magic-mirror-studio.sh), and
-[desktop](magic-mirror-desktop.sh) scripts
+[desktop](magic-mirror-desktop.sh) and [music](magic-mirror-music.sh) scripts
 without opening Terminal. No extra plugin, hotkey remapper, accessibility grant,
 microphone owner, or restart service is needed for these controls. Elgato's
 original Default Profile remains available.
+
+## MusicLoop
+
+The linked shared folder is `AI_Stuff/AI_Avatar/Common`; its **MusicLoop** subfolder
+was created empty at the owner's request. Add MP3, M4A, AAC, WAV, AIFF, FLAC or CAF
+files, then press MUSIC LOOP. Subfolders are included; hidden files and symlinks
+are excluded. Number filenames for an explicit order. The playlist repeats as a
+whole. Repeated MUSIC LOOP presses preserve current playback; STOP then MUSIC
+LOOP reloads added/removed files. An empty folder produces an explicit Console
+message rather than substituting other shared music.
+
+Main owns the player and a temporary private macOS multi-output route. Current
+outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
+rediscovered during playback; virtual and aggregate devices are excluded to avoid
+duplicate routes. Normal default output, input gain and device mute/volume are
+preserved. HDMI stays awake with black video so its audio remains available.
+
+START, STUDIO, PLAY LOOP, DESKTOP and Return to Avatar release MusicLoop before
+changing modes. CONSOLE preserves it and shows status. **STOP ends it through the
+same Main shutdown as all other modes**, destroys its temporary audio route,
+sleeps TV, keeps HDMI black and restores Jabra to 70%. A queued STOP interrupts a
+pending MusicLoop-start wait. No separate restart service is installed.
+
+[Plan, review, checks and limits](../../docs/testing/music-loop-2026-10-26.md).
 
 ## Reinstall the local controls
 
