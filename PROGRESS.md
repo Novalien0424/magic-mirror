@@ -1,5 +1,23 @@
 # Magic Mirror — current handoff, 2026-10-26
 
+Latest request: read-only audit of Studio's complete image prompt after the
+owner reported a watercolour appearance. Published Raven v21 and its saved draft
+both contain the modern minimalist multicolour vector style, no image-template
+overrides, and implicit Sticker type. Published quality is medium; the saved
+draft's low quality is unpublished. The shared builder/provider dry run passes
+the assembled prompt unchanged (1024×1024 transparent PNG); 13 focused provider/
+inspector tests and build fingerprint pass. No provider generation, settings
+change or runtime restart. Past visitor answers/artwork are not retained, so the
+reported image's visual cause is unproven. Confirmed limitations: rendering-time
+chat cannot alter the already submitted image; sticker revisions preserve the
+existing emblem/colours and omit the initial frame's explicit no-texture/shadow/
+glow rules. Conversation-mode image requests do not inherit Studio artStyle
+(current saved Mirror mode is Conversation; not evidence of the reported visit).
+Next Studio action: make explicit restyling compatible with revision preservation
+and verify a fresh result visually if the owner requests repair. A first local
+prompt probe returned the prompt but emitted Vite dependency-scan shutdown
+warnings; a repeat with discovery disabled passed without warnings.
+
 Repaired MusicLoop silent playback: the native route now mirrors one stereo
 stream across the three macOS outputs, instead of concatenating them into six
 channels. A new native guard rejects the incorrect route. The previous QA's
