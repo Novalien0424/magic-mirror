@@ -108,6 +108,6 @@ function studioImagePrompts(avatar: AvatarProfile, profileSource: string): Promp
   const source = `${PORTRAIT_STUDIO_SOURCE}#imagePrompt + ${profileSource}.experience.studio`
   return [
     { title: 'Interactive Studio image prompt · first picture (sample answers)', source, content: buildPortraitPrompt({ studio, answers, name }) },
-    { title: 'Interactive Studio image prompt · change (sample request)', source, content: buildRevisionPrompt({ studio, change: 'make the sky snowy', name }) },
+    { title: 'Interactive Studio image prompt · change (sample request)', source, content: buildRevisionPrompt({ studio, answers, change: 'make the sky snowy', name }) },
   ]
 }

@@ -1,0 +1,212 @@
+{
+  "unitTests": {
+    "passed": 161,
+    "files": 10
+  },
+  "typecheck": "passed",
+  "build": "passed",
+  "nativeCopy": {
+    "bytes": 200000000,
+    "sourceSha256": "d089e287e101954bb8c80f8e27c0a55cbe41003f3cacc496951d161895ee2582",
+    "copySha256": "d089e287e101954bb8c80f8e27c0a55cbe41003f3cacc496951d161895ee2582",
+    "copyMatches": true,
+    "mp3DurationSeconds": 4995.936,
+    "nativeDeadlineSeconds": 883,
+    "sourceType": "synthetic repeated MP3 frames with valid ID3 padding",
+    "coldCloudDownload": "not_executed",
+    "build": {
+      "version": 1,
+      "status": "complete",
+      "source": "01baaad36a1c3e3cee78b62076dc824119fd44efacd65befeabf546cd945ec91",
+      "output": "4a218bc1edc3fbef7d2081ffe6ee7abb65ea83443b1bb944dda884c43fa3df3b",
+      "builtAt": "2026-10-26T13:03:10.659Z"
+    }
+  },
+  "nativePlayback": {
+    "passed": true,
+    "playedAfterAckMs": 16001,
+    "bytes": 200000000,
+    "events": [
+      {
+        "channels": 2,
+        "event": "ready",
+        "outputs": 3,
+        "streams": 1
+      },
+      {
+        "event": "playing",
+        "id": 1,
+        "outputs": 3
+      },
+      {
+        "event": "stopped"
+      }
+    ],
+    "exited": {
+      "code": 0,
+      "signal": null
+    },
+    "jabraRestored": true,
+    "jabraVolumes": [
+      0.7007718682289124
+    ]
+  },
+  "provider": {
+    "run": "2026-10-26T13-04-33-053Z",
+    "exit": 0,
+    "passed": true,
+    "elapsedMs": 431930,
+    "steps": [
+      {
+        "step": "studio_mode_on",
+        "status": "passed",
+        "durationMs": 8
+      },
+      {
+        "step": "studio_start",
+        "status": "passed",
+        "durationMs": 20475
+      },
+      {
+        "step": "studio_wake_entry",
+        "status": "passed",
+        "durationMs": 6286
+      },
+      {
+        "step": "studio_name",
+        "status": "passed",
+        "durationMs": 77272
+      },
+      {
+        "step": "studio_remote_console",
+        "status": "passed",
+        "durationMs": 104
+      },
+      {
+        "step": "studio_answer_1",
+        "status": "passed",
+        "durationMs": 39844
+      },
+      {
+        "step": "studio_answer_2",
+        "status": "passed",
+        "durationMs": 33282
+      },
+      {
+        "step": "studio_answer_3",
+        "status": "passed",
+        "durationMs": 31585
+      },
+      {
+        "step": "studio_answer_4",
+        "status": "passed",
+        "durationMs": 28939
+      },
+      {
+        "step": "studio_painting",
+        "status": "passed",
+        "durationMs": 216
+      },
+      {
+        "step": "studio_deck_console_painting",
+        "status": "passed",
+        "durationMs": 507
+      },
+      {
+        "step": "studio_reveal",
+        "status": "passed",
+        "durationMs": 52177
+      },
+      {
+        "step": "studio_remote_console_reveal",
+        "status": "passed",
+        "durationMs": 419
+      },
+      {
+        "step": "studio_change",
+        "status": "passed",
+        "durationMs": 69971
+      },
+      {
+        "step": "studio_finish",
+        "status": "passed",
+        "durationMs": 3
+      },
+      {
+        "step": "studio_farewell_dormant",
+        "status": "passed",
+        "durationMs": 2
+      },
+      {
+        "step": "studio_language",
+        "status": "passed",
+        "durationMs": 1
+      },
+      {
+        "step": "studio_comments_then_next_question",
+        "status": "passed",
+        "durationMs": 1
+      },
+      {
+        "step": "studio_feedback_offer_spoken",
+        "status": "passed",
+        "durationMs": 1
+      },
+      {
+        "step": "studio_picture_format",
+        "status": "passed",
+        "durationMs": 0
+      },
+      {
+        "step": "studio_repaint_once",
+        "status": "passed",
+        "durationMs": 0
+      },
+      {
+        "step": "studio_restart_fresh_name",
+        "status": "passed",
+        "durationMs": 26570
+      },
+      {
+        "step": "studio_conversation_request",
+        "status": "passed",
+        "durationMs": 39532
+      },
+      {
+        "step": "studio_release",
+        "status": "passed",
+        "durationMs": 822
+      },
+      {
+        "step": "real_audio_route",
+        "status": "passed",
+        "durationMs": 0
+      },
+      {
+        "step": "provider_errors",
+        "status": "passed",
+        "durationMs": 0
+      }
+    ],
+    "transcriptRetention": "none",
+    "humanAcousticAcceptance": "not_executed"
+  },
+  "operatorSettings": {
+    "exit": 0,
+    "publishedUnchanged": true,
+    "draftUnchanged": true
+  },
+  "cleanup": {
+    "qa": {
+      "run": "2026-10-26T13-04-33-053Z",
+      "files": 103,
+      "bytes": 26422267,
+      "deleted": true
+    },
+    "scratch": {
+      "files": 12,
+      "bytes": 400500113,
+      "deleted": true
+    }
+  }
+}

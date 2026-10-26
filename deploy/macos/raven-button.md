@@ -91,7 +91,7 @@ block other outputs.
 Downloads do not block command acknowledgement or controls. Music does not call
 the TV/ADB path, so a sleeping or unreachable TV cannot produce a music failure
 beep. Ready tracks repeat
-while remaining files prepare; files over 100 MB are abnormal and skipped. The
+while remaining files prepare; files over 200 MB are abnormal and skipped. The
 operator supplies files through shared `MusicLoop`, never a command argument.
 A queued STOP cancels this command's
 acknowledgement wait within a poll interval, allowing ordinary global shutdown to

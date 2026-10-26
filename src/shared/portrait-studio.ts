@@ -107,7 +107,7 @@ export const STUDIO_IMAGE_PROMPT_INFO: Readonly<Record<StudioImagePromptKey, { l
   nameplate: { label: 'Nameplate instruction', when: 'Ends the prompt when the app adds the name banner.', max: 600, required: [], optional: [] },
   painted: { label: 'Painted name instruction', when: 'Ends the prompt when the image model letters the name; {{name}} is the confirmed name, {{font}} the Name font.', max: 600, required: ['name'], optional: ['font'] },
   untitled: { label: 'No-name instruction', when: 'Ends the prompt when Ask for a name first is off.', max: 600, required: [], optional: [] },
-  revision: { label: 'Change instruction', when: 'The whole prompt for a change; {{change}} is what the visitor asked to change.', max: 1000, required: ['change'], optional: [] },
+  revision: { label: 'Change instruction', when: 'Directs the redraw; {{change}} is the visitor’s requested change. The full art style, picture instructions and original answers follow.', max: 1000, required: ['change'], optional: [] },
 })
 export const STUDIO_IMAGE_LINE_MAX = 300
 export function studioImagePromptIssue(key: StudioImagePromptKey, text: unknown): string {

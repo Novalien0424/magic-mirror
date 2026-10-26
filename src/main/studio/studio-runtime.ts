@@ -205,7 +205,7 @@ export function createStudioRuntime(input: {
       result = photo
         ? await provider.edit({ prompt: `${IMAGE_SKILL.photo}\n\n${buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name })}`, image: photo.bytes, mimeType: photo.mimeType, quality, picture, signal: abort.signal })
         : kind === 'edit' && previous
-        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
+        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, answers, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
         : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return

@@ -9,8 +9,8 @@ const CACHE_BUDGET = 2 * 1024 ** 3
 const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
 /** Seconds for one download-and-copy: about 1 MiB/s sustained, at least 9 s, at most 10 minutes. */
 export const prepareDeadlineSeconds = (size: number): number => Math.min(600, Math.max(9, Math.ceil(size / 2 ** 20)))
-/** MusicLoop accepts at most 100 MB; allow slow downloads without delaying controls. */
-export const musicPrepareDeadlineSeconds = (size: number): number => Math.min(600, 120 + Math.ceil(size / 2 ** 18))
+/** MusicLoop accepts at most 200 MB; allow slow downloads without delaying controls. */
+export const musicPrepareDeadlineSeconds = (size: number): number => Math.min(900, 120 + Math.ceil(size / 2 ** 18))
 
 /** Keep playback outside File Provider. Drive remains the versioned source. */
 export function createMacMediaFilePreparer(executable: string, directory: string,
@@ -83,7 +83,7 @@ export function createMacMediaFilePreparer(executable: string, directory: string
         report('media_file_preparing')
         try {
           const deadline = (options.deadlineSeconds ?? prepareDeadlineSeconds)(size)
-          if (!Number.isSafeInteger(deadline) || deadline < 1 || deadline > 600) throw Error('media_file_prepare_failed')
+          if (!Number.isSafeInteger(deadline) || deadline < 1 || deadline > 900) throw Error('media_file_prepare_failed')
           await new Promise<void>((resolve, reject) => {
             execFile(executable, [path, String(size), staging, String(deadline)],
               { timeout: (deadline + 1) * 1000, ...(signal ? { signal } : {}), killSignal: 'SIGKILL', maxBuffer: 1024, encoding: 'utf8' }, (error, stdout) => {

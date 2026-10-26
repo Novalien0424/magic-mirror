@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline'
 
 const AUDIO: Record<string, string> = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
   '.wav': 'audio/vnd.wave', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.flac': 'audio/flac', '.caf': 'audio/x-caf' }
-export const MUSIC_LOOP_MAX_BYTES = 100_000_000
+export const MUSIC_LOOP_MAX_BYTES = 200_000_000
 export async function musicLoopFiles(shared: string | undefined): Promise<string[]> {
   if (!shared) throw Error('operator_loop_music_shared_missing')
   const root = join(shared, 'MusicLoop'), files: string[] = []

@@ -29,10 +29,10 @@ export function buildPortraitPrompt(input: { studio: ImageSettings; answers: rea
   return parts.join(' ')
 }
 
-export function buildRevisionPrompt(input: { studio: ImageSettings; change: string; name: string }): string {
+/** Redraws retain the answers' meaning and reuse the complete current art direction. */
+export function buildRevisionPrompt(input: { studio: ImageSettings; answers: readonly PortraitAnswers[]; change: string; name: string }): string {
   return [renderStudioText(studioImagePrompt(input.studio, 'revision'), { change: quoteVisitorText(input.change, 120) }),
-    `Art direction (operator style): ${input.studio.artStyle.trim()}`,
-    PORTRAIT_STUDIO.imagePrompt.guard, nameLine(input.studio, input.name)].join(' ')
+    buildPortraitPrompt(input)].join(' ')
 }
 
 /** Sample answers for Console previews and the test picture; never visitor data. */

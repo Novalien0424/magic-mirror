@@ -29,21 +29,22 @@ describe('Mac local media cache', () => {
   it('gives MusicLoop large files a separate size-based preparation window', () => {
     expect(musicPrepareDeadlineSeconds(15)).toBe(121)
     expect(musicPrepareDeadlineSeconds(100_000_000)).toBe(502)
-    expect(musicPrepareDeadlineSeconds(100 * 2 ** 30)).toBe(600)
+    expect(musicPrepareDeadlineSeconds(200_000_000)).toBe(883)
+    expect(musicPrepareDeadlineSeconds(100 * 2 ** 30)).toBe(900)
     expect(prepareDeadlineSeconds(3 * 2 ** 30)).toBe(600)
   })
-  it('reuses a complete 100 MB MusicLoop cache entry after restart without downloading again', async () => {
-    const { root } = await fixture(), size = 100_000_000
+  it('reuses a complete 200 MB MusicLoop cache entry after restart without downloading again', async () => {
+    const { root } = await fixture(), size = 200_000_000
     const options = { deadlineSeconds: musicPrepareDeadlineSeconds }
     const prepare = createMacMediaFilePreparer('/app/native/media-file-prepare', root, undefined, options)
     vi.mocked(execFile).mockImplementationOnce(((_file: string, args: string[], options: { timeout: number }, callback: (error: Error | null, stdout: string) => void) => {
-      expect(args[3]).toBe('502'); expect(options.timeout).toBe(503000)
+      expect(args[3]).toBe('883'); expect(options.timeout).toBe(884000)
       void writeFile(args[2]!, '').then(() => truncate(args[2]!, size)).then(() => callback(null, 'media_file_prepared bytes=' + size))
     }) as typeof execFile)
-    const path = await prepare('/drive/large.wav', size, 1)
+    const path = await prepare('/drive/large.mp3', size, 1)
     const restarted = createMacMediaFilePreparer('/app/native/media-file-prepare', root, undefined, options)
-    expect(await restarted.cached('/drive/large.wav', size, 1)).toBe(path)
-    expect(await restarted('/drive/large.wav', size, 1)).toBe(path)
+    expect(await restarted.cached('/drive/large.mp3', size, 1)).toBe(path)
+    expect(await restarted('/drive/large.mp3', size, 1)).toBe(path)
     expect(execFile).toHaveBeenCalledOnce()
   })
   it('removes a partial copy when STOP aborts preparation', async () => {

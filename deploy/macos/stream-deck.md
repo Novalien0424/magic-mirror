@@ -19,7 +19,7 @@ Magic Mirror profiles are preserved.
 | Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
-| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 100 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
@@ -73,7 +73,7 @@ original Default Profile remains available.
 
 The linked shared folder is `AI_Stuff/AI_Avatar/Common`; its **MusicLoop** subfolder
 was created empty at the owner's request. Add MP3, M4A, AAC, WAV, AIFF, FLAC or CAF
-files of **100 MB or less (100,000,000 bytes)**, then press MUSIC LOOP. Larger files
+files of **200 MB or less (200,000,000 bytes)**, then press MUSIC LOOP. Larger files
 are abnormal and skipped before download or playback; Console reports when all
 files are oversized. Subfolders are included; hidden files and symlinks are
 excluded. Number filenames for an explicit order among ready tracks.
@@ -82,7 +82,7 @@ Cached tracks start first; locally downloaded files are prepared before cloud-on
 files. Ready tracks keep repeating while one background download completes. New
 completed tracks join at a track boundary. If none are ready, Console shows
 downloading/preparing and playback begins automatically. Downloads have a finite
-size-based timeout (502 seconds at 100 MB); failure skips that file and preserves
+size-based timeout (883 seconds at 200 MB); failure skips that file and preserves
 playable music. Repeated MUSIC LOOP preserves playback and preparation. STOP then
 MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.

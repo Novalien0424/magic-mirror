@@ -72,8 +72,20 @@ describe('portrait prompt builder', () => {
 
   it('letters the exact quoted name only in painted mode, and quotes change requests', () => {
     expect(buildPortraitPrompt({ studio: { ...studio, nameLettering: 'painted' }, answers, name: '王曉明' })).toContain('"王曉明"')
-    expect(buildRevisionPrompt({ studio, change: '把海邊換成雪地', name: '王曉明' })).toContain('"把海邊換成雪地"')
+    expect(buildRevisionPrompt({ studio, answers, change: '把海邊換成雪地', name: '王曉明' })).toContain('"把海邊換成雪地"')
     expect(quoteVisitorText('a\u0000"b"\n c', 80)).toBe('"a \'b\' c"')
     expect(JSON.parse(quoteVisitorText('x'.repeat(200)))).toHaveLength(80)
+  })
+
+  it.each(['sticker', 'portrait'] as const)('redraws %s from its meaning with the full saved art direction and original answers', pictureType => {
+    const settings = { ...studio, pictureType }
+    const prompt = buildRevisionPrompt({ studio: settings, answers, change: '改成現代極簡風格', name: '王曉明' })
+    expect(prompt).toContain(buildPortraitPrompt({ studio: settings, answers, name: '王曉明' }))
+    expect(prompt).toContain('Preserve the meaning, not the old rendering.')
+    expect(prompt).toContain('do not inherit the previous picture')
+    expect(prompt).toContain('"改成現代極簡風格"')
+    expect(prompt).not.toContain('Preserve the figure, composition and art direction')
+    expect(prompt).not.toContain('Keep its emblem, outlines')
+    if (pictureType === 'sticker') expect(prompt).toContain('no gradients, shadows, glow, texture or tiny details')
   })
 })

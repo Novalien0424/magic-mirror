@@ -14,7 +14,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--local" {
 // Main sizes the deadline to the file so a cold cloud download can finish.
 guard CommandLine.arguments.count == 5,
       let expected = Int(CommandLine.arguments[2]), expected > 0,
-      let deadline = Int(CommandLine.arguments[4]), (1...600).contains(deadline) else { exit(2) }
+      let deadline = Int(CommandLine.arguments[4]), (1...900).contains(deadline) else { exit(2) }
 DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(deadline)) {
     print("media_file_prepare_timeout")
     exit(124)

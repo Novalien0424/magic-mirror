@@ -504,7 +504,7 @@ export function ImagePromptEditor({ experience, issues, disabled, onChange }: {
         <p className="console__muted">First picture{name ? ' (name “Raven”)' : ''}:</p>
         <pre className="experiences-editor__preview-text">{buildPortraitPrompt({ studio, answers, name })}</pre>
         <p className="console__muted">A change (“make the sky snowy”):</p>
-        <pre className="experiences-editor__preview-text">{buildRevisionPrompt({ studio, change: 'make the sky snowy', name })}</pre>
+        <pre className="experiences-editor__preview-text">{buildRevisionPrompt({ studio, answers, change: 'make the sky snowy', name })}</pre>
       </details>
     </fieldset>
   </details>

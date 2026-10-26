@@ -114,6 +114,12 @@ describe('portrait studio runtime', () => {
     completeCue(h, 'paint')
     expect(h.views().at(-1)).toMatchObject({ phase: 'revising' })
     await vi.waitFor(() => expect(h.calls).toHaveLength(2))
+    const redraw = h.calls[1]!.prompt
+    expect(redraw).toContain('Preserve the meaning, not the old rendering.')
+    expect(redraw).toContain(h.experience.studio.artStyle)
+    expect(redraw).toContain('no gradients, shadows, glow, texture or tiny details')
+    expect(redraw.match(/"synthetic answer"/g)).toHaveLength(4)
+    expect(redraw).toContain('"Make the wings red"')
     h.runtime.close('test_complete')
   })
 

@@ -189,16 +189,16 @@ describe('MusicLoop playlist and lifecycle', () => {
     expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_download_failed', undefined)
     expect(f.input.failed).not.toHaveBeenCalled()
   })
-  it('accepts exactly 100 MB and skips larger files before cache access or downloading', async () => {
-    const f = await playerFixture()
-    await truncate(join(f.folder, '01.wav'), MUSIC_LOOP_MAX_BYTES)
-    await truncate(join(f.folder, '02.mp3'), MUSIC_LOOP_MAX_BYTES + 1)
+  it('accepts exactly 200 MB and skips larger files before cache access or downloading', async () => {
+    const f = await playerFixture(['01.mp3', '02.mp3'])
+    await truncate(join(f.folder, '01.mp3'), 200_000_000)
+    await truncate(join(f.folder, '02.mp3'), 200_000_001)
     expect(await f.player.start()).toBe(true)
     expect(f.input.cached).toHaveBeenCalledOnce()
     expect(f.input.prepare).toHaveBeenCalledOnce()
-    expect(f.input.prepare.mock.calls[0]![0]).toBe(join(f.folder, '01.wav'))
+    expect(f.input.prepare.mock.calls[0]![0]).toBe(join(f.folder, '01.mp3'))
     expect(f.input.state).toHaveBeenCalledWith('playing', 0, 1)
-    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_oversize_skipped', { bytes: 100_000_001, limit: 100_000_000 })
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_oversize_skipped', { bytes: 200_000_001, limit: 200_000_000 })
   })
   it('reports an all-abnormal playlist without starting downloads', async () => {
     const f = await playerFixture(['01.wav'])
