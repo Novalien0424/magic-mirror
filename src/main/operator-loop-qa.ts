@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, truncate, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { BrowserWindow, screen } from 'electron'
 import type { LoopVideoSettings, LoopVideoView, OperatorLoopSnapshot } from '../shared/operator-loop'
@@ -21,6 +21,7 @@ const CASES = [
   'operator_remote_console_venue_keys',
   'operator_desktop_preserves_draft', 'operator_desktop_return_buttons',
   'operator_music_loop_play_repeat_console', 'operator_music_loop_transitions', 'operator_music_loop_empty_recovery',
+  'operator_music_loop_background_download', 'operator_music_loop_pending_cancel',
 ] as const
 
 const DOM = `
@@ -679,6 +680,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     pass({ normal: true, studio: true, play_loop: true, show_console: true })
     step = CASES[24]
     await operatorCommand('music_loop')
+    await waitFor(async () => (await snapshot()).status === 'playing')
     const musicGeneration = (await snapshot()).generation
     if ((await snapshot()).status !== 'playing') fail('music_not_playing')
     await operatorCommand('music_loop')
@@ -707,16 +709,77 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     await rename(musicDirectory, moved); await mkdir(musicDirectory)
     try {
       const reply = await sendQaOperatorCommand(userData, 'music_loop')
-      if (reply !== 'failed' || (await snapshot()).reason !== 'operator_loop_music_empty') fail('music_empty_not_reported')
+      if (reply !== 'success') fail('music_mode_not_accepted')
+      await waitFor(async () => (await snapshot()).reason === 'operator_loop_music_empty')
       await operatorCommand('show_console')
       await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('MusicLoop is empty.')"))
       await shot('operator-music-loop-empty.png', false, true)
+      const abnormal = join(musicDirectory, '99-abnormal.wav')
+      await writeFile(abnormal, ''); await truncate(abnormal, 100_000_001)
+      await operatorCommand('music_loop')
+      await waitFor(async () => (await snapshot()).reason === 'operator_loop_music_all_oversize')
+      await operatorCommand('show_console')
+      await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('All MusicLoop files are abnormal')"))
+      await shot('operator-music-loop-abnormal.png', false, true)
     } finally { await rm(musicDirectory, { recursive: true }); await rename(moved, musicDirectory) }
     await operatorCommand('music_loop')
+    await waitFor(async () => (await snapshot()).status === 'playing')
     if ((await snapshot()).status !== 'playing') fail('music_empty_retry_failed')
     // Finish while native music is playing: the runner's ordinary Main shutdown
     // must release it. The outer check verifies that no music worker remains.
-    pass({ empty_visible: true, retry_after_files_added: true, shutdown_with_music_active: true })
+    pass({ empty_visible: true, abnormal_visible: true, retry_after_files_added: true })
+    step = CASES[27]
+    const downloads = input.musicDownloads
+    if (!downloads) fail('download_control_missing')
+    await operatorCommand('normal')
+    await copyFile(join(musicDirectory, '02.wav'), join(musicDirectory, '03-pending.wav'))
+    await writeFile(join(musicDirectory, '99-abnormal.wav'), '')
+    await truncate(join(musicDirectory, '99-abnormal.wav'), 100_000_001)
+    downloads!.paused = true
+    await operatorCommand('music_loop')
+    await waitFor(async () => downloads!.waiting === 1 && (await snapshot()).status === 'playing')
+    const before = downloads!.played, generation = (await snapshot()).generation
+    await operatorCommand('music_loop'); await operatorCommand('show_console')
+    if ((await snapshot()).generation !== generation) fail('download_repeat_restarted')
+    await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('downloading remaining tracks')"))
+    await shot('operator-music-loop-downloading.png', false, true)
+    const started = Date.now()
+    while (Date.now() - started < 50000) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      if ((await snapshot()).status !== 'playing' || downloads!.waiting !== 1) fail('download_interrupted_ready_tracks')
+    }
+    if (downloads!.played - before < 10) fail('download_ready_tracks_not_repeating')
+    downloads!.paused = false
+    await waitFor(async () => downloads!.lastTrack === 3, 15000)
+    await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('abnormal files over 100 MB skipped')"))
+    pass({ delayed_ms: Date.now() - started, ready_track_plays: downloads!.played - before, completed_track_joined: true, abnormal_skipped: true })
+
+    step = CASES[28]
+    await operatorCommand('normal')
+    await rename(musicDirectory, moved); await mkdir(musicDirectory)
+    await copyFile(join(moved, '02.wav'), join(musicDirectory, '04-new.wav'))
+    downloads!.paused = true
+    await operatorCommand('music_loop')
+    await waitFor(async () => downloads!.waiting === 1 && (await snapshot()).status === 'preparing')
+    await operatorCommand('show_console')
+    await shot('operator-music-loop-preparing.png', false, true)
+    const waitingSince = Date.now()
+    while (Date.now() - waitingSince < 46000) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      if ((await snapshot()).status !== 'preparing' || downloads!.waiting !== 1) fail('large_download_timed_out')
+    }
+    await click('Return to Avatar'); await returnedAvatar()
+    await waitFor(async () => downloads!.waiting === 0)
+    const afterCancel = downloads!.played
+    downloads!.paused = false
+    await new Promise(resolve => setTimeout(resolve, 500))
+    if (downloads!.played !== afterCancel || (await snapshot()).mode !== 'avatar') fail('cancelled_download_restarted')
+    await rm(musicDirectory, { recursive: true }); await rename(moved, musicDirectory)
+    await copyFile(join(musicDirectory, '02.wav'), join(musicDirectory, '04-new.wav'))
+    downloads!.paused = true
+    await operatorCommand('music_loop')
+    await waitFor(async () => downloads!.waiting === 1 && (await snapshot()).status === 'playing')
+    pass({ pending_ms: Date.now() - waitingSince, pending_cancelled: true, no_late_restart: true, shutdown_with_playback_and_download: true })
     if (passed.size !== CASES.length || !CASES.every(name => passed.has(name))) fail('cases_incomplete')
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, visualCount: 3,
       screenshotCount: screenshots, musicAnalyser: 'not_executed', consoleCheckCount: passed.size }

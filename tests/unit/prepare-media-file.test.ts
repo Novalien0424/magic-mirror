@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, symlink, truncate, utimes, writeFile } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMacMediaFilePreparer, prepareDeadlineSeconds } from '../../src/main/avatar/prepare-media-file'
+import { createMacMediaFilePreparer, prepareDeadlineSeconds, musicPrepareDeadlineSeconds } from '../../src/main/avatar/prepare-media-file'
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
 
@@ -26,6 +26,37 @@ afterEach(async () => {
 })
 
 describe('Mac local media cache', () => {
+  it('gives MusicLoop large files a separate size-based preparation window', () => {
+    expect(musicPrepareDeadlineSeconds(15)).toBe(121)
+    expect(musicPrepareDeadlineSeconds(100_000_000)).toBe(502)
+    expect(musicPrepareDeadlineSeconds(100 * 2 ** 30)).toBe(600)
+    expect(prepareDeadlineSeconds(3 * 2 ** 30)).toBe(600)
+  })
+  it('reuses a complete 100 MB MusicLoop cache entry after restart without downloading again', async () => {
+    const { root } = await fixture(), size = 100_000_000
+    const options = { deadlineSeconds: musicPrepareDeadlineSeconds }
+    const prepare = createMacMediaFilePreparer('/app/native/media-file-prepare', root, undefined, options)
+    vi.mocked(execFile).mockImplementationOnce(((_file: string, args: string[], options: { timeout: number }, callback: (error: Error | null, stdout: string) => void) => {
+      expect(args[3]).toBe('502'); expect(options.timeout).toBe(503000)
+      void writeFile(args[2]!, '').then(() => truncate(args[2]!, size)).then(() => callback(null, 'media_file_prepared bytes=' + size))
+    }) as typeof execFile)
+    const path = await prepare('/drive/large.wav', size, 1)
+    const restarted = createMacMediaFilePreparer('/app/native/media-file-prepare', root, undefined, options)
+    expect(await restarted.cached('/drive/large.wav', size, 1)).toBe(path)
+    expect(await restarted('/drive/large.wav', size, 1)).toBe(path)
+    expect(execFile).toHaveBeenCalledOnce()
+  })
+  it('removes a partial copy when STOP aborts preparation', async () => {
+    const { root, prepare } = await fixture(), cancellation = new AbortController()
+    vi.mocked(execFile).mockImplementationOnce(((_file: string, args: string[], options: { signal: AbortSignal }, callback: (error: Error | null, stdout: string) => void) => {
+      void writeFile(args[2]!, 'partial').then(() => {
+        options.signal.addEventListener('abort', () => callback(Error('aborted'), ''), { once: true })
+        cancellation.abort()
+      })
+    }) as typeof execFile)
+    await expect(prepare('/drive/selected.mp4', 15, 1, cancellation.signal)).rejects.toThrow('media_file_prepare_failed')
+    expect(await readdir(root)).toEqual([])
+  })
   it('sizes the download deadline to the file: at least 9 s, about 1 s per MiB, at most 10 minutes', () => {
     expect(prepareDeadlineSeconds(15)).toBe(9)
     expect(prepareDeadlineSeconds(48_686_672)).toBe(47)

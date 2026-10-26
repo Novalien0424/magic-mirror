@@ -1,0 +1,753 @@
+{
+  "build": {
+    "version": 1,
+    "status": "complete",
+    "source": "9a025a0d0762d2a3288106194add17434a0066ebb46f50f42edc1eb03a33a49d",
+    "output": "5c9e4bb1a4561946f259af07c0315adb8f0cbdfc033ed91c5ac7d57e135275af",
+    "builtAt": "2026-10-26T07:40:28.043Z"
+  },
+  "focused": {
+    "files": 10,
+    "tests": 284,
+    "status": "passed"
+  },
+  "native": [
+    {
+      "native_copy_bytes": 100000000,
+      "elapsed_ms": 380,
+      "cache_reused": true,
+      "source": "synthetic_local_not_cloud"
+    },
+    {
+      "boundary_playback": "passed",
+      "events": [
+        {
+          "event": "ready",
+          "outputs": 3
+        },
+        {
+          "event": "playing",
+          "id": 1,
+          "outputs": 3
+        },
+        {
+          "event": "ended",
+          "id": 1
+        }
+      ]
+    },
+    {
+      "drive_copy_bytes": 22001708,
+      "already_local": true
+    }
+  ],
+  "runs": [
+    {
+      "id": "2026-10-26T07-36-34-707Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "d58fb3c2653206dd7c8647b4b377fa8a135f8ef4c848b70ff3a2de13194dd48f",
+        "output": "a714d99591919f72e68c5f550ea7bf06b8a5eda9fedd600dd561973f704f350b",
+        "builtAt": "2026-10-26T07:34:02.604Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "failed",
+          "reason": "phase4_qa_operator_loop_operator_command_invalid"
+        },
+        "evidence": [
+          {
+            "step": "operator_loop_scope",
+            "status": "metadata",
+            "item": "{\"media\":\"isolated_synthetic\",\"cases\":29,\"provider\":\"not_executed\",\"physical_audio\":\"not_executed\",\"hardware\":\"not_executed\",\"field_launcher\":\"not_executed\",\"normal_route\":\"production_isolated_mailbox\"}"
+          },
+          {
+            "step": "operator_loop_avatar_authored",
+            "status": "passed"
+          },
+          {
+            "step": "operator_remote_console_beside_avatar",
+            "status": "captured",
+            "file": "operator-remote-console-avatar.png",
+            "sha256": "9065a65a5dab8fd39628b1e17c2d28ac150d30dcb8b8b85cb78c89e4458bcaae",
+            "nonblack_pixels": 353906
+          },
+          {
+            "step": "operator_remote_console_beside_avatar",
+            "status": "passed",
+            "item": "{\"beside_mirror\":true,\"always_on_top\":false,\"focused\":true,\"windows_over_mirror\":0,\"width\":1888,\"height\":1048,\"same_renderer\":true,\"mirror_mode_unchanged\":true}"
+          },
+          {
+            "step": "operator_remote_console_repeat_restores_window",
+            "status": "passed",
+            "item": "{\"repeat_same_bounds\":true,\"minimized_restored\":true,\"maximized_restored\":true,\"same_renderer\":true}"
+          },
+          {
+            "step": "operator_remote_console_display_change",
+            "status": "passed",
+            "item": "{\"deck_replaced_over_mirror\":true,\"remote_stayed_beside\":true,\"rehomes_observed\":2}"
+          },
+          {
+            "step": "operator_remote_console_no_main_display",
+            "status": "passed",
+            "item": "{\"reply\":\"failed\",\"console_visible\":false,\"windows_over_mirror\":0,\"recovered_when_main_returns\":true}"
+          },
+          {
+            "step": "operator_loop_settings_saved",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_settings_saved",
+            "status": "captured",
+            "file": "operator-loop-console-saved.png",
+            "sha256": "5d13f47d37cd841f46b5033e3e218db2d1463fea446ef8812588a790ed951ce4",
+            "nonblack_pixels": 143752
+          },
+          {
+            "step": "operator_loop_settings_reloaded",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_muted_preview",
+            "status": "captured",
+            "file": "operator-loop-console-preview.png",
+            "sha256": "ae63ab799e3f32096d5101e77908b55c02fab64dcbe685a450471ed1af7df19a",
+            "nonblack_pixels": 522652
+          },
+          {
+            "step": "operator_loop_muted_preview",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2069,\"decoded_frames\":61,\"dropped_frames\":0,\"distinct_frames\":20,\"video_duration_ms\":3008,\"audio_duration_ms\":null,\"video_wraps\":0,\"audio_wraps\":0,\"video_only_wraps\":0,\"audio_only_wraps\":0,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "measured",
+            "item": "{\"decoder_audio_meter\":true,\"decoded_bytes\":43630}"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "captured",
+            "file": "operator-loop-embedded-playing.png",
+            "sha256": "89092ca45ac3a5ebfb4fbefd7e7db2a9f4487ed18f2ebde9c98e3f9f3eeebe9b",
+            "nonblack_pixels": 2069551
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "passed",
+            "item": "{\"elapsed_ms\":2069,\"decoded_frames\":61,\"dropped_frames\":0,\"distinct_frames\":20,\"video_duration_ms\":3008,\"audio_duration_ms\":null,\"video_wraps\":0,\"audio_wraps\":0,\"video_only_wraps\":0,\"audio_only_wraps\":0,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_duplicate_play",
+            "status": "passed",
+            "item": "{\"generation_unchanged\":true,\"media_nodes_unchanged\":true,\"source_loads\":0,\"duplicate_clicks\":2}"
+          },
+          {
+            "step": "operator_loop_saved_replacement_button",
+            "status": "captured",
+            "file": "operator-loop-saved-replacement.png",
+            "sha256": "67f38be9209d9dba38196b54b70d6b7bfc24b107233afbd600873a00657b4c54",
+            "nonblack_pixels": 1840016
+          },
+          {
+            "step": "operator_loop_saved_replacement_button",
+            "status": "passed",
+            "item": "{\"saved_selection_used\":true,\"new_generation\":true,\"route\":\"production_isolated_mailbox\"}"
+          },
+          {
+            "step": "operator_loop_avatar_return",
+            "status": "captured",
+            "file": "operator-loop-avatar-return.png",
+            "sha256": "1258ed38444dae8b74621e8f9fcd540c1a11c65f591c43b8306c75f5d67e0ad5",
+            "nonblack_pixels": 963117
+          },
+          {
+            "step": "operator_loop_avatar_return",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_start_cancel",
+            "status": "captured",
+            "file": "operator-loop-console-starting.png",
+            "sha256": "0df120701e552ea4678177bae48c6dd77f3db4510ad9b1f0cbbdc1b1c94192bc",
+            "nonblack_pixels": 31690
+          },
+          {
+            "step": "operator_loop_start_cancel",
+            "status": "passed",
+            "item": "{\"return_offered_while_preparing\":true,\"start_failure_shown\":false}"
+          },
+          {
+            "step": "operator_loop_separate_audio",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":5258,\"decoded_frames\":154,\"dropped_frames\":6,\"distinct_frames\":48,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":2,\"audio_wraps\":4,\"video_only_wraps\":2,\"audio_only_wraps\":4,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "captured",
+            "file": "operator-loop-independent-playing.png",
+            "sha256": "021c7734bc58a67b985dc7454f67778feb1678cb4dca009e2b06c609c8b8dda6",
+            "nonblack_pixels": 2070248
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "passed",
+            "item": "{\"elapsed_ms\":5258,\"decoded_frames\":154,\"dropped_frames\":6,\"distinct_frames\":48,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":2,\"audio_wraps\":4,\"video_only_wraps\":2,\"audio_only_wraps\":4,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_on_mirror",
+            "status": "captured",
+            "file": "operator-console-on-mirror.png",
+            "sha256": "dc95a5939bc523201b9b05464578088972478e56ec1d5dd89c82831e96ad6469",
+            "nonblack_pixels": 35863
+          },
+          {
+            "step": "operator_console_on_mirror",
+            "status": "passed",
+            "item": "{\"on_mirror\":true,\"visible\":true,\"focused\":true,\"always_on_top\":true}"
+          },
+          {
+            "step": "operator_console_preserves_loop_and_draft",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2046,\"decoded_frames\":61,\"dropped_frames\":3,\"distinct_frames\":20,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":0,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_preserves_loop_and_draft",
+            "status": "passed",
+            "item": "{\"generation_unchanged\":true,\"unsaved_draft_preserved\":true,\"decoded_frames\":61}"
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2074,\"decoded_frames\":61,\"dropped_frames\":0,\"distinct_frames\":25,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":1,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":1,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "captured",
+            "file": "operator-console-remote-main.png",
+            "sha256": "e5d3503ab6ef107aaf5c624ffa273f05d9eeaefb1b0be137bb3c2c40ca6be774",
+            "nonblack_pixels": 158623
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "passed",
+            "item": "{\"remote_beside_mirror\":true,\"remote_focused\":true,\"decoded_frames_beside\":61,\"deck_back_over_mirror\":true,\"generation_unchanged\":true,\"unsaved_draft_preserved\":true}"
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2067,\"decoded_frames\":57,\"dropped_frames\":0,\"distinct_frames\":22,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":0,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "captured",
+            "file": "operator-loop-recovered-once.png",
+            "sha256": "204df750bcb2148d8f5db49edab59315b781e8eb7d921e58664a5a1b873b899e",
+            "nonblack_pixels": 2069550
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "passed",
+            "item": "{\"reloads\":1,\"decoded_frames\":57,\"elapsed_ms\":2067}"
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "captured",
+            "file": "operator-loop-failed-black.png",
+            "sha256": "e67dfd31e867c9131c57a237fe79f084a2e642682ed3c805f07b9dbcf5ff442c",
+            "nonblack_pixels": 0
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "captured",
+            "file": "operator-loop-console-failed.png",
+            "sha256": "27f478ff917706a7e9e88919d19c7708ef1b8ecedf09c0d7b42ecc9189ce0057",
+            "nonblack_pixels": 45098
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "passed",
+            "item": "{\"reloads\":1,\"failure_hold_ms\":8671,\"nonblack_pixels\":0}"
+          },
+          {
+            "step": "operator_loop_start_normal_recovery",
+            "status": "captured",
+            "file": "operator-loop-start-normal-avatar.png",
+            "sha256": "1e5ae7861e9a98ff15a7aa5539313d07dad761690de1cdcb3833ba28e408c0d3",
+            "nonblack_pixels": 909057
+          },
+          {
+            "step": "operator_loop_start_normal_recovery",
+            "status": "passed",
+            "item": "{\"normal_acknowledged\":true,\"saved_avatar_unchanged\":true}"
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "captured",
+            "file": "operator-remote-console-studio-mode.png",
+            "sha256": "6418e6ee4e7f3ccc96239cc65b93718e91bd9714c07c8bcc8bbf0e6e8dcd4301",
+            "nonblack_pixels": 178780
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2027,\"decoded_frames\":58,\"dropped_frames\":0,\"distinct_frames\":25,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":1,\"audio_wraps\":2,\"video_only_wraps\":1,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "captured",
+            "file": "operator-remote-console-loop.png",
+            "sha256": "d528e9887fed947cdae6854aed8c3756af36edc679a4fca7ad16022c3bb2dfac",
+            "nonblack_pixels": 169117
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "passed",
+            "item": "{\"studio_hid_console\":true,\"studio_mode_shown\":true,\"play_loop_hid_console\":true,\"decoded_frames_beside\":58,\"start_hid_console\":true,\"mode_after_start\":\"conversation\"}"
+          },
+          {
+            "step": "operator_desktop_preserves_draft",
+            "status": "captured",
+            "file": "operator-desktop-remote-console.png",
+            "sha256": "31c0b2fa26bb034e712ced59db22055a86e918318fc79f2824c3fb9ee375a58f",
+            "nonblack_pixels": 147042
+          },
+          {
+            "step": "operator_desktop_preserves_draft",
+            "status": "passed",
+            "item": "{\"windows_hidden\":true,\"media_released\":true,\"repeated_desktop\":true,\"unsaved_draft_preserved\":true,\"console_renderer_preserved\":true}"
+          },
+          {
+            "step": "operator_desktop_return_buttons",
+            "status": "passed",
+            "item": "{\"normal\":true,\"studio\":true,\"play_loop\":true,\"show_console\":true}"
+          },
+          {
+            "step": "operator_music_loop_play_repeat_console",
+            "status": "failed",
+            "item": "{\"reason\":\"phase4_qa_operator_loop_operator_command_invalid\",\"state\":{\"mode\":\"music\",\"status\":\"preparing\",\"generation\":24,\"reason\":\"operator_loop_music_downloading\"},\"completed_cases\":24}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-26T07-40-32-797Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "9a025a0d0762d2a3288106194add17434a0066ebb46f50f42edc1eb03a33a49d",
+        "output": "5c9e4bb1a4561946f259af07c0315adb8f0cbdfc033ed91c5ac7d57e135275af",
+        "builtAt": "2026-10-26T07:40:28.043Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 0,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 3,
+          "screenshot_count": 22,
+          "music_analyser": "not_executed",
+          "console_check_count": 29
+        },
+        "evidence": [
+          {
+            "step": "operator_loop_scope",
+            "status": "metadata",
+            "item": "{\"media\":\"isolated_synthetic\",\"cases\":29,\"provider\":\"not_executed\",\"physical_audio\":\"not_executed\",\"hardware\":\"not_executed\",\"field_launcher\":\"not_executed\",\"normal_route\":\"production_isolated_mailbox\"}"
+          },
+          {
+            "step": "operator_loop_avatar_authored",
+            "status": "passed"
+          },
+          {
+            "step": "operator_remote_console_beside_avatar",
+            "status": "captured",
+            "file": "operator-remote-console-avatar.png",
+            "sha256": "9065a65a5dab8fd39628b1e17c2d28ac150d30dcb8b8b85cb78c89e4458bcaae",
+            "nonblack_pixels": 353906
+          },
+          {
+            "step": "operator_remote_console_beside_avatar",
+            "status": "passed",
+            "item": "{\"beside_mirror\":true,\"always_on_top\":false,\"focused\":true,\"windows_over_mirror\":0,\"width\":1888,\"height\":1048,\"same_renderer\":true,\"mirror_mode_unchanged\":true}"
+          },
+          {
+            "step": "operator_remote_console_repeat_restores_window",
+            "status": "passed",
+            "item": "{\"repeat_same_bounds\":true,\"minimized_restored\":true,\"maximized_restored\":true,\"same_renderer\":true}"
+          },
+          {
+            "step": "operator_remote_console_display_change",
+            "status": "passed",
+            "item": "{\"deck_replaced_over_mirror\":true,\"remote_stayed_beside\":true,\"rehomes_observed\":2}"
+          },
+          {
+            "step": "operator_remote_console_no_main_display",
+            "status": "passed",
+            "item": "{\"reply\":\"failed\",\"console_visible\":false,\"windows_over_mirror\":0,\"recovered_when_main_returns\":true}"
+          },
+          {
+            "step": "operator_loop_settings_saved",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_settings_saved",
+            "status": "captured",
+            "file": "operator-loop-console-saved.png",
+            "sha256": "5d13f47d37cd841f46b5033e3e218db2d1463fea446ef8812588a790ed951ce4",
+            "nonblack_pixels": 143752
+          },
+          {
+            "step": "operator_loop_settings_reloaded",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_muted_preview",
+            "status": "captured",
+            "file": "operator-loop-console-preview.png",
+            "sha256": "9cf238d83cd979cc1b5de96622b6ef58fccd98fa9e71cadeaffc90e579554ea9",
+            "nonblack_pixels": 523591
+          },
+          {
+            "step": "operator_loop_muted_preview",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2021,\"decoded_frames\":60,\"dropped_frames\":0,\"distinct_frames\":19,\"video_duration_ms\":3008,\"audio_duration_ms\":null,\"video_wraps\":0,\"audio_wraps\":0,\"video_only_wraps\":0,\"audio_only_wraps\":0,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "measured",
+            "item": "{\"decoder_audio_meter\":true,\"decoded_bytes\":43630}"
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "captured",
+            "file": "operator-loop-embedded-playing.png",
+            "sha256": "6c8521dbe0ec4eb5da47c458fd98793025eb504bd82bb1d988b219b81765448d",
+            "nonblack_pixels": 2069604
+          },
+          {
+            "step": "operator_loop_embedded_audio",
+            "status": "passed",
+            "item": "{\"elapsed_ms\":2021,\"decoded_frames\":60,\"dropped_frames\":0,\"distinct_frames\":19,\"video_duration_ms\":3008,\"audio_duration_ms\":null,\"video_wraps\":0,\"audio_wraps\":0,\"video_only_wraps\":0,\"audio_only_wraps\":0,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_duplicate_play",
+            "status": "passed",
+            "item": "{\"generation_unchanged\":true,\"media_nodes_unchanged\":true,\"source_loads\":0,\"duplicate_clicks\":2}"
+          },
+          {
+            "step": "operator_loop_saved_replacement_button",
+            "status": "captured",
+            "file": "operator-loop-saved-replacement.png",
+            "sha256": "60451197b511d71f0d2114ff2da23aae3f52b517be81a02f201fb9d7e8c3456b",
+            "nonblack_pixels": 1840015
+          },
+          {
+            "step": "operator_loop_saved_replacement_button",
+            "status": "passed",
+            "item": "{\"saved_selection_used\":true,\"new_generation\":true,\"route\":\"production_isolated_mailbox\"}"
+          },
+          {
+            "step": "operator_loop_avatar_return",
+            "status": "captured",
+            "file": "operator-loop-avatar-return.png",
+            "sha256": "284a7d548be9a25a9531221a56b51b2872bed18cc586688a4a7e5a40a8d6a97b",
+            "nonblack_pixels": 905697
+          },
+          {
+            "step": "operator_loop_avatar_return",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_start_cancel",
+            "status": "captured",
+            "file": "operator-loop-console-starting.png",
+            "sha256": "0df120701e552ea4678177bae48c6dd77f3db4510ad9b1f0cbbdc1b1c94192bc",
+            "nonblack_pixels": 31690
+          },
+          {
+            "step": "operator_loop_start_cancel",
+            "status": "passed",
+            "item": "{\"return_offered_while_preparing\":true,\"start_failure_shown\":false}"
+          },
+          {
+            "step": "operator_loop_separate_audio",
+            "status": "passed"
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":5186,\"decoded_frames\":153,\"dropped_frames\":0,\"distinct_frames\":49,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":2,\"audio_wraps\":4,\"video_only_wraps\":2,\"audio_only_wraps\":4,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "captured",
+            "file": "operator-loop-independent-playing.png",
+            "sha256": "021c7734bc58a67b985dc7454f67778feb1678cb4dca009e2b06c609c8b8dda6",
+            "nonblack_pixels": 2070248
+          },
+          {
+            "step": "operator_loop_independent_wraps",
+            "status": "passed",
+            "item": "{\"elapsed_ms\":5186,\"decoded_frames\":153,\"dropped_frames\":0,\"distinct_frames\":49,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":2,\"audio_wraps\":4,\"video_only_wraps\":2,\"audio_only_wraps\":4,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_on_mirror",
+            "status": "captured",
+            "file": "operator-console-on-mirror.png",
+            "sha256": "dc95a5939bc523201b9b05464578088972478e56ec1d5dd89c82831e96ad6469",
+            "nonblack_pixels": 35863
+          },
+          {
+            "step": "operator_console_on_mirror",
+            "status": "passed",
+            "item": "{\"on_mirror\":true,\"visible\":true,\"focused\":true,\"always_on_top\":true}"
+          },
+          {
+            "step": "operator_console_preserves_loop_and_draft",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2069,\"decoded_frames\":62,\"dropped_frames\":0,\"distinct_frames\":23,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":0,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_preserves_loop_and_draft",
+            "status": "passed",
+            "item": "{\"generation_unchanged\":true,\"unsaved_draft_preserved\":true,\"decoded_frames\":62}"
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2038,\"decoded_frames\":59,\"dropped_frames\":0,\"distinct_frames\":26,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":1,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":1,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "captured",
+            "file": "operator-console-remote-main.png",
+            "sha256": "e5d3503ab6ef107aaf5c624ffa273f05d9eeaefb1b0be137bb3c2c40ca6be774",
+            "nonblack_pixels": 158623
+          },
+          {
+            "step": "operator_console_remote_main_then_deck",
+            "status": "passed",
+            "item": "{\"remote_beside_mirror\":true,\"remote_focused\":true,\"decoded_frames_beside\":59,\"deck_back_over_mirror\":true,\"generation_unchanged\":true,\"unsaved_draft_preserved\":true}"
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2003,\"decoded_frames\":54,\"dropped_frames\":0,\"distinct_frames\":23,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":0,\"audio_wraps\":2,\"video_only_wraps\":0,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "captured",
+            "file": "operator-loop-recovered-once.png",
+            "sha256": "204df750bcb2148d8f5db49edab59315b781e8eb7d921e58664a5a1b873b899e",
+            "nonblack_pixels": 2069550
+          },
+          {
+            "step": "operator_loop_single_reload",
+            "status": "passed",
+            "item": "{\"reloads\":1,\"decoded_frames\":54,\"elapsed_ms\":2003}"
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "captured",
+            "file": "operator-loop-failed-black.png",
+            "sha256": "e67dfd31e867c9131c57a237fe79f084a2e642682ed3c805f07b9dbcf5ff442c",
+            "nonblack_pixels": 0
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "captured",
+            "file": "operator-loop-console-failed.png",
+            "sha256": "27f478ff917706a7e9e88919d19c7708ef1b8ecedf09c0d7b42ecc9189ce0057",
+            "nonblack_pixels": 45098
+          },
+          {
+            "step": "operator_loop_failed_black",
+            "status": "passed",
+            "item": "{\"reloads\":1,\"failure_hold_ms\":8674,\"nonblack_pixels\":0}"
+          },
+          {
+            "step": "operator_loop_start_normal_recovery",
+            "status": "captured",
+            "file": "operator-loop-start-normal-avatar.png",
+            "sha256": "09f45eed99ec52f1b61f3406d1ae799e625aa204ebc49363f8ab8e842e90406a",
+            "nonblack_pixels": 909037
+          },
+          {
+            "step": "operator_loop_start_normal_recovery",
+            "status": "passed",
+            "item": "{\"normal_acknowledged\":true,\"saved_avatar_unchanged\":true}"
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "captured",
+            "file": "operator-remote-console-studio-mode.png",
+            "sha256": "6418e6ee4e7f3ccc96239cc65b93718e91bd9714c07c8bcc8bbf0e6e8dcd4301",
+            "nonblack_pixels": 178780
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "measured",
+            "item": "{\"elapsed_ms\":2003,\"decoded_frames\":58,\"dropped_frames\":0,\"distinct_frames\":20,\"video_duration_ms\":3008,\"audio_duration_ms\":1250,\"video_wraps\":1,\"audio_wraps\":2,\"video_only_wraps\":1,\"audio_only_wraps\":2,\"unexpected_resets\":0,\"stable_elements\":true,\"sample_error\":false}"
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "captured",
+            "file": "operator-remote-console-loop.png",
+            "sha256": "d528e9887fed947cdae6854aed8c3756af36edc679a4fca7ad16022c3bb2dfac",
+            "nonblack_pixels": 169117
+          },
+          {
+            "step": "operator_remote_console_venue_keys",
+            "status": "passed",
+            "item": "{\"studio_hid_console\":true,\"studio_mode_shown\":true,\"play_loop_hid_console\":true,\"decoded_frames_beside\":58,\"start_hid_console\":true,\"mode_after_start\":\"conversation\"}"
+          },
+          {
+            "step": "operator_desktop_preserves_draft",
+            "status": "captured",
+            "file": "operator-desktop-remote-console.png",
+            "sha256": "31c0b2fa26bb034e712ced59db22055a86e918318fc79f2824c3fb9ee375a58f",
+            "nonblack_pixels": 147042
+          },
+          {
+            "step": "operator_desktop_preserves_draft",
+            "status": "passed",
+            "item": "{\"windows_hidden\":true,\"media_released\":true,\"repeated_desktop\":true,\"unsaved_draft_preserved\":true,\"console_renderer_preserved\":true}"
+          },
+          {
+            "step": "operator_desktop_return_buttons",
+            "status": "passed",
+            "item": "{\"normal\":true,\"studio\":true,\"play_loop\":true,\"show_console\":true}"
+          },
+          {
+            "step": "operator_music_loop_play_repeat_console",
+            "status": "captured",
+            "file": "operator-music-loop-console.png",
+            "sha256": "0e038798662591174ae3598f153587e323355029602ad79a966147bd1a92b1f7",
+            "nonblack_pixels": 37875
+          },
+          {
+            "step": "operator_music_loop_play_repeat_console",
+            "status": "passed",
+            "item": "{\"native_playback_acknowledged\":true,\"repeated_press\":true,\"black_mirror\":true,\"console_preserves_playback\":true}"
+          },
+          {
+            "step": "operator_music_loop_transitions",
+            "status": "passed",
+            "item": "{\"normal\":true,\"studio\":true,\"video_loop\":true,\"desktop\":true,\"console_return\":true}"
+          },
+          {
+            "step": "operator_music_loop_empty_recovery",
+            "status": "captured",
+            "file": "operator-music-loop-empty.png",
+            "sha256": "cba7e1e74b63435be513730340e172a305b171e06e7e02afcf0db1753795d543",
+            "nonblack_pixels": 43682
+          },
+          {
+            "step": "operator_music_loop_empty_recovery",
+            "status": "captured",
+            "file": "operator-music-loop-abnormal.png",
+            "sha256": "db3fd4dba6d5bb41c325868dbcb6fa7f249323d3f87526691794436435e4cab2",
+            "nonblack_pixels": 45295
+          },
+          {
+            "step": "operator_music_loop_empty_recovery",
+            "status": "passed",
+            "item": "{\"empty_visible\":true,\"abnormal_visible\":true,\"retry_after_files_added\":true}"
+          },
+          {
+            "step": "operator_music_loop_background_download",
+            "status": "captured",
+            "file": "operator-music-loop-downloading.png",
+            "sha256": "4963b031d797694e5e50b8be1385f33e60cab62a060f6fffd7009eedc05bd7e6",
+            "nonblack_pixels": 38880
+          },
+          {
+            "step": "operator_music_loop_background_download",
+            "status": "passed",
+            "item": "{\"delayed_ms\":51722,\"ready_track_plays\":34,\"completed_track_joined\":true,\"abnormal_skipped\":true}"
+          },
+          {
+            "step": "operator_music_loop_pending_cancel",
+            "status": "captured",
+            "file": "operator-music-loop-preparing.png",
+            "sha256": "940b8623dbcb6b63a6ac45a4939078f75f4629fc4fc9c1295a1dae682f5662e2",
+            "nonblack_pixels": 38957
+          },
+          {
+            "step": "operator_music_loop_pending_cancel",
+            "status": "passed",
+            "item": "{\"pending_ms\":48008,\"pending_cancelled\":true,\"no_late_restart\":true,\"shutdown_with_playback_and_download\":true}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    }
+  ],
+  "reviewed_screenshots": [
+    "operator-music-loop-downloading.png",
+    "operator-music-loop-abnormal.png",
+    "operator-music-loop-preparing.png"
+  ],
+  "visual_review": "Status, size warning, Return to Avatar and Stop All readable with no clipping on portrait Console.",
+  "limits": [
+    "No cold internet hydration: existing shared audio was local.",
+    "Native route acknowledgements are not human acoustic/physical keypress acceptance.",
+    "TV standby/mouse remain limited by previously missing board ADB transport."
+  ],
+  "cleanup": {
+    "qaRuns": 2,
+    "qaFiles": 207,
+    "qaBytes": 129651594,
+    "scratchFiles": 20,
+    "scratchBytes": 175939
+  },
+  "runtime": {
+    "jobLoaded": true,
+    "pid": 39488,
+    "normalRendererReady": true,
+    "consoleRestored": true,
+    "productionMusicLoopEntries": 0,
+    "nativeMusicWorkers": 0,
+    "preparers": 0,
+    "jabraOutput": 0.7007718682289124
+  }
+}

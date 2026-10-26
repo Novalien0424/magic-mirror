@@ -30,7 +30,8 @@ export async function sendQaOperatorCommand(userData: string, action: OperatorAc
       }
       const reply = JSON.parse(raw)
       if (reply.version !== 1 || reply.id !== id) return 'invalid'
-      if (reply.status === 'success' && reply.reason === 'operator_control_complete') return 'success'
+      const successReason = action === 'music_loop' ? 'operator_control_music_accepted' : 'operator_control_complete'
+      if (reply.status === 'success' && reply.reason === successReason) return 'success'
       return reply.status === 'failed' && reply.reason === 'operator_control_failed' ? 'failed' : 'invalid'
     }
     return 'timeout'

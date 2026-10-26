@@ -7,7 +7,8 @@ disappeared afterward.
 
 The current **Magic Mirror copy 1** profile has seven controls. MUSIC LOOP was
 added to its unused bottom-row second key on 2026-10-26; the existing default
-profile and six assignments were preserved. STUDIO is shortened to fit the key;
+profile and six assignments were preserved. PLAY LOOP is now labeled VIDEO LOOP.
+STUDIO is shortened to fit the key;
 DESKTOP occupies the top-right key. Elgato's original Default Profile and the older
 Magic Mirror profiles are preserved.
 
@@ -15,21 +16,21 @@ Magic Mirror profiles are preserved.
 | --- | --- | --- |
 | First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI. |
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
-| Third (`2,0`) | Blue **PLAY LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
+| Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
-| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Play every supported audio file in shared `MusicLoop`, in filename order, repeating the playlist on all connected physical Mac outputs. TV black; voice and camera off. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 100 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
 STUDIO likewise returns from Desktop or the loop to the avatar,
 then selects Interactive Studio mode: the mirror now wakes to the avatar's Studio
 wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
-studio farewell and Dormant. PLAY LOOP and CONSOLE leave the mirror mode alone;
+studio farewell and Dormant. VIDEO LOOP and CONSOLE leave the mirror mode alone;
 STOP retains its black HDMI and Jabra 70% policy.
 Every visible control first verifies the venue's Mac 90° portrait orientation.
 DESKTOP keeps Electron running with input suspended; it does not discard Console
-edits. START, STUDIO and PLAY LOOP restore their selected view. CONSOLE returns
+edits. START, STUDIO and VIDEO LOOP restore their selected view. CONSOLE returns
 from Desktop to the saved avatar mode and opens its existing editor on the TV.
 An ordinary fresh start begins in reflective Dormant mode.
 It restores the last saved active avatar selection (the Console's **Use on
@@ -37,11 +38,11 @@ Mirror** selection), currently Raven. The scripts do not hard-code an avatar or
 overwrite that selection when starting or stopping.
 Normal avatar wake behavior and TV presence policy still apply. STOP closes the
 application as well as sleeping the TV. Starting again bootstraps the same
-installed LaunchAgent. PLAY LOOP uses Main's approved loop; repeated LOOP is
+installed LaunchAgent. VIDEO LOOP uses Main's approved loop; repeated LOOP is
 idempotent in Main and does not restart playback. The controls do not supply a
-media path. START, STUDIO, DESKTOP and PLAY LOOP hide Console without
+media path. START, STUDIO, DESKTOP and VIDEO LOOP hide Console without
 destroying its unsaved editor state. Repeated CONSOLE shows/focuses it; close the
-window or press START/STUDIO/PLAY LOOP to return to the mirror view.
+window or press START/STUDIO/VIDEO LOOP to return to the mirror view.
 STOP sends no mode command; Main clears desired mode on deliberate TERM. STOP
 applies to Magic Mirror's programs, not unrelated Mac applications.
 
@@ -71,11 +72,19 @@ original Default Profile remains available.
 
 The linked shared folder is `AI_Stuff/AI_Avatar/Common`; its **MusicLoop** subfolder
 was created empty at the owner's request. Add MP3, M4A, AAC, WAV, AIFF, FLAC or CAF
-files, then press MUSIC LOOP. Subfolders are included; hidden files and symlinks
-are excluded. Number filenames for an explicit order. The playlist repeats as a
-whole. Repeated MUSIC LOOP presses preserve current playback; STOP then MUSIC
-LOOP reloads added/removed files. An empty folder produces an explicit Console
-message rather than substituting other shared music.
+files of **100 MB or less (100,000,000 bytes)**, then press MUSIC LOOP. Larger files
+are abnormal and skipped before download or playback; Console reports when all
+files are oversized. Subfolders are included; hidden files and symlinks are
+excluded. Number filenames for an explicit order among ready tracks.
+
+Cached tracks start first; locally downloaded files are prepared before cloud-only
+files. Ready tracks keep repeating while one background download completes. New
+completed tracks join at a track boundary. If none are ready, Console shows
+downloading/preparing and playback begins automatically. Downloads have a finite
+size-based timeout (502 seconds at 100 MB); failure skips that file and preserves
+playable music. Repeated MUSIC LOOP preserves playback and preparation. STOP then
+MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
+produces an explicit Console message.
 
 Main owns the player and a temporary private macOS multi-output route. Current
 outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
@@ -83,13 +92,14 @@ rediscovered during playback; virtual and aggregate devices are excluded to avoi
 duplicate routes. Normal default output, input gain and device mute/volume are
 preserved. HDMI stays awake with black video so its audio remains available.
 
-START, STUDIO, PLAY LOOP, DESKTOP and Return to Avatar release MusicLoop before
+START, STUDIO, VIDEO LOOP, DESKTOP and Return to Avatar release MusicLoop before
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the
 same Main shutdown as all other modes**, destroys its temporary audio route,
 sleeps TV, keeps HDMI black and restores Jabra to 70%. A queued STOP interrupts a
 pending MusicLoop-start wait. No separate restart service is installed.
 
-[Plan, review, checks and limits](../../docs/testing/music-loop-2026-10-26.md).
+[Initial delivery](../../docs/testing/music-loop-2026-10-26.md) ·
+[Download follow-up, checks and limits](../../docs/testing/music-loop-downloads-2026-10-26.md).
 
 ## Reinstall the local controls
 
@@ -128,7 +138,7 @@ The Xiaomi receiver stays plugged into the TV. **CONSOLE** and **DESKTOP** conne
 receiver to macOS over the direct Ethernet cable. The owner confirmed one pointer,
 correct movement and working clicks on the portrait Console. **STOP** releases
 it back to Android and closes the dedicated USB client/server. START,
-STUDIO and PLAY LOOP leave an existing connection alone. No mouse-axis remapping
+STUDIO and VIDEO LOOP leave an existing connection alone. No mouse-axis remapping
 is installed; keep the accepted Mac 90° / Android user_rotation 2 display settings.
 
 One-time installation or deliberate version update, from this checkout:
@@ -161,7 +171,7 @@ size while the avatar keeps running on the TV. It only shows the Console: it doe
 not start Magic Mirror, wake the TV, connect the TV mouse, change the Mirror mode
 or play a sound, and if the app is not running it says so in an alert. The next
 CONSOLE press (Neo key or Console app) moves the Console back over the avatar;
-START, STUDIO, DESKTOP and PLAY LOOP hide it as before. Remote Console leaves a
+START, STUDIO, DESKTOP and VIDEO LOOP hide it as before. Remote Console leaves a
 Desktop TV visible and offers Return to Avatar. Install or reinstall it
 with `zsh deploy/macos/install-remote-console.sh` (it refuses to replace any other
 app of that name).
@@ -200,7 +210,7 @@ and startup/persistence checks without retaining the device serial number.
 [Live lifecycle results](../../.artifacts/stream-deck-2026-10-17/live-controls-results.json)
 cover the assigned application launch path, renderer readiness, duplicate presses,
 ordered STOP→START, clean process release, and a 30-second no-restart interval.
-The owner confirmed physical START/STOP presses work. Physical PLAY LOOP press,
+The owner confirmed physical START/STOP presses work. Physical VIDEO LOOP press,
 USB reconnect and cold-login acceptance remain separate. Earlier TV integration evidence is in the
 [ledger](../../docs/testing/stream-deck-controls-2026-10-17.md).
 

@@ -2,12 +2,13 @@ import { allowPromptWindow } from '../shared/prompt-window'
 import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop } from './music-loop'
-import { createMacMediaFilePreparer } from './avatar/prepare-media-file'
+import { createMacMediaFilePreparer, musicPrepareDeadlineSeconds } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { createMirrorMode } from './mirror-mode'
 import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { readFile, readdir, writeFile, open } from 'node:fs/promises'
+import { setTimeout as wait } from 'node:timers/promises'
 import { isCameraSnapshot, type CameraSnapshot } from '../shared/camera-tracking'
 import {
   app,
@@ -114,6 +115,9 @@ const CONSOLE_SHORTCUT = 'CommandOrControl+Shift+D'
 const EXIT_FLUSH_TIMEOUT_MS = 500
 const phase1LiveSmokeEnabled = process.env['MIRROR_PHASE1_LIVE_SMOKE'] === '1'
 const phase4QaEnabled = process.env['MIRROR_PHASE4_QA'] === '1'
+// Isolated operator QA can delay a copy while actual cached audio keeps playing.
+const musicDownloadsQa = phase4QaEnabled && process.env['MIRROR_OPERATOR_LOOP_QA'] === '1'
+  ? { paused: false, waiting: 0, played: 0, lastTrack: 0 } : undefined
 
 // A kiosk wake/Console command has no click inside the mirror renderer. Permit
 // those trusted Main-routed actions to start the local output graph.
@@ -1045,6 +1049,7 @@ function startPhase4QaIfReady(runtime: BootRuntime): void {
     cubismOnly: process.env['MIRROR_PHASE4_QA_CUBISM'] === '1',
     memoryPipeline: memoryPipelineQa,
     memoryLearningSettled: memoryLearningSettledQa,
+    musicDownloads: musicDownloadsQa,
     onEvidence: (step) => { evidence.push({ ...step }); marker('PHASE4_QA_STEP', { ...step }) },
   }).then((result) => {
     return finish({
@@ -1167,13 +1172,29 @@ void app.whenReady().then(async () => {
   const mirrorMode = createMirrorMode({ path: join(app.getPath('userData'), 'mirror-mode.json'), report: reason => marker('MIRROR_MODE', { reason }) })
   const musicPrepare = createMacMediaFilePreparer(app.isPackaged
     ? join(process.resourcesPath, 'app.asar.unpacked/out/native/media-file-prepare')
-    : join(app.getAppPath(), 'out/native/media-file-prepare'), join(app.getPath('userData'), 'music-loop-cache-v1'))
+    : join(app.getAppPath(), 'out/native/media-file-prepare'), join(app.getPath('userData'), 'music-loop-cache-v1'), undefined,
+    { deadlineSeconds: musicPrepareDeadlineSeconds })
   musicLoop = createMusicLoop({
     executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
     sharedRoot: async () => { await mediaFoldersReady; return mediaFolders.view().shared?.path },
-    prepare: musicPrepare,
+    prepare: async (path, size, mtime, signal) => {
+      if (musicDownloadsQa?.paused) {
+        musicDownloadsQa.waiting++
+        try { while (musicDownloadsQa.paused) await wait(50, undefined, { signal }) }
+        finally { musicDownloadsQa.waiting-- }
+      }
+      return musicPrepare(path, size, mtime, signal)
+    },
+    cached: musicPrepare.cached,
+    isLocal: musicPrepare.isLocal,
+    state: (status, pending, oversized) => operatorLoop?.musicState(status, pending, oversized),
     ...(phase4QaEnabled ? { gain: 0.01 } : {}),
-    report: (reason, details) => marker('MUSIC_LOOP', { reason, ...details }),
+    report: (reason, details) => {
+      marker('MUSIC_LOOP', { reason, ...details })
+      if (musicDownloadsQa && reason === 'operator_loop_music_playing') {
+        musicDownloadsQa.played++; musicDownloadsQa.lastTrack = details?.track ?? 0
+      }
+    },
     failed: reason => operatorLoop?.musicFailed(reason),
   })
   operatorLoop = createOperatorLoop({

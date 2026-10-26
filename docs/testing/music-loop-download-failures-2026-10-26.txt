@@ -1,0 +1,369 @@
+MusicLoop download follow-up: full failed-attempt output. Metadata and synthetic fixtures only.
+
+=== unit-1.log ===
+
+ RUN  v4.1.10 /Users/novalien0424/magic-mirror
+
+ ❯ tests/unit/music-loop.test.ts (9 tests | 3 failed) 1919ms
+     × plays the whole playlist, repeats, and cannot restart after stop 1544ms
+     × shutdown cancels a pending native start and never resumes the avatar 57ms
+     × cancels a pending music start even when the requested video is unavailable 53ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/music-loop.test.ts > MusicLoop playlist and lifecycle > plays the whole playlist, repeats, and cannot restart after stop
+AssertionError: expected [ …(2) ] to deeply equal [ …(3) ]
+
+- Expected
++ Received
+
+  [
+    "/private/tmp/mm-music-loop-Ci2V12/MusicLoop/01.wav",
+    "/private/tmp/mm-music-loop-Ci2V12/MusicLoop/02.mp3",
+-   "/private/tmp/mm-music-loop-Ci2V12/MusicLoop/01.wav",
+  ]
+
+ ❯ tests/unit/music-loop.test.ts:64:96
+     62|     expect(await f.player.start()).toBe(true)
+     63|     await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith…
+     64|     await vi.waitFor(() => expect(f.input.prepare.mock.calls.slice(0, …
+       |                                                                                                ^
+     65|     await f.player.stop()
+     66|     const count = f.input.prepare.mock.calls.length
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/music-loop.test.ts > MusicLoop playlist and lifecycle > shutdown cancels a pending native start and never resumes the avatar
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/music-loop.test.ts:122:27
+    120|     await vi.waitFor(() => expect(music.start).toHaveBeenCalledOnce())
+    121|     controller.clearIntent(); controller.dispose()
+    122|     expect(await started).toBe(false)
+       |                           ^
+    123|     expect(controller.isInputSuspended()).toBe(false)
+    124|     expect(resume).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/music-loop.test.ts > MusicLoop playlist and lifecycle > cancels a pending music start even when the requested video is unavailable
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/music-loop.test.ts:150:30
+    148|       await vi.waitFor(() => expect(music.start).toHaveBeenCalledOnce(…
+    149|       expect(await controller.play()).toBe(false)
+    150|       expect(await starting).toBe(false)
+       |                              ^
+    151|       expect(controller.view().snapshot).toMatchObject({ mode: 'music'…
+    152|     } finally { controller.dispose() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  3 failed | 148 passed (151)
+   Start at  15:25:15
+   Duration  2.79s (transform 58ms, setup 0ms, import 94ms, tests 2.26s, environment 0ms)
+
+
+=== typecheck-1.log ===
+
+> magic-mirror@0.1.0 typecheck
+> npm run typecheck:node && npm run typecheck:web
+
+
+> magic-mirror@0.1.0 typecheck:node
+> tsc --noEmit -p tsconfig.node.json
+
+src/main/operator-loop-qa.ts(744,25): error TS2322: Type 'boolean' is not assignable to type 'Promise<boolean>'.
+src/main/operator-loop-qa.ts(757,25): error TS2322: Type 'boolean' is not assignable to type 'Promise<boolean>'.
+
+=== native-boundary.log ===
+(node:38769) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/avatar/prepare-media-file.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/novalien0424/magic-mirror/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+file:///Users/novalien0424/magic-mirror/scripts/electron-owner.mjs:16
+    if (probe.status === 0) throw Error('electron_already_running')
+                                  ^
+
+Error: electron_already_running
+    at assertElectronStopped (file:///Users/novalien0424/magic-mirror/scripts/electron-owner.mjs:16:35)
+    at file:///Users/novalien0424/magic-mirror/.artifacts/music-loop-download-work/native-boundary-qa.mts:9:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:105:5)
+
+Node.js v26.10.0
+qa_outputs_restored_jabra_70
+
+=== electron-qa-1.log ===
+(node:38868) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/novalien0424/magic-mirror/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+MAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-26T07:36:34.882Z
+SHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-26T07:36:34.972Z
+WINDOW_LOADED window=mirror at=2026-10-26T07:36:35.023Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:35.023Z
+WINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-26T07:36:35.037Z
+RENDERER_READY window=mirror at=2026-10-26T07:36:35.063Z
+WINDOW_LOADED window=console at=2026-10-26T07:36:35.064Z
+RENDERER_READY window=console at=2026-10-26T07:36:35.064Z
+PHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-26T07:36:35.064Z
+PHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-26T07:36:35.064Z
+PHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-26T07:36:35.069Z
+PHASE4_QA_STEP step=operator_loop_scope status=metadata item={"media":"isolated_synthetic","cases":29,"provider":"not_executed","physical_audio":"not_executed","hardware":"not_executed","field_launcher":"not_executed","normal_route":"production_isolated_mailbox… at=2026-10-26T07:36:35.072Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:35.815Z
+PHASE4_QA_STEP step=operator_loop_avatar_authored status=passed at=2026-10-26T07:36:36.105Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:36.128Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:36.147Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=captured file=operator-remote-console-avatar.png sha256=9065a65a5dab8fd39628b1e17c2d28ac150d30dcb8b8b85cb78c89e4458bcaae nonblack_pixels=353906 at=2026-10-26T07:36:36.324Z
+PHASE4_QA_STEP step=operator_remote_console_beside_avatar status=passed item={"beside_mirror":true,"always_on_top":false,"focused":true,"windows_over_mirror":0,"width":1888,"height":1048,"same_renderer":true,"mirror_mode_unchanged":true} at=2026-10-26T07:36:36.324Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:36.335Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:36.336Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:37.663Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:37.667Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:37.783Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:37.784Z
+PHASE4_QA_STEP step=operator_remote_console_repeat_restores_window status=passed item={"repeat_same_bounds":true,"minimized_restored":true,"maximized_restored":true,"same_renderer":true} at=2026-10-26T07:36:37.876Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:37.887Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:37.888Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:38.731Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:38.734Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:39.100Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:39.135Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:39.945Z
+PHASE4_QA_STEP step=operator_remote_console_display_change status=passed item={"deck_replaced_over_mirror":true,"remote_stayed_beside":true,"rehomes_observed":2} at=2026-10-26T07:36:40.308Z
+CONSOLE_OPEN_FAILED reason=console_main_display_missing at=2026-10-26T07:36:40.324Z
+OPERATOR_CONTROL reason=operator_control_failed at=2026-10-26T07:36:40.324Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:40.432Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:40.435Z
+PHASE4_QA_STEP step=operator_remote_console_no_main_display status=passed item={"reply":"failed","console_visible":false,"windows_over_mirror":0,"recovered_when_main_returns":true} at=2026-10-26T07:36:40.523Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:40.552Z
+PHASE4_QA_STEP step=operator_loop_settings_saved status=passed at=2026-10-26T07:36:40.616Z
+PHASE4_QA_STEP step=operator_loop_settings_saved status=captured file=operator-loop-console-saved.png sha256=5d13f47d37cd841f46b5033e3e218db2d1463fea446ef8812588a790ed951ce4 nonblack_pixels=143752 at=2026-10-26T07:36:40.667Z
+WINDOW_LOADED window=console at=2026-10-26T07:36:40.690Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:40.709Z
+PHASE4_QA_STEP step=operator_loop_settings_reloaded status=passed at=2026-10-26T07:36:40.807Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:41.119Z
+PHASE4_QA_STEP step=operator_loop_muted_preview status=captured file=operator-loop-console-preview.png sha256=ae63ab799e3f32096d5101e77908b55c02fab64dcbe685a450471ed1af7df19a nonblack_pixels=522652 at=2026-10-26T07:36:41.193Z
+PHASE4_QA_STEP step=operator_loop_muted_preview status=passed at=2026-10-26T07:36:41.199Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:36:41.233Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:36:41.233Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:41.242Z
+[38871:1026/153641.248903:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[38871:1026/153641.248915:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:36:42.245Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:42.246Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:42.344Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:43.050Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=measured item={"elapsed_ms":2069,"decoded_frames":61,"dropped_frames":0,"distinct_frames":20,"video_duration_ms":3008,"audio_duration_ms":null,"video_wraps":0,"audio_wraps":0,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-26T07:36:44.416Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=measured item={"decoder_audio_meter":true,"decoded_bytes":43630} at=2026-10-26T07:36:44.417Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=captured file=operator-loop-embedded-playing.png sha256=89092ca45ac3a5ebfb4fbefd7e7db2a9f4487ed18f2ebde9c98e3f9f3eeebe9b nonblack_pixels=2069551 at=2026-10-26T07:36:44.508Z
+PHASE4_QA_STEP step=operator_loop_embedded_audio status=passed item={"elapsed_ms":2069,"decoded_frames":61,"dropped_frames":0,"distinct_frames":20,"video_duration_ms":3008,"audio_duration_ms":null,"video_wraps":0,"audio_wraps":0,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-26T07:36:44.508Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:44.509Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:44.530Z
+PHASE4_QA_STEP step=operator_loop_duplicate_play status=passed item={"generation_unchanged":true,"media_nodes_unchanged":true,"source_loads":0,"duplicate_clicks":2} at=2026-10-26T07:36:44.549Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:44.550Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:36:44.599Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:36:44.599Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:44.601Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:45.298Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:36:45.642Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:45.643Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:45.683Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:45.702Z
+PHASE4_QA_STEP step=operator_loop_saved_replacement_button status=captured file=operator-loop-saved-replacement.png sha256=67f38be9209d9dba38196b54b70d6b7bfc24b107233afbd600873a00657b4c54 nonblack_pixels=1840016 at=2026-10-26T07:36:45.758Z
+PHASE4_QA_STEP step=operator_loop_saved_replacement_button status=passed item={"saved_selection_used":true,"new_generation":true,"route":"production_isolated_mailbox"} at=2026-10-26T07:36:45.758Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:45.777Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:45.782Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:36:45.870Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:45.877Z
+PHASE4_QA_STEP step=operator_loop_avatar_return status=captured file=operator-loop-avatar-return.png sha256=1258ed38444dae8b74621e8f9fcd540c1a11c65f591c43b8306c75f5d67e0ad5 nonblack_pixels=963117 at=2026-10-26T07:36:46.347Z
+PHASE4_QA_STEP step=operator_loop_avatar_return status=passed at=2026-10-26T07:36:46.347Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:36:46.576Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:36:46.576Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:46.582Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:46.653Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:46.655Z
+PHASE4_QA_STEP step=operator_loop_start_cancel status=captured file=operator-loop-console-starting.png sha256=0df120701e552ea4678177bae48c6dd77f3db4510ad9b1f0cbbdc1b1c94192bc nonblack_pixels=31690 at=2026-10-26T07:36:46.821Z
+OPERATOR_LOOP reason=operator_loop_start_failed at=2026-10-26T07:36:46.822Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:36:46.822Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:46.828Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:47.621Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:47.627Z
+PHASE4_QA_STEP step=operator_loop_start_cancel status=passed item={"return_offered_while_preparing":true,"start_failure_shown":false} at=2026-10-26T07:36:47.783Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:36:47.998Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:36:47.998Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:48.007Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:48.007Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:36:49.011Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:36:49.012Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:49.063Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:36:49.065Z
+PHASE4_QA_STEP step=operator_loop_separate_audio status=passed at=2026-10-26T07:36:49.066Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:36:49.806Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:49.812Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=measured item={"elapsed_ms":5258,"decoded_frames":154,"dropped_frames":6,"distinct_frames":48,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":2,"audio_wraps":4,"video_only_wraps":2,"audio_only_wraps… at=2026-10-26T07:36:54.324Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=captured file=operator-loop-independent-playing.png sha256=021c7734bc58a67b985dc7454f67778feb1678cb4dca009e2b06c609c8b8dda6 nonblack_pixels=2070248 at=2026-10-26T07:36:54.403Z
+PHASE4_QA_STEP step=operator_loop_independent_wraps status=passed item={"elapsed_ms":5258,"decoded_frames":154,"dropped_frames":6,"distinct_frames":48,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":2,"audio_wraps":4,"video_only_wraps":2,"audio_only_wraps… at=2026-10-26T07:36:54.403Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:54.469Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:54.472Z
+PHASE4_QA_STEP step=operator_console_on_mirror status=captured file=operator-console-on-mirror.png sha256=dc95a5939bc523201b9b05464578088972478e56ec1d5dd89c82831e96ad6469 nonblack_pixels=35863 at=2026-10-26T07:36:54.573Z
+PHASE4_QA_STEP step=operator_console_on_mirror status=passed item={"on_mirror":true,"visible":true,"focused":true,"always_on_top":true} at=2026-10-26T07:36:54.573Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:54.587Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:54.588Z
+PHASE4_QA_STEP step=operator_console_preserves_loop_and_draft status=measured item={"elapsed_ms":2046,"decoded_frames":61,"dropped_frames":3,"distinct_frames":20,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":0,"audio_wraps":2,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-26T07:36:56.723Z
+PHASE4_QA_STEP step=operator_console_preserves_loop_and_draft status=passed item={"generation_unchanged":true,"unsaved_draft_preserved":true,"decoded_frames":61} at=2026-10-26T07:36:56.725Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:36:56.753Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:56.855Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=measured item={"elapsed_ms":2074,"decoded_frames":61,"dropped_frames":0,"distinct_frames":25,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":1,"audio_wraps":2,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-26T07:36:59.032Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=captured file=operator-console-remote-main.png sha256=e5d3503ab6ef107aaf5c624ffa273f05d9eeaefb1b0be137bb3c2c40ca6be774 nonblack_pixels=158623 at=2026-10-26T07:36:59.127Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:36:59.147Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:36:59.152Z
+PHASE4_QA_STEP step=operator_console_remote_main_then_deck status=passed item={"remote_beside_mirror":true,"remote_focused":true,"decoded_frames_beside":61,"deck_back_over_mirror":true,"generation_unchanged":true,"unsaved_draft_preserved":true} at=2026-10-26T07:36:59.232Z
+OPERATOR_LOOP reason=operator_loop_playback_stalled at=2026-10-26T07:37:08.012Z
+OPERATOR_LOOP reason=operator_loop_reloading at=2026-10-26T07:37:08.012Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:08.019Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:08.020Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:37:09.027Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=measured item={"elapsed_ms":2067,"decoded_frames":57,"dropped_frames":0,"distinct_frames":22,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":0,"audio_wraps":2,"video_only_wraps":0,"audio_only_wraps"… at=2026-10-26T07:37:11.199Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=captured file=operator-loop-recovered-once.png sha256=204df750bcb2148d8f5db49edab59315b781e8eb7d921e58664a5a1b873b899e nonblack_pixels=2069550 at=2026-10-26T07:37:11.289Z
+PHASE4_QA_STEP step=operator_loop_single_reload status=passed item={"reloads":1,"decoded_frames":57,"elapsed_ms":2067} at=2026-10-26T07:37:11.289Z
+OPERATOR_LOOP reason=operator_loop_playback_stalled at=2026-10-26T07:37:20.072Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=captured file=operator-loop-failed-black.png sha256=e67dfd31e867c9131c57a237fe79f084a2e642682ed3c805f07b9dbcf5ff442c nonblack_pixels=0 at=2026-10-26T07:37:29.407Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=captured file=operator-loop-console-failed.png sha256=27f478ff917706a7e9e88919d19c7708ef1b8ecedf09c0d7b42ecc9189ce0057 nonblack_pixels=45098 at=2026-10-26T07:37:29.447Z
+PHASE4_QA_STEP step=operator_loop_failed_black status=passed item={"reloads":1,"failure_hold_ms":8671,"nonblack_pixels":0} at=2026-10-26T07:37:29.447Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:29.564Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:29.572Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:29.597Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:30.345Z
+PHASE4_QA_STEP step=operator_loop_start_normal_recovery status=captured file=operator-loop-start-normal-avatar.png sha256=1e5ae7861e9a98ff15a7aa5539313d07dad761690de1cdcb3833ba28e408c0d3 nonblack_pixels=909057 at=2026-10-26T07:37:30.997Z
+PHASE4_QA_STEP step=operator_loop_start_normal_recovery status=passed item={"normal_acknowledged":true,"saved_avatar_unchanged":true} at=2026-10-26T07:37:30.997Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:37:31.017Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:31.036Z
+MIRROR_MODE reason=mirror_mode_studio_operator at=2026-10-26T07:37:31.113Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:31.113Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:31.120Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:31.134Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:37:31.234Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:31.236Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=captured file=operator-remote-console-studio-mode.png sha256=6418e6ee4e7f3ccc96239cc65b93718e91bd9714c07c8bcc8bbf0e6e8dcd4301 nonblack_pixels=178780 at=2026-10-26T07:37:31.391Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:31.480Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:37:31.480Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:31.484Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:31.485Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:31.884Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:37:32.521Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:32.527Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:32.560Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:37:32.631Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:32.640Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:33.310Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=measured item={"elapsed_ms":2027,"decoded_frames":58,"dropped_frames":0,"distinct_frames":25,"video_duration_ms":3008,"audio_duration_ms":1250,"video_wraps":1,"audio_wraps":2,"video_only_wraps":1,"audio_only_wraps"… at=2026-10-26T07:37:34.844Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=captured file=operator-remote-console-loop.png sha256=d528e9887fed947cdae6854aed8c3756af36edc679a4fca7ad16022c3bb2dfac nonblack_pixels=169117 at=2026-10-26T07:37:34.934Z
+MIRROR_MODE reason=mirror_mode_conversation_operator at=2026-10-26T07:37:34.951Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:34.951Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:35.799Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:35.818Z
+PHASE4_QA_STEP step=operator_remote_console_venue_keys status=passed item={"studio_hid_console":true,"studio_mode_shown":true,"play_loop_hid_console":true,"decoded_frames_beside":58,"start_hid_console":true,"mode_after_start":"conversation"} at=2026-10-26T07:37:35.854Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:37:35.862Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:35.865Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:36.005Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:36.005Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:36.015Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:36.073Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:36.073Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:36.080Z
+CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-26T07:37:36.182Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:36.189Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:36.567Z
+PHASE4_QA_STEP step=operator_desktop_preserves_draft status=captured file=operator-desktop-remote-console.png sha256=31c0b2fa26bb034e712ced59db22055a86e918318fc79f2824c3fb9ee375a58f nonblack_pixels=147042 at=2026-10-26T07:37:36.882Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:36.890Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:36.895Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:37:36.981Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:37.034Z
+PHASE4_QA_STEP step=operator_desktop_preserves_draft status=passed item={"windows_hidden":true,"media_released":true,"repeated_desktop":true,"unsaved_draft_preserved":true,"console_renderer_preserved":true} at=2026-10-26T07:37:37.136Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:37.591Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:37.591Z
+[38871:1026/153737.598714:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[38871:1026/153737.598727:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:37.600Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:37.655Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:37.663Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:37.682Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:38.432Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:38.609Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:38.609Z
+[38871:1026/153738.616303:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[38871:1026/153738.616320:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:38.616Z
+MIRROR_MODE reason=mirror_mode_studio_operator at=2026-10-26T07:37:38.737Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:38.737Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:39.634Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:39.651Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:39.789Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:39.789Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:39.798Z
+[38871:1026/153739.799203:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.
+[38871:1026/153739.799210:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:39.860Z
+OPERATOR_LOOP reason=operator_loop_loading at=2026-10-26T07:37:39.860Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:39.863Z
+PHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-26T07:37:39.863Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:40.403Z
+OPERATOR_LOOP reason=operator_loop_playing at=2026-10-26T07:37:40.906Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:40.907Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:40.936Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:40.960Z
+OPERATOR_LOOP reason=operator_loop_desktop at=2026-10-26T07:37:40.960Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:40.966Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:41.073Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:41.081Z
+CONSOLE_ON_MIRROR display_id=3 x=1936 y=16 width=1048 height=1888 visible=true focused=true on_mirror=true at=2026-10-26T07:37:41.115Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:41.124Z
+MIRROR_MODE reason=mirror_mode_conversation_operator at=2026-10-26T07:37:41.196Z
+OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-26T07:37:41.196Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:41.201Z
+OPERATOR_CONTROL reason=operator_control_complete at=2026-10-26T07:37:41.216Z
+PHASE4_QA_STEP step=operator_desktop_return_buttons status=passed item={"normal":true,"studio":true,"play_loop":true,"show_console":true} at=2026-10-26T07:37:41.284Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:41.966Z
+OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-26T07:37:42.036Z
+OPERATOR_LOOP reason=operator_loop_music_preparing at=2026-10-26T07:37:42.036Z
+MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-26T07:37:42.042Z
+OPERATOR_CONTROL reason=operator_control_music_accepted at=2026-10-26T07:37:42.053Z
+MUSIC_LOOP reason=operator_loop_music_playlist_loaded tracks=2 at=2026-10-26T07:37:42.054Z
+OPERATOR_LOOP reason=operator_loop_music_downloading at=2026-10-26T07:37:42.061Z
+MUSIC_LOOP reason=operator_loop_music_download_status ready=0 pending=2 at=2026-10-26T07:37:42.061Z
+MUSIC_LOOP reason=operator_loop_music_file_ready at=2026-10-26T07:37:42.071Z
+OPERATOR_LOOP reason=operator_loop_music_downloading at=2026-10-26T07:37:42.072Z
+MUSIC_LOOP reason=operator_loop_music_download_status ready=1 pending=1 at=2026-10-26T07:37:42.072Z
+MUSIC_LOOP reason=operator_loop_music_file_ready at=2026-10-26T07:37:42.085Z
+OPERATOR_LOOP reason=operator_loop_music_downloading at=2026-10-26T07:37:42.085Z
+MUSIC_LOOP reason=operator_loop_music_download_status ready=2 pending=0 at=2026-10-26T07:37:42.085Z
+PHASE4_QA_STEP step=operator_music_loop_play_repeat_console status=failed item={"reason":"phase4_qa_operator_loop_operator_command_invalid","state":{"mode":"music","status":"preparing","generation":24,"reason":"operator_loop_music_downloading"},"completed_cases":24} at=2026-10-26T07:37:42.094Z
+MUSIC_LOOP reason=operator_loop_music_outputs_ready outputs=3 at=2026-10-26T07:37:42.097Z
+OPERATOR_LOOP reason=operator_loop_music_playing at=2026-10-26T07:37:42.673Z
+MUSIC_LOOP reason=operator_loop_music_download_status ready=2 pending=0 at=2026-10-26T07:37:42.673Z
+MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=0 at=2026-10-26T07:37:42.673Z
+MIRROR_DISPLAY_UNCHANGED reason=already_placed trigger=display-metrics-changed display_id=3 at=2026-10-26T07:37:42.804Z
+MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=2 cycles=0 at=2026-10-26T07:37:44.167Z
+MUSIC_LOOP reason=operator_loop_music_playlist_repeated cycles=1 at=2026-10-26T07:37:45.262Z
+MUSIC_LOOP reason=operator_loop_music_playing tracks=2 outputs=3 track=1 cycles=1 at=2026-10-26T07:37:45.666Z
+PHASE4_QA_RESULT status=failed reason=phase4_qa_operator_loop_operator_command_invalid at=2026-10-26T07:37:47.098Z
+{"marker":"PHASE4_QA_ARTIFACTS","root":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-26T07-36-34-707Z","outputDir":"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-26T07-36-34-707Z/screenshots","exit":2,"timedOut":false,"resultCount":1}
+qa_outputs_restored_jabra_70

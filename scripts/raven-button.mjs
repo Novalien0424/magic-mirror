@@ -211,7 +211,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
     if (process.env.MIRROR_BUTTON_WORKER_LOCK !== '1') throw Error('raven_button_worker_requires_lock')
     let release
     const io = createButtonIo()
-    const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', music_playing: 'Glass', studio_ready: 'Glass', console_shown: 'Pop', desktop_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
+    const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', music_preparing: 'Pop', studio_ready: 'Glass', console_shown: 'Pop', desktop_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
     const feedback = outcome => {
       const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${sounds[outcome] ?? 'Basso'}.aiff`], { stdio: 'ignore' })
       child.on('error', () => record('press', 'feedback_unavailable'))

@@ -130,5 +130,5 @@ export async function operateMirrorControl(action, io) {
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
   return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
     ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
-      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown', music: 'music_playing' }[action] ?? app : tv }
+      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown', music: 'music_preparing' }[action] ?? app : tv }
 }

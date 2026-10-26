@@ -315,7 +315,7 @@ const environment = {
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly ? '180000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly ? '240000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
@@ -344,6 +344,9 @@ child.stdout.on('data', chunk => {
 })
 
 let timedOut = false
+let cancelled = false
+const cancel = () => { cancelled = true; child.kill('SIGTERM') }
+process.on('SIGINT', cancel); process.on('SIGTERM', cancel)
 const childExitCode = await new Promise((resolveExit, reject) => {
   const timer = setTimeout(() => {
     timedOut = true
@@ -351,7 +354,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly || mediaSkillOnly ? 190_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly ? 250_000 : mediaSkillOnly ? 190_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)
@@ -361,7 +364,8 @@ const childExitCode = await new Promise((resolveExit, reject) => {
     resolveExit(code ?? 2)
   })
 })
-const exitCode = timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
+process.off('SIGINT', cancel); process.off('SIGTERM', cancel)
+const exitCode = cancelled || timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
 await finishQaArtifact(repoRoot, stamp, exitCode)
 
 process.stdout.write(`${JSON.stringify({ marker: 'PHASE4_QA_ARTIFACTS', root, outputDir, exit: exitCode, timedOut, resultCount })}\n`)

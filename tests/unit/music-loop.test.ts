@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink, chmod, realpath } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, chmod, realpath, truncate } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMusicLoop, musicLoopFiles } from '../../src/main/music-loop'
+import { createMusicLoop, musicLoopFiles, MUSIC_LOOP_MAX_BYTES } from '../../src/main/music-loop'
 import { createOperatorLoop } from '../../src/main/operator-loop'
 
 const roots: string[] = [], players: ReturnType<typeof createMusicLoop>[] = []
@@ -33,7 +33,9 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
   await chmod(executable, 0o700)
   const input = { executable, sharedRoot: async () => root,
     prepare: vi.fn(async (path: string, _size: number, _mtime: number, _signal: AbortSignal) => path),
-    report: vi.fn(), failed: vi.fn() }
+    cached: vi.fn(async (_path: string, _size: number, _mtime: number): Promise<string | undefined> => undefined),
+    isLocal: vi.fn(async (_path: string, _signal: AbortSignal) => true),
+    state: vi.fn(), report: vi.fn(), failed: vi.fn() }
   const player = createMusicLoop(input); players.push(player)
   return { root, folder, input, player }
 }
@@ -61,7 +63,7 @@ describe('MusicLoop playlist and lifecycle', () => {
     const f = await playerFixture()
     expect(await f.player.start()).toBe(true)
     await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_playlist_repeated', { cycles: 1 }))
-    await vi.waitFor(() => expect(f.input.prepare.mock.calls.slice(0, 3).map(call => call[0])).toEqual(['01.wav', '02.mp3', '01.wav'].map(name => join(f.folder, name))))
+    expect(f.input.prepare.mock.calls.map(call => call[0])).toEqual(['01.wav', '02.mp3'].map(name => join(f.folder, name)))
     await f.player.stop()
     const count = f.input.prepare.mock.calls.length
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -118,8 +120,9 @@ describe('MusicLoop playlist and lifecycle', () => {
       validate: async () => true, suspendAvatar: async () => {}, resumeAvatar: resume, publish: vi.fn(), report: vi.fn() })
     const started = controller.music()
     await vi.waitFor(() => expect(music.start).toHaveBeenCalledOnce())
+    expect(await started).toBe(true) // mode accepted while preparation is pending
+    expect(controller.view().snapshot.status).toBe('preparing')
     controller.clearIntent(); controller.dispose()
-    expect(await started).toBe(false)
     expect(controller.isInputSuspended()).toBe(false)
     expect(resume).not.toHaveBeenCalled()
   })
@@ -147,8 +150,81 @@ describe('MusicLoop playlist and lifecycle', () => {
       const starting = controller.music()
       await vi.waitFor(() => expect(music.start).toHaveBeenCalledOnce())
       expect(await controller.play()).toBe(false)
-      expect(await starting).toBe(false)
+      expect(await starting).toBe(true) // accepted before video cancelled the pending download
       expect(controller.view().snapshot).toMatchObject({ mode: 'music', status: 'failed' })
+    } finally { controller.dispose() }
+  })
+  it('plays a later cache hit while the first cloud file waits, then joins it at a track boundary', async () => {
+    const f = await playerFixture()
+    f.input.cached.mockImplementation(async path => path.endsWith('02.mp3') ? path : undefined)
+    let complete!: (path: string) => void
+    f.input.prepare.mockImplementation(() => new Promise(resolve => { complete = resolve }))
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_playlist_repeated', { cycles: 2 }))
+    expect(f.input.state).toHaveBeenCalledWith('playing', 1, 0)
+    expect(f.input.prepare).toHaveBeenCalledOnce()
+    expect(f.input.report.mock.calls.filter(c => c[0] === 'operator_loop_music_playing').every(c => c[1].track === 2)).toBe(true)
+    complete(join(f.folder, '01.wav'))
+    await vi.waitFor(() => expect(f.input.report.mock.calls.some(c => c[0] === 'operator_loop_music_playing' && c[1].track === 1)).toBe(true))
+    expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('prepares locally downloaded sources before an earlier cloud placeholder', async () => {
+    const f = await playerFixture()
+    f.input.isLocal.mockImplementation(async path => path.endsWith('02.mp3'))
+    f.input.prepare.mockImplementation((path, _size, _mtime, signal) => path.endsWith('02.mp3') ? Promise.resolve(path)
+      : new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(Error('cancelled')), { once: true })))
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(() => expect(f.input.prepare).toHaveBeenCalledTimes(2))
+    expect(f.input.prepare.mock.calls.map(call => call[0])).toEqual(['02.mp3', '01.wav'].map(name => join(f.folder, name)))
+    await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_playlist_repeated', { cycles: 2 }))
+    await f.player.stop()
+    expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('keeps cached music playing after another file download fails', async () => {
+    const f = await playerFixture()
+    f.input.cached.mockImplementation(async path => path.endsWith('02.mp3') ? path : undefined)
+    f.input.prepare.mockRejectedValue(Error('private provider error'))
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_playlist_repeated', { cycles: 2 }))
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_download_failed', undefined)
+    expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('accepts exactly 100 MB and skips larger files before cache access or downloading', async () => {
+    const f = await playerFixture()
+    await truncate(join(f.folder, '01.wav'), MUSIC_LOOP_MAX_BYTES)
+    await truncate(join(f.folder, '02.mp3'), MUSIC_LOOP_MAX_BYTES + 1)
+    expect(await f.player.start()).toBe(true)
+    expect(f.input.cached).toHaveBeenCalledOnce()
+    expect(f.input.prepare).toHaveBeenCalledOnce()
+    expect(f.input.prepare.mock.calls[0]![0]).toBe(join(f.folder, '01.wav'))
+    expect(f.input.state).toHaveBeenCalledWith('playing', 0, 1)
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_oversize_skipped', { bytes: 100_000_001, limit: 100_000_000 })
+  })
+  it('reports an all-abnormal playlist without starting downloads', async () => {
+    const f = await playerFixture(['01.wav'])
+    await truncate(join(f.folder, '01.wav'), MUSIC_LOOP_MAX_BYTES + 1)
+    expect(await f.player.start()).toBe(false)
+    expect(f.input.cached).not.toHaveBeenCalled()
+    expect(f.input.prepare).not.toHaveBeenCalled()
+    expect(f.input.failed).toHaveBeenCalledWith('operator_loop_music_all_oversize')
+  })
+  it('accepts repeated MusicLoop during preparation without restarting and can return immediately', async () => {
+    const { root } = await fixture()
+    let cancelled = false, finish!: (value: boolean) => void
+    const music = { start: vi.fn(() => new Promise<boolean>(resolve => { finish = resolve })), stop: vi.fn(async () => { cancelled = true; finish?.(false) }) }
+    const controller = createOperatorLoop({ path: join(root, 'settings.json'), music,
+      validate: async () => true, suspendAvatar: async () => {}, resumeAvatar: async () => {}, publish: vi.fn(), report: vi.fn() })
+    try {
+      expect(await controller.music()).toBe(true)
+      cancelled = false
+      expect(await controller.music()).toBe(true)
+      expect(music.start).toHaveBeenCalledOnce()
+      expect(cancelled).toBe(false)
+      expect(controller.view().snapshot.status).toBe('preparing')
+      expect(await controller.normal()).toBe(true)
+      expect(cancelled).toBe(true)
+      finish(true); await Promise.resolve()
+      expect(controller.view().snapshot.mode).toBe('avatar')
     } finally { controller.dispose() }
   })
 })

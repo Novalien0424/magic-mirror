@@ -47,7 +47,7 @@ export async function startOperatorControl(input: {
               // Consume once before executing; duplicated fs events cannot replay it.
               await unlink(path)
               success = await input.execute(request.action)
-              reason = success ? 'operator_control_complete' : 'operator_control_failed'
+              reason = success ? request.action === 'music_loop' ? 'operator_control_music_accepted' : 'operator_control_complete' : 'operator_control_failed'
             }
           } catch { reason = 'operator_control_failed' }
           await unlink(path).catch(() => undefined)

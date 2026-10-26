@@ -1,6 +1,14 @@
 import Foundation
 import Darwin
 
+// Probe availability without opening/coordinating a placeholder (which downloads).
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--local" {
+    var info = stat()
+    guard lstat(CommandLine.arguments[2], &info) == 0, info.st_mode & S_IFMT == S_IFREG else { exit(2) }
+    print(info.st_flags & UInt32(SF_DATALESS) == 0 ? "media_file_local" : "media_file_remote")
+    exit(0)
+}
+
 // File Provider placeholders need coordinated access before ordinary POSIX reads.
 // Copy only selected media into Main's private staging file, in bounded buffers.
 // Main sizes the deadline to the file so a cold cloud download can finish.

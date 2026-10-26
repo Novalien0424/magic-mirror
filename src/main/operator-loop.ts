@@ -111,7 +111,8 @@ export function createOperatorLoop(input: {
       return promise
     },
     async normal(target: 'avatar' | 'desktop' | 'music' = 'avatar'): Promise<boolean> {
-      if (target === 'music' && intent === 'music' && snapshot.status === 'playing') return true
+      if (target === 'music' && intent === 'music' && snapshot.mode === 'music' && snapshot.generation > 0
+        && ['playing', 'preparing'].includes(snapshot.status)) return true
       const run = ++revision
       clear(); settle(false); abandonValidation?.()
       // Cancel a slow native start/cloud copy before entering the transition queue.
@@ -138,13 +139,15 @@ export function createOperatorLoop(input: {
           if (disposed || run !== revision) return
           intent = target; persist()
           if (target === 'music') {
-            const success = await input.music?.start()
-            if (disposed || run !== revision) return
-            if (!success) {
-              if (snapshot.status !== 'failed') publish({ status: 'failed', reason: 'operator_loop_music_start_failed' })
-              return
-            }
-            publish({ status: 'playing', reason: 'operator_loop_music_playing' })
+            // Acknowledge mode ownership, not playback. Downloads must not hold
+            // the operator mailbox/transition queue hostage for minutes or hours.
+            void Promise.resolve(input.music?.start()).then(success => {
+              if (disposed || run !== revision || intent !== 'music') return
+              if (!success && snapshot.status !== 'failed') publish({ status: 'failed', reason: 'operator_loop_music_start_failed' })
+              else if (success && snapshot.status === 'preparing') publish({ status: 'playing', reason: 'operator_loop_music_playing' })
+            }).catch(() => {
+              if (!disposed && run === revision && intent === 'music') publish({ status: 'failed', reason: 'operator_loop_music_start_failed' })
+            })
           }
           if (target === 'avatar' && wasSuspended) await input.resumeAvatar()
         } catch {
@@ -159,6 +162,12 @@ export function createOperatorLoop(input: {
     music(): Promise<boolean> { return controller.normal('music') },
     musicFailed(reason: string) {
       if (!disposed && intent === 'music') publish({ status: 'failed', reason })
+    },
+    musicState(status: 'preparing' | 'playing', pending: number, oversized = 0) {
+      if (disposed || intent !== 'music') return
+      publish({ status, reason: status === 'preparing' ? 'operator_loop_music_downloading'
+        : pending > 0 ? 'operator_loop_music_playing_downloading'
+          : oversized > 0 ? 'operator_loop_music_playing_oversize_skipped' : 'operator_loop_music_playing' })
     },
     rendererReady() {
       if (disposed) return

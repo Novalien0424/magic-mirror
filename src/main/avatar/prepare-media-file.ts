@@ -9,11 +9,14 @@ const CACHE_BUDGET = 2 * 1024 ** 3
 const CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
 /** Seconds for one download-and-copy: about 1 MiB/s sustained, at least 9 s, at most 10 minutes. */
 export const prepareDeadlineSeconds = (size: number): number => Math.min(600, Math.max(9, Math.ceil(size / 2 ** 20)))
+/** MusicLoop accepts at most 100 MB; allow slow downloads without delaying controls. */
+export const musicPrepareDeadlineSeconds = (size: number): number => Math.min(600, 120 + Math.ceil(size / 2 ** 18))
 
 /** Keep playback outside File Provider. Drive remains the versioned source. */
 export function createMacMediaFilePreparer(executable: string, directory: string,
   onStatus?: (reason: Status) => void,
-): (path: string, size: number, mtime: number, signal?: AbortSignal) => Promise<string> {
+  options: { deadlineSeconds?: (size: number) => number } = {},
+) {
   const report = (reason: Status) => { try { onStatus?.(reason) } catch { /* diagnostics only */ } }
   const pending = new Map<string, Promise<string>>()
   let initialized: Promise<string> | undefined
@@ -50,24 +53,37 @@ export function createMacMediaFilePreparer(executable: string, directory: string
     try { const info = await lstat(path); return info.isFile() && info.size === size && await realpath(path) === path }
     catch { return false }
   }
-  return async (path, size, mtime, signal) => {
+  const cached = async (path: string, size: number, mtime: number): Promise<string | undefined> => {
+    const root = await (initialized ??= initialize().catch(error => { initialized = undefined; throw error }))
+    const key = createHash('sha256').update(`${path}\0${size}\0${mtime}`).digest('hex')
+    const target = join(root, `${key}.media`)
+    if (!await complete(target, size)) return undefined
+    const now = new Date()
+    try { await utimes(target, now, now) } catch { /* cache age only */ }
+    return target
+  }
+  const isLocal = (path: string, signal: AbortSignal): Promise<boolean> => new Promise((resolve, reject) => {
+    execFile(executable, ['--local', path], { timeout: 3000, signal, killSignal: 'SIGKILL', maxBuffer: 1024, encoding: 'utf8' }, (error, stdout) => {
+      if (error || !['media_file_local', 'media_file_remote'].includes(stdout.trim())) reject(Error('media_file_probe_failed'))
+      else resolve(stdout.trim() === 'media_file_local')
+    })
+  })
+  const prepare = async (path: string, size: number, mtime: number, signal?: AbortSignal): Promise<string> => {
     try {
       signal?.throwIfAborted()
       const root = await (initialized ??= initialize().catch(error => { initialized = undefined; throw error }))
       const key = createHash('sha256').update(`${path}\0${size}\0${mtime}`).digest('hex')
       const target = join(root, `${key}.media`)
-      if (await complete(target, size)) {
-        const now = new Date()
-        try { await utimes(target, now, now) } catch { /* cache age only */ }
-        return target
-      }
+      const ready = await cached(path, size, mtime)
+      if (ready) return ready
       const existing = pending.get(key)
       if (existing) return await existing
       const operation = (async () => {
         const staging = join(root, `${key}.${randomUUID()}.tmp`)
         report('media_file_preparing')
         try {
-          const deadline = prepareDeadlineSeconds(size)
+          const deadline = (options.deadlineSeconds ?? prepareDeadlineSeconds)(size)
+          if (!Number.isSafeInteger(deadline) || deadline < 1 || deadline > 600) throw Error('media_file_prepare_failed')
           await new Promise<void>((resolve, reject) => {
             execFile(executable, [path, String(size), staging, String(deadline)],
               { timeout: (deadline + 1) * 1000, ...(signal ? { signal } : {}), killSignal: 'SIGKILL', maxBuffer: 1024, encoding: 'utf8' }, (error, stdout) => {
@@ -85,4 +101,5 @@ export function createMacMediaFilePreparer(executable: string, directory: string
       try { return await operation } finally { if (pending.get(key) === operation) pending.delete(key) }
     } catch { report('media_file_prepare_failed'); throw Error('media_file_prepare_failed') }
   }
+  return Object.assign(prepare, { cached, isLocal })
 }

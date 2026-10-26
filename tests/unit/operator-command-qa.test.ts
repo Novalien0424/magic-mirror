@@ -25,12 +25,12 @@ async function leftovers(directory: string): Promise<string[]> {
 }
 
 describe('QA operator mailbox client', () => {
-  it('runs Remote Console through the production mailbox and cleans up', async () => {
+  it.each(['show_console_main', 'music_loop'] as const)('runs %s through the production mailbox and cleans up', async action => {
     const directory = await userData(), actions: OperatorAction[] = []
     stops.push(await startOperatorControl({ directory: join(directory, 'operator-control'),
       execute: async action => { actions.push(action); return true }, report: () => undefined }))
-    expect(await sendQaOperatorCommand(directory, 'show_console_main')).toBe('success')
-    expect(actions).toEqual(['show_console_main'])
+    expect(await sendQaOperatorCommand(directory, action)).toBe('success')
+    expect(actions).toEqual([action])
     expect(await leftovers(directory)).toEqual([])
   })
 

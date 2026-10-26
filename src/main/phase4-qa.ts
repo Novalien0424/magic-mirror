@@ -51,6 +51,7 @@ export interface Phase4QaInput {
   readonly lifecycleLive?: boolean
   readonly memoryPipeline?: (evidence: (step: string) => void) => Promise<void>
   readonly memoryLearningSettled?: () => boolean
+  readonly musicDownloads?: { paused: boolean; waiting: number; played: number; lastTrack: number }
   readonly onEvidence: (evidence: Phase4QaEvidence) => void
 }
 

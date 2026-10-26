@@ -21,7 +21,7 @@ def build_profile(controls: Path) -> Path:
     for column, row, action, title, color, symbol in [
         (0, 0, "Start", "START\nMIRROR", "#167248", '<path d="M58 29 L58 82 L99 55 Z" fill="white"/>'),
         (1, 0, "Console", "CONSOLE", "#6650a4", '<rect x="43" y="30" width="62" height="48" rx="5" fill="none" stroke="white" stroke-width="6"/><path d="M53 42 L64 53 L53 64 M73 64 H92" fill="none" stroke="white" stroke-width="5" stroke-linejoin="round"/>'),
-        (2, 0, "Play Loop", "PLAY\nLOOP", "#315ba8", '<path d="M47 42 A31 31 0 1 1 43 72" fill="none" stroke="white" stroke-width="9"/><path d="M35 33 L60 38 L41 57 Z" fill="white"/>'),
+        (2, 0, "Play Loop", "VIDEO\nLOOP", "#315ba8", '<path d="M47 42 A31 31 0 1 1 43 72" fill="none" stroke="white" stroke-width="9"/><path d="M35 33 L60 38 L41 57 Z" fill="white"/>'),
         (3, 0, "Desktop", "DESKTOP", "#35656a", '<rect x="42" y="27" width="64" height="44" rx="4" fill="none" stroke="white" stroke-width="6"/><path d="M74 74 V84 M57 86 H91" fill="none" stroke="white" stroke-width="6"/>'),
         (0, 1, "Studio", "STUDIO", "#b26a00", '<path d="M66 31 Q70 53 92 57 Q70 61 66 83 Q62 61 40 57 Q62 53 66 31 Z M97 24 Q98.5 31.5 106 33 Q98.5 34.5 97 42 Q95.5 34.5 88 33 Q95.5 31.5 97 24 Z" fill="white"/>'),
         (1, 1, "Music Loop", "MUSIC\nLOOP", "#087d77", '<path d="M62 72 V32 L98 24 V64 M62 43 L98 35" fill="none" stroke="white" stroke-width="7"/><ellipse cx="53" cy="75" rx="13" ry="9" fill="white"/><ellipse cx="89" cy="67" rx="13" ry="9" fill="white"/>'),

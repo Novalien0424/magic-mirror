@@ -588,7 +588,10 @@ function loopModeLabel(snapshot: OperatorLoopSnapshot | null): string {
   if (!snapshot) return 'Checking…'
   if (snapshot.mode === 'avatar') return 'Not playing'
   if (snapshot.mode === 'desktop') return 'macOS desktop'
-  if (snapshot.mode === 'music') return snapshot.status === 'failed' ? 'MusicLoop · failed' : snapshot.status === 'playing' ? 'MusicLoop · playing on all outputs' : 'MusicLoop · preparing'
+  if (snapshot.mode === 'music') return snapshot.status === 'failed' ? 'MusicLoop · failed' : snapshot.status === 'playing'
+    ? snapshot.reason === 'operator_loop_music_playing_downloading' ? 'MusicLoop · playing on all outputs · downloading remaining tracks'
+      : snapshot.reason === 'operator_loop_music_playing_oversize_skipped' ? 'MusicLoop · playing on all outputs · abnormal files over 100 MB skipped' : 'MusicLoop · playing on all outputs'
+    : 'MusicLoop · downloading / preparing · playback starts automatically'
   return { idle: 'Starting', preparing: 'Preparing', playing: 'Playing', recovering: 'Recovering', failed: 'Failed · Mirror black' }[snapshot.status]
 }
 

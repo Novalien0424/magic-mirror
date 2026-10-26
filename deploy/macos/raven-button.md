@@ -79,9 +79,12 @@ mode acknowledgement; Remote Console can open on the main monitor while the TV
 remains on Desktop. DESKTOP wakes HDMI and connects the TV mouse like CONSOLE;
 its success result is `desktop_shown`.
 
-MUSIC LOOP selects Main's native all-output music mode and reports `music_playing`
-only after playback progress. The operator supplies files through shared
-`MusicLoop`, never a command argument. A queued STOP cancels this command's
+MUSIC LOOP selects Main's native all-output music mode and reports `music_preparing`
+after Main accepts the mode. Console reports actual playback after native progress;
+downloads do not block command acknowledgement or controls. Ready tracks repeat
+while remaining files prepare; files over 100 MB are abnormal and skipped. The
+operator supplies files through shared `MusicLoop`, never a command argument.
+A queued STOP cancels this command's
 acknowledgement wait within a poll interval, allowing ordinary global shutdown to
 cancel a cloud preparation. Cancellation has no failure chime. Main releases the
 native child on mode change/quit; stdin EOF and parent loss also release it.
