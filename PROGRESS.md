@@ -1,52 +1,50 @@
 # Magic Mirror — current handoff, 2026-10-26
 
-Delivered the MusicLoop follow-up and Neo label change. **VIDEO LOOP** now labels
-the top-row third key in the live **Magic Mirror copy 1** profile; its target and
-the other six assignments are preserved. Recovery profile regenerated.
+Repaired MusicLoop silent playback: the native route now mirrors one stereo
+stream across the three macOS outputs, instead of concatenating them into six
+channels. A new native guard rejects the incorrect route. The previous QA's
+advancing-clock/sub-device checks did not prove duplicated output.
+MUSIC LOOP now leaves TV power/ADB, orientation, mouse and black cover alone, per
+the owner's clarification. STOP retains global shutdown/black/Jabra policy.
 
 MusicLoop accepts audio **up to 100 MB (100,000,000 bytes)** and skips larger
 files as abnormal before downloading. Ready tracks loop while remaining files
 prepare, then completed tracks join at a boundary. Mode commands acknowledge
 promptly; Console shows preparing/downloading/playback/error status. Repeated
 MUSIC LOOP is idempotent. STOP and mode changes cancel preparation and playback.
-Shared `AI_Stuff/AI_Avatar/Common/MusicLoop` remains **empty** for the owner.
+Shared `AI_Stuff/AI_Avatar/Common/MusicLoop` now contains the owner's **two MP3s**
+(4.85 MB and 1.25 MB). **VIDEO LOOP** remains the Neo top-row third key label.
 
-[Plan, self-review, journey, results and limits](docs/testing/music-loop-downloads-2026-10-26.md) ·
-[metadata checks/builds](docs/testing/music-loop-download-checks-2026-10-26.json) ·
-[full failed attempts](docs/testing/music-loop-download-failures-2026-10-26.txt) ·
+[Silent-output diagnosis, repair and evidence](docs/testing/music-loop-routing-2026-10-26.md) ·
+[route checks/build](docs/testing/music-loop-routing-checks-2026-10-26.json) ·
+[download journey and retained failures](docs/testing/music-loop-downloads-2026-10-26.md) ·
 [operator instructions](deploy/macos/stream-deck.md).
 
 ## Current evidence and runtime
 
-- **284 distinct focused tests pass** across ten files; TypeScript, build,
-  fingerprint, script syntax and native signing checks pass. No model/dependency
-  or operator settings changes.
-- Real isolated Electron journey **29/29, exit 0**, 22 captures. Inspected pending,
-  downloading and abnormal warning UI. Cached tracks played 34 times during a
-  50-second preparation delay; completed track joined. A 46-second no-ready wait,
-  cancel/no-late-restart and shutdown with playback plus pending preparation pass.
-- Native exactly-100-MB WAV copy/cache/restart/playback passes on the three-output
-  route. Existing 22 MB Drive WAV copied; source was already local. No cold network
-  hydration, physical keypress or human acoustic acceptance claim.
-- Current source `9a025a0d0762d2a3`, output `5c9e4bb1a4561946`, built
-  **2026-10-26 15:40:28 Taipei**. Canonical build and current controls deployed.
-  Normal app was opened during work, then stopped for QA and restored afterward:
-  LaunchAgent running, Console Raven version 21, Conversation, Asleep with wake
-  listening, all modules normal. No music player/preparer remains. Jabra final
-  reset/read-back **70.077%**; other output levels/mutes restored.
-- Both owned QA roots cleaned (**207 files / 129651594 bytes**) after preserving
-  metadata and full failures; 20 scratch files removed. Production MusicLoop is
-  empty; no operator config/draft was published.
-- Failed development attempts are retained: outdated unit expectations, two QA
-  type errors, a correct normal-Electron ownership block, and the QA client's old
-  success-reason expectation. All affected final checks passed.
+- **130/130 focused button/TV tests pass**. New case proves no TV, orientation,
+  blackout or mouse dependency for music; STOP still stops Main. Build, native
+  signature, script syntax and fingerprint pass. No model/dependency/config edit.
+- Actual Mac native A/B: original output buffers `[2,2,2]`, corrected `[2]` with
+  all three sub-devices active. Corrected production helper played both actual
+  cached MP3s for eight seconds after each acknowledgement. Guard negative test
+  rejected the original routing with `operator_loop_music_route_incomplete`.
+- Current source `5830f8b0ff4fb236`, output `915626e92258cce1`, built
+  **2026-10-26 16:07:35 Taipei**. Latest native helper and canonical app deployed;
+  LaunchAgent restarted and renderer ready. Jabra final **70.077%**; other output
+  levels/mutes and all input/default devices preserved. Owner's physical MUSIC
+  LOOP/audibility check has been requested and is pending.
+- Earlier **29/29 rendered journey**, 284 focused tests and 100 MB copy/cache
+  evidence remain valid for unchanged controls/download handling. They do not
+  establish physical speaker output; the route acceptance gap is documented above.
+  Their cleaned artifacts and full failed attempts remain linked in the report.
 
 ## Next action / scope
 
-Owner adds music of 100 MB or less. STOP then MUSIC LOOP refreshes files/retries
-downloads. Re-establish venue board ADB transport and verify physical buttons,
-TV standby/mouse and acoustic output together. Existing TV standby/mouse failure,
-output hotplug and inter-device latency remain unresolved/unmeasured.
+Complete owner's live MUSIC LOOP check on the corrected build. STOP then MUSIC
+LOOP refreshes files/retries downloads. TV standby/mouse transport remains a
+separate display-control issue; music no longer uses it. Output hotplug and
+inter-device latency remain unmeasured; no cold cloud hydration claim.
 
 The **LLM-led full-catalog media selection redesign** remains deferred in
 [TODO](TODO.md), with [research and acceptance plan](docs/testing/llm-media-catalog-design-2026-10-25.md).

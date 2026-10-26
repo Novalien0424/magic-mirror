@@ -55,7 +55,9 @@ The combined control then waits up to ten seconds for this Main's existing
 logged mirror failure/recreation or app exit, and rechecks the Main PID. Only
 then does it send Main `normal` for START, `play_loop` for LOOP, `show_console`
 for CONSOLE, `studio` for STUDIO, `music_loop` for MUSIC LOOP, or `desktop` for DESKTOP. Only a successful
-acknowledgement permits TV wake and HDMI selection. Missing/ambiguous readiness
+acknowledgement permits TV wake and HDMI selection for display modes. MUSIC LOOP
+leaves TV power, orientation, mouse and the HDMI black cover unchanged.
+Missing/ambiguous readiness
 reports `<action>_not_ready` without waking the TV; mode failure reports
 `<action>_mode_failed` plus a safe `modeReason`.
 The saved active avatar is never overwritten. An already-running app goes through
@@ -81,7 +83,9 @@ its success result is `desktop_shown`.
 
 MUSIC LOOP selects Main's native all-output music mode and reports `music_preparing`
 after Main accepts the mode. Console reports actual playback after native progress;
-downloads do not block command acknowledgement or controls. Ready tracks repeat
+downloads do not block command acknowledgement or controls. Music does not call
+the TV/ADB path, so a sleeping or unreachable TV cannot produce a music failure
+beep. Ready tracks repeat
 while remaining files prepare; files over 100 MB are abnormal and skipped. The
 operator supplies files through shared `MusicLoop`, never a command argument.
 A queued STOP cancels this command's

@@ -82,9 +82,17 @@ describe('combined Stream Deck sequence', () => {
   it('routes the MusicLoop button through Main and global STOP through application shutdown', async () => {
     const io = control()
     expect((await operateMirrorControl('music', io)).outcome).toBe('music_preparing')
-    expect(io.order).toEqual(['start', 'ready', 'music_loop', 'awake'])
+    expect(io.order).toEqual(['start', 'ready', 'music_loop'])
     expect((await operateMirrorControl('stop', io)).outcome).toBe('stopped')
     expect(io.app).toHaveBeenLastCalledWith('stop')
+  })
+  it('plays music without touching TV, orientation, mouse or the black cover', async () => {
+    const io = { ...control('already_on', 'tv_unavailable'), portrait: vi.fn(async () => 'portrait_failed'),
+      blackout: vi.fn(async () => 'blackout_clear_failed'), mouse: vi.fn(async () => 'mouse_start_failed') }
+    expect(await operateMirrorControl('music', io)).toMatchObject({ outcome: 'music_preparing', tv: 'tv_unchanged' })
+    expect(io.order).toEqual(['start', 'ready', 'music_loop'])
+    expect(io.tv).not.toHaveBeenCalled(); expect(io.portrait).not.toHaveBeenCalled()
+    expect(io.blackout).not.toHaveBeenCalled(); expect(io.mouse).not.toHaveBeenCalled()
   })
   it('acknowledges Desktop before clearing black and connects the mouse after HDMI wake', async () => {
     const base = control()

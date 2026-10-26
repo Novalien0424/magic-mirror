@@ -1,0 +1,215 @@
+{
+  "build": {
+    "version": 1,
+    "status": "complete",
+    "source": "5830f8b0ff4fb2364ef007564da4fa51a8f45bb913000477fc3a5957e0c1b29d",
+    "output": "915626e92258cce1743743cbebe91fbf769db82c6c8d1e0cf96414e51230a983",
+    "builtAt": "2026-10-26T08:07:35.224Z"
+  },
+  "focusedTests": {
+    "files": 2,
+    "passed": 130
+  },
+  "baseline": [
+    {
+      "channels": [
+        2,
+        2,
+        2
+      ],
+      "event": "route_probe"
+    },
+    {
+      "event": "ready",
+      "outputs": 3
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 0.03358715,
+      "status": 2
+    },
+    {
+      "event": "playing",
+      "id": 1,
+      "outputs": 3
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 1.037045941,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 2.034075733,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 3.034272567,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 4.034053608,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 5.039206774,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 6.034251858,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 7.034216316,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 8.034189316,
+      "status": 2
+    },
+    {
+      "event": "stopped"
+    }
+  ],
+  "correctedProbe": [
+    {
+      "channels": [
+        2
+      ],
+      "event": "route_probe"
+    },
+    {
+      "event": "ready",
+      "outputs": 3
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 0,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 0.233772499,
+      "status": 2
+    },
+    {
+      "event": "playing",
+      "id": 1,
+      "outputs": 3
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 1.221601583,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 2.224752041,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 3.229314749,
+      "status": 2
+    },
+    {
+      "event": "progress_probe",
+      "gain": 0.009999999776482582,
+      "muted": false,
+      "seconds": 4.238634374,
+      "status": 2
+    },
+    {
+      "event": "stopped"
+    }
+  ],
+  "productionHelper": [
+    {
+      "playback": "acknowledged",
+      "track": 1,
+      "outputs": 3
+    },
+    {
+      "playback": "acknowledged",
+      "track": 2,
+      "outputs": 3
+    },
+    {
+      "status": "passed",
+      "route": {
+        "channels": 2,
+        "event": "ready",
+        "outputs": 3,
+        "streams": 1
+      },
+      "mp3Tracks": 2,
+      "secondsAfterEachAck": 8
+    }
+  ],
+  "negativeRegression": [
+    {
+      "exit": 1,
+      "events": [
+        {
+          "event": "failed",
+          "reason": "operator_loop_music_route_incomplete"
+        },
+        {
+          "event": "stopped"
+        }
+      ],
+      "expectedFailure": true
+    }
+  ],
+  "normalRestore": [
+    {
+      "start": "started",
+      "ready": true
+    }
+  ],
+  "jabraOutput": 0.7007718682289124,
+  "physicalOwnerCheck": "pending",
+  "limits": [
+    "Native playback time and route shape are not physical acoustic measurements.",
+    "TV wake intentionally not executed for music."
+  ],
+  "cleanup": {
+    "files": 18,
+    "bytes": 573648,
+    "root": ".artifacts/music-loop-silence-work"
+  }
+}

@@ -28,7 +28,8 @@ then selects Interactive Studio mode: the mirror now wakes to the avatar's Studi
 wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
 studio farewell and Dormant. VIDEO LOOP and CONSOLE leave the mirror mode alone;
 STOP retains its black HDMI and Jabra 70% policy.
-Every visible control first verifies the venue's Mac 90° portrait orientation.
+Display controls first verify the venue's Mac 90° portrait orientation.
+MUSIC LOOP leaves TV power, orientation, mouse and the HDMI black cover alone.
 DESKTOP keeps Electron running with input suspended; it does not discard Console
 edits. START, STUDIO and VIDEO LOOP restore their selected view. CONSOLE returns
 from Desktop to the saved avatar mode and opens its existing editor on the TV.
@@ -90,7 +91,10 @@ Main owns the player and a temporary private macOS multi-output route. Current
 outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
 rediscovered during playback; virtual and aggregate devices are excluded to avoid
 duplicate routes. Normal default output, input gain and device mute/volume are
-preserved. HDMI stays awake with black video so its audio remains available.
+preserved. The route duplicates one stereo stream across the available outputs;
+it does not concatenate their channels. MUSIC LOOP does not wake the TV or depend
+on its ADB connection. HDMI receives music if the connected TV is already able to
+play audio; TV power remains unchanged.
 
 START, STUDIO, VIDEO LOOP, DESKTOP and Return to Avatar release MusicLoop before
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the

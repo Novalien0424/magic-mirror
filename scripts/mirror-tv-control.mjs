@@ -105,7 +105,7 @@ export async function operateMirrorControl(action, io) {
       ? app : blackout && blackout !== 'blackout_covered' ? blackout : tv !== 'tv_standby' ? tv
         : audio && audio !== 'jabra_output_70' ? audio : mouse && !['mouse_stopped', 'mouse_not_installed'].includes(mouse) ? mouse : app }
   }
-  if (io.portrait) {
+  if (action !== 'music' && io.portrait) {
     const portrait = await attempt(() => io.portrait(), 'portrait_failed')
     if (portrait !== 'portrait_ready') return { portrait, tv: 'tv_wake_skipped', outcome: portrait }
   }
@@ -120,6 +120,9 @@ export async function operateMirrorControl(action, io) {
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
   if (mode !== 'success') return { app, mode, modeReason, tv: 'tv_wake_skipped', outcome: action === 'music' && modeReason === 'operator_command_cancelled' ? 'music_cancelled' : `${action}_mode_failed` }
+  // Audio-only mode uses available macOS outputs. TV power, orientation, mouse
+  // and the HDMI black cover are independent and must not gate music.
+  if (action === 'music') return { app, mode, modeReason, tv: 'tv_unchanged', outcome: 'music_preparing' }
   // Remove the cover only after the actual renderer/mode acknowledgement.
   if (io.blackout) {
     const blackout = await attempt(() => io.blackout('clear'), 'blackout_clear_failed')

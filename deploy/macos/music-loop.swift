@@ -80,7 +80,10 @@ final class Playback {
       kAudioAggregateDeviceUIDKey: uid,
       kAudioAggregateDeviceNameKey: "Magic Mirror MusicLoop",
       kAudioAggregateDeviceIsPrivateKey: 1,
-      kAudioAggregateDeviceIsStackedKey: 0,
+      // Multi-output mirroring: measured on the venue Mac as one stereo stream.
+      // 0 instead concatenates the three outputs into six channels; a stereo
+      // player then reaches only the first output despite an advancing clock.
+      kAudioAggregateDeviceIsStackedKey: 1,
       kAudioAggregateDeviceMainSubDeviceKey: next[0].uid,
       kAudioAggregateDeviceSubDeviceListKey: next.enumerated().map { index, output in
         [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: index == 0 ? 0 : 1] as [String: Any]
@@ -98,11 +101,21 @@ final class Playback {
       Thread.sleep(forTimeInterval: 0.025)
     }
     guard verified else { fail("operator_loop_music_route_incomplete") }
+    // Counting sub-devices alone does not prove stereo duplication. A concatenated
+    // route can report all devices while only its first pair receives the song.
+    property = address(kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeOutput)
+    guard AudioObjectGetPropertyDataSize(aggregate, &property, 0, nil, &size) == noErr,
+      size >= MemoryLayout<AudioBufferList>.size else { fail("operator_loop_music_route_incomplete") }
+    let storage = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+    defer { storage.deallocate() }
+    guard AudioObjectGetPropertyData(aggregate, &property, 0, nil, &size, storage) == noErr else { fail("operator_loop_music_route_incomplete") }
+    let buffers = UnsafeMutableAudioBufferListPointer(storage.assumingMemoryBound(to: AudioBufferList.self))
+    guard buffers.count == 1, buffers[0].mNumberChannels > 0 else { fail("operator_loop_music_route_incomplete") }
     route = next
     player?.audioOutputDeviceUniqueID = uid
     if let current = current, current.isValid { player?.seek(to: current) }
     player?.play(); lastAdvance = Date()
-    emit("ready", ["outputs": next.count])
+    emit("ready", ["outputs": next.count, "streams": buffers.count, "channels": buffers[0].mNumberChannels])
   }
   func play(_ message: [String: Any]) {
     guard let id = message["id"] as? Int, id > 0, let path = message["path"] as? String, path.hasPrefix("/"),
