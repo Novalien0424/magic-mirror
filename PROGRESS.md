@@ -6,6 +6,10 @@ channels. A new native guard rejects the incorrect route. The previous QA's
 advancing-clock/sub-device checks did not prove duplicated output.
 MUSIC LOOP now leaves TV power/ADB, orientation, mouse and black cover alone, per
 the owner's clarification. STOP retains global shutdown/black/Jabra policy.
+Latest follow-up: each accepted MUSIC LOOP press sets and verifies Jabra at 70%
+once before the mode command. Physical volume buttons remain free afterward;
+there is no per-track/timer enforcement. Repeat presses reset volume without
+restarting the track. Failed resets are recorded while other outputs continue.
 
 MusicLoop accepts audio **up to 100 MB (100,000,000 bytes)** and skips larger
 files as abnormal before downloading. Ready tracks loop while remaining files
@@ -22,7 +26,9 @@ Shared `AI_Stuff/AI_Avatar/Common/MusicLoop` now contains the owner's **two MP3s
 
 ## Current evidence and runtime
 
-- **130/130 focused button/TV tests pass**. New case proves no TV, orientation,
+- **133/133 focused button/TV tests pass**. Latest coverage checks one-shot 70%,
+  ordering/repeat presses, manual-volume preservation and reset failures. Existing
+  cases prove no TV, orientation,
   blackout or mouse dependency for music; STOP still stops Main. Build, native
   signature, script syntax and fingerprint pass. No model/dependency/config edit.
 - Actual Mac native A/B: original output buffers `[2,2,2]`, corrected `[2]` with
@@ -31,8 +37,9 @@ Shared `AI_Stuff/AI_Avatar/Common/MusicLoop` now contains the owner's **two MP3s
   rejected the original routing with `operator_loop_music_route_incomplete`.
 - Current source `5830f8b0ff4fb236`, output `915626e92258cce1`, built
   **2026-10-26 16:07:35 Taipei**. Latest native helper and canonical app deployed;
-  LaunchAgent restarted and renderer ready. Jabra final **70.077%**; other output
-  levels/mutes and all input/default devices preserved. Owner's physical MUSIC
+  LaunchAgent restarted and renderer ready. Native reset measured **70.077%**;
+  the later launcher-only change preserved active owner music and its volume.
+  Other output levels/mutes and all input/default devices preserved. Owner's physical MUSIC
   LOOP/audibility check has been requested and is pending.
 - Earlier **29/29 rendered journey**, 284 focused tests and 100 MB copy/cache
   evidence remain valid for unchanged controls/download handling. They do not

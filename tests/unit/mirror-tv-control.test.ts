@@ -94,6 +94,28 @@ describe('combined Stream Deck sequence', () => {
     expect(io.tv).not.toHaveBeenCalled(); expect(io.portrait).not.toHaveBeenCalled()
     expect(io.blackout).not.toHaveBeenCalled(); expect(io.mouse).not.toHaveBeenCalled()
   })
+  it('sets Jabra to 70% once before each music press and leaves subsequent physical volume changes alone', async () => {
+    const base = control('already_on')
+    let volume = 0.1
+    const io = { ...base, resetAudio: vi.fn(async () => { base.order.push('audio_70'); volume = 0.7; return 'jabra_output_70' }) }
+    expect(await operateMirrorControl('music', io)).toMatchObject({ audio: 'jabra_output_70', outcome: 'music_preparing' })
+    expect(base.order).toEqual(['start', 'ready', 'audio_70', 'music_loop'])
+    expect(volume).toBe(0.7); expect(io.resetAudio).toHaveBeenCalledTimes(1)
+    volume = 0.3 // visitor changes physical volume while the track continues
+    await operateMirrorControl('console', io)
+    expect(volume).toBe(0.3); expect(io.resetAudio).toHaveBeenCalledTimes(1)
+    await operateMirrorControl('music', io)
+    expect(volume).toBe(0.7); expect(io.resetAudio).toHaveBeenCalledTimes(2)
+  })
+  it.each(['unavailable', 'exception'])('records a %s Jabra reset without blocking other music outputs', async failure => {
+    const io = { ...control(), resetAudio: vi.fn(async () => {
+      if (failure === 'exception') throw Error('private device error')
+      return 'jabra_output_reset_failed'
+    }) }
+    expect(await operateMirrorControl('music', io)).toMatchObject({ audio: 'jabra_output_reset_failed', outcome: 'music_preparing' })
+    expect(io.mode).toHaveBeenCalledExactlyOnceWith('music_loop')
+    expect(io.resetAudio).toHaveBeenCalledTimes(1)
+  })
   it('acknowledges Desktop before clearing black and connects the mouse after HDMI wake', async () => {
     const base = control()
     const io = { ...base,

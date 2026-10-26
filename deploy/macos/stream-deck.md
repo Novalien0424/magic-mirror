@@ -87,6 +87,12 @@ playable music. Repeated MUSIC LOOP preserves playback and preparation. STOP the
 MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.
 
+Each accepted MUSIC LOOP press first sets Jabra output to **70%** and verifies
+the native read-back. This happens once per press, including a repeat press while
+music is running. Jabra's physical volume buttons remain usable afterward; there
+is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
+reset is recorded in button diagnostics; music can still use other outputs.
+
 Main owns the player and a temporary private macOS multi-output route. Current
 outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
 rediscovered during playback; virtual and aggregate devices are excluded to avoid

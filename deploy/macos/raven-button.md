@@ -82,8 +82,13 @@ remains on Desktop. DESKTOP wakes HDMI and connects the TV mouse like CONSOLE;
 its success result is `desktop_shown`.
 
 MUSIC LOOP selects Main's native all-output music mode and reports `music_preparing`
-after Main accepts the mode. Console reports actual playback after native progress;
-downloads do not block command acknowledgement or controls. Music does not call
+after Main accepts the mode. Console reports actual playback after native progress.
+Before sending that mode command, each accepted press calls the existing native
+Jabra output reset/read-back once to establish 70%. Physical volume changes then
+persist until another MUSIC LOOP or STOP press. No timer or track callback resets
+volume. Reset failure is retained in the command's `audio` metadata and does not
+block other outputs.
+Downloads do not block command acknowledgement or controls. Music does not call
 the TV/ADB path, so a sleeping or unreachable TV cannot produce a music failure
 beep. Ready tracks repeat
 while remaining files prepare; files over 100 MB are abnormal and skipped. The

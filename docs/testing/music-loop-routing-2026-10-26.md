@@ -68,3 +68,20 @@ Physical speaker audibility still requires the owner's live check.
 The task-owned diagnostic sources, binaries, native sample and temporary logs
 were removed after retaining metadata. No MP3 source, production cache or operator
 setting was deleted. Normal app remains running and ready for the owner's press.
+
+## Follow-up: default Jabra volume on MUSIC LOOP
+
+Owner requested 70% at each MUSIC LOOP press while retaining physical-button
+volume control afterward. The button sequence now invokes the existing native
+reset/read-back once, after app readiness and before the music command. Repeated
+accepted presses reset to 70% without restarting the current track. There is no
+volume timer, track-boundary reset or Main/native player volume enforcement.
+Reset failure remains fixed `audio` metadata and does not gate other outputs.
+
+Focused `mirror-tv-control` and `raven-button` run: **133/133 passed**. Added
+ordering/one-shot/repeated-press behavior, preservation of a simulated physical
+volume adjustment through Console access, and reset failure/exception cases.
+Script syntax and final diff check passed. The native helper is unchanged from
+its measured 70.077% reset above. No new sound-producing QA or Electron restart
+was needed; active owner playback was preserved. This launcher-script change is
+used directly by the installed canonical controls on their next press.

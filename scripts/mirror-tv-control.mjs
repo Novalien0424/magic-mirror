@@ -113,16 +113,19 @@ export async function operateMirrorControl(action, io) {
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
   const ready = await attempt(() => io.ready(), false)
   if (!ready) return { app, tv: 'tv_wake_skipped', outcome: `${action}_not_ready` }
+  // One reset per accepted button press, before playback starts. Never enforce
+  // volume during playback: the visitor can use Jabra's physical volume buttons.
+  const audio = action === 'music' ? await attempt(() => io.resetAudio(), 'jabra_output_reset_failed') : undefined
   // Console is a separate window; showing it must preserve the current media mode.
   // START selects Conversation and STUDIO Interactive Studio; LOOP leaves the mirror mode alone.
   const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio', desktop: 'desktop', music: 'music_loop' }[action]
   const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
-  if (mode !== 'success') return { app, mode, modeReason, tv: 'tv_wake_skipped', outcome: action === 'music' && modeReason === 'operator_command_cancelled' ? 'music_cancelled' : `${action}_mode_failed` }
+  if (mode !== 'success') return { app, mode, modeReason, ...(audio === undefined ? {} : { audio }), tv: 'tv_wake_skipped', outcome: action === 'music' && modeReason === 'operator_command_cancelled' ? 'music_cancelled' : `${action}_mode_failed` }
   // Audio-only mode uses available macOS outputs. TV power, orientation, mouse
   // and the HDMI black cover are independent and must not gate music.
-  if (action === 'music') return { app, mode, modeReason, tv: 'tv_unchanged', outcome: 'music_preparing' }
+  if (action === 'music') return { app, mode, modeReason, audio, tv: 'tv_unchanged', outcome: 'music_preparing' }
   // Remove the cover only after the actual renderer/mode acknowledgement.
   if (io.blackout) {
     const blackout = await attempt(() => io.blackout('clear'), 'blackout_clear_failed')
