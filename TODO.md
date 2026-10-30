@@ -1,131 +1,93 @@
-# Open work — reconciled 2026-10-21
+# Open work — reconciled 2026-10-30
 
-Only unresolved defects, limitations and acceptance remain here. Current delivery
-and runtime: [PROGRESS](PROGRESS.md). Durable rules: [DECISIONS](DECISIONS.md).
+Only unresolved work belongs here. [PRD](PRD.md) defines the current product;
+[PROGRESS](PROGRESS.md) records delivery/runtime; [DECISIONS](DECISIONS.md) owns
+rulings. Historical failures remain in linked reports, even when later repaired.
 
-## Unresolved reliability
+## Reliability and product gaps
 
-- [ ] **Venue ADB transport unavailable (2026-10-26).** MusicLoop's final STOP
-  check verified black HDMI cover, Jabra 70% and no playback processes, but TV
-  standby and mouse disconnect failed because the board transport was missing.
-  Recheck the board connection, then verify standby/mouse release and a physical
-  MUSIC LOOP → STOP journey. [Evidence](docs/testing/music-loop-2026-10-26.md).
+- [ ] **Studio speech-failure recovery and operator rescue.** A rejected opening
+  or question cue can leave a step without its listening deadline. Add bounded
+  recovery and a visible safe exit; provide a current-visit name retry/correction
+  control with fresh verbal read-back. The 10-24 name repair fixed candidate
+  selection, receipt-based confirmation and tool-only repeats, but explicitly
+  left these two gaps open.
+  [Audit](docs/testing/studio-journey-audit-2026-10-24.md) ·
+  [Repair boundary](docs/testing/guest-name-repair-2026-10-24.md).
+- [ ] **TV ADB transport and mouse release.** Wake/standby remain unavailable on
+  10-30; local STOP, black HDMI and Jabra 70 work independently. Restore board
+  transport and verify physical mode-to-STOP behavior.
+  [Latest evidence](docs/testing/dance-floor-delivery-2026-10-30.md).
+- [ ] **Post-restart Jabra volume.** STOP read-back was 70%; one later startup
+  observation was 6.25%. Final explicit 70% held. Investigate if reproducible;
+  cause is unknown, and continuous volume enforcement would prevent the owner's
+  physical-button adjustment. [Evidence](docs/testing/dance-floor-checks-2026-10-30.json).
+- [ ] **USB camera stability.** Temporary 96×96 / 5 fps mode delivered frames but
+  failed strict stability; one sample averaged 2.18 fps. Qualify cable/port/host or
+  vendor-matched firmware across restart/reboot.
+  [Native checks](docs/testing/low-camera-image-journeys-2026-10-21.md) ·
+  [Investigation](docs/testing/camera-availability-qa-2026-10-18.md).
+- [ ] **Wake and voice quality.** Validate human names, corrections/spelling,
+  near-negative wake phrases, cold start, media interference, barge-in and echo.
+  Synthetic speech is not human accuracy. Repeat hidden online phrase
+  「在雲上找找」 and factual/character/tool scenarios if field results worsen.
+  [Name repair](docs/testing/guest-name-repair-2026-10-24.md) ·
+  [Voice boundaries](docs/testing/open-issues-2026-10-13.md) ·
+  [Online-media sample](docs/testing/console-ux-revamp-2026-10-17.md).
+- [ ] **Intermittent Console reload stall.** One ritual run stalled; later runs
+  passed. Use unload-blocker diagnostics if it recurs; no established root cause.
+  [Report](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
+- [ ] **Image chat timing/tool selection.** A chat-during-painting timeout and an
+  ordinary-camera tool-selection miss each passed one unchanged retry. Retain
+  both failures; no claim of deterministic provider reliability.
+  [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
+- [ ] **Live quality-judge baseline.** The memory-role judge failed `local_scope`
+  quality twice despite passing application checks; a prior judge passed on
+  retry. Re-baseline or explicitly version a separate judge role before treating
+  these scores as regressions. [Evidence](docs/testing/memory-model-signin-2026-10-18.md#results).
+- [ ] **LLM-led media catalog selection.** Replace rigid alias/matcher admission
+  with the LLM selecting real authorized catalog entries. Evaluate 50/200/512
+  items, versions and ambiguity; preserve character and online authorization.
+  Existing phonetic retrieval is shipped; this redesign is deferred.
+  [Research and acceptance](docs/testing/llm-media-catalog-design-2026-10-25.md).
+- [ ] **Physical sticker printing.** The final cue calls a deferred printer sink;
+  physical printer and delivery are not connected. [Journey](PRD.md#3-完整訪客旅程).
 
-- [ ] **LLM-led local media selection (roadmap, 2026-10-26).** Replace the rigid
-  alias/matcher admission path with the existing LLM selecting from the compact
-  authorized catalog. No operator-maintained aliases required. Compare at 50,
-  200 and 512 items; preserve versions, natural Raven character, execution checks
-  and explicit online authorization. Address current folder/catalog limits before
-  larger-library claims. Deferred while the owner prioritizes MusicLoop.
-  [Research, journeys and acceptance plan](docs/testing/llm-media-catalog-design-2026-10-25.md).
+## Remaining field acceptance
 
-- [ ] **Camera transport/driver reliability.** The owner's temporary minimum
-  mode is 96×96 at 5 fps. It returned six native snapshots, but strict stability
-  failed; a separate 72-frame sample delivered about 2.18 fps. The earlier zero-frame
-  result is superseded, while continuous reliability remains unqualified.
-  Obtain vendor-matched firmware/PCB or alternate cable/port/host evidence,
-  then qualify a persistent fix across restart/reboot.
-  [Latest native evidence](docs/testing/low-camera-image-journeys-2026-10-21.md) ·
-  [Transport investigation](docs/testing/camera-availability-qa-2026-10-18.md).
-- [ ] **Wake robustness under media and cold start.** Validate representative
-  human positives, near negatives and startup behavior over Dormant media. The
-  Jabra speech-bed stress failures remain; synthetic detection rates are not
-  human accuracy. Consolidates the older duplicate wake checks.
-  [Wake investigation](docs/testing/open-issues-2026-10-13.md#2-wake-fails-over-the-tested-speech-playback).
-- [ ] **Realtime dialogue and media reliability.** Check the hidden online
-  phrase 「在雲上找找」 through the real microphone and repeat matched scenarios
-  if field results worsen. On 10-17 the gate held, but mini searched on 4/6
-  phrase turns and sometimes failed to play. Identity ASR, factual correction,
-  character/tool delivery and repeated Chinese-title clarification also retain
-  evidence gaps; do not reopen repaired memory-write bugs without reproduction.
-  [Latest live results](docs/testing/console-ux-revamp-2026-10-17.md#results) ·
-  [Earlier boundaries](docs/testing/open-issues-2026-10-13.md).
-  The 10-21 ordinary-camera regression also missed tool selection on its first
-  attempt despite correct ASR; its one unchanged retry passed all five checks.
-  No photo was taken on the failed attempt.
-  [Camera failure/retry](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
-- [ ] **Intermittent Console reload stall.** One of three ritual runs stalled;
-  later runs passed. Preserve the failure and use the new unload-blocker
-  diagnostics if it recurs before claiming the cause is fixed.
-  [QA driver evidence](docs/testing/console-ux-revamp-2026-10-17.md#qa-drivers-repaired).
-- [ ] **Image chat completion timing.** The first per-Avatar live Conversation
-  run timed out waiting for chat-during-painting completion despite recorded audio
-  replies and an image reveal. The single retry passed the full 14-check journey.
-  New metadata counters can identify the outstanding wait if it recurs; the first
-  run does not establish whether provider timing or QA tracking was responsible.
-  [Retained failure and retry](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
+- [ ] **Studio with real people.** Run opening → corrected/confirmed name →
+  four answers/short comments → drawing cue → image → explicit redraw or finish →
+  transfer → farewell/Dormant → fresh restart. Check silence branches, Chinese/
+  English, name-only display and guest-list near sounds at the Jabra.
+  [Current journey](PRD.md#3-完整訪客旅程) ·
+  [Latest synthetic image run](docs/testing/studio-redraw-music-cap-2026-10-26.md).
+  Saved modern minimalist art and MusicLoop 200 MB are already implemented.
+- [ ] **Consented guest photo.** Verify real microphone permission, fresh clear
+  face at the temporary camera mode and likeness; public-portrait simulation
+  cannot prove these. [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md).
+- [ ] **Dance Floor installation.** Check audible/visible beat alignment and
+  saved offset, independent speaker delay, hotplug, normal-volume output and
+  the complete 35-minute track boundary. Software clock measurements and quiet
+  playback do not establish these. [Report](docs/testing/dance-floor-delivery-2026-10-30.md).
+- [ ] **Cold Drive video and long-copy feedback.** MusicLoop/Dance native
+  preparation is exercised; general Loop Video/conversation cold-video delivery
+  and silent waiting UX remain to verify.
+  [Video gap](docs/testing/todo-audit-fixes-2026-10-18.md) ·
+  [Music download checks](docs/testing/music-loop-downloads-2026-10-26.md).
+- [ ] **Physical operator journey.** Verify the current eight Neo keys, portrait
+  Console save/check feedback, queued start cancellation, Desktop→other mode,
+  Remote Console and remote-pointer/keyboard behavior with the TV mouse.
+  [Current controls](deploy/macos/stream-deck.md) ·
+  [Desktop evidence](docs/testing/stream-deck-desktop-2026-10-23.md).
+- [ ] **Release/venue acceptance.** Connected lighting/fog, real scene fades,
+  cold login/power, signing/packaging and 24-hour TV-present soak with ten
+  conversations remain distinct from local test passes.
+  [Acceptance boundaries](docs/testing/open-issues-2026-10-13.md#deferred-acceptance).
 
-- [ ] **Live quality judge baseline on `gpt-6.1-sol`.** Since config 19 the
-  judge reads the memory role, now `gpt-6.1-sol`. Live `local_scope` failed its
-  quality judge twice (tool silence, grounding, naturalness/character 2/3) while
-  every application check passed; the luna judge passed it on retry. Decide
-  whether to re-baseline thresholds or give the judge its own versioned model
-  role before treating live quality failures as regressions.
-  [Evidence](docs/testing/memory-model-signin-2026-10-18.md#results).
-- [ ] **Cold Drive media on a real download.** The size-scaled wait and
-  copy-before-play are proven with synthetic delays only. Once, with a large
-  online-only Common video, check Loop Save/Play, Stream Deck PLAY LOOP and a
-  conversation request. Known limitation: during a long copy, a PLAY LOOP press
-  shows nothing until the loop starts, and a conversation request waits with the
-  avatar visible but silent. [Fixes](docs/testing/todo-audit-fixes-2026-10-18.md).
-
-## Remaining acceptance
-
-- [ ] **Shared image skill with real guests.** The owner authorized a public
-  Internet portrait after native frame delivery because nobody was available.
-  The complete simulated journeys and retained failures are in the
-  [latest per-Avatar report](docs/testing/avatar-image-skill-selection-2026-10-21.md).
-  When a willing guest is available, verify real microphone use, a clear face
-  at 96×96, fresh capture and likeness in both modes. Simulation cannot establish
-  these human checks or reliable USB delivery.
-- [ ] **Interactive Studio in the field.** The five-key profile is imported
-  (Neo shows "Magic Mirror copy"; delete the unused old profile). Press
-  INTERACTIVE STUDIO, say 「招喚渡鴉使者」 at the mirror (check detection; 招 is
-  zhāo, the usual 召喚 is zhào — change the phrase in 1 · Start if detection is
-  weak), complete one human visit to the farewell and Dormant, check the farewell
-  pauses, then START MIRROR. Walk the [user journeys](docs/testing/user-journeys-2026-10-18.md)
-  O2–O4 on the portrait TV.
-- [ ] **QA sound wrapper and output-device switches.** During Electron runs the
-  default output can flip between the TV output and the Jabra, so a restore can
-  land on the other device. Pin capture/restore to one device (CoreAudio device
-  ID) before the next long sound-producing batch; until then set the Jabra back
-  to the normal 69 % after QA. [Evidence](docs/testing/interactive-studio-2026-10-18.md#owner-flow-follow-up-same-day).
-- [ ] Review the compact Console on the portrait TV with its mouse, including
-  Save/check feedback, live queued-scene cancellation, Return to Avatar while
-  Loop Play starts and the Interactive Studio sign-in badge and Mirror mode
-  switch. [Delivery](docs/testing/console-ux-revamp-2026-10-17.md).
-- [ ] **Studio names by voice.** Measure corrections and spelling with human
-  speakers before an event that depends on exact names. The 2026-10-20 synthetic
-  visits passed 5 of 5 name steps, and local tests now cover repeated unconfirmed
-  calls. The new 2026-10-21 shared-image QA passed 2/3 name steps; one visit
-  advanced with the wrong intended spelling. Neither sample establishes human accuracy.
-  [Studio stories](docs/testing/interactive-studio-stories-2026-10-20.md).
-- [ ] **Sticker print output.** Stickers are shown on the mirror only; the
-  keepsake has no file or printer output yet (`KeepsakeSink` is display-only).
-  Decide how a finished sticker reaches the colour printer.
-- [ ] **Published studio art style.** The owner's published studio keeps its
-  ink-and-watercolour storybook style, which fights the flat sticker look;
-  switch it in the Console if stickers are wanted there.
-- [ ] Confirm Chrome Remote Desktop pointer movement/click, drag/scroll and
-  keyboard alongside the forwarded TV mouse. Physical local direction/clicks
-  are already accepted. [Mouse evidence](docs/testing/portrait-console-mouse-2026-10-17.md).
-  Also open **Remote Console Magic Mirror** on the Desktop remotely: Console on
-  the main display, avatar uncovered on the TV; then press CONSOLE on the Neo and
-  check it returns over the avatar. [Remote Console](docs/testing/remote-console-2026-10-18.md).
-- [ ] Confirm the latest Neo key layout/labels and physical START, CONSOLE,
-  PLAY LOOP and STOP behavior, picture/music, USB reconnect and cold login.
-  [Operator controls](docs/testing/operator-controls-2026-10-17.md).
-- [ ] Complete outstanding Mac field acceptance: physical audio/echo and
-  interruption, configured spell/effect and fade behavior, power/cold boot,
-  packaging/signing, and a 24-hour TV-present soak with ten conversations.
-  Follow current command/preamble rulings; no phase acceptance is implied.
-  [Deferred acceptance](docs/testing/open-issues-2026-10-13.md#deferred-acceptance).
-
-Every sound-producing QA must capture output volume/mute, use minimum output,
-and restore the captured state on success, failure or cancellation. Such QA does
-not establish normal-volume acoustic acceptance. See the
-[sound directive](DECISIONS.md#2026-10-17--qa-sound-level-owner-directive).
-
-Remove entries when the relevant fix and evidence exist. Superseded delivery and
-optional historical artifact-cleanup requests stay in their evidence ledgers;
-they are not current repair tasks.
+Every sound-producing QA uses minimum output (Jabra 1% is intentional), then
+restores **Jabra 70% by device identity**, other outputs to their captured levels,
+and preserves mute/input/default devices on success, failure or cancellation.
+The device-aware wrapper is implemented; actual hotplug still needs field
+coverage. [Current QA policy](.agents/skills/mm-ui-qa/SKILL.md).
+Face enrollment, standalone Master Memory and backup/restore UI remain future
+product scope in [PRD](PRD.md#6-尚未提供與待驗收), not accepted features.

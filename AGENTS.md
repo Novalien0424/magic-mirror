@@ -1,44 +1,46 @@
 # Magic Mirror — Working contract
 
 Finish the requested outcome with the smallest correct change and relevant
-evidence. Prioritize correctness/privacy, scope, then time/token cost. Stop at
-the proven task boundary or concrete blocker; preserve others' edits.
+evidence. Prioritize correctness/privacy, scope, then time/token cost; preserve
+others' edits and stop at the proven boundary or concrete blocker.
 
 ## Authority and execution
 
-Precedence: latest user request/routing → AGENTS → newer DECISIONS → product/
-spec/implementation/stack → PROGRESS → domain facts → history. DECISIONS owns
-rulings; PROGRESS routes current runtime/issues/evidence. Read only the selected
-issue and relevant skill references; completed ledgers are history, not a startup
-reading list. Keep harness instructions in English and domain facts in skills.
-Clock in: inspect branch/status and the current PROGRESS handoff; the latest
-user request selects the work. Dated runtime evidence is not a fresh status check.
+Latest user request/routing → AGENTS → newer DECISIONS → product/spec/plan/stack
+→ PROGRESS → domain facts → history. [PRD](PRD.md) is the current feature/user-story
+reference; [PROGRESS](PROGRESS.md) is the current handoff; [TODO](TODO.md) is
+open-only. Versioned product baselines and completed ledgers are history, not
+startup instructions. DECISIONS owns rulings; keep harness English and domain
+facts in maintained `.agents/skills`.
 
-- Explain/review/diagnose/plan: inspect/report. Fix/change/build: implement/check. Start
-  at the named path/symbol/error with targeted `rg`; no adjacent cleanup.
+- Clock in: inspect branch/status and current PROGRESS; latest request selects
+  work. Dated evidence is not a fresh health check. Read only relevant sections.
+- Explain/review/diagnose/plan means inspect/report; fix/change/build means
+  implement/check. Start at the named path/symbol/error with targeted `rg`.
 - In-scope reads, reversible edits, isolated tests and task-caused repairs are
   authorized. Ask only for unresolved destructive actions, external writes,
-  purchases, credential rotation, irreversible migration or material expansion.
-  Existing authority persists; bounded work needs no plan or repeated approval.
+  purchases, credential rotation, irreversible migration or material expansion; prior
+  authority persists. No repeated plan/approval gate or adjacent cleanup.
 - External/flaky actions: at most one retry, then report the exact failure.
-  Stop/cancel/abort ends active work; do not restart or substitute it.
-- Report meaningful findings/blockers; status uses current evidence or the
-  smallest direct capture.
+  Stop/cancel/abort ends work; never restart or substitute it.
+- Report meaningful findings/blockers using current evidence or the smallest
+  direct capture.
 
 ## Verification and skills
 
-One agent normally implements/checks (2026-10-04). No mandatory chain, plan,
-approval gate, independent review or full suite. Use focused behavioral tests
-or docs/config static checks; reuse unchanged passes. Broaden for affected
-integration, packaging, privacy, mic/restart ownership or release boundaries.
-Review the final diff once unless it reveals a problem. Retain full failures,
-summarize passes; artifacts serve reproduction/handoff, not untested acceptance.
+One agent normally implements/checks (2026-10-04); no mandatory chain, plan,
+approval gate, independent review or full suite. Use focused behavior tests or
+docs/config static checks; reuse
+unchanged passes. Broaden for affected integration, packaging, privacy,
+mic/restart ownership or release boundaries. Review the final diff once unless
+it exposes a problem. Retain full failures, summarize passes; artifacts are evidence,
+not untested acceptance.
 
-Realtime prompts/tools come from the versioned catalog; application code owns
-authorization/ordering. Use `roleplay-control-prompts` for behavior, without regex
-speech filters. QA starts at PROGRESS and `mm-ui-qa`. Historical passes are not
-fresh QA. Never overlap normal Electron, Electron QA or full `npm test` (includes
-Electron smoke). Preserve unsaved operator edits before reload/restart.
+Prompts/tools come from the versioned catalog; code owns authorization/ordering.
+Use `roleplay-control-prompts` for behavior, without regex speech filters.
+QA starts at PROGRESS and `mm-ui-qa`; historical passes are not fresh QA.
+Never overlap normal Electron, Electron QA or full `npm test` (includes Electron
+smoke). Preserve unsaved operator edits before reload/restart.
 
 ## Optional delegation
 

@@ -1,49 +1,37 @@
 # Magic Mirror
 
-Single-venue Mac Electron/Cubism Raven: Traditional Chinese/English Realtime,
-local wake, verbally confirmed identity, spoken scenes and scoped memory.
+Single-venue Mac Electron/Cubism Raven; current product and user stories:
+[PRD](PRD.md). Shared policy, invariants and clock-in/out:
 
 @AGENTS.md
 
-AGENTS owns policy. In Claude Code only, the routing below replaces its Optional
-delegation section (user ruling, 2026-10-10); runtime model IDs are separate.
+## Claude Code routing
 
-## Session entry and routing
+Only in Claude Code, this replaces AGENTS' Optional delegation section (owner
+ruling, 2026-10-10). Root and workers use Opus (`model: "opus"`); never route to
+Codex/GPT/OpenAI CLIs, codex-rescue or gstack `/codex`. Application model IDs are
+separate. One agent normally implements/checks; delegate only independent
+substantial work with owned paths, invariant IDs and checks. Workers preserve
+edits, stay scoped, never delegate and return metadata-only evidence. Global
+superpowers/gstack chains do not override this rule.
 
-- Clock in/out: follow AGENTS; TODO is open-only.
-- Read project `.agents/skills/<name>/SKILL.md` directly, then only needed
-  references. Prompt/persona → `roleplay-control-prompts`; tools/ASR/playback →
-  `mm-realtime-voice` (also Interactive Studio visits); wake → `mm-wake-word`; Cubism → `mm-live2d-avatar`;
-  rig authoring → `magic-mirror-avatar-studio`; QA → `mm-ui-qa`; Main/IPC →
-  `mm-electron-foundation`. Legacy `.claude/skills/mm-*` redirects are disabled;
-  read the maintained `.agents/skills` files.
-- Global superpowers/gstack chains do not override the one-agent ruling; use only
-  when requested or needed. Root and every worker run Opus (`model: "opus"`).
-  Never route to Codex/GPT/OpenAI CLIs or codex-rescue/gstack `/codex`.
-  Delegate only independent substantial tasks with owned paths, invariant IDs
-  and checks; workers preserve edits, stay scoped, never delegate and return
-  metadata-only evidence.
-- Never read, print or grep `.env` or `.env.chatgpt`.
+Read maintained `.agents/skills/<name>/SKILL.md` and only relevant references:
+prompt/persona → `roleplay-control-prompts`; voice/Studio → `mm-realtime-voice`;
+wake → `mm-wake-word`; Cubism → `mm-live2d-avatar`; rig authoring →
+`magic-mirror-avatar-studio`; QA → `mm-ui-qa`; Main/IPC →
+`mm-electron-foundation`. Disabled `.claude/skills` entries are compatibility
+pointers. Never read, print or grep `.env` or `.env.chatgpt`.
 
-## Commands and runtime
+## Working map
 
-```sh
-npx vitest run tests/unit/<file>.test.ts
-npm run typecheck:node
-npm run typecheck:web
-npm run build
-```
-
-Use [Mac runbook](deploy/macos/README.md) for LaunchAgent deployment and
-[owner checks](deploy/macos/owner-check/) for field work. The running app owns
-Jabra; stop deliberately before Electron QA. Runners use stamped `out/`; rebuild
-changed source, never bypass hashes. Metadata logs: `~/Library/Logs/MagicMirror/`.
-
-Code: `src/main` lifecycle/IPC/devices/SQLite, `src/renderer` Mirror/Console/
-Cubism/Realtime, `src/preload` and `src/shared` contracts. QA drivers are Main
-`*-qa.ts` plus `scripts/run-*.mjs`. Tests use serial Vitest/Node.
-Vendored Cubism is not editable; versioned Raven CMO/PSD masters get new versions.
-Product docs: `docs/Magic_Mirror_{PRD,Tech_Spec,Implementation_Plan,Phase4_UIUX_Design}_v0.3.md`.
-`docs/testing`, `docs/archive`, root handoff files and `.artifacts` are evidence/
-history, not extra instructions. Product/guest text is Traditional Chinese;
-code/telemetry is English. Windows evidence does not establish Mac acceptance.
+- Source: `src/main`, `src/renderer`, `src/preload`, `src/shared`; QA drivers:
+  Main `*-qa.ts` and `scripts/run-*.mjs`. Focused checks:
+  `npx vitest run tests/unit/<file>.test.ts`, `npm run typecheck`, `npm run build`.
+- [Mac deployment](deploy/macos/README.md) and [field checks](deploy/macos/owner-check/).
+  The app owns Jabra; stop deliberately before Electron QA. Runners use stamped
+  `out/`; rebuild changed source, never bypass hashes. Metadata logs:
+  `~/Library/Logs/MagicMirror/`.
+- [Document map](docs/README.md): baselines/evidence/history are not extra
+  instructions. Product/guest text is Traditional Chinese; code/telemetry English.
+  Windows evidence does not establish Mac acceptance.
+- Vendored Cubism is not editable; Raven CMO/PSD masters get new versions.

@@ -1,5 +1,7 @@
 # 魔鏡 AI Avatar：Software PRD
 
+> 歷史需求基線（保留原始階段規劃）。目前已實作功能、完整旅程與待辦界線請看 [PRD.md](../PRD.md)。本文件的 Must／Build-ready 不代表已交付。
+
 **版本：** 0.4.0
 **日期：** 2026-09-05
 **狀態：** Build-ready baseline  
