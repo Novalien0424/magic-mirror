@@ -1,4 +1,5 @@
 import { REALTIME_PROMPTS, buildAuditionPrompt, buildSpeechResponse } from '../../shared/realtime-prompts'
+import { danceWelcomePrompt } from '../../shared/dance-prompt'
 import { memoryNeedsReset } from '../../shared/memory'
 import {
   RealtimeAgent,
@@ -144,6 +145,7 @@ export interface RealtimeSessionHandle {
   imageEvent?(event: ImageSkillEvent, identity: StudioEventIdentity): void
   close(reason: string): Promise<void>
   speakVerbatim(text: string, signal?: AbortSignal, onFinished?: (completed: boolean) => void): void
+  danceWelcome?(language: 'zh-TW' | 'en', signal: AbortSignal, onFinished: (completed: boolean) => void): void
   claimControlTurn?(itemId: string): void
   onOutputAudioBufferStopped(listener: OutputAudioBufferStoppedListener): () => void
   onInputItemCreated?(listener: InputItemCreatedListener): () => void
@@ -2816,6 +2818,11 @@ export function createRealtimeSession(
     imageEvent,
     close,
     speakVerbatim,
+    danceWelcome: (language: 'zh-TW' | 'en', signal: AbortSignal, onFinished: (completed: boolean) => void) => {
+      if (!input.preview || !input.avatar) { onFinished(false); return }
+      queueSpeechResponse({ conversation: 'none', tool_choice: 'none', input: [],
+        instructions: danceWelcomePrompt(input.avatar, language) }, signal, onFinished)
+    },
     claimControlTurn: (itemId: string) => { if (!memoryLatestItem || memoryLatestItem === itemId) commandTurnOwned = true },
     onOutputAudioBufferStopped,
     onInputItemCreated,

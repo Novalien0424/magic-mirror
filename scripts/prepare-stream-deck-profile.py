@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a seven-key Neo profile using Elgato's built-in System/Open action.
+"""Build an eight-key Neo profile using Elgato's built-in System/Open action.
 
 The format is taken from Stream Deck 7.6's bundled Neo profile. Import through
 Stream Deck; never edit its live profile database or replace the default profile.
@@ -25,6 +25,7 @@ def build_profile(controls: Path) -> Path:
         (3, 0, "Desktop", "DESKTOP", "#35656a", '<rect x="42" y="27" width="64" height="44" rx="4" fill="none" stroke="white" stroke-width="6"/><path d="M74 74 V84 M57 86 H91" fill="none" stroke="white" stroke-width="6"/>'),
         (0, 1, "Studio", "STUDIO", "#b26a00", '<path d="M66 31 Q70 53 92 57 Q70 61 66 83 Q62 61 40 57 Q62 53 66 31 Z M97 24 Q98.5 31.5 106 33 Q98.5 34.5 97 42 Q95.5 34.5 88 33 Q95.5 31.5 97 24 Z" fill="white"/>'),
         (1, 1, "Music Loop", "MUSIC\nLOOP", "#087d77", '<path d="M62 72 V32 L98 24 V64 M62 43 L98 35" fill="none" stroke="white" stroke-width="7"/><ellipse cx="53" cy="75" rx="13" ry="9" fill="white"/><ellipse cx="89" cy="67" rx="13" ry="9" fill="white"/>'),
+        (2, 1, "Dance Floor", "DANCE\nFLOOR", "#9a266a", '<path d="M44 72 L57 38 L70 66 L83 29 L100 72" fill="none" stroke="white" stroke-width="7" stroke-linecap="round"/>'),
         (3, 1, "Stop", "STOP", "#a3303c", '<rect x="49" y="29" width="49" height="49" rx="5" fill="white"/>'),
     ]:
         app = controls / f"{action} Magic Mirror.app"

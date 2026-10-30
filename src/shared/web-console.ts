@@ -9,7 +9,7 @@ export const WEB_CONSOLE_METHODS = {
   getAvatarRuntime: 'console:get-avatar-runtime', controlAvatar: 'console:avatar-control',
   startConversation: 'console:start-conversation', disconnect: 'console:disconnect', interrupt: 'console:interrupt',
   runScene: 'console:run-scene', stopScenes: 'console:stop-scenes', studio: 'console:studio',
-  loopVideo: 'console:loop-video', checkCamera: 'console:check-camera', mediaFolders: 'console:media-folders',
+  loopVideo: 'console:loop-video', danceFloor: 'console:dance-floor', checkCamera: 'console:check-camera', mediaFolders: 'console:media-folders',
 } as const
 export type WebConsoleMethod = keyof typeof WEB_CONSOLE_METHODS
 export const WEB_CONSOLE_LOCAL_ONLY = 'Use Console on the Mac for file imports, private memory, voice preview, wake calibration and simulator controls.'

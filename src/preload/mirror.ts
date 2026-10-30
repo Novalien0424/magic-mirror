@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { parseOperatorLoopSnapshot } from '../shared/operator-loop'
+import { parseDanceFrame } from '../shared/dance-floor'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseMediaSkillRequest, parseMediaSkillResult } from '../shared/media-skill'
 import { parseStudioEventIdentity, parseStudioReply, parseStudioRequest, parseStudioSessionEvent, parseStudioView, STUDIO_MIRROR_CHANNEL } from '../shared/portrait-studio'
@@ -456,6 +457,18 @@ function validateRealtimeSecretResult(value: unknown): TransientRealtimeSecretRe
 }
 
 const bridge: MirrorBridge = {
+  getDanceFrame: async () => {
+    const frame = parseDanceFrame(await ipcRenderer.invoke('mirror:get-dance-frame'))
+    if (!frame) throw Error('dance_frame_invalid')
+    return frame
+  },
+  onDanceFrame(listener) {
+    const handler = (_event: IpcRendererEvent, value: unknown) => { const frame = parseDanceFrame(value); if (frame) listener(frame) }
+    ipcRenderer.on('mirror:dance-frame', handler)
+    return () => ipcRenderer.removeListener('mirror:dance-frame', handler)
+  },
+  danceWelcome: generation => ipcRenderer.invoke('mirror:dance-welcome', generation),
+  finishDanceWelcome: (generation, completed) => ipcRenderer.send('mirror:dance-welcome-finished', generation, completed),
   getOperatorLoop: async () => {
     const value = parseOperatorLoopSnapshot(await ipcRenderer.invoke('mirror:get-operator-loop'))
     if (!value) throw Error('operator_loop_snapshot_invalid')

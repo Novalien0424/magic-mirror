@@ -24,6 +24,8 @@ import {
 import type { AvatarState } from './avatar-state'
 import type { CameraTarget } from '../../shared/camera-tracking'
 import { createGazeSmoother } from './gaze-tracking'
+import { dancePose, type DancePose } from './dance-performance'
+import type { DanceFrame } from '../../shared/dance-floor'
 import { createAvatarMvp } from './avatar-framing'
 import { clampPreviewParameter, configureMotionPlayback, motionKey, type CubismCapabilities, type CubismPreviewControls } from './cubism-preview'
 import { CONTINUOUS_PARAMETERS, drainMotionQueue, lifecycleLoops, ownsBlink, performanceState, PerformanceContinuity, readPerformanceProfile, type PerformanceProfile } from './cubism-performance'
@@ -67,6 +69,8 @@ export interface CubismAvatarMetrics {
 }
 
 export interface CubismAvatarRenderer {
+  setDanceFrame?(frame: DanceFrame | null): void
+  getDanceSample?(): DancePose | null
   setPaused?(paused: boolean): void
   setLookTarget?(target: CameraTarget | null): void
   initialize(): Promise<void>
@@ -155,6 +159,13 @@ class MagicMirrorCubismModel extends CubismUserModel {
   #state: AvatarState = 'Dormant'
   #mouthOpen = 0
   readonly #gaze = createGazeSmoother()
+  #danceFrame: DanceFrame | null = null
+  #danceSample: DancePose | null = null
+  setDanceFrame(frame: DanceFrame | null): void {
+    this.#danceFrame = frame
+    if (!frame) { this.#danceSample = null; this.#continuity.reset() }
+  }
+  getDanceSample(): DancePose | null { return this.#danceSample }
   #oneShotGroup: string | null = null
   #previewMotion = false
   #playbackGeneration = 0
@@ -536,14 +547,14 @@ class MagicMirrorCubismModel extends CubismUserModel {
       throw new Error('avatar_lip_update_failed')
     }
     try {
-      if (this.#performance !== null && !this.#previewNeutral) {
+      if (this.#performance !== null && !this.#previewNeutral && !this.#danceFrame) {
         for (const { name, id } of this.#continuousIds) {
           this._model.setParameterValueById(id,
             this.#continuity.sample(name, this._model.getParameterValueById(id), deltaSeconds))
         }
       }
       const gaze = this.#gaze.step(deltaSeconds, performance.now(),
-        !this.#previewNeutral && this.#oneShotGroup === null
+        !this.#previewNeutral && !this.#danceFrame && this.#oneShotGroup === null
         && GAZE_STATES.has(this.#state))
       // Apply after authored continuity, before preview overrides. Saved body parameters
       // precede this overlay, so gaze cannot accumulate or rewrite authored curves.
@@ -554,6 +565,17 @@ class MagicMirrorCubismModel extends CubismUserModel {
       }
       for (const [id, value] of this.#previewValues) {
         this._model.setParameterValueById(CubismFramework.getIdManager().getId(id), value)
+      }
+      if (this.#danceFrame) {
+        const sample = dancePose(this.#danceFrame)
+        for (const [name, value] of Object.entries(sample.parameters)) {
+          const id = CubismFramework.getIdManager().getId(name), index = this._model.getParameterIndex(id)
+          if (index < this._model.getParameterCount()) {
+            this._model.setParameterValueByIndex(index, Math.min(this._model.getParameterMaximumValue(index), Math.max(this._model.getParameterMinimumValue(index), value)))
+            sample.parameters[name] = this._model.getParameterValueByIndex(index)
+          }
+        }
+        this.#danceSample = sample
       }
       this._model.update()
     } catch {
@@ -737,6 +759,8 @@ export function createCubismAvatarRenderer(
     },
     playMotion: (group: string, index = 0): boolean => model?.playMotion(group, index, input.preview === true) ?? false,
     getPreviewControls: (): CubismPreviewControls | null => input.preview && model ? model.previewControls() : null,
+    setDanceFrame: (frame: DanceFrame | null) => model?.setDanceFrame(frame),
+    getDanceSample: () => model?.getDanceSample() ?? null,
     setExpression: (name: string): void => model?.setExpression(name),
     setLookTarget: (target: CameraTarget | null): void => { if (!input.preview) model?.setLookTarget(target) },
     setMouthOpen: (value: number): void => {

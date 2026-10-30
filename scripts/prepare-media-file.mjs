@@ -11,6 +11,11 @@ if (process.platform === 'darwin') {
   const music = spawnSync('xcrun', ['swiftc', '-O', '-swift-version', '5',
     'deploy/macos/music-loop.swift', '-o', `${directory}/music-loop`], { stdio: 'inherit' })
   if (music.error || music.status !== 0) throw Error('music_loop_build_failed')
+  const dance = spawnSync('xcrun', ['swiftc', '-O', '-swift-version', '5',
+    'deploy/macos/dance-analysis.swift', '-o', `${directory}/dance-analysis`], { stdio: 'inherit' })
+  if (dance.error || dance.status !== 0) throw Error('dance_analysis_build_failed')
+  const danceSigned = spawnSync('/usr/bin/codesign', ['--force', '--sign', '-', `${directory}/dance-analysis`], { stdio: 'inherit' })
+  if (danceSigned.error || danceSigned.status !== 0) throw Error('dance_analysis_sign_failed')
   const signed = spawnSync('/usr/bin/codesign', ['--force', '--sign', '-', `${directory}/music-loop`], { stdio: 'inherit' })
   if (signed.error || signed.status !== 0) throw Error('music_loop_sign_failed')
   console.log('media_file_prepare_built platform=darwin')

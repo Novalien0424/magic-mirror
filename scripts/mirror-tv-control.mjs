@@ -92,7 +92,7 @@ export async function operateTv(action, io = createTvIo()) {
 
 /** The entire sequence runs inside the existing button queue/operation lease. */
 export async function operateMirrorControl(action, io) {
-  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music'].includes(action)) throw Error('mirror_control_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', 'dance'].includes(action)) throw Error('mirror_control_action_invalid')
   const attempt = async (fn, fallback) => { try { return await fn() } catch { return fallback } }
   if (action === 'stop') {
     // Keep the HDMI signal black even after Electron exits or TV standby fails.
@@ -118,7 +118,7 @@ export async function operateMirrorControl(action, io) {
   const audio = action === 'music' ? await attempt(() => io.resetAudio(), 'jabra_output_reset_failed') : undefined
   // Console is a separate window; showing it must preserve the current media mode.
   // START selects Conversation and STUDIO Interactive Studio; LOOP leaves the mirror mode alone.
-  const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio', desktop: 'desktop', music: 'music_loop' }[action]
+  const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio', desktop: 'desktop', music: 'music_loop', dance: 'dance_floor' }[action]
   const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
@@ -136,5 +136,5 @@ export async function operateMirrorControl(action, io) {
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
   return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
     ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
-      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown', music: 'music_preparing' }[action] ?? app : tv }
+      : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown', music: 'music_preparing', dance: 'dance_preparing' }[action] ?? app : tv }
 }

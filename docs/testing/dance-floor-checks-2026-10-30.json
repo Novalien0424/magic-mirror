@@ -1,0 +1,1575 @@
+{
+  "date": "2026-10-30",
+  "build": {
+    "version": 1,
+    "status": "complete",
+    "source": "a3f128351a466aeb38aa5fe2254204be545ca084056b06b98177d0c53e4008f1",
+    "output": "e572cc16daff38b2a0a4aa67f6edba937a2a4f8e78fded228b083819f5ca5c1f",
+    "builtAt": "2026-10-30T13:27:02.588Z"
+  },
+  "unitTests": {
+    "focused": 394,
+    "boundaries": 15,
+    "exit": 0
+  },
+  "typecheck": "\n> magic-mirror@0.1.0 typecheck\n> npm run typecheck:node && npm run typecheck:web\n\n\n> magic-mirror@0.1.0 typecheck:node\n> tsc --noEmit -p tsconfig.node.json\n\n\n> magic-mirror@0.1.0 typecheck:web\n> tsc --noEmit -p tsconfig.web.json\n\n",
+  "nativeFullVolume": {
+    "code": 0,
+    "events": [
+      {
+        "channels": 2,
+        "event": "ready",
+        "outputs": 3,
+        "streams": 1
+      },
+      {
+        "controlled": 2,
+        "event": "volume",
+        "outputs": 3,
+        "verified": true
+      },
+      {
+        "event": "clock",
+        "id": 1,
+        "positionMs": 16.086586,
+        "rate": 1,
+        "sentAt": 1793366303664.153
+      },
+      {
+        "event": "clock",
+        "id": 1,
+        "positionMs": 216.145836,
+        "rate": 1,
+        "sentAt": 1793366303864.213
+      },
+      {
+        "event": "playing",
+        "id": 1,
+        "outputs": 3
+      },
+      {
+        "controlled": 2,
+        "event": "volume",
+        "outputs": 3,
+        "verified": true
+      },
+      {
+        "event": "clock",
+        "id": 2,
+        "positionMs": 0,
+        "rate": 0,
+        "sentAt": 1793366304069.1929
+      },
+      {
+        "event": "clock",
+        "id": 2,
+        "positionMs": 104.43253399999999,
+        "rate": 1,
+        "sentAt": 1793366304264.509
+      },
+      {
+        "event": "playing",
+        "id": 2,
+        "outputs": 3
+      },
+      {
+        "event": "clock",
+        "id": 2,
+        "positionMs": 304.374409,
+        "rate": 1,
+        "sentAt": 1793366304464.451
+      },
+      {
+        "event": "stopped"
+      }
+    ]
+  },
+  "actualAnalysis": {
+    "durationMs": 2111900.2267573695,
+    "frames": 211670,
+    "beats": 4462,
+    "tempoRange": [
+      64.66275659824046,
+      171.81818181818184
+    ],
+    "medianBpm": 127.94970986460348,
+    "elapsedMs": 1004
+  },
+  "audioBefore": {
+    "defaultInput": "Jabra Speak2 75",
+    "defaultOutput": "Jabra Speak2 75",
+    "devices": [
+      {
+        "id": 80,
+        "inCh": 0,
+        "name": "T749-fHD720",
+        "outCh": 2,
+        "outMute": null,
+        "outVol": [],
+        "rate": 48000
+      },
+      {
+        "id": 104,
+        "inCh": 2,
+        "inVol": [
+          {
+            "el": 2,
+            "v": 0.06380193680524826
+          },
+          {
+            "el": 1,
+            "v": 1
+          }
+        ],
+        "name": "Arducam 1080P Low Light",
+        "outCh": 0,
+        "rate": 48000
+      },
+      {
+        "id": 95,
+        "inCh": 0,
+        "name": "Jabra Speak2 75",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.7007718682289124
+          }
+        ],
+        "rate": 48000
+      },
+      {
+        "id": 100,
+        "inCh": 1,
+        "inVol": [
+          {
+            "el": 0,
+            "v": 0.5714285969734192
+          }
+        ],
+        "name": "Jabra Speak2 75",
+        "outCh": 0,
+        "rate": 32000
+      },
+      {
+        "id": 74,
+        "inCh": 0,
+        "name": "Mac mini Speakers",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.009999996051192284
+          }
+        ],
+        "rate": 48000
+      }
+    ]
+  },
+  "audioRestored": {
+    "defaultInput": "Jabra Speak2 75",
+    "defaultOutput": "Jabra Speak2 75",
+    "devices": [
+      {
+        "id": 80,
+        "inCh": 0,
+        "name": "T749-fHD720",
+        "outCh": 2,
+        "outMute": null,
+        "outVol": [],
+        "rate": 48000
+      },
+      {
+        "id": 104,
+        "inCh": 2,
+        "inVol": [
+          {
+            "el": 2,
+            "v": 0.06380193680524826
+          },
+          {
+            "el": 1,
+            "v": 1
+          }
+        ],
+        "name": "Arducam 1080P Low Light",
+        "outCh": 0,
+        "rate": 48000
+      },
+      {
+        "id": 95,
+        "inCh": 0,
+        "name": "Jabra Speak2 75",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.7007718682289124
+          }
+        ],
+        "rate": 48000
+      },
+      {
+        "id": 100,
+        "inCh": 1,
+        "inVol": [
+          {
+            "el": 0,
+            "v": 0.5714285969734192
+          }
+        ],
+        "name": "Jabra Speak2 75",
+        "outCh": 0,
+        "rate": 32000
+      },
+      {
+        "id": 74,
+        "inCh": 0,
+        "name": "Mac mini Speakers",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.009999996051192284
+          }
+        ],
+        "rate": 48000
+      }
+    ]
+  },
+  "defaults": {
+    "track": "",
+    "intensity": 1,
+    "volume": 1,
+    "offsetMs": 0,
+    "welcome": true,
+    "language": "zh-TW"
+  },
+  "neo": {
+    "profile": "Magic Mirror copy 1",
+    "keys": 8,
+    "position": "2,1",
+    "title": "DANCE\nFLOOR",
+    "applicationPathVerified": true
+  },
+  "runs": [
+    {
+      "id": "2026-10-30T13-07-04-794Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "083205b480a83e575bc55366aa6d2ebfd6013a777e3afe0780e26070443cf94f",
+        "output": "2db114cf7daa364e23c83387e01f2b5404019bc4383fa18f864c80ff08d7f088",
+        "builtAt": "2026-10-30T13:06:37.430Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "failed",
+          "reason": "phase4_qa_failed"
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "0bd94abd4195b56b65960b28ffeaa74537604dd2c6c3b7b0236006dd6da2bd4b",
+            "nonblack_pixels": 259292
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-08-42-049Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "b831ba72b8a42ba58fc3e9229a3e038df2cb5a437b7f091cffd2bb9603431049",
+        "output": "0ca79ac9ec4169bb3ebe6546c71dbff51c72d4b3addd80af9807444f9f7ea902",
+        "builtAt": "2026-10-30T13:08:33.013Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "failed",
+          "reason": "phase4_qa_dance_failed"
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "ece8bdbad8704b646c9330372f929bae03efdf8c0db4a7ae89b2287ff0741060",
+            "nonblack_pixels": 258879
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1525,\"beats\":50,\"wraps\":2,\"medianMs\":4.3129438131018105,\"p95Ms\":7.590665692352559}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "2b6ccd072104203f829dd84b545af7b76dacfd6129b20a3e047f28fac43e5484",
+            "nonblack_pixels": 154042
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "93828c15364062b41b7b1e3b84a74b8e9673748be0225b408684e47d454f1698",
+            "nonblack_pixels": 153657
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "908fbdb27aeabdffed01f9b4a6d970f3621e2ca8485f4d717da81510512e9eb8",
+            "nonblack_pixels": 154104
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "3dc6bdb2725afe5c3c59910b32cc6c6362bab7488209844a06b783fd71a7e221",
+            "nonblack_pixels": 153580
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "7d8c8ff13b64f6aced88811262c6b9cf4ac6435f9faaf064f3ac3adcda72a583",
+            "nonblack_pixels": 153385
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "f00e91509990560c8809b44bce56bcb65a815c4a93278e44efb8a2b4aeb73f93",
+            "nonblack_pixels": 153456
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "c6cdd7d4b2aebaac4ce229f236c5646bd77de3bc6464db664961ef91c5a059e6",
+            "nonblack_pixels": 152905
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-11-31-426Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "d7951ef7dcd61334015767151f03f4fe9e23348851f2765a729d287cbadd29fd",
+        "output": "2ae1d52eefe98053b0dda398b4b018e4196cab4b28af7d2a7a10dd461043de31",
+        "builtAt": "2026-10-30T13:10:53.812Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 6,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 9,
+          "screenshot_count": 9,
+          "music_analyser": "not_executed",
+          "console_check_count": 12
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_provider_welcome_before_music",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "0cc523c744f0eb4aa2698f016cccc25826560a7baf14969eda75acb46f5057cc",
+            "nonblack_pixels": 238302
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1524,\"beats\":50,\"wraps\":2,\"medianMs\":5.793123211167767,\"p95Ms\":8.011555864228285}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "c910195fc80f6ddbfca3ad03578120f7df6b2a8e472016c17ab5960caf17203b",
+            "nonblack_pixels": 154155
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "d264387687b0aa2dd717825f4b0066adb4a700eb7756423ab30e0789288c6606",
+            "nonblack_pixels": 153735
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "6875113fcb829e2efae6f542508895abb166cdca57824437371a8449ce5f9560",
+            "nonblack_pixels": 154117
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "ff19c93e572229ec0933d18e69e7d2d5b45c9de3d3efaddba419a784c2157864",
+            "nonblack_pixels": 153410
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "41dd6a30402e759cc2883915586054922f0ad3fbe533d79264b31cd3bda90953",
+            "nonblack_pixels": 152957
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "736c548cf35e5c80b0f37f61c3e95e4714b84b77d5a8291bf341afa6fd61d5ef",
+            "nonblack_pixels": 153327
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "4a61cecd9335d4c0e6e2849760d716d529264eb4924c5ec78b8fbdf44d28f88e",
+            "nonblack_pixels": 153454
+          },
+          {
+            "step": "dance_missing_track_visible",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_cancels_preparation",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_defaults_restored",
+            "status": "passed",
+            "item": "{}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-16-59-815Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "32e7ddb42b593a62e53ccb0df4cff4213fa460b484e759aa500aa3d41cb58c87",
+        "output": "f849671878029c061a7629733f2e8b4bebc97849bfac48008161b42b84cf1d9f",
+        "builtAt": "2026-10-30T13:16:56.443Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 6,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 9,
+          "screenshot_count": 9,
+          "music_analyser": "not_executed",
+          "console_check_count": 12
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_provider_welcome_before_music",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "e00668156c4f3831323f3c2781c32432c1a08e0e607302eb011c450d62414596",
+            "nonblack_pixels": 193235
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1525,\"beats\":50,\"wraps\":2,\"medianMs\":2.7030500377677527,\"p95Ms\":7.056397004924293}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "35bcb8b4811c01a003f139cc7b533b10c9ef837bd8774c15f36d09c0497011cc",
+            "nonblack_pixels": 153831
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "aaa1456146d3e826dd1b35acca23eebdaf2d345770822792522d0a24a228d13b",
+            "nonblack_pixels": 153717
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "5655350dcb392651c749f3d55f48360e60cfbab28ec8267154092a896e2f4715",
+            "nonblack_pixels": 154096
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "7f1ada02ef4e207a42d9a08a693fcfb5b359d1abfe284b0a81fe85cb8982c4cd",
+            "nonblack_pixels": 153910
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "c3a62c7dfb6591122ffcef1211307b373caac39026f217d7ef2ce3bbc6dda03a",
+            "nonblack_pixels": 153011
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "573be6557a8b870daa71372e975946ee310bed4e030a7a368347ea6357021e22",
+            "nonblack_pixels": 153436
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "a1663797e4caaa85c1c17e023ebb4fab97f2caa51b42ef15c1e6338278ec2b34",
+            "nonblack_pixels": 153052
+          },
+          {
+            "step": "dance_missing_track_visible",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_cancels_preparation",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_defaults_restored",
+            "status": "passed",
+            "item": "{}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-21-46-424Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "32e7ddb42b593a62e53ccb0df4cff4213fa460b484e759aa500aa3d41cb58c87",
+        "output": "f849671878029c061a7629733f2e8b4bebc97849bfac48008161b42b84cf1d9f",
+        "builtAt": "2026-10-30T13:16:56.443Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 6,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 9,
+          "screenshot_count": 9,
+          "music_analyser": "not_executed",
+          "console_check_count": 12
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_provider_welcome_before_music",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "ba79a2d8da3530d3613d7da0568ad278bba2149db67a8a1233736df3eaa1e994",
+            "nonblack_pixels": 190074
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1511,\"beats\":50,\"wraps\":2,\"medianMs\":4.370235725198654,\"p95Ms\":7.731635885239484}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "91b1f676637bf76de274a9abe568cb4c80cefe4d0ab2bcd50b5aa074998bf6eb",
+            "nonblack_pixels": 154041
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "24edee8ec912ba71e9a645a5cfa60d0ace93ef62fb56f57e56ed25f7752752f3",
+            "nonblack_pixels": 153802
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "de987ff75a7098da5bfa9c75c0212c61047b2fef7fc3ed966b420659f87012cf",
+            "nonblack_pixels": 154235
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "cf23841d088f9c16abaeea067a1bb0a49d44c7ca82df4922cb73c0c2fe1a50b4",
+            "nonblack_pixels": 153863
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "0fe481506d0dcfe2517c71391f7726ef4ac194e12e43ef86d3bd6c0e0efbbe24",
+            "nonblack_pixels": 152996
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "60abb9e28496347307a8eade0a0c3dc2b33ae04e0c845e5fab40ecd7da07130a",
+            "nonblack_pixels": 153414
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "d80acd5bb2b49d3d1ad5f498549493e55a168edb00eca24411e8819f51cacaf1",
+            "nonblack_pixels": 154035
+          },
+          {
+            "step": "dance_missing_track_visible",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_cancels_preparation",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_defaults_restored",
+            "status": "passed",
+            "item": "{}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-25-00-965Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "fbef4bf70bd2f4e254bd0561a861a604b41b15ff4f19eedcdd95a985dbb1f6ba",
+        "output": "31af18da25d759c3d1a880f143e66ecd4d2c87a20e5d36672918ea0eb680c29e",
+        "builtAt": "2026-10-30T13:24:35.979Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 6,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 9,
+          "screenshot_count": 9,
+          "music_analyser": "not_executed",
+          "console_check_count": 14
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_provider_welcome_before_music",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "e00668156c4f3831323f3c2781c32432c1a08e0e607302eb011c450d62414596",
+            "nonblack_pixels": 193235
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1509,\"beats\":50,\"wraps\":2,\"medianMs\":5.493416466622875,\"p95Ms\":8.39122607706122}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "8a7d97447b7fcd28d89db3e34c41f598cb3acc8c68541b5ff89a079e53baeff8",
+            "nonblack_pixels": 154040
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "d0012570c7d5d840e9f1b9f54fcc21d2da63b59820d76cab42941ef855d11ab8",
+            "nonblack_pixels": 153562
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "a23ae0c3666cd8b7e0a176e2fddcfea5397fcb5687f8baebf93cc80f5f91bbbc",
+            "nonblack_pixels": 154058
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "72a18b7fc6c19db42af0e8451cea5d3ea979a8bae52f8814c53235b789367a16",
+            "nonblack_pixels": 153917
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "4a72087026387a809c8f389506cf854ea006c4057f76b007681109676ca45d19",
+            "nonblack_pixels": 153030
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "767266893c919af886ba1be563654dfa494a17dd36d6e26243808492255ef022",
+            "nonblack_pixels": 153346
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "5a288647c21ed2f4d8806395f0b928ef24b87d1da2f1460464f12e979e2238ad",
+            "nonblack_pixels": 153624
+          },
+          {
+            "step": "dance_global_stop_all",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_missing_track_visible",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_cancels_preparation",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_defaults_restored",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_return_to_avatar",
+            "status": "passed",
+            "item": "{}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    },
+    {
+      "id": "2026-10-30T13-28-31-411Z",
+      "build": {
+        "version": 1,
+        "status": "complete",
+        "source": "a3f128351a466aeb38aa5fe2254204be545ca084056b06b98177d0c53e4008f1",
+        "output": "e572cc16daff38b2a0a4aa67f6edba937a2a4f8e78fded228b083819f5ca5c1f",
+        "builtAt": "2026-10-30T13:27:02.588Z"
+      },
+      "evidence": {
+        "platform": "darwin",
+        "mode": "console",
+        "live": false,
+        "display": {
+          "count": 2,
+          "mirror": 3,
+          "width": 1080,
+          "height": 1920,
+          "verified": true,
+          "console": 5
+        },
+        "result": {
+          "status": "passed",
+          "motion_count": 6,
+          "expression_count": 0,
+          "scene_count": 0,
+          "visual_count": 9,
+          "screenshot_count": 9,
+          "music_analyser": "not_executed",
+          "console_check_count": 14
+        },
+        "evidence": [
+          {
+            "step": "dance_defaults_and_tracks",
+            "status": "passed",
+            "item": "{\"tracks\":2}"
+          },
+          {
+            "step": "dance_provider_welcome_before_music",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_ui_selection_and_save",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-console.png",
+            "sha256": "ad003905ad0b3bd0fd143bdd835e259cc8880144813ac127ad1ddaad3dcafa25",
+            "nonblack_pixels": 195708
+          },
+          {
+            "step": "dance_native_playback",
+            "status": "passed",
+            "item": "{\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}}"
+          },
+          {
+            "step": "dance_rendered_sync_and_loop",
+            "status": "passed",
+            "item": "{\"samples\":1510,\"beats\":50,\"wraps\":2,\"medianMs\":4.224836014633183,\"p95Ms\":7.523740340490804}"
+          },
+          {
+            "step": "dance_native_pcm_ground_truth",
+            "status": "passed",
+            "item": "{\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-0.png",
+            "sha256": "f6f59ad53d08d9504e8ab030d38d958b9d7780d06cd5bad11833d10cf90d7bfb",
+            "nonblack_pixels": 154113
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-1.png",
+            "sha256": "f9204a1352934bf4066de32c7e6e1e7aba6b60e99d68216a5eef90d7b638f4df",
+            "nonblack_pixels": 153207
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-2.png",
+            "sha256": "825be572fee5a00ce4fbe90629da2ded09e3036017bc52f502973e2f134b0b0c",
+            "nonblack_pixels": 153665
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-3.png",
+            "sha256": "e9411e7afbd1387797612fe91f9b553611706ba7f49611211a54d8a9098da490",
+            "nonblack_pixels": 153916
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-4.png",
+            "sha256": "6aba7c6606c48802fe0a81e4d9f20e68e43fd8dbab4b871fb36ed5e46f02e626",
+            "nonblack_pixels": 153037
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-raven-5.png",
+            "sha256": "07b4583afccf7fa7e739fcf7974d9fec46497f88704d1cdf8e6fff009d162760",
+            "nonblack_pixels": 153371
+          },
+          {
+            "step": "dance_live_controls",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_black",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_actual_m4a",
+            "status": "passed",
+            "item": "{\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9}"
+          },
+          {
+            "step": "dance_visual",
+            "status": "captured",
+            "file": "dance-actual-track.png",
+            "sha256": "8e6552eb3093ec726933248aa7844664c74c48fa72cba590a3f480c8ccf0442d",
+            "nonblack_pixels": 153635
+          },
+          {
+            "step": "dance_global_stop_all",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_missing_track_visible",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_stop_cancels_preparation",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_defaults_restored",
+            "status": "passed",
+            "item": "{}"
+          },
+          {
+            "step": "dance_return_to_avatar",
+            "status": "passed",
+            "item": "{}"
+          }
+        ],
+        "humanAcceptance": "not_executed",
+        "physicalHardware": "not_executed"
+      }
+    }
+  ],
+  "fullRetainedFailures": {
+    "focused-checks.txt": "\n RUN  v4.1.10 /Users/novalien0424/magic-mirror\n\n ❯ tests/unit/raven-button.test.ts (49 tests | 1 failed) 8ms\n     × installs a signed wrapper for every Stream Deck profile key, with STUDIO under START 2ms\n\n⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  tests/unit/raven-button.test.ts > Raven launchd button > installs a signed wrapper for every Stream Deck profile key, with STUDIO under START\nAssertionError: expected [ …(2) ] to deeply equal [ …(2) ]\n\n- Expected\n+ Received\n\n  [\n-   \"for action in start stop loop console studio desktop music; do\",\n-   \"for action in start stop loop console studio desktop music; do\",\n+   \"for action in start stop loop console studio desktop music dance; do\",\n+   \"for action in start stop loop console studio desktop music dance; do\",\n  ]\n\n ❯ tests/unit/raven-button.test.ts:246:59\n    244|     const installer = readFileSync(new URL('../../deploy/macos/install…\n    245|     const profile = readFileSync(new URL('../../scripts/prepare-stream…\n    246|     expect(installer.match(/^for action in (.+); do$/gm)).toEqual(Arra…\n       |                                                           ^\n    247|     for (const [action, label] of [['start', 'Start'], ['stop', 'Stop'…\n    248|       expect(installer).toContain(`    ${action}) label='${label} Magi…\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n\n\n Test Files  1 failed | 6 passed (7)\n      Tests  1 failed | 263 passed (264)\n   Start at  21:06:43\n   Duration  2.99s (transform 76ms, setup 0ms, import 128ms, tests 2.25s, environment 0ms)\n\n",
+    "rendered-qa-1.txt": "(node:92774) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/novalien0424/magic-mirror/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nMAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-30T13:07:04.991Z\nSHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-30T13:07:05.086Z\nWINDOW_LOADED window=console at=2026-10-30T13:07:05.133Z\nWINDOW_LOADED window=mirror at=2026-10-30T13:07:05.133Z\nRENDERER_READY window=mirror at=2026-10-30T13:07:05.135Z\nRENDERER_READY window=console at=2026-10-30T13:07:05.150Z\nWINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-30T13:07:05.219Z\nPHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-30T13:07:05.219Z\nPHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-30T13:07:05.219Z\nPHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-30T13:07:05.225Z\nPHASE4_QA_STEP step=dance_defaults_and_tracks status=passed item={\"tracks\":2} at=2026-10-30T13:07:05.373Z\nPHASE4_QA_STEP step=dance_ui_selection_and_save status=passed item={} at=2026-10-30T13:07:05.379Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-console.png sha256=0bd94abd4195b56b65960b28ffeaa74537604dd2c6c3b7b0236006dd6da2bd4b nonblack_pixels=259292 at=2026-10-30T13:07:05.427Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=not_configured lifecycle=dormant camera=released at=2026-10-30T13:07:05.427Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:07:05.427Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:07:05.435Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:07:05.659Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:07:05.667Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:07:05.667Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:07:05.691Z\nDANCE_FLOOR reason=dance_analysis_ready beats=23 durationMs=11993 at=2026-10-30T13:07:06.009Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:07:06.047Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:07:06.365Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:07:06.365Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:07:06.365Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=1 at=2026-10-30T13:07:18.382Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=1 at=2026-10-30T13:07:18.665Z\nPHASE4_QA_RESULT status=failed reason=phase4_qa_failed at=2026-10-30T13:07:26.548Z\n{\"marker\":\"PHASE4_QA_ARTIFACTS\",\"root\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-07-04-794Z\",\"outputDir\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-07-04-794Z/screenshots\",\"exit\":2,\"timedOut\":false,\"resultCount\":1}\n",
+    "rendered-qa-2.txt": "(node:93182) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/novalien0424/magic-mirror/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nMAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-30T13:08:42.202Z\nSHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-30T13:08:42.300Z\nWINDOW_LOADED window=mirror at=2026-10-30T13:08:42.350Z\nWINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-30T13:08:42.360Z\nWINDOW_LOADED window=console at=2026-10-30T13:08:42.387Z\nRENDERER_READY window=mirror at=2026-10-30T13:08:42.388Z\nRENDERER_READY window=console at=2026-10-30T13:08:42.388Z\nPHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-30T13:08:42.388Z\nPHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-30T13:08:42.388Z\nPHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-30T13:08:42.394Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.510Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.513Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.520Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.520Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.521Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.522Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.522Z\nPHASE4_QA_STEP step=dance_defaults_and_tracks status=passed item={\"tracks\":2} at=2026-10-30T13:08:42.527Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.529Z\nPHASE4_QA_STEP step=dance_ui_selection_and_save status=passed item={} at=2026-10-30T13:08:42.536Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-console.png sha256=ece8bdbad8704b646c9330372f929bae03efdf8c0db4a7ae89b2287ff0741060 nonblack_pixels=258879 at=2026-10-30T13:08:42.592Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:08:42.672Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:08:42.672Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:08:42.683Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:08:42.775Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:08:42.786Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:08:42.786Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:08:42.809Z\nDANCE_FLOOR reason=dance_analysis_ready beats=23 durationMs=11993 at=2026-10-30T13:08:42.889Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:08:42.936Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.943Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.945Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.947Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.947Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.947Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.948Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.948Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.948Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.948Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:08:42.949Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:08:43.380Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:08:43.380Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:08:43.381Z\nPHASE4_QA_STEP step=dance_native_playback status=passed item={\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}} at=2026-10-30T13:08:43.612Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=1 at=2026-10-30T13:08:55.398Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=1 at=2026-10-30T13:08:55.682Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=2 at=2026-10-30T13:09:07.717Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=2 at=2026-10-30T13:09:08.182Z\nPHASE4_QA_STEP step=dance_rendered_sync_and_loop status=passed item={\"samples\":1525,\"beats\":50,\"wraps\":2,\"medianMs\":4.3129438131018105,\"p95Ms\":7.590665692352559} at=2026-10-30T13:09:10.629Z\nPHASE4_QA_STEP step=dance_native_pcm_ground_truth status=passed item={\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951} at=2026-10-30T13:09:10.631Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-0.png sha256=2b6ccd072104203f829dd84b545af7b76dacfd6129b20a3e047f28fac43e5484 nonblack_pixels=154042 at=2026-10-30T13:09:10.871Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-1.png sha256=93828c15364062b41b7b1e3b84a74b8e9673748be0225b408684e47d454f1698 nonblack_pixels=153657 at=2026-10-30T13:09:11.295Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-2.png sha256=908fbdb27aeabdffed01f9b4a6d970f3621e2ca8485f4d717da81510512e9eb8 nonblack_pixels=154104 at=2026-10-30T13:09:14.875Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-3.png sha256=3dc6bdb2725afe5c3c59910b32cc6c6362bab7488209844a06b783fd71a7e221 nonblack_pixels=153580 at=2026-10-30T13:09:15.296Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-4.png sha256=7d8c8ff13b64f6aced88811262c6b9cf4ac6435f9faaf064f3ac3adcda72a583 nonblack_pixels=153385 at=2026-10-30T13:09:16.938Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-5.png sha256=f00e91509990560c8809b44bce56bcb65a815c4a93278e44efb8a2b4aeb73f93 nonblack_pixels=153456 at=2026-10-30T13:09:17.364Z\nPHASE4_QA_STEP step=dance_live_controls status=passed item={} at=2026-10-30T13:09:17.658Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:09:17.735Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:09:17.736Z\nPHASE4_QA_STEP step=dance_stop_black status=passed item={} at=2026-10-30T13:09:18.117Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:09:18.131Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:09:18.131Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:09:18.139Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.144Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:09:18.144Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.146Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.147Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.147Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.147Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.147Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.147Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.148Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:09:18.152Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:09:18.168Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:09:18.168Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:09:18.177Z\nDANCE_FLOOR reason=dance_analysis_ready beats=4462 durationMs=2111900 at=2026-10-30T13:09:19.209Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:09:19.244Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:09:19.549Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:09:19.549Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:09:19.550Z\nPHASE4_QA_STEP step=dance_actual_m4a status=passed item={\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9} at=2026-10-30T13:09:27.526Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-actual-track.png sha256=c6cdd7d4b2aebaac4ce229f236c5646bd77de3bc6464db664961ef91c5a059e6 nonblack_pixels=152905 at=2026-10-30T13:09:27.770Z\nPHASE4_QA_RESULT status=failed reason=phase4_qa_dance_failed at=2026-10-30T13:09:27.772Z\nOPERATOR_LOOP reason=operator_loop_release_failed at=2026-10-30T13:09:27.834Z\nDANCE_FLOOR reason=dance_stop_failed at=2026-10-30T13:09:27.834Z\n{\"marker\":\"PHASE4_QA_ARTIFACTS\",\"root\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-08-42-049Z\",\"outputDir\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-08-42-049Z/screenshots\",\"exit\":2,\"timedOut\":false,\"resultCount\":1}\n",
+    "rendered-qa-3.txt": "(node:93705) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/novalien0424/magic-mirror/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nMAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-30T13:11:31.590Z\nSHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-30T13:11:31.689Z\nWINDOW_LOADED window=console at=2026-10-30T13:11:31.741Z\nWINDOW_LOADED window=mirror at=2026-10-30T13:11:31.744Z\nWINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-30T13:11:31.755Z\nRENDERER_READY window=mirror at=2026-10-30T13:11:31.784Z\nRENDERER_READY window=console at=2026-10-30T13:11:31.785Z\nPHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-30T13:11:31.785Z\nPHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-30T13:11:31.785Z\nPHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-30T13:11:31.791Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.913Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.917Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.925Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:31.934Z\nPHASE4_QA_STEP step=dance_defaults_and_tracks status=passed item={\"tracks\":2} at=2026-10-30T13:11:31.936Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:11:32.082Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:11:32.082Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:11:32.090Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:11:32.191Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:11:32.200Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:11:32.200Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:11:32.224Z\nDANCE_FLOOR reason=dance_analysis_ready beats=23 durationMs=11993 at=2026-10-30T13:11:32.331Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.395Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.396Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.397Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.397Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:32.398Z\nDANCE_FLOOR reason=dance_welcome_cancelled at=2026-10-30T13:11:47.332Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:11:47.338Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:11:47.699Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:11:47.699Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:11:47.699Z\nPHASE4_QA_STEP step=dance_provider_welcome_before_music status=passed item={} at=2026-10-30T13:11:47.701Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:11:47.788Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:11:47.789Z\n[93708:1030/211147.805032:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[93708:1030/211147.805052:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.\nPHASE4_QA_STEP step=dance_ui_selection_and_save status=passed item={} at=2026-10-30T13:11:47.922Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-console.png sha256=0cc523c744f0eb4aa2698f016cccc25826560a7baf14969eda75acb46f5057cc nonblack_pixels=238302 at=2026-10-30T13:11:47.992Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:11:47.993Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:11:47.993Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:11:48.003Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:11:48.004Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.007Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.012Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.016Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.016Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.016Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.017Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:11:48.023Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:11:48.049Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:11:48.155Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:11:48.522Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:11:48.522Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:11:48.522Z\nPHASE4_QA_STEP step=dance_native_playback status=passed item={\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}} at=2026-10-30T13:11:48.612Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=1 at=2026-10-30T13:12:00.487Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=1 at=2026-10-30T13:12:00.823Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=2 at=2026-10-30T13:12:12.810Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=2 at=2026-10-30T13:12:13.323Z\nPHASE4_QA_STEP step=dance_rendered_sync_and_loop status=passed item={\"samples\":1524,\"beats\":50,\"wraps\":2,\"medianMs\":5.793123211167767,\"p95Ms\":8.011555864228285} at=2026-10-30T13:12:15.630Z\nPHASE4_QA_STEP step=dance_native_pcm_ground_truth status=passed item={\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951} at=2026-10-30T13:12:15.632Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-0.png sha256=c910195fc80f6ddbfca3ad03578120f7df6b2a8e472016c17ab5960caf17203b nonblack_pixels=154155 at=2026-10-30T13:12:15.985Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-1.png sha256=d264387687b0aa2dd717825f4b0066adb4a700eb7756423ab30e0789288c6606 nonblack_pixels=153735 at=2026-10-30T13:12:16.397Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-2.png sha256=6875113fcb829e2efae6f542508895abb166cdca57824437371a8449ce5f9560 nonblack_pixels=154117 at=2026-10-30T13:12:19.977Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-3.png sha256=ff19c93e572229ec0933d18e69e7d2d5b45c9de3d3efaddba419a784c2157864 nonblack_pixels=153410 at=2026-10-30T13:12:20.401Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-4.png sha256=41dd6a30402e759cc2883915586054922f0ad3fbe533d79264b31cd3bda90953 nonblack_pixels=152957 at=2026-10-30T13:12:21.963Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-5.png sha256=736c548cf35e5c80b0f37f61c3e95e4714b84b77d5a8291bf341afa6fd61d5ef nonblack_pixels=153327 at=2026-10-30T13:12:22.494Z\nPHASE4_QA_STEP step=dance_live_controls status=passed item={} at=2026-10-30T13:12:22.789Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:22.875Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:12:22.875Z\nPHASE4_QA_STEP step=dance_stop_black status=passed item={} at=2026-10-30T13:12:23.277Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:23.296Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:12:23.296Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:12:23.305Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.310Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:12:23.312Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.315Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.317Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.318Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.318Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.318Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.318Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.318Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:23.325Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:12:23.349Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:12:23.349Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:12:23.354Z\nDANCE_FLOOR reason=dance_analysis_ready beats=4462 durationMs=2111900 at=2026-10-30T13:12:24.406Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:12:24.441Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:12:24.831Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:12:24.831Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:12:24.831Z\nPHASE4_QA_STEP step=dance_actual_m4a status=passed item={\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9} at=2026-10-30T13:12:32.901Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-actual-track.png sha256=4a61cecd9335d4c0e6e2849760d716d529264eb4924c5ec78b8fbdf44d28f88e nonblack_pixels=153454 at=2026-10-30T13:12:33.146Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:33.205Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:12:33.205Z\n[93708:1030/211233.221968:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[93708:1030/211233.221981:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:33.353Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:12:33.353Z\nOPERATOR_LOOP reason=operator_loop_dance_track_missing at=2026-10-30T13:12:33.361Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.365Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.367Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.368Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:12:33.369Z\nPHASE4_QA_STEP step=dance_missing_track_visible status=passed item={} at=2026-10-30T13:12:33.461Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:33.564Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:12:33.564Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:12:33.571Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:12:33.571Z\nPHASE4_QA_STEP step=dance_stop_cancels_preparation status=passed item={} at=2026-10-30T13:12:34.378Z\nPHASE4_QA_STEP step=dance_defaults_restored status=passed item={} at=2026-10-30T13:12:34.390Z\nPHASE4_QA_RESULT status=passed motion_count=6 expression_count=0 scene_count=0 visual_count=9 screenshot_count=9 music_analyser=not_executed console_check_count=12 at=2026-10-30T13:12:34.391Z\n{\"marker\":\"PHASE4_QA_ARTIFACTS\",\"root\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-11-31-426Z\",\"outputDir\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-11-31-426Z/screenshots\",\"exit\":0,\"timedOut\":false,\"resultCount\":1}\n",
+    "rendered-qa-release.txt": "(node:95674) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/novalien0424/magic-mirror/src/main/memory-conversation-fixture.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/novalien0424/magic-mirror/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nqa_output_quiet=true\nMAIN_READY electron=44.0.0 platform=darwin smoke=on at=2026-10-30T13:25:01.914Z\nSHORTCUT_REGISTERED accelerator=CommandOrControl+Shift+D at=2026-10-30T13:25:02.009Z\nWINDOW_LOADED window=mirror at=2026-10-30T13:25:02.059Z\nWINDOW_SHOWN window=mirror mode=simple_fullscreen level=screen-saver at=2026-10-30T13:25:02.072Z\nRENDERER_READY window=mirror at=2026-10-30T13:25:02.096Z\nWINDOW_LOADED window=console at=2026-10-30T13:25:02.097Z\nRENDERER_READY window=console at=2026-10-30T13:25:02.097Z\nPHASE4_QA_DISPLAY_CANDIDATE display=5 width=1920 height=1080 mirror=no at=2026-10-30T13:25:02.097Z\nPHASE4_QA_DISPLAY_CANDIDATE display=3 width=1080 height=1920 mirror=yes at=2026-10-30T13:25:02.097Z\nPHASE4_QA_DISPLAY display_count=2 mirror_display=3 width=1080 height=1920 scale_factor=1 console_display=5 status=portrait_verified at=2026-10-30T13:25:02.105Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.214Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.218Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.226Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.227Z\nPHASE4_QA_STEP step=dance_defaults_and_tracks status=passed item={\"tracks\":2} at=2026-10-30T13:25:02.231Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.240Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:02.389Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:25:02.389Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:25:02.397Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:25:02.403Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:25:02.411Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:02.411Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.633Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.634Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.636Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.636Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.637Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.638Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.638Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.638Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.638Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:02.638Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:25:02.656Z\nDANCE_FLOOR reason=dance_analysis_ready beats=23 durationMs=11993 at=2026-10-30T13:25:02.921Z\nDANCE_FLOOR reason=dance_welcome_finished at=2026-10-30T13:25:10.780Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:25:10.783Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:11.100Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:25:11.100Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:25:11.100Z\nPHASE4_QA_STEP step=dance_provider_welcome_before_music status=passed item={} at=2026-10-30T13:25:11.191Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:11.282Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:25:11.283Z\n[95697:1030/212511.292515:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[95697:1030/212511.292551:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.\nPHASE4_QA_STEP step=dance_ui_selection_and_save status=passed item={} at=2026-10-30T13:25:11.416Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-console.png sha256=e00668156c4f3831323f3c2781c32432c1a08e0e607302eb011c450d62414596 nonblack_pixels=193235 at=2026-10-30T13:25:11.475Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:11.476Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:25:11.476Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:25:11.484Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:11.485Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.488Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.491Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.494Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.494Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.494Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.495Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.496Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:11.500Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:25:11.528Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:25:11.667Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:12.078Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:25:12.078Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:25:12.079Z\nPHASE4_QA_STEP step=dance_native_playback status=passed item={\"outputs\":{\"count\":3,\"controlled\":2,\"verified\":true}} at=2026-10-30T13:25:12.203Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=1 at=2026-10-30T13:25:24.159Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=1 at=2026-10-30T13:25:24.680Z\nDANCE_FLOOR reason=dance_music_playlist_repeated cycles=2 at=2026-10-30T13:25:36.704Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=2 at=2026-10-30T13:25:37.178Z\nPHASE4_QA_STEP step=dance_rendered_sync_and_loop status=passed item={\"samples\":1509,\"beats\":50,\"wraps\":2,\"medianMs\":5.493416466622875,\"p95Ms\":8.39122607706122} at=2026-10-30T13:25:39.216Z\nPHASE4_QA_STEP step=dance_native_pcm_ground_truth status=passed item={\"beats\":20,\"maxOnsetErrorMs\":7.936507936507951} at=2026-10-30T13:25:39.218Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-0.png sha256=8a7d97447b7fcd28d89db3e34c41f598cb3acc8c68541b5ff89a079e53baeff8 nonblack_pixels=154040 at=2026-10-30T13:25:41.839Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-1.png sha256=d0012570c7d5d840e9f1b9f54fcc21d2da63b59820d76cab42941ef855d11ab8 nonblack_pixels=153562 at=2026-10-30T13:25:42.249Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-2.png sha256=a23ae0c3666cd8b7e0a176e2fddcfea5397fcb5687f8baebf93cc80f5f91bbbc nonblack_pixels=154058 at=2026-10-30T13:25:43.794Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-3.png sha256=72a18b7fc6c19db42af0e8451cea5d3ea979a8bae52f8814c53235b789367a16 nonblack_pixels=153917 at=2026-10-30T13:25:44.329Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-4.png sha256=4a72087026387a809c8f389506cf854ea006c4057f76b007681109676ca45d19 nonblack_pixels=153030 at=2026-10-30T13:25:47.828Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-raven-5.png sha256=767266893c919af886ba1be563654dfa494a17dd36d6e26243808492255ef022 nonblack_pixels=153346 at=2026-10-30T13:25:48.247Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:25:48.445Z\nPHASE4_QA_STEP step=dance_live_controls status=passed item={} at=2026-10-30T13:25:48.548Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:48.629Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:25:48.629Z\n[95697:1030/212548.641323:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[95697:1030/212548.641351:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.\nPHASE4_QA_STEP step=dance_stop_black status=passed item={} at=2026-10-30T13:25:49.038Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:49.053Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:25:49.053Z\nDANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:25:49.060Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.062Z\nDANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:25:49.064Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.065Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.066Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.067Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:49.072Z\nDANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:25:49.088Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:49.088Z\nDANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:25:49.097Z\nDANCE_FLOOR reason=dance_analysis_ready beats=4462 durationMs=2111900 at=2026-10-30T13:25:50.139Z\nDANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:25:50.173Z\nDANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:25:50.547Z\nDANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:25:50.547Z\nOPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:25:50.547Z\nPHASE4_QA_STEP step=dance_actual_m4a status=passed item={\"durationMs\":2111900,\"outputs\":3,\"beatsInWindow\":9} at=2026-10-30T13:25:58.565Z\nPHASE4_QA_STEP step=dance_visual status=captured file=dance-actual-track.png sha256=5a288647c21ed2f4d8806395f0b928ef24b87d1da2f1460464f12e979e2238ad nonblack_pixels=153624 at=2026-10-30T13:25:58.785Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:58.843Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:25:58.843Z\n[95697:1030/212558.858895:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[95697:1030/212558.858911:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox.\nPHASE4_QA_STEP step=dance_global_stop_all status=passed item={} at=2026-10-30T13:25:59.197Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:59.197Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:25:59.197Z\nOPERATOR_LOOP reason=operator_loop_dance_track_missing at=2026-10-30T13:25:59.206Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.211Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.214Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.215Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.215Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.215Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_MEDIA_PROTOCOL stage=request status=received at=2026-10-30T13:25:59.216Z\nPHASE4_QA_STEP step=dance_missing_track_visible status=passed item={} at=2026-10-30T13:25:59.307Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:59.411Z\nOPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:25:59.411Z\nOPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:25:59.422Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:25:59.422Z\nPHASE4_QA_STEP step=dance_stop_cancels_preparation status=passed item={} at=2026-10-30T13:26:00.230Z\nPHASE4_QA_STEP step=dance_defaults_restored status=passed item={} at=2026-10-30T13:26:00.237Z\nOPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:26:00.237Z\nPHASE4_QA_STEP step=dance_return_to_avatar status=passed item={} at=2026-10-30T13:26:00.249Z\nPHASE4_QA_RESULT status=passed motion_count=6 expression_count=0 scene_count=0 visual_count=9 screenshot_count=9 music_analyser=not_executed console_check_count=14 at=2026-10-30T13:26:00.250Z\nOPERATOR_LOOP reason=operator_loop_stop_failed at=2026-10-30T13:26:00.277Z\nqa_output_restored=true\n{\"output\":\"Jabra Speak2 75\",\"reset\":true,\"volumes\":[0.70077186822891235]}\n{\"marker\":\"PHASE4_QA_ARTIFACTS\",\"root\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-25-00-965Z\",\"outputDir\":\"/Users/novalien0424/magic-mirror/.artifacts/phase4-qa/2026-10-30T13-25-00-965Z/screenshots\",\"exit\":0,\"timedOut\":false,\"resultCount\":1}\n",
+    "silent-full-volume.json": "{\"code\":1,\"events\":[{\"channels\":2,\"event\":\"ready\",\"outputs\":3,\"streams\":1},{\"controlled\":2,\"event\":\"volume\",\"outputs\":3,\"verified\":true},{\"event\":\"clock\",\"id\":1,\"positionMs\":0,\"rate\":1,\"sentAt\":1793366209744.927},{\"event\":\"clock\",\"id\":1,\"positionMs\":0,\"rate\":1,\"sentAt\":1793366209844.229},{\"event\":\"clock\",\"id\":1,\"positionMs\":0,\"rate\":1,\"sentAt\":1793366209944.535},{\"event\":\"clock\",\"id\":1,\"positionMs\":91.587819,\"rate\":1,\"sentAt\":1793366210044.5662},{\"event\":\"playing\",\"id\":1,\"outputs\":3},{\"event\":\"clock\",\"id\":1,\"positionMs\":191.221194,\"rate\":1,\"sentAt\":1793366210144.2},{\"event\":\"clock\",\"id\":1,\"positionMs\":291.563444,\"rate\":1,\"sentAt\":1793366210244.543},{\"event\":\"clock\",\"id\":1,\"positionMs\":391.04686,\"rate\":1,\"sentAt\":1793366210344.0261},{\"event\":\"clock\",\"id\":1,\"positionMs\":490.762652,\"rate\":1,\"sentAt\":1793366210443.742},{\"event\":\"clock\",\"id\":1,\"positionMs\":590.745902,\"rate\":1,\"sentAt\":1793366210543.726},{\"event\":\"failed\",\"reason\":\"operator_loop_music_protocol_invalid\"},{\"event\":\"stopped\"}]}"
+  },
+  "production": {
+    "logs": [
+      "MAIN_READY electron=44.0.0 platform=darwin smoke=off at=2026-10-30T13:30:17.893Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:30:18.045Z",
+      "RENDERER_READY window=mirror at=2026-10-30T13:30:18.062Z",
+      "OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:30:18.352Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:30:18.360Z",
+      "RENDERER_READY window=console at=2026-10-30T13:30:26.853Z",
+      "CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-30T13:30:26.860Z",
+      "OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:30:57.468Z",
+      "OPERATOR_LOOP reason=operator_loop_dance_preparing at=2026-10-30T13:30:57.469Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:30:57.482Z",
+      "DANCE_FLOOR reason=dance_music_playlist_loaded tracks=1 at=2026-10-30T13:30:57.539Z",
+      "DANCE_FLOOR reason=dance_music_download_status ready=0 pending=1 at=2026-10-30T13:30:57.554Z",
+      "DANCE_FLOOR reason=dance_music_file_ready at=2026-10-30T13:30:57.587Z",
+      "DANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:30:57.587Z",
+      "DANCE_FLOOR reason=dance_music_outputs_ready outputs=3 at=2026-10-30T13:30:57.716Z",
+      "DANCE_FLOOR reason=dance_analysis_ready beats=4462 durationMs=2111900 at=2026-10-30T13:30:58.924Z",
+      "DANCE_FLOOR reason=dance_volume_verified outputs=3 controlled=2 at=2026-10-30T13:30:58.958Z",
+      "DANCE_FLOOR reason=dance_music_download_status ready=1 pending=0 at=2026-10-30T13:30:59.218Z",
+      "DANCE_FLOOR reason=dance_music_playing tracks=1 outputs=3 track=1 cycles=0 at=2026-10-30T13:30:59.218Z",
+      "OPERATOR_LOOP reason=operator_loop_dance_playing at=2026-10-30T13:30:59.219Z",
+      "CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-30T13:31:11.963Z",
+      "OPERATOR_LOOP reason=operator_loop_inputs_released wake=released lifecycle=dormant camera=released at=2026-10-30T13:31:20.400Z",
+      "OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:31:20.400Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:31:20.407Z",
+      "APP_EXIT code=0 reason=operator_stop at=2026-10-30T13:31:24.632Z",
+      "MAIN_READY electron=44.0.0 platform=darwin smoke=off at=2026-10-30T13:31:48.176Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:31:48.327Z",
+      "RENDERER_READY window=mirror at=2026-10-30T13:31:48.346Z",
+      "OPERATOR_LOOP reason=operator_loop_stopped at=2026-10-30T13:31:48.620Z",
+      "MIRROR_DISPLAY_SELECTED display_id=3 label=T749-fHD720 reason=match at=2026-10-30T13:31:48.627Z",
+      "RENDERER_READY window=console at=2026-10-30T13:32:06.658Z",
+      "CONSOLE_ON_MAIN display_id=5 x=16 y=16 width=1888 height=1048 visible=true focused=true on_main=true at=2026-10-30T13:32:06.711Z"
+    ],
+    "buttons": [
+      {
+        "at": "2026-10-30T13:30:18.583Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:30:21.590Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:30:21.967Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:30:24.969Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:30:24.970Z",
+        "action": "start",
+        "outcome": "tv_awake_failed",
+        "app": "started",
+        "mode": "success",
+        "modeReason": "operator_control_complete",
+        "tv": "tv_awake_failed"
+      },
+      {
+        "at": "2026-10-30T13:30:57.632Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:00.636Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:31:01.020Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:01.428Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:01.428Z",
+        "action": "dance",
+        "outcome": "tv_awake_failed",
+        "app": "already_on",
+        "mode": "success",
+        "modeReason": "operator_control_complete",
+        "tv": "tv_awake_failed"
+      },
+      {
+        "at": "2026-10-30T13:31:20.780Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:21.173Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:21.558Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:24.561Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:31:25.239Z",
+        "action": "mouse",
+        "outcome": "mouse_remote_stop_failed",
+        "step": "remote_stop"
+      },
+      {
+        "at": "2026-10-30T13:31:25.239Z",
+        "action": "mouse",
+        "outcome": "mouse_stop_failed",
+        "step": "stop"
+      },
+      {
+        "at": "2026-10-30T13:31:25.271Z",
+        "action": "stop",
+        "outcome": "tv_standby_failed",
+        "app": "stopped",
+        "tv": "tv_standby_failed",
+        "blackout": "blackout_covered",
+        "audio": "jabra_output_70",
+        "mouse": "mouse_stop_failed"
+      },
+      {
+        "at": "2026-10-30T13:31:48.849Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:51.854Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:31:52.235Z",
+        "action": "tv",
+        "outcome": "tv_transport_missing",
+        "step": "power_before"
+      },
+      {
+        "at": "2026-10-30T13:31:55.239Z",
+        "action": "tv",
+        "outcome": "tv_command_timeout",
+        "step": "connect"
+      },
+      {
+        "at": "2026-10-30T13:31:55.239Z",
+        "action": "start",
+        "outcome": "tv_awake_failed",
+        "app": "started",
+        "mode": "success",
+        "modeReason": "operator_control_complete",
+        "tv": "tv_awake_failed"
+      }
+    ]
+  },
+  "physicalAcceptance": "not_executed",
+  "cleanup": {
+    "reviewedRunIds": [
+      "2026-10-30T13-07-04-794Z",
+      "2026-10-30T13-08-42-049Z",
+      "2026-10-30T13-11-31-426Z",
+      "2026-10-30T13-16-59-815Z",
+      "2026-10-30T13-21-46-424Z",
+      "2026-10-30T13-25-00-965Z",
+      "2026-10-30T13-28-31-411Z"
+    ],
+    "taskRoot": ".artifacts/dance-floor-2026-10-30",
+    "originalCommonMediaPreserved": true,
+    "completed": true,
+    "deletedRuns": [
+      {
+        "runId": "2026-10-30T13-07-04-794Z",
+        "files": 82,
+        "bytes": 47642455,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-08-42-049Z",
+        "files": 93,
+        "bytes": 94605016,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-11-31-426Z",
+        "files": 100,
+        "bytes": 94645169,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-16-59-815Z",
+        "files": 100,
+        "bytes": 94586875,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-21-46-424Z",
+        "files": 102,
+        "bytes": 94676504,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-25-00-965Z",
+        "files": 102,
+        "bytes": 94673884,
+        "deleted": true
+      },
+      {
+        "runId": "2026-10-30T13-28-31-411Z",
+        "files": 102,
+        "bytes": 94667860,
+        "deleted": true
+      }
+    ],
+    "deletedTaskFiles": [
+      "actual-analysis.json",
+      "actual-beat-plots.png",
+      "actual-beat-plots.svg",
+      "actual-features.json",
+      "actual-metadata.json",
+      "audio-after.json",
+      "audio-before.json",
+      "audio-deployed-restored.json",
+      "audio-final.json",
+      "boundary-checks.txt",
+      "build.txt",
+      "controls-install.txt",
+      "focused-checks-final.txt",
+      "focused-checks-release.txt",
+      "focused-checks.txt",
+      "owner-track.m4a",
+      "quiet-jabra.swift",
+      "rendered-qa-1.txt",
+      "rendered-qa-2.txt",
+      "rendered-qa-3.txt",
+      "rendered-qa-4.txt",
+      "rendered-qa-accepted.txt",
+      "rendered-qa-final.txt",
+      "rendered-qa-release.txt",
+      "silent-full-volume-final.json",
+      "silent-full-volume.json",
+      "typecheck.txt",
+      "welcome-audio-before.json"
+    ]
+  },
+  "audioAfterRestartBeforeFinalReset": {
+    "defaultInput": "Jabra Speak2 75",
+    "defaultOutput": "Jabra Speak2 75",
+    "devices": [
+      {
+        "id": 80,
+        "inCh": 0,
+        "name": "T749-fHD720",
+        "outCh": 2,
+        "outMute": null,
+        "outVol": [],
+        "rate": 48000
+      },
+      {
+        "id": 104,
+        "inCh": 2,
+        "inVol": [
+          {
+            "el": 1,
+            "v": 1
+          },
+          {
+            "el": 2,
+            "v": 0.06380193680524826
+          }
+        ],
+        "name": "Arducam 1080P Low Light",
+        "outCh": 0,
+        "rate": 48000
+      },
+      {
+        "id": 95,
+        "inCh": 0,
+        "name": "Jabra Speak2 75",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.0625
+          }
+        ],
+        "rate": 48000
+      },
+      {
+        "id": 100,
+        "inCh": 1,
+        "inVol": [
+          {
+            "el": 0,
+            "v": 0.5714285969734192
+          }
+        ],
+        "name": "Jabra Speak2 75",
+        "outCh": 0,
+        "rate": 32000
+      },
+      {
+        "id": 74,
+        "inCh": 0,
+        "name": "Mac mini Speakers",
+        "outCh": 2,
+        "outMute": 0,
+        "outVol": [
+          {
+            "el": 0,
+            "v": 0.009999996051192284
+          }
+        ],
+        "rate": 48000
+      }
+    ]
+  },
+  "restorationNote": "After STOP verified70, a later normal-start observation was6.25%; cause not established. Explicit final reset verified70 twice, with normal app running. No continuous enforcement added."
+}

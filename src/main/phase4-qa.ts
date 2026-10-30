@@ -11,6 +11,7 @@ import { runPhase4LifecycleQa } from './phase4-lifecycle-qa'
 import { runSpellLiveQa } from './spell-live-qa'
 import { runCubismConsoleQa } from './cubism-console-qa'
 import { runOperatorLoopQa } from './operator-loop-qa'
+import { runDanceFloorQa } from './dance-floor-qa'
 
 type QaWindow = Pick<BrowserWindow, 'capturePage' | 'webContents' | 'getSize' | 'setSize'
   | 'getBounds' | 'setBounds' | 'isVisible' | 'isFocused' | 'isAlwaysOnTop' | 'hide'
@@ -208,6 +209,9 @@ export async function runPhase4Qa(input: Phase4QaInput): Promise<Phase4QaResult>
   // This case authors a known return avatar through Console before waiting for
   // its renderer; the isolated default may reference an unavailable model.
   if (process.env['MIRROR_OPERATOR_LOOP_QA'] === '1') return runOperatorLoopQa(input)
+  if (process.env['MIRROR_DANCE_FLOOR_QA'] === '1') return runDanceFloorQa(input).catch(error => {
+    throw Error(error instanceof Error && /^dance_qa_[a-z_]+$/.test(error.message) ? `phase4_qa_${error.message}` : 'phase4_qa_dance_failed')
+  })
   await waitForAvatarReason(input.runtime, 'cubism_avatar_ready', 20_000)
   if (process.env['MIRROR_SPELL_QA'] === '1') return runSpellLiveQa(input)
   if (input.lifecycleLive) return runPhase4LifecycleQa(input)

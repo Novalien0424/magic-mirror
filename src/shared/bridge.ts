@@ -245,6 +245,10 @@ interface SharedRendererBridge {
 }
 
 export interface MirrorBridge extends SharedRendererBridge {
+  getDanceFrame?(): Promise<import('./dance-floor').DanceFrame>
+  onDanceFrame?(listener: (frame: import('./dance-floor').DanceFrame) => void): () => void
+  danceWelcome?(generation: number): Promise<import('./dance-floor').DanceWelcomeBundle | null>
+  finishDanceWelcome?(generation: number, completed: boolean): void
   getOperatorLoop?(): Promise<import('./operator-loop').OperatorLoopSnapshot>
   onOperatorLoop?(listener: (snapshot: import('./operator-loop').OperatorLoopSnapshot) => void): () => void
   reportOperatorLoop?(report: import('./operator-loop').OperatorLoopReport): void
@@ -278,6 +282,7 @@ export interface MirrorBridge extends SharedRendererBridge {
 }
 
 export interface ConsoleBridge extends SharedRendererBridge {
+  danceFloor?(command: import('./dance-floor').DanceCommand): Promise<ConsoleResponse<import('./dance-floor').DanceView>>
   loopVideo?(command: import('./operator-loop').LoopVideoCommand): Promise<ConsoleResponse<import('./operator-loop').LoopVideoView>>
   memory?(request: import('./memory').MemoryConsoleRequest): Promise<import('./memory').MemoryConsoleReply>
   memoryImport?(request: import('./memory').MemoryImportRequest): Promise<import('./memory').MemoryImportStatus>

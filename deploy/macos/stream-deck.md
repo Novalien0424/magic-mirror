@@ -5,7 +5,9 @@ updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 
-The current **Magic Mirror copy 1** profile has seven controls. MUSIC LOOP was
+The current **Magic Mirror copy 1** profile has eight controls. DANCE FLOOR was
+added through Stream Deck's UI to bottom-row third on 2026-10-30, preserving
+the seven previous assignments. MUSIC LOOP was
 added to its unused bottom-row second key on 2026-10-26; the existing default
 profile and six assignments were preserved. PLAY LOOP is now labeled VIDEO LOOP.
 STUDIO is shortened to fit the key;
@@ -20,6 +22,7 @@ Magic Mirror profiles are preserved.
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
 | Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
+| Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all available Mac outputs, default 100%, with Raven's beat-driven head/body motion and a brief DJ welcome. Voice listening and camera stay off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
@@ -53,13 +56,14 @@ The signed native black cover remains active after STOP. Standby consumption has
 wake after a full Android shutdown or removal of mains power is not established.
 The Mac mini remains running. This does not change the Mac's pre-login/boot screen.
 
-All seven buttons use Elgato's built-in **System → Open** action. The targets are
+All eight buttons use Elgato's built-in **System → Open** action. The targets are
 `~/Applications/Magic Mirror Controls/Start Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Stop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Play Loop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Console Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`,
-`~/Applications/Magic Mirror Controls/Music Loop Magic Mirror.app`, and
+`~/Applications/Magic Mirror Controls/Music Loop Magic Mirror.app`,
+`~/Applications/Magic Mirror Controls/Dance Floor Magic Mirror.app`, and
 `~/Applications/Magic Mirror Controls/Desktop Magic Mirror.app`. The small local
 apps call the executable [start](magic-mirror-start.sh),
 [stop](magic-mirror-stop.sh), [loop](magic-mirror-loop.sh),
@@ -110,6 +114,28 @@ pending MusicLoop-start wait. No separate restart service is installed.
 
 [Initial delivery](../../docs/testing/music-loop-2026-10-26.md) ·
 [Download follow-up, checks and limits](../../docs/testing/music-loop-downloads-2026-10-26.md).
+
+## Dance Floor
+
+The default file is `AI_Stuff/AI_Avatar/Common/DanceFloor.m4a`; M4A plays directly.
+Add other supported audio to `Common/DanceFloor`, maximum 200 MB per file.
+Open **Console → Dance Floor** locally or through the existing tailnet Console
+to refresh/select music, change intensity, volume, visual timing offset, welcome
+and Chinese/English language. Save changes before Start. Track/language/welcome
+apply next start; intensity, timing and a changed volume apply immediately.
+
+Start prepares the file, analyses local beat timing, gives a brief in-character
+welcome, then loops the music. No physical microphone or camera is used. Volume
+is set once, default 100%, on writable Mac outputs; physical speaker controls
+remain free afterward. Fixed-volume HDMI depends on the TV's own setting.
+Music timing drives head and torso motion; this portrait rig has no independent
+arms/legs. Positive timing offset advances Raven and negative delays Raven.
+
+STOP releases Dance and restores Jabra70 plus the other outputs' prior levels.
+The Console's Dance STOP and global Stop All during Dance use the same production
+shutdown/black-cover operation. Return to Avatar and other mode keys release
+Dance before switching. Opening Console preserves Dance. Crashes do not restart
+Dance automatically. [Journey, measurements and physical exclusions](../../docs/testing/dance-floor-delivery-2026-10-30.md).
 
 ## Reinstall the local controls
 

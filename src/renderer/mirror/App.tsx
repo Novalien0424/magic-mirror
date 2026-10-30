@@ -3,6 +3,7 @@ import { createAvatarRuntimeReporter } from './avatar-runtime-reporter'
 import { getAudioDeviceRouter } from '../audio-devices'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
 import { OperatorLoopBlack, OperatorLoopPlayer } from './OperatorLoopPlayer'
+import { DanceFloor } from './DanceFloor'
 import { PresentationStage } from '../avatar/PresentationStage'
 import { DEFAULT_PRESENTATION, type PresentationPayload } from '../../shared/presentation'
 import type { PresentationPhase } from '../avatar/presentation-controller'
@@ -812,6 +813,8 @@ export function App(props: AppProps = {}): React.JSX.Element {
   }, [])
   if (failure || !loop) return <OperatorLoopBlack reason={failure || undefined} />
   if (loop.mode === 'avatar') return <AvatarApp {...props} />
+  if (loop.mode === 'dance') return <DanceFloor />
+  if (loop.mode === 'black') return <OperatorLoopBlack />
   if (loop.mode === 'desktop') return <OperatorLoopBlack reason="operator_loop_desktop" />
   if (loop.mode === 'music') return <OperatorLoopBlack reason={loop.reason} />
   if (loop.generation === 0) return <OperatorLoopBlack reason={loop.reason} />

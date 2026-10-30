@@ -2,6 +2,9 @@ import { allowPromptWindow } from '../shared/prompt-window'
 import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop } from './music-loop'
+import { createDanceFloor } from './dance-floor'
+import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
+import { execFile } from 'node:child_process'
 import { createMacMediaFilePreparer, musicPrepareDeadlineSeconds } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { createMirrorMode } from './mirror-mode'
@@ -207,6 +210,7 @@ let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
 let musicLoop: ReturnType<typeof createMusicLoop> | undefined
+let danceFloor: ReturnType<typeof createDanceFloor> | undefined
 let stopOperatorControl: (() => void) | undefined
 let consoleOnMirror = false
 
@@ -1197,9 +1201,36 @@ void app.whenReady().then(async () => {
     },
     failed: reason => operatorLoop?.musicFailed(reason),
   })
+  let welcomeWait: { generation: number; signal: AbortSignal; claimed: boolean; finish(completed: boolean): void } | undefined
+  danceFloor = createDanceFloor({
+    directory: app.getPath('userData'),
+    executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
+    analyser: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/dance-analysis') : join(app.getAppPath(), 'out/native/dance-analysis'),
+    sharedRoot: async () => { await mediaFoldersReady; return mediaFolders.view().shared?.path },
+    prepare: musicPrepare, cached: musicPrepare.cached, isLocal: musicPrepare.isLocal,
+    qa: phase4QaEnabled,
+    report: (reason, details) => marker('DANCE_FLOOR', { reason, ...details }),
+    failed: reason => operatorLoop?.danceFailed(reason),
+    publish: frame => {
+      const win = windows.get('mirror')
+      if (win && !win.isDestroyed()) win.webContents.send('mirror:dance-frame', frame)
+    },
+    welcome: (generation, signal) => new Promise<void>(resolveWelcome => {
+      const finish = (completed: boolean) => {
+        clearTimeout(timer); signal.removeEventListener('abort', abort)
+        if (welcomeWait?.generation === generation) welcomeWait = undefined
+        marker('DANCE_FLOOR', { reason: completed ? 'dance_welcome_finished' : 'dance_welcome_cancelled' }); resolveWelcome()
+      }
+      const abort = () => finish(false), timer = setTimeout(abort, 25000)
+      welcomeWait = { generation, signal, claimed: false, finish }
+      signal.addEventListener('abort', abort, { once: true })
+      if (signal.aborted) abort()
+    }),
+  })
   operatorLoop = createOperatorLoop({
     path: join(app.getPath('userData'), 'operator-loop.json'),
     music: musicLoop,
+    dance: danceFloor,
     validate: async settings => {
       await mediaFoldersReady
       await bounded(mediaFolders.refresh(), 12000)
@@ -1444,6 +1475,62 @@ void app.whenReady().then(async () => {
     }
     operatorLoop!.report(report)
   })
+  ipcMain.handle('mirror:get-dance-frame', event => authorizeSender(event, 'mirror', windows).ok ? danceFloor!.view().frame : null)
+  ipcMain.handle('mirror:dance-welcome', async (event, generation): Promise<DanceWelcomeBundle | null> => {
+    const current = welcomeWait
+    if (!authorizeSender(event, 'mirror', windows).ok || !current || current.generation !== generation || current.claimed
+      || operatorLoop?.view().snapshot.mode !== 'dance' || current.signal.aborted) return null
+    current.claimed = true
+    try {
+      const snapshot = await runtime.getPublishedSessionModelSnapshotForDiagnostics()
+      const config = await runtime.getPublishedSceneConfigForRuntime()
+      const avatar = config.avatarCatalog?.avatars.find(a => a.id === config.avatarCatalog?.activeAvatarId)
+      if (!avatar || welcomeWait !== current) return null
+      const secret = await clientSecretBroker.issue({ modelId: snapshot.realtimeDialogue, signal: current.signal })
+      if (welcomeWait !== current || current.signal.aborted || operatorLoop?.view().snapshot.mode !== 'dance') return null
+      return { generation, snapshot, clientSecret: secret.value, avatar: { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle } }
+    } catch { marker('DANCE_FLOOR', { reason: 'dance_welcome_unavailable' }); return null }
+  })
+  ipcMain.on('mirror:dance-welcome-finished', (event, generation, completed) => {
+    const current = welcomeWait
+    if (authorizeSender(event, 'mirror', windows).ok && typeof completed === 'boolean' && current && current.generation === generation) current.finish(completed)
+  })
+  let danceConsoleRequest = 0
+  webConsoleRegistry.registrar.handle('console:dance-floor', async (event, ...args) => {
+    const command = args.length === 1 ? parseDanceCommand(args[0]) : null
+    if (!authorizeSender(event, 'console', windows).ok || !command) return { ok: false, error: 'console_request_rejected', reason: 'dance_request_rejected' }
+    try {
+      if (command.action === 'refresh') await danceFloor!.refresh()
+      if (command.action === 'save') danceFloor!.save(command.settings)
+      if (command.action === 'start') {
+        const request = ++danceConsoleRequest
+        // Use the same serialized, STOP-cancellable operation as the physical
+        // key. Never start here and enqueue a second start behind it.
+        if (isDarwin && !phase4QaEnabled) await new Promise<void>((resolveStart, reject) =>
+          execFile('/bin/zsh', [join(app.getAppPath(), 'deploy/macos/magic-mirror-dance.sh')], { timeout: 45000 }, error =>
+            error ? reject(Error('dance_start_failed')) : resolveStart()))
+        else if (!await operatorLoop!.dance() || !showMirrorWindow()) throw Error('dance_start_failed')
+        const deadline = Date.now() + 15000
+        while (request === danceConsoleRequest && operatorLoop!.view().snapshot.mode !== 'dance' && Date.now() < deadline) {
+          await new Promise(done => setTimeout(done, 100))
+        }
+        if (request !== danceConsoleRequest || operatorLoop!.view().snapshot.mode !== 'dance') throw Error('dance_start_failed')
+      }
+      if (command.action === 'stop') {
+        ++danceConsoleRequest
+        if (!await operatorLoop!.black() || !showMirrorWindow()) throw Error('dance_stop_failed')
+        if (isDarwin) await new Promise<void>((resolveStop, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
+          ['--reset-output'], { timeout: 5000 }, error => error ? reject(Error('dance_volume_restore_failed')) : resolveStop()))
+        if (isDarwin && !phase4QaEnabled) execFile('/bin/zsh', [join(app.getAppPath(), 'deploy/macos/magic-mirror-stop.sh')], { timeout: 45000 }, error => {
+          if (error) marker('DANCE_FLOOR', { reason: 'dance_stop_control_failed' })
+        })
+      }
+      return { ok: true, value: danceFloor!.view() }
+    } catch (error) {
+      const reason = error instanceof Error && /^dance_[a-z_]+$/.test(error.message) ? error.message : 'dance_operation_failed'
+      marker('DANCE_FLOOR', { reason }); return { ok: false, error: 'console_request_rejected', reason }
+    }
+  })
   webConsoleRegistry.registrar.handle('console:loop-video', async (event, ...args) => {
     const command = args.length === 1 ? parseLoopVideoCommand(args[0]) : null
     if (!authorizeSender(event, 'console', windows).ok || !command) {
@@ -1485,8 +1572,8 @@ void app.whenReady().then(async () => {
       }
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
-      if (action !== 'play_loop' && action !== 'music_loop' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
-      const success = await (action === 'music_loop' ? operatorLoop!.music() : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      if (action !== 'play_loop' && action !== 'music_loop' && action !== 'dance_floor' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
+      const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music() : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       if (!success) return false
       hideConsoleWindow()
       return showMirrorWindow()
@@ -2006,6 +2093,7 @@ function shutdownBootRuntime(): Promise<void> {
   shutdownPromise = (async () => {
     const steps = [
       () => musicLoop?.stop(),
+      () => danceFloor?.stop(),
       () => stopYoutube?.(),
       () => cameraTracking?.stop(),
       () => sceneRuntimeControl?.stopAll(),

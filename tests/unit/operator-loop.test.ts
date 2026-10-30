@@ -56,6 +56,24 @@ function advancePlayback(controller: Loop, generation: number) {
 }
 
 describe('operator loop appliance controller', () => {
+  it('owns Dance without input, makes repeats idempotent, cancels late start and never restores loud mode', async () => {
+    const path = fixturePath(), started = deferred<boolean>()
+    const dance = { start: vi.fn(() => started.promise), stop: vi.fn(async () => {}) }
+    const music = { start: vi.fn(async () => true), stop: vi.fn(async () => {}) }
+    const f = fixture(), controller = createOperatorLoop({ ...f, path, dance, music })
+    controllers.push(controller)
+    await controller.dance(); await controller.dance()
+    expect(dance.start).toHaveBeenCalledOnce()
+    expect(controller.isInputSuspended()).toBe(true)
+    expect(JSON.parse(readFileSync(path, 'utf8')).intent).toBe('avatar')
+    expect(f.resumeAvatar).not.toHaveBeenCalled()
+    await controller.black(); started.resolve(true); await vi.advanceTimersByTimeAsync(0)
+    expect(controller.view().snapshot.mode).toBe('black')
+    expect(dance.stop).toHaveBeenCalled()
+    expect(fixture(path).controller.view().snapshot.mode).toBe('avatar')
+    await controller.normal()
+    expect(f.resumeAvatar).toHaveBeenCalledOnce()
+  })
   it('keeps input suspended on Desktop, restores Desktop after a crash and resumes on normal', async () => {
     const f = fixture()
     f.suspendAvatar.mockImplementation(async () => { expect(f.controller.isInputSuspended()).toBe(true) })

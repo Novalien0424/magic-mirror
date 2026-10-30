@@ -1199,3 +1199,8 @@ html { scroll-padding-top: calc(var(--console-top-height, 0px) + .75rem); }
 .avatar-header__live { color: #bbc9d7; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
 .web-console-notice { padding: 10px 20px; background: #172c3d; color: #e6f5ff; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 20px; }
 .web-console-notice span { opacity: .85; }
+.dance-floor-panel > label { display: flex; flex-direction: column; gap: .5rem; margin: 1rem 0; max-width: 48rem; }
+.dance-floor-panel > label > select { max-width: 100%; }
+.dance-floor-panel > label > input[type="number"] { width: 9rem; }
+.dance-floor-panel > label.dance-floor-checkbox { flex-direction: row; align-items: center; }
+.dance-floor-panel .console__action-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }

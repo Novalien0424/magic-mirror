@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -15,6 +15,7 @@ process.once('exit', releaseOwner)
 assertElectronStopped()
 const modes = ['--music-only', '--lifecycle-live', '--spells-live', '--video-fades', '--live', '--manual', '--editor', '--console', '--cubism', '--profiles', '--audio', '--field-help', '--active-bgm', '--ritual', '--operator-loop', '--media-skill', '--media-skill-functional', '--memory', '--memory-live', '--memory-conversation', '--studio-journey', '--web-console']
 const args = process.argv.slice(2)
+modes.push('--dance-floor')
 if (args.some(arg => !modes.includes(arg)) || args.length > 1) {
   throw new Error('phase4_qa_mode_invalid')
 }
@@ -30,6 +31,7 @@ const audioOnly = process.argv.includes('--audio')
 const activeBgmOnly = process.argv.includes('--active-bgm')
 const ritualOnly = process.argv.includes('--ritual')
 const operatorLoopOnly = process.argv.includes('--operator-loop')
+const danceFloorOnly = process.argv.includes('--dance-floor')
 const mediaSkillFunctional = process.argv.includes('--media-skill-functional')
 const mediaSkillOnly = process.argv.includes('--media-skill') || mediaSkillFunctional
 const memoryLive = process.argv.includes('--memory-live')
@@ -39,7 +41,7 @@ const fieldHelpOnly = process.argv.includes('--field-help')
 const studioJourneyOnly = process.argv.includes('--studio-journey')
 const editorOnly = process.argv.includes('--editor') || cubismOnly || profileOnly || audioOnly || fieldHelpOnly || memoryOnly || studioJourneyOnly || webConsole
 const videoFades = process.argv.includes('--video-fades')
-const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || operatorLoopOnly || mediaSkillOnly || memoryOnly
+const consoleOnly = process.argv.includes('--console') || editorOnly || videoFades || activeBgmOnly || ritualOnly || operatorLoopOnly || danceFloorOnly || mediaSkillOnly || memoryOnly
 if (consoleOnly && (live || musicOnly)) throw new Error('phase4_qa_incompatible_modes')
 if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'win32' && repoRoot.toLowerCase() !== resolve('C:/Project/magic-mirror').toLowerCase()
@@ -90,6 +92,26 @@ const musicFileName = 'phase4-qa-tone.wav'
 await writeFile(join(musicDir, musicFileName), music)
 
 const trialVisualDir = join(repoRoot, 'resources', 'phase4-trial-assets')
+if (danceFloorOnly) {
+  const shared = join(userDataDir, 'dance-shared')
+  await mkdir(join(shared, 'DanceFloor'), { recursive: true })
+  const wav = makeToneWav(12, 22050)
+  // Known 120 BPM kick + offbeat treble. Ground truth starts at 500 ms.
+  for (let i = 0; i < (wav.length - 44) / 2; i++) {
+    const t = i / 22050, phase = t % 0.5, hat = (t + 0.25) % 0.5
+    const kick = t >= 0.5 && phase < 0.12 ? Math.sin(2*Math.PI*75*phase)*Math.exp(-phase*40)*0.8 : 0
+    const treble = t >= 0.5 && hat < 0.035 ? Math.sin(2*Math.PI*6000*hat)*Math.exp(-hat*100)*0.15 : 0
+    wav.writeInt16LE(Math.round((kick+treble)*32767), 44+i*2)
+  }
+  await writeFile(join(shared, 'DanceFloor', '01-known-beats.wav'), wav)
+  const linked = JSON.parse(await readFile(join(homedir(), 'Library/Application Support/magic-mirror/media-folders.json'), 'utf8'))
+  const actual = process.env.MIRROR_DANCE_QA_TRACK || join(linked.links.shared, 'DanceFloor.m4a')
+  const size = (await lstat(actual)).size
+  if (size <= 0 || size > 200000000) throw Error('dance_qa_track_size')
+  const prepared = spawnSync(join(repoRoot, 'out/native/media-file-prepare'), [actual, String(size), join(shared, 'DanceFloor.m4a'), '200'], { timeout: 205000, stdio: 'ignore' })
+  if (prepared.status !== 0) throw Error('dance_qa_track_prepare')
+  await writeFile(join(userDataDir, 'media-folders.json'), JSON.stringify({ version: 1, links: { shared: await realpath(shared) } }))
+}
 if (operatorLoopOnly) {
   // Seed only the isolated Common library. Loop settings and the return avatar
   // are authored later through the real Console, never prewritten here.
@@ -281,6 +303,16 @@ if (mediaSkillOnly) {
     entranceMs: 0, exitMs: 0, wakeGreeting: '', sleepFarewell: 'Rest now.' }
 }
 
+if (danceFloorOnly) {
+  const id = 'model-290002c3-7e18-466c-b547-d98a67e054eb'
+  const destination = join(userDataDir, 'assets/avatars', id)
+  await cp(join(homedir(), 'Library/Application Support/magic-mirror/assets/avatars', id), destination, { recursive: true })
+  const files = (await readdir(destination, { recursive: true })).filter(name => /\.(json|moc3|png)$/.test(name) && name !== 'avatar-label.json')
+  config.avatarCatalog = { activeAvatarId: 'qa-dj', locks: [], models: [{ id, name: 'Raven QA', manifestFileName: 'raven-lord.model3.json', files }], avatars: [
+    { id: 'qa-dj', name: 'Raven', personality: 'A proud, dry-witted raven guardian hosting a heavy metal dance floor.', speakingStyle: 'Brief Traditional Chinese.', voice: config.voice, idleSeconds: 300, modelId: id,
+      presentation: { mode: 'always_visible', backgroundId: '', ambienceId: '', ambienceGain: 0, entranceMs: 200, exitMs: 200, wakeGreeting: '', sleepFarewell: '再會。' }, scenes: [], spells: [] },
+  ] }
+}
 for (const slot of ['active', 'draft', 'previous']) {
   await writeFile(join(configDir, `${slot}.json`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
 }
@@ -298,6 +330,7 @@ const environment = {
   MIRROR_ACTIVE_BGM_QA: activeBgmOnly ? '1' : '0',
   MIRROR_REFLECTIVE_RITUAL_QA: ritualOnly ? '1' : '0',
   MIRROR_OPERATOR_LOOP_QA: operatorLoopOnly ? '1' : '0',
+  MIRROR_DANCE_FLOOR_QA: danceFloorOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA: mediaSkillOnly ? '1' : '0',
   MIRROR_MEDIA_SKILL_QA_FUNCTIONAL: mediaSkillFunctional ? '1' : '0',
   MIRROR_MEMORY_QA: memoryOnly ? '1' : '0',
@@ -315,13 +348,27 @@ const environment = {
   MIRROR_PHASE4_QA_OUTPUT_DIR: outputDir,
   MIRROR_PHASE0_USER_DATA_ROOT: root,
   MIRROR_USER_DATA_DIR: userDataDir,
-  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly ? '240000' : '120000',
+  MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly || danceFloorOnly ? '240000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
 }
 delete environment.MIRROR_PHASE0_DEMO
 delete environment.MIRROR_PHASE1_LIVE_SMOKE
 
+const qaVolumeHelper = join(root, 'qa-output-volume'), qaVolumeSnapshot = join(root, 'output-volumes.json')
+let volumeRestored = false
+const restoreDanceQaVolume = () => {
+  if (!danceFloorOnly || volumeRestored) return true
+  volumeRestored = true
+  const result = spawnSync(qaVolumeHelper, ['restore', qaVolumeSnapshot], { timeout: 5000, stdio: 'inherit' })
+  const reset = spawnSync(join(homedir(), 'Library/Application Support/MagicMirror/ops/stop-state'), ['--reset-output'], { timeout: 5000, stdio: 'inherit' })
+  return result.status === 0 && reset.status === 0
+}
+if (danceFloorOnly) {
+  if (spawnSync('xcrun', ['swiftc', '-O', join(repoRoot, 'deploy/macos/qa-output-volume.swift'), '-o', qaVolumeHelper], { stdio: 'inherit' }).status !== 0) throw Error('dance_qa_volume_build')
+  process.once('exit', restoreDanceQaVolume)
+  if (spawnSync(qaVolumeHelper, ['quiet', qaVolumeSnapshot], { timeout: 5000, stdio: 'inherit' }).status !== 0) throw Error('dance_qa_volume_quiet')
+}
 const child = spawn(electron, [repoRoot], {
   cwd: repoRoot,
   env: environment,
@@ -354,7 +401,7 @@ const childExitCode = await new Promise((resolveExit, reject) => {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 5000, stdio: 'ignore' })
     }
     child.kill()
-  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly ? 250_000 : mediaSkillOnly ? 190_000 : 130_000)
+  }, manual ? 1_810_000 : memoryLive || memoryConversation ? 310_000 : cubismOnly ? 310_000 : operatorLoopOnly || danceFloorOnly ? 250_000 : mediaSkillOnly ? 190_000 : 130_000)
   child.once('error', (error) => {
     clearTimeout(timer)
     reject(error)
@@ -365,7 +412,8 @@ const childExitCode = await new Promise((resolveExit, reject) => {
   })
 })
 process.off('SIGINT', cancel); process.off('SIGTERM', cancel)
-const exitCode = cancelled || timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
+const volumeOkay = restoreDanceQaVolume()
+const exitCode = !volumeOkay || cancelled || timedOut || !manual && childExitCode === 0 && (resultCount !== 1 || !reportedPassed) ? 2 : childExitCode
 await finishQaArtifact(repoRoot, stamp, exitCode)
 
 process.stdout.write(`${JSON.stringify({ marker: 'PHASE4_QA_ARTIFACTS', root, outputDir, exit: exitCode, timedOut, resultCount })}\n`)

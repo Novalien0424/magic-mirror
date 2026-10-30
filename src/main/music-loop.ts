@@ -6,9 +6,14 @@ import { createInterface } from 'node:readline'
 const AUDIO: Record<string, string> = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
   '.wav': 'audio/vnd.wave', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.flac': 'audio/flac', '.caf': 'audio/x-caf' }
 export const MUSIC_LOOP_MAX_BYTES = 200_000_000
-export async function musicLoopFiles(shared: string | undefined): Promise<string[]> {
+export async function musicLoopFiles(shared: string | undefined, folder: 'MusicLoop' | 'DanceFloor' = 'MusicLoop'): Promise<string[]> {
   if (!shared) throw Error('operator_loop_music_shared_missing')
-  const root = join(shared, 'MusicLoop'), files: string[] = []
+  const root = join(shared, folder), files: string[] = []
+  // Owner-supplied default may live directly in Common; extra tracks live in the subfolder.
+  if (folder === 'DanceFloor') for (const extension of ['.m4a', '.mp3']) {
+    const path = join(shared, `DanceFloor${extension}`)
+    try { if ((await lstat(path)).isFile() && await realpath(path) === path) files.push(path) } catch { /* optional default */ }
+  }
   try {
     if (await realpath(root) !== root || !(await lstat(root)).isDirectory()) throw Error()
   } catch { throw Error('operator_loop_music_folder_missing') }
@@ -40,6 +45,11 @@ export function createMusicLoop(input: {
   report(reason: string, details?: Record<string, number>): void
   failed(reason: string): void
   gain?: number
+  folder?: 'DanceFloor'
+  select?(path: string): boolean
+  beforePlay?(path: string, mime: string, id: number, signal: AbortSignal): Promise<void>
+  danceVolume?(): number
+  nativeEvent?(event: Record<string, unknown>): void
 }) {
   let revision = 0, child: ChildProcessWithoutNullStreams | undefined, abort: AbortController | undefined
   let settle: ((success: boolean) => void) | undefined
@@ -66,6 +76,9 @@ export function createMusicLoop(input: {
   }
   return {
     stop,
+    setVolume(value: number) {
+      if (child && Number.isFinite(value) && value >= 0 && value <= 1) child.stdin.write(JSON.stringify({ action: 'volume', value }) + '\n')
+    },
     async start(): Promise<boolean> {
       await stop()
       const run = revision, cancellation = new AbortController(); abort = cancellation
@@ -73,7 +86,7 @@ export function createMusicLoop(input: {
       const tracks: Track[] = []
       let oversized = 0
       try {
-        const files = await musicLoopFiles(await input.sharedRoot())
+        const files = (await musicLoopFiles(await input.sharedRoot(), input.folder)).filter(path => input.select?.(path) ?? true)
         for (const path of files) {
           if (run !== revision) return false
           try {
@@ -128,8 +141,12 @@ export function createMusicLoop(input: {
               if (!cached.isFile() || cached.size !== track.size || await realpath(track.local) !== track.local) throw Error()
               if (run !== revision) return
               if (last !== undefined && index <= last) { cycles++; report('operator_loop_music_playlist_repeated', { cycles }) }
+              const id = ++trackId, mime = AUDIO[extname(track.path).toLowerCase()]!
+              await input.beforePlay?.(track.local, mime, id, cancellation.signal)
+              if (run !== revision) return
               current = last = index
-              process.stdin.write(JSON.stringify({ action: 'play', id: ++trackId, path: track.local, mime: AUDIO[extname(track.path).toLowerCase()], gain: input.gain ?? 1 }) + '\n')
+              process.stdin.write(JSON.stringify({ action: 'play', id, path: track.local, mime, gain: input.gain ?? 1,
+                ...(input.danceVolume ? { danceVolume: input.danceVolume() } : {}) }) + '\n')
               return
             } catch { track.status = 'failed'; report('operator_loop_music_file_skipped') }
           }
@@ -143,10 +160,15 @@ export function createMusicLoop(input: {
         }
       }
       createInterface({ input: process.stdout }).on('line', line => {
-        if (run !== revision) return
         try {
           if (line.length > 2048) throw Error()
           const event = JSON.parse(line)
+          // Shutdown read-back is useful after revision invalidation too.
+          if (run !== revision) {
+            if (event.event === 'volume_restore_failed') input.nativeEvent?.(event)
+            return
+          }
+          input.nativeEvent?.(event)
           if (event.event === 'ready' && Number.isSafeInteger(event.outputs) && event.outputs > 0) {
             clearTimeout(deadline); routeReady = true
             report('operator_loop_music_outputs_ready', { outputs: event.outputs })

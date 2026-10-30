@@ -59,6 +59,7 @@ import { ExperiencesEditor } from './ExperiencesEditor'
 import { StudioLiveControls, StudioServiceSummary, StudioStatusPanel, type LiveMessage } from './StudioStatusPanel'
 import { MediaFoldersPanel } from './MediaFoldersPanel'
 import { LoopVideoPanel } from './LoopVideoPanel'
+import { DanceFloorPanel } from './DanceFloorPanel'
 import type { OperatorLoopSnapshot } from '../../shared/operator-loop'
 import type { MirrorMode } from '../../shared/portrait-studio'
 import { addAvatarMedia } from './media-selection'
@@ -78,7 +79,7 @@ import { MemoryPanel } from './MemoryPanel'
 import { DeleteAvatarDialog } from './DeleteAvatarDialog'
 import { avatarDeletionReason, removeAvatarFromDraft } from './avatar-management'
 
-const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
+const PAGES = ['Mirror', 'Avatars', 'Loop Video', 'Dance Floor', 'System'] as const
 /** Avatar settings sections, including the Interactive Studio content. */
 type AvatarSection = ProfileSection
 const AVATAR_SECTIONS: readonly AvatarSection[] = PROFILE_SECTIONS
@@ -2497,6 +2498,13 @@ export function App(): React.JSX.Element {
     const bridge = bridgeRef.current
     setStopSignal(value => value + 1)
     if (bridge === null || !bridgeAvailable) { setLiveLine({ tone: 'failed', content: <ReasonDetail code={`${BRIDGE_FAILURE.error}; ${BRIDGE_FAILURE.reason}`} /> }); return }
+    if (operatorLoop?.mode === 'dance') {
+      void Promise.all([bridge.stopScenes(), bridge.danceFloor?.({ action: 'stop' })]).then(results => {
+        if (results.some(result => !result?.ok)) throw Error('dance_stop_failed')
+        if (mountedRef.current) setLiveLine({ tone: 'success', content: 'Dance Floor stopped.' })
+      }).catch(() => { if (mountedRef.current) setLiveLine({ tone: 'failed', content: 'Could not stop Dance Floor. Use the physical STOP key.' }) })
+      return
+    }
     setLiveLine({ tone: 'loading', content: 'Stopping all scenes…' })
     void bridge.stopScenes().then(
       response => { if (mountedRef.current) setLiveLine(response.ok ? { tone: 'success', content: 'All scenes stopped.' } : { tone: 'failed', content: <ReasonDetail code={response.reason} /> }) },
@@ -2545,10 +2553,10 @@ export function App(): React.JSX.Element {
         <section className="live-bar" aria-label="Live controls">
           <div className="live-bar__groups">
             {operatorLoop && operatorLoop.mode !== 'avatar' || loopStarting ? <div className="live-bar__group" role="group" aria-labelledby="live-loop-heading">
-              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'music' ? loopModeLabel(operatorLoop) : operatorLoop?.mode === 'desktop' ? 'macOS desktop' : operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
+              <h2 id="live-loop-heading" className="live-bar__label">{operatorLoop?.mode === 'dance' ? 'Dance Floor' : operatorLoop?.mode === 'black' ? 'Stopped · black screen' : operatorLoop?.mode === 'music' ? loopModeLabel(operatorLoop) : operatorLoop?.mode === 'desktop' ? 'macOS desktop' : operatorLoop?.mode === 'loop' ? 'Loop video' : 'Loop video · starting'}</h2>
               {operatorLoop?.mode === 'music' && operatorLoop.status === 'failed' ? <OperatorMessage text={operatorLoop.reason} /> : null}
               <HelpButton placement="below" className="console__primary" disabled={!bridgeAvailable} onClick={returnToAvatar}
-                help="Stops MusicLoop or loop video, or returns from macOS desktop, to the avatar with voice, wake listening and camera.">Return to Avatar</HelpButton>
+                help="Stops Dance Floor, MusicLoop or loop video, or returns from macOS desktop, to the avatar with voice, wake listening and camera.">Return to Avatar</HelpButton>
             </div> : <>
               <LifecycleControls
                 lifecycle={overviewState.status === 'success' ? overviewState.value.lifecycle : undefined}
@@ -2611,6 +2619,7 @@ export function App(): React.JSX.Element {
           <LoopVideoPanel bridge={bridgeRef.current} visible={activePage === 'Loop Video'} onPlaybackChange={setOperatorLoop}
             onStartingChange={setLoopStarting} cancelSignal={loopCancel} onMediaFolders={() => navigate('System', 'Media folders')} />
         </div>
+        <div hidden={activePage !== 'Dance Floor'}><DanceFloorPanel bridge={bridgeRef.current} visible={activePage === 'Dance Floor'} /></div>
         {activePage === 'System' && systemPage === 'Media folders' && <MediaFoldersPanel bridge={bridgeRef.current} />}
         {activePage === 'System' && systemPage === 'Studio service' && <div className="console__panel"><StudioStatusPanel bridge={bridgeRef.current} visible /></div>}
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>

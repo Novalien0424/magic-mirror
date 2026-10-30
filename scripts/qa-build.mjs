@@ -10,7 +10,7 @@ const inputs = ['src', 'resources/generated', 'resources/avatar', 'resources/con
   'scripts/generate-offline-loop.mjs', 'scripts/prepare-avatar-assets.mjs', 'scripts/generate-avatar-audio.mjs',
   'scripts/native', 'scripts/build-wake-score-native.ps1', 'scripts/build-wake-score-native.mjs', 'scripts/prepare-wake-score-native.mjs',
   'scripts/prepare-camera-tracker.mjs', 'deploy/macos/camera-tracker.swift', 'deploy/macos/camera-rate-probe.m',
-  'scripts/prepare-media-file.mjs', 'deploy/macos/media-file-prepare.swift', 'deploy/macos/music-loop.swift',
+  'scripts/prepare-media-file.mjs', 'deploy/macos/media-file-prepare.swift', 'deploy/macos/music-loop.swift', 'deploy/macos/dance-analysis.swift',
   'deploy/macos/camera-usb-reset.c', 'deploy/macos/camera-usb-reset.h', 'scripts/memory-qa-speech.swift',
   'scripts/raven-qa-transcription-comparison.swift', 'scripts/raven-qa-resample.swift']
 const requiredOutputs = ['main/index.js', 'preload/mirror.js', 'preload/console.js',

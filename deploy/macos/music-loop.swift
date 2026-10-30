@@ -1,11 +1,12 @@
-// Main-owned playback only. No microphone, default-device or volume changes.
+// Main-owned playback. Dance volume is an explicit one-shot command; no microphone/default-device changes.
 import Foundation
 import AVFoundation
 import CoreAudio
 import Darwin
 
-func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
-  AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+             _ element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress {
+  AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
 }
 func emit(_ event: String, _ values: [String: Any] = [:]) {
   let data = try! JSONSerialization.data(withJSONObject: values.merging(["event": event]) { _, new in new }, options: .sortedKeys)
@@ -54,6 +55,43 @@ final class Playback {
   var lastAdvance = Date()
   let parent = getppid()
   var closed = false
+  var savedVolumes: [(Output, UInt32, Float32)] = []
+  var danceVolumeStarted = false
+
+  func setDanceVolume(_ value: Float32, capture: Bool) {
+    var controlled = 0, verified = true
+    for output in route {
+      var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
+      let elements: [UInt32] = AudioObjectHasProperty(output.id, &main) ? [0] : [1, 2]
+      for element in elements {
+        var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element), writable: DarwinBoolean = false
+        guard AudioObjectHasProperty(output.id, &property), AudioObjectIsPropertySettable(output.id, &property, &writable) == noErr, writable.boolValue else { continue }
+        var previous: Float32 = 0, size: UInt32 = 4
+        guard AudioObjectGetPropertyData(output.id, &property, 0, nil, &size, &previous) == noErr else { verified = false; continue }
+        if capture { savedVolumes.append((output, element, previous)) }
+        var next = value
+        if AudioObjectSetPropertyData(output.id, &property, 0, nil, 4, &next) != noErr { verified = false; continue }
+        var observed: Float32 = 0
+        if AudioObjectGetPropertyData(output.id, &property, 0, nil, &size, &observed) != noErr || abs(observed-value) > 0.015 { verified = false }
+        controlled += 1
+      }
+    }
+    emit("volume", ["outputs": route.count, "controlled": controlled, "verified": verified])
+  }
+  func restoreVolumes() {
+    for (old, element, previous) in savedVolumes {
+      guard let output = outputs().first(where: { $0.uid == old.uid }) else { continue }
+      var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
+      let name = textProperty(output.id, kAudioObjectPropertyName) ?? ""
+      var level: Float32 = name.localizedCaseInsensitiveContains("Jabra Speak2 75") ? 0.7 : previous
+      var size: UInt32 = 4, observed: Float32 = 0
+      if AudioObjectSetPropertyData(output.id, &property, 0, nil, 4, &level) != noErr
+        || AudioObjectGetPropertyData(output.id, &property, 0, nil, &size, &observed) != noErr || abs(observed-level) > 0.015 {
+        emit("volume_restore_failed")
+      }
+    }
+    savedVolumes.removeAll()
+  }
 
   func releaseItem() {
     player?.pause(); player?.replaceCurrentItem(with: nil); player = nil
@@ -63,7 +101,7 @@ final class Playback {
     endObserver = nil; failureObserver = nil
   }
   func close(_ code: Int32 = 0) -> Never {
-    closed = true; tick?.invalidate(); releaseItem()
+    closed = true; tick?.invalidate(); releaseItem(); restoreVolumes()
     if aggregate != 0 { AudioHardwareDestroyAggregateDevice(aggregate); aggregate = 0 }
     emit("stopped"); exit(code)
   }
@@ -123,6 +161,9 @@ final class Playback {
       let gain = message["gain"] as? Double, gain.isFinite, gain >= 0, gain <= 1,
       let uid = textProperty(aggregate, kAudioDevicePropertyDeviceUID) else { fail("operator_loop_music_protocol_invalid") }
     releaseItem(); track = id; reportedPlaying = false; lastPosition = 0; lastAdvance = Date()
+    if let level = message["danceVolume"] as? Double, level.isFinite, level >= 0, level <= 1, !danceVolumeStarted {
+      danceVolumeStarted = true; setDanceVolume(Float32(level), capture: true)
+    }
     // The shared File Provider cache intentionally uses .media names. Preserve
     // the original file's container type instead of relying on that extension.
     guard #available(macOS 14.0, *) else { fail("operator_loop_music_platform_unsupported") }
@@ -152,13 +193,17 @@ final class Playback {
   }
   func start() {
     setRoute(outputs())
-    tick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+    tick = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
       guard let self = self, !self.closed else { return }
       if getppid() != self.parent || self.parent == 1 { self.close() }
       let next = outputs()
       if next != self.route { self.setRoute(next) }
       guard let player = self.player else { return }
       let seconds = player.currentTime().seconds
+      if self.danceVolumeStarted && seconds.isFinite && seconds >= 0 {
+        emit("clock", ["id": self.track, "positionMs": seconds*1000, "sentAt": Date().timeIntervalSince1970*1000,
+          "rate": player.timeControlStatus == .playing ? 1 : 0])
+      }
       if seconds.isFinite && seconds > self.lastPosition {
         self.lastPosition = seconds; self.lastAdvance = Date()
         if !self.reportedPlaying && seconds >= 0.05 {
@@ -181,10 +226,15 @@ terminate.resume(); interrupt.resume()
 DispatchQueue.global().async {
   while let line = readLine() {
     guard line.utf8.count <= 16384, let data = line.data(using: .utf8),
-      let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any], message["action"] as? String == "play" else {
+      let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any], ["play", "volume"].contains(message["action"] as? String ?? "") else {
       DispatchQueue.main.async { playback.fail("operator_loop_music_protocol_invalid") }; return
     }
-    DispatchQueue.main.async { playback.play(message) }
+    DispatchQueue.main.async {
+      if message["action"] as? String == "volume" {
+        guard playback.danceVolumeStarted, let value = message["value"] as? Double, value.isFinite, value >= 0, value <= 1 else { return }
+        playback.setDanceVolume(Float32(value), capture: false)
+      } else { playback.play(message) }
+    }
   }
   DispatchQueue.main.async { playback.close() }
 }
