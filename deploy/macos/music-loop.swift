@@ -138,8 +138,20 @@ final class Playback {
     emit("stopped"); exit(code)
   }
   func fail(_ reason: String) -> Never { emit("failed", ["reason": reason]); close(1) }
+  /// A speaker that comes back (Bluetooth) joins mid-song; one that leaves is dropped. If a
+  /// half-ready reconnect cannot join, keep playing on the speakers that worked and retry.
+  var routeRetry = Date.distantPast, routeRetryDelay: TimeInterval = 5
   func setRoute(_ next: [Output]) {
     guard !next.isEmpty else { fail("operator_loop_music_no_outputs") }
+    guard let reason = buildRoute(next) else { routeRetryDelay = 5; return }
+    let previous = route
+    guard !previous.isEmpty, previous != next, buildRoute(previous) == nil else { fail(reason) }
+    // Each attempt briefly pauses every speaker: back off (5 s doubling to 5 min).
+    routeRetry = Date(timeIntervalSinceNow: routeRetryDelay); routeRetryDelay = min(routeRetryDelay * 2, 300)
+    emit("route_kept", ["outputs": previous.count, "reason": reason])
+  }
+  /// Nil on success, else the failure reason (the player is left paused on no route).
+  func buildRoute(_ next: [Output]) -> String? {
     let current = player?.currentTime()
     player?.pause()
     // Disconnect the renderer before destroying its old CoreAudio route.
@@ -161,7 +173,7 @@ final class Playback {
       }
     ]
     guard AudioHardwareCreateAggregateDevice(description as CFDictionary, &aggregate) == noErr else {
-      fail("operator_loop_music_route_failed")
+      aggregate = 0; return "operator_loop_music_route_failed"
     }
     // Do not silently claim all outputs if CoreAudio accepted only part of them.
     var property = address(kAudioAggregateDevicePropertyActiveSubDeviceList), size: UInt32 = 0
@@ -171,22 +183,23 @@ final class Playback {
         Int(size) / MemoryLayout<AudioObjectID>.size == next.count { verified = true; break }
       Thread.sleep(forTimeInterval: 0.025)
     }
-    guard verified else { fail("operator_loop_music_route_incomplete") }
+    guard verified else { return "operator_loop_music_route_incomplete" }
     // Counting sub-devices alone does not prove stereo duplication. A concatenated
     // route can report all devices while only its first pair receives the song.
     property = address(kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyScopeOutput)
     guard AudioObjectGetPropertyDataSize(aggregate, &property, 0, nil, &size) == noErr,
-      size >= MemoryLayout<AudioBufferList>.size else { fail("operator_loop_music_route_incomplete") }
+      size >= MemoryLayout<AudioBufferList>.size else { return "operator_loop_music_route_incomplete" }
     let storage = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
     defer { storage.deallocate() }
-    guard AudioObjectGetPropertyData(aggregate, &property, 0, nil, &size, storage) == noErr else { fail("operator_loop_music_route_incomplete") }
+    guard AudioObjectGetPropertyData(aggregate, &property, 0, nil, &size, storage) == noErr else { return "operator_loop_music_route_incomplete" }
     let buffers = UnsafeMutableAudioBufferListPointer(storage.assumingMemoryBound(to: AudioBufferList.self))
-    guard buffers.count == 1, buffers[0].mNumberChannels > 0 else { fail("operator_loop_music_route_incomplete") }
+    guard buffers.count == 1, buffers[0].mNumberChannels > 0 else { return "operator_loop_music_route_incomplete" }
     route = next
     player?.audioOutputDeviceUniqueID = uid
     if let current = current, current.isValid { player?.seek(to: current) }
     player?.play(); lastAdvance = Date()
     emit("ready", ["outputs": next.count, "wireless": next.filter { $0.wireless }.count, "streams": buffers.count, "channels": buffers[0].mNumberChannels])
+    return nil
   }
   func play(_ message: [String: Any]) {
     guard let id = message["id"] as? Int, id > 0, let path = message["path"] as? String, path.hasPrefix("/"),
@@ -230,7 +243,7 @@ final class Playback {
       guard let self = self, !self.closed else { return }
       if getppid() != self.parent || self.parent == 1 { self.close() }
       let next = outputs()
-      if next != self.route { self.setRoute(next) }
+      if next != self.route && Date() >= self.routeRetry { self.setRoute(next) }
       guard let player = self.player else { return }
       let seconds = player.currentTime().seconds
       if self.danceVolumeStarted && seconds.isFinite && seconds >= 0 {

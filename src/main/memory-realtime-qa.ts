@@ -11,6 +11,16 @@ export async function runMemoryRealtimeQa(input: Phase4QaInput, pass: (step: str
     input.onEvidence({ step: 'memory_realtime_failure_metadata', status: 'info', item: flags })
     throw Error('phase4_qa_memory_realtime_' + reason)
   }
+  // Production runtime events (the same ones Raven QA reads), not renderer guesses.
+  const mainEvent = async (reason: string, since: number) => {
+    const end = Date.now() + 35_000
+    while (Date.now() < end) {
+      const page = input.runtime.console.getEvents({ limit: 200, source: 'runtime' })
+      if (page.ok && page.value.events.some(e => e.reason === reason && Date.parse(e.time) >= since)) return
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    throw Error('phase4_qa_memory_realtime_' + reason)
+  }
   await evaluate(`
     const q=window.__memoryQa={channels:[],tracks:[],results:[],calls:[],answers:[],items:[],briefs:[],acked:[],errors:[],done:0,stops:0,active:false,audio:false,relevant:false,stage:'identity'};
     const Original=window.RTCPeerConnection;
@@ -22,6 +32,8 @@ export async function runMemoryRealtimeQa(input: Phase4QaInput, pass: (step: str
             let r;try{r=JSON.parse(e.item.output)}catch{};if(r?.memory?.code||r?.code)q.results.push(r.memory?.code??r.code);
           }
           if(e.type==='conversation.item.create'&&e.item?.id?.startsWith('memory-brief-'))q.briefs.push(e.item.id);
+          // The confirmation dialogue owns responses while it turns automatic replies off.
+          if(e.type==='session.update'&&typeof e.session?.audio?.input?.turn_detection?.create_response==='boolean')q.autoResponse=e.session.audio.input.turn_detection.create_response;
           send(data);
         };
         c.addEventListener('message',m=>{const e=JSON.parse(m.data);
@@ -48,24 +60,25 @@ export async function runMemoryRealtimeQa(input: Phase4QaInput, pass: (step: str
     };
   `)
   const send = async (id: string, text: string) => {
-    // Identification replaces the session (clean confirmation session): never write
-    // to a data channel that is still connecting.
     await wait("const q=window.__memoryQa;return q.stops>0&&!q.active&&!q.audio&&q.channels.at(-1)?.readyState==='open'", 'response_boundary')
     await evaluate(`const q=window.__memoryQa;if(${JSON.stringify(id)}==='memory-qa-recall'){q.stage='recall';q.relevant=false}
       const c=q.channels.at(-1);c.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'input_audio_buffer.speech_started',event_id:'qa-speech',audio_start_ms:0,item_id:${JSON.stringify(id)}})}));
       c.send(JSON.stringify({type:'conversation.item.create',item:{id:${JSON.stringify(id)},type:'message',role:'user',content:[{type:'input_text',text:${JSON.stringify(text)}}]}}));`)
     await wait(`return window.__memoryQa.items.includes(${JSON.stringify(id)})`, 'input_ack')
-    await evaluate(`const c=window.__memoryQa.channels.at(-1);c.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'conversation.item.input_audio_transcription.completed',event_id:'qa-transcript',content_index:0,item_id:${JSON.stringify(id)},transcript:${JSON.stringify(text)}})}));c.send(JSON.stringify({type:'response.create'}));`)
+    await evaluate(`const c=window.__memoryQa.channels.at(-1);c.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'conversation.item.input_audio_transcription.completed',event_id:'qa-transcript',content_index:0,item_id:${JSON.stringify(id)},transcript:${JSON.stringify(text)}})}));if(window.__memoryQa.autoResponse!==false)c.send(JSON.stringify({type:'response.create'}));`)
   }
   try {
     await input.console.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Start Conversation').click()`, true)
     await wait("return window.__memoryQa.channels.at(-1)?.readyState==='open'", 'connect')
     await wait("return window.__memoryQa.stops>0", 'greeting_finished')
+    const identifyAt = Date.now()
     await send('memory-qa-identify', 'My name is Synthetic QA Person. Can you recall what we discussed before?')
     await wait("return window.__memoryQa.results.includes('memory_confirmation_required')&&window.__memoryQa.stops>0", 'identity_tool')
     pass('memory_realtime_identity_tool')
+    // Answer only after the app has actually asked; an early "yes" is rejected by design.
+    await mainEvent('memory_question_delivered', identifyAt)
     await send('memory-qa-confirm', 'yes')
-    await wait("return window.__memoryQa.acked.length>0", 'brief_ack')
+    await mainEvent('memory_brief_installed', identifyAt)
     pass('memory_realtime_provider_brief_ack')
     await wait("return window.__memoryQa.done>=2", 'confirmation_response')
     await send('memory-qa-recall', 'What quiet Sunday outing had I settled on?')

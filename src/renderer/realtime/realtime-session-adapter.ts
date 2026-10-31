@@ -185,6 +185,15 @@ function readProperty(value: unknown, key: string): unknown {
   }
 }
 
+/** False only when response.done lists its whole output and none of it is audio. */
+function responseHasAudio(response: unknown): boolean {
+  const output = readProperty(response, 'output')
+  return !Array.isArray(output) || output.some(item => {
+    const content = readProperty(item, 'content')
+    return Array.isArray(content) && content.some(part => /audio/.test(String(readProperty(part, 'type'))))
+  })
+}
+
 function configuredTurnDetection(profile: string): {
   readonly type: 'semantic_vad' | 'server_vad'
   readonly eagerness?: 'low'
@@ -1474,7 +1483,12 @@ export function createRealtimeSession(
         if (typeof responseId === 'string') cue.responseId = responseId
         if (type === 'response.done') {
           cue.done = true
-          if (readProperty(response, 'status') !== 'completed') { cue.failed = true; cue.played = true }
+          if (readProperty(response, 'status') !== 'completed') {
+            cue.failed = true; cue.played = true
+            // Cancelled before any audio: nothing is buffered, and an empty buffer
+            // never acknowledges its clear, so waiting would close the session.
+            if (!responseHasAudio(response)) cue.cleared = true
+          }
           releaseFinishedCues()
         }
         else if (cue.signal.aborted) cue.abort()

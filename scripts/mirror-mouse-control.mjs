@@ -65,6 +65,7 @@ export function createMouseIo(report = () => {}, overrides = {}) {
       } finally { clearTimeout(timer) }
     },
     wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    terminate: (pid, signal) => { try { process.kill(pid, signal) } catch { /* already gone */ } },
     processes: async timeout => {
       const deadline = now() + timeout
       // Select exact executable basenames before reading their argv. Avoid
@@ -114,6 +115,7 @@ export async function operateMouse(action, io = createMouseIo()) {
     report(step, `mouse_${step}_failed`)
     return false
   }
+  let ownedPid
   const inspect = async () => {
     try {
       const timeout = budget(clientDeadline, action === 'stop' ? 500 : 1000)
@@ -122,6 +124,7 @@ export async function operateMouse(action, io = createMouseIo()) {
       if (!Array.isArray(rows)) return 'mouse_process_unavailable'
       if (rows.some(row => !Number.isSafeInteger(row?.pid) || row.pid < 1
         || row.uid !== io.uid || row.command !== CLIENT_COMMAND)) return 'mouse_client_unowned'
+      ownedPid = rows.length === 1 ? rows[0].pid : undefined
       return rows.length > 1 ? 'mouse_client_ambiguous' : rows.length ? 'owned' : 'absent'
     } catch { return 'mouse_process_unavailable' }
   }
@@ -222,10 +225,21 @@ export async function operateMouse(action, io = createMouseIo()) {
       if (await api('exit', 'EXIT') === null) failure = 'mouse_stop_failed'
       else {
         let remaining = 'owned'
-        for (let check = 0; check < 70 && budget(clientDeadline); check++) {
+        // Up to 3 s for a clean EXIT, leaving time to end an unresponsive client.
+        for (let check = 0; check < 30 && budget(clientDeadline); check++) {
           remaining = await inspect()
           if (remaining !== 'owned') break
           await io.wait(Math.min(100, budget(clientDeadline)))
+        }
+        // A client that ignored EXIT is our own dedicated process (exact user and argv):
+        // end it directly so STOP never leaves the TV mouse attached.
+        if (remaining === 'owned' && ownedPid && io.terminate) {
+          for (const signal of ['SIGTERM', 'SIGKILL']) {
+            io.terminate(ownedPid, signal)
+            for (let check = 0; check < 6 && remaining === 'owned'; check++) { await io.wait(100); remaining = await inspect() }
+            if (remaining !== 'owned') break
+          }
+          if (remaining === 'absent') report('exit', 'mouse_client_terminated')
         }
         if (remaining !== 'absent') { failure = 'mouse_stop_failed'; report('exit', 'mouse_client_exit_unverified') }
       }

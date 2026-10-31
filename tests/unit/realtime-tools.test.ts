@@ -132,6 +132,16 @@ describe('structured Realtime tool catalog', () => {
     expect(await call(tool,input)).toMatchObject({content:publicResult(REALTIME_TOOLS.tools[0].results.rejected)})
     expect(handler).not.toHaveBeenCalled(); expect(onFailure).toHaveBeenCalledExactlyOnceWith('tool_arguments_rejected')
   })
+  it('keeps only search_youtube fields, visibly, when the model copies media fields over', async () => {
+    const handler=vi.fn(async () => 'accepted' as const), onFailure=vi.fn()
+    const search=resolveRealtimeTools('Rest.').filter(spec => spec.handler === 'search_youtube')
+    expect(search).toHaveLength(1)
+    const [tool]=bindRealtimeTools(search,{search_youtube:handler},onFailure)
+    await call(tool,'{"query":"Moonlit Lake","kind":"music","mode":"once"}')
+    expect(handler).toHaveBeenCalledExactlyOnceWith({query:'Moonlit Lake'}); expect(onFailure).toHaveBeenCalledExactlyOnceWith('tool_arguments_trimmed')
+    await call(tool,'{"kind":"music"}')
+    expect(handler).toHaveBeenCalledTimes(1); expect(onFailure).toHaveBeenLastCalledWith('tool_arguments_rejected')
+  })
   it('validates structured enum arguments for future explicitly bound tools', async () => {
     const catalog=fresh(); catalog.tools[0].parameters={type:'object',properties:{mode:{type:'string',enum:['calm','bright']}},required:['mode'],additionalProperties:false}
     const handler=vi.fn(async () => 'accepted' as const)

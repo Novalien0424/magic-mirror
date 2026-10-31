@@ -14,7 +14,7 @@ Use [PROGRESS](../../../PROGRESS.md) to select relevant cases/evidence; open an 
 | Inspect captured images, framing, motion, media or failure evidence | [visual evidence](references/visual-evidence.md) |
 | User-requested disposal of owned QA artifacts | [artifact cleanup](references/artifact-cleanup.md) |
 
-Runners execute stamped `out/`; rebuild changed source rather than bypassing hashes. Use isolated synthetic fixtures and production UI paths; bridge mutation cannot claim operator authoring. Keep operator data, transcripts, credentials and unrelated desktop content out of captures.
+Runners execute stamped `out/`; rebuild changed source rather than bypassing hashes, and do not edit `src`/`resources` while a batch runs (later runs refuse the stale stamp). Use isolated synthetic fixtures and production UI paths; bridge mutation cannot claim operator authoring. Keep operator data, transcripts, credentials and unrelated desktop content out of captures.
 
 Require exit 0 plus expected executed cases for a pass; inspect the relevant screenshots. Built-in Ren does not prove Raven, Console-only does not prove portrait display, and pixels do not prove physical sound, smoothness or fog/lights. External rig coverage must identify its manifest.
 
@@ -36,5 +36,10 @@ after its welcome and leaving Dance restores 70%: re-quiet after each.
 Use guaranteed cleanup, not a success-only restore; report a failed reset/read-back
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.
+
+Electron QA holds the operator lease, so venue Stream Deck presses fail with
+`electron_owner_busy` meanwhile: tell the owner before a long batch. Acoustic wake
+uses the Mac mini speaker as the synthetic visitor; at its normal 1% venue level a
+miss is an environment limit, not a product failure.
 
 Fix observed failures and rerun the affected mode within scope. Preserve failed evidence and actual manual exclusions. Record command, exit, cases, build/artifact links, visual findings and remaining manual checks. QA does not advance phases.

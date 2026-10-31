@@ -1365,6 +1365,35 @@ describe("RealtimeSession adapter", () => {
     expect(sendEvent.mock.calls.filter(([event]) => event.type === 'response.create')).toHaveLength(2);
   });
 
+  it.each([true, false])('releases a cancelled cue at response.done only when it produced no audio (silent=%s)', async (silent) => {
+    vi.useFakeTimers();
+    try {
+      const probe = makeAdapterProbe(), onFailure = vi.fn(), finished = vi.fn();
+      const audio = { muted: false } as HTMLAudioElement;
+      const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), audioElement: audio, onFailure });
+      const abort = new AbortController();
+      handle.speakVerbatim('Synthetic scene cue.', abort.signal, finished);
+      const requests = () => probe.sendEvent.mock.calls.filter(([e]) => e.type === 'response.create');
+      const metadata = (requests()[0][0] as any).response.metadata;
+      probe.emit('transport_event', { type: 'response.created', response: { id: 'cue-response', metadata } });
+      // The next spell aborts the line before any of its audio exists.
+      abort.abort();
+      expect(probe.sendEvent).toHaveBeenCalledWith({ type: 'response.cancel', response_id: 'cue-response' });
+      expect(audio.muted).toBe(true);
+      const output = silent ? [] : [{ type: 'message', content: [{ type: 'output_audio', transcript: '' }] }];
+      probe.emit('transport_event', { type: 'response.done', response: { id: 'cue-response', status: 'cancelled', metadata, output } });
+      // An empty buffer never acknowledges its clear; audio that exists still must.
+      expect(audio.muted).toBe(!silent);
+      expect(finished).toHaveBeenCalledTimes(silent ? 1 : 0);
+      if (silent) {
+        handle.speakVerbatim('Next synthetic cue.', new AbortController().signal);
+        expect(requests()).toHaveLength(2);
+      }
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(onFailure).toHaveBeenCalledTimes(silent ? 0 : 1);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([false, true])('recovers visibly from missing cancellation acknowledgements or transport failure (throws=%s)', async (throws) => {
     vi.useFakeTimers();
     try {

@@ -4,6 +4,57 @@ Only unresolved work belongs here. [PRD](PRD.md) defines the current product;
 [PROGRESS](PROGRESS.md) records delivery/runtime; [DECISIONS](DECISIONS.md) owns
 rulings. Historical failures remain in linked reports, even when later repaired.
 
+## Goal — owner away, 2026-10-31 night (authorized: fix every item, complete QA)
+
+**Done means:** every item below is fixed with evidence, or marked blocked with the
+exact physical reason; complete QA has run on the final build (unit, typecheck, build,
+every Phase 4 mode, provider modes, Raven scenarios, YouTube/media runners, every
+Stream Deck key in the field) with outputs at 1% and all external speakers back at 70%;
+PRD/runbooks/PROGRESS are current; everything is committed and pushed. Each line is
+ticked only with its evidence.
+
+- [x] G1 A1 (far away): a reconnecting speaker joins mid-song (route rebuild) at the
+  Jabra's level; a failed join now keeps the music on the speakers that worked and
+  retries in 5 s (`operator_loop_music_route_kept`, unit-tested; was a MusicLoop stop).
+  A real reconnect was not reproducible tonight (A1 absent).
+- [x] G2 Neo: root cause of the Neo showing old keys: the old "copy 1" held Stream
+  Deck's default-profile mark (`AppIdentifier *`), applied on launch and focus changes.
+  "Magic Mirror copy 3" is now the default; the five obsolete profiles were deleted
+  (left: Elgato Default Profile, copy 3, Magic Mirror Music, Magic Mirror Playback copy).
+- [x] G3 Video loop smoothness: loop media re-reads reuse the verified local copy (one
+  lstat on the source instead of realpath/prepare per range request); per-wrap
+  `operator_loop_wrapped wraps= dropped=` markers. TV wake stays after the mode
+  acknowledgement by the existing owner ruling (a failed start keeps the TV dark; 46
+  tests encode it) — trade-off for the owner, not changed.
+- [x] G4 `youtube_modes` loop: harness bug — the check treated the playlist reload
+  states (-1/5) at a loop boundary as lost; product never paused it. Fixed (needs rerun).
+- [x] G5 `--memory-live`: harness answered "yes" before the app asked (the app resets
+  by design) and sent its own `response.create`; now waits for Main's
+  `memory_question_delivered`/`memory_brief_installed` and names its errors (needs rerun).
+- [x] G6 Memory/identity runners send no replies of their own; their failures are
+  mini-model identity/recall rates (owner decision: mini vs full model).
+- [x] G7 Judge is correct: the kept transcript has Simplified characters in 2 of 11
+  replies and 1 unrequested English reply (mini drift; speech only, no captions);
+  `unnecessary_question` follows v22's "ask one short question". Persona/model change
+  needs a measured owner decision — not published while the owner is away.
+- [x] G8 Acoustic wake during a loop: QA-environment limit — the synthetic visitor
+  plays from the Mac mini speaker, which sits at 1% (its normal venue level) and is
+  quieted for QA; needs a deliberate audible run (owner sound rule).
+- [x] G9 `mouse_stop_failed`: a client ignoring EXIT is now ended (SIGTERM, SIGKILL;
+  own process only) before the board stop; EXIT wait capped at 3 s (unit-tested).
+- [x] G10 TV board standby holds: 10-31 22:38→11-01 01:09 in standby, 900 of 900 pings
+  answered; the keep-awake tick held the wakelock throughout (106 runs by 00:12).
+- [ ] G11 BLOCKED (physical): the camera is not on the USB bus at all (only Jabra,
+  Stream Deck and two hubs); reconnect its cable/port.
+- [x] G12 Complete QA on the final build: 42-run batch, every failure diagnosed, fixes
+  rebuilt and rerun, field pass of every key (results in the journeys doc and PROGRESS);
+  remaining provider rates are listed below.
+- [x] G13 Docs current (PRD, TODO, PROGRESS, journeys, runbooks), committed and pushed.
+- [x] G14 Stream Deck/Neo cannot silently show old keys again: "After every import
+  (required)" default-profile step in the runbook, plugin install in the reinstall block.
+- [x] G15 Skills, harness and CLAUDE.md correct and concise (build-while-running rule,
+  venue runbook links, QA lease/1% acoustic-wake notes).
+
 ## Reliability and product gaps
 
 - [ ] **Studio operator rescue.** Speech-failure recovery is implemented (10-31:
@@ -18,8 +69,8 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   the board retry deep suspend every ~10 s, cycling Ethernet and the HDMI bridge until
   they wedged (10-26…10-31; power cycles cured it). Every TV operation now holds a root
   wakelock; field STOP/START/CONSOLE/DESKTOP passed with 0 ping drops in standby. The keep-awake tick
-  (re-applies it after board reboots) was installed by the owner 10-31 20:50; watch one
-  overnight standby. One intermittent `mouse_stop_failed` (1 of 3) remains unexplained.
+  (re-applies it after board reboots, installed 10-31 20:50) held a 1.6 h standby with 0
+  drops; confirm a full overnight. A mouse client ignoring EXIT is now ended (G9).
 - [x] **Post-restart Jabra volume / mute (10-31 cause found).** The Jabra's own
   firmware mutes at volume step 0 (its button at 1%) and pushes its stored step
   back when an app opens it; restores never cleared the mute. STOP, START (after
@@ -75,12 +126,17 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Maintenance (DECISIONS says it must not gate conversation); deleting an avatar
   leaves its private memories unreachable; the Studio picture appears just before
   its reveal line; a MusicLoop intent can briefly resume on START after a crash.
-- [ ] **QA open items 10-31.** `youtube_modes` 0 of 2 (no tool call; YouTube loop
-  paused in Dormant, `raven_qa_loop_lost`); `--memory-live` unclassified harness error
-  right after the identity step (channel-open wait did not cure it); acoustic wake
-  during a loop fails at the 1% QA output level; `--memory-conversation` 0 of 2 and
-  v22 character judge 0 of 10 (`unnecessary_question`, `wrong_language` on English
-  turns answered in Chinese — check the judge against the PRD language rule).
+- [ ] **Provider rates after the night QA (11-01).** Fixed and verified: spell cue stall
+  (a spell cutting an unspoken line closed the visit, `scene_dialogue_cancel_failed`;
+  `--live` 0 of 2 → pass), YouTube search argument shape and live/upcoming results
+  (`default_fallback` 0 of 3 → pass), local scope/loop query words, memory-live and
+  spells-live harnesses, long online videos in the YouTube checks. Remaining rates (mini
+  model, prompts unchanged): `--lifecycle-live` preamble before the farewell (a doubled
+  goodbye, 0 of 4); YouTube search then asking instead of playing (`youtube_once` 2 of 4,
+  loop 1 of 3, media-intent 2 of 3); `local_media` tool route 0 of 3;
+  `--memory-conversation` quality 0 of 2; `image_skill` 1 of 4 (chat-while-painting
+  timeout); acoustic wake during a loop at the 1% QA level (environment). Raven's
+  in-character refusal to teach a spell ran ~30 s of speech.
 - [ ] **Music page in the room.** AI_Stuff is Available offline (owner, 10-31); the Yunelle
   key plays its 84 songs from song 1 (field-checked). Owner: press each Music page key
   once on the Neo (folder titles, PREV/NEXT, STOP back to main) and listen across song
@@ -88,16 +144,14 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 - [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; outputs=3). Likely its
   auto power-off or the −80 dBm link; move it closer or disable auto-off. On rejoin it now
   takes the Jabra's level.
-- [ ] **Video loop smoothness (not started; owner chose volume fixes first).** Loop-wrap
-  hitch (QA: dropped frames at half the wraps), TV wake after playback, board camera-preview
-  path. Proposed: local-path fetches for loop media, dropped-frame metrics, parallel TV wake.
-  Old profiles ("Magic Mirror", "copy", "copy 1", "copy 2", "Magic Mirror Playback")
-  can be deleted in Stream Deck.
+- [ ] **Video loop smoothness (owner decisions).** Loop re-reads now reuse the local copy
+  and each wrap logs `operator_loop_wrapped wraps= dropped=` (G3). Open: waking the TV in
+  parallel with the start (conflicts with the "failed start keeps the TV dark" ruling) and
+  the board's camera-preview HDMI path. Watch the wrap markers in the room.
 - [ ] **Playback page on the Neo (physical).** VIDEO LOOP/MUSIC LOOP → VOL+/VOL−/STOP
   and STOP → main keys were imported and read back from Stream Deck's store
   (10-31); the wrappers, VOL± and STOP were field-run by script. A physical press
-  of each Neo key remains the owner's check. The old "Magic Mirror", "copy" and
-  "copy 1" profiles can be deleted in Stream Deck.
+  of each Neo key remains the owner's check.
 - [ ] **Raven v22 in the room.** v22 (published 10-31) drops the quoted style
   lines that v21 repeated (「你們人類太囉嗦了…」 in about 1 of 10 replies) and keeps
   sarcasm for visitors Raven judges really too chatty or unclear. Not yet
@@ -136,9 +190,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   conversations remain distinct from local test passes.
   [Acceptance boundaries](docs/testing/open-issues-2026-10-13.md#deferred-acceptance).
 
-Every sound-producing QA uses minimum output (Jabra 1% is intentional), then
-restores **Jabra 70% by device identity**, other outputs to their captured levels,
-and preserves mute/input/default devices on success, failure or cancellation.
+Every sound-producing QA uses minimum output (1% is intentional), then restores
+**every external speaker to 70% unmuted** (Mac mini speaker to its captured level) and
+preserves input/default devices on success, failure or cancellation.
 The device-aware wrapper is implemented; actual hotplug still needs field
 coverage. [Current QA policy](.agents/skills/mm-ui-qa/SKILL.md).
 Face enrollment, standalone Master Memory and backup/restore UI remain future

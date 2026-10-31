@@ -78,7 +78,7 @@ describe('dedicated operator loop ownership', () => {
     expect(h.ready).not.toHaveBeenCalled()
     h.video.currentTime = .1; h.audio.currentTime = .1; h.video.update()
     expect(h.ready).toHaveBeenCalledOnce()
-    expect(h.reports).toEqual([{ generation: 7, status: 'playing', videoTimeMs: 100, audioTimeMs: 100, frames: 1 }])
+    expect(h.reports).toEqual([{ generation: 7, status: 'playing', videoTimeMs: 100, audioTimeMs: 100, frames: 1, droppedFrames: 0, wraps: 0 }])
     h.video.update(); h.audio.playing()
     expect(h.reports.filter(report => report.status === 'playing')).toHaveLength(1)
     stop()
@@ -107,10 +107,15 @@ describe('dedicated operator loop ownership', () => {
     h.video.playing(); h.audio.playing(); h.video.frames = 3; h.video.update()
     h.video.currentTime = .25; h.audio.currentTime = 4.5; h.video.frames = 70
     await vi.advanceTimersByTimeAsync(1000)
-    expect(h.reports.at(-1)).toEqual({ generation: 7, status: 'progress', videoTimeMs: 250, audioTimeMs: 4500, frames: 70 })
+    expect(h.reports.at(-1)).toEqual({ generation: 7, status: 'progress', videoTimeMs: 250, audioTimeMs: 4500, frames: 70, droppedFrames: 0, wraps: 0 })
     h.video.currentTime = 1.25; h.audio.currentTime = .1; h.video.frames = 100
     await vi.advanceTimersByTimeAsync(1000)
-    expect(h.reports.at(-1)).toMatchObject({ videoTimeMs: 1250, audioTimeMs: 100, frames: 100 })
+    expect(h.reports.at(-1)).toMatchObject({ videoTimeMs: 1250, audioTimeMs: 100, frames: 100, wraps: 0 })
+    // The video wrapping back to its start counts once, with its dropped frames.
+    h.video.getVideoPlaybackQuality = () => ({ totalVideoFrames: 130, droppedVideoFrames: 4 }) as VideoPlaybackQuality
+    h.video.currentTime = .05
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.reports.at(-1)).toMatchObject({ videoTimeMs: 50, wraps: 1, droppedFrames: 4 })
     expect(h.video.play).toHaveBeenCalledOnce(); expect(h.audio.play).toHaveBeenCalledOnce()
     stop()
   })
@@ -122,7 +127,7 @@ describe('dedicated operator loop ownership', () => {
     expect(h.video.muted).toBe(false); expect(h.video.volume).toBe(.63)
     expect(h.audio.play).not.toHaveBeenCalled(); expect(h.audio.src).toBe('')
     h.video.playing(); h.video.frames = 1; h.video.currentTime = .1; h.video.update()
-    expect(h.reports[0]).toEqual({ generation: 7, status: 'playing', videoTimeMs: 100, frames: 1 })
+    expect(h.reports[0]).toEqual({ generation: 7, status: 'playing', videoTimeMs: 100, frames: 1, droppedFrames: 0, wraps: 0 })
     stop()
   })
 
@@ -175,7 +180,7 @@ describe('dedicated operator loop ownership', () => {
     expect(h.video.pause).toHaveBeenCalledTimes(pauses)
     h.video.frames = 1; h.video.currentTime = .1; h.audio.currentTime = .1; h.video.playing(); h.audio.playing()
     expect(h.reports.filter(report => report.status === 'playing')).toEqual([
-      { generation: 8, status: 'playing', videoTimeMs: 100, audioTimeMs: 100, frames: 1 },
+      { generation: 8, status: 'playing', videoTimeMs: 100, audioTimeMs: 100, frames: 1, droppedFrames: 0, wraps: 0 },
     ])
     expect(h.video.src).toContain('operatorLoop=8')
     nextStop()

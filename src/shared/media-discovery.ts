@@ -62,7 +62,9 @@ let segmenter: Intl.Segmenter | undefined
 // original lookup misses, so titles containing these words retain priority.
 const searchSyntax = new Set(['請', '请', '幫', '帮', '我', '想', '要', '聽', '听', '看', '播放', '放', '一下', '的', '唱', '唱的', '那個', '那个',
   // Generic media nouns around a title ("雨聲鋼琴音樂"), never a title clue on their own.
-  '音樂', '音乐', '歌', '歌曲', '曲子'])
+  '音樂', '音乐', '歌', '歌曲', '曲子',
+  // Scope and loop words ("我們 寶庫 雨聲 鋼琴 循環"): source and mode, not title clues.
+  '我們', '我们', '寶庫', '宝库', '資料夾', '资料夹', '循環', '循环', '重複', '重复'])
 function queryClues(query: string): string[] {
   segmenter ??= new Intl.Segmenter('zh-TW', { granularity: 'word' })
   return [...segmenter.segment(query)].filter(part => part.isWordLike && !searchSyntax.has(part.segment))

@@ -56,6 +56,18 @@ function advancePlayback(controller: Loop, generation: number) {
 }
 
 describe('operator loop appliance controller', () => {
+  it('reports each loop wrap once with the frames dropped since the previous wrap', async () => {
+    const f = fixture(), smoothness = vi.fn()
+    const loop = createOperatorLoop({ ...f, path: fixturePath(), smoothness }); controllers.push(loop)
+    await loop.save(settings); void loop.play(); await vi.advanceTimersByTimeAsync(0)
+    const generation = loop.view().snapshot.generation
+    advancePlayback(loop, generation)
+    loop.report({ generation, status: 'progress', videoTimeMs: 300, frames: 9, droppedFrames: 2, wraps: 0 })
+    loop.report({ generation, status: 'progress', videoTimeMs: 50, frames: 12, droppedFrames: 5, wraps: 1 })
+    loop.report({ generation, status: 'progress', videoTimeMs: 1050, frames: 40, droppedFrames: 5, wraps: 1 })
+    loop.report({ generation, status: 'progress', videoTimeMs: 40, frames: 44, droppedFrames: 6, wraps: 2 })
+    expect(smoothness.mock.calls).toEqual([[1, 5], [2, 1]])
+  })
   it('owns Dance without input, makes repeats idempotent, cancels late start and never restores loud mode', async () => {
     const path = fixturePath(), started = deferred<boolean>()
     const dance = { start: vi.fn(() => started.promise), stop: vi.fn(async () => {}) }

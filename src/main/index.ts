@@ -1209,7 +1209,9 @@ void app.whenReady().then(async () => {
     subfolder: () => musicFolder,
   })
   // The Stream Deck plugin titles its three folder keys from this file (names only, no paths).
-  const musicFoldersFile = join(app.getPath('home'), 'Library/Caches/MagicMirror/music-folders.json')
+  // QA keeps its fixture folders in its own profile, never on the venue's keys.
+  const musicFoldersFile = phase4QaEnabled ? join(app.getPath('userData'), 'music-folders.json')
+    : join(app.getPath('home'), 'Library/Caches/MagicMirror/music-folders.json')
   const musicFoldersState = async () => ({ version: 1, folders: (await musicSubfolders(mediaFolders.view().shared?.path)).slice(0, 3),
     active: musicFolder ?? null, playing: !!operatorLoop?.isMusicMode() })
   const publishMusicFolders = async (state?: Record<string, unknown>) => {
@@ -1315,6 +1317,7 @@ void app.whenReady().then(async () => {
       if (win && !win.isDestroyed()) win.webContents.send('mirror:operator-loop', snapshot)
     },
     report: reason => marker('OPERATOR_LOOP', { reason }),
+    smoothness: (wraps, dropped) => marker('OPERATOR_LOOP', { reason: 'operator_loop_wrapped', wraps, dropped }),
   })
   const wakeDefaults = new Map<string, Promise<import('../shared/console-types').ConsoleWakeTuningDefaults | null>>()
 
@@ -2022,7 +2025,7 @@ void app.whenReady().then(async () => {
   memoryIndexer.schedule()
   if (phase4QaEnabled && process.env['MIRROR_MEMORY_LIVE_QA'] === '1') memoryPipelineQa = async evidence => runMemoryLiveQa({
     path: join(app.getPath('userData'), 'private-memory', 'synthetic-e2e.sqlite'), model: await memoryModel(),
-    extract: memoryExtractor, embedder: memoryEmbedder, evidence })
+    extract: memoryExtractor, embedder: memoryEmbedder, interpret: memoryInterpreter, evidence })
   if (phase4QaEnabled && process.env['MIRROR_MEMORY_CALENDAR_QA'] === '1') memoryPipelineQa = async evidence => {
     let validationReason = 'memory_extraction_invalid'
     const extract = createMemoryExtractor({ credentialSource, report: reason => { validationReason = reason; memoryReport(reason) } })

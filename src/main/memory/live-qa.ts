@@ -3,9 +3,10 @@ import { MemoryLearning } from './learning'
 import { RelationshipMemory } from './relationship'
 import type { MemoryEmbedder } from './contracts'
 import type { MemoryExtractor } from './extractor'
+import type { MemoryInterpreter } from './intent'
 
 /** Isolated synthetic real-provider contract check. Only case names/boolean outcomes leave Main. */
-export async function runMemoryLiveQa(options: { path: string; model: string; extract: MemoryExtractor; embedder: MemoryEmbedder; evidence(step: string): void }): Promise<void> {
+export async function runMemoryLiveQa(options: { path: string; model: string; extract: MemoryExtractor; embedder: MemoryEmbedder; interpret: MemoryInterpreter; evidence(step: string): void }): Promise<void> {
   let repository = createMemoryRepository(options.path)
   let learning: MemoryLearning | undefined
   let step = 'memory_live_extraction'
@@ -36,12 +37,17 @@ export async function runMemoryLiveQa(options: { path: string; model: string; ex
     repository = createMemoryRepository(options.path)
     check((await repository.list('raven-synthetic', 'Synthetic Guest')).length === entries.length)
     learning = new MemoryLearning({ repository, extract: options.extract, model: async () => options.model, report: () => {} })
-    const session = new RelationshipMemory({ repository, learning, embedder: options.embedder, report: () => {}, controlPhrases: async () => [] })
+    const session = new RelationshipMemory({ repository, learning, embedder: options.embedder, interpret: options.interpret, report: () => {}, controlPhrases: async () => [] })
     const state = { active: true, avatarId: 'raven-synthetic', realtimeSessionId: 'synthetic-session', sessionGeneration: 1 }
     const recall = { action: 'recall', name: '', topic: '', text: '', query: '怎樣讓展出的作品看起來舒服、不刺眼？' }
     step = 'memory_live_locked_before_confirmation'
     check((await session.request(state, recall)).code === 'memory_identity_required')
-    await session.request(state, { ...recall, action: 'identify', name: 'Synthetic Guest', query: '' })
+    // Production order: spoken introduction, identify, the question actually played, then the answer.
+    await session.input(state, 'speech', 'introduce', '')
+    await session.input(state, 'complete', 'introduce', 'My name is Synthetic Guest.')
+    const question = (await session.request(state, { ...recall, action: 'identify', name: 'Synthetic Guest', query: '' })).confirmation
+    step = 'memory_live_question_delivered'
+    check(!!question && (await session.input(state, 'question_played', question.token, question.text)).code === 'memory_question_delivered')
     await session.input(state, 'speech', 'confirm', '')
     const confirmed = await session.input(state, 'complete', 'confirm', 'yes')
     step = 'memory_live_confirmed_brief'; check(!!confirmed.entries?.length)

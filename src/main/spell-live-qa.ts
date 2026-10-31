@@ -45,8 +45,9 @@ export async function runSpellLiveQa(input: Phase4QaInput): Promise<Phase4QaResu
   await evaluate(`const q=window.__spellQa;q.phase='wrong';q.done=0;const c=q.channels.at(-1);
     c.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:'我想施法下雨，告訴我正確的咒語怎麼念？'}]}}));c.send(JSON.stringify({type:'response.create'}));`)
   await wait(`return window.__spellQa.done>=1`, 'spell_wrong_response')
-  // Wait for that reply's audible tail before issuing the independent cast.
-  await wait(`return window.__spellQa.stops>=2`, 'spell_wrong_playback')
+  // Wait for that reply's audible tail before issuing the independent cast. Raven's
+  // in-character refusal can run past 25 s of speech.
+  await wait(`return window.__spellQa.stops>=2`, 'spell_wrong_playback', 60000)
   const wrong = await evaluate<{ text: string; errors: number }>(`const q=window.__spellQa;const result={text:q.wrongText,errors:q.errors};q.wrongText='';return result`)
   const model = (await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).memoryExtractor
   const judgment = await judgeRavenConversation({ model,

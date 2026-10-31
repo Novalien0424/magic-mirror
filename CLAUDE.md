@@ -29,8 +29,10 @@ pointers. Never read, print or grep `.env` or `.env.chatgpt`.
   `npx vitest run tests/unit/<file>.test.ts`, `npm run typecheck`, `npm run build`.
 - [Mac deployment](deploy/macos/README.md) and [field checks](deploy/macos/owner-check/).
   The app owns Jabra; stop deliberately before Electron QA. Runners use stamped
-  `out/`; rebuild changed source, never bypass hashes. Metadata logs:
-  `~/Library/Logs/MagicMirror/`.
+  `out/`; rebuild changed source, never bypass hashes, and never build while
+  production runs (it can load half-replaced `out/`; Phase 0/runner tests refuse
+  then too). Venue keys, speakers, TV board: [Stream Deck](deploy/macos/stream-deck.md),
+  [buttons](deploy/macos/raven-button.md). Metadata logs: `~/Library/Logs/MagicMirror/`.
 - [Document map](docs/README.md): baselines/evidence/history are not extra
   instructions. Product/guest text is Traditional Chinese; code/telemetry English.
   Windows evidence does not establish Mac acceptance.

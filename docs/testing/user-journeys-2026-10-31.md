@@ -1,12 +1,12 @@
 # User journeys — QA plan, 2026-10-31
 
-Draft QA plan. It lists every current feature as a person-level journey and gives
+QA plan and results. It lists every current feature as a person-level journey and gives
 the check that proves each one. Sources: [PRD](../../PRD.md) §2–5 (modes, journeys,
 story IDs), [Stream Deck runbook](../../deploy/macos/stream-deck.md),
 [operator controls](../../deploy/macos/raven-button.md),
 [mm-ui-qa](../../.agents/skills/mm-ui-qa/SKILL.md) and its
 [modes reference](../../.agents/skills/mm-ui-qa/references/modes.md), and the runners
-named below. Every result is **pending**: this file contains no new QA evidence.
+named below. Results are in §3 (10-31 evening and the night run to 11-01).
 The previous plan, [user-journeys-2026-10-18](user-journeys-2026-10-18.md), is history.
 
 ## 1. Purpose, environment and evidence rules
@@ -695,6 +695,17 @@ Format: Stories · Actor · Preconditions · Steps · Expected/pass · QA method
   - Raven `--scenario camera_native`, `camera_availability --camera-check stable`, `camera --physical`.
   - **Blocked:** the camera does not enumerate today.
 
+#### J-38 Music page, folders and Bluetooth re-sync (added 2026-10-31 night)
+- **Stories:** LOOP-02 · **Actor:** host at the Neo.
+- **Steps:** MUSIC LOOP → the Neo shows Magic Mirror Music; a folder key plays that
+  subfolder from its first song; PREV/NEXT change song; VOL± step all speakers; STOP
+  stops and returns to the main keys. Songs follow file-name order; with the re-sync
+  option each song ends with a 1.2 s pause; a reconnecting speaker joins at the group level.
+- **Pass:** `music_folder_N`/`music_next`/`music_previous` outcomes; refused folders keep
+  the music; first song is song 1; Bluetooth stream suspend ≈1.2 s between songs.
+- **QA:** unit (music-loop, operator-command, raven-button), field scripts, bluetoothd log.
+  Physical Neo presses and listening are owner checks.
+
 ## 3. Results
 
 | Journey | Method | Result | Evidence | Notes |
@@ -736,6 +747,31 @@ Format: Stories · Actor · Preconditions · Steps · Expected/pass · QA method
 | J-35 Renderer crash | Full `npm test` (smoke contract) | pass | 2932 passed, 2 skipped |  |
 | J-36 TV absent / board | Unit + field + RCA | fixed | Unnamed-panel fallback, presence fix, board wakelock (0 ping drops in standby) | RCA in PROGRESS |
 | J-37 Camera failure | Raven camera scenarios | blocked | Camera not enumerated |  |
+
+### Night run, 10-31 22:37 → 11-01 01:30 (final builds, outputs at 1%)
+
+Complete batch: 42 runs (22 Phase 4 modes, media-intent, YouTube runner, 18 Raven
+scenarios); 31 passed first time. Every failure was diagnosed from metadata telemetry;
+fixes were rebuilt and the affected modes rerun.
+
+| Finding | Journeys | Result |
+| --- | --- | --- |
+| A spell that cut the previous scene's line before any audio left the cue waiting for a buffer-clear receipt an empty buffer never sends; after 8 s the conversation closed (`scene_dialogue_cancel_failed` → OfflineLoop) | J-11, J-21 | Fixed (a cancelled reply with no audio output releases at `response.done`); `--live` 0 of 2 → pass, `spell_control`, `sleep_spells` pass |
+| YouTube searches rejected for extra fields copied from other media tools (5 of 6 late-night calls) | J-16 | Fixed (search keeps its own fields, `tool_arguments_trimmed`); later runs 0 rejections |
+| Live/upcoming YouTube results never complete a once request | J-16 | Fixed: search drops live and upcoming broadcasts |
+| Local loop query with scope/mode words ("我們 寶庫 … 循環") missed its title | J-14 | Fixed in the matcher; `local_loop` explicit loop passes |
+| `--memory-live`: stale harness (module filter; no delivered question in the pipeline) | J-13 | Fixed; first full pass of every memory-live step |
+| `--spells-live` waited 25 s for a ~30 s in-character refusal | J-21 | Wait widened; pass |
+| YouTube checks waited for a 7-minute result to finish | J-16 | Long videos are brought near their end; `cloud_external`, `youtube_once` pass |
+| QA overwrote the venue Neo's music folder titles | J-38 | Fixed: QA writes its own profile copy |
+| `--lifecycle-live` second-cycle quiet check read a closed wake-cue context | J-11 | Harness ignores closed contexts |
+
+Remaining provider rates (mini model; prompts unchanged while the owner is away):
+farewell preamble (`--lifecycle-live` 0 of 4), YouTube search-then-ask instead of play,
+`local_media` tool route 0 of 3, `--memory-conversation` quality 0 of 2, `image_skill`
+1 of 4 (chat while painting), acoustic wake during a loop at 1% (environment). TV
+board standby 22:38 → 01:09: 900 of 900 pings, wakelock held. Loop wraps logged 0/0/2
+dropped frames. J-38 (Music page): field keys below; physical presses remain the owner's.
 
 **Coverage gaps found while drafting** (the two doc gaps were fixed the same day):
 

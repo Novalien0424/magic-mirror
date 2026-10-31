@@ -250,7 +250,10 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   }
   const localCompleted = async (since: number) => {
     try {
-      await wait(async () => events(since).some(e => e.reason === 'media_completed') && await returned(), 'media_return', 120000)
+      await wait(async () => {
+        await youtubeNearEnd(await youtubeState())
+        return events(since).some(e => e.reason === 'media_completed') && await returned()
+      }, 'media_return', 120000)
     } catch (error) {
       const remote = await youtubeState()
       if (remote) input.onEvidence({ step: 'youtube_playback_timeout', status: 'info',
@@ -264,16 +267,25 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const view = webContents.getAllWebContents().find(c => c.getURL() === 'https://com.magicmirror.app/youtube-player')
     return view?.executeJavaScript('({...window.youtubePlaybackState(),duration:player?.getDuration?.()??0})') as Promise<{ state: number; time: number; error: number; duration: number }> | undefined
   }
+  // Online results vary in length (one was 7 minutes): bring a long video near its end so
+  // the once completion and the loop boundary are still checked within their waits.
+  const youtubeNearEnd = async (remote: Awaited<ReturnType<typeof youtubeState>>) => {
+    if (remote?.state !== 1 || remote.duration <= 60 || remote.time <= 3 || remote.time >= remote.duration - 8) return
+    await webContents.getAllWebContents().find(c => c.getURL() === 'https://com.magicmirror.app/youtube-player')
+      ?.executeJavaScript(`player?.seekTo?.(${Math.floor(remote.duration - 4)},true)`).catch(() => undefined)
+  }
   const loopDormant = async (youtube = false) => {
     await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released && (await state()).media, 'loop_handoff')
     await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'loop_wake_microphone', 12000)
     let previous = -1
     await wait(async () => {
       const s = await state(), remote = youtube ? await youtubeState() : undefined
+      if (youtube) await youtubeNearEnd(remote)
       const media = youtube ? remote && { time: remote.time, loop: true, paused: remote.state !== 1, ready: remote.state === 1 ? 4 : 0 } : s.video ?? s.music
-      // YouTube briefly buffers between iterations; require advancing playback
-      // on both sides without mistaking that transition for a lost loop.
-      if (youtube && remote && [0, 3].includes(remote.state)) return false
+      // The YouTube loop reloads a one-item playlist at each boundary: ENDED(0) ->
+      // UNSTARTED(-1)/CUED(5) -> BUFFERING(3) -> PLAYING(1). Those are not a lost loop;
+      // PAUSED(2), a player error or a stall (wait timeout) still fail.
+      if (youtube && remote && !remote.error && [-1, 0, 3, 5].includes(remote.state)) return false
       if (!s.media || !media || !media.loop || media.paused || media.ready < 2 || input.runtime.snapshot().lifecycle !== 'dormant') throw Error('raven_qa_loop_lost')
       const crossed = previous > media.time + .15; previous = media.time
       return crossed

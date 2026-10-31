@@ -214,9 +214,19 @@ loop through the Console (Return to Avatar) leaves the deck on Playback until ST
 From the canonical checkout:
 
 ```sh
+zsh deploy/macos/install-stream-deck-plugin.sh   # only when the plugin changed (restarts Stream Deck)
 zsh deploy/macos/install-stream-deck-controls.sh
 open "$HOME/Applications/Magic Mirror Controls/Magic Mirror.streamDeckProfile"
 ```
+
+**After every import (required):** the package imports three new copies (main, Music,
+Playback). In Stream Deck → Preferences → Profiles select the new main copy, tick **Make
+this my default profile**, then delete the superseded Magic Mirror copies (keep Elgato's
+Default Profile). Stream Deck shows the default profile at launch and on focus changes,
+so an old default silently brings back old keys (found 2026-10-31: the old "copy 1"
+was default, so the Neo lost the Music page after each Stream Deck restart). Verify with
+`AppIdentifier: "*"` on exactly the new main copy in
+`~/Library/Application Support/com.elgato.StreamDeck/ProfilesV3/*/manifest.json`.
 
 The installer verifies its prerequisites, creates ad-hoc signed local apps,
 and only replaces apps with the matching Magic Mirror bundle identifiers. It

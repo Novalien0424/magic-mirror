@@ -7,6 +7,9 @@ import { isFolderMediaId, validMediaAliases, type FolderMediaEntry, type MediaFo
 import type { LocalMediaKind } from '../../shared/media-skill'
 import { prepareDeadlineSeconds } from './prepare-media-file'
 
+/** How long a verified playback copy is reused before the source is checked again. */
+const RESOLVE_REUSE_MS = 30_000
+
 const formats: Record<string, { kind: LocalMediaKind; mimeType: string }> = {
   '.mp4': { kind: 'video', mimeType: 'video/mp4' }, '.webm': { kind: 'video', mimeType: 'video/webm' },
   '.mp3': { kind: 'music', mimeType: 'audio/mpeg' }, '.wav': { kind: 'music', mimeType: 'audio/wav' },
@@ -27,6 +30,9 @@ export class MediaFolders {
   private queue: Promise<unknown> = Promise.resolve()
   private failure = ''
   private prepared = new Map<string, Promise<void>>()
+  // Loop media is re-read at every wrap; reuse a verified local copy briefly instead of
+  // re-checking the Google Drive original on each range request (playback hitch).
+  private resolved = new Map<string, { path: string; mimeType: string; checkedAt: number }>()
   constructor(private readonly configPath: string,
     private readonly prepareCloudFile?: (path: string, size: number, mtime: number) => Promise<string>) {}
   private run<T>(operation: () => Promise<T>): Promise<T> {
@@ -153,6 +159,18 @@ export class MediaFolders {
       if (!preview && owner !== 'shared' && owner !== `avatar:${avatarId}`) continue
       const file = source.files.find(f => f.entry.assetId === id)
       if (!file) continue
+      const reuseKey = `${owner}\0${this.links[owner]}\0${id}\0${file.size}\0${file.mtime}`
+      const reused = this.resolved.get(reuseKey)
+      if (reused && Date.now() - reused.checkedAt < RESOLVE_REUSE_MS) {
+        // One lstat still rejects a changed, removed or symlinked source at once.
+        try {
+          const [source, copy] = await Promise.all([lstat(file.path), lstat(reused.path)])
+          if (source.isFile() && source.size === file.size && source.mtimeMs === file.mtime && copy.isFile() && copy.size === file.size) {
+            return { path: reused.path, mimeType: reused.mimeType }
+          }
+        } catch { /* Fall through to the full check. */ }
+        this.resolved.delete(reuseKey)
+      }
       try {
         const root = this.links[owner]!
         if (await realpath(root) !== root || await realpath(file.path) !== file.path || !inside(root, file.path)) return null
@@ -180,6 +198,8 @@ export class MediaFolders {
         const after = await lstat(file.path)
         if (this.links[owner] !== root || await realpath(file.path) !== file.path
           || !after.isFile() || after.size !== file.size || after.mtimeMs !== file.mtime) return null
+        this.resolved.set(reuseKey, { path: playbackPath, mimeType: file.mimeType, checkedAt: Date.now() })
+        if (this.resolved.size > 64) this.resolved.delete(this.resolved.keys().next().value!)
         return { path: playbackPath, mimeType: file.mimeType }
       } catch { return null }
     }

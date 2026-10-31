@@ -27,6 +27,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
  if(m.mime !== (m.path.endsWith('.mp3') ? 'audio/mpeg' : 'audio/vnd.wave')) process.exit(2);
  if(m.path.includes('bad')) { send({event:'track_failed',id:m.id}); return }
  send({event:'playing',id:m.id,outputs:3});
+ if(m.path.includes('rejoin')) send({event:'route_kept',outputs:2,reason:'operator_loop_music_route_incomplete'});
  if(m.path.includes('long')) return;
  setTimeout(()=>send({event:'ended',id:m.id}),50);
 }).on('close',()=>process.exit(0));
@@ -132,6 +133,12 @@ describe('MusicLoop playlist and lifecycle', () => {
     expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_next', undefined)
     expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_previous', undefined)
     expect(f.input.report).not.toHaveBeenCalledWith('operator_loop_music_playlist_repeated', expect.anything())
+  })
+  it('keeps playing when a reconnecting speaker cannot join yet', async () => {
+    const f = await playerFixture(['01-rejoin-long.wav'])
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(() => expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_route_kept', { outputs: 2 }))
+    expect(f.input.failed).not.toHaveBeenCalled()
   })
   it('plays only the chosen subfolder when a folder key selected it', async () => {
     const f = await playerFixture(['01.wav'])

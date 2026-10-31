@@ -115,7 +115,7 @@ export async function runMemoryConsoleQa(input: Phase4QaInput): Promise<Phase4Qa
     return { motionCount: 0, expressionCount: 0, sceneCount: 0, screenshotCount: screenshots,
       musicAnalyser: 'not_executed', visualCount: 0, consoleCheckCount: checks }
   } catch (error) {
-    const reason = error instanceof Error && /^memory_qa_[a-z_]+$/.test(error.message) ? error.message : 'memory_qa_unknown'
+    const reason = error instanceof Error && /^(?:memory_qa|phase4_qa_memory_realtime)_[a-z_]+$/.test(error.message) ? error.message : 'memory_qa_unknown'
     input.onEvidence({ step, status: 'failed', item: reason })
     const flags = await evaluate<string>("return JSON.stringify({rows:document.querySelectorAll('.memory-list li').length,edit:!!button('Edit'),save:!!button('Save changes'),saveDisabled:button('Save changes')?.disabled,loading:document.querySelector('.memory-panel [role=status]')?.textContent==='Loading…',storageError:document.querySelector('.memory-panel [role=status]')?.textContent.includes('Could not update')})").catch(() => '{}')
     input.onEvidence({ step: 'memory_console_failure_flags', status: 'info', item: flags })

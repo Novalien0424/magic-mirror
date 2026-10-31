@@ -167,6 +167,9 @@ describe('public local media ranking', () => {
   it('resolves a title alias wrapped in generic media words, but never a lone artist', () => {
     const rain = [resource('qa-rain-piano', 'Rain — Fixture Pianist', ['雨聲鋼琴', '雨天鋼琴']), resource('qa-rain-violin', 'Rain — Fixture Violinist', ['雨聲小提琴'])]
     expect(rankMediaResources(rain, request('雨聲鋼琴音樂'))).toMatchObject({ code: 'media_discovery_clues', total: 1, resources: [{ assetId: 'qa-rain-piano' }] })
+    // Scope and loop words belong to source/mode, not to the title (live QA 10-31).
+    expect(rankMediaResources(rain, request('我們 寶庫 雨聲 鋼琴 音樂 循環', 'music'))).toMatchObject({ code: 'media_discovery_clues', total: 1, resources: [{ assetId: 'qa-rain-piano' }] })
+    expect(rankMediaResources(rain, request('循環 寶庫 雨聲'))).toMatchObject({ code: 'media_discovery_no_match' })
     const songs = [resource('qilixiang', '七里香', ['周杰倫'])]
     expect(rankMediaResources(songs, request('播放周杰倫的歌'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })
     expect(rankMediaResources(songs, request('周杰倫的晴天歌曲'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })

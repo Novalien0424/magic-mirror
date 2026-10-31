@@ -10,6 +10,8 @@ export function createOperatorLoop(input: {
   resumeAvatar(): Promise<void>
   publish(snapshot: OperatorLoopSnapshot): void
   report(reason: string): void
+  /** Per loop wrap: dropped video frames since the previous wrap (field smoothness). */
+  smoothness?(wraps: number, dropped: number): void
   music?: { start(): Promise<boolean>; stop(): Promise<void> }
   dance?: { start(): Promise<boolean>; stop(): Promise<void> }
 }) {
@@ -47,8 +49,9 @@ export function createOperatorLoop(input: {
     publish({ mode: 'loop', status: 'failed', reason })
   }
   const watch = () => { clear(); timer = setTimeout(() => recover('operator_loop_playback_stalled'), 8000) }
+  let lastWraps = 0, lastDropped = 0
   const launch = (recovering: boolean) => {
-    lastVideo = lastAudio = lastFrames = undefined
+    lastVideo = lastAudio = lastFrames = undefined; lastWraps = 0; lastDropped = 0
     reportedReason = ''
     publish({ mode: 'loop', status: recovering ? 'recovering' : 'preparing', reason: recovering ? 'operator_loop_reloading' : 'operator_loop_loading', generation: snapshot.generation + 1 })
     watch()
@@ -196,6 +199,10 @@ export function createOperatorLoop(input: {
       if (disposed || intent !== 'loop' || report.generation !== snapshot.generation || snapshot.status === 'failed') return
       if (report.status === 'failed') { recover(report.reason ?? 'operator_loop_playback_failed'); return }
       if (report.reason && report.reason !== reportedReason) { reportedReason = report.reason; input.report(report.reason) }
+      if (report.wraps !== undefined && report.wraps > lastWraps) {
+        input.smoothness?.(report.wraps, Math.max(0, (report.droppedFrames ?? 0) - lastDropped))
+        lastWraps = report.wraps; lastDropped = report.droppedFrames ?? lastDropped
+      }
       const separate = snapshot.settings.audioMode === 'separate'
       const advanced = lastVideo !== undefined && lastFrames !== undefined
         && report.videoTimeMs !== undefined && report.videoTimeMs > 0 && report.frames !== undefined && report.frames > 0

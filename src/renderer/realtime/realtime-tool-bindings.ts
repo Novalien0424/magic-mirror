@@ -14,7 +14,7 @@ export type RealtimeToolHandler = (arguments_: Readonly<Record<string, unknown>>
   image?: import('../../shared/image-skill').ImageSkillReply
   /** The visitor already heard this call's line, so the result needs no reply. */
   spoken?: boolean }>
-export type ToolFailureReason = 'tool_arguments_rejected' | 'tool_execution_failed'
+export type ToolFailureReason = 'tool_arguments_rejected' | 'tool_arguments_trimmed' | 'tool_execution_failed'
 
 /** Bind only code-authorized handlers. Raw JSON schemas alone do not validate SDK input. */
 export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: Readonly<Record<string, RealtimeToolHandler>>,
@@ -67,6 +67,12 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
           if (spec.handler === 'find_media' && Object.hasOwn(spec.parameters.properties ?? {}, 'context')
             && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             parsed = { context: 'new', ...parsed }
+          }
+          // A read-only YouTube search needs only its own fields; the model sometimes copies
+          // kind/mode from the other media tools, which the strict schema would reject.
+          if (spec.handler === 'search_youtube' && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const known = Object.entries(parsed).filter(([key]) => Object.hasOwn(spec.parameters.properties ?? {}, key))
+            if (known.length < Object.keys(parsed).length) { parsed = Object.fromEntries(known); onFailure('tool_arguments_trimmed') }
           }
           if (spec.handler === 'memory' && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             parsed = { name: '', topic: '', text: '', query: '', ...parsed }

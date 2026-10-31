@@ -36,8 +36,12 @@ export function startOperatorLoop(input: OperatorLoopInput): () => void {
     } catch { metricsUnavailable = true; return 0 }
   }
   const timeMs = (media: HTMLMediaElement) => Number.isFinite(media.currentTime) ? Math.max(0, Math.round(media.currentTime * 1000)) : 0
-  let initialFrames = 0, initialTime = 0
-  const progress = () => ({ videoTimeMs: timeMs(video), frames: frames(),
+  let initialFrames = 0, initialTime = 0, wraps = 0, lastVideoTime = 0
+  const dropped = (): number => {
+    try { const count = video.getVideoPlaybackQuality?.().droppedVideoFrames; return typeof count === 'number' && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0 }
+    catch { return 0 }
+  }
+  const progress = () => ({ videoTimeMs: timeMs(video), frames: frames(), droppedFrames: dropped(), wraps,
     ...(settings.audioMode === 'separate' && audio ? { audioTimeMs: timeMs(audio) } : {}),
     ...(metricsUnavailable ? { reason: 'operator_loop_video_metrics_unavailable' } : {}) })
   const release = () => {
@@ -118,6 +122,10 @@ export function startOperatorLoop(input: OperatorLoopInput): () => void {
       unsubscribe = router.subscribe(outputState)
       timer = setInterval(() => {
         if (!active()) return
+        // A loop wrap shows as the play position jumping back.
+        const now = timeMs(video)
+        if (announced && now + 1000 < lastVideoTime) wraps++
+        lastVideoTime = now
         checkReady()
         if (active()) emit({ status: 'progress', ...progress() })
       }, 1000)

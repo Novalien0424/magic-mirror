@@ -249,6 +249,9 @@ export function createMusicLoop(input: {
               report('operator_loop_music_resync_gap', { ms: gap })
               setTimeout(() => { if (run === revision) void next() }, gap)
             } else void next()
+          } else if (event.event === 'route_kept' && Number.isSafeInteger(event.outputs)) {
+            // A speaker could not join yet; playback continued on the previous speakers.
+            report('operator_loop_music_route_kept', { outputs: event.outputs })
           } else if (event.event === 'failed') {
             fail(typeof event.reason === 'string' && /^operator_loop_music_[a-z_]+$/.test(event.reason) ? event.reason : 'operator_loop_music_player_failed')
           }

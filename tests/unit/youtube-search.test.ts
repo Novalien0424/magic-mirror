@@ -46,6 +46,14 @@ describe('YouTube search and video boundary', () => {
     expect(options.redirect).toBe('error')
     expect(JSON.stringify(result)).not.toContain('synthetic-key')
   })
+  it('drops live and upcoming broadcasts, which never complete a once request', async () => {
+    const item = (videoId: string, liveBroadcastContent?: string) => ({ id: { videoId }, snippet: { title: videoId, channelTitle: 'Fixture', liveBroadcastContent } })
+    const fetchImpl = vi.fn(async () => Response.json({ items: [item('liveaaaaaaa', 'live'), item('upcomingaaa', 'upcoming'), item('recordedaaa', 'none'), item('unmarkedaaa')] }))
+    const result = await createYoutubeSearch({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl })({ query: 'lofi rain' })
+    expect(result.videos.map(video => video.title)).toEqual(['recordedaaa', 'unmarkedaaa'])
+    const [url] = fetchImpl.mock.calls[0] as unknown as [URL]
+    expect(url.searchParams.get('fields')).toContain('liveBroadcastContent')
+  })
   it('bounds invalid queries/replies and reports provider failures without exception text or retries', async () => {
     expect(parseYoutubeSearchRequest({ query: '' })).toBeNull()
     expect(parseYoutubeSearchRequest({ query: 'a'.repeat(201) })).toBeNull()

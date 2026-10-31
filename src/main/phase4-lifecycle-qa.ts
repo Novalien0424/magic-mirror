@@ -33,6 +33,8 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
       const samples=new Float32Array(256);
       let peak=0;
       for(const analyser of q.outputTaps) {
+        // A closed context (wake cue cut by the reveal) keeps its last samples forever.
+        if(analyser.context.state==='closed') continue;
         analyser.getFloatTimeDomainData(samples);
         for(const value of samples)peak=Math.max(peak,Math.abs(value));
       }

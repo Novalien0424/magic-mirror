@@ -44,7 +44,7 @@ export function createYoutubeSearch(options: { credentialSource: { get(): Promis
       const url = new URL('https://www.googleapis.com/youtube/v3/search')
       url.search = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: '5', q: parsed.query,
         videoEmbeddable: 'true', videoSyndicated: 'true', safeSearch: 'moderate',
-        fields: 'items(id/videoId,snippet(title,channelTitle))' }).toString()
+        fields: 'items(id/videoId,snippet(title,channelTitle,liveBroadcastContent))' }).toString()
       const response = await (options.fetchImpl ?? fetch)(url, { headers: { 'X-Goog-Api-Key': key },
         signal: AbortSignal.timeout(10000), redirect: 'error', cache: 'no-store' })
       const body = await readBoundedJson(response) as { items?: unknown; error?: { errors?: { reason?: unknown }[] } } | null
@@ -55,7 +55,11 @@ export function createYoutubeSearch(options: { credentialSource: { get(): Promis
           : response.status === 401 || response.status === 403 ? 'youtube_search_access_denied' : 'youtube_search_unavailable')
       }
       if (!Array.isArray(body?.items) || body.items.length > 5) return failure('youtube_search_unavailable')
-      const videos = body.items.map((item: { id?: { videoId?: unknown }; snippet?: { title?: unknown; channelTitle?: unknown } }) => ({
+      // A live or upcoming broadcast never completes a once request (QA 10-31: a result
+      // reporting 5 s kept playing for minutes), so only recorded videos are candidates.
+      const recorded = body.items.filter((item: { snippet?: { liveBroadcastContent?: unknown } }) =>
+        item?.snippet?.liveBroadcastContent !== 'live' && item?.snippet?.liveBroadcastContent !== 'upcoming')
+      const videos = recorded.map((item: { id?: { videoId?: unknown }; snippet?: { title?: unknown; channelTitle?: unknown } }) => ({
         url: `https://www.youtube.com/watch?v=${item.id?.videoId}`, title: item.snippet?.title, channel: item.snippet?.channelTitle,
       }))
       return parseYoutubeSearchReply({ status: 'accepted', code: 'youtube_search_results', videos }) ?? failure('youtube_search_unavailable')

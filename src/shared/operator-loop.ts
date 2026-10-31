@@ -26,6 +26,9 @@ export interface OperatorLoopReport {
   videoTimeMs?: number
   audioTimeMs?: number
   frames?: number
+  /** Cumulative dropped video frames and completed loop wraps (smoothness metadata). */
+  droppedFrames?: number
+  wraps?: number
   reason?: string
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -57,10 +60,10 @@ export function parseLoopVideoCommand(value: unknown): LoopVideoCommand | null {
   return value.action === 'save' && Object.keys(value).length === 2 && settings ? { action: 'save', settings } : null
 }
 export function parseOperatorLoopReport(value: unknown): OperatorLoopReport | null {
-  if (!record(value) || Object.keys(value).some(key => !['generation', 'status', 'videoTimeMs', 'audioTimeMs', 'frames', 'reason'].includes(key))
+  if (!record(value) || Object.keys(value).some(key => !['generation', 'status', 'videoTimeMs', 'audioTimeMs', 'frames', 'droppedFrames', 'wraps', 'reason'].includes(key))
     || !Number.isSafeInteger(value.generation) || (value.generation as number) < 0
     || !['playing', 'progress', 'failed', 'released'].includes(value.status as string)
-    || ['videoTimeMs', 'audioTimeMs', 'frames'].some(key => value[key] !== undefined
+    || ['videoTimeMs', 'audioTimeMs', 'frames', 'droppedFrames', 'wraps'].some(key => value[key] !== undefined
       && (typeof value[key] !== 'number' || !Number.isFinite(value[key]) || (value[key] as number) < 0))
     || value.reason !== undefined && (typeof value.reason !== 'string' || !/^operator_loop_[a-z0-9_]{1,80}$/.test(value.reason))) return null
   return value as unknown as OperatorLoopReport

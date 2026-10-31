@@ -220,6 +220,15 @@ describe('synthetic mouse control', () => {
     expect(io.report.mock.calls.every(([step, reason]) => /^[a-z_]+$/.test(step) && /^mouse_[a-z_]+$/.test(reason))).toBe(true)
   })
 
+  it('ends its own client that ignores EXIT, then stops the board server', async () => {
+    const { io, state } = fixture(true); state.exit = false
+    const terminate = vi.fn((pid: number, signal: string) => { expect(pid).toBe(42); if (signal === 'SIGKILL') state.client = false })
+    expect(await operateMouse('stop', { ...io, terminate })).toBe('mouse_stopped')
+    expect(terminate.mock.calls.map(([, signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL'])
+    expect(io.report).toHaveBeenCalledWith('exit', 'mouse_client_terminated')
+    expect(remotes(io)).toEqual(['stop'])
+    expect(state.time).toBeLessThanOrEqual(10000)
+  })
   it('reports a client that ignores EXIT and still performs bounded remote cleanup', async () => {
     const { io, state } = fixture(true); state.exit = false
     expect(await operateMouse('stop', io)).toBe('mouse_stop_failed')
