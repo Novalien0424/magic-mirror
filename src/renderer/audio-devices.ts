@@ -22,19 +22,26 @@ export class AudioDeviceRouter {
   private devices: AudioDeviceState['devices'] = []
   private reason = 'audio_devices_loading'
   private sinks = new Map<AudioSink, AudioSinkRole>()
+  // Per attached sink, so a sink that later routes (or detaches) clears its own failure.
+  private failures = new Map<AudioSink, 'audio_output_unavailable_using_default' | 'audio_output_routing_failed'>()
   private listed: Promise<void> | undefined
   private listeners = new Set<(state: AudioDeviceState) => void>()
   private queue: Promise<unknown> = Promise.resolve()
   private ready: Promise<void>
 
-  constructor(load: () => Promise<AudioPreferences>, private enumerate: () => Promise<readonly MediaDeviceInfo[]>) {
+  constructor(load: () => Promise<AudioPreferences>, private enumerate: () => Promise<readonly MediaDeviceInfo[]>,
+    private wait: (ms: number) => Promise<void> = ms => new Promise(done => setTimeout(done, ms))) {
     this.ready = load().then((preferences) => {
       this.preferences = preferences
       this.reason = 'audio_devices_ready'
     }).catch(() => { this.reason = 'audio_preferences_unreadable_using_default' })
   }
 
-  snapshot(): AudioDeviceState { return { preferences: this.preferences, devices: this.devices, reason: this.reason } }
+  snapshot(): AudioDeviceState {
+    const failures = [...this.failures.values()]
+    const reason = failures.includes('audio_output_routing_failed') ? 'audio_output_routing_failed' : failures[0] ?? this.reason
+    return { preferences: this.preferences, devices: this.devices, reason }
+  }
   subscribe(listener: (state: AudioDeviceState) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -63,12 +70,25 @@ export class AudioDeviceRouter {
     if (!isWebConsole() && role === 'voice' && !this.preferences.outputId) {
       try { await (this.listed ??= this.list()) } catch { this.listed = undefined }
     }
-    const target = isWebConsole() || this.preferences.outputId || role === 'music' ? '' : speakerphoneOutputId(this.devices, this.preferences.inputId)
-    try { await sink.setSinkId(isWebConsole() ? '' : this.preferences.outputId || target) } catch {
-      this.reason = 'audio_output_unavailable_using_default'
-      try { await sink.setSinkId('') } catch { this.reason = 'audio_output_routing_failed' }
-      this.changed()
-    }
+    const selected = this.sinkIdFor(role)
+    const attempt = async (id: string) => { try { await sink.setSinkId(id); return true } catch { return false } }
+    let failure: 'audio_output_unavailable_using_default' | 'audio_output_routing_failed' | undefined
+    let routed = await attempt(selected)
+    if (!routed && selected) { failure = 'audio_output_unavailable_using_default'; routed = await attempt('') }
+    // The default briefly refuses while macOS switches it to the venue's shared
+    // speakers at app start (a cold VIDEO LOOP press); one delayed retry.
+    if (!routed) { await this.wait(1000); routed = await attempt('') }
+    if (!routed) failure = 'audio_output_routing_failed'
+    const before = this.failures.get(sink)
+    // A sink detached during the retry must not leave a failure behind.
+    if (failure && this.sinks.has(sink)) this.failures.set(sink, failure)
+    else this.failures.delete(sink)
+    if (failure || before) this.changed()
+  }
+  /** The output a graph of this role uses, from the cached device list ('' = system default). */
+  sinkIdFor(role: AudioSinkRole = 'voice'): string {
+    if (isWebConsole()) return ''
+    return this.preferences.outputId || (role === 'music' ? '' : speakerphoneOutputId(this.devices, this.preferences.inputId))
   }
   async attach(sink: AudioSink, isDisposed: () => boolean = () => false, role: AudioSinkRole = 'voice'): Promise<() => void> {
     await this.ready
@@ -76,7 +96,10 @@ export class AudioDeviceRouter {
     if (isDisposed()) return () => undefined
     this.sinks.set(sink, role)
     await this.route(sink, role)
-    return () => { this.sinks.delete(sink) }
+    return () => {
+      this.sinks.delete(sink)
+      if (this.failures.delete(sink)) this.changed()
+    }
   }
   select(preferences: AudioPreferences): Promise<void> {
     const operation = this.queue.then(async () => {
@@ -99,7 +122,7 @@ export class AudioDeviceRouter {
       this.listed = listing
       await listing
       await this.queue
-      if (this.reason.startsWith('audio_output_') || this.reason === 'audio_device_enumeration_failed') this.reason = 'audio_devices_ready'
+      if (this.reason === 'audio_device_enumeration_failed') this.reason = 'audio_devices_ready'
       await Promise.all([...this.sinks].map(([sink, role]) => this.route(sink, role)))
     } catch { this.reason = 'audio_device_enumeration_failed' }
     this.changed()

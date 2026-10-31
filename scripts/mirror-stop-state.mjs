@@ -48,5 +48,11 @@ export function createStopStateIo() {
       const result = spawnSync(binary, ['--reset-output'], { encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL' })
       return result.status === 0 && !result.error && !result.signal ? 'jabra_output_70' : 'jabra_output_reset_failed'
     },
+    // Playback VOL±: every external speaker 10% up/down together, read back by the helper.
+    stepVolume: async direction => {
+      if (!['up', 'down'].includes(direction)) throw Error('volume_direction_invalid')
+      const result = spawnSync(binary, [`--volume-${direction}`], { encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL' })
+      return result.status === 0 && !result.error && !result.signal ? `volume_${direction}` : 'volume_step_failed'
+    },
   }
 }

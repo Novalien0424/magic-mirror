@@ -20,16 +20,19 @@ Require exit 0 plus expected executed cases for a pass; inspect the relevant scr
 
 Identify each audio route explicitly; each proves only its own boundary. Provider dialogue is probabilistic: one pass or failure is a sample, so report rates over repeated runs ([prompt evidence](../roleplay-control-prompts/SKILL.md)).
 
-Owner sound directive (2026-10-17, clarified 2026-10-23): **Jabra output at 1%
-during QA is intentional; after QA it must return to 70%, even if its captured
+Owner sound directive (2026-10-17, clarified 2026-10-23/31): **outputs at 1%
+during QA are intentional; after QA every external speaker returns to 70%, even if its captured
 starting volume was lower.** Before sound-producing QA, capture output/mute by
 device identity and use the minimum output level (tested Mac system route: 1%).
 On success, failure or cancellation, first finish/release owned test playback,
-then restore Jabra output to 70% with the installed native helper
+then restore every external output (Jabra and Bluetooth speakers) to 70% unmuted
+(owner 2026-10-31) with the installed native helper
 `"$HOME/Library/Application Support/MagicMirror/ops/stop-state" --reset-output` and
 verify with `--output-status`. The helper accepts hardware rounding within 1.5
-percentage points. Restore other outputs to their captured levels. Preserve mute;
+percentage points. The Mac mini speaker returns to its captured level and mute;
 never change input gain. Protect any alternate output selected by the test too.
+In field button QA, START/STOP/MUSIC LOOP reset to 70%, Dance raises to 90%
+after its welcome and leaving Dance restores 70%: re-quiet after each.
 Use guaranteed cleanup, not a success-only restore; report a failed reset/read-back
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.

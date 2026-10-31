@@ -10,8 +10,10 @@
  * no other display at all. The guest-facing glass has no signal either way, so this is not
  * a black-screen regression (invariant #10); the renderer keeps running and the window is
  * moved back and shown once the panel returns. At first boot a configured-but-missing
- * target waits hidden, so login never covers the operator's display. Every fallback and
- * no-op carries a reason (invariant #9).
+ * target waits hidden, so login never covers the operator's display. When the panel's
+ * HDMI bridge stops sending its EDID, macOS lists it unnamed: a single unnamed non-primary
+ * display then counts as the target (`unnamed_target`). Every fallback and no-op carries
+ * a reason (invariant #9).
  *
  * Electron-free on purpose: the policy is unit-testable without a running app. Markers
  * carry display ids, labels and reasons only.
@@ -32,7 +34,7 @@ export interface DisplayInfo {
 }
 
 export type MirrorDisplayChoice =
-  | { readonly display: DisplayInfo; readonly reason: 'match' | 'primary_default' | 'no_match' }
+  | { readonly display: DisplayInfo; readonly reason: 'match' | 'unnamed_target' | 'primary_default' | 'no_match' }
   | { readonly display: null; readonly reason: 'no_displays' }
 
 /** Where the Mirror window was last placed by us, or that we hid it for a missing target. */
@@ -95,7 +97,15 @@ export function chooseMirrorDisplay(displays: readonly DisplayInfo[], match: str
 
   const hit = sorted.find((d) => d.label.toLowerCase().includes(needle))
   if (hit !== undefined) return { display: hit, reason: 'match' }
+  // The panel without its EDID name; an operator monitor or the main display never qualifies.
+  const unnamed = sorted.filter((d) => !d.primary && d.label.trim() === '')
+  if (unnamed.length === 1) return { display: unnamed[0]!, reason: 'unnamed_target' }
   return { display: primary, reason: 'no_match' }
+}
+
+/** True when the choice is the configured panel, by name or as its unnamed stand-in. */
+export function isTargetChoice(choice: MirrorDisplayChoice): boolean {
+  return choice.reason === 'match' || choice.reason === 'unnamed_target'
 }
 
 const HIDDEN: MirrorPlacement = { kind: 'hidden_awaiting_target' }
@@ -129,7 +139,7 @@ export function planInitialPlacement(
   previous: MirrorPlacement | null
 ): InitialPlacementPlan {
   // A missing configured target stays hidden at startup and on window recreation.
-  if (match !== undefined && choice.reason !== 'match') {
+  if (match !== undefined && !isTargetChoice(choice)) {
     return {
       action: 'hide',
       display: null,
@@ -155,7 +165,7 @@ export function planInitialPlacement(
   return {
     action: 'show',
     display,
-    placement: placementFor(display, reason === 'match'),
+    placement: placementFor(display, isTargetChoice(choice)),
     marker: { name: 'MIRROR_DISPLAY_SELECTED', fields: { display_id: display.id, label: display.label, reason } }
   }
 }
@@ -167,7 +177,7 @@ export function planRehome(
   match: string | undefined,
   trigger: DisplayTrigger
 ): RehomeDecision {
-  const onTarget = choice.reason === 'match'
+  const onTarget = isTargetChoice(choice)
 
   if (previous?.kind === 'hidden_awaiting_target') {
     if (!onTarget || choice.display === null) return { action: 'none', marker: awaitingMarker(trigger, match) }

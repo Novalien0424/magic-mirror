@@ -10,6 +10,32 @@
 - **MusicLoop volume:** every accepted MUSIC LOOP press sets Jabra to 70%, also
   while music already plays. Volume is never enforced during playback; the
   physical buttons adjust it until the next press.
+- **MusicLoop is independent of the TV:** MUSIC LOOP must play whether the TV is
+  on, in standby or powered off. While MusicLoop is the mode, a missing TV never
+  quits the app (supersedes the 2026-10-11 TV-off exit for MusicLoop only; other
+  modes keep it, with a fresh 15 s countdown after MusicLoop ends), and a panel
+  that cannot be shown never fails the MUSIC LOOP command.
+- **TV board stays reachable in standby:** STOP's standby keeps the screen off but
+  the board's kernel must not attempt deep suspend; every TV operation and a
+  two-minute keep-awake tick hold a root wakelock (`magicmirror_standby`). RCA
+  2026-10-31: suspend attempts in standby cycled Ethernet and the HDMI bridge
+  every ~10 s until both wedged (10-26 to 10-31, cured only by power cycles).
+- **Playback page for the loops:** VIDEO LOOP and MUSIC LOOP switch the Stream
+  Deck to a page with only VOL+, VOL− and STOP; STOP stops as usual and returns
+  to the main keys. VOL± moves every external speaker 10% together (Mac mini
+  speaker and HDMI untouched); STOP/START/MUSIC LOOP still return them to 70%.
+  Built-in Stream Deck actions only (Multi Action + Switch Profile); the page
+  changes on the press, so a failed loop also shows it and its STOP recovers.
+- **Raven's sarcasm is judged, not constant:** Raven saves sarcasm for a
+  visitor who is really too chatty, rambling or unclear, and decides that
+  itself; clear visitors get calm answers with light dry wit. No repeated stock
+  line (v21's quoted 「你們人類太囉嗦了…」 example was copied verbatim, so v22's
+  persona has no quoted examples).
+- **All speakers at 70%:** wherever the Jabra returned to 70% unmuted (STOP,
+  START, MUSIC LOOP press, Dance end, QA cleanup), every external speaker now
+  does too (Edifier, A1 and any new one). The Mac mini speaker keeps its level;
+  the HDMI TV has no Mac-side volume. Supersedes "other outputs keep their
+  captured level".
 - **Studio ending:** a studio started inside a conversation (visitor request or
   Console start) returns to that conversation after the transfer line, without
   the Studio farewell or Dormant. Studio-mode visits (wake in Studio mode or a

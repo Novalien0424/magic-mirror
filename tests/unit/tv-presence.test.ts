@@ -36,6 +36,21 @@ describe('TV absence shutdown', () => {
     expect(f.onAbsent).toHaveBeenCalledTimes(1)
     expect(f.report).toHaveBeenLastCalledWith({ hdmi: 'absent', ethernet: 'absent', reason: 'both_absent_15_seconds' })
   })
+  it('never quits for a missing TV while MusicLoop holds, and restarts the countdown afterwards', async () => {
+    vi.useFakeTimers()
+    let music = true
+    const onAbsent = vi.fn(), report = vi.fn()
+    monitorTvPresence({ display: () => 'absent', ethernet: async () => 'absent', hold: () => music, onAbsent, report, now: () => Date.now() })
+    // A cold MUSIC LOOP press with the TV off: no startup or absence quit while it plays.
+    await vi.advanceTimersByTimeAsync(TV_STARTUP_GRACE_MS + 60_000)
+    expect(onAbsent).not.toHaveBeenCalled()
+    expect(report).toHaveBeenCalledWith({ hdmi: 'absent', ethernet: 'absent', reason: 'absence_held_music_loop' })
+    music = false
+    await vi.advanceTimersByTimeAsync(14_000)
+    expect(onAbsent).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(onAbsent).toHaveBeenCalledTimes(1)
+  })
   it('does not treat a failed display query or uncertain network result as power-off', async () => {
     const f = fixture()
     f.ethernet('unknown')

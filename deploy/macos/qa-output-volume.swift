@@ -1,5 +1,5 @@
-// QA only: quiet physical output volumes; restore by UID, with the owner's Jabra70 rule.
-// Never touches mute, input gain, default devices or the runtime key.
+// QA only: quiet physical output volumes; restore by UID; external speakers return to 70% (owner rule).
+// Restore unmutes external speakers; never touches input gain, default devices or the runtime key.
 import Foundation
 import CoreAudio
 func addr(_ s: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal, _ e: UInt32 = 0) -> AudioObjectPropertyAddress {
@@ -37,10 +37,13 @@ var failed=false
 for level in levels {
   guard let id=devices.first(where:{text($0,kAudioDevicePropertyDeviceUID)==level.uid}) else{continue}
   var p=addr(kAudioDevicePropertyVolumeScalar,kAudioObjectPropertyScopeOutput,level.element), size:UInt32=4, observed:Float32=0
-  var value:Float32=quiet ? 0.01 : text(id,kAudioObjectPropertyName).localizedCaseInsensitiveContains("Jabra Speak2 75") ? 0.7 : level.value
+  var transport:UInt32=0, t=addr(kAudioDevicePropertyTransportType)
+  AudioObjectGetPropertyData(id,&t,0,nil,&size,&transport)
+  let external = transport != kAudioDeviceTransportTypeBuiltIn
+  var value:Float32=quiet ? 0.01 : external ? 0.7 : level.value
   if AudioObjectSetPropertyData(id,&p,0,nil,4,&value) != noErr || AudioObjectGetPropertyData(id,&p,0,nil,&size,&observed) != noErr || abs(value-observed)>0.015 {failed=true}
-  // After QA the Jabra is back in normal use: 70% and unmuted (its firmware mutes at step 0).
-  if !quiet && value == 0.7 { var m=addr(kAudioDevicePropertyMute,kAudioObjectPropertyScopeOutput), off:UInt32=0; if AudioObjectHasProperty(id,&m) { AudioObjectSetPropertyData(id,&m,0,nil,4,&off) } }
+  // After QA every external speaker is back in normal use: 70% and unmuted (the Jabra's firmware mutes at step 0).
+  if !quiet && external { var m=addr(kAudioDevicePropertyMute,kAudioObjectPropertyScopeOutput), off:UInt32=0; if AudioObjectHasProperty(id,&m) { AudioObjectSetPropertyData(id,&m,0,nil,4,&off) } }
 }
 print(quiet ? "qa_output_quiet=\(!failed)" : "qa_output_restored=\(!failed)")
 exit(failed ? 2 : 0)

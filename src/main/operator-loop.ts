@@ -65,6 +65,7 @@ export function createOperatorLoop(input: {
     view,
     isLoopMode: () => intent === 'loop',
     isDesktopMode: () => intent === 'desktop',
+    isMusicMode: () => intent === 'music',
     isInputSuspended: () => intent !== 'avatar',
     async save(value: LoopVideoSettings): Promise<void> {
       const parsed = parseLoopVideoSettings(value)

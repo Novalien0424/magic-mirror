@@ -184,7 +184,7 @@ const file = fileURLToPath(import.meta.url)
 if (process.argv[1] && resolve(process.argv[1]) === file) {
   if (process.platform !== 'darwin') throw Error('raven_button_macos_only')
   const action = process.argv[2]
-  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', 'dance', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
+  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', 'dance', 'volume-up', 'volume-down', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
   const root = join(homedir(), 'Library/Caches/MagicMirror/button'), queue = join(root, 'queue')
   const log = join(homedir(), 'Library/Logs/MagicMirror/button.log')
   mkdirSync(queue, { recursive: true, mode: 0o700 }); mkdirSync(dirname(log), { recursive: true })
@@ -200,7 +200,19 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
     child.unref()
   }
   if (action === '--wake') detach()
-  else if (action !== '--worker') {
+  else if (action.startsWith('volume-')) {
+    // Playback VOL± acts at once, outside the queue: a volume press must never wait
+    // behind a slow start, and it does not touch the app, TV or Electron lease.
+    const direction = action.slice('volume-'.length)
+    const outcome = await createStopStateIo().stepVolume(direction).catch(() => 'volume_step_failed')
+    record(`volume_${direction}`, outcome)
+    // Detached: afplay lingers ~3 s, and Stream Deck cannot reopen a still-running wrapper app,
+    // so waiting would swallow quick repeated presses.
+    const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${outcome === 'volume_step_failed' ? 'Basso' : 'Pop'}.aiff`], { stdio: 'ignore', detached: true })
+    child.on('error', () => record('press', 'feedback_unavailable'))
+    child.unref()
+    if (outcome === 'volume_step_failed') process.exitCode = 1
+  } else if (action !== '--worker') {
     const path = join(queue, `${process.hrtime.bigint().toString().padStart(24, '0')}-${process.pid}.json`)
     // Another worker may already be draining the queue. Publish only a complete
     // request, so it cannot consume a partially written control press.

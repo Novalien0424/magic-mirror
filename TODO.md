@@ -14,10 +14,12 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   left these two gaps open.
   [Audit](docs/testing/studio-journey-audit-2026-10-24.md) ·
   [Repair boundary](docs/testing/guest-name-repair-2026-10-24.md).
-- [ ] **TV ADB transport and mouse release.** Wake/standby remain unavailable on
-  10-30; local STOP, black HDMI and Jabra 70 work independently. Restore board
-  transport and verify physical mode-to-STOP behavior.
-  [Latest evidence](docs/testing/dance-floor-delivery-2026-10-30.md).
+- [ ] **TV board standby (RCA 10-31, fixed; confirm overnight).** Standby made
+  the board retry deep suspend every ~10 s, cycling Ethernet and the HDMI bridge until
+  they wedged (10-26…10-31; power cycles cured it). Every TV operation now holds a root
+  wakelock; field STOP/START/CONSOLE/DESKTOP passed with 0 ping drops in standby. The keep-awake tick
+  (re-applies it after board reboots) was installed by the owner 10-31 20:50; watch one
+  overnight standby. One intermittent `mouse_stop_failed` (1 of 3) remains unexplained.
 - [x] **Post-restart Jabra volume / mute (10-31 cause found).** The Jabra's own
   firmware mutes at volume step 0 (its button at 1%) and pushes its stored step
   back when an app opens it; restores never cleared the mute. STOP, START (after
@@ -73,9 +75,21 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Maintenance (DECISIONS says it must not gate conversation); deleting an avatar
   leaves its private memories unreachable; the Studio picture appears just before
   its reveal line; a MusicLoop intent can briefly resume on START after a crash.
-- [ ] **Raven stock lines.** v21's quoted style anchors recur in about 10% of
-  replies. An anchor-free rewrite removed them but lowered the character score
-  (2.66 → 2.29) and softened the sarcasm, so v21 stays published.
+- [ ] **QA open items 10-31.** `youtube_modes` 0 of 2 (no tool call; YouTube loop
+  paused in Dormant, `raven_qa_loop_lost`); `--memory-live` unclassified harness error
+  right after the identity step (channel-open wait did not cure it); acoustic wake
+  during a loop fails at the 1% QA output level; `--memory-conversation` 0 of 2 and
+  v22 character judge 0 of 10 (`unnecessary_question`, `wrong_language` on English
+  turns answered in Chinese — check the judge against the PRD language rule).
+- [ ] **Playback page on the Neo (physical).** VIDEO LOOP/MUSIC LOOP → VOL+/VOL−/STOP
+  and STOP → main keys were imported and read back from Stream Deck's store
+  (10-31); the wrappers, VOL± and STOP were field-run by script. A physical press
+  of each Neo key remains the owner's check. The old "Magic Mirror", "copy" and
+  "copy 1" profiles can be deleted in Stream Deck.
+- [ ] **Raven v22 in the room.** v22 (published 10-31) drops the quoted style
+  lines that v21 repeated (「你們人類太囉嗦了…」 in about 1 of 10 replies) and keeps
+  sarcasm for visitors Raven judges really too chatty or unclear. Not yet
+  measured in QA; listen for leftover stock lines and for too little bite.
 
 ## Remaining field acceptance
 

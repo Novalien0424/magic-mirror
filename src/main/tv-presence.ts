@@ -57,6 +57,8 @@ export function monitorTvPresence(options: {
   ethernet: (signal: AbortSignal) => Promise<TvPresence>
   onAbsent: () => void
   report: (event: { hdmi: TvPresence; ethernet: TvPresence; reason: string }) => void
+  /** While true (MusicLoop, owner 2026-10-31) a missing TV never quits; the countdown restarts after. */
+  hold?: () => boolean
   now?: () => number
 }): { stop(): void } {
   const now = options.now ?? (() => performance.now())
@@ -87,12 +89,14 @@ export function monitorTvPresence(options: {
     if (stopped) return
     observedPresent ||= hdmi === 'present' || ethernet === 'present'
     const bothAbsent = hdmi === 'absent' && ethernet === 'absent'
-    if (bothAbsent) absentSince ??= now()
+    let held = false
+    try { held = bothAbsent && (options.hold?.() ?? false) } catch { /* Never hold on an error. */ }
+    if (bothAbsent && !held) absentSince ??= now()
     else absentSince = undefined
-    const state = `${hdmi}/${ethernet}`
+    const state = `${hdmi}/${ethernet}${held ? '/held' : ''}`
     if (state !== previous) {
       previous = state
-      options.report({ hdmi, ethernet, reason: bothAbsent
+      options.report({ hdmi, ethernet, reason: held ? 'absence_held_music_loop' : bothAbsent
         ? observedPresent ? 'both_absent_countdown' : 'startup_presence_grace'
         : hdmi === 'present' || ethernet === 'present' ? 'presence_detected' : 'presence_query_unavailable' })
     }

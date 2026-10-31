@@ -164,6 +164,13 @@ describe('public local media ranking', () => {
     expect(rankMediaResources(songs, request('請播放周杰倫的晴天'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })
     expect(rankMediaResources(songs, request('周杰倫'))).toMatchObject({ code: 'media_discovery_matches', total: 1 })
   })
+  it('resolves a title alias wrapped in generic media words, but never a lone artist', () => {
+    const rain = [resource('qa-rain-piano', 'Rain — Fixture Pianist', ['雨聲鋼琴', '雨天鋼琴']), resource('qa-rain-violin', 'Rain — Fixture Violinist', ['雨聲小提琴'])]
+    expect(rankMediaResources(rain, request('雨聲鋼琴音樂'))).toMatchObject({ code: 'media_discovery_clues', total: 1, resources: [{ assetId: 'qa-rain-piano' }] })
+    const songs = [resource('qilixiang', '七里香', ['周杰倫'])]
+    expect(rankMediaResources(songs, request('播放周杰倫的歌'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })
+    expect(rankMediaResources(songs, request('周杰倫的晴天歌曲'))).toMatchObject({ code: 'media_discovery_weak', total: 1 })
+  })
   it('marks equal best matches as ambiguous and retains all candidates', () => {
     const resources = [resource('piano', 'Rain — Piano'), resource('violin', 'Rain — Violin')]
     expect(rankMediaResources(resources, request('Rain'))).toMatchObject({ code: 'media_discovery_ambiguous', total: 2 })

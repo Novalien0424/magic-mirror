@@ -55,6 +55,7 @@ import { cameraLifecycleStatus, createCameraLifecycle, type CameraLifecycleServi
 import {
   chooseMirrorDisplay,
   parseMirrorDisplayMatch,
+  isTargetChoice,
   planInitialPlacement,
   planRehome,
   type DisplayInfo,
@@ -412,7 +413,7 @@ function selectMirrorDisplay(
     displays.map(display => ({ ...display, primary: display.id === primaryDisplayId })),
     mirrorDisplayMatch,
   )
-  return choice.reason === 'match'
+  return isTargetChoice(choice) && choice.display
     ? displays.find(display => display.id === choice.display.id) ?? null
     : null
 }
@@ -1577,7 +1578,9 @@ void app.whenReady().then(async () => {
       const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music() : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       if (!success) return false
       hideConsoleWindow()
-      return showMirrorWindow()
+      // MusicLoop is audio-only and independent of the TV (owner 2026-10-31): with the
+      // panel off the black Mirror simply stays hidden.
+      return showMirrorWindow() || action === 'music_loop'
     },
     report: reason => marker('OPERATOR_CONTROL', { reason }),
   }).then(stop => { if (shutdownStarted) stop(); else stopOperatorControl = stop })
@@ -1588,10 +1591,14 @@ void app.whenReady().then(async () => {
   const tvHost = parseTvHost(process.env['MIRROR_TV_HOST'])
   if (isDarwin && mirrorDisplayMatch && tvHost && smokeMode.kind === 'off'
     && !phase4QaEnabled && !phase1LiveSmokeEnabled) {
-    const displayNeedle = mirrorDisplayMatch.toLowerCase()
     tvPresence = monitorTvPresence({
-      display: () => screen.getAllDisplays().some(display => display.label.toLowerCase().includes(displayNeedle))
-        ? 'present' : 'absent',
+      // Same target rule as Mirror placement: a panel that lost its EDID name still counts.
+      // A query error propagates (unknown), never absent.
+      display: () => {
+        const primaryId = screen.getPrimaryDisplay().id
+        const displays = screen.getAllDisplays().map(d => ({ id: d.id, label: d.label, bounds: d.bounds, primary: d.id === primaryId }))
+        return isTargetChoice(chooseMirrorDisplay(displays, mirrorDisplayMatch)) ? 'present' : 'absent'
+      },
       ethernet: signal => probeTvEthernet(tvHost, signal),
       report: event => {
         marker('TV_PRESENCE', event)
@@ -1601,6 +1608,7 @@ void app.whenReady().then(async () => {
             reason: `${event.reason};hdmi=${event.hdmi};ethernet=${event.ethernet}` })
         } catch { /* Diagnostics cannot gate shutdown or conversation. */ }
       },
+      hold: () => operatorLoop?.isMusicMode() ?? false,
       onAbsent: () => app.quit(),
     })
   } else if (process.env['MIRROR_TV_HOST'] && !tvHost) {

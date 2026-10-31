@@ -22,6 +22,9 @@ opened by Stream Deck:
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-studio.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-desktop.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-music.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-dance.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-volume-up.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-volume-down.sh
 ```
 
 Each fixes its action and calls the existing queue helper using canonical paths.
@@ -84,8 +87,8 @@ its success result is `desktop_shown`.
 MUSIC LOOP selects Main's native all-output music mode and reports `music_preparing`
 after Main accepts the mode. Console reports actual playback after native progress.
 Before sending that mode command, each accepted press calls the existing native
-Jabra output reset/read-back once to establish 70%. Physical volume changes then
-persist until another MUSIC LOOP or STOP press. No timer or track callback resets
+output reset/read-back once to put every external speaker at 70%. Playback VOL± and
+physical volume changes then persist until another MUSIC LOOP, START or STOP press. No timer or track callback resets
 volume. Reset failure is retained in the command's `audio` metadata and does not
 block other outputs.
 Downloads do not block command acknowledgement or controls. Music does not call
@@ -158,23 +161,37 @@ Those failure results require inspection before another start.
 
 ## TV standby/wake
 
-STOP first covers the T749 HDMI display with a native, opaque black window. It
+STOP first covers the T749 HDMI display (or, when its bridge loses the EDID name,
+the single unnamed non-main display) with a native, opaque black window. It
 survives Electron shutdown, covers desktop/menu/Dock and hides the cursor only on
 that display. START/LOOP/STUDIO/CONSOLE/DESKTOP clear it after renderer readiness and the
 mode acknowledgement. The operator monitor remains usable. A missing display or
 failed cover is reported; TV, app, mouse and audio cleanup still run independently.
 The cover does not restart Electron and has no LaunchAgent.
 
-STOP also sets the connected Jabra Speak2 75 **output** scalar to 0.70 and reads it
-back. It preserves mute, input gain and selected default devices. Missing or
-ambiguous devices and failed verification are reported instead of changing another
-speaker. Install the signed user-owned helper with
+STOP also sets every external speaker's **output** (the required Jabra Speak2 75,
+plus Bluetooth speakers such as the Edifier and A1) to 0.70 unmuted and reads it
+back. It preserves input gain, selected default devices and the Mac mini speaker.
+A missing or ambiguous Jabra and failed verification are reported.
+
+**Playback VOL±** (`raven-button.sh volume-up|volume-down`, Stream Deck Playback page)
+runs the same helper's `--volume-up/--volume-down` at once, outside the queue and the
+Electron lease: every external speaker ±10% together on a 5% grid, VOL+ unmutes.
+It logs `volume_up`/`volume_down` or `volume_step_failed` and plays Pop or Basso,
+detached so the wrapper app exits in about 0.2 s and quick repeats are not dropped. Install the signed user-owned helper with
 `zsh deploy/macos/install-stop-state.sh` when deploying these controls.
 
 STOP first confirms Android Asleep/display OFF, sending explicit key 223 only
 when needed, then always performs the app stop. START/LOOP/CONSOLE/STUDIO/DESKTOP send explicit wake key
 224 when needed, open `com.android.rockchip.camera2/.RockchipCamera2`, and
 verify Awake/display ON. Confirmed standby needs no repeated sleep injection.
+Before any sleep/wake key the helper ensures a root kernel wakelock
+(`magicmirror_standby`) on the board, so standby only turns the screen off: without
+it the board's kernel retried deep suspend every ~10 s, each attempt cycling Ethernet
+and the RK628 HDMI bridge until both wedged (RCA 2026-10-31; no ADB 10-26 to 10-31,
+then an unnamed HDMI panel, cured only by power cycles). The wakelock is lost on a
+board reboot; `install-board-keep-awake.sh` adds a two-minute per-user tick that
+re-applies it through the root ADB server (metadata log `board-keep-awake.log`).
 This is **standby, not Android shutdown or mains power-off**. The board and wired
 control path retain power; actual standby wattage is unmeasured.
 

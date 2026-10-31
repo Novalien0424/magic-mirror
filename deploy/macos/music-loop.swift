@@ -112,13 +112,11 @@ final class Playback {
     for (old, element, previous) in savedVolumes {
       guard let output = outputs().first(where: { $0.uid == old.uid }) else { continue }
       var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
-      let name = textProperty(output.id, kAudioObjectPropertyName) ?? ""
-      let jabra = name.localizedCaseInsensitiveContains("Jabra Speak2 75")
-      var level: Float32 = jabra ? 0.7 : previous
+      var level: Float32 = output.builtIn ? previous : 0.7
       var size: UInt32 = 4, observed: Float32 = 0
-      // Jabra returns to normal use: 70% and unmuted (its firmware mutes at step 0).
+      // Every external speaker returns to normal use: 70% and unmuted (the Jabra's firmware mutes at step 0).
       var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), off: UInt32 = 0
-      if jabra && AudioObjectHasProperty(output.id, &mute) { AudioObjectSetPropertyData(output.id, &mute, 0, nil, 4, &off) }
+      if !output.builtIn && AudioObjectHasProperty(output.id, &mute) { AudioObjectSetPropertyData(output.id, &mute, 0, nil, 4, &off) }
       if AudioObjectSetPropertyData(output.id, &property, 0, nil, 4, &level) != noErr
         || AudioObjectGetPropertyData(output.id, &property, 0, nil, &size, &observed) != noErr || abs(observed-level) > 0.015 {
         emit("volume_restore_failed")

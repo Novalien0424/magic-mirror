@@ -48,7 +48,9 @@ export async function runMemoryRealtimeQa(input: Phase4QaInput, pass: (step: str
     };
   `)
   const send = async (id: string, text: string) => {
-    await wait("const q=window.__memoryQa;return q.stops>0&&!q.active&&!q.audio", 'response_boundary')
+    // Identification replaces the session (clean confirmation session): never write
+    // to a data channel that is still connecting.
+    await wait("const q=window.__memoryQa;return q.stops>0&&!q.active&&!q.audio&&q.channels.at(-1)?.readyState==='open'", 'response_boundary')
     await evaluate(`const q=window.__memoryQa;if(${JSON.stringify(id)}==='memory-qa-recall'){q.stage='recall';q.relevant=false}
       const c=q.channels.at(-1);c.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'input_audio_buffer.speech_started',event_id:'qa-speech',audio_start_ms:0,item_id:${JSON.stringify(id)}})}));
       c.send(JSON.stringify({type:'conversation.item.create',item:{id:${JSON.stringify(id)},type:'message',role:'user',content:[{type:'input_text',text:${JSON.stringify(text)}}]}}));`)

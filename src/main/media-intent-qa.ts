@@ -54,7 +54,11 @@ void app.whenReady().then(async () => {
     let responseDone = 0, lastActivity = Date.now(), failed = false, replied = false
     const local = scenario.ambiguous ? [...resources, { ...resources[0], assetId: 'fixture-rain-other', name: 'Rain — Another Pianist' }] : resources
     const record = (name: string, mode?: unknown, valid?: boolean) => { calls.push({ name, mode, valid }); lastActivity = Date.now() }
-    const tools = bindRealtimeTools(resolveRealtimeTools('Rest.'), {
+    const specs = resolveRealtimeTools('Rest.')
+    // Tools outside this media fixture (image, language, Studio, ...) are recorded and
+    // rejected, so a new catalog tool can never stop the harness before its first check.
+    const others = Object.fromEntries(specs.map(spec => [spec.handler, async () => { record(spec.handler); return 'rejected' as const }]))
+    const tools = bindRealtimeTools(specs, { ...others,
       find_media: async args => {
         record('find_media')
         const media = rankMediaResources(local, { query: args.query as string, kind: args.kind as 'all' | 'music' | 'video' | 'image' }, mediaClueKey, mediaPhoneticKey)

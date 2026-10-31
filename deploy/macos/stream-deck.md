@@ -5,7 +5,8 @@ updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 
-The current **Magic Mirror copy 1** profile has eight controls. DANCE FLOOR was
+The current **Magic Mirror copy 2** profile (imported 2026-10-31 together with
+**Magic Mirror Playback**, see below) has eight controls. DANCE FLOOR was
 added through Stream Deck's UI to bottom-row third on 2026-10-30, preserving
 the seven previous assignments. MUSIC LOOP was
 added to its unused bottom-row second key on 2026-10-26; the existing default
@@ -18,19 +19,19 @@ Magic Mirror profiles are preserved.
 | --- | --- | --- |
 | First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI. |
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
-| Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. |
+| Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. The deck switches to the Playback page. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
-| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on every external speaker while remaining files download. TV black; voice and camera off. The deck switches to the Playback page. |
 | Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all external outputs (Bluetooth included; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
-| Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
+| Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset every external speaker (Jabra Speak2 75, Bluetooth speakers) to 70% unmuted. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
 STUDIO likewise returns from Desktop or the loop to the avatar,
 then selects Interactive Studio mode: the mirror now wakes to the avatar's Studio
 wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
 studio farewell and Dormant. VIDEO LOOP and CONSOLE leave the mirror mode alone;
-STOP retains its black HDMI and Jabra 70% policy.
+STOP retains its black HDMI and all-speakers 70% policy.
 Display controls first verify the venue's Mac 90° portrait orientation.
 MUSIC LOOP leaves TV power, orientation, mouse and the HDMI black cover alone.
 DESKTOP keeps Electron running with input suspended; it does not discard Console
@@ -51,24 +52,29 @@ STOP sends no mode command; Main clears desired mode on deliberate TERM. STOP
 applies to Magic Mirror's programs, not unrelated Mac applications.
 
 **Standby is not complete power-off.** Android reports Asleep and display OFF,
-but the board remains powered and reachable over wired ADB so START can wake it.
+but the board remains powered and reachable over wired ADB so START can wake it;
+a held wakelock keeps it out of deep suspend (see [raven-button](raven-button.md)).
 The signed native black cover remains active after STOP. Standby consumption has not been measured;
 wake after a full Android shutdown or removal of mains power is not established.
 The Mac mini remains running. This does not change the Mac's pre-login/boot screen.
 
-All eight buttons use Elgato's built-in **System → Open** action. The targets are
+The keys use Elgato's built-in **System → Open** action; VIDEO LOOP and MUSIC LOOP
+are built-in **Multi Actions** (Open, then **Switch Profile** to Playback). The targets are
 `~/Applications/Magic Mirror Controls/Start Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Stop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Play Loop Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Console Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Studio Magic Mirror.app`,
 `~/Applications/Magic Mirror Controls/Music Loop Magic Mirror.app`,
-`~/Applications/Magic Mirror Controls/Dance Floor Magic Mirror.app`, and
-`~/Applications/Magic Mirror Controls/Desktop Magic Mirror.app`. The small local
+`~/Applications/Magic Mirror Controls/Dance Floor Magic Mirror.app`,
+`~/Applications/Magic Mirror Controls/Desktop Magic Mirror.app`, and the Playback page's
+`Volume Up Magic Mirror.app` / `Volume Down Magic Mirror.app`. The small local
 apps call the executable [start](magic-mirror-start.sh),
 [stop](magic-mirror-stop.sh), [loop](magic-mirror-loop.sh),
 [Console](magic-mirror-console.sh), [studio](magic-mirror-studio.sh), and
-[desktop](magic-mirror-desktop.sh) and [music](magic-mirror-music.sh) scripts
+[desktop](magic-mirror-desktop.sh), [music](magic-mirror-music.sh),
+[dance](magic-mirror-dance.sh) and [volume up](magic-mirror-volume-up.sh) /
+[down](magic-mirror-volume-down.sh) scripts
 without opening Terminal. No extra plugin, hotkey remapper, accessibility grant,
 microphone owner, or restart service is needed for these controls. Elgato's
 original Default Profile remains available.
@@ -91,10 +97,10 @@ playable music. Repeated MUSIC LOOP preserves playback and preparation. STOP the
 MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.
 
-Each accepted MUSIC LOOP press first sets Jabra output to **70%** and verifies
+Each accepted MUSIC LOOP press first sets every external speaker to **70%** and verifies
 the native read-back. This happens once per press, including a repeat press while
-music is running. Jabra's physical volume buttons remain usable afterward; there
-is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
+music is running. Afterwards the Playback page's VOL+/VOL− (and Jabra's physical
+volume buttons) adjust it; there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
 
 Main owns the player and a temporary private macOS multi-output route. Current
@@ -104,13 +110,14 @@ duplicate routes. Input gain and device mute/volume are preserved; while the
 app runs the default output is the shared "Magic Mirror Speakers" device (see
 [README](README.md)), which this private route does not use. The route duplicates one stereo stream across the available outputs;
 it does not concatenate their channels. MUSIC LOOP does not wake the TV or depend
-on its ADB connection. HDMI receives music if the connected TV is already able to
+on its ADB connection, HDMI or power: with the TV off the app keeps playing (the
+TV-absent exit is held during MusicLoop) and the command still succeeds. HDMI receives music if the connected TV is already able to
 play audio; TV power remains unchanged.
 
 START, STUDIO, VIDEO LOOP, DESKTOP and Return to Avatar release MusicLoop before
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the
 same Main shutdown as all other modes**, destroys its temporary audio route,
-sleeps TV, keeps HDMI black and restores Jabra to 70%. A queued STOP interrupts a
+sleeps TV, keeps HDMI black and restores every external speaker to 70%. A queued STOP interrupts a
 pending MusicLoop-start wait. No separate restart service is installed.
 
 [Initial delivery](../../docs/testing/music-loop-2026-10-26.md) ·
@@ -127,18 +134,37 @@ apply next start; intensity, timing and a changed volume apply immediately.
 
 Start prepares the file, analyses local beat timing, gives a brief in-character
 welcome, then loops the music. No physical microphone or camera is used. Volume
-is set once, default 100%, on writable Mac outputs; physical speaker controls
+is set once, default 90%, on every external speaker; physical speaker controls
 remain free afterward. Fixed-volume HDMI depends on the TV's own setting.
 Music timing drives head and torso motion; this portrait rig has no independent
 arms/legs. Positive timing offset advances Raven and negative delays Raven.
 
-STOP releases Dance and restores Jabra70 plus the other outputs' prior levels.
+STOP releases Dance and returns every external speaker to 70% unmuted (switching to
+another mode does the same; field-checked 2026-10-31).
 The Console's Stop Dance Floor and global Stop All during Dance end Dance only:
-they restore output levels (Jabra 70%) and return Raven to Conversation while
+they restore output levels (every external speaker 70%) and return Raven to Conversation while
 the app keeps running. Only the physical STOP key runs the shutdown/black-cover
 operation (owner ruling 2026-10-31). Return to Avatar and other mode keys release
 Dance before switching. Opening Console preserves Dance. Crashes do not restart
 Dance automatically. [Journey, measurements and physical exclusions](../../docs/testing/dance-floor-delivery-2026-10-30.md).
+
+## Playback page
+
+Pressing **VIDEO LOOP** or **MUSIC LOOP** opens its control and switches the Neo to the
+**Magic Mirror Playback** profile, which has only three keys:
+
+| Position | Key | Action |
+| --- | --- | --- |
+| Top left (`0,0`) | **VOL +** | Every external speaker (Jabra, Edifier, A1) 10% louder together, snapped to 5% steps, unmuted. |
+| Bottom left (`0,1`) | **VOL −** | Every external speaker 10% quieter together (0% is the floor). |
+| Bottom right (`3,1`) | Red **STOP** | The normal STOP (shutdown, black HDMI, every external speaker 70%), then back to the main profile. |
+
+VOL± acts at once, outside the control queue, so it never waits behind a slow start;
+it does not touch the app, TV or Electron lease and plays Pop (Basso on failure). The
+Mac mini speaker and fixed-volume HDMI are untouched, and STOP/START/MUSIC LOOP return
+the speakers to 70%. Stream Deck's built-in actions switch the page on the press, not
+on the result: a failed loop still shows Playback, and its STOP recovers. Leaving a
+loop through the Console (Return to Avatar) leaves the deck on Playback until STOP.
 
 ## Reinstall the local controls
 
@@ -156,6 +182,13 @@ does not edit Elgato's live configuration files. Avoid re-importing unnecessaril
 because Stream Deck may create another copy of the profile. The generated file
 also serves as a recovery copy. The installed app and profile retained their
 configuration across a Stream Deck quit/relaunch test.
+
+**Playback page (2026-10-31):** installer run (ten wrappers, `stop-state` with
+`--volume-up/--volume-down`), the two-profile package imported with Stream Deck's
+Install confirmation. Stream Deck created **Magic Mirror copy 2** and **Magic Mirror
+Playback** and remapped both Switch Profile targets (read back from its profile
+store); the Neo was set back to copy 2. The older copies remain and can be deleted in
+Stream Deck. Physical presses of the Playback switch remain owner checks.
 
 **Desktop / compact Studio (2026-10-23):** installer run, six signed wrappers and
 updated native helper deployed, regenerated profile imported. Stream Deck created

@@ -168,7 +168,10 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
       before = await state(input.mirror)
     }
     if (before.mode !== 'reflective' || before.phase !== expected
-      || expected === 'entering' && before.elapsedMs >= BLACK_HOLD_MS) fail('black_capture_window_missed')
+      || expected === 'entering' && before.elapsedMs >= BLACK_HOLD_MS) {
+      measured({ phase: expected, beforeMs: Math.round(before.elapsedMs) })
+      fail('black_capture_window_missed')
+    }
     const nonzero = await rawMirrorShot(name), after = await state(input.mirror)
     measured({ phase: expected, beforeMs: Math.round(before.elapsedMs), afterMs: Math.round(after.elapsedMs), nonzeroPixels: nonzero })
     if (after.phase !== expected || expected === 'entering' && after.elapsedMs >= BLACK_HOLD_MS) fail('black_capture_window_missed')
@@ -419,10 +422,16 @@ export async function runReflectiveRitualQa(input: Phase4QaInput): Promise<Phase
     for (const cycleNumber of [1, 2]) {
       step = cycleNumber === 1 ? 'ritual_portrait_wake_black_hold' : 'ritual_portrait_entrance_restarts'
       await setMotion(input.mirror, cycleNumber === 1 ? 'reduce' : 'no-preference')
-      if ((await input.runtime.handleSimulator({ type: 'wake' })).op !== 'success') fail('wake_simulator_failed')
+      // Poll while the wake request is still resolving: it can take longer than the
+      // 400 ms black hold, which then ends before a sequential first sample.
+      const woke = input.runtime.handleSimulator({ type: 'wake' })
+      void woke.catch(() => undefined)
       const initial = await phase(input.mirror, 'entering', 2000)
+      measured({ firstEnteringSampleMs: Math.round(initial.elapsedMs) })
       if (initial.avatarOpacity !== 0) fail('initial_avatar_visible')
-      await blackShot(`mirror-ritual-black-hold-${cycleNumber}.png`, 'entering'); pass()
+      await blackShot(`mirror-ritual-black-hold-${cycleNumber}.png`, 'entering')
+      if ((await woke).op !== 'success') fail('wake_simulator_failed')
+      pass()
       step = 'ritual_portrait_entering_video_and_reveal'
       await progressing(input.mirror, 'entrance', videoId, 'visual')
       if ((await state(input.mirror)).video?.blend !== 'screen') fail('entrance_blend')

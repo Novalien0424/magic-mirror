@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error Plain JavaScript shared with the deployed CLI.
 import { operateMirrorControl, operateTv, parseTvPower } from '../../scripts/mirror-tv-control.mjs'
+// @ts-expect-error Plain JavaScript LaunchAgent tick.
+import { keepBoardAwake } from '../../scripts/board-keep-awake.mjs'
 
 const success = (stdout = '') => ({ status: 0, stdout })
 const state = (asleep: boolean) => `  mWakefulness=${asleep ? 'Asleep' : 'Awake'}\nDisplay Power: state=${asleep ? 'OFF' : 'ON'}\n`
@@ -40,6 +42,35 @@ describe('TV standby and wake', () => {
     const io = device(); io.available.mockReturnValue(false)
     expect(await operateTv('standby', io)).toBe('tv_unavailable')
     expect(io.run).not.toHaveBeenCalled()
+  })
+  it('holds the board wakelock before the sleep key so standby never cycles Ethernet', async () => {
+    const io = device(false)
+    expect(await operateTv('standby', io)).toBe('tv_standby')
+    const calls = io.run.mock.calls.map(([args]) => args.join(' '))
+    const lock = calls.findIndex(c => c.includes('/sys/power/wake_lock')), sleep = calls.findIndex(c => c.includes('223'))
+    expect(lock).toBeGreaterThan(-1); expect(lock).toBeLessThan(sleep)
+    expect(calls.filter(c => c.includes('/sys/power/wake_lock'))).toHaveLength(1)
+    // A failed wakelock is reported and never blocks the TV command.
+    const failing = device(false), run = failing.run.getMockImplementation()!
+    failing.run.mockImplementation(async (args: string[]) => args.join(' ').includes('wake_lock') ? { status: 1, stdout: '' } : run(args))
+    const report = vi.fn(); Object.assign(failing, { report })
+    expect(await operateTv('standby', failing)).toBe('tv_standby')
+    expect(report).toHaveBeenCalledWith('wakelock', 'tv_wakelock_failed')
+  })
+  it('re-applies the wakelock after a board reboot from the keep-awake tick', async () => {
+    const held = { available: () => true, wait: vi.fn(async () => {}), run: vi.fn(() => ({ status: 0, stdout: '' })) }
+    expect(await keepBoardAwake(held)).toBe('board_wakelock_held')
+    expect(held.run).toHaveBeenCalledTimes(1)
+    let connected = false
+    const rebooted = { available: () => true, wait: vi.fn(async () => {}), run: vi.fn((args: string[]) => {
+      if (args[0] === 'connect') { connected = true; return { status: 0, stdout: '' } }
+      return { status: connected ? 0 : 1, stdout: '' }
+    }) }
+    expect(await keepBoardAwake(rebooted)).toBe('board_wakelock_held')
+    expect(rebooted.run.mock.calls.map(([args]) => args[0])).toEqual(['-s', 'connect', '-s'])
+    const away = { available: () => true, wait: vi.fn(async () => {}), run: vi.fn(() => ({ status: 1, stdout: '' })) }
+    expect(await keepBoardAwake(away)).toBe('board_unreachable')
+    expect(await keepBoardAwake({ ...away, available: () => false })).toBe('board_adb_unavailable')
   })
   it('requires sleep confirmation and retries at most once', async () => {
     const io = device(); io.run.mockImplementation(async () => success(state(false)))

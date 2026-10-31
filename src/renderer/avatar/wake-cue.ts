@@ -12,7 +12,10 @@ export function playWakeCue(onFailure: (reason: string) => void): () => void {
   }
   try {
     const router = getAudioDeviceRouter()
-    const audio = context = new AudioContext()
+    // Open on the speakerphone directly: switching a running context's device afterwards
+    // delayed the cue ~0.3 s past its 150 ms budget once voice was pinned to the Jabra.
+    const sinkId = router.sinkIdFor('voice')
+    const audio = context = new AudioContext(sinkId ? { sinkId } as AudioContextOptions : undefined)
     void router.attach(audio as AudioContext & { setSinkId(id: string): Promise<void> }, () => disposed).then(async release => {
       detach = release
       if (disposed) { release(); return }

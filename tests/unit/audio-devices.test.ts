@@ -89,6 +89,20 @@ describe('audio device selection', () => {
     expect(speakerphoneOutputId(devices as Parameters<typeof speakerphoneOutputId>[0], 'jabra-in')).toBe('jabra-out')
   })
 
+  it('names the sink a new graph should open on, from the cached device list', async () => {
+    const devices = [
+      { kind: 'audioinput', deviceId: 'default', label: 'Default - Jabra Speak2 75' },
+      { kind: 'audiooutput', deviceId: 'jabra-out', label: 'Jabra Speak2 75' },
+    ] as MediaDeviceInfo[]
+    const router = new AudioDeviceRouter(async () => DEFAULT_AUDIO_PREFERENCES, async () => devices)
+    expect(router.sinkIdFor('voice')).toBe('')
+    await router.refresh()
+    expect(router.sinkIdFor('voice')).toBe('jabra-out')
+    expect(router.sinkIdFor('music')).toBe('')
+    await router.select(preferences)
+    expect(router.sinkIdFor('music')).toBe('speaker-1')
+  })
+
   it('reports an unavailable output and explicitly falls back to the system default', async () => {
     const router = new AudioDeviceRouter(async () => preferences, async () => [])
     const changed = vi.fn()
@@ -98,6 +112,31 @@ describe('audio device selection', () => {
     expect(sink.setSinkId).toHaveBeenLastCalledWith('')
     expect(router.snapshot().reason).toBe('audio_output_unavailable_using_default')
     expect(JSON.stringify(changed.mock.calls)).not.toContain('private device detail')
+  })
+
+  it('retries a briefly refused default once and clears a failure when its sink detaches', async () => {
+    const wait = vi.fn(async () => undefined)
+    const router = new AudioDeviceRouter(async () => DEFAULT_AUDIO_PREFERENCES, async () => [], wait)
+    // macOS is switching the default to the shared speakers: the first attempt is refused.
+    let refusals = 1
+    const music = { setSinkId: vi.fn(async () => { if (refusals-- > 0) throw new Error('switching') }) }
+    await router.attach(music, undefined, 'music')
+    expect(wait).toHaveBeenCalledWith(1000)
+    expect(music.setSinkId).toHaveBeenCalledTimes(2)
+    expect(router.snapshot().reason).toBe('audio_devices_ready')
+    // A sink that never routes fails, but only while it is attached (a cold
+    // VIDEO LOOP failure must not fail Main's reload or the next press).
+    const broken = { setSinkId: vi.fn(async () => { throw new Error('gone') }) }
+    const changed = vi.fn()
+    router.subscribe(changed)
+    const detach = await router.attach(broken, undefined, 'music')
+    expect(router.snapshot().reason).toBe('audio_output_routing_failed')
+    detach()
+    expect(router.snapshot().reason).toBe('audio_devices_ready')
+    expect(changed).toHaveBeenCalledTimes(2)
+    const next = { setSinkId: vi.fn(async () => undefined) }
+    await router.attach(next, undefined, 'music')
+    expect(router.snapshot().reason).toBe('audio_devices_ready')
   })
 
   it('rejects malformed preference payloads and never chooses an ambiguous native input', () => {

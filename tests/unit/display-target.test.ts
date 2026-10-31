@@ -52,6 +52,23 @@ describe('chooseMirrorDisplay', () => {
     expect(chooseMirrorDisplay([asus], 'T749')).toEqual({ display: asus, reason: 'no_match' })
   })
 
+  it('treats a single unnamed non-primary display as the panel that lost its EDID name', () => {
+    const unnamed = { ...mirror, label: '' }
+    expect(chooseMirrorDisplay([asus, unnamed], 'T749')).toEqual({ display: unnamed, reason: 'unnamed_target' })
+    expect(planInitialPlacement(chooseMirrorDisplay([asus, unnamed], 'T749'), 'T749', null))
+      .toMatchObject({ action: 'show', display: unnamed, placement: { kind: 'placed', displayId: 7, onTarget: true } })
+    const hidden: MirrorPlacement = { kind: 'hidden_awaiting_target' }
+    expect(planRehome(hidden, chooseMirrorDisplay([asus, unnamed], 'T749'), 'T749', 'display-added'))
+      .toMatchObject({ action: 'move_and_show', display: unnamed })
+  })
+
+  it('never treats an unnamed primary display or two unnamed displays as the panel', () => {
+    const unnamedPrimary = { ...asus, label: '' }
+    expect(chooseMirrorDisplay([unnamedPrimary], 'T749')).toEqual({ display: unnamedPrimary, reason: 'no_match' })
+    const second = { ...mirror, id: 9, label: '' }
+    expect(chooseMirrorDisplay([asus, { ...mirror, label: '' }, second], 'T749')).toEqual({ display: asus, reason: 'no_match' })
+  })
+
   it('returns a null display with a reason when there are no displays at all', () => {
     expect(chooseMirrorDisplay([], 'T749')).toEqual({ display: null, reason: 'no_displays' })
     expect(chooseMirrorDisplay([], undefined)).toEqual({ display: null, reason: 'no_displays' })

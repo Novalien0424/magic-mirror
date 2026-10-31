@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { playWakeCue } from '../../../src/renderer/avatar/wake-cue'
 
-const f = vi.hoisted(() => ({ attach: vi.fn(), effects: 1 }))
-vi.mock('../../../src/renderer/audio-devices', () => ({ getAudioDeviceRouter: () => ({ attach: f.attach,
+const f = vi.hoisted(() => ({ attach: vi.fn(), effects: 1, sink: '', options: [] as unknown[] }))
+vi.mock('../../../src/renderer/audio-devices', () => ({ getAudioDeviceRouter: () => ({ attach: f.attach, sinkIdFor: () => f.sink,
   snapshot: () => ({ preferences: { volumes: { effects: f.effects } } }) }) }))
 const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
 function setup() {
-  vi.useFakeTimers(); f.effects = 1
+  vi.useFakeTimers(); f.effects = 1; f.sink = ''; f.options = []
   const detach = vi.fn(), close = vi.fn(async () => {}), start = vi.fn()
   const connect = vi.fn(function (this: unknown) { return this })
   const level = vi.fn(), param = { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn(), linearRampToValueAtTime: level }
   class Context {
+    constructor(options?: unknown) { f.options.push(options) }
     currentTime = 0; destination = {}; close = close; resume = vi.fn(async () => {})
     createOscillator() { return { frequency: param, connect, start, stop: vi.fn(), type: '' } }
     createGain() { return { gain: param, connect } }
@@ -26,6 +27,13 @@ describe('local wake acknowledgement', () => {
     await vi.advanceTimersByTimeAsync(221)
     expect(p.close).toHaveBeenCalledOnce(); expect(p.detach).toHaveBeenCalledOnce()
     stop(); expect(p.close).toHaveBeenCalledOnce(); expect(failed).not.toHaveBeenCalled()
+  })
+  it('opens on the speakerphone directly instead of switching a running context', async () => {
+    const p = setup(); f.sink = 'jabra-out'
+    playWakeCue(vi.fn()); await tick()
+    expect(f.options).toEqual([{ sinkId: 'jabra-out' }]); expect(p.start).toHaveBeenCalledOnce()
+    setup(); playWakeCue(vi.fn()); await tick()
+    expect(f.options).toEqual([undefined])
   })
   it('honors effects mute loaded during routing', async () => {
     const p = setup(); let routed!: (release: () => void) => void

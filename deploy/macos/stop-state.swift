@@ -1,4 +1,5 @@
-// Fixed venue policies: black HDMI, portrait orientation, Jabra OUTPUT at 70%.
+// Fixed venue policies: black HDMI, portrait orientation, every external speaker OUTPUT at 70%
+// (Playback VOL± steps them together).
 // No microphone, input-gain, credential, default-device or restart ownership.
 import AppKit
 import CoreAudio
@@ -8,8 +9,19 @@ let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponen
 let active = root.appendingPathComponent("active")
 let ready = root.appendingPathComponent("ready.json")
 func fail(_ reason: String) -> Never { print(reason); exit(1) }
+/// The venue HDMI receiver is T749. If its bridge stops sending the EDID, macOS lists it
+/// unnamed; a single unnamed non-main screen is then the panel. Never the operator's display.
+func venueScreens() -> [NSScreen] {
+  let named = NSScreen.screens.filter { $0.localizedName.localizedCaseInsensitiveContains("T749") }
+  if !named.isEmpty { return named }
+  let unnamed = NSScreen.screens.filter { screen in
+    let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    return screen.localizedName.trimmingCharacters(in: .whitespaces).isEmpty && id != 0 && CGDisplayIsMain(id) == 0
+  }
+  return unnamed.count == 1 ? unnamed : []
+}
 func portrait() {
-  let screens = NSScreen.screens.filter { $0.localizedName.localizedCaseInsensitiveContains("T749") }
+  let screens = venueScreens()
   guard screens.count == 1, let id = (screens[0].deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     else { fail("portrait_display_unavailable") }
   // Same accepted venue orientation as displayctl. Only touch the HDMI target.
@@ -32,51 +44,84 @@ func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectProper
              _ element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress {
   AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
 }
-func jabraOutput() -> AudioDeviceID {
+func outputDevices() -> [(id: AudioDeviceID, name: String, builtIn: Bool)] {
   var property = address(kAudioHardwarePropertyDevices), size: UInt32 = 0
   let system = AudioObjectID(kAudioObjectSystemObject)
   guard AudioObjectGetPropertyDataSize(system, &property, 0, nil, &size) == noErr else { fail("jabra_devices_unavailable") }
   var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
   guard AudioObjectGetPropertyData(system, &property, 0, nil, &size, &ids) == noErr else { fail("jabra_devices_unavailable") }
-  let matches = ids.filter { id in
+  return ids.compactMap { id in
     var p = address(kAudioObjectPropertyName), name: Unmanaged<CFString>?, n = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-    guard AudioObjectGetPropertyData(id, &p, 0, nil, &n, &name) == noErr, let value = name?.takeRetainedValue(),
-          (value as String).localizedCaseInsensitiveContains("Jabra Speak2 75") else { return false }
+    guard AudioObjectGetPropertyData(id, &p, 0, nil, &n, &name) == noErr, let value = name?.takeRetainedValue() else { return nil }
     p = address(kAudioDevicePropertyStreams, kAudioDevicePropertyScopeOutput); n = 0
-    return AudioObjectGetPropertyDataSize(id, &p, 0, nil, &n) == noErr && n > 0
+    guard AudioObjectGetPropertyDataSize(id, &p, 0, nil, &n) == noErr, n > 0 else { return nil }
+    p = address(kAudioDevicePropertyTransportType); var transport: UInt32 = 0; n = 4
+    guard AudioObjectGetPropertyData(id, &p, 0, nil, &n, &transport) == noErr,
+      ![kAudioDeviceTransportTypeAggregate, kAudioDeviceTransportTypeVirtual].contains(transport) else { return nil }
+    return (id, value as String, transport == kAudioDeviceTransportTypeBuiltIn)
   }
-  guard matches.count == 1 else { fail(matches.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
-  return matches[0]
 }
-func volume(_ reset: Bool) {
-  let id = jabraOutput()
+/// Sets (reset), steps (Playback VOL±) or reads one output; a reset is 70% unmuted.
+/// Nil when it has no writable volume (HDMI TV).
+func level(_ id: AudioDeviceID, _ reset: Bool, step: Float32 = 0) -> (volumes: [Float32], muted: Bool)? {
+  var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
   var values: [Float32] = []
-  for element: UInt32 in [0, 1, 2] {
-    var p = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
-    guard AudioObjectHasProperty(id, &p) else { continue }
-    if reset {
-      var writable: DarwinBoolean = false
-      guard AudioObjectIsPropertySettable(id, &p, &writable) == noErr, writable.boolValue else { fail("jabra_volume_readonly") }
-      var value: Float32 = 0.7
-      guard AudioObjectSetPropertyData(id, &p, 0, nil, UInt32(MemoryLayout<Float32>.size), &value) == noErr else { fail("jabra_volume_set_failed") }
-    }
+  for element: UInt32 in AudioObjectHasProperty(id, &main) ? [0] : [1, 2] {
+    var p = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element), writable: DarwinBoolean = false
+    guard AudioObjectHasProperty(id, &p), AudioObjectIsPropertySettable(id, &p, &writable) == noErr, writable.boolValue else { continue }
     var value: Float32 = 0, size = UInt32(MemoryLayout<Float32>.size)
-    guard AudioObjectGetPropertyData(id, &p, 0, nil, &size, &value) == noErr else { fail("jabra_volume_read_failed") }
+    if step != 0 {
+      guard AudioObjectGetPropertyData(id, &p, 0, nil, &size, &value) == noErr else { fail("output_volume_read_failed") }
+      // Snap to 5% so hardware rounding (Jabra 0.701) never drifts the speakers apart.
+      value = min(1, max(0, ((value + step) * 20).rounded() / 20))
+    }
+    if reset || step != 0 {
+      if reset { value = 0.7 }
+      guard AudioObjectSetPropertyData(id, &p, 0, nil, size, &value) == noErr else { fail("output_volume_set_failed") }
+    }
+    guard AudioObjectGetPropertyData(id, &p, 0, nil, &size, &value) == noErr else { fail("output_volume_read_failed") }
     values.append(value)
   }
-  guard !values.isEmpty else { fail("jabra_volume_unavailable") }
-  if reset && values.contains(where: { abs($0 - 0.7) > 0.015 }) { fail("jabra_volume_verify_failed") }
+  guard !values.isEmpty else { return nil }
   // The Jabra's own firmware mutes when its buttons take it to step 0, and a later volume
-  // write does not clear that. Normal use is 70% unmuted (owner 2026-10-31); input untouched.
+  // write does not clear that, so a reset or VOL+ also unmutes. Input gain is never touched.
   var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), muted: UInt32 = 0, muteSize = UInt32(MemoryLayout<UInt32>.size)
   let hasMute = AudioObjectHasProperty(id, &mute)
-  if reset && hasMute {
+  if (reset || step > 0) && hasMute {
     var off: UInt32 = 0
-    guard AudioObjectSetPropertyData(id, &mute, 0, nil, muteSize, &off) == noErr else { fail("jabra_unmute_failed") }
+    guard AudioObjectSetPropertyData(id, &mute, 0, nil, muteSize, &off) == noErr else { fail("output_unmute_failed") }
   }
-  if hasMute && AudioObjectGetPropertyData(id, &mute, 0, nil, &muteSize, &muted) != noErr { fail("jabra_mute_read_failed") }
-  if reset && muted != 0 { fail("jabra_unmute_verify_failed") }
-  let data = try! JSONSerialization.data(withJSONObject: ["output": "Jabra Speak2 75", "volumes": values, "reset": reset, "muted": muted != 0], options: [.sortedKeys])
+  if hasMute && AudioObjectGetPropertyData(id, &mute, 0, nil, &muteSize, &muted) != noErr { fail("output_mute_read_failed") }
+  return (values, muted != 0)
+}
+// Normal use is every external speaker at 70% unmuted (owner 2026-10-31). The Jabra is
+// required; the Mac mini speaker is excluded from music and keeps its level.
+func volume(_ reset: Bool) {
+  let external = outputDevices().filter { !$0.builtIn }
+  let jabras = external.filter { $0.name.localizedCaseInsensitiveContains("Jabra Speak2 75") }
+  guard jabras.count == 1 else { fail(jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
+  guard let jabra = level(jabras[0].id, reset) else { fail("jabra_volume_unavailable") }
+  var speakers: [[String: Any]] = [], uncontrolled = 0, verified = !jabra.volumes.contains(where: { abs($0 - 0.7) > 0.015 }) && !jabra.muted
+  for output in external where output.id != jabras[0].id {
+    guard let other = level(output.id, reset) else { uncontrolled += 1; continue }
+    verified = verified && !other.volumes.contains(where: { abs($0 - 0.7) > 0.015 }) && !other.muted
+    speakers.append(["output": output.name, "volumes": other.volumes, "muted": other.muted])
+  }
+  let data = try! JSONSerialization.data(withJSONObject: ["output": "Jabra Speak2 75", "volumes": jabra.volumes, "reset": reset, "muted": jabra.muted,
+    "speakers": speakers, "uncontrolled": uncontrolled], options: [.sortedKeys])
+  print(String(data: data, encoding: .utf8)!)
+  if reset && !verified { fail("output_volume_verify_failed") }
+}
+// Playback VOL± (Stream Deck): every external speaker moves 10% together; the Jabra is
+// not required here, and the Mac mini speaker and fixed-volume HDMI are left alone.
+func stepVolume(_ step: Float32) {
+  var speakers: [[String: Any]] = []
+  for output in outputDevices() where !output.builtIn {
+    guard let changed = level(output.id, false, step: step) else { continue }
+    speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
+  }
+  guard !speakers.isEmpty else { fail("output_volume_unavailable") }
+  let data = try! JSONSerialization.data(withJSONObject: ["step": step, "speakers": speakers], options: [.sortedKeys])
   print(String(data: data, encoding: .utf8)!)
 }
 
@@ -94,6 +139,8 @@ final class BlackWindow: NSWindow {
 switch CommandLine.arguments.dropFirst().first {
 case "--reset-output": volume(true)
 case "--output-status": volume(false)
+case "--volume-up": stepVolume(0.1)
+case "--volume-down": stepVolume(-0.1)
 case "--portrait": portrait()
 case "--black":
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -109,8 +156,7 @@ case "--black":
       try? FileManager.default.removeItem(at: ready)
       app.terminate(nil); return
     }
-    // The venue HDMI receiver is T749. Never cover the operator's display.
-    let targets = NSScreen.screens.filter { $0.localizedName.localizedCaseInsensitiveContains("T749") }
+    let targets = venueScreens()
     let frames = targets.map(\.frame)
     if frames != priorFrames {
       windows.forEach { $0.orderOut(nil) }; windows = []; priorFrames = frames

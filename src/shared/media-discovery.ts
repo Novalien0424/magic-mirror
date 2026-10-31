@@ -60,7 +60,9 @@ function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 :
 let segmenter: Intl.Segmenter | undefined
 // Search syntax only, never a speech/intent/command filter. Apply after the
 // original lookup misses, so titles containing these words retain priority.
-const searchSyntax = new Set(['請', '请', '幫', '帮', '我', '想', '要', '聽', '听', '看', '播放', '放', '一下', '的', '唱', '唱的', '那個', '那个'])
+const searchSyntax = new Set(['請', '请', '幫', '帮', '我', '想', '要', '聽', '听', '看', '播放', '放', '一下', '的', '唱', '唱的', '那個', '那个',
+  // Generic media nouns around a title ("雨聲鋼琴音樂"), never a title clue on their own.
+  '音樂', '音乐', '歌', '歌曲', '曲子'])
 function queryClues(query: string): string[] {
   segmenter ??= new Intl.Segmenter('zh-TW', { granularity: 'word' })
   return [...segmenter.segment(query)].filter(part => part.isWordLike && !searchSyntax.has(part.segment))
@@ -130,7 +132,9 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
     .sort((a, b) => b.score - a.score || compare(a.name, b.name)
       || compare(a.resource.kind, b.resource.kind) || compare(a.resource.assetId, b.resource.assetId))
   let segmented = false
-  if (!listing && !ranked.length && !/[^\p{L}\p{N}\p{P}\p{Z}\s]/u.test(parsedRequest.query)) {
+  // Also when every candidate is weak: a title alias plus generic words should still
+  // resolve by its clues, while a lone artist clue stays weak (it needs two clues).
+  if (!listing && (!ranked.length || ranked[0]!.score <= 2) && !/[^\p{L}\p{N}\p{P}\p{Z}\s]/u.test(parsedRequest.query)) {
     const parts = queryClues(parsedRequest.query)
     // Keep every substantive clue, including a conflicting artist/version.
     // Never degrade a whole unknown sentence to one coincidental title token.
@@ -141,11 +145,12 @@ export function rankMediaResources(resources: readonly AvatarMediaResource[], re
         return labels.some(label => clues.every(clue => label.includes(clue)))
           || clues.every(clue => labels[0]!.includes(clue) || labels.slice(1).includes(clue))
       }
-      ranked = eligible.map(resource => ({ resource, name: normalize(resource.name),
+      const clueMatches = eligible.map(resource => ({ resource, name: normalize(resource.name),
         score: matches(resource, normalize) ? 2 : pronunciation && matches(resource, pronunciation) ? 1 : 0 }))
         .filter(candidate => candidate.score > 0)
         .sort((a, b) => b.score - a.score || compare(a.name, b.name) || compare(a.resource.assetId, b.resource.assetId))
-      segmented = ranked.length > 0
+      // Keep the weak candidates when the clues find nothing better.
+      if (clueMatches.length) { ranked = clueMatches; segmented = true }
     }
   }
   const total = ranked.length

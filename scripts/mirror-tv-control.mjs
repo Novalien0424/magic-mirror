@@ -2,8 +2,20 @@ import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { safeOperatorReason } from './operator-command.mjs'
 
-const BOARD = '192.168.77.2:5555'
+export const BOARD = '192.168.77.2:5555'
 const HDMI = 'com.android.rockchip.camera2/.RockchipCamera2'
+// Under a dark standby screen the board's kernel retries deep suspend every ~10 s; each
+// attempt (aborted by its own watchdog) cycles Ethernet and the RK628 HDMI bridge until
+// one wedges: no ADB and an unnamed HDMI panel until a power cycle (RCA 2026-10-31).
+// A kernel wakelock stops the attempts; Android still reports Asleep/display OFF.
+// It is lost on board reboot, so every TV operation and board-keep-awake re-apply it.
+const KEEP_AWAKE = "su 0 sh -c 'grep -q magicmirror_standby /sys/power/wake_lock || echo magicmirror_standby > /sys/power/wake_lock'"
+
+/** Idempotent; true when the board holds the Magic Mirror wakelock. */
+export async function ensureBoardWakelock(io, timeout = 3000) {
+  const result = await io.run(['-s', BOARD, 'shell', KEEP_AWAKE], timeout)
+  return result.status === 0 && !result.error && !result.signal
+}
 
 export function parseTvPower(text) {
   return {
@@ -50,6 +62,7 @@ export async function operateTv(action, io = createTvIo()) {
     }
     return passed
   }
+  let wakelock = false
   try {
     if (!await io.available()) return 'tv_unavailable'
     // One retry only. Explicit SLEEP/WAKEUP are idempotent; never toggle POWER.
@@ -68,6 +81,11 @@ export async function operateTv(action, io = createTvIo()) {
       }
       const current = parseTvPower(before.stdout ?? '')
       const known = ok(before, 'power_before')
+      // Before any sleep/wake key; a failure is reported and never gates the command.
+      if (!wakelock && known) {
+        wakelock = true
+        if (!await ensureBoardWakelock({ run: (args, timeout) => run(args, timeout) })) io.report?.('wakelock', 'tv_wakelock_failed')
+      }
       // In standby the Android input service need not finish another injected
       // sleep key promptly. A confirmed OFF state needs no second command.
       if (action === 'standby' && known && current.wakefulness === 'Asleep' && current.display === 'OFF') return 'tv_standby'
