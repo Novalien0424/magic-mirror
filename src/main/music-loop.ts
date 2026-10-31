@@ -6,6 +6,8 @@ import { createInterface } from 'node:readline'
 const AUDIO: Record<string, string> = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
   '.wav': 'audio/vnd.wave', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.flac': 'audio/flac', '.caf': 'audio/x-caf' }
 export const MUSIC_LOOP_MAX_BYTES = 200_000_000
+/** Longest wait for the next song in name order while its on-disk source is cached. */
+export const MUSIC_ORDER_WAIT_MS = 15_000
 const byName = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true })
 const folderName = (name: string) => !!name && !name.startsWith('.') && !/[/\\]/.test(name) && name !== '..'
 
@@ -118,7 +120,8 @@ export function createMusicLoop(input: {
     async start(): Promise<boolean> {
       await stop()
       const run = revision, cancellation = new AbortController(); abort = cancellation
-      type Track = { path: string; size: number; mtime: number; local?: string; status: 'pending' | 'ready' | 'failed' }
+      // onDisk: the source is already on this Mac (Google Drive "Available offline"), so its cache copy is quick.
+      type Track = { path: string; size: number; mtime: number; local?: string; status: 'pending' | 'ready' | 'failed'; onDisk?: boolean }
       const tracks: Track[] = []
       let oversized = 0
       try {
@@ -165,12 +168,24 @@ export function createMusicLoop(input: {
         const stat = await lstat(track.path)
         return stat.isFile() && stat.size === track.size && stat.mtimeMs === track.mtime && await realpath(track.path) === track.path
       }
+      const orderWaits = new Map<number, number>()
+      let waiting = false
       const next = async () => {
         if (picking || !routeReady || current !== undefined || run !== revision) return
-        picking = true
+        picking = true; waiting = false
         try {
           for (let offset = 1; offset <= tracks.length; offset++) {
             const index = ((last ?? -1) + offset) % tracks.length, track = tracks[index]!
+            // File-name order (owner 2026-10-31): wait briefly for the next song while its
+            // on-disk source is copied into the cache; only cloud-only songs are skipped.
+            if (track.status === 'pending' && track.onDisk !== false) {
+              let deadline = orderWaits.get(index)
+              if (deadline === undefined) {
+                orderWaits.set(index, deadline = Date.now() + MUSIC_ORDER_WAIT_MS)
+                setTimeout(() => { if (run === revision) void next() }, MUSIC_ORDER_WAIT_MS)
+              }
+              if (Date.now() < deadline) { waiting = true; return }
+            }
             if (track.status !== 'ready') continue
             try {
               if (!await unchanged(track) || !track.local) throw Error()
@@ -195,7 +210,7 @@ export function createMusicLoop(input: {
           else state()
         } finally {
           picking = false
-          if (run === revision && current === undefined && tracks.some(t => t.status === 'ready')) void next()
+          if (!waiting && run === revision && current === undefined && tracks.some(t => t.status === 'ready')) void next()
         }
       }
       skipper = delta => {
@@ -250,9 +265,11 @@ export function createMusicLoop(input: {
           let available = false
           try { available = await input.isLocal?.(track.path, cancellation.signal) ?? false }
           catch { if (run === revision) report('operator_loop_music_availability_unknown') }
+          track.onDisk = available
           ;(available ? local : remote).push(track)
         }
-        state()
+        // Classification decides waiting (on disk) or skipping (cloud-only) for the next song.
+        state(); void next()
         for (const track of [...local, ...remote]) {
           if (run !== revision) return
           try {

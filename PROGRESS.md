@@ -35,6 +35,12 @@ What changed (rulings in [DECISIONS](DECISIONS.md) 2026-10-31, product in [PRD](
   35% on the alert output (Jabra) via `stop-state --chime` (installed, field-checked).
   Investigation of video jitter (loop-wrap hitch, start delay, board capture path) and
   volume actors is in the session report; fixes 4–5 not started.
+- **Follow-up check 21:57 Taipei:** Yunelle readable after AI_Stuff went offline (84
+  songs); the re-sync pause measured on the Edifier stream (suspend 21:48:38.83 → start
+  40.07); file-name order fixed for on-disk songs still being cached (waits ≤15 s; before,
+  Yunelle started at song 2); runbook profile/page names corrected. Full unit suite passes;
+  Phase 0 demos and Phase 4 runner checks pass with the app stopped (they refuse while it
+  runs). MUSIC LOOP restarted on the new build (song 1).
 
 - Dance Floor: Console Stop/Stop All end Dance and return to Conversation; loop-wrap
   clock fix; beat-locked groove; "Ready to Party?" welcome; 90% default volume;

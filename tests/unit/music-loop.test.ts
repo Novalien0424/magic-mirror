@@ -253,6 +253,7 @@ setInterval(() => {}, 1000);
   it('plays a later cache hit while the first cloud file waits, then joins it at a track boundary', async () => {
     const f = await playerFixture()
     f.input.cached.mockImplementation(async path => path.endsWith('02.mp3') ? path : undefined)
+    f.input.isLocal.mockImplementation(async path => !path.endsWith('01.wav')) // 01 is cloud-only
     let complete!: (path: string) => void
     f.input.prepare.mockImplementation(() => new Promise(resolve => { complete = resolve }))
     expect(await f.player.start()).toBe(true)
@@ -263,6 +264,17 @@ setInterval(() => {}, 1000);
     complete(join(f.folder, '01.wav'))
     await vi.waitFor(() => expect(f.input.report.mock.calls.some(c => c[0] === 'operator_loop_music_playing' && c[1].track === 1)).toBe(true))
     expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('keeps file-name order by waiting for an on-disk song that is still being cached', async () => {
+    const f = await playerFixture()
+    f.input.cached.mockImplementation(async path => path.endsWith('02.mp3') ? path : undefined)
+    const played: string[] = []
+    Object.assign(f.input, { beforePlay: vi.fn(async (path: string) => { played.push(path.split('/').pop()!) }) })
+    f.input.prepare.mockImplementation(async (path: string) => { await new Promise(resolve => setTimeout(resolve, 200)); return path })
+    const player = createMusicLoop(f.input); players.push(player)
+    await f.player.stop()
+    expect(await player.start()).toBe(true)
+    await vi.waitFor(() => expect(played.slice(0, 2)).toEqual(['01.wav', '02.mp3']))
   })
   it('prepares locally downloaded sources before an earlier cloud placeholder', async () => {
     const f = await playerFixture()

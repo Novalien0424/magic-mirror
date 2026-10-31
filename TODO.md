@@ -81,9 +81,16 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   during a loop fails at the 1% QA output level; `--memory-conversation` 0 of 2 and
   v22 character judge 0 of 10 (`unnecessary_question`, `wrong_language` on English
   turns answered in Chinese — check the judge against the PRD language rule).
-- [ ] **Music page in the room.** Owner: make Google Drive's MusicLoop/Yunelle
-  Available offline so its key plays; press each Music page key once (folder titles,
-  PREV/NEXT, STOP back to main); listen across song changes with the re-sync pause.
+- [ ] **Music page in the room.** AI_Stuff is Available offline (owner, 10-31); the Yunelle
+  key plays its 84 songs from song 1 (field-checked). Owner: press each Music page key
+  once on the Neo (folder titles, PREV/NEXT, STOP back to main) and listen across song
+  changes with the re-sync pause (Bluetooth streams now pause 1.24 s between songs).
+- [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; outputs=3). Likely its
+  auto power-off or the −80 dBm link; move it closer or disable auto-off. On rejoin it now
+  takes the Jabra's level.
+- [ ] **Video loop smoothness (not started; owner chose volume fixes first).** Loop-wrap
+  hitch (QA: dropped frames at half the wraps), TV wake after playback, board camera-preview
+  path. Proposed: local-path fetches for loop media, dropped-frame metrics, parallel TV wake.
   Old profiles ("Magic Mirror", "copy", "copy 1", "copy 2", "Magic Mirror Playback")
   can be deleted in Stream Deck.
 - [ ] **Playback page on the Neo (physical).** VIDEO LOOP/MUSIC LOOP → VOL+/VOL−/STOP

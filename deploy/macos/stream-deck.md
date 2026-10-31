@@ -5,8 +5,9 @@ updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 
-The current **Magic Mirror copy 2** profile (imported 2026-10-31 together with
-**Magic Mirror Playback**, see below) has eight controls. DANCE FLOOR was
+The current **Magic Mirror copy 3** profile (imported 2026-10-31 night together with
+**Magic Mirror Playback copy** for VIDEO LOOP and **Magic Mirror Music** for MUSIC LOOP,
+see below) has eight controls. DANCE FLOOR was
 added through Stream Deck's UI to bottom-row third on 2026-10-30, preserving
 the seven previous assignments. MUSIC LOOP was
 added to its unused bottom-row second key on 2026-10-26; the existing default
@@ -22,7 +23,7 @@ Magic Mirror profiles are preserved.
 | Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. The deck switches to the Playback page. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
-| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on every external speaker while remaining files download. TV black; voice and camera off. The deck switches to the Playback page. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on every external speaker while remaining files download. TV black; voice and camera off. The deck switches to the Music page. |
 | Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all external outputs (Bluetooth included; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset every external speaker (Jabra Speak2 75, Bluetooth speakers) to 70% unmuted. The black cover stays until another control has a ready app and acknowledged mode. |
 
@@ -86,8 +87,10 @@ was created empty at the owner's request. Add MP3, M4A, AAC, WAV, AIFF, FLAC or 
 files of **200 MB or less (200,000,000 bytes)**, then press MUSIC LOOP. Larger files
 are abnormal and skipped before download or playback; Console reports when all
 files are oversized. MUSIC LOOP plays the folder's own files in natural file-name
-order ("2" before "10"); hidden files and symlinks are excluded. A file still
-downloading from Google Drive is skipped until ready rather than stalling the music.
+order ("2" before "10"); hidden files and symlinks are excluded. A song already on the
+Mac (Google Drive "Available offline") is waited for while it is copied into the music
+cache (at most 15 s), so the order holds; a cloud-only song still downloading is skipped
+until ready rather than stalling the music.
 
 **Music page (2026-10-31).** Pressing MUSIC LOOP switches the Neo to **Magic Mirror
 Music**: the top row holds keys for the first three subfolders of MusicLoop in name
@@ -112,7 +115,7 @@ produces an explicit Console message.
 
 Each accepted MUSIC LOOP press first sets every external speaker to **70%** and verifies
 the native read-back. This happens once per press, including a repeat press while
-music is running. Afterwards the Playback page's VOL+/VOL− (and Jabra's physical
+music is running. Afterwards the Music page's VOL+/VOL− (and Jabra's physical
 volume buttons) adjust it; there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
 
@@ -190,8 +193,8 @@ Dance automatically. [Journey, measurements and physical exclusions](../../docs/
 
 ## Playback page
 
-Pressing **VIDEO LOOP** or **MUSIC LOOP** opens its control and switches the Neo to the
-**Magic Mirror Playback** profile, which has only three keys:
+Pressing **VIDEO LOOP** opens its control and switches the Neo to the **Magic Mirror
+Playback** profile (MUSIC LOOP has its own Music page, above), which has only three keys:
 
 | Position | Key | Action |
 | --- | --- | --- |
@@ -229,6 +232,13 @@ Install confirmation. Stream Deck created **Magic Mirror copy 2** and **Magic Mi
 Playback** and remapped both Switch Profile targets (read back from its profile
 store); the Neo was set back to copy 2. The older copies remain and can be deleted in
 Stream Deck. Physical presses of the Playback switch remain owner checks.
+
+**Music page (2026-10-31 night):** the Magic Mirror Controls plugin installed
+(`install-stream-deck-plugin.sh`, Stream Deck restarted, "Plugin connected" logged), the
+three-profile package imported and read back: **Magic Mirror copy 3** (MUSIC LOOP → Music,
+VIDEO LOOP → Playback copy), **Magic Mirror Playback copy**, **Magic Mirror Music**
+(plugin folder keys kept with slots 1–3). After the restart Stream Deck stopped answering
+accessibility, so the Neo was left on the Music page; its STOP returns to copy 3.
 
 **Desktop / compact Studio (2026-10-23):** installer run, six signed wrappers and
 updated native helper deployed, regenerated profile imported. Stream Deck created
