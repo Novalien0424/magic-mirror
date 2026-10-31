@@ -3,6 +3,9 @@
 // Reacts to CoreAudio device-list changes only, so a manual pick in Sound
 // settings holds until the next plug/unplug. When the device is absent macOS
 // chooses its own fallback. Metadata-only log on stdout.
+// While Magic Mirror runs, its public "Magic Mirror Speakers" device (music-loop
+// --shared-output) is the default output instead, so every music source reaches
+// every speaker; the app pins Raven's voice to the Jabra. Alerts and input stay.
 // Usage: audio-prefer [name-substring]   (default "Jabra")
 import CoreAudio
 import Foundation
@@ -59,6 +62,7 @@ func enforce(reason: String) {
   let matches = devices().filter { string($0, kAudioObjectPropertyName).localizedCaseInsensitiveContains(needle) }
   let output = matches.first { channels($0, kAudioObjectPropertyScopeOutput) > 0 }
   let input = matches.first { channels($0, kAudioObjectPropertyScopeInput) > 0 }
+  let shared = devices().first { string($0, kAudioDevicePropertyDeviceUID) == "com.magicmirror.speakers" && channels($0, kAudioObjectPropertyScopeOutput) > 0 }
   let present = output != nil || input != nil
   if present != lastPresent {
     say(present ? "PREFERRED_AUDIO_PRESENT needle=\(needle) uid=\(string((output ?? input)!, kAudioDevicePropertyDeviceUID))"
@@ -66,7 +70,7 @@ func enforce(reason: String) {
     lastPresent = present
   }
   let targets: [(String, AudioObjectPropertySelector, AudioDeviceID?)] = [
-    ("output", kAudioHardwarePropertyDefaultOutputDevice, output),
+    ("output", kAudioHardwarePropertyDefaultOutputDevice, shared ?? output),
     ("system_output", kAudioHardwarePropertyDefaultSystemOutputDevice, output),
     ("input", kAudioHardwarePropertyDefaultInputDevice, input),
   ]

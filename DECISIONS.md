@@ -22,6 +22,18 @@
   is left out whenever another output exists. By ear on 10-31, the Jabra and
   Edifier are aligned by macOS in the stacked aggregate; the built-in speaker
   raised to Dance volume was the audible offset.
+- **Every music source on every speaker:** conversation music, operator loops and
+  YouTube also play on all external outputs, like MusicLoop. While the app runs,
+  Main publishes a "Magic Mirror Speakers" device that audio-prefer makes the
+  macOS default output (alerts and input stay on the Jabra). Raven's voice and
+  cues stay on the microphone's speakerphone (the Jabra), whose echo canceller
+  hears only its own output. Embedded local-video audio stays there too, to keep
+  lip sync.
+- **Reply quality is a rate, not a gate:** model tool use (route, source scope,
+  mode, selection, playback, effects), privacy and application cues stay hard
+  runtime gates. The v9 reply-quality judge and the barge-in judge report
+  per-turn rates; `raven-quality-rates.mjs` compares them with the recorded v9
+  baseline and flags a significant regression. Invalid judge output still fails.
 
 ## 2026-10-21 — Selectable common image skill per Avatar (owner directive)
 

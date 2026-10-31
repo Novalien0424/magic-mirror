@@ -58,7 +58,7 @@ displayctl unmirror
 displayctl main   Virtual              # Virtual 16:9 stays MAIN; T749 is extended RIGHT
 
 sudo zsh deploy/macos/install-board-adb-daemon.sh    # localhost ADB only (root LaunchDaemon)
-zsh deploy/macos/install-audio-prefer.sh             # Jabra = default mic + speaker (user LaunchAgent)
+zsh deploy/macos/install-audio-prefer.sh             # Jabra = default mic + speaker; app's all-speakers device = default output while it runs
 ```
 
 Once rotated, macOS reports the display's modes rotated too: `displayctl mode T749 1080 1920 60`.

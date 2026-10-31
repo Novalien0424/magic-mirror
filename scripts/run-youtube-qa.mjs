@@ -11,7 +11,7 @@ const evidence = join(root, '.artifacts', 'youtube-qa', new Date().toISOString()
 await mkdir(evidence, { recursive: true })
 await writeFile(join(evidence, 'build.json'), JSON.stringify(build))
 const require = createRequire(import.meta.url)
-const child = spawn(require('electron'), [join(root, 'out/main/youtube-qa.js'), evidence], { cwd: root, stdio: 'inherit' })
+const child = spawn(require('electron'), [join(root, 'out/main/youtube-qa.js'), evidence, ...process.argv.slice(2).filter(arg => arg === '--audible')], { cwd: root, stdio: 'inherit' })
 child.on('error', () => { console.error('youtube_qa_launch_failed'); process.exitCode = 2 })
 child.on('exit', async code => {
   let verified = false

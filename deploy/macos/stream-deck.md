@@ -100,8 +100,9 @@ reset is recorded in button diagnostics; music can still use other outputs.
 Main owns the player and a temporary private macOS multi-output route. Current
 outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
 rediscovered during playback; virtual and aggregate devices are excluded to avoid
-duplicate routes. Normal default output, input gain and device mute/volume are
-preserved. The route duplicates one stereo stream across the available outputs;
+duplicate routes. Input gain and device mute/volume are preserved; while the
+app runs the default output is the shared "Magic Mirror Speakers" device (see
+[README](README.md)), which this private route does not use. The route duplicates one stereo stream across the available outputs;
 it does not concatenate their channels. MUSIC LOOP does not wake the TV or depend
 on its ADB connection. HDMI receives music if the connected TV is already able to
 play audio; TV power remains unchanged.

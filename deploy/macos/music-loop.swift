@@ -250,11 +250,74 @@ final class Playback {
   }
 }
 
-let playback = Playback()
+/// Main-owned "all speakers" device for the music Chromium plays (conversation music,
+/// operator loop, YouTube). Public so audio-prefer can make it the default output while
+/// Magic Mirror runs; the app pins Raven's voice to the microphone's speakerphone.
+/// One output needs no aggregate. Rebuilt when the connected outputs change.
+final class SharedOutput {
+  static let uid = "com.magicmirror.speakers"
+  var device: AudioDeviceID = 0
+  var route: [Output] = []
+  var built = false
+  let parent = getppid()
+  func destroy() {
+    if device != 0 { AudioHardwareDestroyAggregateDevice(device); device = 0 }
+    // A killed earlier helper can leave its public device behind.
+    var property = address(kAudioHardwarePropertyTranslateUIDToDevice), uid = SharedOutput.uid as CFString
+    var stale: AudioDeviceID = 0, size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    let status = withUnsafePointer(to: &uid) {
+      AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &property, UInt32(MemoryLayout<CFString>.size), $0, &size, &stale)
+    }
+    if status == noErr, stale != 0 { AudioHardwareDestroyAggregateDevice(stale) }
+  }
+  func update() {
+    let next = outputs()
+    if built && next == route { return }
+    destroy(); route = next; built = true
+    guard next.count > 1 else { emit("shared", ["outputs": next.count, "wireless": 0]); return }
+    let description: [String: Any] = [
+      kAudioAggregateDeviceUIDKey: SharedOutput.uid,
+      kAudioAggregateDeviceNameKey: "Magic Mirror Speakers",
+      kAudioAggregateDeviceIsPrivateKey: 0,
+      kAudioAggregateDeviceIsStackedKey: 1,
+      kAudioAggregateDeviceMainSubDeviceKey: next[0].uid,
+      kAudioAggregateDeviceSubDeviceListKey: next.enumerated().map { index, output in
+        [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: index == 0 ? 0 : 1,
+         kAudioSubDeviceExtraOutputLatencyKey: extraOutputLatency(output)] as [String: Any]
+      }
+    ]
+    guard AudioHardwareCreateAggregateDevice(description as CFDictionary, &device) == noErr else {
+      device = 0; built = false; emit("shared_failed", ["reason": "music_output_shared_route_failed"]); return
+    }
+    emit("shared", ["outputs": next.count, "wireless": next.filter { $0.wireless }.count])
+  }
+  func close() -> Never { destroy(); emit("stopped"); exit(0) }
+  func start() {
+    update()
+    Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+      guard let self = self else { return }
+      if getppid() != self.parent || self.parent == 1 { self.close() }
+      self.update()
+    }
+  }
+}
+
 signal(SIGPIPE, SIG_IGN)
 signal(SIGTERM, SIG_IGN); signal(SIGINT, SIG_IGN)
 let terminate = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
 let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+if CommandLine.arguments.contains("--shared-output") {
+  let shared = SharedOutput()
+  terminate.setEventHandler { shared.close() }; interrupt.setEventHandler { shared.close() }
+  terminate.resume(); interrupt.resume()
+  DispatchQueue.global().async {
+    while readLine() != nil {}
+    DispatchQueue.main.async { shared.close() }
+  }
+  shared.start()
+  RunLoop.main.run()
+}
+let playback = Playback()
 terminate.setEventHandler { playback.close() }; interrupt.setEventHandler { playback.close() }
 terminate.resume(); interrupt.resume()
 // EOF is also ownership release: a dead/killed Main cannot orphan this player.

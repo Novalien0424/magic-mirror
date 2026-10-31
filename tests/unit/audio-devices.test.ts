@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AudioDeviceRouter } from '../../src/renderer/audio-devices'
+import { AudioDeviceRouter, speakerphoneOutputId } from '../../src/renderer/audio-devices'
 import { DEFAULT_AUDIO_PREFERENCES, parseAudioPreferences, matchMicrophoneName } from '../../src/shared/audio-devices'
 
 const preferences = { inputId: 'mic-1', inputLabel: 'Headset (2-SRS-NB10)', outputId: 'speaker-1' }
@@ -62,6 +62,31 @@ describe('audio device selection', () => {
     await router.select(DEFAULT_AUDIO_PREFERENCES)
     expect(media.setSinkId).toHaveBeenLastCalledWith('')
     expect(dialogue.setSinkId).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps voice on the microphone speakerphone while music follows the all-speakers default', async () => {
+    const devices = [
+      { kind: 'audioinput', deviceId: 'default', label: 'Default - Jabra Speak2 75' },
+      { kind: 'audioinput', deviceId: 'jabra-in', label: 'Jabra Speak2 75' },
+      { kind: 'audiooutput', deviceId: 'default', label: 'Default - Magic Mirror Speakers' },
+      { kind: 'audiooutput', deviceId: 'speakers', label: 'Magic Mirror Speakers' },
+      { kind: 'audiooutput', deviceId: 'jabra-out', label: 'Jabra Speak2 75' },
+    ] as MediaDeviceInfo[]
+    const enumerate = vi.fn(async () => devices)
+    const router = new AudioDeviceRouter(async () => DEFAULT_AUDIO_PREFERENCES, enumerate)
+    const voice = { setSinkId: vi.fn(async () => undefined) }, music = { setSinkId: vi.fn(async () => undefined) }
+    await router.attach(voice)
+    await router.attach(music, undefined, 'music')
+    expect(voice.setSinkId).toHaveBeenLastCalledWith('jabra-out')
+    expect(music.setSinkId).toHaveBeenLastCalledWith('')
+    expect(enumerate).toHaveBeenCalledOnce()
+    // An explicit operator output applies to both.
+    await router.select(preferences)
+    expect(voice.setSinkId).toHaveBeenLastCalledWith('speaker-1')
+    expect(music.setSinkId).toHaveBeenLastCalledWith('speaker-1')
+    // A microphone without a same-named output leaves voice on the system default.
+    expect(speakerphoneOutputId([{ kind: 'audioinput', deviceId: 'default', label: 'Default - Arducam' }, { kind: 'audiooutput', deviceId: 'jabra-out', label: 'Jabra Speak2 75' }], '')).toBe('')
+    expect(speakerphoneOutputId(devices as Parameters<typeof speakerphoneOutputId>[0], 'jabra-in')).toBe('jabra-out')
   })
 
   it('reports an unavailable output and explicitly falls back to the system default', async () => {

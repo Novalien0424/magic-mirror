@@ -70,3 +70,15 @@ describe('Wilson failure intervals', () => {
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 })
+describe('quality baseline comparison', () => {
+  it('weights the baseline by the group scenario mix and flags only significant changes', async () => {
+    // @ts-expect-error Shared plain-JavaScript evidence CLI.
+    const { compareBaseline } = await import('../../scripts/raven-quality-rates.mjs')
+    const baseline = { judgeVersion: 'v9', models: { mini: { a: { judgedTurns: 10, failedTurns: 5 }, b: { judgedTurns: 10, failedTurns: 1 } } } }
+    const group = (turns: number, failures: number) => ({ judgeVersion: 'v9', models: { realtimeDialogue: { modelId: 'mini' } }, scenarioTurns: { a: { turns, failures }, c: { turns: 5, failures: 5 } } })
+    expect(compareBaseline(group(40, 20), baseline)).toMatchObject({ status: 'within_baseline', comparedTurns: 40, baselineFailureRate: 0.5 })
+    expect(compareBaseline(group(40, 36), baseline).status).toBe('regression')
+    expect(compareBaseline(group(40, 4), baseline).status).toBe('improvement')
+    expect(compareBaseline({ ...group(40, 20), judgeVersion: 'v10' }, baseline)).toEqual({ status: 'no_baseline' })
+  })
+})

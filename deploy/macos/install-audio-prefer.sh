@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Install the preferred-audio helper as a per-user LaunchAgent: the Jabra (or the
 # device named by $1) becomes default input + output + system output whenever it
-# is connected. Run as the logged-in operator (no sudo): zsh install-audio-prefer.sh [name]
+# is connected; while Magic Mirror runs, its all-speakers device is the default
+# output instead. Run as the logged-in operator (no sudo): zsh install-audio-prefer.sh [name]
 set -euo pipefail
 [[ $EUID -ne 0 ]] || { print -u2 "run as the operator user, not root (audio defaults are per user)"; exit 1; }
 

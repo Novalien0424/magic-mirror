@@ -14,6 +14,7 @@ class FakeNode {
 }
 
 class FakeGain extends FakeNode {
+  context = { currentTime: 0 }
   readonly ramps: number[] = []
   readonly gain = {
     value: 1,
@@ -99,7 +100,7 @@ function setupMusicController() {
   const controller = createAvatarMediaController({
     onRecordedOutput: vi.fn(), onActivity: vi.fn(), onChanged: vi.fn(), eventSink,
   })
-  return { controller, music: audioElements[0]!, context: contexts[0]!, eventSink, fetchMedia }
+  return { controller, music: audioElements[0]!, context: contexts[0]!, musicOutput: contexts[1]!, eventSink, fetchMedia }
 }
 
 const sceneContext = (actionId: string): SceneActionCommandContext => ({
@@ -107,7 +108,7 @@ const sceneContext = (actionId: string): SceneActionCommandContext => ({
 })
 
 async function flushMusicTasks(): Promise<void> {
-  for (let task = 0; task < 20; task += 1) await Promise.resolve()
+  for (let task = 0; task < 40; task += 1) await Promise.resolve()
 }
 
 async function playSceneMusic(
@@ -140,15 +141,17 @@ describe('Avatar shared background audio bus', () => {
     await flushMusicTasks()
     expect(f.music.preload).toBe('none')
     expect(f.context.suspend).toHaveBeenCalledOnce()
+    expect(f.musicOutput.suspend).toHaveBeenCalledOnce()
+    expect(f.musicOutput.setSinkId).toHaveBeenCalledWith('')
     await playSceneMusic(f, sceneContext('play'))
-    expect(f.context.resume).toHaveBeenCalled()
+    expect(f.musicOutput.resume).toHaveBeenCalled()
     const before = f.context.suspend.mock.calls.length
     f.controller.handleCommand({ type: 'scene_music', action: 'stop', fadeDurationMs: 0 })
     await flushMusicTasks()
     expect(f.context.suspend.mock.calls.length).toBeGreaterThan(before)
     f.controller.dispose()
   })
-  it('feeds authored music and embedded video through one duck gain and uses explicit draft media', async () => {
+  it('routes music and embedded video through separate duck gains and uses explicit draft media', async () => {
     const audioElements: FakeAudio[] = []
     const sources: FakeNode[] = []
     const gains: FakeGain[] = []
@@ -184,11 +187,13 @@ describe('Avatar shared background audio bus', () => {
     const musicAnalyser = musicSource.connections[0]!
     const musicAuthoredGain = musicAnalyser.connections[0]!
     const musicMaster = musicAuthoredGain.connections[0] as FakeGain
-    const sharedAnalyser = musicMaster.connections[0]!
-    expect((sharedAnalyser.connections[0] as FakeGain).gain.value).toBe(1)
+    // Music reaches every speaker on its own graph; video audio stays with the speakerphone.
+    const musicDuckGain = musicMaster.connections[0] as FakeGain
+    expect(musicDuckGain.gain.value).toBe(1)
     const videoAuthoredGain = videoSource.connections[0]!
     const effectsMaster = videoAuthoredGain.connections[0] as FakeGain
-    expect(effectsMaster.connections[0]).toBe(sharedAnalyser)
+    const videoDuckGain = effectsMaster.connections[0]!.connections[0] as FakeGain
+    expect(videoDuckGain).not.toBe(musicDuckGain)
     controller.setSceneVideoAudio(video, 0.4, 120)
     expect(sources).toHaveLength(2)
     expect((videoAuthoredGain as FakeGain).ramps.at(-1)).toBe(0.4)
@@ -202,7 +207,8 @@ describe('Avatar shared background audio bus', () => {
     expect(realtime.setVolume).toHaveBeenLastCalledWith(0.7)
 
     controller.handleActivity('output_started')
-    const sharedDuckGain = sharedAnalyser.connections[0] as FakeGain
+    expect(videoDuckGain.ramps.at(-1)).toBe(0.22)
+    const sharedDuckGain = musicDuckGain
     expect(sharedDuckGain.ramps.at(-1)).toBe(0.22)
     controller.handleCommand({ type: 'music', action: 'stop' })
     expect(sharedDuckGain.gain.value).toBe(0.22)

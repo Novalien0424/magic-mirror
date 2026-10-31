@@ -19,6 +19,13 @@ from a completed build and retain `build.json`. Rebuild stale/interrupted/altere
 output, never bypass hashes. Choose one supported Phase 4 mode; unknown/combined
 flags fail. Prefer npm's named modes or direct Node flags to avoid forwarding loss.
 
+Speaker routing: while the app runs, music follows the default output, Main's
+"Magic Mirror Speakers" device; voice/cues stay on the Jabra. A CoreAudio
+running-device watcher during `--active-bgm`, `--media-skill`, `--operator-loop`
+or `run-youtube-qa.mjs --audible` (gain 0.05, outputs quieted first; YouTube QA
+has no Main, so start `out/native/music-loop --shared-output` beside it) shows
+the route. Mic captures cannot measure it (Jabra AEC).
+
 ## Raven runner
 
 ```sh
@@ -102,9 +109,13 @@ Select the relevant mode rather than copying all cases into a new harness:
 - v8 accepts exact per-turn criteria/scores and derives pass flags. Missing,
   duplicate, foreign or malformed evidence fails; diagnostics enter rates only
   after full validation. Character is separate; cues/silent turns are exempt.
-- `raven-quality-rates.mjs RUN_DIRECTORY...` groups matching provenance and case
-  sets, excludes duplicate/unfinished/unversioned runs, treats unscored history
-  as unknown. Never pool judge versions; correlated-turn intervals are descriptive.
+- Reply quality and barge-in judgments are rates, not gates (ruling 2026-10-31);
+  tool use, effects, privacy and cues stay hard runtime checks, and invalid judge
+  output still fails. `raven-quality-rates.mjs RUN_DIRECTORY...` groups matching
+  provenance and case sets, excludes duplicate/unfinished/unversioned runs, treats
+  unscored history as unknown and compares `quality_turn` with the v9 baseline
+  (`regression` only when significant). Never pool judge versions;
+  correlated-turn intervals are descriptive.
 - Tool-call names alone do not prove application ordering; include local discovery
   inside the online guard. `recognition.exact` includes command folds;
   `literalExact`/title-presence own literal media evidence.

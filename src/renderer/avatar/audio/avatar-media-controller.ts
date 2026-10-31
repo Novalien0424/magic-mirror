@@ -50,12 +50,17 @@ export function createAvatarMediaController(
   input: CreateAvatarMediaControllerInput,
 ): AvatarMediaController {
   const context = new AudioContext()
+  // Music has its own graph so it can reach every speaker; embedded video audio
+  // stays with the speakerphone, where Chromium's lip-sync latency still holds.
+  const musicOutput = new AudioContext()
   // Electron supports AudioContext.setSinkId; TypeScript's DOM lib omits it.
-  const outputRouting = getAudioDeviceRouter().attach(context as AudioContext & { setSinkId(id: string): Promise<void> }, () => disposed)
+  type Sink = AudioContext & { setSinkId(id: string): Promise<void> }
+  const outputRouting = Promise.all([getAudioDeviceRouter().attach(context as Sink, () => disposed),
+    getAudioDeviceRouter().attach(musicOutput as Sink, () => disposed, 'music')])
   let audioTransition: Promise<unknown> = Promise.resolve()
   const resumeAudio = async (): Promise<void> => {
     await outputRouting
-    audioTransition = audioTransition.catch(() => undefined).then(() => { if (!disposed) return context.resume() })
+    audioTransition = audioTransition.catch(() => undefined).then(() => { if (!disposed) return Promise.all([context.resume(), musicOutput.resume()]) })
     await audioTransition
   }
   const music = new Audio()
@@ -69,11 +74,12 @@ export function createAvatarMediaController(
   recordedGain.connect(recordedAnalyser)
   recordedAnalyser.connect(context.destination)
 
-  const musicSource = context.createMediaElementSource(music)
-  const musicAnalyser = context.createAnalyser()
+  const musicSource = musicOutput.createMediaElementSource(music)
+  const musicAnalyser = musicOutput.createAnalyser()
   musicAnalyser.fftSize = 256
-  const musicGainNode = context.createGain()
-  const musicMasterGain = context.createGain()
+  const musicGainNode = musicOutput.createGain()
+  const musicMasterGain = musicOutput.createGain()
+  const musicDuckGain = musicOutput.createGain()
   const effectsMasterGain = context.createGain()
   const backgroundAnalyser = context.createAnalyser()
   backgroundAnalyser.fftSize = 256
@@ -81,7 +87,8 @@ export function createAvatarMediaController(
   musicSource.connect(musicAnalyser)
   musicAnalyser.connect(musicGainNode)
   musicGainNode.connect(musicMasterGain)
-  musicMasterGain.connect(backgroundAnalyser)
+  musicMasterGain.connect(musicDuckGain)
+  musicDuckGain.connect(musicOutput.destination)
   effectsMasterGain.connect(backgroundAnalyser)
   backgroundAnalyser.connect(backgroundDuckGain)
   backgroundDuckGain.connect(context.destination)
@@ -112,7 +119,7 @@ export function createAvatarMediaController(
   let sceneVideoElement: HTMLVideoElement | null = null
   const suspendIfIdle = (): void => {
     audioTransition = audioTransition.then(() => {
-      if (!disposed && music.paused && !recordedSource && !sceneVideoElement) return context.suspend()
+      if (!disposed && music.paused && !recordedSource && !sceneVideoElement) return Promise.all([context.suspend(), musicOutput.suspend()])
     }).catch(() => input.eventSink('avatar_audio_suspend_failed'))
   }
   music.addEventListener('pause', suspendIfIdle)
@@ -237,7 +244,7 @@ export function createAvatarMediaController(
   }
 
   const ramp = (gain: GainNode, target: number, durationMs: number): void => {
-    const now = context.currentTime
+    const now = gain.context.currentTime
     gain.gain.cancelScheduledValues(now)
     gain.gain.setValueAtTime(gain.gain.value, now)
     gain.gain.linearRampToValueAtTime(unit(target), now + durationMs / 1000)
@@ -250,6 +257,7 @@ export function createAvatarMediaController(
         duckGain = target
         effectiveMusicGain = target * musicGainSetting * volumes.bgm * dormantMediaGain
         ramp(backgroundDuckGain, target, durationMs)
+        ramp(musicDuckGain, target, durationMs)
         changed()
       },
     },
@@ -519,7 +527,7 @@ export function createAvatarMediaController(
       if (disposed) return
       disposed = true
       stopVolumes()
-      void outputRouting.then((detach) => detach())
+      void outputRouting.then(detach => detach.forEach(release => release()))
       stopRecorded()
       invalidateMusicPlayback()
       music.pause()
@@ -535,6 +543,7 @@ export function createAvatarMediaController(
       realtimeOutput = null
       input.onRecordedOutput(null)
       void context.close().catch(() => undefined)
+      void musicOutput.close().catch(() => undefined)
     },
   })
 }

@@ -122,7 +122,8 @@ export function startOperatorLoop(input: OperatorLoopInput): () => void {
         if (active()) emit({ status: 'progress', ...progress() })
       }, 1000)
       void Promise.all(elements.map(async media => {
-        const remove = await router.attach(media, () => !active() || !owns(media))
+        // Operator loop media is music for the room: every speaker, like MusicLoop.
+        const remove = await router.attach(media, () => !active() || !owns(media), 'music')
         if (!active() || !owns(media)) remove()
         else detach.add(remove)
       })).then(() => {

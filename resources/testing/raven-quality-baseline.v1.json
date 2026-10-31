@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "judgeVersion": "raven-quality.v9",
+  "recorded": "2026-10-31",
+  "source": "Published persona, trimmed prompt: all 24 retained real-API Raven runs judged by v9 between 2026-10-30T23:57Z and 2026-10-31T05:51Z.",
+  "models": {
+    "gpt-realtime-2.1-mini": {
+      "character_consistency": { "judgedTurns": 60, "failedTurns": 39 },
+      "phonetic_media": { "judgedTurns": 24, "failedTurns": 11 },
+      "sleep_spells": { "judgedTurns": 32, "failedTurns": 17 },
+      "identity_denial": { "judgedTurns": 8, "failedTurns": 3 },
+      "two_visit_memory": { "judgedTurns": 30, "failedTurns": 18 }
+    },
+    "gpt-realtime-2.1": {
+      "character_consistency": { "judgedTurns": 10, "failedTurns": 4 },
+      "phonetic_media": { "judgedTurns": 6, "failedTurns": 3 },
+      "sleep_spells": { "judgedTurns": 8, "failedTurns": 1 }
+    }
+  }
+}

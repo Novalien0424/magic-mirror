@@ -7,6 +7,8 @@ import { createYoutubeCredentialSource, createYoutubeSearch } from './avatar/you
 import type { SceneActionRendererReport } from '../shared/types'
 
 const evidenceRoot = resolve(process.argv[2] ?? '.artifacts/youtube-qa')
+// --audible opens a real output (quiet the speakers first) so routing can be observed.
+const gain = process.argv.includes('--audible') ? 0.05 : 0
 app.setPath('userData', join(evidenceRoot, 'user-data'))
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.on('window-all-closed', () => {}) // Persist the result before explicitly exiting.
@@ -46,7 +48,7 @@ app.whenReady().then(async () => {
   const player = createYoutubePlayer(() => win)
   cleanup = () => { player.stop(); if (!win.isDestroyed()) win.destroy() }
   const context = { runId: 'youtube-qa', sceneId: 'media-skill', stageId: 'youtube-qa', actionId: 'youtube-qa' }
-  const started = player.play({ videoId: 'M7lc1UVf-VE', kind: 'video', mode: 'once', gain: 0, context }, report => { lastReport = report })
+  const started = player.play({ videoId: 'M7lc1UVf-VE', kind: 'video', mode: 'once', gain, context }, report => { lastReport = report })
   if (!started) throw Error('youtube_player_unavailable')
   await waitFor(() => lastReport?.status === 'acknowledged')
   const contents = webContents.getAllWebContents().find(contents => contents.getURL() === 'https://com.magicmirror.app/youtube-player')!
@@ -73,7 +75,7 @@ app.whenReady().then(async () => {
   checks.push({ name: 'once_end_closes_player', passed: contents.isDestroyed() })
   step = 'loop_start'
   lastReport = undefined
-  player.play({ videoId: 'M7lc1UVf-VE', kind: 'music', mode: 'loop', gain: 0, context }, report => { lastReport = report })
+  player.play({ videoId: 'M7lc1UVf-VE', kind: 'music', mode: 'loop', gain, context }, report => { lastReport = report })
   await waitFor(() => lastReport?.status === 'acknowledged')
   const loop = webContents.getAllWebContents().find(contents => contents.getURL() === 'https://com.magicmirror.app/youtube-player')!
   const duration = await loop.executeJavaScript('player.getDuration()') as number

@@ -2,6 +2,7 @@ import { allowPromptWindow } from '../shared/prompt-window'
 import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop } from './music-loop'
+import { createSharedMusicOutput } from './shared-music-output'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
 import { execFile } from 'node:child_process'
@@ -1743,6 +1744,18 @@ void app.whenReady().then(async () => {
     report: reason => runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason }) })
   stopYoutube = () => youtubePlayer.stop()
   app.once('before-quit', () => youtubePlayer.stop())
+  if (process.platform === 'darwin') {
+    const sharedMusicOutput = createSharedMusicOutput({
+      executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
+      report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
+      degraded: reason => {
+        marker('MUSIC_OUTPUT', { reason })
+        runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
+      },
+    })
+    sharedMusicOutput.start()
+    app.once('will-quit', () => sharedMusicOutput.stop())
+  }
   sceneRuntimeControl = registerIpcHandlers({
     onConsoleSceneStatus: status => webConsole?.publish('console:scene-status', status),
     isShuttingDown: () => shutdownStarted,

@@ -45,11 +45,14 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   ordinary-camera tool-selection miss each passed one unchanged retry. Retain
   both failures; no claim of deterministic provider reliability.
   [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
-- [ ] **Quality-judge gate (10-31 data).** Judge v9 follows the explicit-request
-  language rule. Per-turn pass rate: mini 40% (118 turns), full 67% (24 turns);
-  every scenario still fails the all-turns gate on both models. Owner to choose
-  gate versus reported rate, and mini versus full for dialogue.
-  [Report](https://claude.ai/artifact/QPzGYwcT5HiRbhFSXNi7DV).
+- [ ] **Reply quality below baseline target.** Quality is now a reported rate
+  (ruling 2026-10-31). v9 baseline failure rate per judged turn: mini 57% (154
+  turns), full 33% (24 turns). Owner to choose mini versus full for dialogue;
+  improve character/naturalness without losing the persona.
+- [ ] **Music on room speakers during conversation.** The Jabra cancels only its
+  own output, so conversation music from the other speakers reaches the
+  microphone. Check real-guest turns and voice Stop while music plays; consider
+  ducking music while the visitor speaks.
 - [ ] **Live quality-judge baseline (history).** The memory-role judge failed `local_scope`
   quality twice despite passing application checks; a prior judge passed on
   retry. Re-baseline or explicitly version a separate judge role before treating
