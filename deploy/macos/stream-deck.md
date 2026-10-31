@@ -85,8 +85,21 @@ The linked shared folder is `AI_Stuff/AI_Avatar/Common`; its **MusicLoop** subfo
 was created empty at the owner's request. Add MP3, M4A, AAC, WAV, AIFF, FLAC or CAF
 files of **200 MB or less (200,000,000 bytes)**, then press MUSIC LOOP. Larger files
 are abnormal and skipped before download or playback; Console reports when all
-files are oversized. Subfolders are included; hidden files and symlinks are
-excluded. Number filenames for an explicit order among ready tracks.
+files are oversized. MUSIC LOOP plays the folder's own files in natural file-name
+order ("2" before "10"); hidden files and symlinks are excluded. A file still
+downloading from Google Drive is skipped until ready rather than stalling the music.
+
+**Music page (2026-10-31).** Pressing MUSIC LOOP switches the Neo to **Magic Mirror
+Music**: the top row holds keys for the first three subfolders of MusicLoop in name
+order, titled with their names by the **Magic Mirror Controls** plugin (later folders
+are ignored); then VOL+, and on the bottom row PREV, NEXT, VOL− and STOP (back to the
+main keys). A folder key plays that subfolder (with its own subfolders); the key of the
+folder playing shows ▶. A folder Google Drive has not downloaded yet ("Resource
+deadlock avoided"), or one without music, is refused with Basso and the current music
+keeps playing — make it Available offline in Finder first. PREV/NEXT replace the song at
+once. These keys talk to a running app directly (no queue) and do nothing without
+MusicLoop. Install or update the plugin with `zsh deploy/macos/install-stream-deck-plugin.sh`
+(restarts Stream Deck), then re-import the profile package.
 
 Cached tracks start first; locally downloaded files are prepared before cloud-only
 files. Ready tracks keep repeating while one background download completes. New
@@ -102,6 +115,33 @@ the native read-back. This happens once per press, including a repeat press whil
 music is running. Afterwards the Playback page's VOL+/VOL− (and Jabra's physical
 volume buttons) adjust it; there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
+
+**Bluetooth drift and re-sync (2026-10-31).** Bluetooth speakers drift apart over long
+playback inside their own buffers, invisible to macOS (static reported latency, exact
+44.1 kHz); the venue links are weak (Edifier ~6% / A1 ~12% median retransmissions at
+−75/−80 dBm). macOS suspends each Bluetooth stream within milliseconds when audio stops,
+but a normal song change restarts it after only ~40 ms, shorter than a speaker buffer.
+Opt in with **Console → Loop Video → Re-sync Bluetooth speakers between MusicLoop
+songs** (Save settings): MusicLoop then leaves 1.2 s of silence after each finished song
+so every speaker drains and restarts aligned. Within one song drift can still build up;
+Dance, VIDEO LOOP and YouTube have no song boundary and are unchanged.
+
+A speaker that joins while the app runs (a Bluetooth reconnect) is set to the group's
+level, read from the Jabra (`music_output_speaker_matched`), instead of the stale level
+macOS restores (once found at 1% after QA). Button sounds play quietly on the Jabra
+only, not on every speaker.
+
+Research (2026-10-31): A2DP has no synchronized multi-speaker mode; each sink absorbs
+clock drift with its own buffer, which it may resize for link quality
+([A2DP 1.4.1 §2.3](https://www.bluetooth.com/specifications/specs/html/?src=a2dp_v1-4-1_1752513648/A2DP_v1.4.1/out/en/index-en.html),
+AVDTP 1.3 §8.19.1). What a sink does on SUSPEND is not specified; Android's reference sink
+flushes its queue ([btif_a2dp_sink.cc](https://android.googlesource.com/platform/system/bt/+/e8bbf5b0889790cf8616f4004867f0ff656f0551/btif/src/btif_a2dp_sink.cc)),
+so a ≥1 s pause is the conservative re-sync (inference; confirm by ear or a phone
+recording). macOS drift correction cannot see the speakers' own clocks. Better fixes, in
+order: wire a speaker (AUX, or USB audio if the model offers it, gives a host-visible
+clock); improve the radio (line of sight, Mac on Ethernet or 5/6 GHz, USB 3 hubs/drives
+away from the Mac mini — [Apple](https://support.apple.com/en-us/102766)); then the re-sync
+pause. AirPlay 2 and LE Audio sync properly but are not practical from macOS multi-output today.
 
 Main owns the player and a temporary private macOS multi-output route. Current
 outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are

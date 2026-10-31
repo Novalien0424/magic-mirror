@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink, chmod, realpath, truncate } fro
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMusicLoop, musicLoopFiles, MUSIC_LOOP_MAX_BYTES } from '../../src/main/music-loop'
+import { createMusicLoop, musicLoopFiles, musicSubfolders, MUSIC_LOOP_MAX_BYTES } from '../../src/main/music-loop'
 import { createOperatorLoop } from '../../src/main/operator-loop'
 
 const roots: string[] = [], players: ReturnType<typeof createMusicLoop>[] = []
@@ -27,6 +27,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
  if(m.mime !== (m.path.endsWith('.mp3') ? 'audio/mpeg' : 'audio/vnd.wave')) process.exit(2);
  if(m.path.includes('bad')) { send({event:'track_failed',id:m.id}); return }
  send({event:'playing',id:m.id,outputs:3});
+ if(m.path.includes('long')) return;
  setTimeout(()=>send({event:'ended',id:m.id}),50);
 }).on('close',()=>process.exit(0));
 `)
@@ -48,9 +49,30 @@ describe('MusicLoop playlist and lifecycle', () => {
     await symlink(join(f.folder, '1.mp3'), join(f.folder, 'alias.wav'))
     await mkdir(join(f.folder, 'sub')); await writeFile(join(f.folder, 'sub', 'nested.FLAC'), 'fixture')
     const files = await musicLoopFiles(f.root)
-    expect(files).toHaveLength(61)
+    // MUSIC LOOP plays the folder's own files; a subfolder plays only from its key.
+    expect(files).toHaveLength(60)
     expect(files.slice(0, 3)).toEqual(['1.mp3', '2.mp3', '3.mp3'].map(name => join(f.folder, name)))
-    expect(files.at(-1)).toBe(join(f.folder, 'sub', 'nested.FLAC'))
+    expect(files.at(-1)).toBe(join(f.folder, '60.mp3'))
+    expect(await musicLoopFiles(f.root, 'MusicLoop', undefined, 'sub')).toEqual([join(f.folder, 'sub', 'nested.FLAC')])
+    expect(await musicSubfolders(f.root)).toEqual(['sub'])
+    await expect(musicLoopFiles(f.root, 'MusicLoop', undefined, '../MusicLoop')).rejects.toThrow('operator_loop_music_folder_invalid')
+  })
+  it('skips a subfolder it cannot list (cloud folder not downloaded) and keeps the playable files', async () => {
+    const f = await fixture(['01.wav'])
+    const locked = join(f.folder, 'Not downloaded'); await mkdir(locked); await writeFile(join(locked, '02.wav'), 'fixture')
+    await chmod(locked, 0)
+    try {
+      expect(await musicLoopFiles(f.root, 'MusicLoop')).toEqual([join(f.folder, '01.wav')])
+      expect(await musicSubfolders(f.root)).toEqual(['Not downloaded'])
+      // Its key reports the folder unavailable instead of stopping the music.
+      await expect(musicLoopFiles(f.root, 'MusicLoop', undefined, 'Not downloaded')).rejects.toThrow('operator_loop_music_folder_unavailable')
+      // Dance still walks its subfolders and skips the unreadable one.
+      const dance = join(f.root, 'DanceFloor'); await mkdir(dance); await writeFile(join(dance, 'a.wav'), 'fixture')
+      const lockedDance = join(dance, 'cloud'); await mkdir(lockedDance); await chmod(lockedDance, 0)
+      const skipped = vi.fn()
+      try { expect(await musicLoopFiles(f.root, 'DanceFloor', skipped)).toEqual([join(dance, 'a.wav')]) } finally { await chmod(lockedDance, 0o700) }
+      expect(skipped).toHaveBeenCalledOnce()
+    } finally { await chmod(locked, 0o700) }
   })
   it('reports missing/empty folders without selecting music outside MusicLoop', async () => {
     const f = await fixture([])
@@ -69,6 +91,57 @@ describe('MusicLoop playlist and lifecycle', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(f.input.prepare).toHaveBeenCalledTimes(count)
     expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('pauses between finished songs for the speaker re-sync, never after a failed track or once stopped', async () => {
+    const f = await playerFixture(['01.wav', '02-bad.wav', '03.mp3'])
+    const played: number[] = []
+    f.input.report.mockImplementation((reason: string) => { if (reason === 'operator_loop_music_playing') played.push(Date.now()) })
+    Object.assign(f.input, { resyncGapMs: () => 300 })
+    const player = createMusicLoop(f.input); players.push(player)
+    await f.player.stop()
+    expect(await player.start()).toBe(true)
+    await vi.waitFor(() => expect(played.length).toBeGreaterThanOrEqual(2), { timeout: 3000 })
+    // 01 ends, gap; the corrupt 02 is skipped without another gap; 03 plays.
+    expect(played[1]! - played[0]!).toBeGreaterThanOrEqual(300)
+    expect(played[1]! - played[0]!).toBeLessThan(600)
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_resync_gap', { ms: 300 })
+    await player.stop()
+    const count = played.length
+    await new Promise(resolve => setTimeout(resolve, 450))
+    expect(played).toHaveLength(count)
+  })
+  it('plays in natural file-name order and Previous/Next replace the song with wrap-around', async () => {
+    const f = await playerFixture(['10-long.wav', '2-long.wav', '1-long.wav'])
+    const played: string[] = []
+    Object.assign(f.input, { beforePlay: vi.fn(async (path: string) => { played.push(path.split('/').pop()!) }) })
+    const player = createMusicLoop(f.input); players.push(player)
+    await f.player.stop()
+    expect(player.skip(1)).toBe(false) // nothing playing yet
+    expect(await player.start()).toBe(true)
+    await vi.waitFor(() => expect(played).toEqual(['1-long.wav']))
+    expect(player.skip(1)).toBe(true)
+    await vi.waitFor(() => expect(played).toEqual(['1-long.wav', '2-long.wav']))
+    expect(player.skip(1)).toBe(true)
+    await vi.waitFor(() => expect(played.at(-1)).toBe('10-long.wav'))
+    expect(player.skip(1)).toBe(true)
+    await vi.waitFor(() => expect(played.at(-1)).toBe('1-long.wav'))
+    expect(player.skip(-1)).toBe(true)
+    await vi.waitFor(() => expect(played.at(-1)).toBe('10-long.wav'))
+    expect(player.skip(-1)).toBe(true)
+    await vi.waitFor(() => expect(played.at(-1)).toBe('2-long.wav'))
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_next', undefined)
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_previous', undefined)
+    expect(f.input.report).not.toHaveBeenCalledWith('operator_loop_music_playlist_repeated', expect.anything())
+  })
+  it('plays only the chosen subfolder when a folder key selected it', async () => {
+    const f = await playerFixture(['01.wav'])
+    await mkdir(join(f.folder, 'Yunelle')); await writeFile(join(f.folder, 'Yunelle', '05-long.wav'), 'fixture')
+    const played: string[] = []
+    Object.assign(f.input, { subfolder: () => 'Yunelle', beforePlay: vi.fn(async (path: string) => { played.push(path) }) })
+    const player = createMusicLoop(f.input); players.push(player)
+    await f.player.stop()
+    expect(await player.start()).toBe(true)
+    await vi.waitFor(() => expect(played).toEqual([join(f.folder, 'Yunelle', '05-long.wav')]))
   })
   it('reports a timed-out helper release once without locking every later stop', async () => {
     const f = await playerFixture()
@@ -123,8 +196,11 @@ setInterval(() => {}, 1000);
       expect(await controller.music()).toBe(true)
       expect(music.start).toHaveBeenCalledOnce()
       expect(controller.view().snapshot).toMatchObject({ mode: 'music', status: 'playing' })
+      // A folder key restarts the running MusicLoop with its new selection.
+      expect(await controller.music(true)).toBe(true)
+      expect(music.start).toHaveBeenCalledTimes(2)
       expect(await controller.normal()).toBe(true)
-      expect(order).toEqual(['stop', 'suspend', 'play', 'stop', 'resume'])
+      expect(order).toEqual(['stop', 'suspend', 'play', 'stop', 'suspend', 'play', 'stop', 'resume'])
       await controller.music(); await controller.desktop()
       expect(controller.view().snapshot.mode).toBe('desktop')
       expect(controller.isInputSuspended()).toBe(true)

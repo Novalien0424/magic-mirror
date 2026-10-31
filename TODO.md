@@ -81,6 +81,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   during a loop fails at the 1% QA output level; `--memory-conversation` 0 of 2 and
   v22 character judge 0 of 10 (`unnecessary_question`, `wrong_language` on English
   turns answered in Chinese — check the judge against the PRD language rule).
+- [ ] **Music page in the room.** Owner: make Google Drive's MusicLoop/Yunelle
+  Available offline so its key plays; press each Music page key once (folder titles,
+  PREV/NEXT, STOP back to main); listen across song changes with the re-sync pause.
+  Old profiles ("Magic Mirror", "copy", "copy 1", "copy 2", "Magic Mirror Playback")
+  can be deleted in Stream Deck.
 - [ ] **Playback page on the Neo (physical).** VIDEO LOOP/MUSIC LOOP → VOL+/VOL−/STOP
   and STOP → main keys were imported and read back from Stream Deck's store
   (10-31); the wrappers, VOL± and STOP were field-run by script. A physical press

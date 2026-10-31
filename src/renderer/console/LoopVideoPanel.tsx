@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { mediaUrl } from '../shared/media-url'
 import type { ConsoleBridge } from '../../shared/bridge'
 import { isFolderMediaId, type FolderMediaEntry } from '../../shared/media-folders'
-import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoCommand, type LoopVideoSettings,
+import { DEFAULT_LOOP_VIDEO, MUSIC_RESYNC_GAP_MS, parseLoopVideoSettings, type LoopVideoCommand, type LoopVideoSettings,
   type LoopVideoView, type OperatorLoopSnapshot } from '../../shared/operator-loop'
 import { ReasonDetail } from './reason-copy'
 import { HelpButton, InfoTip } from './HelpButton'
 
 export function sameLoopVideoSettings(left: LoopVideoSettings, right: LoopVideoSettings): boolean {
   return left.videoId === right.videoId && left.audioMode === right.audioMode && left.audioId === right.audioId
-    && left.fit === right.fit && left.volume === right.volume
+    && left.fit === right.fit && left.volume === right.volume && !!left.musicResync === !!right.musicResync
 }
 
 export function loopVideoValidation(settings: LoopVideoSettings, entries: readonly FolderMediaEntry[]): string {
@@ -224,6 +224,8 @@ export function LoopVideoPanel({ bridge, visible, onMediaFolders, onPlaybackChan
         </select></label>
         <label>Loop volume · {Math.round(settings.volume * 100)}%<input aria-label="Loop volume" type="range" min="0" max="1" step="0.01"
           value={settings.volume} onChange={event => edit({ volume: Number(event.currentTarget.value) })} /></label>
+        <label className="dance-floor-checkbox"><input aria-label="Re-sync speakers between MusicLoop songs" type="checkbox" checked={!!settings.musicResync}
+          onChange={event => edit({ musicResync: event.currentTarget.checked })} />Re-sync Bluetooth speakers between MusicLoop songs ({MUSIC_RESYNC_GAP_MS / 1000} s pause)</label>
       </fieldset>
       {videos.length > 0 && <button type="button" className="console__link" onClick={onMediaFolders}>Manage Common media in System</button>}
     </div>{settings.videoId && videos.some(entry => entry.assetId === settings.videoId)

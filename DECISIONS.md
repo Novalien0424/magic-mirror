@@ -10,6 +10,13 @@
 - **MusicLoop volume:** every accepted MUSIC LOOP press sets Jabra to 70%, also
   while music already plays. Volume is never enforced during playback; the
   physical buttons adjust it until the next press.
+- **MusicLoop folders and song keys:** MUSIC LOOP plays the MusicLoop folder's own
+  files in natural file-name order (subfolders no longer mix in) and shows the Music
+  page: keys for the first three subfolders by name (later ones ignored; the Magic
+  Mirror Controls Stream Deck plugin titles them), Previous, Next, VOL± and STOP. A
+  folder that cannot be read or has no music is refused and the current music keeps
+  playing; one unreadable subfolder never stops MusicLoop. VIDEO LOOP keeps its
+  3-key page.
 - **MusicLoop is independent of the TV:** MUSIC LOOP must play whether the TV is
   on, in standby or powered off. While MusicLoop is the mode, a missing TV never
   quits the app (supersedes the 2026-10-11 TV-off exit for MusicLoop only; other

@@ -27,10 +27,11 @@
 | VIDEO LOOP | 循環播放已保存影片；可使用影片原音或獨立背景音樂，暫停對話與喚醒。Stream Deck 切到播放頁。 |
 | DESKTOP | 在電視顯示方向正確的 macOS 桌面；再按其他模式鍵會切回該功能。 |
 | STUDIO | 進入 Interactive Studio 模式；以該模式喚醒詞開始新的訪談。 |
-| MUSIC LOOP | 循環播放共享資料夾 `Common/MusicLoop` 的音樂；無論電視開啟、待機或斷電都必須播放（主持人指示 2026-10-31），電視不在時 App 不會因此關閉。Stream Deck 切到播放頁。 |
+| MUSIC LOOP | 依檔名順序循環播放 `Common/MusicLoop` 資料夾本身的音樂（子資料夾不混入）；無論電視開啟、待機或斷電都必須播放（主持人指示 2026-10-31），電視不在時 App 不會因此關閉。Stream Deck 切到音樂頁。 |
 | DANCE FLOOR | Raven 說「Ready to Party?」，接著播放選定音樂並依節拍擺動。 |
 | STOP | 中止播放與工作、用原生黑幕覆蓋 HDMI、把所有外接喇叭（Jabra、藍牙喇叭）重設至 70%，並嘗試電視待機及釋放遙控滑鼠。待機只關螢幕，電視主機板保持網路連線，START 才能喚醒它。電視傳輸失敗仍須完成本機停止與黑幕。 |
-| 播放頁 VOL＋／VOL－／STOP | 按 VIDEO LOOP 或 MUSIC LOOP 後 Neo 只顯示這三鍵（主持人指示 2026-10-31）。VOL＋／VOL－ 立即把所有外接喇叭一起調高／調低 10%；STOP 執行一般 STOP 後回到主選單。按鍵當下就換頁：模式失敗也會停在播放頁，以 STOP 返回；從 Console 返回 Avatar 時播放頁會保留到按 STOP。 |
+| 音樂頁 | 按 MUSIC LOOP 後 Neo 顯示：前三個子資料夾按鍵（按鍵上顯示資料夾名稱，例如 Yunelle；依名稱排序，第四個以後忽略），按下播放該資料夾的音樂；PREV／NEXT 上一首、下一首；VOL＋／VOL－；STOP 停止並回到主選單。無法讀取（雲端尚未下載）或沒有音樂的資料夾會被拒絕，目前音樂繼續播放（主持人指示 2026-10-31）。 |
+| 播放頁 VOL＋／VOL－／STOP | 按 VIDEO LOOP 後 Neo 只顯示這三鍵（主持人指示 2026-10-31）。VOL＋／VOL－ 立即把所有外接喇叭一起調高／調低 10%；STOP 執行一般 STOP 後回到主選單。按鍵當下就換頁：模式失敗也會停在播放頁，以 STOP 返回；從 Console 返回 Avatar 時播放頁會保留到按 STOP。 |
 
 模式切換必須釋放前一模式的音訊、計時器及裝置所有權；開啟 Console 本身不是模式切換。
 一般 Console 的 **Stop All** 用於場景／測試效果，也會停止 Dance Floor；它與 Dance Floor 面板的 **Stop Dance Floor** 只結束 Dance、恢復音量（所有外接喇叭 70%）並回到 Conversation，App 持續運作。只有實體 STOP 執行關機流程（主持人裁決 2026-10-31）。
@@ -75,7 +76,7 @@ Studio 的名字是本次作品稱呼，不會因此取得私人記憶。Convers
 ### MusicLoop 與 Dance Floor
 
 MusicLoop：主持人放入音樂 → 按 MUSIC LOOP → 本機可用曲目先播放，雲端檔案背景準備完成後加入 →
-曲目循環 → 以播放頁 VOL＋／VOL－（或 Jabra 實體按鍵）調整所有外接喇叭音量 → 播放頁 STOP 停止並回到主選單。檔案上限 **200,000,000 bytes**；更大的檔案視為異常並跳過。
+曲目循環 → 以播放頁 VOL＋／VOL－（或 Jabra 實體按鍵）調整所有外接喇叭音量 → 播放頁 STOP 停止並回到主選單。藍牙喇叭長時間播放會彼此漂移；Console → Loop Video 可勾選「Re-sync Bluetooth speakers between MusicLoop songs」，每首歌之間停 1.2 秒，讓各喇叭清空緩衝後重新對齊（選用，主持人指示 2026-10-31；只在歌曲交界生效）。檔案上限 **200,000,000 bytes**；更大的檔案視為異常並跳過。
 每次按下 MUSIC LOOP（包含音樂已在播放時）都把所有外接喇叭設為 70%；播放期間不強制音量，實體按鍵可調整到下一次按鍵為止（主持人裁決 2026-10-31）；不為音樂喚醒電視。
 
 Dance Floor：選定曲目與動作設定 → Start → 準備媒體、分析節拍、Raven 逐字說「Ready to Party?」→ 循環音樂並擺動 →

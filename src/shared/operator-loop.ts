@@ -5,7 +5,11 @@ export interface LoopVideoSettings {
   audioId: string
   fit: 'contain' | 'cover'
   volume: number
+  /** MusicLoop pauses MUSIC_RESYNC_GAP_MS between songs so Bluetooth speakers drain and restart aligned. */
+  musicResync?: boolean
 }
+/** Longer than any venue speaker's buffer (~0.19 s) plus the ~0.45 s Bluetooth stream restart. */
+export const MUSIC_RESYNC_GAP_MS = 1200
 export const DEFAULT_LOOP_VIDEO: LoopVideoSettings = { videoId: '', audioMode: 'embedded', audioId: '', fit: 'contain', volume: 0.7 }
 export interface OperatorLoopSnapshot {
   mode: 'avatar' | 'loop' | 'desktop' | 'music' | 'dance' | 'black'
@@ -36,11 +40,15 @@ export function parseOperatorLoopSnapshot(value: unknown): OperatorLoopSnapshot 
     reason: value.reason, generation: value.generation as number, settings } : null
 }
 export function parseLoopVideoSettings(value: unknown): LoopVideoSettings | null {
-  if (!record(value) || Object.keys(value).length !== 5 || !mediaId(value.videoId) || !mediaId(value.audioId)
+  // Settings saved before the MusicLoop re-sync option have five keys.
+  const keys = Object.keys(value ?? {}).length
+  if (!record(value) || keys !== (Object.hasOwn(value, 'musicResync') ? 6 : 5) || !mediaId(value.videoId) || !mediaId(value.audioId)
+    || value.musicResync !== undefined && typeof value.musicResync !== 'boolean'
     || !['embedded', 'separate'].includes(value.audioMode as string) || !['contain', 'cover'].includes(value.fit as string)
     || typeof value.volume !== 'number' || !Number.isFinite(value.volume) || value.volume < 0 || value.volume > 1) return null
   return { videoId: value.videoId, audioMode: value.audioMode as LoopVideoSettings['audioMode'],
-    audioId: value.audioMode === 'embedded' ? '' : value.audioId, fit: value.fit as LoopVideoSettings['fit'], volume: value.volume }
+    audioId: value.audioMode === 'embedded' ? '' : value.audioId, fit: value.fit as LoopVideoSettings['fit'], volume: value.volume,
+    ...(value.musicResync === true ? { musicResync: true } : {}) }
 }
 export function parseLoopVideoCommand(value: unknown): LoopVideoCommand | null {
   if (!record(value)) return null

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 // @ts-expect-error Plain JavaScript shared with the deployed CLI.
 import { OPERATOR_ACTIONS, createOperatorIo, createOperatorRequest, parseOperatorRequest, parseOperatorResponse, sendOperatorCommand } from '../../scripts/operator-command.mjs'
+import { OPERATOR_ACTIONS as MAIN_OPERATOR_ACTIONS } from '../../src/main/operator-control'
 
 const id = 'cb108b79-5dfe-4b6d-9802-272f41d300ff'
 const otherId = '8d55bcc1-eb91-4d1b-aabb-3e6cce83e2ed'
@@ -24,9 +24,9 @@ function mailbox() {
 
 describe('operator mailbox payload validation', () => {
   it('accepts exactly Main\'s operator action set', () => {
-    const main = readFileSync(new URL('../../src/main/operator-control.ts', import.meta.url), 'utf8').match(/^export type OperatorAction = (.+)$/m)?.[1]
-    expect([...main?.matchAll(/'([a-z_]+)'/g) ?? []].map(([, action]) => action)).toEqual(OPERATOR_ACTIONS)
-    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop', 'music_loop', 'dance_floor'])
+    expect([...MAIN_OPERATOR_ACTIONS]).toEqual(OPERATOR_ACTIONS)
+    expect(OPERATOR_ACTIONS).toEqual(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop', 'music_loop', 'dance_floor',
+      'music_folder_1', 'music_folder_2', 'music_folder_3', 'music_next', 'music_previous'])
     expect(Object.isFrozen(OPERATOR_ACTIONS)).toBe(true)
   })
   it.each(['normal', 'play_loop', 'show_console', 'show_console_main', 'studio', 'desktop'])('creates exactly the approved %s payload', action => {

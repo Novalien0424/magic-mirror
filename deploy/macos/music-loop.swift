@@ -251,6 +251,31 @@ final class Playback {
 /// Main-owned "all speakers" device for the music Chromium plays (conversation music,
 /// operator loop, YouTube). Public so audio-prefer can make it the default output while
 /// Magic Mirror runs; the app pins Raven's voice to the microphone's speakerphone.
+/// Writable output level (first channel when there is no main element); nil for fixed HDMI.
+func outputLevel(_ id: AudioDeviceID) -> Float32? {
+  var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
+  for element: UInt32 in AudioObjectHasProperty(id, &main) ? [0] : [1, 2] {
+    var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element), writable: DarwinBoolean = false
+    var value: Float32 = 0, size = UInt32(MemoryLayout<Float32>.size)
+    guard AudioObjectIsPropertySettable(id, &property, &writable) == noErr, writable.boolValue,
+      AudioObjectGetPropertyData(id, &property, 0, nil, &size, &value) == noErr else { continue }
+    return value
+  }
+  return nil
+}
+func setOutputLevel(_ id: AudioDeviceID, _ level: Float32) -> Bool {
+  var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput), changed = false
+  for element: UInt32 in AudioObjectHasProperty(id, &main) ? [0] : [1, 2] {
+    var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element), writable: DarwinBoolean = false
+    var value = level
+    guard AudioObjectIsPropertySettable(id, &property, &writable) == noErr, writable.boolValue else { continue }
+    changed = AudioObjectSetPropertyData(id, &property, 0, nil, UInt32(MemoryLayout<Float32>.size), &value) == noErr || changed
+  }
+  var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), off: UInt32 = 0
+  if changed && level > 0 && AudioObjectHasProperty(id, &mute) { AudioObjectSetPropertyData(id, &mute, 0, nil, 4, &off) }
+  return changed
+}
+
 /// One output needs no aggregate. Rebuilt when the connected outputs change.
 final class SharedOutput {
   static let uid = "com.magicmirror.speakers"
@@ -268,9 +293,22 @@ final class SharedOutput {
     }
     if status == noErr, stale != 0 { AudioHardwareDestroyAggregateDevice(stale) }
   }
+  /// A speaker that joins later (a Bluetooth reconnect) takes the group's level, from the
+  /// first steady speaker with a volume control (the wired Jabra): macOS would restore its
+  /// own stale level, e.g. 1% after QA, beside speakers at 70% or the owner's VOL± level.
+  func matchJoined(_ previous: [Output], _ next: [Output]) {
+    let joined = next.filter { output in !output.builtIn && !previous.contains { $0.uid == output.uid } }
+    guard !joined.isEmpty, let level = next.filter({ output in !output.builtIn && previous.contains { $0.uid == output.uid } })
+      .lazy.compactMap({ outputLevel($0.id) }).first else { return }
+    let apply = { for output in joined where setOutputLevel(output.id, level) { emit("speaker_matched", ["level": Double(level)]) } }
+    apply()
+    // A reconnecting speaker can push its stored level a moment after it appears.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: apply)
+  }
   func update() {
     let next = outputs()
     if built && next == route { return }
+    if built { matchJoined(route, next) }
     destroy(); route = next; built = true
     guard next.count > 1 else { emit("shared", ["outputs": next.count, "wireless": 0]); return }
     let description: [String: Any] = [

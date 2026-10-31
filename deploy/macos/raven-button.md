@@ -37,7 +37,8 @@ wrappers and configuring Stream Deck are separate integration steps.
 
 The scripts return after **queueing** the request; exit zero is queue acceptance,
 not proof that the app started/stopped. Completion is reported through the
-metadata-only log and `afplay` sounds: Glass for started/loop playing/`studio_ready`, Pop for Console shown/already on/off,
+metadata-only log and quiet system sounds played on the alert output (the Jabra) only,
+never on every speaker (`stop-state --chime`): Glass for started/loop playing/`studio_ready`, Pop for Console shown/already on/off,
 Tink for clean stop, Sosumi for a forced stop, and Basso for failure/busy.
 Requests are published atomically and processed in order. A stop followed by a
 start stays ordered. Requests older than 120 seconds are dropped with `expired`,
@@ -173,6 +174,12 @@ STOP also sets every external speaker's **output** (the required Jabra Speak2 75
 plus Bluetooth speakers such as the Edifier and A1) to 0.70 unmuted and reads it
 back. It preserves input gain, selected default devices and the Mac mini speaker.
 A missing or ambiguous Jabra and failed verification are reported.
+
+**Music page keys** (`raven-button.sh music-next|music-previous|music-folder-1..3`) send
+Main `music_next`, `music_previous` or `music_folder_N` directly when the app is running
+(no queue, no TV, no app start); they log `music_next`/… or `music_key_failed`/
+`music_not_running` with Main's reason and play Pop or Basso. Main checks a folder before
+switching, so a refused folder keeps the current music.
 
 **Playback VOL±** (`raven-button.sh volume-up|volume-down`, Stream Deck Playback page)
 runs the same helper's `--volume-up/--volume-down` at once, outside the queue and the

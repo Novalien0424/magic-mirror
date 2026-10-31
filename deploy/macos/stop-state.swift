@@ -136,7 +136,26 @@ final class BlackWindow: NSWindow {
   override var canBecomeMain: Bool { false }
 }
 
+// Button feedback: a quiet system sound on the alert output only (audio-prefer keeps that on
+// the Jabra), never the all-speakers default output that music uses.
+func chime(_ name: String) {
+  guard ["Pop", "Basso", "Glass", "Tink", "Sosumi"].contains(name), let sound = NSSound(named: NSSound.Name(name)) else { fail("chime_invalid") }
+  var property = address(kAudioHardwarePropertyDefaultSystemOutputDevice), device: AudioDeviceID = 0
+  var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+  if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &property, 0, nil, &size, &device) == noErr, device != 0 {
+    var uid = address(kAudioDevicePropertyDeviceUID), value: Unmanaged<CFString>?, n = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    if AudioObjectGetPropertyData(device, &uid, 0, nil, &n, &value) == noErr, let id = value?.takeRetainedValue() {
+      sound.playbackDeviceIdentifier = NSSound.PlaybackDeviceIdentifier(id as String)
+    }
+  }
+  sound.volume = 0.35
+  guard sound.play() else { fail("chime_failed") }
+  let end = Date(timeIntervalSinceNow: 3)
+  while sound.isPlaying && Date() < end { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05)) }
+}
+
 switch CommandLine.arguments.dropFirst().first {
+case "--chime": chime(CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "")
 case "--reset-output": volume(true)
 case "--output-status": volume(false)
 case "--volume-up": stepVolume(0.1)

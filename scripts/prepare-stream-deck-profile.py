@@ -2,9 +2,12 @@
 """Build the Neo profiles using only Elgato's built-in actions.
 
 Magic Mirror: the eight mode keys (System/Open). VIDEO LOOP and MUSIC LOOP are Multi
-Actions that open their control and then Switch Profile to Magic Mirror Playback.
-Magic Mirror Playback: VOL+, VOL- and STOP; STOP opens the stop control and switches
-back. Both ship in one package so Stream Deck maps the cross-profile references.
+Actions that open their control and then Switch Profile to their page.
+Magic Mirror Playback (VIDEO LOOP): VOL+, VOL- and STOP. Magic Mirror Music (MUSIC LOOP):
+three folder keys (the Magic Mirror Controls plugin titles them with the first three
+MusicLoop subfolders), Previous, Next, VOL+, VOL- and STOP. STOP opens the stop control
+and switches back. All ship in one package so Stream Deck maps the cross-profile
+references.
 
 The format is taken from Stream Deck 7.6's bundled Neo and package profiles. Import
 through Stream Deck; never edit its live profile database or replace the default profile.
@@ -21,6 +24,10 @@ MAIN_PINNED = "99293094-82b8-4758-9126-dc3f7ed80752"
 PLAYBACK_ID = "3c0b8f1e-6a52-4f0e-9a7d-2f5d0f6b8c41"
 PLAYBACK_PAGE = "b8a4d2c7-1e3f-4a6b-9c5d-7e8f9a0b1c2d"
 PLAYBACK_PINNED = "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b"
+MUSIC_ID = "5d1c9e2a-7b3f-4c6d-8e9f-a0b1c2d3e4f5"
+MUSIC_PAGE = "6e2dae3b-8c4a-4d7e-9fa0-b1c2d3e4f5a6"
+MUSIC_PINNED = "7f3ebf4c-9d5b-4e8f-a0b1-c2d3e4f5a6b7"
+FOLDER_ACTION = "com.magicmirror.controls.folder"
 
 SYMBOLS = {
     "Start": ("#167248", '<path d="M58 29 L58 82 L99 55 Z" fill="white"/>'),
@@ -33,6 +40,9 @@ SYMBOLS = {
     "Stop": ("#a3303c", '<rect x="49" y="29" width="49" height="49" rx="5" fill="white"/>'),
     "Volume Up": ("#3d4f66", '<path d="M38 44 H52 L70 30 V82 L52 68 H38 Z" fill="white"/><path d="M84 56 H108 M96 44 V68" stroke="white" stroke-width="7" stroke-linecap="round"/>'),
     "Volume Down": ("#3d4f66", '<path d="M38 44 H52 L70 30 V82 L52 68 H38 Z" fill="white"/><path d="M84 56 H108" stroke="white" stroke-width="7" stroke-linecap="round"/>'),
+    "Previous Song": ("#2f5d50", '<path d="M40 30 V82 M98 30 L52 56 L98 82 Z" fill="white" stroke="white" stroke-width="7" stroke-linejoin="round"/>'),
+    "Next Song": ("#2f5d50", '<path d="M104 30 V82 M46 30 L92 56 L46 82 Z" fill="white" stroke="white" stroke-width="7" stroke-linejoin="round"/>'),
+    "Music Folder": ("#5a4a8a", '<path d="M34 42 H62 L70 50 H110 V96 H34 Z" fill="none" stroke="white" stroke-width="7" stroke-linejoin="round"/>'),
 }
 
 
@@ -79,23 +89,41 @@ def key(controls: Path, action: str, title: str, switch_to=None, size: int = 14)
     }, icon
 
 
+def folder_key(slot: int):
+    """Plugin action: the title comes from the plugin at run time (empty here so it is not overridden)."""
+    icon = "Images/music-folder.svg"
+    return {"ActionID": str(uuid.uuid5(uuid.NAMESPACE_URL, f"magicmirror:folder:{slot}")), "LinkedTitle": False,
+            "Name": "Music Folder", "Resources": None, "Settings": {"slot": slot}, "State": 0,
+            "States": [state("", icon, 12)], "UUID": FOLDER_ACTION}, icon
+
+
 def build_profile(controls: Path) -> Path:
     main = [
         (0, 0, "Start", "START\nMIRROR", None), (1, 0, "Console", "CONSOLE", None),
         (2, 0, "Play Loop", "VIDEO\nLOOP", PLAYBACK_ID), (3, 0, "Desktop", "DESKTOP", None),
-        (0, 1, "Studio", "STUDIO", None), (1, 1, "Music Loop", "MUSIC\nLOOP", PLAYBACK_ID),
+        (0, 1, "Studio", "STUDIO", None), (1, 1, "Music Loop", "MUSIC\nLOOP", MUSIC_ID),
         (2, 1, "Dance Floor", "DANCE\nFLOOR", None), (3, 1, "Stop", "STOP", None),
     ]
     playback = [
         (0, 0, "Volume Up", "VOL +", None), (0, 1, "Volume Down", "VOL −", None),
         (3, 1, "Stop", "STOP", MAIN_ID),
     ]
+    music = [
+        (0, 0, 1), (1, 0, 2), (2, 0, 3), (3, 0, "Volume Up", "VOL +", None),
+        (0, 1, "Previous Song", "PREV", None), (1, 1, "Next Song", "NEXT", None),
+        (2, 1, "Volume Down", "VOL −", None), (3, 1, "Stop", "STOP", MAIN_ID),
+    ]
     destination = controls / "Magic Mirror.streamDeckProfile"
     with ZipFile(destination, "w", ZIP_DEFLATED) as archive:
         def profile(profile_id, page_id, pinned_id, name, keys):
             base = f"Profiles/{profile_id.upper()}.sdProfile"
             actions, images = {}, {}
-            for column, row, action, title, switch_to in keys:
+            for column, row, *spec in keys:
+                if len(spec) == 1:
+                    actions[f"{column},{row}"], icon = folder_key(spec[0])
+                    images[icon] = svg("Music Folder")
+                    continue
+                action, title, switch_to = spec
                 actions[f"{column},{row}"], icon = key(controls, action, title, switch_to,
                                                        12 if action in ("Console", "Desktop") else 14)
                 images[icon] = svg(action)
@@ -112,9 +140,10 @@ def build_profile(controls: Path) -> Path:
             "AppVersion": "7.6.0.23012", "DeviceModel": "20GBJ9901", "DeviceSettings": None, "FormatVersion": 1,
             "OSType": "macOS", "OSVersion": "27.0.0",
             "RequiredPlugins": ["com.elgato.streamdeck.system.open", "com.elgato.streamdeck.multiactions",
-                                "com.elgato.streamdeck.profile.rotate"]}))
+                                "com.elgato.streamdeck.profile.rotate", "com.magicmirror.controls"]}))
         profile(MAIN_ID, MAIN_PAGE, MAIN_PINNED, "Magic Mirror", main)
         profile(PLAYBACK_ID, PLAYBACK_PAGE, PLAYBACK_PINNED, "Magic Mirror Playback", playback)
+        profile(MUSIC_ID, MUSIC_PAGE, MUSIC_PINNED, "Magic Mirror Music", music)
     return destination
 
 

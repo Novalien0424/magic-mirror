@@ -1,7 +1,7 @@
 import { allowPromptWindow } from '../shared/prompt-window'
 import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from './web-console'
 import { createOperatorLoop } from './operator-loop'
-import { createMusicLoop } from './music-loop'
+import { createMusicLoop, musicLoopFiles, musicSubfolders } from './music-loop'
 import { createSharedMusicOutput } from './shared-music-output'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
@@ -9,9 +9,10 @@ import { execFile } from 'node:child_process'
 import { createMacMediaFilePreparer, musicPrepareDeadlineSeconds } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { createMirrorMode } from './mirror-mode'
-import { parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
-import { basename, extname, isAbsolute, join, resolve } from 'node:path'
-import { readFile, readdir, writeFile, open } from 'node:fs/promises'
+import { MUSIC_RESYNC_GAP_MS, parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { mkdir, readFile, readdir, rename, writeFile, open } from 'node:fs/promises'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { setTimeout as wait } from 'node:timers/promises'
 import { isCameraSnapshot, type CameraSnapshot } from '../shared/camera-tracking'
 import {
@@ -212,6 +213,8 @@ let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
 let musicLoop: ReturnType<typeof createMusicLoop> | undefined
+/** MusicLoop subfolder chosen by a Stream Deck folder key; undefined plays the folder itself. */
+let musicFolder: string | undefined
 let danceFloor: ReturnType<typeof createDanceFloor> | undefined
 let stopOperatorControl: (() => void) | undefined
 let consoleOnMirror = false
@@ -1202,7 +1205,42 @@ void app.whenReady().then(async () => {
       }
     },
     failed: reason => operatorLoop?.musicFailed(reason),
+    resyncGapMs: () => operatorLoop?.view().settings.musicResync ? MUSIC_RESYNC_GAP_MS : 0,
+    subfolder: () => musicFolder,
   })
+  // The Stream Deck plugin titles its three folder keys from this file (names only, no paths).
+  const musicFoldersFile = join(app.getPath('home'), 'Library/Caches/MagicMirror/music-folders.json')
+  const musicFoldersState = async () => ({ version: 1, folders: (await musicSubfolders(mediaFolders.view().shared?.path)).slice(0, 3),
+    active: musicFolder ?? null, playing: !!operatorLoop?.isMusicMode() })
+  const publishMusicFolders = async (state?: Record<string, unknown>) => {
+    try {
+      await mkdir(dirname(musicFoldersFile), { recursive: true, mode: 0o700 })
+      await writeFile(musicFoldersFile + '.tmp', JSON.stringify(state ?? await musicFoldersState()), { mode: 0o600 })
+      await rename(musicFoldersFile + '.tmp', musicFoldersFile)
+    } catch { marker('MUSIC_LOOP', { reason: 'operator_loop_music_folders_unpublished' }) }
+  }
+  app.once('will-quit', () => {
+    try {
+      const saved = JSON.parse(readFileSync(musicFoldersFile, 'utf8'))
+      writeFileSync(musicFoldersFile, JSON.stringify({ ...saved, active: null, playing: false }), { mode: 0o600 })
+    } catch { /* No folder keys were published. */ }
+  })
+  /** Folder key: check the folder first, so an unreadable or empty one keeps the current music. */
+  const selectMusicFolder = async (slot: number): Promise<boolean> => {
+    try {
+      const shared = (await mediaFoldersReady, mediaFolders.view().shared?.path)
+      const name = (await musicSubfolders(shared))[slot - 1]
+      if (!name) throw Error('operator_loop_music_folder_missing')
+      await musicLoopFiles(shared, 'MusicLoop', () => {}, name)
+      musicFolder = name
+    } catch (error) {
+      const reason = error instanceof Error && /^operator_loop_music_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_music_folder_unavailable'
+      marker('MUSIC_LOOP', { reason })
+      runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
+      return false
+    }
+    return operatorLoop!.music(true)
+  }
   let welcomeWait: { generation: number; signal: AbortSignal; claimed: boolean; finish(completed: boolean): void } | undefined
   danceFloor = createDanceFloor({
     directory: app.getPath('userData'),
@@ -1569,13 +1607,28 @@ void app.whenReady().then(async () => {
       const session = runtime.snapshot()
       const skillOwner = session.lifecycle === 'active' && session.realtimeSessionId
         ? { realtimeSessionId: session.realtimeSessionId, sessionGeneration: session.sessionGeneration } : undefined
+      // Music page keys act on MusicLoop only; they never start another mode.
+      if (action === 'music_next' || action === 'music_previous') {
+        return operatorLoop!.isMusicMode() && !!musicLoop?.skip(action === 'music_next' ? 1 : -1)
+      }
+      if (action === 'music_folder_1' || action === 'music_folder_2' || action === 'music_folder_3') {
+        const success = await selectMusicFolder(Number(action.slice(-1)))
+        void publishMusicFolders()
+        if (success) { hideConsoleWindow(); showMirrorWindow() }
+        return success
+      }
       if (action === 'studio' && !runtime.getAvatarSkillsForRuntime(skillOwner).imageGeneration) {
         marker('OPERATOR_CONTROL', { reason: 'studio_skill_disabled' }); return false
       }
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
       if (action !== 'play_loop' && action !== 'music_loop' && action !== 'dance_floor' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
-      const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music() : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      // MUSIC LOOP plays the folder's own files; it restarts only when leaving a subfolder.
+      const leaveFolder = action === 'music_loop' && musicFolder !== undefined && operatorLoop!.isMusicMode()
+      if (action === 'music_loop') musicFolder = undefined
+      const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music(leaveFolder)
+        : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
+      void publishMusicFolders()
       if (!success) return false
       hideConsoleWindow()
       // MusicLoop is audio-only and independent of the TV (owner 2026-10-31): with the

@@ -246,18 +246,18 @@ describe('Raven launchd button', () => {
   })
   it('installs a signed wrapper for every Stream Deck key, with STUDIO under START', () => {
     const installer = readFileSync(new URL('../../deploy/macos/install-stream-deck-controls.sh', import.meta.url), 'utf8')
-    expect(installer.match(/^for action in (.+); do$/gm)).toEqual(Array(2).fill('for action in start stop loop console studio desktop music dance volume-up volume-down; do'))
-    for (const [action, label] of [['start', 'Start'], ['stop', 'Stop'], ['loop', 'Play Loop'], ['console', 'Console'], ['studio', 'Studio'], ['desktop', 'Desktop'], ['music', 'Music Loop'], ['dance', 'Dance Floor'], ['volume-up', 'Volume Up'], ['volume-down', 'Volume Down']]) {
+    expect(installer.match(/^for action in (.+); do$/gm)).toEqual(Array(2).fill('for action in start stop loop console studio desktop music dance volume-up volume-down music-previous music-next; do'))
+    for (const [action, label] of [['start', 'Start'], ['stop', 'Stop'], ['loop', 'Play Loop'], ['console', 'Console'], ['studio', 'Studio'], ['desktop', 'Desktop'], ['music', 'Music Loop'], ['dance', 'Dance Floor'], ['volume-up', 'Volume Up'], ['volume-down', 'Volume Down'], ['music-previous', 'Previous Song'], ['music-next', 'Next Song']]) {
       expect(installer).toContain(`    ${action}) label='${label} Magic Mirror' ;;`)
     }
-    for (const direction of ['up', 'down']) {
-      expect(readFileSync(new URL(`../../deploy/macos/magic-mirror-volume-${direction}.sh`, import.meta.url), 'utf8')).toContain(`raven-button.sh volume-${direction}\n`)
+    for (const key of ['volume-up', 'volume-down', 'music-next', 'music-previous']) {
+      expect(readFileSync(new URL(`../../deploy/macos/magic-mirror-${key}.sh`, import.meta.url), 'utf8')).toContain(`raven-button.sh ${key}\n`)
     }
   })
-  it('switches the deck to Playback from VIDEO/MUSIC LOOP and back from its STOP', () => {
+  it('switches the deck to its Playback/Music page from VIDEO/MUSIC LOOP and back from STOP', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'mm-deck-')))
     try {
-      for (const name of ['Start', 'Stop', 'Play Loop', 'Console', 'Studio', 'Desktop', 'Music Loop', 'Dance Floor', 'Volume Up', 'Volume Down']) mkdirSync(join(root, `${name} Magic Mirror.app`))
+      for (const name of ['Start', 'Stop', 'Play Loop', 'Console', 'Studio', 'Desktop', 'Music Loop', 'Dance Floor', 'Volume Up', 'Volume Down', 'Previous Song', 'Next Song']) mkdirSync(join(root, `${name} Magic Mirror.app`))
       const built = spawnSync('/usr/bin/python3', [fileURLToPath(new URL('../../scripts/prepare-stream-deck-profile.py', import.meta.url)), root], { encoding: 'utf8' })
       expect(built.status).toBe(0)
       const listed = spawnSync('/usr/bin/unzip', ['-Z1', join(root, 'Magic Mirror.streamDeckProfile')], { encoding: 'utf8' }).stdout.split('\n')
@@ -277,12 +277,24 @@ describe('Raven launchd button', () => {
       expect(Object.keys(main).sort()).toEqual(['0,0', '0,1', '1,0', '1,1', '2,0', '2,1', '3,0', '3,1'])
       expect(main['0,1'].States[0].Title).toBe('STUDIO')
       expect(target(main['2,0'])).toEqual({ app: `"${join(root, 'Play Loop Magic Mirror.app')}"`, profile: 'Magic Mirror Playback' })
-      expect(target(main['1,1'])).toEqual({ app: `"${join(root, 'Music Loop Magic Mirror.app')}"`, profile: 'Magic Mirror Playback' })
+      expect(target(main['1,1'])).toEqual({ app: `"${join(root, 'Music Loop Magic Mirror.app')}"`, profile: 'Magic Mirror Music' })
       expect(main['3,1'].UUID).toBe('com.elgato.streamdeck.system.open')
       expect(Object.keys(playback).sort()).toEqual(['0,0', '0,1', '3,1'])
       expect(playback['0,0'].Settings.path).toContain('Volume Up Magic Mirror.app')
       expect(playback['0,1'].Settings.path).toContain('Volume Down Magic Mirror.app')
       expect(target(playback['3,1'])).toEqual({ app: `"${join(root, 'Stop Magic Mirror.app')}"`, profile: 'Magic Mirror' })
+      // Music page: three plugin folder keys (titled at run time), Previous/Next, VOL± and STOP back.
+      const music = keys('Magic Mirror Music')
+      expect(Object.keys(music).sort()).toEqual(['0,0', '0,1', '1,0', '1,1', '2,0', '2,1', '3,0', '3,1'])
+      expect([music['0,0'], music['1,0'], music['2,0']].map(a => [a.UUID, a.Settings.slot, a.States[0].Title]))
+        .toEqual([1, 2, 3].map(slot => ['com.magicmirror.controls.folder', slot, '']))
+      expect(music['0,1'].Settings.path).toContain('Previous Song Magic Mirror.app')
+      expect(music['1,1'].Settings.path).toContain('Next Song Magic Mirror.app')
+      expect(music['3,0'].Settings.path).toContain('Volume Up Magic Mirror.app')
+      expect(music['2,1'].Settings.path).toContain('Volume Down Magic Mirror.app')
+      expect(target(music['3,1'])).toEqual({ app: `"${join(root, 'Stop Magic Mirror.app')}"`, profile: 'Magic Mirror' })
+      expect(JSON.parse(spawnSync('/usr/bin/unzip', ['-p', join(root, 'Magic Mirror.streamDeckProfile'), 'package.json'], { encoding: 'utf8' }).stdout).RequiredPlugins)
+        .toContain('com.magicmirror.controls')
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
   it('keeps Remote Console off the button queue, the TV, the mouse and the Stream Deck', () => {

@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { LoopVideoPanel, loopVideoValidation, sameLoopVideoSettings } from '../../../src/renderer/console/LoopVideoPanel'
-import { DEFAULT_LOOP_VIDEO, type LoopVideoSettings } from '../../../src/shared/operator-loop'
+import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoSettings } from '../../../src/shared/operator-loop'
 import type { FolderMediaEntry } from '../../../src/shared/media-folders'
 
 const videoId = `folder-${'a'.repeat(40)}`, musicId = `folder-${'b'.repeat(40)}`
@@ -29,9 +29,17 @@ describe('global Loop Video Console settings', () => {
   })
   it('detects unsaved changes in every setting independent of property order', () => {
     expect(sameLoopVideoSettings(settings, { volume: settings.volume, fit: settings.fit, audioId: '', audioMode: 'embedded', videoId })).toBe(true)
-    for (const patch of [{ volume: .2 }, { fit: 'cover' as const }, { videoId: musicId }, { audioMode: 'separate' as const }, { audioId: musicId }]) {
+    for (const patch of [{ volume: .2 }, { fit: 'cover' as const }, { videoId: musicId }, { audioMode: 'separate' as const }, { audioId: musicId }, { musicResync: true }]) {
       expect(sameLoopVideoSettings(settings, { ...settings, ...patch })).toBe(false)
     }
+  })
+  it('keeps five-key settings valid and round-trips the opt-in MusicLoop re-sync', () => {
+    expect(parseLoopVideoSettings({ ...settings })).toEqual(settings)
+    expect(parseLoopVideoSettings({ ...settings, musicResync: true })).toEqual({ ...settings, musicResync: true })
+    expect(parseLoopVideoSettings({ ...settings, musicResync: false })).toEqual(settings)
+    expect(parseLoopVideoSettings({ ...settings, musicResync: 'yes' })).toBeNull()
+    expect(sameLoopVideoSettings(settings, { ...settings, musicResync: false })).toBe(true)
+    expect(loopVideoValidation({ ...settings, musicResync: true }, entries)).toBe('')
   })
   it('provides bounded unavailable/loading states; Return to Avatar lives in the Console control bar', () => {
     const html = renderToStaticMarkup(createElement(LoopVideoPanel, { bridge: null, visible: true, onMediaFolders() {} }))

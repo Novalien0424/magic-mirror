@@ -113,8 +113,9 @@ export function createOperatorLoop(input: {
       })
       return promise
     },
-    async normal(target: 'avatar' | 'desktop' | 'music' | 'dance' | 'black' = 'avatar'): Promise<boolean> {
-      if ((target === 'music' || target === 'dance') && intent === target && snapshot.mode === target && snapshot.generation > 0
+    /** `force` restarts a running MusicLoop (folder key); a plain repeat press keeps playback. */
+    async normal(target: 'avatar' | 'desktop' | 'music' | 'dance' | 'black' = 'avatar', force = false): Promise<boolean> {
+      if (!force && (target === 'music' || target === 'dance') && intent === target && snapshot.mode === target && snapshot.generation > 0
         && ['playing', 'preparing'].includes(snapshot.status)) return true
       const run = ++revision
       clear(); settle(false); abandonValidation?.()
@@ -163,7 +164,7 @@ export function createOperatorLoop(input: {
       }).then(() => run === revision && intent === target && snapshot.status !== 'failed', () => false)
     },
     desktop(): Promise<boolean> { return controller.normal('desktop') },
-    music(): Promise<boolean> { return controller.normal('music') },
+    music(restart = false): Promise<boolean> { return controller.normal('music', restart) },
     dance(): Promise<boolean> { return controller.normal('dance') },
     black(): Promise<boolean> { return controller.normal('black') },
     danceFailed(reason: string) { if (!disposed && intent === 'dance') publish({ status: 'failed', reason }) },

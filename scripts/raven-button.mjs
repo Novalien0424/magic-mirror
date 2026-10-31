@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquireElectronOwner } from './electron-owner.mjs'
 import { createTvIo, operateMirrorControl, operateTv } from './mirror-tv-control.mjs'
-import { createOperatorIo, sendOperatorCommand } from './operator-command.mjs'
+import { createOperatorIo, safeOperatorReason, sendOperatorCommand } from './operator-command.mjs'
 import { createMouseIo, operateMouse } from './mirror-mouse-control.mjs'
 import { createStopStateIo } from './mirror-stop-state.mjs'
 
@@ -184,7 +184,8 @@ const file = fileURLToPath(import.meta.url)
 if (process.argv[1] && resolve(process.argv[1]) === file) {
   if (process.platform !== 'darwin') throw Error('raven_button_macos_only')
   const action = process.argv[2]
-  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', 'dance', 'volume-up', 'volume-down', '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
+  const MUSIC_KEYS = ['music-next', 'music-previous', 'music-folder-1', 'music-folder-2', 'music-folder-3']
+  if (!['start', 'stop', 'loop', 'console', 'studio', 'desktop', 'music', 'dance', 'volume-up', 'volume-down', ...MUSIC_KEYS, '--worker', '--wake'].includes(action)) throw Error('raven_button_action_invalid')
   const root = join(homedir(), 'Library/Caches/MagicMirror/button'), queue = join(root, 'queue')
   const log = join(homedir(), 'Library/Logs/MagicMirror/button.log')
   mkdirSync(queue, { recursive: true, mode: 0o700 }); mkdirSync(dirname(log), { recursive: true })
@@ -206,12 +207,23 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
     const direction = action.slice('volume-'.length)
     const outcome = await createStopStateIo().stepVolume(direction).catch(() => 'volume_step_failed')
     record(`volume_${direction}`, outcome)
-    // Detached: afplay lingers ~3 s, and Stream Deck cannot reopen a still-running wrapper app,
-    // so waiting would swallow quick repeated presses.
-    const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${outcome === 'volume_step_failed' ? 'Basso' : 'Pop'}.aiff`], { stdio: 'ignore', detached: true })
-    child.on('error', () => record('press', 'feedback_unavailable'))
-    child.unref()
+    createStopStateIo().chime(outcome === 'volume_step_failed' ? 'Basso' : 'Pop', () => record('press', 'feedback_unavailable'))
     if (outcome === 'volume_step_failed') process.exitCode = 1
+  } else if (MUSIC_KEYS.includes(action)) {
+    // Music page keys (Previous/Next/folders) talk to a running Main directly; they never
+    // start the app, wake the TV or wait behind the queue.
+    const command = action.replaceAll('-', '_')
+    let outcome = 'music_not_running', reason
+    try {
+      if ((await createButtonIo().state(1000)).pid) {
+        const reply = await sendOperatorCommand(command, createOperatorIo())
+        outcome = reply?.status === 'success' ? command : 'music_key_failed'
+        reason = safeOperatorReason(reply?.reason) ? reply.reason : undefined
+      }
+    } catch { outcome = 'music_key_failed' }
+    record(command, outcome, reason ? { modeReason: reason } : {})
+    createStopStateIo().chime(outcome === command ? 'Pop' : 'Basso', () => record('press', 'feedback_unavailable'))
+    if (outcome !== command) process.exitCode = 1
   } else if (action !== '--worker') {
     const path = join(queue, `${process.hrtime.bigint().toString().padStart(24, '0')}-${process.pid}.json`)
     // Another worker may already be draining the queue. Publish only a complete
@@ -224,10 +236,7 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
     let release
     const io = createButtonIo()
     const sounds = { started: 'Glass', already_on: 'Pop', loop_playing: 'Glass', music_preparing: 'Pop', dance_preparing: 'Pop', studio_ready: 'Glass', console_shown: 'Pop', desktop_shown: 'Pop', stopped: 'Tink', already_off: 'Pop', stopped_forced: 'Sosumi' }
-    const feedback = outcome => {
-      const child = spawn('/usr/bin/afplay', [`/System/Library/Sounds/${sounds[outcome] ?? 'Basso'}.aiff`], { stdio: 'ignore' })
-      child.on('error', () => record('press', 'feedback_unavailable'))
-    }
+    const feedback = outcome => createStopStateIo().chime(sounds[outcome] ?? 'Basso', () => record('press', 'feedback_unavailable'))
     try {
       // A physical press must never take over somebody else's active QA.
       try { release = acquireElectronOwner('raven-button') } catch {

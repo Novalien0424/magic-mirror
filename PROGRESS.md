@@ -20,6 +20,21 @@ What changed (rulings in [DECISIONS](DECISIONS.md) 2026-10-31, product in [PRD](
   opens on the Jabra (458 → 13 ms); QA harness fixes (ritual sampling, media-intent
   tool map, memory channel race); title-alias discovery with generic media words.
   [User journeys and results](docs/testing/user-journeys-2026-10-31.md).
+- **Night 10-31:** MusicLoop plays its own files in file-name order; the Neo's new
+  **Magic Mirror Music** page has 3 subfolder keys (titled by the new Magic Mirror
+  Controls plugin), PREV, NEXT, VOL± and STOP; an unreadable subfolder (Google Drive
+  "Yunelle", not downloaded: EDEADLK) is skipped and its key refused while music keeps
+  playing; the 1.2 s Bluetooth re-sync pause between songs is enabled. Field-checked
+  13:34Z: NEXT/PREV, refused Yunelle/empty slot, music uninterrupted. Imported as
+  "Magic Mirror copy 3" + "Magic Mirror Playback copy" + "Magic Mirror Music"; Stream
+  Deck stopped answering accessibility after its relaunch, so the Neo was left on the
+  Music page (its STOP returns to copy 3).
+- **Volume fixes 10-31 night (owner: do 1 and 2; no loudness normalization because songs
+  are added constantly; the 70% reset policy unchanged):** a rejoining speaker takes the
+  Jabra's level (active from the next app start, built 21:45); button chimes now play at
+  35% on the alert output (Jabra) via `stop-state --chime` (installed, field-checked).
+  Investigation of video jitter (loop-wrap hitch, start delay, board capture path) and
+  volume actors is in the session report; fixes 4–5 not started.
 
 - Dance Floor: Console Stop/Stop All end Dance and return to Conversation; loop-wrap
   clock fix; beat-locked groove; "Ready to Party?" welcome; 90% default volume;
@@ -112,6 +127,17 @@ Clock-in checks: Node typecheck and 30 display-target tests passed; existing app
 build verification failed `qa_build_stale` (retained in
 [preflight failures](.artifacts/camera-cable-2026-10-31/preflight-failures.txt)), so
 rebuild current source before Electron QA. Other in-progress edits were preserved.
+
+MusicLoop inspection, **21:00 Taipei 2026-10-31**: the saved shared root is the
+Drive-backed `AI_Stuff/AI_Avatar/Common`; MusicLoop scans its `MusicLoop` tree
+recursively, prepares cloud files through File Provider, and repeats ready tracks.
+New files require a fresh mode start (STOP then MUSIC LOOP); a repeat press during
+playback does not rescan. Live enumeration failed on `MusicLoop/Yunelle` with
+`Resource deadlock avoided` (errno 11), including the one retry using the actual
+playlist scanner. This currently blocks the whole scan before playback, rather
+than skipping that directory. Last logged run at 20:46 loaded five tracks; current
+folder completeness is unverified. All 28 music-loop/preparer unit tests passed.
+No playback or source changes made. [Failure evidence](.artifacts/music-loop-inspection-2026-10-31/scan.json).
 
 1. Owner: press the Neo keys
    once (VIDEO/MUSIC LOOP → Playback → STOP back), leave the TV in standby overnight.
