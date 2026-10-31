@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision } from '../../src/renderer/console/profile-workspace'
+import { newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, saveApplyDecision, acceptsEditorRefresh,
+  isStaleConfigFailure, consoleFailureText } from '../../src/renderer/console/profile-workspace'
 import type { ConsoleConfigDraftInput, ConsoleConfigPayload } from '../../src/shared/console-types'
 import { avatarCatalogSchema } from '../../src/main/avatar/avatar-config'
 import { projectAvatarDraft } from '../../src/renderer/console/avatar-editor'
@@ -123,6 +124,47 @@ describe('profile workspace ownership', () => {
     const pending = { ...payload, publishDiff: { ...payload.publishDiff, changed: [{} as never] } }
     expect(avatarActivationReason(pending, 'a', true, 'dormant')).toBe('Already on the Mirror.')
     expect(avatarActivationReason(pending, 'b', false, 'dormant')).toContain('Avatars')
+  })
+})
+
+describe('Save & apply scope and editor refresh ownership', () => {
+  const nonModel = { path: 'avatarCatalog', kind: 'non_model', change: 'updated' } as const
+  const payload = (active: ConsoleConfigDraftInput, draft: ConsoleConfigDraftInput, changed: readonly object[]) =>
+    ({ active: { ...active, configVersion: 9 }, draft: { ...draft, configVersion: 9 }, publishDiff: { changed } }) as unknown as ConsoleConfigPayload
+  const edited = (draft: ConsoleConfigDraftInput, voice: string): ConsoleConfigDraftInput => {
+    const next = structuredClone(draft)
+    next.avatarCatalog!.avatars[0]!.voice = voice
+    return projectAvatarDraft(next)
+  }
+
+  it('publishes directly only when the live config equals the saved draft this save started from', () => {
+    const live = syntheticDraft(), mine = edited(live, 'cedar')
+    expect(saveApplyDecision(live, payload(live, mine, [nonModel]))).toBe('publish')
+    expect(saveApplyDecision(live, payload(live, live, []))).toBe('up_to_date')
+  })
+
+  it('routes earlier saved-but-unpublished or model changes to the whole-draft review', () => {
+    const live = syntheticDraft(), earlier = edited(live, 'sage'), mine = edited(earlier, 'cedar')
+    expect(saveApplyDecision(earlier, payload(live, mine, [nonModel]))).toBe('other_pending')
+    expect(saveApplyDecision(live, payload(live, mine, [nonModel, { path: 'aiModels.realtimeDialogue.modelId', kind: 'model', change: 'updated' }])))
+      .toBe('models_pending')
+  })
+
+  it('keeps unsaved Advanced config and Models edits when Config is read again', () => {
+    const saved = { realtimeDialogue: 'a', inputTranscription: 'b', memoryExtractor: 'c' }
+    expect(acceptsEditorRefresh(saved, { ...saved, memoryExtractor: 'edited' }, false)).toBe(false)
+    expect(acceptsEditorRefresh(saved, { ...saved }, false)).toBe(true)
+    expect(acceptsEditorRefresh(saved, { ...saved, memoryExtractor: 'edited' }, true)).toBe(true)
+    expect(acceptsEditorRefresh(null, saved, false)).toBe(true)
+  })
+
+  it('reads Config again after stale saves or publishes and reports failures with their reason', () => {
+    expect(isStaleConfigFailure('console_config_draft_conflict')).toBe(true)
+    expect(isStaleConfigFailure('console_config_diff_stale')).toBe(true)
+    expect(isStaleConfigFailure('console_config_invalid')).toBe(false)
+    expect(consoleFailureText({ ok: false, error: 'console_config_invalid', reason: 'cause=payload_schema_invalid',
+      fields: [{ path: 'realtimeDialogue', message: 'invalid_type' }] }))
+      .toBe('console_config_invalid: cause=payload_schema_invalid · realtimeDialogue: invalid_type')
   })
 })
 type AvatarProfileScenes = ReturnType<typeof newAvatar>['scenes']

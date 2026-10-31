@@ -67,8 +67,11 @@ export function createMusicLoop(input: {
       previous.once('exit', () => { cleanup(); resolve() })
       previous.stdin.end(); previous.kill('SIGTERM')
     })
-    stopping = Promise.all([release, preparation]).then(() => undefined)
-    return stopping
+    const attempt = Promise.all([release, preparation]).then(() => undefined)
+    // Report a timed-out release once; a later stop with no live helper must not
+    // inherit the rejection, or every mode switch would stay locked until restart.
+    stopping = attempt.catch(() => undefined)
+    return attempt
   }
   const fail = (reason: string) => {
     report(reason); input.failed(reason)
@@ -171,7 +174,7 @@ export function createMusicLoop(input: {
           input.nativeEvent?.(event)
           if (event.event === 'ready' && Number.isSafeInteger(event.outputs) && event.outputs > 0) {
             clearTimeout(deadline); routeReady = true
-            report('operator_loop_music_outputs_ready', { outputs: event.outputs })
+            report('operator_loop_music_outputs_ready', { outputs: event.outputs, wireless: Number.isSafeInteger(event.wireless) ? event.wireless : 0 })
             void next()
           } else if (event.event === 'playing' && event.id === trackId && current !== undefined) {
             audible = true; settle?.(true); settle = undefined; state()

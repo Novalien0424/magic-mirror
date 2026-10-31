@@ -126,8 +126,8 @@ const bridge: ConsoleBridge = {
     return ipcRenderer.invoke(SAVE_MODEL_DRAFT_CHANNEL, input) as Promise<ConsoleResponse<ConsoleModelsPayload>>
   },
 
-  saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>> {
-    return ipcRenderer.invoke(SAVE_DRAFT_CHANNEL, input) as Promise<ConsoleResponse<ConsoleConfigPayload>>
+  saveDraft(input: ConsoleConfigDraftInput, baseRevision: string): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+    return ipcRenderer.invoke(SAVE_DRAFT_CHANNEL, input, baseRevision) as Promise<ConsoleResponse<ConsoleConfigPayload>>
   },
 
   testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>> {

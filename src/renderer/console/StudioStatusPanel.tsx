@@ -222,19 +222,24 @@ function useOnConsoleShown(refresh: () => unknown, enabled: boolean): void {
 /** Sign-in chip for Mirror and Avatars › Interactive Studio; sign-in and the test picture live in System › Studio service. */
 export function StudioServiceSummary({ bridge, visible, onOpen }: { bridge: StudioBridge; visible: boolean; onOpen(): void }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
+  const [failure, setFailure] = useState<Failure | null>(null)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const refresh = useCallback(async (): Promise<void> => {
     if (!bridge?.studio) return
     const result = await call(bridge, { action: 'status' })
-    if (mounted.current && !failed(result)) setStatus(result.status)
+    if (!mounted.current) return
+    if (failed(result)) setFailure(result)
+    else { setFailure(null); setStatus(result.status) }
   }, [bridge])
   useEffect(() => { if (visible) void refresh() }, [visible, refresh])
   useOnConsoleShown(refresh, visible && !!bridge?.studio)
   const auth = status ? studioAuthText(status.auth) : null
   return <p className="studio-service-summary">
     <span>Interactive Studio · ChatGPT</span>
-    {auth ? <Badge tone={auth.tone}>{auth.label}</Badge> : <span className="console__status">{bridge?.studio ? 'Checking…' : 'Unavailable'}</span>}
+    {failure ? <Badge tone="failed">Status unavailable</Badge> : auth ? <Badge tone={auth.tone}>{auth.label}</Badge>
+      : <span className="console__status">{bridge?.studio ? 'Checking…' : 'Unavailable'}</span>}
+    {failure && <span className="studio-service-summary__hint" role="status">Could not read the sign-in status ({failure.error}; {failure.reason}). Open Sign-in and test picture to retry.</span>}
     <HelpButton className="console__link" help="Sign-in status, image model, usage and a test picture for this Mac. Shared by every avatar."
       onClick={onOpen}>Sign-in and test picture</HelpButton>
     <span className="studio-service-summary__hint">To start: set Mirror mode to Interactive Studio in the control bar, or press INTERACTIVE STUDIO on the Stream Deck; then visitors say{' '}
@@ -254,6 +259,7 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
   onStatus?(status: StudioConsoleStatus): void
 }): React.JSX.Element {
   const [status, setStatus] = useState<StudioConsoleStatus | null>(null)
+  const [readFailure, setReadFailure] = useState<Failure | null>(null)
   const [busy, setBusy] = useState(false)
   const [ownMessage, setOwnMessage] = useState<LiveMessage | null>(null)
   const message = onMessage ? null : ownMessage
@@ -270,7 +276,9 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
     polling.current = true
     const result = await call(bridge, { action: 'status' })
     polling.current = false
-    if (mounted.current && !failed(result)) show(result.status)
+    if (!mounted.current) return
+    if (failed(result)) setReadFailure(result)
+    else { setReadFailure(null); show(result.status) }
   }, [bridge])
   // Lifecycle changes refresh too: a Stream Deck switch happens while the Console is hidden.
   useEffect(() => {
@@ -302,17 +310,21 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
         : `Switches the Mirror to Interactive Studio: the mirror wakes to 「${status?.wakePhrase ?? 'the studio wake phrase'}」 and runs the studio, then says farewell and sleeps.`
   const conversationHelp = active && status?.active ? 'Switches the Mirror to Conversation: the running studio closes now and the conversation continues.'
     : 'Switches the Mirror to Conversation: the mirror wakes to the Persona wake phrase and starts a normal conversation.'
+  // Mode buttons need the current mode; say why they are disabled while it cannot be read.
+  const modeUnknown = available && !mode && readFailure
+    ? `Mirror mode unknown: reading the studio status failed (${readFailure.error}; ${readFailure.reason}). Retrying every ${LIVE_POLL_MS / 1000} s; check Events if this continues.` : ''
   // A visitor may still open the studio from a conversation; only that run has a separate exit.
   const visitorRun = mode === 'conversation' && status?.active
   return <div className="live-bar__group studio-live" role="group" aria-labelledby="studio-live-heading">
     <h2 id="studio-live-heading" className="live-bar__label">Mirror mode</h2>
     <div className="studio-live__switch" role="group" aria-label="Mirror mode">
       <HelpButton placement="below" aria-pressed={mode === 'conversation'}
-        help={conversationHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'conversation') void run({ action: 'mode', mode: 'conversation' }) }}>Conversation</HelpButton>
+        help={modeUnknown || conversationHelp} disabled={!available || busy || !mode} onClick={() => { if (mode !== 'conversation') void run({ action: 'mode', mode: 'conversation' }) }}>Conversation</HelpButton>
       <HelpButton placement="below" aria-pressed={mode === 'studio'}
-        help={studioHelp} disabled={!available || busy || !mode || status?.imageSkillEnabled === false} onClick={() => { if (mode !== 'studio') void run({ action: 'mode', mode: 'studio' }) }}>Interactive Studio</HelpButton>
+        help={modeUnknown || studioHelp} disabled={!available || busy || !mode || status?.imageSkillEnabled === false} onClick={() => { if (mode !== 'studio') void run({ action: 'mode', mode: 'studio' }) }}>Interactive Studio</HelpButton>
     </div>
     {status?.active && <span className="console__status console__status--success" role="status">{studioPhaseText(status)}</span>}
+    {readFailure && !mode && <span className="console__status console__status--failed" role="status" title={modeUnknown}>Mode unknown · status read failed</span>}
     {visitorRun && <HelpButton placement="below" help="Ends the studio the visitor asked for, clears its picture from the Mirror and returns to conversation."
       disabled={!available || busy} onClick={() => void run({ action: 'exit' })}>Back to conversation</HelpButton>}
     {!onMessage && <p className="console__result studio-live__result" role="status" aria-live="polite">

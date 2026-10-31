@@ -1,5 +1,6 @@
 import { getAudioPreferences, saveAudioPreferences } from './audio-preferences'
 import { isWebConsoleEvent } from './web-console'
+import { isConsoleDraftRevision } from './console-config'
 import { createMediaSkillRuntime } from './avatar/media-skill-runtime'
 import { registerStudioIpc } from './studio/studio-ipc'
 import { registerImageSkillIpc } from './studio/image-skill-ipc'
@@ -334,6 +335,9 @@ function isValidAvatarRuntimeSnapshot(value: unknown): value is AvatarRuntimeSna
     && isUnitNumber(readProperty(value, 'voiceGain'))
     && isUnitNumber(readProperty(value, 'musicGain'))
 }
+
+// Simulation and developer avatar controls stay on the Mac (CONSOLE-02); a tailnet Console keeps devices and test stop.
+const REMOTE_AVATAR_CONTROLS: ReadonlySet<AvatarControlCommand['type']> = new Set(['audio_devices', 'refresh_audio_devices', 'stop_avatar_test'])
 
 function validateAvatarControl(value: unknown): value is AvatarControlCommand {
   const type = readProperty(value, 'type')
@@ -2193,6 +2197,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
+    if (isWebConsoleEvent(event) && !REMOTE_AVATAR_CONTROLS.has(args[0].type)) {
+      emit(telemetry, { module: 'app', event: 'console_remote_action_rejected', status: 'failed',
+        error_code: 'console_request_rejected', reason: 'mac_local_only;command=' + args[0].type, source: 'runtime' })
+      return consoleFailure('console_request_rejected', 'cause=mac_local_only')
+    }
     if (args[0].type === 'audio_devices') {
       try { saveAudioPreferences(args[0].preferences) } catch {
         emit(telemetry, { module: 'audio', event: 'audio_preferences_save_failed', status: 'failed', reason: 'audio_preferences_save_failed', source: 'runtime' })
@@ -2521,11 +2530,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       senderRejected(telemetry, authorization.reason)
       return consoleFailure('console_request_rejected', 'cause=sender_rejected')
     }
-    if (args.length !== 1) {
+    // Every Console save names the saved draft it edited, so a stale editor cannot overwrite another save.
+    if (args.length !== 2 || !isConsoleDraftRevision(args[1])) {
       payloadRejected(telemetry)
       return consoleFailure('console_request_invalid', 'cause=payload_schema_invalid')
     }
-    return invokeConsole(consoleFacade(options), (facade) => facade.saveDraft(args[0]), telemetry)
+    return invokeConsole(consoleFacade(options), (facade) => facade.saveDraft(args[0], args[1]), telemetry)
   })
 
   ipcMain.handle(CONSOLE_IPC_CHANNELS.testDraft, async (event, ...args) => {

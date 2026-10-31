@@ -6,7 +6,7 @@ export interface DanceSettings {
   welcome: boolean
   language: 'zh-TW' | 'en'
 }
-export const DEFAULT_DANCE: DanceSettings = { track: '', intensity: 1, volume: 1, offsetMs: 0, welcome: true, language: 'zh-TW' }
+export const DEFAULT_DANCE: DanceSettings = { track: '', intensity: 1, volume: 0.9, offsetMs: 0, welcome: true, language: 'zh-TW' }
 export interface DanceBeat { timeMs: number; periodMs: number; strength: number; confidence: number; index: number }
 export interface DanceAnalysis { version: 1; durationMs: number; beats: DanceBeat[]; energy: number[]; energyStepMs: number }
 export interface DanceFrame {
@@ -27,6 +27,8 @@ export interface DanceWelcomeBundle {
   snapshot: Readonly<import('./types').SessionModelSnapshot>
   clientSecret: string
   avatar: { name: string; personality: string; speakingStyle: string }
+  /** DJ language captured when this Dance Floor run started. */
+  language: DanceSettings['language']
 }
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const finite = (v: unknown, low: number, high: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= low && v <= high

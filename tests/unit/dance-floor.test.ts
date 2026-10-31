@@ -43,6 +43,19 @@ describe('Dance Floor beat detection and actual-player clock', () => {
     expect(Math.abs(impact.positionMs - 1000)).toBeLessThanOrEqual(1000 / 60)
     expect(impact.parameters.ParamAngleY).toBeLessThan(-20)
   })
+  it('keeps a beat-locked groove between hits, continuous across beats, without moving the nod timing', () => {
+    const beats = [0, 1, 2].map(index => ({ timeMs: 1000 + index * 500, periodMs: 500, strength: 1, confidence: 1, index }))
+    const at = (positionMs: number) => dancePose(frame({ beats, positionMs, sentAt: 10000 }), 10000)
+    // Between the two nods of a group the head and body still lean with the music.
+    expect(at(1250).parameters.ParamAngleZ!).toBeGreaterThan(3)
+    expect(at(1250).parameters.ParamBodyAngleZ!).toBeLessThan(-1)
+    // The lean follows each two-beat group's side and has no jump where the nearest beat switches.
+    expect(Math.sign(at(1000).parameters.ParamAngleZ!)).toBe(1)
+    expect(Math.sign(at(2000).parameters.ParamAngleZ!)).toBe(-1)
+    expect(Math.abs(at(1249).parameters.ParamAngleZ! - at(1251).parameters.ParamAngleZ!)).toBeLessThan(0.5)
+    // It stops with the clock.
+    expect(dancePose(frame({ beats, rate: 0 }), 10100).parameters.ParamAngleZ).toBe(0)
+  })
   it('stops dancing on paused/stalled clocks and cannot free-run after stale IPC', () => {
     for (const pose of [dancePose(frame({ rate: 0 }), 10100), dancePose(frame(), 10500), dancePose(frame({ status: 'idle' }), 10100)]) {
       expect(pose.parameters.ParamAngleY).toBe(0); expect(pose.synchronized).toBe(false)

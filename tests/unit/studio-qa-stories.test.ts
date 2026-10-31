@@ -26,6 +26,14 @@ describe('live Interactive Studio QA stories', () => {
     expect(stories.some(story => /^[\x20-\x7e]+$/.test(story.visitor.answers.join(' ')))).toBe(true)
   })
 
+  it('answers the published default questions and revises something the visitor actually described', () => {
+    const story = studioQaStory('default')!
+    expect(story.visitor.answers).toHaveLength(defaultExperience().studio.questions.length)
+    expect(story.visitor.answers[0]).toContain('因為')
+    expect(story.visitor.answers.some(answer => answer.includes('海邊'))).toBe(true)
+    expect(story.visitor.changes[0]).toContain('海邊')
+  })
+
   it('compares names the way a visitor reads them', () => {
     expect(sameStudioName('Mia', ' MIA ')).toBe(true)
     expect(sameStudioName('王曉明', '王小明')).toBe(false)

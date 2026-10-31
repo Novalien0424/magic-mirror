@@ -6,7 +6,8 @@ it('does not answer yes to a related but different question or a question follow
   expect(confirmationQuestionMatches([r('Would you like to discuss the project?')], 2, 'Alex')).toBe(false)
   expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex')), r('Would you like some advice?')], 2, 'Alex')).toBe(false)
   expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex'))], 2, 'Alex')).toBe(true)
-  expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex', 'en'))], 2, 'Alex')).toBe(false)
+  expect(confirmationQuestionMatches([r(buildMemoryQuestion('Alex', 'en'))], 2, 'Alex')).toBe(true)
+  expect(confirmationQuestionMatches([r('Are you Alex? Would you like some advice?')], 2, 'Alex')).toBe(false)
 })
 it('rejects an old deadline even when material recall succeeds', () => {
   const result = judgeMemoryConversation([
@@ -21,6 +22,13 @@ it('accepts an explicit old-to-current deadline correction while rejecting missi
   expect(judge('Two samples, changed from Friday afternoon to Saturday afternoon.')).toBe(true)
   expect(judge('Two samples by Friday or Saturday afternoon.')).toBe(false)
   expect(judge('The samples by Saturday afternoon.')).toBe(false)
+})
+it('recognises the same recall facts in Traditional Chinese replies', () => {
+  const judge = (stage: string, text: string) => judgeMemoryConversation([{ visit: 2, stage, role: 'avatar', text }])
+  expect(judge('recall_commitment', '你答應的，是交付兩個軟木板顏色樣品。期限原本是星期五下午，之後改成星期六下午。').commitment).toBe(true)
+  expect(judge('recall_commitment', '兩個樣品，星期五或星期六下午。').commitment).toBe(false)
+  expect(judge('recall_material', '你選擇的材料是回收軟木板，因為它比較不反光，拿起來也更方便搬運。').material).toBe(true)
+  expect(judgeMemoryConversation([{ visit: 1, stage: 'background', role: 'avatar', text: '抱歉，我存不了這件事。' }]).clean).toBe(false)
 })
 it('flags false storage-failure claims and thinking narration in the synthetic conversation', () => {
   for (const text of ['I had a little trouble saving that.', 'Let me quickly think through what you promised.']) {

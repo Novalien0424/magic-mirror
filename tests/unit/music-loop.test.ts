@@ -70,6 +70,26 @@ describe('MusicLoop playlist and lifecycle', () => {
     expect(f.input.prepare).toHaveBeenCalledTimes(count)
     expect(f.input.failed).not.toHaveBeenCalled()
   })
+  it('reports a timed-out helper release once without locking every later stop', async () => {
+    const f = await playerFixture()
+    // This helper ignores stdin EOF and SIGTERM, so only the release deadline ends the wait.
+    await writeFile(f.input.executable, `#!/usr/bin/env node
+process.on('SIGTERM', () => {});
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+send({event:'ready',outputs:1});
+require('node:readline').createInterface({input:process.stdin}).on('line', line => send({event:'playing',id:JSON.parse(line).id,outputs:1}));
+setInterval(() => {}, 1000);
+`)
+    expect(await f.player.start()).toBe(true)
+    vi.useFakeTimers()
+    try {
+      const first = f.player.stop()
+      const rejected = expect(first).rejects.toThrow('operator_loop_music_stop_failed')
+      vi.advanceTimersByTime(3600)
+      await rejected
+      await expect(f.player.stop()).resolves.toBeUndefined()
+    } finally { vi.useRealTimers() }
+  })
   it('skips corrupt tracks and stops if every track is unusable', async () => {
     const good = await playerFixture(['01-bad.wav', '02.wav'])
     expect(await good.player.start()).toBe(true)

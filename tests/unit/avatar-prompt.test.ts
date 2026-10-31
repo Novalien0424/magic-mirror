@@ -14,7 +14,7 @@ describe('effective avatar prompt', () => {
     expect(prompt).toContain('An ancient guardian.')
     expect(prompt).toContain('Calm and slow.')
     expect(prompt).toContain('One sentence about "I explored {{language}}.".')
-    expect(prompt).toContain('Speak in English.')
+    expect(prompt).toContain('Speak only in English, including any brief line before a tool call, even when the visitor uses another language; only set_reply_language changes it.')
     expect(prompt).not.toContain('General personality.')
     expect(prompt).not.toContain('1–3 short sentences')
     expect(prompt).not.toContain('studio_answer')

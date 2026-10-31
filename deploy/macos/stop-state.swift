@@ -66,7 +66,17 @@ func volume(_ reset: Bool) {
   }
   guard !values.isEmpty else { fail("jabra_volume_unavailable") }
   if reset && values.contains(where: { abs($0 - 0.7) > 0.015 }) { fail("jabra_volume_verify_failed") }
-  let data = try! JSONSerialization.data(withJSONObject: ["output": "Jabra Speak2 75", "volumes": values, "reset": reset], options: [.sortedKeys])
+  // The Jabra's own firmware mutes when its buttons take it to step 0, and a later volume
+  // write does not clear that. Normal use is 70% unmuted (owner 2026-10-31); input untouched.
+  var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), muted: UInt32 = 0, muteSize = UInt32(MemoryLayout<UInt32>.size)
+  let hasMute = AudioObjectHasProperty(id, &mute)
+  if reset && hasMute {
+    var off: UInt32 = 0
+    guard AudioObjectSetPropertyData(id, &mute, 0, nil, muteSize, &off) == noErr else { fail("jabra_unmute_failed") }
+  }
+  if hasMute && AudioObjectGetPropertyData(id, &mute, 0, nil, &muteSize, &muted) != noErr { fail("jabra_mute_read_failed") }
+  if reset && muted != 0 { fail("jabra_unmute_verify_failed") }
+  let data = try! JSONSerialization.data(withJSONObject: ["output": "Jabra Speak2 75", "volumes": values, "reset": reset, "muted": muted != 0], options: [.sortedKeys])
   print(String(data: data, encoding: .utf8)!)
 }
 

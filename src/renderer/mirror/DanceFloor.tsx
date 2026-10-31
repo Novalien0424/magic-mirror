@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MirrorBridge } from '../../shared/bridge'
 import type { DanceFrame } from '../../shared/dance-floor'
+/** Applied Core parameters exposed to movement QA, in this order. */
+const DANCE_QA_PARAMETERS = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamBodyAngleX', 'ParamBodyAngleY', 'ParamBodyAngleZ', 'ParamEyeBallX', 'ParamEyeLOpen']
 import type { AvatarModelReference } from '../../shared/avatar-profiles'
 import { AvatarCanvas } from '../avatar/AvatarCanvas'
 import type { CubismAvatarRenderer } from '../avatar/cubism-avatar'
@@ -35,6 +37,7 @@ export function DanceFloor(): React.JSX.Element {
         element.dataset.danceBeat = String(sample.beatIndex ?? -1)
         element.dataset.danceImpactMs = String(sample.impactTimeMs ?? -1)
         element.dataset.danceSynchronized = String(sample.synchronized)
+        element.dataset.danceParams = DANCE_QA_PARAMETERS.map(name => (sample.parameters[name] ?? 0).toFixed(2)).join(',')
       }
       id = requestAnimationFrame(inspect)
     }
@@ -43,7 +46,7 @@ export function DanceFloor(): React.JSX.Element {
   }, [])
   useEffect(() => {
     if (!frame || frame.status !== 'welcome') return
-    const generation = frame.generation, language = frame.settings.language, abort = new AbortController()
+    const generation = frame.generation, abort = new AbortController()
     let output: RealtimeAudioOutput | undefined, session: RealtimeSessionHandle | undefined
     let silent: AudioContext | undefined, track: MediaStreamTrack | undefined, detach: (() => void) | undefined
     let raf = 0, stopped = false, cleanup: Promise<void> | undefined
@@ -87,7 +90,7 @@ export function DanceFloor(): React.JSX.Element {
         }),
       })
       await session.connect(); check()
-      session.danceWelcome?.(language, abort.signal, completed => {
+      session.danceWelcome?.(bundle.language, abort.signal, completed => {
         if (root.current) root.current.dataset.danceWelcomeCompleted = String(completed)
         void stop().then(() => bridge.finishDanceWelcome?.(generation, completed))
       })

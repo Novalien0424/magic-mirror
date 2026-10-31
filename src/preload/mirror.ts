@@ -577,7 +577,7 @@ const bridge: MirrorBridge = {
     return isCameraSnapshot(frame) ? frame : null
   },
 
-  memory: (request, identity) => ipcRenderer.invoke('mirror:memory', { request, identity }),
+  memory: (request, identity, language) => ipcRenderer.invoke('mirror:memory', language ? { request, identity, language } : { request, identity }),
   memoryInput: (phase, itemId, transcript, identity) => ipcRenderer.invoke('mirror:memory-input', { phase, itemId, transcript, identity }),
   resetMemorySession: identity => ipcRenderer.invoke('mirror:memory-reset', identity),
 

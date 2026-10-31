@@ -164,6 +164,23 @@ describe('bounded synthetic Raven fixture', () => {
       .toEqual(expect.arrayContaining(['farewell_tail_before_close', 'mic_release_before_acquire']))
   })
 
+  it('grades replies against the selected reply language, which only an explicit request changes', () => {
+    expect(RAVEN_QUALITY_JUDGE_CONTRACT.version).toBe('raven-quality.v9')
+    expect(RAVEN_CONVERSATION_FIXTURE.version).toBe('raven-conversation.v2')
+    expect(RAVEN_QUALITY_JUDGE_CONTRACT.dimensions.relevance).toContain('in the selected reply language')
+    const rule = RAVEN_QUALITY_JUDGE_CONTRACT.instructions.find(line => line.startsWith('Reply language:'))!
+    expect(rule).toContain('Traditional Chinese reply to it is correct')
+    expect(rule).toContain('unrequested switch to English')
+    const title = fixtureTurn('character_consistency', 'english_with_title')
+    expect(title.language).toBe('en')
+    expect(title.expected.criteria.map(c => c.expectation).join(' ')).not.toContain('Answer in English')
+    expect(title.expected.criteria.find(c => c.category === 'command_intent')!.expectation).toContain('selected reply language')
+    // The explicit Chinese request may select Chinese again; it is never an unknown route.
+    expect(fixtureTurn('character_consistency', 'return_to_chinese').expected.toolRoutes).toEqual([['set_reply_language'], []])
+    // No turn presupposes context the visitor never supplied.
+    expect(fixtureTurn('sleep_spells', 'after_spell').visitorText).toBe('我們繼續聊吧。我下週六有個社區展覽，如果只有十分鐘，我能先準備什麼？')
+  })
+
   it('requires explicit bindings and emits only a fixed failure code for unusable values', () => {
     const t = fixtureTurn('default_fallback', 'local_then_external')
     for (const binding of [{}, { youtubeQuery: '' }, { youtubeQuery: 'private\nvalue' }, { youtubeQuery: 'x'.repeat(201) }]) {

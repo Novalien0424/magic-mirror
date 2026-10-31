@@ -61,9 +61,14 @@ export async function runSpellLiveQa(input: Phase4QaInput): Promise<Phase4QaResu
   await evaluate(`const q=window.__spellQa;q.phase='cast';q.lastStop=0;`)
   const cast = await evaluate<{ decision: string; reason?: string; result?: { status: string } }>(
     `return window.magicMirrorPhase4Qa.injectFinalTranscript('施放咒語，下雨','qa-live-rain')`)
+  if (cast.decision !== 'triggered') {
+    input.onEvidence({ step: 'live_spell_comparison', status: 'failed', item: `${cast.decision}_${cast.reason ?? 'none'}` })
+    throw new Error('phase4_qa_spell_order')
+  }
   await wait(`return window.__spellQa.lastStop>0`, 'spell_cue_playback')
   const audio = await evaluate<{ valid: boolean; errors: number }>(`const q=window.__spellQa;return {valid:q.prefixes===1&&!q.extra&&q.sceneStart>0&&q.sceneStart<=q.lastStop,errors:q.errors}`)
-  if (cast.decision !== 'triggered' || cast.result?.status !== 'accepted' || !audio.valid || audio.errors) {
+  // A completed result is an accepted scene that already finished its once-only effect.
+  if (cast.decision !== 'triggered' || !['accepted', 'completed'].includes(cast.result?.status ?? '') || !audio.valid || audio.errors) {
     input.onEvidence({ step: 'live_spell_comparison', status: 'failed', item: `${cast.decision}_${cast.reason ?? cast.result?.status ?? 'none'}_audio_${audio.valid}_errors_${audio.errors}` })
     throw new Error('phase4_qa_spell_order')
   }

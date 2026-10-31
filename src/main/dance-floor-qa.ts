@@ -32,7 +32,7 @@ export async function runDanceFloorQa(input: Phase4QaInput): Promise<Phase4QaRes
   await wait(()=>ui(`return !!button('Dance Floor')`));await click('Dance Floor')
   await wait(async()=> (await view()).tracks.length===2)
   const initial=await view(), fixture=initial.tracks.find(t=>t.name.endsWith('.wav'))!, actual=initial.tracks.find(t=>t.name.endsWith('.m4a'))!
-  if(!initial.settings.welcome||initial.settings.volume!==1||initial.settings.language!=='zh-TW')throw Error('dance_qa_defaults')
+  if(!initial.settings.welcome||initial.settings.volume!==0.9||initial.settings.language!=='zh-TW')throw Error('dance_qa_defaults')
   pass('dance_defaults_and_tracks',{tracks:initial.tracks.length})
   await ui(`set('Dance Floor track',${JSON.stringify(fixture.id)})`);await save()
   await click('Start Dance Floor')
@@ -41,7 +41,7 @@ export async function runDanceFloorQa(input: Phase4QaInput): Promise<Phase4QaRes
   await playing()
   if (!await mirror(`const d=document.querySelector('.dance-floor')?.dataset;return d?.danceWelcomeCompleted==='true'&&+d.danceWelcomePeak>0.001`)) throw Error('dance_qa_welcome_incomplete')
   pass('dance_provider_welcome_before_music')
-  await click('STOP · black screen');await wait(()=>ui(`return !button('Start Dance Floor').disabled`))
+  await click('Stop Dance Floor');await wait(()=>ui(`return !button('Start Dance Floor').disabled`))
   await ui(`field('DJ welcome').click()`);await save()
   if((await view()).settings.track!==fixture.id||(await view()).settings.welcome)throw Error('dance_qa_save')
   pass('dance_ui_selection_and_save');await shot('dance-console.png',false)
@@ -80,14 +80,41 @@ export async function runDanceFloorQa(input: Phase4QaInput): Promise<Phase4QaRes
   await wait(()=>mirror(`return +document.querySelector('.dance-floor')?.dataset.danceHeadY===0`))
   const edited = (await view()).settings
   if(edited.offsetMs!==120 || edited.volume!==0.4 || edited.language!=='en')throw Error('dance_qa_offset')
-  pass('dance_live_controls');await click('STOP · black screen')
+  pass('dance_live_controls');await click('Stop Dance Floor')
   await wait(async()=> (await view()).frame.status==='idle')
-  await new Promise(r=>setTimeout(r,400));const image=await input.mirror.capturePage(), pixels=image.toBitmap()
-  if(!pixels.length||pixels.some((v,i)=>i%4!==3&&v!==0))throw Error('dance_qa_black')
-  pass('dance_stop_black');await writeFile(join(input.outputDir,'dance-stop-black.png'),image.toPNG());shots++
-  await ui(`set('Dance Floor track',${JSON.stringify(actual.id)});set('Dance intensity','1');set('Dance timing offset','0');set('Dance volume','1');set('DJ language','zh-TW')`);await save()
+  // Console Stop ends Dance only: the app stays up and Raven returns to Conversation.
+  await wait(()=>mirror(`return (await window.magicMirror.getOperatorLoop()).mode==='avatar'`))
+  await wait(()=>mirror(`return !document.querySelector('.dance-floor') && !!document.querySelector('.avatar-stage')`))
+  await new Promise(r=>setTimeout(r,1500))
+  pass('dance_stop_returns_to_conversation');await shot('dance-stop-conversation.png')
+  await ui(`set('Dance Floor track',${JSON.stringify(actual.id)});set('Dance intensity','1');set('Dance timing offset','0');set('Dance volume','0.9');set('DJ language','zh-TW')`);await save()
   await click('Start Dance Floor');await playing();await wait(async()=> (await view()).frame.positionMs>8000)
-  pass('dance_actual_m4a',{durationMs:2111900,outputs:(await view()).outputs.count,beatsInWindow:(await view()).frame.beats.length})
+  pass('dance_actual_m4a',{positionMs:Math.round((await view()).frame.positionMs),outputs:(await view()).outputs.count,beatsInWindow:(await view()).frame.beats.length})
+  const motion=await mirror<Array<{p:number,b:number,t:number,s:number,v:string}>>(`return new Promise(resolve=>{const a=[],end=performance.now()+30000;const tick=()=>{
+    const d=document.querySelector('.dance-floor')?.dataset;if(d)a.push({p:+d.dancePositionMs,b:+d.danceBeat,t:+d.danceImpactMs,s:d.danceSynchronized==='true'?1:0,v:d.danceParams??''});
+    if(performance.now()<end)requestAnimationFrame(tick);else resolve(a)};tick()})`)
+  const rows=motion.map(m=>({...m,q:m.v.split(',').map(Number)})).filter(m=>m.q.length===8)
+  const synced=rows.filter(m=>m.s), byBeat=new Map<number,typeof rows>()
+  for(const m of synced){const g=byBeat.get(m.b)??[];g.push(m);byBeat.set(m.b,g)}
+  const hits:number[]=[]
+  for(const g of byBeat.values()){if(!g.some(m=>m.p<m.t-50)||!g.some(m=>m.p>m.t+50))continue;const low=g.reduce((a,b)=>a.q[1]<b.q[1]?a:b);if(low.q[1]<-1)hits.push(Math.abs(low.p-low.t))}
+  hits.sort((a,b)=>a-b)
+  const range=(i:number)=>synced.length?Math.max(...synced.map(m=>m.q[i]!))-Math.min(...synced.map(m=>m.q[i]!)):0
+  const steps=rows.slice(1).map((m,i)=>Math.abs(m.q[1]!-rows[i]!.q[1]!))
+  const phrases=new Set(synced.map(m=>Math.floor(m.b/16)%3))
+  const movement={samples:rows.length,syncedShare:+(synced.length/Math.max(1,rows.length)).toFixed(3),beats:byBeat.size,timedBeats:hits.length,
+    medianMs:hits[Math.floor(hits.length/2)]??null,p95Ms:hits[Math.floor(hits.length*.95)]??null,
+    rangeDeg:{headX:+range(0).toFixed(1),headY:+range(1).toFixed(1),headZ:+range(2).toFixed(1),bodyX:+range(3).toFixed(1),bodyY:+range(4).toFixed(1),bodyZ:+range(5).toFixed(1)},
+    maxHeadStepDeg:+Math.max(0,...steps).toFixed(2),phraseSets:phrases.size}
+  await writeFile(join(input.outputDir,'dance-motion.json'),JSON.stringify({movement,rows:rows.map(m=>[m.p,m.b,m.t,m.s,...m.q])}))
+  if(movement.syncedShare<0.6||hits.length<20||(movement.p95Ms??Infinity)>40||movement.rangeDeg.headY<6)throw Error('dance_qa_real_track_movement')
+  pass('dance_real_track_movement',movement)
+  const burst:Array<{i:number,p:number,t:number,b:number}>=[]
+  for(let i=0;i<32;i++){
+    const at=await mirror<{p:number,t:number,b:number}>(`const d=document.querySelector('.dance-floor')?.dataset;return {p:+d.dancePositionMs,t:+d.danceImpactMs,b:+d.danceBeat}`)
+    const name=`dance-burst-${String(i).padStart(2,'0')}.png`;await shot(name);burst.push({i,...at})
+  }
+  await writeFile(join(input.outputDir,'dance-burst.json'),JSON.stringify(burst))
   await shot('dance-actual-track.png');await click('Stop All');await wait(async()=> (await view()).frame.status==='idle')
   await wait(()=>ui(`return document.querySelector('.live-bar__result')?.textContent.includes('Dance Floor stopped.')`))
   await wait(()=>ui(`return !button('Start Dance Floor').disabled`))
@@ -96,13 +123,14 @@ export async function runDanceFloorQa(input: Phase4QaInput): Promise<Phase4QaRes
   const path=join(userData,'dance-shared','DanceFloor.m4a');await rename(path,path+'.held')
   await click('Start Dance Floor');await wait(async()=> (await view()).frame.reason==='dance_track_missing')
   pass('dance_missing_track_visible');await rename(path+'.held',path)
-  await click('Refresh tracks');await click('Start Dance Floor');await click('STOP · black screen')
+  await click('Refresh tracks');await click('Start Dance Floor');await click('Stop Dance Floor')
   await wait(async()=> (await view()).frame.status==='idle');await new Promise(r=>setTimeout(r,800))
   if((await view()).frame.status!=='idle')throw Error('dance_qa_late_start')
   pass('dance_stop_cancels_preparation')
   await ui(`set('Dance Floor track','');field('DJ welcome').click()`);await save()
-  const final=await view();if(final.settings.volume!==1||final.settings.intensity!==1||final.settings.offsetMs!==0||!final.settings.welcome)throw Error('dance_qa_restore')
+  const final=await view();if(final.settings.volume!==0.9||final.settings.intensity!==1||final.settings.offsetMs!==0||!final.settings.welcome)throw Error('dance_qa_restore')
   pass('dance_defaults_restored')
+  await click('Start Dance Floor');await playing()
   await click('Return to Avatar')
   await wait(()=>mirror(`return (await window.magicMirror.getOperatorLoop()).mode==='avatar'`))
   await wait(()=>ui(`return document.querySelector('.live-bar__result')?.textContent.includes('Back to the avatar.')`))

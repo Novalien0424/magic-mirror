@@ -22,7 +22,7 @@ Magic Mirror profiles are preserved.
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
 | Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on all connected physical Mac outputs while remaining files download. TV black; voice and camera off. |
-| Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all available Mac outputs, default 100%, with Raven's beat-driven head/body motion and a brief DJ welcome. Voice listening and camera stay off. |
+| Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all external outputs (Bluetooth included; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset Jabra Speak2 75 output to 70%. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
@@ -132,8 +132,10 @@ Music timing drives head and torso motion; this portrait rig has no independent
 arms/legs. Positive timing offset advances Raven and negative delays Raven.
 
 STOP releases Dance and restores Jabra70 plus the other outputs' prior levels.
-The Console's Dance STOP and global Stop All during Dance use the same production
-shutdown/black-cover operation. Return to Avatar and other mode keys release
+The Console's Stop Dance Floor and global Stop All during Dance end Dance only:
+they restore output levels (Jabra 70%) and return Raven to Conversation while
+the app keeps running. Only the physical STOP key runs the shutdown/black-cover
+operation (owner ruling 2026-10-31). Return to Avatar and other mode keys release
 Dance before switching. Opening Console preserves Dance. Crashes do not restart
 Dance automatically. [Journey, measurements and physical exclusions](../../docs/testing/dance-floor-delivery-2026-10-30.md).
 

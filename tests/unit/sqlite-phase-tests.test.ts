@@ -697,6 +697,19 @@ async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 40; i++) await Promise.resolve()
 }
 
+// whenReady reads userData/web-console.json with real fs I/O before it registers the Console
+// shortcut and schedules the smoke timer (5c93769), so microtask flushing alone cannot reach it.
+// Poll on the real timer captured before any test fakes timers, so fake time never advances here.
+const realSetTimeout = globalThis.setTimeout
+async function waitForMainReady(harness: { readonly globalShortcut: { readonly register: ReturnType<typeof vi.fn> } }): Promise<void> {
+  for (let i = 0; i < 500 && harness.globalShortcut.register.mock.calls.length === 0; i++) {
+    await flushMicrotasks()
+    await new Promise(resolve => realSetTimeout(resolve, 2))
+  }
+  await flushMicrotasks()
+  expect(harness.globalShortcut.register).toHaveBeenCalled()
+}
+
 function stubImmediateMarkerFlush(): ReturnType<typeof vi.spyOn> {
   const stdoutWrite = vi.spyOn(process.stdout, 'write')
   stdoutWrite.mockImplementation((...args: Parameters<typeof process.stdout.write>) => {
@@ -976,7 +989,7 @@ describe('second audit Main integration with mocked Electron only', () => {
     const h = await prepare({ consoleLoadFailure: true })
     try {
       await import('../../src/main/index')
-      await flushMicrotasks()
+      await waitForMainReady(h)
       const toggle = h.globalShortcut.register.mock.calls[0]?.[1] as unknown as () => void
       toggle()
       await flushMicrotasks()
@@ -1780,7 +1793,8 @@ describe('Phase 0 Task 10A authoritative SQLite phase-test records', () => {
 
     try {
       await import('../../src/main/index')
-      await flushMicrotasks()
+      await waitForMainReady(harness)
+      expect(harness.shutdown).not.toHaveBeenCalled()
 
       await vi.advanceTimersByTimeAsync(1)
       await flushMicrotasks()

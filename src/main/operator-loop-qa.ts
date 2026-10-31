@@ -715,7 +715,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
       await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('MusicLoop is empty.')"))
       await shot('operator-music-loop-empty.png', false, true)
       const abnormal = join(musicDirectory, '99-abnormal.wav')
-      await writeFile(abnormal, ''); await truncate(abnormal, 100_000_001)
+      await writeFile(abnormal, ''); await truncate(abnormal, 200_000_001)
       await operatorCommand('music_loop')
       await waitFor(async () => (await snapshot()).reason === 'operator_loop_music_all_oversize')
       await operatorCommand('show_console')
@@ -734,7 +734,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     await operatorCommand('normal')
     await copyFile(join(musicDirectory, '02.wav'), join(musicDirectory, '03-pending.wav'))
     await writeFile(join(musicDirectory, '99-abnormal.wav'), '')
-    await truncate(join(musicDirectory, '99-abnormal.wav'), 100_000_001)
+    await truncate(join(musicDirectory, '99-abnormal.wav'), 200_000_001)
     downloads!.paused = true
     await operatorCommand('music_loop')
     await waitFor(async () => downloads!.waiting === 1 && (await snapshot()).status === 'playing')
@@ -751,7 +751,7 @@ export async function runOperatorLoopQa(input: Phase4QaInput): Promise<Phase4QaR
     if (downloads!.played - before < 10) fail('download_ready_tracks_not_repeating')
     downloads!.paused = false
     await waitFor(async () => downloads!.lastTrack === 3, 15000)
-    await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('abnormal files over 100 MB skipped')"))
+    await waitFor(() => evaluate("return document.querySelector('.live-bar')?.textContent.includes('abnormal files over 200 MB skipped')"))
     pass({ delayed_ms: Date.now() - started, ready_track_plays: downloads!.played - before, completed_track_joined: true, abnormal_skipped: true })
 
     step = CASES[28]

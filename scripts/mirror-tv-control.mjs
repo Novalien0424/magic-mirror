@@ -134,7 +134,11 @@ export async function operateMirrorControl(action, io) {
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
   const mouse = ['console', 'desktop'].includes(action) && tv === 'tv_awake' && io.mouse
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
-  return { app, mode, modeReason, tv, ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
+  // START returns the Jabra to 70% unmuted (owner 2026-10-31) only after the app has opened
+  // it: an earlier write is replaced by the speaker's own stored step when the stream opens.
+  const started = action === 'start' && io.resetAudio
+    ? (await (io.settle ?? io.wait ?? (ms => new Promise(done => setTimeout(done, ms))))(6000), await attempt(() => io.resetAudio(), 'jabra_output_reset_failed')) : audio
+  return { app, mode, modeReason, tv, ...(started === undefined ? {} : { audio: started }), ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'
     ? mouse && !['mouse_started', 'mouse_not_installed'].includes(mouse) ? mouse
       : { console: 'console_shown', loop: 'loop_playing', studio: 'studio_ready', desktop: 'desktop_shown', music: 'music_preparing', dance: 'dance_preparing' }[action] ?? app : tv }
 }

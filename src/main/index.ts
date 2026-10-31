@@ -1488,7 +1488,8 @@ void app.whenReady().then(async () => {
       if (!avatar || welcomeWait !== current) return null
       const secret = await clientSecretBroker.issue({ modelId: snapshot.realtimeDialogue, signal: current.signal })
       if (welcomeWait !== current || current.signal.aborted || operatorLoop?.view().snapshot.mode !== 'dance') return null
-      return { generation, snapshot, clientSecret: secret.value, avatar: { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle } }
+      return { generation, snapshot, clientSecret: secret.value, avatar: { name: avatar.name, personality: avatar.personality, speakingStyle: avatar.speakingStyle },
+        language: danceFloor!.welcomeLanguage() }
     } catch { marker('DANCE_FLOOR', { reason: 'dance_welcome_unavailable' }); return null }
   })
   ipcMain.on('mirror:dance-welcome-finished', (event, generation, completed) => {
@@ -1518,12 +1519,11 @@ void app.whenReady().then(async () => {
       }
       if (command.action === 'stop') {
         ++danceConsoleRequest
-        if (!await operatorLoop!.black() || !showMirrorWindow()) throw Error('dance_stop_failed')
+        // Console Stop and Stop All end Dance and return to Conversation; only the
+        // physical STOP key shuts the installation down (owner ruling 2026-10-31).
+        if (!await operatorLoop!.normal() || !showMirrorWindow()) throw Error('dance_stop_failed')
         if (isDarwin) await new Promise<void>((resolveStop, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
           ['--reset-output'], { timeout: 5000 }, error => error ? reject(Error('dance_volume_restore_failed')) : resolveStop()))
-        if (isDarwin && !phase4QaEnabled) execFile('/bin/zsh', [join(app.getAppPath(), 'deploy/macos/magic-mirror-stop.sh')], { timeout: 45000 }, error => {
-          if (error) marker('DANCE_FLOOR', { reason: 'dance_stop_control_failed' })
-        })
       }
       return { ok: true, value: danceFloor!.view() }
     } catch (error) {

@@ -93,7 +93,12 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
     studio: { prompts: { painting: '用一句話告訴訪客：「顏料已經調好了，我開始畫囉。」不要描述畫面。' } },
     visitor: {
       name: { say: '我叫王曉明。', intended: '王曉明', correction: '不是小朋友的小，是破曉的曉，王曉明。', confirm: '對，就是這個名字。' },
-      answers: ['我想變成一隻貓頭鷹。', '夜晚的海邊。', '像起霧的早晨，很安靜。', '深藍色。'],
+      // One answer per published default question: the past year's moment and why, a "this is me"
+      // moment, two wants that are hard to have at once, and what life could have more of.
+      answers: ['最難忘的是去年夏天，我一個人去海邊看日出。因為那天我第一次覺得，自己一個人也可以過得很好。',
+        '有一次下大雨，我把傘借給公車站一個不認識的阿姨，自己淋雨回家。那時候我就覺得，這就是我會做的事。',
+        '我想存錢買房子，也想辭職去環島旅行，可是這兩件事很難同時做到。',
+        '我希望生活裡多一點安靜的時間，可以慢慢看書。'],
       changes: ['可以把海邊換成下雪的森林嗎？'],
       thanks: '很好，我很喜歡，謝謝你。',
       request: '請開始互動工作室，帶我完成畫像的問答體驗。',

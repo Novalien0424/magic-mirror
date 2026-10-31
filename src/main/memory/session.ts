@@ -1,6 +1,6 @@
 import { parseMemoryRequest, validMemoryText, type MemoryReply, type MemoryEntry, type MemoryLanguage } from '../../shared/memory'
 import { randomUUID } from 'node:crypto'
-import { buildMemoryQuestion, sameSpokenQuestion } from '../../shared/realtime-prompts'
+import { buildMemoryQuestion, deliveredSpokenQuestion } from '../../shared/realtime-prompts'
 
 export interface MemoryState { active: boolean; avatarId: string; realtimeSessionId: string; sessionGeneration: number; lifecycle?: string }
 interface Store {
@@ -29,7 +29,7 @@ export class MemorySession {
     this.observe(state)
     const q = this.question
     if (!q || q.token !== token || !this.pending || !state.active) return reply('memory_question_stale')
-    if (!completed || performance.now() > q.expires || !sameSpokenQuestion(q.text, text)) {
+    if (!completed || performance.now() > q.expires || !deliveredSpokenQuestion(q.text, text)) {
       this.pending = ''; this.question = undefined; return reply('memory_question_rejected')
     }
     if (q.delivered) return reply('memory_question_duplicate')

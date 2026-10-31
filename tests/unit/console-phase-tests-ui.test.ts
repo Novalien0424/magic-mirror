@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import * as React from 'react'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// web-bridge reads window/location at import; model the Electron Console (file:, no web bridge).
+vi.hoisted(() => { vi.stubGlobal('window', {}); vi.stubGlobal('location', { protocol: 'file:' }) })
 
 import {
   App,

@@ -1,5 +1,28 @@
 # Magic Mirror — Durable rulings
 
+## 2026-10-31 — Console Dance stop, MusicLoop volume and Studio ending (owner rulings)
+
+- **Console Stop / Stop All during Dance Floor** end Dance only: music and DJ
+  speech stop, pre-Dance output levels return with Jabra 70%, and Raven returns
+  to Conversation (Dormant). The app keeps running and the tailnet Console stays
+  available. Only the physical STOP key runs the installation shutdown
+  (black HDMI cover, TV standby, app stop).
+- **MusicLoop volume:** every accepted MUSIC LOOP press sets Jabra to 70%, also
+  while music already plays. Volume is never enforced during playback; the
+  physical buttons adjust it until the next press.
+- **Studio ending:** a studio started inside a conversation (visitor request or
+  Console start) returns to that conversation after the transfer line, without
+  the Studio farewell or Dormant. Studio-mode visits (wake in Studio mode or a
+  Mirror switch) keep the fixed ending: transfer → Studio farewell → Dormant.
+  This supersedes the 2026-10-22 spec's farewell for visitor-requested visits.
+- **Dance welcome and volume:** Raven says the fixed line "Ready to Party?"
+  verbatim, then the music starts; the default Dance volume is 90%.
+- **Speakers:** MusicLoop and Dance play on every external output, Bluetooth
+  included (the Edifier M330 II with the Jabra); the Mac mini's built-in speaker
+  is left out whenever another output exists. By ear on 10-31, the Jabra and
+  Edifier are aligned by macOS in the stacked aggregate; the built-in speaker
+  raised to Dance volume was the audible offset.
+
 ## 2026-10-21 — Selectable common image skill per Avatar (owner directive)
 
 - Avatars → Skills owns each Avatar's `skills.imageGeneration` assignment.

@@ -47,10 +47,18 @@ export function buildSpeechResponse(text: string, speakingStyle: string) {
 export function buildMemoryQuestion(name: string, language: MemoryLanguage = 'zh-TW'): string {
   return language === 'zh-TW' ? REALTIME_PROMPTS.memoryChinese.question.replace('{{name}}', () => name) : renderPrompt('memoryQuestion', { name })
 }
+const normalizeSpoken = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '')
 /** Punctuation/spacing do not change the question; added or changed words do. RAM only. */
 export function sameSpokenQuestion(expected: string, actual: string): boolean {
-  const normalize = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '')
-  return !!actual.trim() && normalize(expected) === normalize(actual)
+  return !!actual.trim() && normalizeSpoken(expected) === normalizeSpoken(actual)
+}
+/**
+ * The identity question was delivered when the spoken output ends with it exactly. A model
+ * preamble before it does not change what a following yes answers; anything after it does.
+ */
+export function deliveredSpokenQuestion(expected: string, actual: string): boolean {
+  const question = normalizeSpoken(expected)
+  return !!question && normalizeSpoken(actual).endsWith(question)
 }
 export function buildMemoryState(reply: MemoryReply): string {
   const mode = reply.temporary ? 'temporary' : reply.mode ?? 'off'

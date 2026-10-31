@@ -48,6 +48,15 @@ if (resolve(process.cwd()).toLowerCase() !== repoRoot.toLowerCase()
   || process.platform === 'darwin' && repoRoot !== '/Users/novalien0424/magic-mirror') {
   throw new Error('phase4_qa_requires_canonical_checkout_cwd')
 }
+// Operator-loop case 19 needs Main's display listeners, which exist only with the production
+// MIRROR_DISPLAY target. Take an explicit value, else the installed LaunchAgent's; fail before launch.
+let operatorLoopDisplay = operatorLoopOnly ? process.env.MIRROR_DISPLAY?.trim() || '' : ''
+if (operatorLoopOnly && !operatorLoopDisplay && process.platform === 'darwin') {
+  const plist = join(homedir(), 'Library/LaunchAgents/com.magicmirror.launchagent.plist')
+  const read = spawnSync('/usr/bin/plutil', ['-extract', 'EnvironmentVariables.MIRROR_DISPLAY', 'raw', '-o', '-', plist], { encoding: 'utf8', timeout: 10_000 })
+  operatorLoopDisplay = read.status === 0 ? read.stdout.trim() : ''
+}
+if (operatorLoopOnly && !operatorLoopDisplay) throw new Error('phase4_qa_operator_loop_requires_mirror_display')
 const buildProvenance = await verifyBuild(repoRoot).catch(() => {
   throw new Error('phase4_qa_build_unverified_run_npm_run_build')
 })
@@ -351,6 +360,7 @@ const environment = {
   MIRROR_SMOKE_MS: manual ? '1800000' : cubismOnly || memoryLive || memoryConversation ? '300000' : operatorLoopOnly || danceFloorOnly ? '240000' : '120000',
   MIRROR_DEVELOPER_MODE: audioOnly || activeBgmOnly ? 'enabled' : 'disabled',
   MIRROR_BUILD_COMMIT: 'phase4-qa',
+  ...(operatorLoopDisplay ? { MIRROR_DISPLAY: operatorLoopDisplay } : {}),
 }
 delete environment.MIRROR_PHASE0_DEMO
 delete environment.MIRROR_PHASE1_LIVE_SMOKE

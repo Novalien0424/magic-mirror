@@ -1,4 +1,4 @@
-import { parseMemoryRequest, validMemoryText, type MemoryConsoleRequest, type MemoryReply, type MemoryMode, type MemoryInputPhase } from '../../shared/memory'
+import { parseMemoryRequest, validMemoryText, type MemoryConsoleRequest, type MemoryReply, type MemoryMode, type MemoryInputPhase, type MemoryLanguage } from '../../shared/memory'
 import type { MemoryRepository, MemoryEmbedder } from './contracts'
 import type { MemoryState } from './session'
 import { RelationshipMemory } from './relationship'
@@ -36,12 +36,12 @@ export function registerMemoryIpc(options: Options): { observe(): void; close():
   }
   options.handle('mirror:memory', async (event, ...args) => {
     if (!options.authorize(event, 'mirror') || args.length !== 1 || !object(args[0])) return rejected()
-    const envelope = args[0]
-    if (Object.keys(envelope).length !== 2) return rejected()
+    const envelope = args[0], keys = Object.keys(envelope).length
+    if (keys !== 2 && (keys !== 3 || envelope.language !== 'en' && envelope.language !== 'zh-TW')) return rejected()
     const state = current(envelope.identity), request = parseMemoryRequest(envelope.request)
     if (!state || !request) return rejected('memory_session_unavailable')
     try {
-      const result = await session.request(state, request)
+      const result = await session.request(state, request, envelope.language as MemoryLanguage | undefined)
       options.report(result.code)
       return result
     } catch { options.report('memory_storage_unavailable'); return { status: 'failed', code: 'memory_storage_unavailable' } }

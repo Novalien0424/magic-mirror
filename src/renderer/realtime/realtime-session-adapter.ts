@@ -1,5 +1,5 @@
 import { REALTIME_PROMPTS, buildAuditionPrompt, buildSpeechResponse } from '../../shared/realtime-prompts'
-import { danceWelcomePrompt } from '../../shared/dance-prompt'
+import { danceWelcomeLine } from '../../shared/dance-prompt'
 import { memoryNeedsReset } from '../../shared/memory'
 import {
   RealtimeAgent,
@@ -688,8 +688,9 @@ export function createRealtimeSession(
       // A spoken command owns this turn; a studio call from its cancelled reply is stale.
       if (closed || !studioActive || commandTurnOwned) return { outcome: 'ignored' as const, studio: { status: 'ignored' as const, code: 'studio_not_active_stale' } }
       if ((imagePhotoPending || studioStepSpeaking) && request.action !== 'exit') return { outcome: 'ignored' as const, spoken: true, studio: { status: 'ignored' as const, code: imagePhotoPending ? 'studio_photo_pending' : 'studio_step_speaking' } }
+      // A language switch may also come while painting, which has no listening step.
       if (studioStep && ['set_name', 'confirm_name', 'reject_name', 'repeat', 'answer', 'revise', 'finish', 'language'].includes(request.action)
-        && (studioListeningStep !== studioStep.id || visitorInputs <= studioStepInputs)) return awaitingVisitor()
+        && (request.action !== 'language' && studioListeningStep !== studioStep.id || visitorInputs <= studioStepInputs)) return awaitingVisitor()
       const reply = await studioRequest(request)
       if (!reply) return { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable' } }
       return { outcome: reply.status, studio: reply, ...(reply.step ? { spoken: true } : {}) }
@@ -734,7 +735,12 @@ export function createRealtimeSession(
       },
       create_image: args => imageTool({ action: 'generate', prompt: args.prompt as string, picture: args.picture as 'portrait' | 'sticker', source: args.source as 'description' | 'photo', language: args.language as 'zh' | 'en' }),
       edit_image: args => imageTool({ action: 'edit', prompt: args.prompt as string, language: args.language as 'zh' | 'en' }),
-      dismiss_image: () => imageTool({ action: 'dismiss' }),
+      // In Studio an ignored dismissal stays silent: a model follow-up would inherit the
+      // step's required tool_choice and be forced into another, unrelated tool call.
+      dismiss_image: async () => {
+        const result = await imageTool({ action: 'dismiss' })
+        return studioActive && result.outcome === 'ignored' ? { ...result, spoken: true } : result
+      },
       studio_use_photo: args => imageTool({ action: 'studio_photo', language: args.language as 'zh' | 'en' }),
       start_portrait_studio: async () => {
         // Duplicate or stale starts stay silent (background results), never an unguided reply.
@@ -839,8 +845,9 @@ export function createRealtimeSession(
         await memoryInputQueue
         if (closed || commandTurnOwned || studioActive || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
         const revision = memoryInputRevision
+        // Main asks the identity question in the selected reply language, never a guessed one.
         const request = () => input.onMemory!(args as unknown as import('../../shared/memory').MemoryRequest,
-          { realtimeSessionId: input.sessionId, sessionGeneration })
+          { realtimeSessionId: input.sessionId, sessionGeneration }, replyLanguage === 'english' ? 'en' : 'zh-TW')
         const requestMemory = () => args.action === 'recall' ? request() : withWorking(request)
         let memory = await requestMemory()
         // Main may already have changed private context even if a command has
@@ -1519,6 +1526,9 @@ export function createRealtimeSession(
     }
     if (type === 'output_audio_buffer.cleared') {
       releaseFinishedCues()
+      // A server-VAD barge-in clears output without output_audio_buffer.stopped;
+      // Main must still learn playback ended, or its idle timer stays paused.
+      emitMetadata(input, 'realtime_observer_event', 'success', 'cause=output_interrupted', sessionGeneration, createdAt)
     }
     if (type === 'ready' || (type === 'connection_change' && rawEventStatus(event) === 'connected')) {
       emitReady('cause=connect_succeeded')
@@ -1922,6 +1932,13 @@ export function createRealtimeSession(
 
   session.on('transport_event', handleTransportEvent)
   session.on('error', handleSessionError)
+  // transport_event carries only server messages. A lost peer connection (failed,
+  // or disconnected past the SDK grace) closes the transport, which reports here;
+  // an active session must end visibly instead of staying silent and awake.
+  ;(transport as unknown as { on?: (name: 'connection_change', listener: (status: unknown) => void) => void })
+    .on?.('connection_change', status => {
+      if (status === 'disconnected' && readyEmitted) handleTransportEvent({ type: 'connection_change', status })
+    })
   session.on('agent_tool_end', (_context, _agent, completedTool) => {
     if (!closed && pendingQuestion && readProperty(completedTool, 'name') === 'memory') { questionToolEnded = true; askPendingQuestion() }
     if (!closed && memoryResetPending && readProperty(completedTool, 'name') === 'memory') {
@@ -2031,6 +2048,8 @@ export function createRealtimeSession(
         })
       }
       if (!closed) emitReady('cause=connect_succeeded')
+      // The default reply language is explicit from the first turn, not only after a switch.
+      if (!closed && !input.preview) memoryDialogue.setReplyLanguage(replyLanguage)
       // Main starts the studio after it marks this session active; fall back to the wake greeting.
       if (!closed && studioDefaultSettle) studioDefaultTimer = setTimeout(() => settleStudioDefault(false), 10000)
       if (!closed) scheduleGreeting()
@@ -2511,11 +2530,22 @@ export function createRealtimeSession(
       if (!current()) { resolve(false); return }
       speakVerbatim(text, controller.signal, resolve, { mirror_studio: stage, mirror_studio_step: step.id })
     })
+    // One retry, then continue without the line: a rejected cue must never strand
+    // a step without its listening deadline, painting, reveal or transfer.
+    const line = async (text: string, stage: string): Promise<boolean> => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (await say(text, stage).catch(() => false)) return true
+        if (!current()) return false
+        emitMetadata(input, 'realtime_observer_event', 'degraded', attempt ? 'studio_speech_skipped' : 'studio_speech_failed', sessionGeneration, createdAt)
+        if (!attempt) { await input.waitForOutputTail?.(); await new Promise(resolve => setTimeout(resolve, 400)) }
+      }
+      return current()
+    }
     const perform = async () => {
       try {
         if (!current()) return
-        if (opening && !await say(opening, 'opening')) return
-        if (step.silent && !await say(PORTRAIT_STUDIO.journey[step.language].silence, 'silence')) return
+        if (opening && !await line(opening, 'opening')) return
+        if (step.silent && !await line(PORTRAIT_STUDIO.journey[step.language].silence, 'silence')) return
         if (step.comment) {
           const instructions = buildStudioCommentPrompt(promptAvatar, step.comment, step.language)
           const completed = await new Promise<boolean>(resolve => queueSpeechResponse({ conversation: 'none', tool_choice: 'none', input: [], instructions }, controller.signal, resolve, { mirror_studio: 'comment', mirror_studio_step: step.id }))
@@ -2527,7 +2557,7 @@ export function createRealtimeSession(
         // The native revision preamble owns this announcement when present.
         // Wait for its processed playback before starting the image request.
         if (revisionAnnounced) await input.waitForOutputTail?.()
-        else if (!await say(step.speech, step.phase === 'keepsake' ? 'transfer' : step.phase)) return
+        else if (!await line(step.speech, step.phase === 'keepsake' ? 'transfer' : step.phase)) return
         if (!current()) return
         if (step.phase === 'painting' || step.phase === 'revising') {
           const result = await studioRequest({ action: 'paint', stepId: step.id })
@@ -2820,8 +2850,7 @@ export function createRealtimeSession(
     speakVerbatim,
     danceWelcome: (language: 'zh-TW' | 'en', signal: AbortSignal, onFinished: (completed: boolean) => void) => {
       if (!input.preview || !input.avatar) { onFinished(false); return }
-      queueSpeechResponse({ conversation: 'none', tool_choice: 'none', input: [],
-        instructions: danceWelcomePrompt(input.avatar, language) }, signal, onFinished)
+      queueSpeechResponse(buildSpeechResponse(danceWelcomeLine(language), input.avatar.speakingStyle), signal, onFinished)
     },
     claimControlTurn: (itemId: string) => { if (!memoryLatestItem || memoryLatestItem === itemId) commandTurnOwned = true },
     onOutputAudioBufferStopped,

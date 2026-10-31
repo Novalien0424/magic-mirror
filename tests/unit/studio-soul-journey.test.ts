@@ -37,6 +37,8 @@ describe('Gate thirty-three application journey', () => {
     expect(v.current().speech).not.toContain('Amy')
     const switched = v.runtime.handle({ action: 'language', language: 'en' }, identity)
     expect(switched.step).toMatchObject({ phase: 'question', language: 'en' })
+    // The model learns the repeat already happened, so the next reply is recorded, not re-asked.
+    expect(switched.next).toContain('already repeated the pending question')
     expect(v.current().speech).toBe(defaultExperience().studio.questions[1]!.en)
     expect(v.current().comment).toBeUndefined()
     v.runtime.handle({ action: 'answer', question: 2, answer: '我會幫助朋友。', language: 'zh' }, identity)
@@ -108,7 +110,7 @@ describe('Gate thirty-three application journey', () => {
     v.signal('deliver'); v.signal('deliver', transfer)
     expect(v.deliver).toHaveBeenCalledOnce()
     expect(v.reports).toContain('studio_printer_deferred')
-    expect(v.events.at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
+    expect(v.events.at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'continue' }) // visitor-requested: back to conversation
     expect(v.events.every(e => parseStudioSessionEvent(e) !== null)).toBe(true)
     expect(v.runtime.isActive()).toBe(false)
   })

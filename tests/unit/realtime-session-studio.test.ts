@@ -199,7 +199,7 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'input_audio_buffer.committed', item_id: 'switch-zh' })
     await call(tool(p.agents[1]!, 'set_reply_language'), { language: 'zh' })
     expect(requests.at(-1)).toEqual({ action: 'language', language: 'zh' })
-    expect(p.sent.some(e => JSON.stringify(e).includes('visitor selected Chinese'))).toBe(true)
+    expect(p.sent.some(e => JSON.stringify(e).includes('Reply language: Taiwan Mandarin'))).toBe(true)
     await handle.close('test_complete')
   })
 
@@ -448,7 +448,7 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(image.content[0]).toEqual({ type: 'input_image', image_url: 'data:image/jpeg;base64,AAAA' })
     const reveal = responses(p).find(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')!
     // The reply language comes last, after the English stage text.
-    expect(String(reveal.instructions).endsWith('\n\nSpeak in Taiwan Mandarin with Traditional characters.')).toBe(true)
+    expect(String(reveal.instructions).endsWith('\n\nSpeak only in Taiwan Mandarin with Traditional characters, including any brief line before a tool call, even when the visitor uses another language; only set_reply_language changes it.')).toBe(true)
     expect(reveal.instructions).toContain('studio_revise')
     p.event({ type: 'response.created', response: { id: 'rev' } })
     p.event({ type: 'response.done', response: { id: 'rev', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
@@ -681,7 +681,7 @@ describe('Portrait Studio in the Realtime session', () => {
     prepared[0]!('data:image/jpeg;base64,AAAA')
     await vi.waitFor(() => expect(reasons()).toContain('studio_event_stale'))
     expect(reveals()).toHaveLength(1)
-    const images = p.sent.filter(e => e.type === 'conversation.item.create').map(e => (e.item as { content: { image_url: string }[] }).content[0]!.image_url)
+    const images = p.sent.filter(e => e.type === 'conversation.item.create' && JSON.stringify(e).includes('input_image')).map(e => (e.item as { content: { image_url: string }[] }).content[0]!.image_url)
     expect(images).toEqual(['data:image/jpeg;base64,BBBB'])
   })
 
@@ -692,7 +692,7 @@ describe('Portrait Studio in the Realtime session', () => {
     await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
     handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 0, language: 'zh' }, ID)
     await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
-    const image = (p.sent.find(e => e.type === 'conversation.item.create') as { item: { id: string } }).item.id
+    const image = (p.sent.find(e => e.type === 'conversation.item.create' && JSON.stringify(e).includes('input_image')) as { item: { id: string } }).item.id
     p.event({ type: 'response.created', response: { id: 'reveal-r', metadata: { mirror_studio: 'reveal' } } })
     p.event({ type: 'response.done', response: { id: 'reveal-r', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
     // The picture's own item event arrives after the reveal already removed it.
@@ -1125,7 +1125,7 @@ describe('Portrait Studio in the Realtime session', () => {
     await vi.waitFor(() => expect(firstSteps()).toHaveLength(1))
     expect(String(firstSteps()[0]!.instructions)).toContain('# Interactive Studio')
     expect(String(firstSteps()[0]!.instructions)).toContain(step)
-    expect(String(firstSteps()[0]!.instructions)).toContain('Speak in Taiwan Mandarin with Traditional characters.')
+    expect(String(firstSteps()[0]!.instructions)).toContain('Speak only in Taiwan Mandarin with Traditional characters, including any brief line before a tool call, even when the visitor uses another language; only set_reply_language changes it.')
   })
 
   it('does not ask the first step again when the visitor already answered it during the start script', async () => {

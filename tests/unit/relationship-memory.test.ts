@@ -54,6 +54,14 @@ describe('Realtime relationship memory integration', () => {
     expect(p.repository.policy).not.toHaveBeenCalled()
     expect(p.repository.hybridRecall).not.toHaveBeenCalled()
   })
+  it.each([['zh-TW', '你是Alice Smith嗎？'], ['en', 'Are you Alice Smith?']] as const)('asks the identity question in the selected reply language %s, not the introduction language', async (selected, question) => {
+    const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith'])
+    await p.memory.input(state, 'speech', 'intro', '')
+    await p.memory.input(state, 'complete', 'intro', 'My name is Alice Smith.')
+    p.interpret.mockResolvedValueOnce({ confirmation: 'unclear', authorized: true, name: 'Alice Smith', language: 'en' })
+    const proposal = await p.memory.request(state, request('identify', { name: 'Alice Smith' }), selected)
+    expect(proposal.confirmation?.text).toBe(question)
+  })
   it.each(['identify', 'recall'])('recovers an unmatched introduction through explicit spelling and %s before a fresh confirmation', async action => {
     const p = setup(); p.repository.names.mockResolvedValue(['Alice Smith'])
     await p.memory.input(state, 'speech', 'intro', '')

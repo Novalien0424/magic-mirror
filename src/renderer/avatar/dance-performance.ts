@@ -19,15 +19,19 @@ export function dancePose(frame: DanceFrame, now = Date.now()): DancePose {
   const anticipation = synchronized ? Math.exp(-(((phase + 0.35) / 0.14) ** 2)) : 0
   const accent = selected && selected.index % 4 === 0 ? 1 : 0.78
   const power = amplitude * accent
+  // Groove between hits: one side-to-side lean per two-beat group, matching the hit
+  // direction, peaking between its two nods and crossing centre as the group changes side.
+  // A function of the beat clock only, so it cannot drift; AngleY nod timing is untouched.
+  const sway = synchronized ? Math.cos(Math.PI * (selected!.index + phase - 0.5) / 2) * amplitude : 0
   // Ranges are below Core extrema; combined-pose audition owns final limits.
   // The head/torso counter-rotate; loudness scales an already timed gesture.
   const parameters: Record<string, number> = {
-    ParamAngleX: direction * power * (phrase === 1 ? 21 : 10) * hit,
+    ParamAngleX: direction * power * (phrase === 1 ? 21 : 10) * hit + 3 * sway,
     ParamAngleY: power * (8 * anticipation - 24 * hit),
-    ParamAngleZ: direction * power * (phrase === 2 ? 20 : 9) * hit,
-    ParamBodyAngleX: -direction * power * (phrase === 1 ? 8 : 4) * hit,
+    ParamAngleZ: direction * power * (phrase === 2 ? 20 : 9) * hit + 5 * sway,
+    ParamBodyAngleX: -direction * power * (phrase === 1 ? 8 : 4) * hit - 2 * sway,
     ParamBodyAngleY: power * (6.5 * hit - 2 * anticipation),
-    ParamBodyAngleZ: -direction * power * (phrase === 2 ? 7 : 3) * hit,
+    ParamBodyAngleZ: -direction * power * (phrase === 2 ? 7 : 3) * hit - 3 * sway,
     ParamBreath: clamp(0.2 + amplitude * 0.5 * hit, 0, 1),
     ParamEyeBallX: direction * 0.25 * hit, ParamEyeBallY: -0.15 * hit,
     ParamEyeLOpen: live ? 1 - 0.25 * hit * power : 1, ParamEyeROpen: 1,

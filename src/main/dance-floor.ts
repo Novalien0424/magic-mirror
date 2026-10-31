@@ -25,6 +25,7 @@ export async function decodeRhythm(executable: string, path: string, mime: strin
         if (line.length > 200000) throw Error()
         const e = JSON.parse(line)
         if (e.event === 'complete') complete = true
+        else if (e.event === 'failed') failure ||= 'dance_analysis_decode_failed'
         else if (e.event === 'features' && Array.isArray(e.frames) && e.frames.length <= 500) {
           for (const f of e.frames) {
             if (!Array.isArray(f) || f.length !== 5 || f.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 0)
@@ -34,7 +35,8 @@ export async function decodeRhythm(executable: string, path: string, mime: strin
         } else throw Error()
       } catch { abort(); failure = 'dance_analysis_invalid' }
     })
-    child.on('exit', code => { cleanup(); if (!failure && complete && code === 0) resolve(frames); else reject(Error(failure || 'dance_analysis_decode_failed')) })
+    // 'close' follows stdout's end, so the final complete line is never missed.
+    child.on('close', code => { cleanup(); if (!failure && complete && code === 0) resolve(frames); else reject(Error(failure || 'dance_analysis_decode_failed')) })
   })
 }
 
@@ -53,8 +55,13 @@ export function createDanceFloor(input: {
   let settings = { ...DEFAULT_DANCE }
   try { settings = parseDanceSettings(JSON.parse(readFileSync(settingsPath, 'utf8'))) ?? settings }
   catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') input.report('dance_settings_unreadable') }
-  let tracks: DanceView['tracks'] = [], generation = 0, chosen = '', first = true
+  let tracks: DanceView['tracks'] = [], generation = 0, chosen = '', first = true, oversized = 0
   let analysis: DanceAnalysis | undefined
+  // Track, welcome and language belong to the Start that chose them.
+  let started: Pick<DanceSettings, 'welcome' | 'language'> = { welcome: settings.welcome, language: settings.language }
+  // Loop wraps reuse this session's result, including a failure, instead of
+  // re-hashing and re-decoding the file in silence before every repeat.
+  const analysed = new Map<string, DanceAnalysis>()
   let outputs: DanceView['outputs'] = { count: 0, controlled: 0, verified: false }
   let frame: DanceFrame = { generation, trackId: 0, positionMs: 0, sentAt: Date.now(), rate: 0, beats: [], energy: 0,
     settings, status: 'idle', reason: 'dance_idle' }
@@ -80,7 +87,8 @@ export function createDanceFloor(input: {
     const result = analyseBeats(features)
     if (signal.aborted) throw Error('dance_cancelled')
     const temporary = file + '.tmp'
-    await writeFile(temporary, JSON.stringify(result), { mode: 0o600 }); await rename(temporary, file)
+    try { await writeFile(temporary, JSON.stringify(result), { mode: 0o600 }); await rename(temporary, file) }
+    catch { input.report('dance_analysis_cache_failed') }
     input.report('dance_analysis_ready', { beats: result.beats.length, durationMs: Math.round(result.durationMs) })
     return result
   }
@@ -92,14 +100,21 @@ export function createDanceFloor(input: {
     failed: () => { publish({ status: 'failed', reason: 'dance_playback_failed', rate: 0 }); input.failed('operator_loop_dance_failed') },
     beforePlay: async (path, mime, id, signal) => {
       const run = generation
-      publish({ status: 'preparing', reason: 'dance_analysing', rate: 0, trackId: id, beats: [], energy: 0 })
-      try { analysis = await analyse(path, mime, signal) }
-      catch (e) {
+      const source = await lstat(path).then(s => `${path}:${s.size}:${s.mtimeMs}`, () => path)
+      const known = analysed.get(source)
+      // Every play adopts its native id, or the helper's clock for a repeat is ignored.
+      publish({ status: 'preparing', reason: known ? 'dance_starting' : 'dance_analysing', rate: 0, trackId: id, beats: [], energy: 0 })
+      if (known) analysis = known
+      else {
+        try { analysis = await analyse(path, mime, signal) }
+        catch (e) {
+          if (signal.aborted || run !== generation) return
+          analysis = empty(); input.report(e instanceof Error && /^dance_[a-z_]+$/.test(e.message) ? e.message : 'dance_analysis_failed')
+        }
         if (signal.aborted || run !== generation) return
-        analysis = empty(); input.report(e instanceof Error && /^dance_[a-z_]+$/.test(e.message) ? e.message : 'dance_analysis_failed')
+        analysed.set(source, analysis)
       }
-      if (signal.aborted || run !== generation) return
-      if (first && settings.welcome && input.welcome) {
+      if (first && started.welcome && input.welcome) {
         first = false; publish({ status: 'welcome', reason: 'dance_welcome' })
         try { await input.welcome(run, signal) } catch { if (!signal.aborted) input.report('dance_welcome_unavailable') }
       }
@@ -128,15 +143,18 @@ export function createDanceFloor(input: {
   })
   const controller = {
     view: (): DanceView => structuredClone({ settings, tracks, frame, outputs }),
+    welcomeLanguage: (): DanceSettings['language'] => started.language,
     async refresh() {
       const root = await input.sharedRoot()
       if (root) await mkdir(join(root, 'DanceFloor'), { recursive: true, mode: 0o700 })
       try {
         const files = await musicLoopFiles(root, 'DanceFloor')
-        tracks = (await Promise.all(files.map(async path => ({ id: danceTrackId(path), name: basename(path), bytes: (await lstat(path)).size }))))
-          .filter(t => t.bytes > 0 && t.bytes <= MUSIC_LOOP_MAX_BYTES)
+        const found = await Promise.all(files.map(async path => ({ id: danceTrackId(path), name: basename(path), bytes: (await lstat(path)).size })))
+        tracks = found.filter(t => t.bytes > 0 && t.bytes <= MUSIC_LOOP_MAX_BYTES)
+        oversized = found.filter(t => t.bytes > MUSIC_LOOP_MAX_BYTES).length
+        if (oversized) input.report('dance_track_oversize_skipped', { tracks: oversized, limit: MUSIC_LOOP_MAX_BYTES })
       } catch (e) {
-        tracks = []
+        tracks = []; oversized = 0
         input.report(e instanceof Error && e.message === 'operator_loop_music_empty' ? 'dance_folder_empty' : 'dance_folder_unavailable')
       }
       return controller.view()
@@ -153,9 +171,11 @@ export function createDanceFloor(input: {
       await controller.stop(); const run = generation
       await controller.refresh()
       if (run !== generation) return false
-      chosen = settings.track || tracks[0]?.id || ''; first = true; analysis = undefined
+      chosen = settings.track || tracks[0]?.id || ''; first = true; analysis = undefined; analysed.clear()
+      started = { welcome: settings.welcome, language: settings.language }
       if (!chosen || !tracks.some(t => t.id === chosen)) {
-        publish({ status: 'failed', reason: 'dance_track_missing' }); input.failed('operator_loop_dance_track_missing'); return false
+        const reason = !tracks.length && oversized ? 'dance_track_oversize' : 'dance_track_missing'
+        publish({ status: 'failed', reason }); input.failed(`operator_loop_${reason}`); return false
       }
       publish({ status: 'preparing', reason: 'dance_preparing' })
       return player.start()

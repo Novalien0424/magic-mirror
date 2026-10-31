@@ -61,7 +61,8 @@ const cameraCheck = cameraCheckIndex < 0 ? 'screen' : args[cameraCheckIndex + 1]
 if (!['screen', 'stable', 'cycles'].includes(cameraCheck)) throw Error('camera_qa_check_invalid')
 if (cameraCheckIndex >= 0) args.splice(cameraCheckIndex, 2)
 // Interactive Studio story (portrait_studio only); --keep-transcript keeps the synthetic visit's
-// transcript and pictures in the run folder for an owner review, never by default.
+// transcript (and Studio pictures) in the run folder for an owner review, never by default.
+// It applies to portrait_studio or one selected synthetic conversation scenario.
 const storyIndex = args.indexOf('--studio-story')
 const story = studioQaStory(storyIndex < 0 ? 'default' : args[storyIndex + 1])
 if (!story) throw Error('raven_qa_studio_story_invalid')
@@ -75,7 +76,10 @@ if (studioPhoto) args.splice(args.indexOf('--studio-photo'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
 if (nativeCameraJourney && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_native_camera_journey_invalid')
 if (portraitFixtureBytes && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_portrait_fixture_journey_invalid')
-if ((storyIndex >= 0 || keepTranscript || studioPhoto || nameOnly) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
+const conversationScenario = RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selected)
+if ((storyIndex >= 0 || keepTranscript && !conversationScenario || studioPhoto || nameOnly) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
+// A real room microphone could hear non-synthetic speech; keep no conversation transcript then.
+if (keepTranscript && conversationScenario && physical) throw Error('raven_qa_keep_transcript_physical_invalid')
 if (nameOnly && (studioPhoto || keepTranscript || story.visitor.silentName || !story.visitor.name)) throw Error('raven_qa_name_capture_invalid')
 if ((cameraCaseIndex >= 0 || cameraCheckIndex >= 0) && selected !== 'camera_availability') throw Error('camera_qa_scenario_required')
 const mediaBgm = selected === 'media_bgm'
@@ -111,6 +115,7 @@ const data = join(root, 'user-data'), output = join(root, 'screenshots')
 for (const path of ['config', 'assets/music', 'assets/visual', 'assets/avatars', 'fixtures/own', 'fixtures/shared']) await mkdir(join(data, path), { recursive: true })
 await mkdir(output)
 if (selected === 'portrait_studio') await writeFile(join(data, 'studio-qa-story.json'), JSON.stringify({ version: 1, story: story.id, keepTranscript, photo: studioPhoto, nameOnly }))
+if (conversationScenario) await writeFile(join(data, 'raven-qa-transcript.json'), JSON.stringify({ version: 1, keepTranscript }))
 if (portraitFixtureBytes) await writeFile(join(data, 'portrait-fixture.json'), portraitFixtureBytes, { mode: 0o600 })
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const fingerprint = digest(JSON.stringify(avatar))

@@ -21,13 +21,29 @@ export async function runPromptInspectorQa(input: Phase4QaInput, expectedSession
       windows.push(win)
       stage = `${PROMPT_TABS.indexOf(tab)}_content`
       await wait(() => win.webContents.executeJavaScript(`!!document.querySelector('.prompt-inspector article pre')`))
-      const valid = await win.webContents.executeJavaScript(`(() => {
-        const page=document.querySelector('article');
-        return page.getAttribute('aria-label')===${JSON.stringify(tab)} && page.querySelector('pre').textContent.length>0
-          && document.body.textContent.includes('Editor draft snapshot') && !document.querySelector('textarea');
-      })()`)
-      if (!valid) throw new Error('prompt_inspector_content_missing')
-      if (tab === 'Session' && !await win.webContents.executeJavaScript(`document.querySelector('pre').textContent.includes(${JSON.stringify(expectedSession)})`)) throw new Error('prompt_inspector_wrong_avatar')
+      // One reason per failed condition; '' means the rendered page is valid.
+      const problem = await win.webContents.executeJavaScript(`(() => {
+        const page=document.querySelector('.prompt-inspector article');
+        if (!page) return 'prompt_inspector_article_missing';
+        if (page.getAttribute('aria-label')!==${JSON.stringify(tab)}) return 'prompt_inspector_wrong_tab';
+        const pres=[...page.querySelectorAll('pre')];
+        if (!pres.length) return 'prompt_inspector_sections_missing';
+        const empty=pres.findIndex(p=>!p.textContent);
+        if (empty>=0) return 'prompt_inspector_empty_section_'+empty;
+        if (!document.body.textContent.includes('Editor draft snapshot')) return 'prompt_inspector_draft_selector_missing';
+        if (document.querySelector('textarea')) return 'prompt_inspector_editable_textarea';
+        return '';
+      })()`) as string
+      if (problem) throw new Error(problem)
+      if (tab === 'Session') {
+        stage = `${PROMPT_TABS.indexOf(tab)}_avatar`
+        // Session opens with "Assigned skills" (96f48e3); the avatar text lives in the session instructions.
+        const avatar = await win.webContents.executeJavaScript(`(() => {
+          const pre=[...document.querySelectorAll('.prompt-inspector article pre')].find(p=>p.getAttribute('aria-label')==='Session instructions · system');
+          return !pre ? 'prompt_inspector_session_instructions_missing' : pre.textContent.includes(${JSON.stringify(expectedSession)}) ? '' : 'prompt_inspector_wrong_avatar';
+        })()`) as string
+        if (avatar) throw new Error(avatar)
+      }
       stage = `${PROMPT_TABS.indexOf(tab)}_isolation`
       const isolated = await win.webContents.executeJavaScript(`(async()=>!window.magicMirror || !(await window.magicMirror.getConfig()).ok)()`)
       if (!isolated) throw new Error('prompt_inspector_privileged_ipc_allowed')
@@ -65,7 +81,10 @@ export async function runPromptInspectorQa(input: Phase4QaInput, expectedSession
     input.onEvidence({ step: 'prompt_inspector_tabs_and_published', status: 'passed' })
     return { checks, screenshots }
   } catch (error) {
-    input.onEvidence({step:'prompt_inspector_failure_stage',item:stage,status:'failed'})
+    // Metadata-only: the QA's own reason code, never page text.
+    const message = error instanceof Error ? error.message : ''
+    const reason = /^prompt_inspector_[a-z0-9_]+$/.test(message) ? message : 'script_error'
+    input.onEvidence({step:'prompt_inspector_failure_stage',item:`${stage}:${reason}`,status:'failed'})
     throw error
   } finally { for (const win of windows) if (!win.isDestroyed()) win.close() }
 }

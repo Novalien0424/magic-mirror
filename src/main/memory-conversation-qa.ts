@@ -84,7 +84,8 @@ export async function runMemoryConversationQa(input: Phase4QaInput): Promise<Pha
       await evaluate(`window.__memoryConversationQa.stage=${JSON.stringify(stage)}`)
       const before = await evaluate<{ asr: number; stops: number }>('const q=window.__memoryConversationQa;return {asr:q.asr,stops:q.stops}')
       await evaluate(`return window.__memoryConversationQa.speak(${index})`)
-      await wait(() => evaluate(`const q=window.__memoryConversationQa;return q.asr>${before.asr}&&q.stops>${before.stops}&&!q.active&&!q.audio`), stage + '_response')
+      // A long spoken reply is a quality finding (compact/meanWords), not a broken turn.
+      await wait(() => evaluate(`const q=window.__memoryConversationQa;return q.asr>${before.asr}&&q.stops>${before.stops}&&!q.active&&!q.audio`), stage + '_response', 60000)
       await new Promise(resolve => setTimeout(resolve, 600))
       input.onEvidence({ step: stage, status: 'completed' })
     }

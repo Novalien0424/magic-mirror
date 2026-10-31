@@ -1,5 +1,5 @@
 import type { MemoryInputPhase, MemoryReply } from '../../shared/memory'
-import { buildMemoryAcknowledgment, buildMemoryState, buildSpeechResponse, REALTIME_PROMPTS, sameSpokenQuestion } from '../../shared/realtime-prompts'
+import { buildMemoryAcknowledgment, buildMemoryState, buildSpeechResponse, REALTIME_PROMPTS, deliveredSpokenQuestion } from '../../shared/realtime-prompts'
 
 interface Options {
   send(event: any): void
@@ -121,7 +121,7 @@ export class MemoryDialogue {
       if (event.type === 'output_audio_buffer.cleared') { this.fail(); return }
     }
     if (this.phase === 'speaking' && q.done && q.stopped && q.started) {
-      if (!sameSpokenQuestion(q.text, q.transcript)) { this.fail(); return }
+      if (!deliveredSpokenQuestion(q.text, q.transcript)) { this.fail(); return }
       this.phase = 'verifying'
       void this.delivered(q)
     }

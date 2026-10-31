@@ -101,7 +101,7 @@ export interface ConsoleDataPlane extends ConsoleBaseDataPlane {
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
-  saveDraft(input: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  saveDraft(input: unknown, baseRevision?: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>>
   publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
@@ -713,7 +713,7 @@ export function createConsoleDataPlane(
     getConfig: () => invokeConfig((controller) => controller.getConfig()),
     getModels: () => invokeConfig((controller) => controller.getModels()),
     saveModelDraft: (input) => invokeConfig((controller) => controller.saveModelDraft(input)),
-    saveDraft: (input) => invokeConfig((controller) => controller.saveDraft(input)),
+    saveDraft: (input, baseRevision) => invokeConfig((controller) => controller.saveDraft(input, baseRevision)),
     testDraft: () => invokeConfig((controller) => controller.testDraft()),
     publish: (confirmation) => invokeConfig((controller) => controller.publish(confirmation)),
     rollback: (confirmation) => invokeConfig((controller) => controller.rollback(confirmation)),

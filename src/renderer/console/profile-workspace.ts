@@ -1,6 +1,6 @@
 import { REALTIME_PROMPTS } from '../../shared/realtime-prompts'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
-import type { ConsoleConfigDraftInput, ConsoleConfigPayload } from '../../shared/console-types'
+import type { ConsoleConfigDraftInput, ConsoleConfigPayload, ConsoleResponse } from '../../shared/console-types'
 import { DEFAULT_PRESENTATION } from '../../shared/presentation'
 import { DEFAULT_VOICE_EFFECTS } from '../../shared/voice-effects'
 import { DEFAULT_MEDIA_SKILL } from '../../shared/media-skill'
@@ -25,6 +25,54 @@ export function draftRefreshDecision(previous: ConsoleConfigDraftInput | null, i
   }
   if (expected || !previous || !local || draftFingerprint(previous) === draftFingerprint(local)) return 'accept'
   return draftFingerprint(previous) === draftFingerprint(incoming) ? 'retain' : 'conflict'
+}
+
+/** The editable draft fields of a saved Config view (drops configVersion and read-only extras). */
+export function safeDraftFromConfig(value: ConsoleConfigDraftInput): ConsoleConfigDraftInput {
+  return {
+    ...(value.avatarCatalog ? { avatarCatalog: structuredClone(value.avatarCatalog) } : {}),
+    ...(value.presentation ? { presentation: structuredClone(value.presentation) } : {}),
+    personaName: value.personaName,
+    voice: value.voice,
+    idleSeconds: value.idleSeconds,
+    wake: { ...value.wake },
+    faceModel: { ...value.faceModel },
+    assets: { ...value.assets },
+    adapters: { ...value.adapters },
+    visualAssets: structuredClone(value.visualAssets),
+    musicAssets: structuredClone(value.musicAssets),
+    sceneActions: structuredClone(value.sceneActions),
+    spells: structuredClone(value.spells),
+    scenes: structuredClone(value.scenes),
+  }
+}
+
+export const DRAFT_CONFLICT_MESSAGE = 'The draft was changed in another Console while you were editing. Your edits are kept here; saving is blocked so they cannot overwrite the newer draft.'
+
+/** Main refused a save or publish made from an outdated read; read Config again (unsaved edits stay). */
+export const isStaleConfigFailure = (error: string): boolean =>
+  error === 'console_config_draft_conflict' || error === 'console_config_diff_stale'
+
+export function consoleFailureText(response: Extract<ConsoleResponse<unknown>, { ok: false }>): string {
+  return `${response.error}: ${response.reason}${response.fields?.length
+    ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`
+}
+
+/** A Config/Models read replaces an editor only when it holds no unsaved edits (or after its own save). */
+export function acceptsEditorRefresh<T>(base: T | null, local: T | null, accept: boolean): boolean {
+  return accept || base === null || local === null || same(base, local)
+}
+
+/**
+ * Save & apply may publish only this save's own changes: the live config must equal the saved draft
+ * the edits started from. Earlier saved-but-unpublished or model changes go through the whole-draft review.
+ */
+export function saveApplyDecision(savedBefore: ConsoleConfigDraftInput, fresh: ConsoleConfigPayload):
+  'publish' | 'up_to_date' | 'models_pending' | 'other_pending' {
+  if (!fresh.publishDiff.changed.length) return 'up_to_date'
+  if (fresh.publishDiff.changed.some(change => change.kind === 'model')) return 'models_pending'
+  return draftFingerprint(safeDraftFromConfig(fresh.active)) === draftFingerprint(safeDraftFromConfig(savedBefore))
+    ? 'publish' : 'other_pending'
 }
 
 export function newAvatar(id: string): AvatarProfile {

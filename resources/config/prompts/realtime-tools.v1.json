@@ -143,7 +143,7 @@
         "additionalProperties": false
       },
       "rules": {
-        "useWhen": "Only when asked to look at or describe the current surroundings. The application asks for photo/cloud permission before supplying an image.",
+        "useWhen": "Call first, without speaking, whenever the guest asks you to look (through the camera, at them or around) or asks what you can see now; never answer such a question from imagination. The application asks for photo/cloud permission before supplying an image.",
         "avoidWhen": "Never call this to prepare a portrait, drawing, image edit or photo-based artwork. Those requests belong to the separate image-generation skill when enabled; otherwise explain it is unavailable. Do not capture a reference first. No background monitoring, identity or sensitive-trait inference.",
         "speech": "Remain silent while the application asks permission. Answer only after the approved image arrives; if unavailable ask for a description."
       },
@@ -186,7 +186,7 @@
         "query": { "type": "string", "description": "Recall clues; empty retrieves recent summaries." }
       }, "required": ["action", "name", "topic", "text", "query"], "additionalProperties": false },
       "rules": {
-        "useWhen": "When the visitor wants to be remembered or recognized, request a missing name and identify it. After the application confirms identity, recall relevant past facts not already in this conversation.",
+        "useWhen": "When the visitor introduces themselves by name or wants to be remembered or recognized, identify that name (request it if missing); the application decides whether to ask for confirmation. After the application confirms identity, recall relevant past facts not already in this conversation.",
         "avoidWhen": "Before confirmation, and for facts stated in this conversation, answer without memory. Call remember once for an explicit save request, never for an anecdote or ordinary corrected facts. Forget and policy changes also require an explicit request.",
         "speech": "Use recall subtly and preserve factual details. Unavailable or incomplete recall is uncertainty, not absence."
       },
@@ -221,7 +221,7 @@
       "name": "dismiss_image", "handler": "dismiss_image", "requiredSkill": "imageGeneration", "enabled": true, "availability": "all", "routing": "model_intent",
       "description": "Dismiss the Conversation picture or cancel an unfinished drawing/photo request. In Studio this only cancels a pending photo request, preserving the guided visit.",
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
-      "rules": { "useWhen": "Call when the guest asks to dismiss the Conversation picture or cancel a pending drawing/photo request.", "avoidWhen": "Do not dismiss on your own. To finish or exit the guided Studio use its own tools.", "speech": "Call without a preamble, then continue the conversation or current Studio step." },
+      "rules": { "useWhen": "Call when the guest asks to dismiss the Conversation picture or cancel a pending drawing/photo request.", "avoidWhen": "Do not dismiss on your own. To finish or exit the guided Studio use its own tools; in Studio it never answers the picture question.", "speech": "Call without a preamble, then continue the conversation or current Studio step." },
       "completion": "response", "results": { "accepted": { "status": "accepted", "code": "image_dismissed", "speech": "model" }, "ignored": { "status": "ignored", "code": "image_not_active", "speech": "none" }, "rejected": { "status": "rejected", "code": "image_rejected", "speech": "model" }, "failed": { "status": "failed", "code": "image_unavailable", "speech": "model" } }
     },
     {
@@ -242,7 +242,7 @@
       "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
       "rules": {
         "useWhen": "When the visitor explicitly asks to enter the guided Interactive Studio experience ({{studioOffer}}), call start_portrait_studio as your first output.",
-        "avoidWhen": "Ordinary drawing/photo-art requests use create_image and stay in Conversation. Do not start for questions about Studio, describing a picture, or quoted, negated or hypothetical mentions.",
+        "avoidWhen": "Any request to draw, paint or picture the visitor, including from a fresh photo or as a character, is create_image and stays in Conversation, even without the word draw. Do not start for questions about Studio, describing a picture, or quoted, negated or hypothetical mentions.",
         "speech": "No spoken preamble. If accepted, the application speaks the opening and first question; add no speech. If rejected or failed, follow the returned guidance briefly and continue the conversation."
       },
       "completion": "response",
@@ -324,7 +324,7 @@
       "availability": "studio",
       "routing": "model_intent",
       "description": "Record the visitor's answer to the current studio question.",
-      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "The visitor's answer in their own words and language, including their reason, up to 1600 characters." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Selected reply language: zh by default, en only after an explicit request for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
+      "parameters": { "type": "object", "properties": { "question": { "type": "integer", "description": "Number of the question being answered, starting at 1, as given in the guidance." }, "answer": { "type": "string", "description": "What the visitor actually said, in their own words and language, up to 1600 characters. Add no detail, reason or translation they did not give." }, "language": { "type": "string", "enum": ["zh", "en"], "description": "Selected reply language: zh by default, en only after an explicit request for English." } }, "required": ["question", "answer", "language"], "additionalProperties": false },
       "rules": {
         "useWhen": "As soon as the visitor answers the current studio question, call studio_answer with that question number and their answer.",
         "avoidWhen": "Do not invent or embellish an answer, and do not answer a question the visitor has not been asked yet.",

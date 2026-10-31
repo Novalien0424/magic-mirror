@@ -252,7 +252,8 @@ export interface MirrorBridge extends SharedRendererBridge {
   getOperatorLoop?(): Promise<import('./operator-loop').OperatorLoopSnapshot>
   onOperatorLoop?(listener: (snapshot: import('./operator-loop').OperatorLoopSnapshot) => void): () => void
   reportOperatorLoop?(report: import('./operator-loop').OperatorLoopReport): void
-  memory?(request: import('./memory').MemoryRequest, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
+  /** `language` is the session's selected reply language; the identity question uses it. */
+  memory?(request: import('./memory').MemoryRequest, identity: RealtimeSessionIdentity, language?: import('./memory').MemoryLanguage): Promise<import('./memory').MemoryReply>
   memoryInput?(phase: import('./memory').MemoryInputPhase, itemId: string, transcript: string, identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   resetMemorySession?(identity: RealtimeSessionIdentity): Promise<import('./memory').MemoryReply>
   onCameraTarget?(listener: (target: import('./camera-tracking').CameraTarget | null) => void): () => void
@@ -300,7 +301,8 @@ export interface ConsoleBridge extends SharedRendererBridge {
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: ConsoleModelDraftInput): Promise<ConsoleResponse<ConsoleModelsPayload>>
-  saveDraft(input: ConsoleConfigDraftInput): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  /** baseRevision is the ConsoleConfigPayload.draftRevision the edits started from. */
+  saveDraft(input: ConsoleConfigDraftInput, baseRevision: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   loadAvatar(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   deleteAvatar?(id: string): Promise<ConsoleResponse<ConsoleConfigPayload>>
   importAvatarModel(): Promise<ConsoleResponse<import('./avatar-profiles').AvatarModel | null>>

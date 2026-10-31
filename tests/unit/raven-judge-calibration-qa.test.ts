@@ -74,6 +74,10 @@ describe('public Raven judge calibration plumbing (mocked judge, no provider cal
       expect(evidence.tools[1].result.media.code).toBe('media_discovery_no_match')
       expect(evidence.toolTiming.every((t: any) => t.quickToolPreambles === 0)).toBe(true)
     }
+    // No calibration turn requests English, so even English visitor turns have Chinese candidates.
+    const candidates = (vi.mocked(judgeRavenConversation).mock.calls[0]![0].evidence as any).records.filter((r: any) => r.role === 'avatar')
+    expect(scenario.turns.some(t => t.language === 'en')).toBe(true)
+    for (const t of scenario.turns) expect(candidates.find((r: any) => r.stage.endsWith('_' + t.id)).text).toMatch(/\p{Script=Han}{4}/u)
     const rows = saved()
     expect(rows).toHaveLength(10)
     expect(rows.every(row => row.expectedPassed === row.observedPassed && row.criterion.expectedPassed === row.criterion.observedPassed)).toBe(true)

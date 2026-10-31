@@ -73,7 +73,8 @@ import { CubismStudio } from './CubismStudio'
 import { VoiceStudio } from './VoiceStudio'
 import { SkillsEditor } from './SkillsEditor'
 import { imageGenerationEnabled } from '../../shared/avatar-skills'
-import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, type ProfileSection, type SavedDraftRefresh } from './profile-workspace'
+import { PROFILE_SECTIONS, LIBRARY_SECTIONS, newAvatar, workspaceChanges, avatarActivationReason, draftRefreshDecision, safeDraftFromConfig,
+  DRAFT_CONFLICT_MESSAGE, isStaleConfigFailure, consoleFailureText, acceptsEditorRefresh, saveApplyDecision, type ProfileSection, type SavedDraftRefresh } from './profile-workspace'
 import { ActiveAvatarPanel } from './ActiveAvatarPanel'
 import { MemoryPanel } from './MemoryPanel'
 import { DeleteAvatarDialog } from './DeleteAvatarDialog'
@@ -1071,25 +1072,6 @@ export function PhaseTestsPanel({
   )
 }
 
-function safeDraftFromConfig(value: ConsoleConfigDraftInput): ConsoleConfigDraftInput {
-  return {
-    ...(value.avatarCatalog ? { avatarCatalog: structuredClone(value.avatarCatalog) } : {}),
-    ...(value.presentation ? { presentation: structuredClone(value.presentation) } : {}),
-    personaName: value.personaName,
-    voice: value.voice,
-    idleSeconds: value.idleSeconds,
-    wake: { ...value.wake },
-    faceModel: { ...value.faceModel },
-    assets: { ...value.assets },
-    adapters: { ...value.adapters },
-    visualAssets: structuredClone(value.visualAssets),
-    musicAssets: structuredClone(value.musicAssets),
-    sceneActions: structuredClone(value.sceneActions),
-    spells: structuredClone(value.spells),
-    scenes: structuredClone(value.scenes),
-  }
-}
-
 function confirmationFromDiff(
   diff: ConsoleConfigPayload['publishDiff'],
 ): ConsoleDiffConfirmation {
@@ -1118,22 +1100,43 @@ export function ConfigPanel({
   onEditingChange,
 }: ConfigPanelProps): React.JSX.Element {
   const config = state.status === 'success' ? state.value : null
+  // The saved Config this editor loaded. A later read never replaces unsaved edits.
+  const [base, setBase] = useState<ConsoleConfigPayload | null>(config)
   const [draft, setDraft] = useState<ConsoleConfigDraftInput | null>(
     config === null ? null : safeDraftFromConfig(config.draft),
   )
+  const latest = useRef({ base, draft })
+  latest.current = { base, draft }
+  const acceptRefresh = useRef(false)
+  const [conflict, setConflict] = useState(false)
+  const [confirmReload, setConfirmReload] = useState(false)
+  const [confirmRollback, setConfirmRollback] = useState(false)
   const [result, setResult] = useState('')
   const [fieldErrors, setFieldErrors] = useState<readonly ConsoleFieldError[]>([])
   const panel = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (config !== null) setDraft(safeDraftFromConfig(config.draft))
+    if (config === null) return
+    const { base: loaded, draft: local } = latest.current
+    setConfirmRollback(false)
+    if (acceptsEditorRefresh(loaded && safeDraftFromConfig(loaded.draft), local && safeDraftFromConfig(local), acceptRefresh.current)) {
+      acceptRefresh.current = false
+      setBase(config); setDraft(safeDraftFromConfig(config.draft)); setConflict(false); setConfirmReload(false)
+    } else if (config.draftRevision === loaded?.draftRevision) setBase(config)
+    else setConflict(true)
   }, [config])
 
-  const disabled = !bridgeAvailable || bridge === null || draft === null || config === null || busy
-  const dirty = draft !== null && config !== null
-    && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(config.draft))
-  useEffect(() => onEditingChange?.(dirty || busy), [dirty, busy, onEditingChange])
+  const disabled = !bridgeAvailable || bridge === null || draft === null || base === null || config === null || busy
+  const dirty = draft !== null && base !== null
+    && JSON.stringify(safeDraftFromConfig(draft)) !== JSON.stringify(safeDraftFromConfig(base.draft))
+  useEffect(() => onEditingChange?.(dirty || busy || conflict), [dirty, busy, conflict, onEditingChange])
+  const loadLatest = (): void => {
+    if (config !== null) { setBase(config); setDraft(safeDraftFromConfig(config.draft)) }
+    acceptRefresh.current = true; setConflict(false); setConfirmReload(false); setFieldErrors([])
+    setResult('Loaded the latest saved draft.')
+    onChanged()
+  }
   const updateDraft = (update: (current: ConsoleConfigDraftInput) => ConsoleConfigDraftInput): void => {
     // Read event-backed values while the change handler still owns currentTarget.
     if (draft !== null) setDraft(mergeAvatarDraft(draft, update(draft), draft.avatarCatalog?.activeAvatarId ?? ''))
@@ -1149,9 +1152,13 @@ export function ConfigPanel({
         const suffix = path.startsWith(avatarPath) ? path.slice(avatarPath.length) : path
         return { ...field, path: suffix === 'name' ? 'personaName' : suffix === 'wakePhrase' ? 'wake.phrase' : suffix }
       }))
-      setResult(response.ok ? 'Operation completed.' : `${response.error}: ${response.reason}${response.fields?.length
-        ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
-      if (response.ok) onChanged()
+      setResult(response.ok ? 'Operation completed.' : consoleFailureText(response))
+      if (response.ok) { acceptRefresh.current = true; onChanged() }
+      else if (isStaleConfigFailure(response.error)) {
+        // Read the newer saved state; unsaved edits stay until the operator loads it.
+        if (response.error === 'console_config_draft_conflict') setConflict(true)
+        onChanged()
+      }
     } catch {
       setResult('Console operation failed.')
     } finally {
@@ -1175,6 +1182,12 @@ export function ConfigPanel({
         <div className="console__fault"><ReasonDetail code={state.reason} /></div>
       ) : null}
       {config === null ? <p className="console__muted">Config is unavailable until Main is ready.</p> : null}
+      {conflict ? <div className="console__fault" role="alert">{DRAFT_CONFLICT_MESSAGE}
+        {confirmReload ? <><span>Loading the latest draft replaces your unsaved edits here.</span>
+          <button type="button" onClick={loadLatest}>Discard my edits and load latest</button>
+          <button type="button" onClick={() => setConfirmReload(false)}>Keep editing</button></>
+          : <button type="button" onClick={() => setConfirmReload(true)}>Load the latest draft…</button>}
+      </div> : null}
 
       <div className="console__config-grid">
         <fieldset>
@@ -1347,9 +1360,9 @@ export function ConfigPanel({
       </div>
 
       <div className="console__action-row">
-        <button type="button" disabled={disabled} onClick={() => {
+        <button type="button" disabled={disabled || conflict} onClick={() => {
           if (panel.current && focusInvalidField(panel.current)) { setResult('Correct the highlighted field before saving.'); return }
-          if (bridge && draft) void run(() => bridge.saveDraft(draft))
+          if (bridge && draft && base) void run(() => bridge.saveDraft(draft, base.draftRevision))
         }}>Save configuration draft</button>
         <button type="button" disabled={disabled || dirty} onClick={() => bridge && void run(() => bridge.testDraft())}>Test Draft</button>
       </div>
@@ -1378,13 +1391,27 @@ export function ConfigPanel({
             <span>complete confirmation required</span>
             <button
               type="button"
-              disabled={disabled || dirty || diff === undefined || label === 'Publish' && config?.draftTest?.result !== 'mock_passed'}
-              onClick={() => bridge && diff && void run(() => label === 'Publish'
-                ? bridge.publish(confirmationFromDiff(diff))
-                : bridge.rollback(confirmationFromDiff(diff)))}
+              disabled={disabled || dirty || conflict || diff === undefined || !diff.changed.length
+                || label === 'Publish' && config?.draftTest?.result !== 'mock_passed'}
+              onClick={() => {
+                if (!bridge || !diff) return
+                if (label === 'Rollback') setConfirmRollback(true)
+                else void run(() => bridge.publish(confirmationFromDiff(diff)))
+              }}
             >
               {label}
             </button>
+            {label === 'Rollback' && confirmRollback && diff ? (
+              <div className="profile-publish-confirmation" role="group" aria-label="Confirm rollback">
+                <strong>Roll back to the previous published configuration (v{config?.previous.configVersion ?? '—'})?</strong>
+                <p>The live configuration and the saved draft both become the previous version; unpublished saved changes are replaced. Changed paths: {diff.changed.length}.</p>
+                <button type="button" disabled={disabled || dirty || conflict} onClick={() => {
+                  setConfirmRollback(false)
+                  if (bridge) void run(() => bridge.rollback(confirmationFromDiff(diff)))
+                }}>Confirm rollback</button>
+                <button type="button" onClick={() => setConfirmRollback(false)}>Cancel</button>
+              </div>
+            ) : null}
           </fieldset>
         ))}
       </div>
@@ -1613,9 +1640,10 @@ export function ScenesPanel({
       else if (response.ok && refresh) setFieldErrors([])
       const testFailed = response.ok && typeof response.value === 'object' && response.value !== null
         && 'result' in response.value && response.value.result === 'failed'
-      setResult(response.ok ? testFailed ? 'Draft test failed; check saved media and configuration.' : message : `${response.error}: ${response.reason}${response.fields?.length
-        ? ` · ${response.fields.map(field => `${field.path}: ${field.message}`).join(' · ')}` : ''}`)
+      setResult(response.ok ? testFailed ? 'Draft test failed; check saved media and configuration.' : message : consoleFailureText(response))
       if (response.ok && refresh) { acceptRefresh.current = true; onChanged() }
+      // A stale publish/load reads the newer saved state again; unsaved edits stay in the editor.
+      else if (!response.ok && isStaleConfigFailure(response.error)) onChanged()
     } catch {
       setResult('Console operation failed.')
     } finally {
@@ -1623,9 +1651,15 @@ export function ScenesPanel({
     }
   }
 
+  const draftConflict = (): void => {
+    setConflict(true)
+    setResult('Not saved: the draft was changed in another Console. Your edits are kept; load the latest draft before saving again.')
+    onChanged()
+  }
   const saveAndCheck = async (apply = false): Promise<void> => {
-    if (!bridge || !rawDraft || busy) return
+    if (!bridge || !rawDraft || !payload || busy) return
     if (panel.current && focusInvalidField(panel.current)) { setResult('Correct the highlighted field before saving.'); return }
+    const savedBefore = safeDraftFromConfig(payload.draft)
     const snapshot = projectAvatarDraft(rawDraft)
     const fingerprint = draftFingerprint(safeDraftFromConfig(snapshot))
     const abort = new AbortController()
@@ -1636,8 +1670,9 @@ export function ScenesPanel({
     setResult('Saving changes…')
     let savedFingerprint: string | null = null
     try {
-      const response = await bridge.saveDraft(snapshot)
+      const response = await bridge.saveDraft(snapshot, payload.draftRevision)
       if (!response.ok) {
+        if (response.error === 'console_config_draft_conflict') { draftConflict(); return }
         if (current()) showFieldErrors(response.fields, snapshot)
         setResult(`Cannot save (${response.error}): ${response.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || response.reason}. Your edits are retained.`)
         return
@@ -1669,14 +1704,20 @@ export function ScenesPanel({
         if (!fresh.ok || draftFingerprint(safeDraftFromConfig(fresh.value.draft)) !== savedFingerprint) {
           setResult('Saved, but the draft changed during checking. Review and apply again.'); return
         }
-        if (fresh.value.publishDiff.changed.length) {
-          if (fresh.value.publishDiff.changed.some(change => change.kind === 'model')) {
-            setResult('Saved and checked. AI model changes need review in Publish all changes before they can go live.')
-            return
-          }
+        const decision = saveApplyDecision(savedBefore, fresh.value)
+        if (decision === 'models_pending') {
+          setResult('Saved and checked. AI model changes need review in Publish all changes before they can go live.')
+          return
+        }
+        if (decision === 'other_pending') {
+          const scope = workspaceChanges(safeDraftFromConfig(fresh.value.active), safeDraftFromConfig(fresh.value.draft))
+          setResult(`Saved and checked, but not applied: other saved changes are also waiting to publish (${scope.join(', ') || 'saved configuration'}). Use Publish all changes to review the entire saved draft before it goes live.`)
+          return
+        }
+        if (decision === 'publish') {
           setResult('Applying checked changes…')
           const applied = await bridge.publish(confirmationFromDiff(fresh.value.publishDiff))
-          if (!applied.ok) { showFieldErrors(applied.fields, snapshot); setResult(`Saved, but could not apply: ${applied.reason}. Your edits are retained.`); return }
+          if (!applied.ok) { showFieldErrors(applied.fields, snapshot); setResult(`Saved, but could not apply (${applied.error}): ${applied.reason}. Your edits are retained.`); return }
           setPreviewRevision(value => value + 1)
         }
         setResult(current() ? 'Saved and applied. Ready for the next conversation.' : 'Saved changes applied. Newer edits remain unapplied.')
@@ -1712,12 +1753,14 @@ export function ScenesPanel({
   const saveScene = async (sceneId: string, stepId?: string, test?: import('../../shared/scene-test-scope').SceneTestScope | 'scene'): Promise<void> => {
     if (!bridge || !payload || !rawDraft || busy) return
     const generation = ++sceneTestGeneration.current
+    const baseRevision = payload.draftRevision
     setBusy(true)
     setResult(`Saving ${stepId ? 'step' : 'scene'}${test ? ' for playback' : ''}…`)
     try {
       const next = buildSceneDraftSave(safeDraftFromConfig(payload.draft), rawDraft, editingId, sceneId, stepId)
-      const saved = await bridge.saveDraft(next)
+      const saved = await bridge.saveDraft(next, baseRevision)
       if (!saved.ok) {
+        if (saved.error === 'console_config_draft_conflict') { draftConflict(); return }
         showFieldErrors(saved.fields, next)
         setResult(`Cannot save: ${saved.fields?.map(f => `${f.path}: ${f.message}`).join('; ') || saved.reason}`)
         return
@@ -1761,9 +1804,12 @@ export function ScenesPanel({
       {state.status === 'failure' ? <div className="console__fault"><ReasonDetail code={state.reason} /><button disabled={!bridgeAvailable} onClick={onChanged}>Retry loading saved configuration</button></div> : null}
       <p className="console__sr-only" aria-live="polite">{operatorMessageText(result)}</p>
 
-      {conflict ? <div className="console__fault" role="alert">The saved configuration changed while you were editing. Your edits are retained; saving is blocked to prevent overwriting newer changes.
-        {confirmDiscard ? <><span>This replaces your unsaved edits with the latest saved draft.</span><button onClick={() => { if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false); setConfirmDiscard(false) }}>Discard edits</button><button onClick={() => setConfirmDiscard(false)}>Keep editing</button></>
-          : <button onClick={() => setConfirmDiscard(true)}>Discard my edits and reload saved changes</button>}
+      {conflict ? <div className="console__fault" role="alert">{DRAFT_CONFLICT_MESSAGE}
+        {confirmDiscard ? <><span>Loading the latest draft replaces your unsaved edits with the latest saved draft.</span><button onClick={() => {
+          if (payload) setRawDraft(safeDraftFromConfig(payload.draft)); setConflict(false); setConfirmDiscard(false)
+          setResult('Loaded the latest saved draft.'); onChanged()
+        }}>Discard my edits and load latest</button><button onClick={() => setConfirmDiscard(false)}>Keep editing</button></>
+          : <button onClick={() => setConfirmDiscard(true)}>Load the latest draft…</button>}
       </div> : null}
       <div className={`profile-workspace${section === 'Media' ? ' profile-workspace--media' : ''}`}>
       <div className="profile-workspace__editor">
@@ -1892,9 +1938,9 @@ export function ScenesPanel({
         {section === 'Spells & scenes' && <span className="console__status console__status--mock">Lighting / Fog: {draft?.adapters.lighting === 'physical' || draft?.adapters.fog === 'physical' ? 'Physical not connected' : 'Mock'}</span>}
         <details className="profile-scope-details"><summary>Change scope · {dirty ? unsavedChanges.length : changes.length} areas</summary><p className="profile-change-scope">{dirty ? `Unsaved: ${unsavedChanges.join(', ') || 'Configuration'}` : `Publish scope: ${changes.join(', ') || 'No changes'}`}</p></details></div>
         <div className="profile-publish-actions">
-        <HelpButton aria-label={applyOnSave ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : applyOnSave ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled} onClick={() => void saveAndCheck(applyOnSave)}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : applyOnSave ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
+        <HelpButton aria-label={applyOnSave ? 'Save & apply all changes' : 'Save all changes'} help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before saving or publishing.' : applyOnSave ? 'Save, check and publish all workspace edits in one action. Applies to the next conversation; does not switch avatars. If other saved changes are also waiting, it stops after checking so you can review the entire draft in Publish all changes. Expand Change scope to see affected settings.' : 'Save all workspace edits, then automatically check configuration and media. Successful checks enable Publish when there are new changes; saving does not publish or switch avatars.'} disabled={disabled} onClick={() => void saveAndCheck(applyOnSave)}>{savePhase === 'saving' ? 'Saving…' : savePhase === 'checking' ? 'Checking…' : applyOnSave ? 'Save & apply all changes' : 'Save all changes'}</HelpButton>
         {savePhase !== 'idle' && <button type="button" onClick={() => { saveCheckController.current?.abort(); setResult('Check stopped. Waiting for the pending save / check to finish safely…') }}>Stop check</button>}
-        {!applyOnSave && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
+        {(!applyOnSave || !dirty && !!payload?.publishDiff.changed.length) && <HelpButton help={invalidPresentation ? 'Fix the presentation timing and fields in Appearance before publishing.' : dirty ? 'Save and check changes before publishing.' : payload && !payload.publishDiff.changed.length ? 'Already up to date. No changes to publish.' : mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' ? 'Check saved changes successfully before publishing.' : 'Review every affected avatar and shared setting before publishing.'} disabled={disabled || invalidPresentation || dirty || mediaTestFailed || payload?.draftTest?.result !== 'mock_passed' || payload === null || !payload.publishDiff.changed.length} onClick={() => setPublishReview(true)}>Publish all changes</HelpButton>}
         </div>
         {publishReview && <div className="profile-publish-confirmation" role="group" aria-label="Confirm publication"><strong>Publish this entire saved draft?</strong><p>{changes.join(', ') || 'Saved configuration'}. Changes apply to the next conversation. This does not switch the selected avatar.</p>
           <button disabled={disabled || invalidPresentation || dirty || payload?.draftTest?.result !== 'mock_passed'} onClick={() => { setPublishReview(false); setPreviewRevision(v => v + 1); if (bridge && payload && !invalidPresentation) void runResponse(() => bridge.publish(confirmationFromDiff(payload.publishDiff)), 'Draft published.') }}>Confirm publish</button>
@@ -1944,36 +1990,48 @@ export function ModelsPanel({
   onEditingChange,
 }: ModelsPanelProps): React.JSX.Element {
   const payload = state.status === 'success' ? state.value : null
-  const [draft, setDraft] = useState<ConsoleModelDraftInput>({
+  const savedDraft = (value: ConsoleModelsPayload): ConsoleModelDraftInput => {
+    const find = (role: string): string => value.cards.find((candidate) => candidate.role === role)?.draft.modelId ?? ''
+    return { realtimeDialogue: find('realtimeDialogue'), inputTranscription: find('inputTranscription'), memoryExtractor: find('memoryExtractor') }
+  }
+  // The saved model draft these inputs started from; a later read never replaces unsaved input.
+  const [base, setBase] = useState<ConsoleModelDraftInput | null>(payload === null ? null : savedDraft(payload))
+  const [draft, setDraft] = useState<ConsoleModelDraftInput>(base ?? {
     realtimeDialogue: '',
     inputTranscription: '',
     memoryExtractor: '',
   })
+  const latest = useRef({ base, draft })
+  latest.current = { base, draft }
+  const acceptRefresh = useRef(false)
   const [busy, setBusy] = useState(false)
-  const dirty = payload !== null && Object.entries(draft).some(([role, value]) => value !== (payload.cards.find(c => c.role === role)?.draft.modelId ?? ''))
+  const [result, setResult] = useState('')
+  const dirty = base !== null && JSON.stringify(draft) !== JSON.stringify(base)
   useEffect(() => onEditingChange?.(dirty || busy), [dirty, busy, onEditingChange])
 
   useEffect(() => {
     if (payload === null) return
-    const find = (role: string): string => {
-      const card = payload.cards.find((candidate) => candidate.role === role)
-      return card?.draft.modelId ?? ''
-    }
-    setDraft({
-      realtimeDialogue: find('realtimeDialogue'),
-      inputTranscription: find('inputTranscription'),
-      memoryExtractor: find('memoryExtractor'),
-    })
+    const { base: loaded, draft: local } = latest.current
+    if (!acceptsEditorRefresh(loaded, local, acceptRefresh.current)) return
+    acceptRefresh.current = false
+    const next = savedDraft(payload)
+    setBase(next); setDraft(next)
   }, [payload?.cards])
 
-  const run = async (action: () => Promise<unknown>): Promise<void> => {
+  const run = async (action: () => Promise<ConsoleResponse<unknown>>, done: string, saving = false): Promise<void> => {
     setBusy(true)
     try {
-      await action()
-      onChanged()
+      const response = await action()
+      const value = response.ok ? response.value as { readonly result?: unknown; readonly reason?: unknown } | null : null
+      if (response.ok && saving) acceptRefresh.current = true
+      setResult(!response.ok ? `Not completed (${consoleFailureText(response)}).${saving ? ' Your input is kept; correct it and save again.' : ''}`
+        : value?.result === 'failed' ? `Not completed (${String(value.reason)}).` : done)
     } catch {
+      setResult(`Not completed: the Console could not reach the app.${saving ? ' Your input is kept.' : ''}`)
+    } finally {
+      setBusy(false)
       onChanged()
-    } finally { setBusy(false) }
+    }
   }
 
   const cards = payload?.cards ?? []
@@ -2001,26 +2059,27 @@ export function ModelsPanel({
       <div className="console__model-draft-form">
         <HelpField help={FIELD_HELP.dialogueModel}>
           <span>Conversation</span>
-          <input type="text" value={draft.realtimeDialogue} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, realtimeDialogue: event.currentTarget.value }))} />
+          <input type="text" value={draft.realtimeDialogue} disabled={!bridgeAvailable || bridge === null || busy} onChange={(event) => setDraft((current) => ({ ...current, realtimeDialogue: event.currentTarget.value }))} />
         </HelpField>
         <HelpField help={FIELD_HELP.transcriptionModel}>
           <span>Transcription</span>
-          <input type="text" value={draft.inputTranscription} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, inputTranscription: event.currentTarget.value }))} />
+          <input type="text" value={draft.inputTranscription} disabled={!bridgeAvailable || bridge === null || busy} onChange={(event) => setDraft((current) => ({ ...current, inputTranscription: event.currentTarget.value }))} />
         </HelpField>
         <HelpField help={FIELD_HELP.extractionModel}>
           <span>Memory extraction</span>
-          <input type="text" value={draft.memoryExtractor} disabled={!bridgeAvailable || bridge === null} onChange={(event) => setDraft((current) => ({ ...current, memoryExtractor: event.currentTarget.value }))} />
+          <input type="text" value={draft.memoryExtractor} disabled={!bridgeAvailable || bridge === null || busy} onChange={(event) => setDraft((current) => ({ ...current, memoryExtractor: event.currentTarget.value }))} />
         </HelpField>
         <button
           type="button"
-          disabled={!bridgeAvailable || bridge === null}
+          disabled={!bridgeAvailable || bridge === null || busy}
           onClick={() => bridge && void run(() => bridge.saveModelDraft({
             realtimeDialogue: draft.realtimeDialogue,
             inputTranscription: draft.inputTranscription,
             memoryExtractor: draft.memoryExtractor,
-          }))}
+          }), 'Model draft saved. Review and publish the draft to use it in the next conversation.', true)}
         >Save Model Draft</button>
       </div>
+      <p className="console__result" role="status">{result}{dirty ? `${result ? ' · ' : ''}Unsaved model edits — save them first.` : ''}</p>
 
       <details className="console__technical"><summary>Model diagnostics</summary>
       <div className="console__model-cards">
@@ -2049,7 +2108,7 @@ export function ModelsPanel({
         <span>old: {payload?.runtime.old === null || payload === null ? '—' : 'simulator'}</span>
         <span>new: {payload?.runtime.new === null || payload === null ? '—' : 'simulator'}</span>
         <span>pending next session / next job</span>
-        <button type="button" disabled={!bridgeAvailable || bridge === null} onClick={() => bridge && void run(() => bridge.createNextRuntimeSnapshots())}>Create next mock session/job</button>
+        <button type="button" disabled={!bridgeAvailable || bridge === null || busy} onClick={() => bridge && void run(() => bridge.createNextRuntimeSnapshots(), 'Next mock session/job created.')}>Create next mock session/job</button>
       </div>
 
       {payload?.latestTest ? (
@@ -2134,6 +2193,7 @@ export function App(): React.JSX.Element {
   const mountedRef = useRef(false)
   const didNotifyReadyRef = useRef(false)
   const didLoadOverviewRef = useRef(false)
+  const didLoadConfigRef = useRef(false)
   const overviewRequestIdRef = useRef(0)
   const eventsRequestIdRef = useRef(0)
   const phaseTestsRequestIdRef = useRef(0)
@@ -2347,8 +2407,12 @@ export function App(): React.JSX.Element {
 
     const query = buildEventsQuery(moduleFilter, statusFilter, sourceFilter)
     void requestEvents(bridge, query, false)
-    void requestConfig(bridge)
-    void requestModels(bridge)
+    // Events filters re-read Events only; Config and Models reload after Console actions.
+    if (!didLoadConfigRef.current) {
+      didLoadConfigRef.current = true
+      void requestConfig(bridge)
+      void requestModels(bridge)
+    }
   }, [moduleFilter, sourceFilter, statusFilter])
 
   useEffect(() => {
@@ -2474,7 +2538,7 @@ export function App(): React.JSX.Element {
   const controlAvatar = async (command: AvatarControlCommand): Promise<boolean> => {
     const bridge = bridgeRef.current
     if (bridge === null || !bridgeAvailable) return false
-    if (!developerMode && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices' && command.type !== 'stop_avatar_test') return false
+    if ((!developerMode || isWebConsole()) && command.type !== 'audio_devices' && command.type !== 'refresh_audio_devices' && command.type !== 'stop_avatar_test') return false
     return bridge.controlAvatar(command).then(
       (response) => {
         if (mountedRef.current && response.ok) {
@@ -2625,7 +2689,7 @@ export function App(): React.JSX.Element {
         <div hidden={activePage !== 'System' || systemPage !== 'Devices'}>
           <AvatarAudioPanel
             store={runtimeStore}
-            developerMode={developerMode}
+            developerMode={developerMode && !isWebConsole()}
             disabled={!bridgeAvailable}
             onCommand={controlAvatar}
             onSave={preferences => controlAvatar({ type: 'audio_devices', preferences })}

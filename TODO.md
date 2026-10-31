@@ -1,4 +1,4 @@
-# Open work — reconciled 2026-10-30
+# Open work — reconciled 2026-10-31
 
 Only unresolved work belongs here. [PRD](PRD.md) defines the current product;
 [PROGRESS](PROGRESS.md) records delivery/runtime; [DECISIONS](DECISIONS.md) owns
@@ -6,9 +6,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 
 ## Reliability and product gaps
 
-- [ ] **Studio speech-failure recovery and operator rescue.** A rejected opening
-  or question cue can leave a step without its listening deadline. Add bounded
-  recovery and a visible safe exit; provide a current-visit name retry/correction
+- [ ] **Studio operator rescue.** Speech-failure recovery is implemented (10-31:
+  one retry per fixed line, then the visit continues with `studio_speech_skipped`).
+  Still open: a visible safe exit and a current-visit name retry/correction
   control with fresh verbal read-back. The 10-24 name repair fixed candidate
   selection, receipt-based confirmation and tool-only repeats, but explicitly
   left these two gaps open.
@@ -18,7 +18,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   10-30; local STOP, black HDMI and Jabra 70 work independently. Restore board
   transport and verify physical mode-to-STOP behavior.
   [Latest evidence](docs/testing/dance-floor-delivery-2026-10-30.md).
-- [ ] **Post-restart Jabra volume.** STOP read-back was 70%; one later startup
+- [x] **Post-restart Jabra volume / mute (10-31 cause found).** The Jabra's own
+  firmware mutes at volume step 0 (its button at 1%) and pushes its stored step
+  back when an app opens it; restores never cleared the mute. STOP, START (after
+  the app owns it), Dance restore and QA now set 70% unmuted. Field-confirm once.
+- [ ] **Post-restart Jabra volume (history).** STOP read-back was 70%; one later startup
   observation was 6.25%. Final explicit 70% held. Investigate if reproducible;
   cause is unknown, and continuous volume enforcement would prevent the owner's
   physical-button adjustment. [Evidence](docs/testing/dance-floor-checks-2026-10-30.json).
@@ -41,7 +45,12 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   ordinary-camera tool-selection miss each passed one unchanged retry. Retain
   both failures; no claim of deterministic provider reliability.
   [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
-- [ ] **Live quality-judge baseline.** The memory-role judge failed `local_scope`
+- [ ] **Quality-judge gate (10-31 data).** Judge v9 follows the explicit-request
+  language rule. Per-turn pass rate: mini 40% (118 turns), full 67% (24 turns);
+  every scenario still fails the all-turns gate on both models. Owner to choose
+  gate versus reported rate, and mini versus full for dialogue.
+  [Report](https://claude.ai/artifact/QPzGYwcT5HiRbhFSXNi7DV).
+- [ ] **Live quality-judge baseline (history).** The memory-role judge failed `local_scope`
   quality twice despite passing application checks; a prior judge passed on
   retry. Re-baseline or explicitly version a separate judge role before treating
   these scores as regressions. [Evidence](docs/testing/memory-model-signin-2026-10-18.md#results).
@@ -52,6 +61,18 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   [Research and acceptance](docs/testing/llm-media-catalog-design-2026-10-25.md).
 - [ ] **Physical sticker printing.** The final cue calls a deferred printer sink;
   physical printer and delivery are not connected. [Journey](PRD.md#3-完整訪客旅程).
+
+- [ ] **Audit follow-ups not fixed on 10-31.** Hourly rollover does not wait for a
+  quiet turn; a person switch/forget restarts the session silently and drops the
+  pending identity; a local rollover failure shows OfflineLoop instead of
+  Maintenance; one unclear identity answer cancels confirmation; group and
+  late search-phrase turns rely on the extractor prompt; a SQLite failure enters
+  Maintenance (DECISIONS says it must not gate conversation); deleting an avatar
+  leaves its private memories unreachable; the Studio picture appears just before
+  its reveal line; a MusicLoop intent can briefly resume on START after a crash.
+- [ ] **Raven stock lines.** v21's quoted style anchors recur in about 10% of
+  replies. An anchor-free rewrite removed them but lowered the character score
+  (2.66 → 2.29) and softened the sarcasm, so v21 stays published.
 
 ## Remaining field acceptance
 
@@ -65,9 +86,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 - [ ] **Consented guest photo.** Verify real microphone permission, fresh clear
   face at the temporary camera mode and likeness; public-portrait simulation
   cannot prove these. [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md).
-- [ ] **Dance Floor installation.** Check audible/visible beat alignment and
-  saved offset, independent speaker delay, hotplug, normal-volume output and
-  the complete 35-minute track boundary. Software clock measurements and quiet
+- [ ] **Dance Floor installation.** Rendered sync on the real track is measured
+  (10-31: 100% beat-locked, 4 ms median, groove added). Still check audible/visible
+  alignment and saved offset, the Edifier Bluetooth speaker's ~183 ms reported
+  latency against the Jabra (echo by ear), hotplug, normal-volume output and the
+  complete 35-minute track boundary. Software clock measurements and quiet
   playback do not establish these. [Report](docs/testing/dance-floor-delivery-2026-10-30.md).
 - [ ] **Cold Drive video and long-copy feedback.** MusicLoop/Dance native
   preparation is exercised; general Loop Video/conversation cold-video delivery

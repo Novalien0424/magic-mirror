@@ -32,6 +32,7 @@ export type ConsoleErrorCode =
   | 'console_config_not_tested'
   | 'console_config_test_failed'
   | 'console_config_diff_stale'
+  | 'console_config_draft_conflict'
   | 'console_config_confirmation_invalid'
   | 'console_config_publish_failed'
   | 'console_config_rollback_failed'
@@ -55,6 +56,8 @@ export type ConsoleReason =
   | 'cause=draft_not_tested'
   | 'cause=draft_test_failed'
   | 'cause=diff_stale'
+  | 'cause=draft_conflict'
+  | 'cause=mac_local_only'
   | 'cause=confirmation_invalid'
   | 'cause=atomic_publish_failed'
   | 'cause=atomic_rollback_failed'
@@ -351,4 +354,6 @@ export interface ConsoleConfigPayload {
   readonly publishDiff: ConsoleConfigDiff
   readonly rollbackDiff: ConsoleConfigDiff
   readonly draftTest: ConsoleDraftTestResult | null
+  /** Saved-draft revision a Console edits from; saveDraft rejects a stale one instead of overwriting. */
+  readonly draftRevision: string
 }

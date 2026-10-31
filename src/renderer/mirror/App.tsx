@@ -453,11 +453,14 @@ function createMirrorRealtimeRuntimeOwner(
   }): Promise<SceneTranscriptDecision> => {
     const itemId = `qa-${input.turnId ?? 'turn'}`
     const target = owner.getSnapshot().state === 'active' ? sceneTranscript : offlineQaTranscript
+    // A live QA turn belongs to the current Realtime session, like a microphone turn.
+    const realtimeSessionId = target === sceneTranscript
+      ? owner.getSnapshot().currentIdentity?.realtimeSessionId ?? input.realtimeSessionId : input.realtimeSessionId
     target.handleInputItemCreated(itemId, input.turnId)
     return target.handleCompletedTranscript({
       itemId,
       transcript: input.transcript,
-      realtimeSessionId: input.realtimeSessionId,
+      realtimeSessionId,
     })
   }
 

@@ -183,7 +183,10 @@ export function createStudioRuntime(input: {
       try { sink.deliver({ bytes: image.bytes, mimeType: image.mimeType }) } catch { input.report(`studio_keepsake_${sink.name}_failed`, 'degraded') }
     }
     input.report('studio_transfer_completed')
-    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: 'farewell' }, identity: r.identity })
+    // Studio-mode visits end with the farewell and Dormant; a studio started inside a
+    // conversation (visitor or Console) returns to it (DECISIONS 2026-10-18, owner 2026-10-31).
+    const afterPortrait = r.source === 'mode' || r.source === 'session_default' ? 'farewell' : 'continue'
+    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait }, identity: r.identity })
     close('studio_completed', false)
     return reply('accepted', 'studio_delivered')
   }
@@ -257,7 +260,8 @@ export function createStudioRuntime(input: {
       if (repeat) step(r)
       else publish(r)
       input.report('studio_language_changed')
-      return { ...reply('accepted', 'studio_language_changed'), ...(repeat ? { step: r.step } : {}) }
+      // Tell the model the repeat already happened, or a pending "repeat it" request is answered twice.
+      return { ...reply('accepted', 'studio_language_changed', repeat ? PORTRAIT_STUDIO.journey.languageRepeated : undefined), ...(repeat ? { step: r.step } : {}) }
     }
     if ('stepId' in request) {
       if (request.stepId !== r.step?.id) return reply('ignored', 'studio_step_stale')

@@ -135,7 +135,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const metadata = async () => {
       const observation = installed ? await observe().catch(() => null) : null
       const calls = observation?.tools.filter(c => c.stage === name && c.direction === 'call').map(c =>
-        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'look_at_surroundings', 'return_to_dormant',
+        ['play', 'find_media', 'play_media', 'search_youtube', 'play_youtube', 'stop_media', 'look_at_surroundings', 'return_to_dormant', 'set_reply_language',
           'start_portrait_studio', 'studio_set_name', 'studio_confirm_name', 'studio_reject_name', 'studio_repeat_question', 'studio_answer', 'studio_revise', 'studio_finish', 'studio_exit', 'create_image', 'edit_image', 'dismiss_image', 'studio_use_photo'].includes(c.name ?? '') ? c.name!
           : c.name === 'memory' && ['identify', 'remember', 'recall', 'forget', 'policy', 'temporary'].includes(String(c.args?.action)) ? 'memory.' + String(c.args?.action) : 'unknown_tool') ?? []
       const records = observation?.records.filter(r => r.stage === name) ?? []
@@ -187,6 +187,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       if (!stopped.ok) throw Error('raven_qa_cleanup_stop_failed')
       await wait(async () => !(await state()).media, 'cleanup_media')
     }
+    // A sleep or wake still in progress disables Disconnect; let it settle first.
+    await wait(async () => !['suspending', 'activating', 'starting'].includes(input.runtime.snapshot().lifecycle), 'lifecycle_settled', 15000)
     if (input.runtime.snapshot().lifecycle !== 'dormant') await button('Disconnect')
     await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released, 'transport_release')
     await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'wake_microphone_acquired', 12000)
@@ -363,7 +365,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const storyFile = selection === 'portrait_studio' ? JSON.parse(await readFile(join(app.getPath('userData'), 'studio-qa-story.json'), 'utf8')) : null
   const story = storyFile ? studioQaStory(storyFile.story) : undefined
   if (storyFile && (storyFile.version !== 1 || !story || typeof storyFile.keepTranscript !== 'boolean')) throw Error('raven_qa_studio_story_invalid')
-  const keepTranscript = storyFile?.keepTranscript === true && !nativeCameraJourney
+  // Likewise for one selected synthetic conversation scenario; never with a real room microphone.
+  const conversationScenario = RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selection)
+  const transcriptFile = conversationScenario ? await readFile(join(app.getPath('userData'), 'raven-qa-transcript.json'), 'utf8')
+    .then(text => { try { return JSON.parse(text) } catch { throw Error('raven_qa_transcript_option_invalid') } },
+      (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw Error('raven_qa_transcript_option_invalid') }) : null
+  if (transcriptFile && (transcriptFile.version !== 1 || typeof transcriptFile.keepTranscript !== 'boolean')) throw Error('raven_qa_transcript_option_invalid')
+  const keepTranscript = (storyFile?.keepTranscript === true || transcriptFile?.keepTranscript === true && !physical) && !nativeCameraJourney
   const persist = (running: boolean) => writeFile(join(input.outputDir, '..', 'raven-results.json'), JSON.stringify({ selection: selection || 'all', running, passed: !running && accepted,
     elapsedMs: Date.now() - started, results, quality, qualityDiagnostics, capabilityQuality, acousticEvidence, spellRecognition, controlSpeech, protocol, toolTimingEvidence, screenshots,
     ...(selection === 'portrait_studio' ? { studioEvidence } : {}),
@@ -397,6 +405,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     bargePrompt: texts.push('Tell me three different ways to prepare for a small exhibition, and explain the advantages of each.') - 1,
     bargeInterrupt: texts.push('Stop there. I changed my mind. Please give me just one small step I can finish in ten minutes.') - 1,
     ...(selection === 'image_skill' ? {
+      imageEnglish: texts.push('Please speak English from now on.') - 1,
       imageDraw: texts.push('Please create a full picture of a red fox beside a blue lake at sunset. Keep chatting with me; I do not want the guided Studio.') - 1,
       imageChat: texts.push('While you draw, tell me one short interesting fact about foxes.') - 1,
       imageEdit: texts.push('Please change the sky in that picture to purple, keeping the fox and lake.') - 1,
@@ -692,6 +701,17 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       await check(scenario.id + '_release', stop)
       input.onEvidence({ step: scenario.id, status: 'completed', item: `duration_ms=${Date.now() - begin}` })
     }
+    if (keepTranscript && conversationScenario) {
+      // Owner review of a synthetic conversation scenario, like the Studio transcript: what was
+      // scripted, what ASR heard, what the avatar said and the tool calls, in time order.
+      const observation = await observe()
+      const entries = [
+        ...observation.records.map(r => ({ at: r.at, stage: r.stage, visit: r.visit, role: r.role, text: r.text,
+          ...(r.role === 'visitor' ? { scripted: spokenTexts.get(r.stage) ?? null } : { audible: r.audible !== false }) })),
+        ...observation.tools.filter(c => c.direction === 'call').map(c => ({ at: c.at, stage: c.stage, role: 'tool', name: c.name, args: c.args })),
+      ].sort((a, b) => a.at - b.at)
+      await writeFile(join(input.outputDir, 'conversation-transcript.json'), JSON.stringify({ scenario: selection, visitor: 'synthetic', entries }, null, 2))
+    }
     if (selection === 'media_stop') {
       const ready = await check('media_stop_start', start)
       const playing = ready && await check('media_stop_playback', async () => {
@@ -756,6 +776,12 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         await shot(name)
       }
       let good = await check('image_conversation_start', start)
+      // Only an explicit request selects English (2026-10-23); the English render below depends on it.
+      if (good) good = await check('image_select_english', async () => {
+        await turn('imageEnglish', 'image_select_english', 'set_reply_language')
+        if (!(await observe()).tools.some(c => c.stage === 'image_select_english' && c.direction === 'call'
+          && c.name === 'set_reply_language' && c.args?.language === 'en')) throw Error('raven_qa_image_english_not_selected')
+      })
       if (good) good = await check('image_create_in_conversation', async () => {
         const stage = 'image_create_in_conversation'
         spokenTexts.set(stage, texts[extra.imageDraw!]!)

@@ -18,7 +18,7 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
     window.__lifecycleQa = {channels: [], peers: [], tracks: [], lines: [], errors: [], stops: 0, settings: [], speechOnlyRequests: 0, toolCalls: 0, cycle: 0, farewellRequests: 0, toolDefinitions: [], toolResults: []};
     const q = window.__lifecycleQa; const Original = window.RTCPeerConnection;
     const expectedTools=${JSON.stringify(['恭送渡鴨大人','恭送渡鴉大人'].map(phrase => resolveRealtimeTools(phrase).map(realtimeToolDefinition)))};
-    const expectedResult=${JSON.stringify(REALTIME_TOOLS.tools[0].results.accepted)};
+    const expectedResult=${JSON.stringify((({ speech: _speech, ...shown }) => shown)(REALTIME_TOOLS.tools[0].results.accepted))};
     q.outputTaps=[]; q.monitor='idle'; q.preFarewellPeak=0; q.preFarewellSamples=0; q.farewellId=null; q.quietSince=performance.now();
     const connectNode=AudioNode.prototype.connect;
     AudioNode.prototype.connect=function(destination,...args) {
@@ -55,7 +55,8 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
           }
           if(event.type==='conversation.item.create' && event.item?.type==='function_call_output') {
             let result;try{result=JSON.parse(event.item.output)}catch{}
-            q.toolResults.push(!!result && Object.keys(result).length===3 && Object.entries(expectedResult).every(([k,v])=>result[k]===v));
+            q.toolResults.push(!!result && Object.keys(result).length===Object.keys(expectedResult).length && Object.entries(expectedResult).every(([k,v])=>result[k]===v));
+            q.toolResultShapes=(q.toolResultShapes??[]).concat(result?Object.keys(result).sort().join('+')+':'+String(result.status)+':'+String(result.code):'unparsed');
           }
           if (event.type === 'response.create' && event.response?.tool_choice === 'none') q.speechOnlyRequests++;
           if (event.type === 'response.create' && event.response?.metadata?.mirror_sleep_cue
@@ -72,6 +73,7 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
             if (words) {
               const line = words === '我在請說' ? 'greeting_1' : words === '來者何人所問何事' ? 'greeting_2' : words === '如你所願再會' && event.response_id===q.farewellId ? 'farewell_' + (q.cycle + 1) : q.monitor==='conversation' && ['四','four','4'].some(n=>words.includes(n)) ? 'followup_' + (q.cycle+1) : q.monitor==='sleep' ? 'pre_farewell_generated' : 'unexpected';
               q.lines.push(line);
+              if (line === 'unexpected') (q.unexpectedWords = q.unexpectedWords ?? []).push(words.slice(0, 80));
               if (line === 'unexpected') q.errors.push(q.farewellRequests > q.cycle ? 'extra_during_farewell' : 'extra_before_farewell');
               if (line === 'unexpected') q.errors.push(words.includes('如你所願再會') || words.includes('goodbye') ? 'farewell_extra_words' : words.replaceAll('您','你') === '如你所願再會' ? 'farewell_pronoun_changed' : 'dialogue_not_verbatim');
             }
@@ -108,7 +110,7 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
       await input.console.webContents.executeJavaScript(`[...document.querySelectorAll('.console__active-avatar button')].find(b=>b.textContent==='Activate avatar').click()`, true)
       await wait(async () => { const c = await input.runtime.console.getConfig(); return c.ok && c.value.active.avatarCatalog?.activeAvatarId === 'qa-guide' }, 'avatar_loaded')
     }
-    await input.console.webContents.executeJavaScript(`document.querySelector('[aria-label="Conversation lifecycle controls"] button').click()`, true)
+    await input.console.webContents.executeJavaScript(`[...document.querySelectorAll('[aria-labelledby="console-lifecycle"] button')].find(b=>b.textContent==='Start Conversation').click()`, true)
     await wait(() => input.runtime.snapshot().lifecycle === 'active', 'live_activation')
     await wait(() => evaluate<boolean>(`return window.__lifecycleQa.lines.includes('greeting_${cycle + 1}') && window.__lifecycleQa.stops >= ${cycle * 3 + 1}`), 'live_greeting')
     await wait(() => evaluate<boolean>(`return window.__lifecycleQa.settings.some(s=>s.${cycle === 0 ? 'host' : 'guide'})`), 'live_avatar_settings')
@@ -133,7 +135,8 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
       return input.runtime.snapshot().lifecycle === 'dormant'
     }, 'live_sleep')
     const toolResultValid=await evaluate<boolean>(`const q=window.__lifecycleQa;return q.toolResults.length===${cycle+1} && q.toolResults.every(Boolean)`)
-    input.onEvidence({step:'live_structured_tool_result',item:String(cycle+1),status:toolResultValid?'passed':'failed'});
+    const shapes=await evaluate<string[]>(`return window.__lifecycleQa.toolResultShapes??[]`)
+    input.onEvidence({step:'live_structured_tool_result',item:`${cycle+1}:${shapes.join('|')||'none'}`,status:toolResultValid?'passed':'failed'});
     if(!toolResultValid) throw new Error('phase4_qa_tool_result_mismatch')
     checks++
     const observation = await evaluate<{ valid: boolean; released: boolean; errors: string[]; lines: string[]; peak: number; samples: number }>(`const q=window.__lifecycleQa; return {
@@ -143,7 +146,8 @@ export async function runPhase4LifecycleQa(input: Phase4QaInput): Promise<Phase4
     input.onEvidence({ step: 'sleep_output_before_farewell', item: `samples_${observation.samples}_peak_${observation.peak.toFixed(6)}`, status: observation.samples>0 && observation.peak<0.001 ? 'passed' : 'failed' })
     for (const code of observation.errors) input.onEvidence({ step: 'lifecycle_request_error', item: code, status: 'observed' })
     if (!observation.valid) {
-      input.onEvidence({ step: 'live_dialogue_comparison', item: observation.lines.join('_'), status: 'failed' })
+      const unexpected = await evaluate<string[]>(`return window.__lifecycleQa.unexpectedWords ?? []`)
+      input.onEvidence({ step: 'live_dialogue_comparison', item: `${observation.lines.join('_')}|${unexpected.join('|')}`, status: 'failed' })
       throw new Error('phase4_qa_sleep_dialogue_mismatch')
     }
     if (!observation.released) throw new Error('phase4_qa_sleep_tracks_not_released')

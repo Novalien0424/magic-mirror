@@ -4,7 +4,7 @@ import AVFoundation
 import Darwin
 
 func emit(_ value: [String: Any]) {
-  if let data = try? JSONSerialization.data(withJSONObject: value) { FileHandle.standardOutput.write(data + Data([10])) }
+  if let data = try? JSONSerialization.data(withJSONObject: value) { try? FileHandle.standardOutput.write(contentsOf: data + Data([10])) }
 }
 func analyse() throws {
   guard CommandLine.arguments.count == 3, #available(macOS 14.0, *) else { throw NSError(domain: "analysis", code: 1) }

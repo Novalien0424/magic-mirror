@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// web-bridge reads window/location at import; model the Electron Console (file:, no web bridge).
+vi.hoisted(() => { vi.stubGlobal('window', {}); vi.stubGlobal('location', { protocol: 'file:' }) })
 
 import {
   App,
@@ -12,7 +15,7 @@ import {
 } from '../../src/renderer/console/App'
 import type { ConsoleModelsPayload } from '../../src/shared/console-types'
 
-const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
+const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'Dance Floor', 'System'] as const
 
 it('renders a recoverable profile configuration failure and blocks publication', () => {
   const html = renderToStaticMarkup(createElement(ScenesPanel, {

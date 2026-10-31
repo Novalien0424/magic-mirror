@@ -6,6 +6,7 @@ import {
   MIRROR_IPC_CHANNELS,
   registerIpcHandlers,
 } from '../../src/main/ipc'
+import { createWebConsoleRegistry } from '../../src/main/web-console'
 
 const TEST_TRANSCRIPT_SENTINEL = '__TEST_TRANSCRIPT_SENTINEL__'
 const TEST_AUDIO_SENTINEL = '__TEST_AUDIO_SENTINEL__'
@@ -578,6 +579,34 @@ describe('Phase 0 Task 9 Gate 9A.1 Console IPC RED contract', () => {
       error: 'console_request_invalid',
       reason: 'cause=payload_schema_invalid',
     })
+  })
+
+  it('keeps developer and simulation avatar controls Mac-local for the tailnet Console', async () => {
+    const registered = makeHarness()
+    const handler = getHandler(registered, CONSOLE_IPC_CHANNELS.avatarControl)
+    const web = createWebConsoleRegistry({ handle: () => undefined, on: () => undefined })
+    web.registrar.handle(CONSOLE_IPC_CHANNELS.avatarControl, handler)
+    const developerOnly = [
+      { type: 'asset_failure', action: 'inject' },
+      { type: 'state', state: 'Speaking' },
+      { type: 'scene_dialogue', text: TEST_TRANSCRIPT_SENTINEL },
+      { type: 'recorded_audio', action: 'play' },
+      { type: 'voice_gain', value: 0.5 },
+    ]
+
+    for (const command of developerOnly) {
+      expect(await web.invoke('controlAvatar', [command]), command.type)
+        .toEqual({ ok: false, error: 'console_request_rejected', reason: 'cause=mac_local_only' })
+    }
+    expect(registered.mirrorSender.send).not.toHaveBeenCalled()
+    expect(registered.events).toEqual(expect.arrayContaining([expect.objectContaining({
+      event: 'console_remote_action_rejected', status: 'failed', reason: 'mac_local_only;command=scene_dialogue' })]))
+
+    expect(await web.invoke('controlAvatar', [{ type: 'stop_avatar_test' }])).toMatchObject({ ok: true })
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl, { type: 'stop_avatar_test' })
+    expect(await handler(authorizedEvent(registered), { type: 'asset_failure', action: 'inject' })).toMatchObject({ ok: true })
+    expect(registered.mirrorSender.send).toHaveBeenCalledWith(MIRROR_IPC_CHANNELS.avatarControl, { type: 'asset_failure', action: 'inject' })
+    expectNoSensitiveOutput(registered.events)
   })
 
   it('exposes wake input to Console only without accepting renderer-forged health', async () => {

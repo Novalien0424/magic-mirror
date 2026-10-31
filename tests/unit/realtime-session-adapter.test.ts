@@ -23,6 +23,7 @@ type AdapterProbe = {
   sendMessage: ReturnType<typeof vi.fn>;
   addImage: ReturnType<typeof vi.fn>;
   sendEvent: ReturnType<typeof vi.fn>;
+  languageHints: ReturnType<typeof vi.fn>;
   emit: (eventName: string, ...events: unknown[]) => void;
   dependencies: RealtimeSessionDependencies;
 };
@@ -38,7 +39,15 @@ function makeAdapterProbe(): AdapterProbe {
   const addImage = vi.fn();
   const transport = createDeterministicRealtimeTransport();
   vi.spyOn(transport, 'sendMessage').mockImplementation(sendMessage);
-  const sendEvent = vi.spyOn(transport, 'sendEvent').mockImplementation(() => {});
+  // The connect-time default reply-language hint is asserted in its own test; the others
+  // count application events.
+  const languageHints = vi.fn();
+  const sendEvent = vi.fn();
+  vi.spyOn(transport, 'sendEvent').mockImplementation(event => {
+    const item = (event as { item?: { id?: string }; item_id?: string });
+    if (item.item?.id === 'mirror_language_1' || item.item_id === 'mirror_language_1') { languageHints(event); return; }
+    sendEvent(event);
+  });
   vi.spyOn(transport, 'requestResponse').mockImplementation(response => transport.sendEvent({ type: 'response.create', response }));
   const fakeSession = {
     addImage,
@@ -73,6 +82,7 @@ function makeAdapterProbe(): AdapterProbe {
       for (const listener of listeners.get(eventName) ?? []) listener(...events);
     },
     sendEvent,
+    languageHints,
     dependencies: {
       RealtimeAgent: RealtimeAgent as unknown as RealtimeSessionDependencies["RealtimeAgent"],
       RealtimeSession: RealtimeSession as unknown as RealtimeSessionDependencies["RealtimeSession"],
@@ -932,6 +942,46 @@ describe("RealtimeSession adapter", () => {
     eventSink.mockClear();
     probe.emit('audio_interrupted', {});
     expect(eventSink.mock.calls.some(([event]) => event.reason === 'cause=output_interrupted')).toBe(false);
+  });
+
+  it('states the default Traditional-Chinese reply language once at connect, never in previews', async () => {
+    const probe = makeAdapterProbe();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), vi.fn(), probe));
+    await handle.connect();
+    expect(probe.languageHints).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(probe.languageHints.mock.calls[0])).toContain('Traditional Chinese');
+    await handle.close('manual_stop');
+    const preview = makeAdapterProbe();
+    const previewHandle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), preview), preview: true });
+    await previewHandle.connect();
+    expect(preview.languageHints).not.toHaveBeenCalled();
+    await previewHandle.close('manual_stop');
+  });
+
+  it('reports a server-VAD barge-in buffer clear as ended playback so idle tracking resumes', async () => {
+    const probe = makeAdapterProbe();
+    const eventSink = vi.fn<(event: RealtimeMetadataEvent) => void>();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    eventSink.mockClear();
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', realtimeSessionId: 'session-a' });
+    probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: 'barge-in' });
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', realtimeSessionId: 'session-a' });
+    expect(eventSink.mock.calls.map(([event]) => event.reason).filter(reason => String(reason).startsWith('cause=output_')))
+      .toEqual(['cause=output_started', 'cause=output_interrupted']);
+    await handle.close('manual_stop');
+  });
+
+  it('ends an active session visibly when the peer connection drops after ready', async () => {
+    const probe = makeAdapterProbe(), onFailure = vi.fn(async () => undefined);
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onFailure });
+    const transport = probe.dependencies.createTransport!({} as never) as unknown as { emit(name: string, ...values: unknown[]): boolean };
+    // Connect-time failures keep their own reporting path.
+    transport.emit('connection_change', 'disconnected');
+    expect(onFailure).not.toHaveBeenCalled();
+    await handle.connect();
+    transport.emit('connection_change', 'disconnected');
+    await vi.waitFor(() => expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ kind: 'active_disconnect', realtimeSessionId: 'session-a' })));
+    expect(onFailure).toHaveBeenCalledTimes(1);
   });
 
   it('serializes application cues and releases only their matching response and processed tail', async () => {

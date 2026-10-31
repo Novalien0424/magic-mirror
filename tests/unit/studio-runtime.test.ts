@@ -168,7 +168,8 @@ describe('portrait studio runtime', () => {
     await vi.advanceTimersByTimeAsync(45_000)
     expect(h.runtime.isActive()).toBe(true)
     completeCue(h, 'deliver')
-    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
+    // A visitor-requested studio returns to the conversation it started in.
+    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'continue' })
     expect(h.runtime.isActive()).toBe(false)
     // Held while painting, repainting and the keepsake countdown; released after each.
     expect(h.activity.map(a => a.split(':')[0])).toEqual(['started', 'finished', 'started', 'finished', 'started', 'finished'])
@@ -338,7 +339,7 @@ describe('portrait studio runtime', () => {
     await vi.waitFor(() => expect(h.events().at(-1)).toMatchObject({ event: 'failed', line: '牌卡散了，我們聊聊吧。' }))
   })
 
-  it('ends completed visits through every entry route with the farewell after transfer', async () => {
+  it('ends studio-mode visits with the farewell and returns conversation-started visits to conversation', async () => {
     vi.useFakeTimers()
     for (const source of ['session_default', 'mode', 'visitor', 'console'] as const) {
       const experience = { ...defaultExperience(), defaultMode: 'portrait_studio' as const }
@@ -351,7 +352,7 @@ describe('portrait studio runtime', () => {
       h.runtime.handle({ action: 'finish' }, identity)
       await vi.advanceTimersByTimeAsync(45_000)
       completeCue(h, 'deliver')
-      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
+      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: source === 'mode' || source === 'session_default' ? 'farewell' : 'continue' })
     }
   })
 })

@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// web-bridge reads window/location at import; model the Electron Console (file:, no web bridge).
+vi.hoisted(() => { vi.stubGlobal('window', {}); vi.stubGlobal('location', { protocol: 'file:' }) })
 
 import { App, CONSOLE_UI_CONTRACT, PhaseTestsPanel } from '../../src/renderer/console/App'
 import type { ConsoleBridge } from '../../src/shared/bridge'
@@ -12,7 +15,7 @@ import type {
   PhaseTestRecord,
 } from '../../src/shared/console-types'
 
-const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'System'] as const
+const EXPECTED_TABS = ['Mirror', 'Avatars', 'Loop Video', 'Dance Floor', 'System'] as const
 
 const EXPECTED_EVENT_COLUMNS = [
   'time',
@@ -168,7 +171,7 @@ function renderConsole(): string {
 
 function phaseTestsPanelSource(): string {
   const start = CONSOLE_APP_SOURCE.indexOf('export function PhaseTestsPanel')
-  const end = CONSOLE_APP_SOURCE.indexOf('\nfunction safeDraftFromConfig', start)
+  const end = CONSOLE_APP_SOURCE.indexOf('\nfunction confirmationFromDiff', start)
   expect(start).toBeGreaterThanOrEqual(0)
   expect(end).toBeGreaterThan(start)
   return CONSOLE_APP_SOURCE.slice(start, end)

@@ -154,7 +154,8 @@ export interface ConsoleConfigController {
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
-  saveDraft(input: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  /** Console callers pass the payload's draftRevision; Main-only fixtures may omit it. */
+  saveDraft(input: unknown, baseRevision?: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   testDraft(): Promise<ConsoleResponse<ConsoleDraftTestResult>>
   publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
@@ -394,6 +395,16 @@ function safeConfigView(config: MirrorConfig): ConsoleConfigSafeView {
     spells: structuredClone(config.spells),
     scenes: structuredClone(config.scenes),
   }
+}
+
+const DRAFT_REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/
+export const isConsoleDraftRevision = (value: unknown): value is string =>
+  typeof value === 'string' && DRAFT_REVISION_PATTERN.test(value)
+
+/** Everything a Console draft save replaces; the publish counter alone does not make an edit stale. */
+function draftRevisionFor(config: MirrorConfig): string {
+  const serialized = JSON.stringify(stableValue({ ...safeConfigView(config), configVersion: undefined })) ?? ''
+  return 'sha256:' + createHash('sha256').update(serialized, 'utf8').digest('hex')
 }
 
 function configDiffFromService(
@@ -854,6 +865,7 @@ export function createConsoleConfigController(
           publishDiff: publish.publicDiff,
           rollbackDiff: rollback.publicDiff,
           draftTest: currentDraftTest(state.resolution),
+          draftRevision: draftRevisionFor(state.slots.draft),
         },
       }
     } catch (error) {
@@ -902,8 +914,12 @@ export function createConsoleConfigController(
     }
   }
 
-  async function saveDraft(input: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
+  async function saveDraft(input: unknown, baseRevision?: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>> {
     const validation = draftInputValidation(input)
+    if (baseRevision !== undefined && !isConsoleDraftRevision(baseRevision)) {
+      emitAction(options, 'config_draft_rejected', 'failed', 'cause=payload_schema_invalid', 'console_config_invalid')
+      return responseError('console_config_invalid', 'cause=payload_schema_invalid', [safeFieldError('baseRevision', 'invalid_type')])
+    }
     if (!validation.ok) {
       emitAction(options, 'config_draft_rejected', 'failed', 'cause=payload_schema_invalid', 'console_config_invalid')
       return responseError('console_config_invalid', 'cause=payload_schema_invalid', validation.fields)
@@ -913,6 +929,11 @@ export function createConsoleConfigController(
     try {
       const state = await readState()
       if (state === null) return responseError('console_not_ready', 'cause=config_service_unavailable')
+      // Another Console (or tab) saved since this editor loaded: never overwrite it.
+      if (baseRevision !== undefined && baseRevision !== draftRevisionFor(state.slots.draft)) {
+        emitAction(options, 'config_draft_rejected', 'failed', 'cause=draft_conflict', 'console_config_draft_conflict')
+        return responseError('console_config_draft_conflict', 'cause=draft_conflict')
+      }
       await state.service.saveDraft(copyConfigInput(state.slots.draft, validation.value))
       draftTest = null
       emitAction(

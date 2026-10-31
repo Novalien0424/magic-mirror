@@ -38,6 +38,7 @@ import type {
 const TEST_TRANSCRIPT_SENTINEL = '__TEST_TRANSCRIPT_SENTINEL__'
 const TEST_AUDIO_SENTINEL = '__TEST_AUDIO_SENTINEL__'
 const TEST_PRIVATE_MEMORY_SENTINEL = '__TEST_PRIVATE_MEMORY_SENTINEL__'
+const FIXTURE_DRAFT_REVISION = 'sha256:' + '0'.repeat(64)
 const TEST_CREDENTIAL_SENTINEL = '__TEST_CREDENTIAL_SENTINEL__'
 const TEST_IMAGE_SENTINEL = '__TEST_IMAGE_SENTINEL__'
 const TEST_EMBEDDING_SENTINEL = '__TEST_EMBEDDING_SENTINEL__'
@@ -99,7 +100,7 @@ interface ConsoleConfigController {
   getConfig(): Promise<ConsoleResponse<ConsoleConfigPayload>>
   getModels(): Promise<ConsoleResponse<ConsoleModelsPayload>>
   saveModelDraft(input: unknown): Promise<ConsoleResponse<ConsoleModelsPayload>>
-  saveDraft(input: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
+  saveDraft(input: unknown, baseRevision?: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   testDraft(): Promise<ConsoleResponse<unknown>>
   publish(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
   rollback(confirmation: unknown): Promise<ConsoleResponse<ConsoleConfigPayload>>
@@ -608,6 +609,57 @@ describe('Phase 0 Task 9B Gate 9B.1 Config + Models controller RED contract', ()
     expectEvent(harness.events, 'config_draft_saved')
     expectNoSensitiveOutput(result)
     expectMetadataOnly(harness.events)
+  })
+
+  it('rejects a draft save from a stale Console without writing, then accepts the latest revision', async () => {
+    const harness = makeController()
+    const loaded = await readConfigPayload(harness.controller)
+    const base = await harness.service.read()
+    expect(loaded.draftRevision).toMatch(/^sha256:[0-9a-f]{64}$/)
+
+    const consoleA = await harness.controller.saveDraft(safeDraftInput({ ...base.draft, idleSeconds: 301 }), loaded.draftRevision)
+    expect(consoleA).toMatchObject({ ok: true })
+    const savedRevision = consoleA.ok ? consoleA.value.draftRevision : ''
+    expect(savedRevision).not.toBe(loaded.draftRevision)
+    const writes = harness.writer.writeCount
+
+    const consoleB = await harness.controller.saveDraft(
+      safeDraftInput({ ...base.draft, voice: 'fixture-voice-stale-edit' }), loaded.draftRevision)
+
+    expect(consoleB).toEqual({ ok: false, error: 'console_config_draft_conflict', reason: 'cause=draft_conflict' })
+    expect(harness.writer.writeCount).toBe(writes)
+    expect((await harness.service.read()).draft).toMatchObject({ idleSeconds: 301, voice: base.draft.voice })
+    expectEvent(harness.events, 'config_draft_rejected', 'cause=draft_conflict')
+
+    const reloaded = await harness.controller.saveDraft(
+      safeDraftInput({ ...base.draft, idleSeconds: 301, voice: 'fixture-voice-stale-edit' }), savedRevision)
+    expect(reloaded).toMatchObject({ ok: true, value: { draft: { idleSeconds: 301, voice: 'fixture-voice-stale-edit' } } })
+    expectNoSensitiveOutput({ consoleB, reloaded })
+    expectMetadataOnly(harness.events)
+  })
+
+  it('keeps the draft revision across model-only saves and publish, and rejects a malformed base', async () => {
+    const harness = makeController()
+    const base = await harness.service.read()
+    const loaded = await readConfigPayload(harness.controller)
+    await harness.controller.saveModelDraft({
+      realtimeDialogue: fixtureModelValue('realtimeDialogue'),
+      inputTranscription: fixtureModelValue('inputTranscription'),
+      memoryExtractor: fixtureModelValue('memoryExtractor'),
+    })
+    expect((await readConfigPayload(harness.controller)).draftRevision).toBe(loaded.draftRevision)
+
+    const saved = await harness.controller.saveDraft(safeDraftInput({ ...base.draft, idleSeconds: 302 }), loaded.draftRevision)
+    const savedRevision = saved.ok ? saved.value.draftRevision : ''
+    await harness.controller.testDraft()
+    const published = await harness.controller.publish(diffConfirmation(await readDiff(harness.controller, 'publish')))
+    expect(published).toMatchObject({ ok: true, value: { draftRevision: savedRevision } })
+
+    const writes = harness.writer.writeCount
+    const malformed = await harness.controller.saveDraft(safeDraftInput(base.draft), TEST_PRIVATE_MEMORY_SENTINEL)
+    expect(malformed).toMatchObject({ ok: false, error: 'console_config_invalid', reason: 'cause=payload_schema_invalid' })
+    expect(harness.writer.writeCount).toBe(writes)
+    expectNoSensitiveOutput(malformed)
   })
 
   it('rejects an unsafe Draft input with exact fields and leaves Active unchanged', async () => {
@@ -1153,6 +1205,7 @@ function fixtureSafeConfigResponse(): ConsoleResponse<ConsoleConfigPayload> {
       publishDiff: diff,
       rollbackDiff: { ...diff, operation: 'rollback', from: 'previous', to: 'active' },
       draftTest: null,
+      draftRevision: FIXTURE_DRAFT_REVISION,
     },
   }
 }
@@ -1397,7 +1450,7 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       [channels.config, [], 'getConfig'],
       [channels.models, [], 'getModels'],
       [channels.saveModelDraft, [{ realtimeDialogue: fixtureModelValue('realtimeDialogue'), inputTranscription: fixtureModelValue('inputTranscription'), memoryExtractor: fixtureModelValue('memoryExtractor') }], 'saveModelDraft'],
-      [channels.saveDraft, [safeDraftInput(fixtureConfig(7, 'ipc'))], 'saveDraft'],
+      [channels.saveDraft, [safeDraftInput(fixtureConfig(7, 'ipc')), FIXTURE_DRAFT_REVISION], 'saveDraft'],
       [channels.testDraft, [], 'testDraft'],
       [channels.publish, [diffConfirmation({
         operation: 'publish',
@@ -1425,6 +1478,7 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       expect(result).toEqual(harness.facade[method].mock.results.at(-1)?.value)
       expectNoIpcSensitiveOutput(result, method === 'getModels' || method === 'saveModelDraft')
     }
+    expect(harness.facade.saveDraft).toHaveBeenCalledWith(safeDraftInput(fixtureConfig(7, 'ipc')), FIXTURE_DRAFT_REVISION)
     const snapshot = await getHandler(harness, channels.getSnapshot)(event)
     expect(snapshot).toEqual(expect.objectContaining({ lifecycle: 'dormant', configVersion: 7 }))
     expectNoIpcSensitiveOutput(snapshot)
@@ -1445,6 +1499,8 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       { key: 'saveModelDraft', args: [{ realtimeDialogue: fixtureModelValue('realtimeDialogue'), inputTranscription: fixtureModelValue('inputTranscription'), memoryExtractor: fixtureModelValue('memoryExtractor') }, TEST_PRIVATE_MEMORY_SENTINEL], method: 'saveModelDraft' },
       { key: 'saveDraft', args: [], method: 'saveDraft' },
       { key: 'saveDraft', args: [safeDraftInput(fixtureConfig(7, 'ipc')), TEST_PRIVATE_MEMORY_SENTINEL], method: 'saveDraft' },
+      { key: 'saveDraft', args: [safeDraftInput(fixtureConfig(7, 'ipc'))], method: 'saveDraft' },
+      { key: 'saveDraft', args: [safeDraftInput(fixtureConfig(7, 'ipc')), FIXTURE_DRAFT_REVISION, TEST_PRIVATE_MEMORY_SENTINEL], method: 'saveDraft' },
       { key: 'testDraft', args: [TEST_CONFIGURED_VALUE_SENTINEL], method: 'testDraft' },
       { key: 'publish', args: [], method: 'publish' },
       { key: 'publish', args: [{}, TEST_PRIVATE_MEMORY_SENTINEL], method: 'publish' },
@@ -1508,7 +1564,7 @@ describe('Phase 0 Task 9B Console-only IPC/auth RED contract', () => {
       config: [],
       models: [],
       saveModelDraft: [{ realtimeDialogue: fixtureModelValue('realtimeDialogue'), inputTranscription: fixtureModelValue('inputTranscription'), memoryExtractor: fixtureModelValue('memoryExtractor') }],
-      saveDraft: [safeDraftInput(fixtureConfig(7, 'ipc-auth'))],
+      saveDraft: [safeDraftInput(fixtureConfig(7, 'ipc-auth')), FIXTURE_DRAFT_REVISION],
       testDraft: [],
       publish: [safeResponse.ok ? diffConfirmation(safeResponse.value.publishDiff) : {}],
       rollback: [safeResponse.ok ? diffConfirmation(safeResponse.value.rollbackDiff) : {}],

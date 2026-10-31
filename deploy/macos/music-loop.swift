@@ -8,17 +8,27 @@ func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectProper
              _ element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress {
   AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
 }
+var outputClosed = false
+// A broken pipe must not crash the helper before it restores volumes; the
+// 100 ms parent check then closes playback normally.
 func emit(_ event: String, _ values: [String: Any] = [:]) {
+  guard !outputClosed else { return }
   let data = try! JSONSerialization.data(withJSONObject: values.merging(["event": event]) { _, new in new }, options: .sortedKeys)
-  FileHandle.standardOutput.write(data + Data([10]))
+  do { try FileHandle.standardOutput.write(contentsOf: data + Data([10])) } catch { outputClosed = true }
 }
 func textProperty(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
   var property = address(selector), value: Unmanaged<CFString>?, size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
   guard AudioObjectGetPropertyData(id, &property, 0, nil, &size, &value) == noErr else { return nil }
   return value?.takeRetainedValue() as String?
 }
-struct Output: Equatable { let id: AudioDeviceID; let uid: String }
+struct Output: Equatable { let id: AudioDeviceID; let uid: String; var wireless = false; var builtIn = false }
+/// Every connected speaker plays, except the Mac's own built-in speaker whenever an external
+/// one is present: it sits behind the TV and was heard out of step with the room speakers.
 func outputs() -> [Output] {
+  let found = connectedOutputs()
+  return found.contains(where: { !$0.builtIn }) ? found.filter { !$0.builtIn } : found
+}
+func connectedOutputs() -> [Output] {
   var property = address(kAudioHardwarePropertyDevices), size: UInt32 = 0
   let system = AudioObjectID(kAudioObjectSystemObject)
   guard AudioObjectGetPropertyDataSize(system, &property, 0, nil, &size) == noErr else { return [] }
@@ -33,12 +43,32 @@ func outputs() -> [Output] {
     p = address(kAudioDevicePropertyStreams, kAudioDevicePropertyScopeOutput); n = 0
     guard AudioObjectGetPropertyDataSize(id, &p, 0, nil, &n) == noErr, n > 0,
       let uid = textProperty(id, kAudioDevicePropertyDeviceUID) else { return nil }
-    return Output(id: id, uid: uid)
-  }.sorted { $0.uid < $1.uid }
+    let wireless = [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE, kAudioDeviceTransportTypeAirPlay].contains(transport)
+    return Output(id: id, uid: uid, wireless: wireless, builtIn: transport == kAudioDeviceTransportTypeBuiltIn)
+  // Every connected speaker plays (Bluetooth included), but the first entry is the
+  // aggregate's clock: keep it wired, so a Bluetooth link cannot clock the others.
+  }.sorted { ($0.wireless ? 1 : 0, $0.uid) < ($1.wireless ? 1 : 0, $1.uid) }
 }
 
 if CommandLine.arguments.contains("--outputs") {
   emit("outputs", ["count": outputs().count]); exit(0)
+}
+
+/// Extra latency (device frames) for a Bluetooth output that under-reports its delay. macOS
+/// aligns a stacked aggregate by reported latency; by ear on 2026-10-31 the Edifier (183 ms
+/// reported) was aligned as is, while A1 (83 ms reported) needed +100 ms. Raise every
+/// Bluetooth output to the same floor; wired outputs report truthfully and get none.
+let bluetoothLatencyFloorSeconds = 0.185
+func extraOutputLatency(_ output: Output) -> Double {
+  guard output.wireless else { return 0 }
+  var p = address(kAudioDevicePropertyNominalSampleRate), rate: Float64 = 0, n = UInt32(MemoryLayout<Float64>.size)
+  guard AudioObjectGetPropertyData(output.id, &p, 0, nil, &n, &rate) == noErr, rate > 0 else { return 0 }
+  var reported: UInt32 = 0
+  for selector in [kAudioDevicePropertyLatency, kAudioDevicePropertySafetyOffset] {
+    var q = address(selector, kAudioDevicePropertyScopeOutput), v: UInt32 = 0, m: UInt32 = 4
+    if AudioObjectGetPropertyData(output.id, &q, 0, nil, &m, &v) == noErr { reported += v }
+  }
+  return max(0, bluetoothLatencyFloorSeconds * rate - Double(reported))
 }
 
 final class Playback {
@@ -83,8 +113,12 @@ final class Playback {
       guard let output = outputs().first(where: { $0.uid == old.uid }) else { continue }
       var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
       let name = textProperty(output.id, kAudioObjectPropertyName) ?? ""
-      var level: Float32 = name.localizedCaseInsensitiveContains("Jabra Speak2 75") ? 0.7 : previous
+      let jabra = name.localizedCaseInsensitiveContains("Jabra Speak2 75")
+      var level: Float32 = jabra ? 0.7 : previous
       var size: UInt32 = 4, observed: Float32 = 0
+      // Jabra returns to normal use: 70% and unmuted (its firmware mutes at step 0).
+      var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), off: UInt32 = 0
+      if jabra && AudioObjectHasProperty(output.id, &mute) { AudioObjectSetPropertyData(output.id, &mute, 0, nil, 4, &off) }
       if AudioObjectSetPropertyData(output.id, &property, 0, nil, 4, &level) != noErr
         || AudioObjectGetPropertyData(output.id, &property, 0, nil, &size, &observed) != noErr || abs(observed-level) > 0.015 {
         emit("volume_restore_failed")
@@ -124,7 +158,8 @@ final class Playback {
       kAudioAggregateDeviceIsStackedKey: 1,
       kAudioAggregateDeviceMainSubDeviceKey: next[0].uid,
       kAudioAggregateDeviceSubDeviceListKey: next.enumerated().map { index, output in
-        [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: index == 0 ? 0 : 1] as [String: Any]
+        [kAudioSubDeviceUIDKey: output.uid, kAudioSubDeviceDriftCompensationKey: index == 0 ? 0 : 1,
+         kAudioSubDeviceExtraOutputLatencyKey: extraOutputLatency(output)] as [String: Any]
       }
     ]
     guard AudioHardwareCreateAggregateDevice(description as CFDictionary, &aggregate) == noErr else {
@@ -153,7 +188,7 @@ final class Playback {
     player?.audioOutputDeviceUniqueID = uid
     if let current = current, current.isValid { player?.seek(to: current) }
     player?.play(); lastAdvance = Date()
-    emit("ready", ["outputs": next.count, "streams": buffers.count, "channels": buffers[0].mNumberChannels])
+    emit("ready", ["outputs": next.count, "wireless": next.filter { $0.wireless }.count, "streams": buffers.count, "channels": buffers[0].mNumberChannels])
   }
   func play(_ message: [String: Any]) {
     guard let id = message["id"] as? Int, id > 0, let path = message["path"] as? String, path.hasPrefix("/"),

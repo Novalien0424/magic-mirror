@@ -260,6 +260,12 @@ describe('combined Stream Deck sequence', () => {
     expect(io.order).toEqual(['start', 'ready', 'show_console', 'awake'])
     expect(io.mode).toHaveBeenCalledExactlyOnceWith('show_console')
   })
+  it('returns the Jabra to 70% unmuted on START only after the app is ready', async () => {
+    const io = { ...control(), settle: vi.fn(async () => { io.order.push('settle') }), resetAudio: vi.fn(async () => { io.order.push('audio_70'); return 'jabra_output_70' }) }
+    expect(await operateMirrorControl('start', io)).toMatchObject({ audio: 'jabra_output_70', outcome: 'started' })
+    expect(io.order).toEqual(['start', 'ready', 'normal', 'awake', 'settle', 'audio_70'])
+    expect(io.settle).toHaveBeenCalledWith(6000)
+  })
   it('keeps standby on a launch failure', async () => {
     const io = control('start_failed')
     expect((await operateMirrorControl('start', io)).outcome).toBe('start_failed')

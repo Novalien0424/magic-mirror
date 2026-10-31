@@ -27,6 +27,13 @@ describe('delivered identity question', () => {
     expect(answer(session, state, 'early', 'yes').code).not.toBe('memory_identity_confirmed')
     expect(session.currentOwner(state)).toBe('')
   })
+  it('accepts a spoken preamble before the exact question but nothing after it', () => {
+    const { session, proposal } = setup()
+    const q = proposal.confirmation!
+    expect(session.delivery(state, q.token, `${q.text} Would you like some advice?`, true).code).toBe('memory_question_rejected')
+    const next = session.request(state, identify).confirmation!
+    expect(session.delivery(state, next.token, `Let me say that clearly. ${next.text}`, true).code).toBe('memory_question_delivered')
+  })
   it('requires matching delivery and a new answer, never a wrong question or stale token', () => {
     const { session, proposal } = setup()
     const q = proposal.confirmation!

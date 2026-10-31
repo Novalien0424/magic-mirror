@@ -1,5 +1,5 @@
 import { MemorySession, type MemoryState } from './session'
-import { parseMemoryRequest, type MemoryReply, type MemoryInputPhase, type MemoryMode, MEMORY_CONTEXT_BYTES } from '../../shared/memory'
+import { parseMemoryRequest, type MemoryReply, type MemoryInputPhase, type MemoryMode, MEMORY_CONTEXT_BYTES, type MemoryLanguage } from '../../shared/memory'
 import type { MemoryRepository, MemoryEmbedder } from './contracts'
 import type { MemoryLearning } from './learning'
 import { memoryInterpretationFailure, type MemoryInterpreter, type MemoryIntentInput, type MemoryIntentResult } from './intent'
@@ -182,7 +182,8 @@ export class RelationshipMemory {
     }
     return confirmed
   }
-  async request(state: MemoryState, raw: unknown): Promise<MemoryReply> {
+  /** `selected` is the session's reply language; only an explicit visitor choice changes it. */
+  async request(state: MemoryState, raw: unknown, selected?: MemoryLanguage): Promise<MemoryReply> {
     this.observe(state)
     const request = parseMemoryRequest(raw)
     if (!state.active || this.closed || !request) return result('memory_request_rejected', 'rejected')
@@ -203,7 +204,7 @@ export class RelationshipMemory {
       source.control = true
       if (source.name) this.options.learning.exclude(source.avatarId, source.name, this.latest)
       if (!candidate) return result('memory_identity_name_ambiguous', 'rejected')
-      return this.identity.request(state, { ...request, name: candidate }, intent.language)
+      return this.identity.request(state, { ...request, name: candidate }, selected ?? intent.language)
     }
     const name = this.identity.currentOwner(state)
     if (this.temporary) return result('memory_disabled', 'rejected')
@@ -230,7 +231,7 @@ export class RelationshipMemory {
             const candidate = await this.candidateName(state.avatarId, intent.name)
             if (generation !== this.generation) return result('memory_result_stale', 'rejected')
             if (!candidate) return result('memory_identity_name_ambiguous', 'rejected')
-            return this.identity.request(state, { action: 'identify', name: candidate, topic: '', text: '', query: '' }, intent.language)
+            return this.identity.request(state, { action: 'identify', name: candidate, topic: '', text: '', query: '' }, selected ?? intent.language)
           }
         }
       }
