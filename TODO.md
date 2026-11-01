@@ -86,13 +86,16 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   goodbye, 0 of 4); YouTube search then asking instead of playing (`youtube_once` 2 of 4,
   loop 1 of 3, media-intent 2 of 3); `local_media` tool route 0 of 3;
   `--memory-conversation` quality 0 of 2; `image_skill` 1 of 4 (chat-while-painting
-  timeout); acoustic wake during a loop at the 1% QA level (environment). Raven's
-  in-character refusal to teach a spell ran ~30 s of speech (persona v23 asks for one or two sentences).
+  timeout); acoustic wake during a loop at the 1% QA level (environment). The ~30 s
+  spell refusal came from `--spells-live`'s fixture persona, not Raven (Raven v23 asks for
+  one or two sentences).
 - [ ] **Music page in the room.** AI_Stuff is Available offline (owner, 10-31); the Yunelle
-  key plays its 84 songs from song 1 (field-checked). Owner: press each Music page key
-  once on the Neo (folder titles, PREV/NEXT, STOP back to main) and listen across song
-  changes with the re-sync pause (Bluetooth streams now pause 1.24 s between songs).
-- [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; outputs=3). Likely its
+  key plays its 84 songs from song 1 (field-checked). 11-01 night, 1%, through the installed
+  control apps: MUSIC LOOP, PREV/NEXT, VOL±, folder 1 (84 songs), the empty folder 2
+  refused with the music kept, STOP back; no app focus change. Owner: press each Music page
+  key once on the Neo and check the folder titles (the re-sync pause is direct-route only).
+- [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; still off 11-01 night,
+  a reconnect attempt timed out, so Airfoil had only Jabra + Edifier). Likely its
   auto power-off or the −80 dBm link; move it closer or disable auto-off. On rejoin it now
   takes the Jabra's level. Not yet seen live: a speaker leaving or rejoining mid-song (no
   rebuild, `speaker_matched` or `route_kept` event since the code shipped); Main's side is
@@ -119,8 +122,17 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   because the mirror's `show()` and its simple-fullscreen re-toggle activated Electron
   (a focus change selects the default profile). Fixed: `showInactive` and no re-toggle
   when the mirror is already in place. Cold and warm VIDEO LOOP, MUSIC LOOP, the folder
-  key and Console → VIDEO LOOP were verified with no focus change. A physical press of
-  each Neo key remains the owner's check.
+  key and Console → VIDEO LOOP were verified with no focus change. 11-01 night re-check
+  (1%): the installed profiles' switch targets resolve (main → Playback/Music, both STOPs →
+  main); cold and warm VIDEO LOOP/MUSIC LOOP plus every page key, opened through the same
+  control apps, gave 0 app activations in 24 presses (watchers caught a deliberate one), and
+  the control apps themselves never take focus. A physical press of each Neo key remains
+  the owner's check; nothing tests the installed profiles, the focus rule or the plugin's
+  folder titles automatically.
+- [ ] **System alert on the TV display.** A macOS UserNotificationCenter alert (260×192,
+  behind the mirror and the black cover) has been waiting since 11-01 14:22, one second
+  after an agent shell command (likely a permission prompt; text unreadable without Screen
+  Recording). Owner: read and answer it on the Mac (deny if unsure).
 - [ ] **Raven v22 in the room.** v22 (published 10-31) drops the quoted style
   lines that v21 repeated (「你們人類太囉嗦了…」 in about 1 of 10 replies) and keeps
   sarcasm for visitors Raven judges really too chatty or unclear. Not yet
