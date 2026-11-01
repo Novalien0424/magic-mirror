@@ -52,8 +52,9 @@ export const avatarCatalogSchema = z.object({
     voiceEffects: voiceEffectsSchema.default(DEFAULT_VOICE_EFFECTS),
     mediaSkill: mediaSkillSchema.default(() => structuredClone(DEFAULT_MEDIA_SKILL)),
     skills: z.object({ imageGeneration: z.boolean() }).strict().default(() => ({ ...DEFAULT_AVATAR_SKILLS })),
+    // Stored normalized, so retired fields (e.g. Studio holdSeconds) leave the files on the next save.
     experience: z.custom<AvatarExperience>(value => parseAvatarExperience(value) !== null, 'Invalid experience settings')
-      .default(() => defaultExperience()),
+      .transform(value => parseAvatarExperience(value)!).default(() => defaultExperience()),
     wakePhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid wake phrase').optional(),
     sleepPhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid sleep phrase').optional(),
     cloudSearchPhrase: z.string().trim().refine(validSpokenPhrase, 'Invalid online search phrase').optional(),

@@ -275,4 +275,6 @@ see [Stream Deck](stream-deck.md) and the [TV mouse](stream-deck.md#tv-connected
 [`owner-check/owner-check.sh`](owner-check/owner-check.sh) runs owner-present checks and
 saves metadata to `~/Library/Logs/MagicMirror/owner-check/`: `screenlock` (turn the screen
 lock off), `wake-media` (about 12 minutes of audible wake-during-media tests; it stops
-Raven and restarts it afterwards) and `boot` (post-boot evidence).
+Raven and restarts it afterwards) and `boot` (post-boot evidence). Run it from a Terminal window
+that has Microphone access: agent/tmux shells capture digital silence (11-01 it ran as a child
+of a copied Electron.app, which holds the grant).

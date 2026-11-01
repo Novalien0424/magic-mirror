@@ -1,5 +1,14 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-01 — Mini kept, short refusals, Studio hold retired (owner rulings, evening)
+
+- Keep `gpt-realtime-2.1-mini` for dialogue for now; its measured rates stay open in TODO.
+- Raven declines what it will not do or reveal (hidden spells included, without naming
+  them) in one or two short in-character sentences, then moves on: no monologue or
+  invented lore (a QA refusal ran ~30 s). Published as persona v23; v22 is the rollback.
+- The unused Studio picture-hold setting (`holdSeconds`) is retired: the picture stays
+  through the transfer line, then clears. Stored settings drop the field on load.
+
 ## 2026-11-01 — All music through Airfoil, in sync (owner rulings)
 
 - The Edifier M330 II moved to Wi-Fi/AirPlay; the owner bought Airfoil 5.13 to sync

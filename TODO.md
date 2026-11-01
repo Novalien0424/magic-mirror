@@ -32,7 +32,12 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   [Investigation](docs/testing/camera-availability-qa-2026-10-18.md).
 - [ ] **Wake and voice quality.** Validate human names, corrections/spelling,
   near-negative wake phrases, cold start, media interference, barge-in and echo.
-  Synthetic speech is not human accuracy. Repeat hidden online phrase
+  Synthetic speech is not human accuracy. Owner wake-media check (11-01 evening, run under
+  Electron for microphone access, Mac mini "visitor" raised to 50%): 0/10 wakes in every
+  cell including the no-media control (voice 23 dB over the room), 0 false wakes; the
+  stimulus is detected offline, so the Mac mini speaker → Jabra path, not media, defeats
+  it. Needs a human or a better speaker-placed visitor. The TV speaker does play HDMI
+  audio, even in standby (1 kHz probe +14.5 dB). Repeat hidden online phrase
   「在雲上找找」 and factual/character/tool scenarios if field results worsen.
   [Name repair](docs/testing/guest-name-repair-2026-10-24.md) ·
   [Voice boundaries](docs/testing/open-issues-2026-10-13.md) ·
@@ -46,7 +51,7 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   [Report](docs/testing/avatar-image-skill-selection-2026-10-21.md#results).
 - [ ] **Reply quality below baseline target.** Quality is now a reported rate
   (ruling 2026-10-31). v9 baseline failure rate per judged turn: mini 57% (154
-  turns), full 33% (24 turns). Owner to choose mini versus full for dialogue;
+  turns), full 33% (24 turns). Owner keeps mini for now (11-01); report mini rates;
   improve character/naturalness without losing the persona.
 - [ ] **Music on room speakers during conversation.** The Jabra cancels only its
   own output, so conversation music from the other speakers reaches the
@@ -72,11 +77,6 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Maintenance (DECISIONS says it must not gate conversation); deleting an avatar
   leaves its private memories unreachable; the Studio picture appears just before
   its reveal line; a MusicLoop intent can briefly resume on START after a crash.
-- [ ] **Unused Studio picture-hold setting (audit 11-01).** `holdSeconds` (default 45,
-  10–300) is still stored and validated (`src/shared/portrait-studio.ts`, Console issue
-  check), but no Console control or runtime code uses it: the picture stays through the
-  transfer line and then clears (PRD §4). Remove the field with a config migration, or
-  wire it up if the owner wants a timed hold.
 - [ ] **Provider rates after the night QA (11-01).** Fixed and verified: spell cue stall
   (a spell cutting an unspoken line closed the visit, `scene_dialogue_cancel_failed`;
   `--live` 0 of 2 → pass), YouTube search argument shape and live/upcoming results
@@ -87,7 +87,7 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   loop 1 of 3, media-intent 2 of 3); `local_media` tool route 0 of 3;
   `--memory-conversation` quality 0 of 2; `image_skill` 1 of 4 (chat-while-painting
   timeout); acoustic wake during a loop at the 1% QA level (environment). Raven's
-  in-character refusal to teach a spell ran ~30 s of speech.
+  in-character refusal to teach a spell ran ~30 s of speech (persona v23 asks for one or two sentences).
 - [ ] **Music page in the room.** AI_Stuff is Available offline (owner, 10-31); the Yunelle
   key plays its 84 songs from song 1 (field-checked). Owner: press each Music page key
   once on the Neo (folder titles, PREV/NEXT, STOP back to main) and listen across song

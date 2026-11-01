@@ -128,7 +128,6 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
       nameFont: 'bold gold brush calligraphy',
       quality: 'high',
       revisionsAllowed: 2,
-      holdSeconds: 30,
       prompts: {
         askQuestion: '先用半句偈語回應訪客上一句話，再莊重地問第 {{index}} 題（共 {{count}} 題）：{{question}}',
         painting: '用一句話說：「我把你的前世，從鏡底撈上來了。」不要描述畫面。',
@@ -165,7 +164,6 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
       nameLettering: 'nameplate',
       quality: 'low',
       revisionsAllowed: 0,
-      holdSeconds: 30,
       farewell: 'Every road you did not take still loves you\nFarewell, wanderer',
       screenText: { questionLabel: { zh: '第 {{index}} 道星軌，共 {{count}} 道', en: 'Orbit {{index}} of {{count}}' },
         photoHint: { zh: '拍下你未曾走過的那一生', en: 'Photograph the life you never lived' } },
@@ -203,7 +201,6 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
       nameLettering: 'nameplate',
       quality: 'medium',
       revisionsAllowed: 1,
-      holdSeconds: 30,
       farewell: '夢醒了\n帶著它走吧',
       screenText: { nameLabel: { zh: '典當人', en: 'Pawned by' }, photoHint: { zh: '拍下你換來的夢', en: 'Photograph the dream you traded for' } },
       prompts: {

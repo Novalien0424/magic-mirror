@@ -205,7 +205,8 @@ describe('ExperiencesEditor', () => {
     expect(parseAvatarExperience(experience)).toEqual(experience)
     expect(experience).toMatchObject({ defaultMode: 'conversation', visitorMayRequest: false,
       guests: { names: ['王小明'], match: 'only' } })
-    expect(experience.studio).toMatchObject({ nameLettering: 'painted', quality: 'high', revisionsAllowed: 3, holdSeconds: 45 })
+    expect(experience.studio).toMatchObject({ nameLettering: 'painted', quality: 'high', revisionsAllowed: 3 })
+    expect(experience.studio).not.toHaveProperty('holdSeconds')
     expect(experience.studio.questions[4]).toEqual({ id: 'q5', zh: '誰陪在你身邊？', en: 'Who is beside you?', slot: 'companion' })
     expect(experience.studio.questions[0]!.imageLine).toBe('Spirit animal: {{answer}}.')
     expect(ui.render()).toContain('<option value="high" selected="">Best</option>')

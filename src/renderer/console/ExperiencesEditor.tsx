@@ -218,7 +218,6 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
   add('artStyle', textIssue(studio.artStyle, 600, 'Describe the painting style.', false, true))
   if (studio.nameFont !== undefined) add('nameFont', studioNameFontIssue(studio.nameFont))
   add('revisionsAllowed', wholeIssue(studio.revisionsAllowed, 0, 3, 'changes'))
-  add('holdSeconds', wholeIssue(studio.holdSeconds, 10, 300, 'seconds'))
   const guests = experience.guests.names
   add('guests.aliases', guestAliasIssue(experience.guests.aliases ?? [], guests))
   // An empty list cannot restrict names, so Only guests on the list would accept anyone.

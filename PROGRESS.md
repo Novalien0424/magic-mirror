@@ -25,6 +25,9 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
   re-sync pause is skipped on the Airfoil route; YouTube keeps 5 recorded results out of 10;
   a STOP-cancelled Dance start is silent; button logs keep the speaker helper's own reason.
   Runbooks (Stream Deck, buttons, Mac) audited against the code; owner-check wake test fixed.
+  Owner decisions done: mini kept; persona v23 (short in-character refusals; v22 rollback);
+  Studio picture-hold setting retired; owner wake test run (synthetic visitor never detected,
+  even without media: needs a human). 276 QA runs archived and deleted.
   [Audit record](docs/testing/prd-audit-2026-11-01.md).
 - **Neo / Stream Deck:** three-profile package (main "Magic Mirror copy 3", Playback,
   Music). Cause of the Neo silently showing old keys: an older copy held Stream Deck's
@@ -87,7 +90,6 @@ the night QA").
 1. Owner, physical: check the unplugged second Jabra is not still linked to the venue
    Jabra; press each Neo key once (incl. Playback/Music pages); glance at VIDEO LOOP/YouTube
    lip-sync (now measured on the picture side); A1 keeps leaving Bluetooth; the camera is damaged.
-2. Owner decisions: mini vs full dialogue model (farewell preamble, YouTube search-then-ask,
-   tool routes, identity/recall quality); Raven's ~30 s in-character refusals. (VIDEO LOOP's
-   TV wake order stays: DECISIONS 11-01.)
+2. Owner decisions recorded 11-01 (DECISIONS): mini kept, so its rates stay open in TODO;
+   persona v23 to be judged in the room. (VIDEO LOOP's TV wake order stays: DECISIONS 11-01.)
 3. Open items in [TODO](TODO.md), including the audit follow-ups not fixed on 10-31.

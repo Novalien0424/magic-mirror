@@ -354,3 +354,13 @@ describe('Portrait Studio IPC', () => {
   })
 })
 
+describe('retired Studio picture hold', () => {
+  it('loads settings saved with holdSeconds and drops the unused value', () => {
+    const legacy = structuredClone(defaultExperience()) as unknown as { studio: Record<string, unknown> }
+    legacy.studio.holdSeconds = 45
+    const parsed = parseAvatarExperience(legacy)
+    expect(parsed).not.toBeNull()
+    expect(parsed!.studio).not.toHaveProperty('holdSeconds')
+    expect(parseAvatarExperience(parsed)).toEqual(parsed)
+  })
+})

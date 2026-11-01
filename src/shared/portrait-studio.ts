@@ -176,7 +176,6 @@ export interface StudioSettings {
   nameFont?: string
   quality: StudioQuality
   revisionsAllowed: number
-  holdSeconds: number
   prompts: StudioPrompts
   /** Operator edits only; a missing entry uses the versioned default. */
   imagePrompt?: Partial<Record<StudioImagePromptKey, string>>
@@ -220,7 +219,6 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
     nameLettering: 'nameplate',
     quality: 'medium',
     revisionsAllowed: 1,
-    holdSeconds: 45,
     prompts: {},
   },
   guests: { names: [], match: 'prefer' },
@@ -260,7 +258,7 @@ function parseStudioPrompts(value: unknown): StudioPrompts | null {
   return structuredClone(value) as StudioPrompts
 }
 
-const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'holdSeconds', 'prompts']
+const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'prompts']
 const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'askName', 'pictureType', 'nameFont', 'imagePrompt', 'screenText', 'failureLines']
 export const STUDIO_CHARACTER_MAX = 4000
 export const STUDIO_FAREWELL_LINES = 4
@@ -284,8 +282,10 @@ const bilingualMap = <K extends string>(value: unknown, keys: readonly K[], issu
     && !issue(key as K, pair.zh) && !issue(key as K, pair.en))
 
 function parseStudioSettings(input: unknown): StudioSettings | null {
-  // Settings saved before stage prompts existed use every default.
-  const value = record(input) && !Object.hasOwn(input, 'prompts') ? { ...input, prompts: {} } : input
+  // Settings saved before stage prompts existed use every default. The retired picture hold
+  // (holdSeconds; the picture follows the transfer line, owner 2026-11-01) is dropped.
+  let value = record(input) && !Object.hasOwn(input, 'prompts') ? { ...input, prompts: {} } : input
+  if (record(value) && Object.hasOwn(value, 'holdSeconds')) { const { holdSeconds: _retired, ...rest } = value; value = rest }
   if (!record(value) || !STUDIO_KEYS.every(key => Object.hasOwn(value, key))
     || !Object.keys(value).every(key => STUDIO_KEYS.includes(key) || STUDIO_OPTIONAL_KEYS.includes(key))
     || !parseStudioPrompts(value.prompts)) return null
@@ -304,8 +304,7 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
     || !Array.isArray(value.questions) || value.questions.length < 1 || value.questions.length > STUDIO_MAX_QUESTIONS
     || !studioText(value.artStyle, 600, false, true) || (value.nameLettering !== 'nameplate' && value.nameLettering !== 'painted')
     || !['low', 'medium', 'high'].includes(value.quality as string)
-    || !Number.isInteger(value.revisionsAllowed) || (value.revisionsAllowed as number) < 0 || (value.revisionsAllowed as number) > 3
-    || !Number.isInteger(value.holdSeconds) || (value.holdSeconds as number) < 10 || (value.holdSeconds as number) > 300) return null
+    || !Number.isInteger(value.revisionsAllowed) || (value.revisionsAllowed as number) < 0 || (value.revisionsAllowed as number) > 3) return null
   if (speechScriptIssue(value.startScript) || speechScriptIssue(name.zh) || speechScriptIssue(name.en)) return null
   const ids = new Set<string>()
   for (const question of value.questions) {
