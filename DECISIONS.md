@@ -1,5 +1,11 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-01 — VIDEO LOOP wakes the TV after playback (owner ruling)
+
+- VIDEO LOOP keeps waking the TV only after the loop is confirmed playing, so a
+  failed start keeps the TV dark. Waking it in parallel for a faster picture was
+  considered and declined.
+
 ## 2026-10-31 — Console Dance stop, MusicLoop volume and Studio ending (owner rulings)
 
 - **Console Stop / Stop All during Dance Floor** end Dance only: music and DJ

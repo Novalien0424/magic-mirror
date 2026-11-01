@@ -14,7 +14,11 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
   Music). Cause of the Neo silently showing old keys: an older copy held Stream Deck's
   default-profile mark (`AppIdentifier *`), applied at launch and on focus changes.
   copy 3 is now the default and the obsolete copies are deleted; the runbook's "After
-  every import (required)" step prevents a repeat.
+  every import (required)" step prevents a repeat. 11-01: VIDEO LOOP and MUSIC LOOP fell
+  back to the main keys about 1 s after the press. Cause: the mirror window activated
+  Electron, and Stream Deck selects the default profile on any focus change. Fixed: the
+  mirror shows without focus. The press paths were checked with no focus change; a
+  physical press is still the owner's check.
 - **VIDEO LOOP:** cold start fixed; loop re-reads reuse the verified local copy instead
   of checking Google Drive per range request; each wrap logs
   `OPERATOR_LOOP operator_loop_wrapped wraps= dropped=` (QA: 0, 0, 2 dropped frames).
@@ -61,6 +65,6 @@ the night QA").
 1. Owner, physical: press each Neo key once (main, Playback, Music page) and listen across
    song changes; reconnect the camera (it is not on the USB bus at all: G11).
 2. Owner decisions: mini vs full dialogue model (farewell preamble, YouTube search-then-ask,
-   tool routes, identity/recall quality); waking the TV in parallel with VIDEO LOOP vs the
-   "failed start keeps the TV dark" ruling; Raven's ~30 s in-character refusals.
+   tool routes, identity/recall quality); Raven's ~30 s in-character refusals. (VIDEO LOOP's
+   TV wake order stays: DECISIONS 11-01.)
 3. Open items in [TODO](TODO.md), including the audit follow-ups not fixed on 10-31.

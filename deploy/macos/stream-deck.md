@@ -209,6 +209,14 @@ the speakers to 70%. Stream Deck's built-in actions switch the page on the press
 on the result: a failed loop still shows Playback, and its STOP recovers. Leaving a
 loop through the Console (Return to Avatar) leaves the deck on Playback until STOP.
 
+**Never steal focus during a loop.** Stream Deck answers any app activation (a focus
+change) by selecting its default profile, the main keys. Magic Mirror therefore shows
+the mirror without activating itself (`showInactive`) and does not re-toggle simple
+fullscreen when the mirror is already in place. Only CONSOLE and DESKTOP take focus,
+and their page is the main one. The control apps are `LSUIElement` applets, which do
+not take focus (checked 11-01). Before 11-01 every loop press reverted to the main
+keys about 1 s later, when the mirror window appeared.
+
 ## Reinstall the local controls
 
 From the canonical checkout:

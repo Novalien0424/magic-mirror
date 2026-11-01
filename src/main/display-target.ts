@@ -118,7 +118,7 @@ function awaitingMarker(trigger: string, match: string | undefined): DisplayMark
   return { name: 'MIRROR_DISPLAY_UNCHANGED', fields: { reason: 'awaiting_target', trigger, match: match ?? 'none' } }
 }
 
-function sameRect(a: Rect, b: Rect): boolean {
+export function sameRect(a: Rect, b: Rect): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 }
 

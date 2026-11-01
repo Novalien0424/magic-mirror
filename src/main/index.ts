@@ -59,6 +59,7 @@ import {
   isTargetChoice,
   planInitialPlacement,
   planRehome,
+  sameRect,
   type DisplayInfo,
   type DisplayMarker,
   type DisplayTrigger,
@@ -534,7 +535,7 @@ function createWindow(kind: MirrorWindowKind): BrowserWindow {
       if (operatorLoop?.isDesktopMode()) { win.hide(); return }
       if (isDarwin) win.setSimpleFullScreen(true)
       else win.maximize()
-      win.show()
+      showMirror(win)
       raiseMirrorAboveMenuBar(win)
       marker('WINDOW_SHOWN', {
         window: kind,
@@ -615,9 +616,25 @@ function raiseMirrorAboveMenuBar(win: BrowserWindow): void {
   if (isDarwin) win.setAlwaysOnTop(true, MIRROR_WINDOW_LEVEL)
 }
 
+/**
+ * Show the mirror without activating the app on macOS. Activation is a focus change, and
+ * Stream Deck answers focus changes with its default (main) profile, undoing the switch
+ * VIDEO LOOP and MUSIC LOOP make to their pages (11-01). The Console still takes focus.
+ */
+function showMirror(win: BrowserWindow): void {
+  if (isDarwin) win.showInactive()
+  else win.show()
+}
+
 /** A fullscreen window cannot change displays: leave fullscreen, move, re-enter. */
 function moveMirrorWindow(win: BrowserWindow, bounds: Rect): void {
   if (isDarwin) {
+    // Already filling the target: toggling simple fullscreen on a shown window activates
+    // the app, and that focus change resets Stream Deck to its main page (11-01).
+    if (win.isSimpleFullScreen() && sameRect(win.getBounds(), bounds)) {
+      raiseMirrorAboveMenuBar(win)
+      return
+    }
     if (win.isSimpleFullScreen()) win.setSimpleFullScreen(false)
     win.setBounds(bounds)
     win.setSimpleFullScreen(true)
@@ -654,7 +671,7 @@ function rehomeMirror(trigger: DisplayTrigger): void {
     case 'move_and_show':
       moveMirrorWindow(win, decision.display.bounds)
       if (operatorLoop?.isDesktopMode()) win.hide()
-      else win.show()
+      else showMirror(win)
       raiseMirrorAboveMenuBar(win)
       if (bootRuntime !== null) startPhase4QaIfReady(bootRuntime)
       break
@@ -772,7 +789,7 @@ function showMirrorWindow(): boolean {
   if (!win || win.isDestroyed() || !placeMirrorInitially(win)) return false
   if (isDarwin) win.setSimpleFullScreen(true)
   else win.maximize()
-  win.show(); raiseMirrorAboveMenuBar(win)
+  showMirror(win); raiseMirrorAboveMenuBar(win)
   return win.isVisible()
 }
 

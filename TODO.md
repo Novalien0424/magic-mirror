@@ -25,7 +25,7 @@ ticked only with its evidence.
   lstat on the source instead of realpath/prepare per range request); per-wrap
   `operator_loop_wrapped wraps= dropped=` markers. TV wake stays after the mode
   acknowledgement by the existing owner ruling (a failed start keeps the TV dark; 46
-  tests encode it) — trade-off for the owner, not changed.
+  tests encode it) — the owner kept this order (DECISIONS 11-01).
 - [x] G4 `youtube_modes` loop: harness bug — the check treated the playlist reload
   states (-1/5) at a loop boundary as lost; product never paused it. Fixed (needs rerun).
 - [x] G5 `--memory-live`: harness answered "yes" before the app asked (the app resets
@@ -143,15 +143,41 @@ ticked only with its evidence.
   changes with the re-sync pause (Bluetooth streams now pause 1.24 s between songs).
 - [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; outputs=3). Likely its
   auto power-off or the −80 dBm link; move it closer or disable auto-off. On rejoin it now
-  takes the Jabra's level.
-- [ ] **Video loop smoothness (owner decisions).** Loop re-reads now reuse the local copy
-  and each wrap logs `operator_loop_wrapped wraps= dropped=` (G3). Open: waking the TV in
-  parallel with the start (conflicts with the "failed start keeps the TV dark" ruling) and
-  the board's camera-preview HDMI path. Watch the wrap markers in the room.
+  takes the Jabra's level. Not yet seen live: a speaker leaving or rejoining mid-song (no
+  rebuild, `speaker_matched` or `route_kept` event since the code shipped); Main's side is
+  unit-tested only. The Edifier reads −78 dBm (11-01).
+- [ ] **Second Edifier M330 II (owner considering).** Speakers are spread across the house,
+  so cables are out. Three Bluetooth streams (2 Edifier + A1) are untested, and the Mac
+  sends SBC (the M330 II lists SBC/LDAC; Macs do not use LDAC). Wi-Fi/AirPlay suits the
+  range, but macOS sends system or app audio to one AirPlay speaker only (multi-speaker is
+  Music-app only). AirPlay also runs about 2 s behind, so the Jabra and Bluetooth speakers
+  must be delayed to match, and Dance/VIDEO/YouTube need their picture or motion synced.
+  Options: Airfoil (third-party, mixes AirPlay + Bluetooth + local in sync; supports macOS
+  27) or AirPlay 2 in our own player (unproven on macOS). Airfoil 5.13.0 trial (notarized,
+  Rogue Amoeba) installed in /Applications on 11-01 for the by-ear test; remove it if not
+  adopted. Waiting on: the Edifier joining Wi-Fi (not advertising AirPlay yet) and the
+  owner approving the Mac's permission prompts (Automation for Airfoil is pending).
+  Wi-Fi setup (11-01): the iPad showed no "Set Up New AirPlay Speaker" because the Edifier
+  sat in Bluetooth mode, connected to the Mac. Steps: on the Mac, System Settings →
+  Bluetooth → EDIFIER M330 Ⅱ → Disconnect (not Forget). On the iPad (same Wi-Fi as the Mac),
+  connect it to the speaker by Bluetooth and use the EDIFIER ConneX app's Wi-Fi/AirPlay
+  setup (install any firmware update first), naming it "Edifier WiFi". Fallback: switch the
+  speaker out of Bluetooth mode, then use iPad Settings → Wi-Fi → Set Up New AirPlay Speaker.
+  Steps are inferred from Edifier's other AirPlay manuals; no M330 II manual was found.
+  Check: `dns-sd -B _raop._tcp`. After the test, reconnect the Edifier over Bluetooth
+  (MusicLoop and the shared speakers use Bluetooth).
+- [ ] **Video loop smoothness.** Loop re-reads now reuse the local copy and each wrap logs
+  `operator_loop_wrapped wraps= dropped=` (G3). Open: the board's camera-preview HDMI
+  path (the TV wake order stays: DECISIONS 11-01). Watch the wrap markers in the room.
 - [ ] **Playback page on the Neo (physical).** VIDEO LOOP/MUSIC LOOP → VOL+/VOL−/STOP
   and STOP → main keys were imported and read back from Stream Deck's store
-  (10-31); the wrappers, VOL± and STOP were field-run by script. A physical press
-  of each Neo key remains the owner's check.
+  (10-31); the wrappers, VOL± and STOP were field-run by script. 11-01: the owner's
+  presses switched pages, but Stream Deck returned to the main profile about 1 s later,
+  because the mirror's `show()` and its simple-fullscreen re-toggle activated Electron
+  (a focus change selects the default profile). Fixed: `showInactive` and no re-toggle
+  when the mirror is already in place. Cold and warm VIDEO LOOP, MUSIC LOOP, the folder
+  key and Console → VIDEO LOOP were verified with no focus change. A physical press of
+  each Neo key remains the owner's check.
 - [ ] **Raven v22 in the room.** v22 (published 10-31) drops the quoted style
   lines that v21 repeated (「你們人類太囉嗦了…」 in about 1 of 10 replies) and keeps
   sarcasm for visitors Raven judges really too chatty or unclear. Not yet
