@@ -10,6 +10,10 @@ export interface LoopVideoSettings {
 }
 /** Longer than any venue speaker's buffer (~0.19 s) plus the ~0.45 s Bluetooth stream restart. */
 export const MUSIC_RESYNC_GAP_MS = 1200
+/** The re-sync pause only helps the direct speaker group; Airfoil keeps every speaker in sync. */
+export function musicResyncGapMs(settings: Pick<LoopVideoSettings, 'musicResync'>, airfoilActive: boolean): number {
+  return settings.musicResync && !airfoilActive ? MUSIC_RESYNC_GAP_MS : 0
+}
 export const DEFAULT_LOOP_VIDEO: LoopVideoSettings = { videoId: '', audioMode: 'embedded', audioId: '', fit: 'contain', volume: 0.7 }
 export interface OperatorLoopSnapshot {
   mode: 'avatar' | 'loop' | 'desktop' | 'music' | 'dance' | 'black'

@@ -117,6 +117,12 @@ describe('combined Stream Deck sequence', () => {
     expect((await operateMirrorControl('stop', io)).outcome).toBe('stopped')
     expect(io.app).toHaveBeenLastCalledWith('stop')
   })
+  it('reports a STOP-cancelled MusicLoop or Dance start as cancelled, not failed', async () => {
+    for (const [action, outcome] of [['music', 'music_cancelled'], ['dance', 'dance_cancelled']]) {
+      const io = { ...control(), mode: vi.fn(async () => ({ status: 'failed', reason: 'operator_command_cancelled' })) }
+      expect(await operateMirrorControl(action, io)).toMatchObject({ outcome, tv: 'tv_wake_skipped' })
+    }
+  })
   it('plays music without touching TV, orientation, mouse or the black cover', async () => {
     const io = { ...control('already_on', 'tv_unavailable'), portrait: vi.fn(async () => 'portrait_failed'),
       blackout: vi.fn(async () => 'blackout_clear_failed'), mouse: vi.fn(async () => 'mouse_start_failed') }

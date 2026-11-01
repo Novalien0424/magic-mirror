@@ -77,10 +77,6 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   check), but no Console control or runtime code uses it: the picture stays through the
   transfer line and then clears (PRD §4). Remove the field with a config migration, or
   wire it up if the owner wants a timed hold.
-- [ ] **YouTube live/upcoming filter shrinks the result set (audit 11-01).** The search
-  asks for 5 results and then drops live and upcoming broadcasts
-  (`src/main/avatar/youtube-search.ts`), so a query whose top 5 are mostly live returns
-  fewer or no playable videos. Consider requesting more and keeping the first 5 recorded.
 - [ ] **Provider rates after the night QA (11-01).** Fixed and verified: spell cue stall
   (a spell cutting an unspoken line closed the visit, `scene_dialogue_cancel_failed`;
   `--live` 0 of 2 → pass), YouTube search argument shape and live/upcoming results
@@ -109,7 +105,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
   exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra's hidden
   ≈108 ms rests on one iPad memo; re-check with a real mic; (4) watch A1 (±25 ms per stream
-  start; weak link) and confirm by eye that VIDEO LOOP/YouTube pictures match the sound;
+  start; weak link). The TV picture path is measured (67 ms, `tv-picture/measure.sh`) and
+  compensated (reported latency 2081 ms); lip-sync now rests on the audio total (2148 ms);
+  a glance at VIDEO LOOP/YouTube is still a useful sanity check;
   (5) a second Edifier joins by name: re-run `speaker-sync/measure.sh` and set its offset.
 - [ ] **Video loop smoothness.** Loop re-reads now reuse the local copy and each wrap logs
   `operator_loop_wrapped wraps= dropped=`. Open: the board's camera-preview HDMI

@@ -288,7 +288,8 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           writeFileSync(lastPress + '.tmp', JSON.stringify(previous), { mode: 0o600 })
           renameSync(lastPress + '.tmp', lastPress)
         }
-        if (outcome !== 'music_cancelled') feedback(outcome)
+        // A STOP that cancels a pending MusicLoop/Dance start is not a failure: no chime.
+        if (outcome !== 'music_cancelled' && outcome !== 'dance_cancelled') feedback(outcome)
       }
     } catch { record('press', 'helper_failed'); process.exitCode = 1 }
     finally {

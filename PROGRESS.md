@@ -2,8 +2,8 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy`. Canonical Mac, user LaunchAgent; the app is stopped (owner
-STOP 17:49 11-01). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md);
+Runtime: `field/macmini-deploy`. Canonical Mac, user LaunchAgent; the app is stopped
+(STOP 20:15 11-01 after evening QA; TV in standby behind the black cover; speakers 70%). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md);
 night goal G1–G15 ledger: [journeys](docs/testing/user-journeys-2026-10-31.md#night-goal-ledger-moved-from-todo-2026-11-01). Previous detail:
 [archived handoff 10-31](docs/archive/progress-before-night-qa-2026-11-01.md) ·
 [journeys and results](docs/testing/user-journeys-2026-10-31.md).
@@ -19,6 +19,13 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
   Jabra as mic, an iPad memo for the Jabra): Edifier +0.8 ms and A1 +26 ms from the Jabra;
   total 2148 ms, reported to Chromium so VIDEO LOOP/YouTube pictures wait for the sound.
   Calibration record: runbook "Airfoil music route".
+- **Evening 11-01 (owner away, automated):** TV picture delay measured without a mic
+  ([tv-picture/measure.sh](deploy/macos/speaker-sync/tv-picture/measure.sh): 68/67/62 ms) and
+  compensated: Magic Mirror Music now reports 2081 ms (audio 2148 − picture 67). MusicLoop's
+  re-sync pause is skipped on the Airfoil route; YouTube keeps 5 recorded results out of 10;
+  a STOP-cancelled Dance start is silent; button logs keep the speaker helper's own reason.
+  Runbooks (Stream Deck, buttons, Mac) audited against the code; owner-check wake test fixed.
+  [Audit record](docs/testing/prd-audit-2026-11-01.md).
 - **Neo / Stream Deck:** three-profile package (main "Magic Mirror copy 3", Playback,
   Music). Cause of the Neo silently showing old keys: an older copy held Stream Deck's
   default-profile mark (`AppIdentifier *`), applied at launch and on focus changes.
@@ -60,6 +67,12 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
   70%. START/MUSIC LOOP logged `jabra_output_reset_failed` because a second Jabra was attached.
 - 17:49 11-01: the owner unplugged the second Jabra and pressed STOP: `stopped`, speakers
   `jabra_output_70`, Airfoil left with no speaker connected and the route flag removed.
+- 19:51–20:15 11-01, new build, real button paths, speakers held at 1% (Dance under a 1%
+  guard): START `started` (Airfoil: Computer + Edifier; A1 off Bluetooth), MUSIC LOOP
+  `music_preparing` (song 1 → 2 with no re-sync pause), VIDEO LOOP `loop_playing`, DANCE
+  `dance_preparing`, STOP `stopped` (`tv_standby`, `blackout_covered`, `jabra_output_70`).
+  Speakers restored: Jabra 70% (`stop-state --reset-output`), Mac mini speaker 1%.
+  Unit suite 150 files / 2323 tests pass.
 
 QA on the final builds (outputs at 1%, speakers back to 70%): full unit suite 2952
 passed (2 skipped), typecheck clean. Phase 4: all 22 modes run; after fixes `--live`,
@@ -71,9 +84,9 @@ the night QA").
 
 ## Next work / unresolved boundaries
 
-1. Owner, physical: watch VIDEO LOOP/YouTube lip-sync and listen across rooms; check the
-   unplugged second Jabra is not still linked to the venue Jabra; press each Neo key once;
-   the camera is damaged.
+1. Owner, physical: check the unplugged second Jabra is not still linked to the venue
+   Jabra; press each Neo key once (incl. Playback/Music pages); glance at VIDEO LOOP/YouTube
+   lip-sync (now measured on the picture side); A1 keeps leaving Bluetooth; the camera is damaged.
 2. Owner decisions: mini vs full dialogue model (farewell preamble, YouTube search-then-ask,
    tool routes, identity/recall quality); Raven's ~30 s in-character refusals. (VIDEO LOOP's
    TV wake order stays: DECISIONS 11-01.)

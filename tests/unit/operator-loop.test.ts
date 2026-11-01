@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createOperatorLoop } from '../../src/main/operator-loop'
-import type { LoopVideoSettings, OperatorLoopSnapshot } from '../../src/shared/operator-loop'
+import { MUSIC_RESYNC_GAP_MS, musicResyncGapMs, type LoopVideoSettings, type OperatorLoopSnapshot } from '../../src/shared/operator-loop'
 
 const settings: LoopVideoSettings = {
   videoId: `folder-${'1'.repeat(40)}`, audioMode: 'embedded', audioId: '', fit: 'cover', volume: 0.35,
@@ -338,5 +338,14 @@ describe('operator loop appliance controller', () => {
     expect(f.controller.view().snapshot).toEqual(stopped)
     expect(f.publish.mock.calls.some(([snapshot]) => snapshot.status === 'playing' || snapshot.status === 'recovering')).toBe(false)
     expect(JSON.parse(readFileSync(f.path, 'utf8')).intent).toBe('avatar')
+  })
+})
+
+describe('MusicLoop re-sync pause', () => {
+  it('pauses between songs only on the direct speaker group, never on the Airfoil route', () => {
+    expect(musicResyncGapMs({ musicResync: true }, false)).toBe(MUSIC_RESYNC_GAP_MS)
+    expect(musicResyncGapMs({ musicResync: true }, true)).toBe(0)
+    expect(musicResyncGapMs({ musicResync: false }, false)).toBe(0)
+    expect(musicResyncGapMs({}, false)).toBe(0)
   })
 })

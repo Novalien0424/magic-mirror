@@ -54,6 +54,16 @@ describe('YouTube search and video boundary', () => {
     const [url] = fetchImpl.mock.calls[0] as unknown as [URL]
     expect(url.searchParams.get('fields')).toContain('liveBroadcastContent')
   })
+  it('requests extra results so live ones still leave five recorded choices', async () => {
+    const item = (videoId: string, liveBroadcastContent: string) => ({ id: { videoId }, snippet: { title: videoId, channelTitle: 'Fixture', liveBroadcastContent } })
+    const items = [...['livea', 'liveb', 'livec', 'lived'].map(id => item(id.padEnd(11, 'a'), 'live')),
+      ...['rec1', 'rec2', 'rec3', 'rec4', 'rec5', 'rec6'].map(id => item(id.padEnd(11, 'a'), 'none'))]
+    const fetchImpl = vi.fn(async () => Response.json({ items }))
+    const result = await createYoutubeSearch({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl })({ query: 'lofi rain' })
+    expect(result.videos.map(video => video.title)).toEqual(['rec1aaaaaaa', 'rec2aaaaaaa', 'rec3aaaaaaa', 'rec4aaaaaaa', 'rec5aaaaaaa'])
+    const [url] = fetchImpl.mock.calls[0] as unknown as [URL]
+    expect(url.searchParams.get('maxResults')).toBe('10')
+  })
   it('bounds invalid queries/replies and reports provider failures without exception text or retries', async () => {
     expect(parseYoutubeSearchRequest({ query: '' })).toBeNull()
     expect(parseYoutubeSearchRequest({ query: 'a'.repeat(201) })).toBeNull()

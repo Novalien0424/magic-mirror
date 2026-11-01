@@ -97,12 +97,12 @@ Dance Floor：選定曲目與動作設定 → Start（或 DANCE FLOOR 鍵）→ 
   同步播放到 Jabra、Airfoil 列出的藍牙喇叭（現為 A1）與名稱以 EDIFIER 開頭的 AirPlay 喇叭；新的 Edifier 依名稱自動加入，需重新測量對齊。
 - 對齊值以儀器實測，不靠耳朵；數值與重新校正步驟見 [runbook](deploy/macos/stream-deck.md#musicloop)「Airfoil music route」。
   藍牙喇叭每次開始串流仍有約 ±25 ms 浮動。
-- 聲音比來源晚約 2.15 秒；音樂裝置回報這段延遲，VIDEO LOOP／YouTube 的畫面與 Dance 動作因此一起延後。
+- 聲音比來源晚約 2.15 秒，電視顯示畫面本身晚約 67 ms；音樂裝置因此回報 2.08 秒，VIDEO LOOP／YouTube 的畫面與 Dance 動作延後到與聲音同時抵達。
 - Airfoil 每 10 秒重連掉線的喇叭；無法使用時改回直接輸出（Jabra、藍牙、HDMI；Edifier 無聲），並在 Console 顯示原因。
   Airfoil 路徑不含電視，電視此時不播音樂。
 - Raven 的語音、提示音與對話中本機影片的原聲只走 Jabra（回音消除只聽得到自己的輸出，嘴型也同步）。有外接喇叭時不用 Mac mini 內建喇叭。
 - 直接輸出時藍牙喇叭會漸漸漂移：Console → Loop Video 可勾選「Re-sync Bluetooth speakers between MusicLoop songs」，每首歌之間停 1.2 秒重新對齊。
-  這個停頓在 Airfoil 路徑也會發生，但此時不需要。
+  Airfoil 路徑下 App 自動略過這個停頓。
 
 ## 4. 主持人的設定旅程
 

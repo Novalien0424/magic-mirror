@@ -145,10 +145,17 @@ second Jabra). Untuned, relative to Airfoil's wired path: Edifier +68 ms, A1 −
 Jabra +108 ms. Airfoil `syncOffsets` (seconds; Computer/Bluetooth positive = play earlier,
 0–1 s; AirPlay positive = later, ±1 s; applied 30–60 s after connecting): Computer 0.148,
 A1 0, Edifier −0.108. Verified: Edifier +0.8 ms and A1 +26 ms from the Jabra's time; total
-delay ≈ 2148 ms, so `mmlt` = 103104 frames (Chromium reads 2148.4 ms and holds video frames
-back by it). A1 still wanders about ±25 ms per stream start (Bluetooth). Re-tune after
-adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with Airfoil quit,
-relaunch, re-measure; change `mmlt` if the total moves.
+audio delay ≈ 2148 ms. A1 still wanders about ±25 ms per stream start (Bluetooth).
+
+TV picture delay (2026-11-01 evening): the TV shows a Mac frame **67 ms** later (Mac draw →
+board composition; three runs 68/67/62 ms, p10–p90 50–85 ms in 60 Hz steps), measured with
+[speaker-sync/tv-picture/measure.sh](speaker-sync/tv-picture/measure.sh) while the TV is awake
+(silent, ~30 s). The device therefore reports audio delay − picture delay: `mmlt` = 99888
+frames (2081 ms; was 103104 = 2148 ms). Chromium holds video frames back and AVPlayer's
+Dance clock lags by this value, so pictures and Dance reach the panel with the sound. Read
+or set it with [music-device/latency.swift](music-device/latency.swift) (`latency [frames]`).
+Re-tune after adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with
+Airfoil quit, relaunch, re-measure; reset `mmlt` if the audio total or the TV path changes.
 
 **Bluetooth drift and re-sync (2026-10-31; the direct route used when Airfoil is down).**
 Bluetooth speakers drift apart over long
@@ -158,10 +165,9 @@ playback inside their own buffers, invisible to macOS (static reported latency, 
 but a normal song change restarts it after only ~40 ms, shorter than a speaker buffer.
 Opt in with **Console → Loop Video → Re-sync Bluetooth speakers between MusicLoop
 songs** (Save settings): MusicLoop then leaves 1.2 s of silence after each finished song
-so every speaker drains and restarts aligned. The pause applies on either route; Airfoil
-already keeps the speakers aligned, so it only helps on the direct route (it is ticked
-as of 11-01: untick it while Airfoil is active to remove the gap). Within one song drift
-can still build up; Dance, VIDEO LOOP and YouTube have no song boundary and are unchanged.
+so every speaker drains and restarts aligned. Airfoil already keeps the speakers aligned,
+so the app skips the pause while the Airfoil route is active (11-01); the option only acts
+on the direct route. Within one song drift can still build up; Dance, VIDEO LOOP and YouTube have no song boundary and are unchanged.
 
 A speaker that joins while the app runs (a Bluetooth reconnect) is set to the group's
 level, read from the Jabra (`music_output_speaker_matched`), instead of the stale level

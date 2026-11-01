@@ -140,7 +140,7 @@ export async function operateMirrorControl(action, io) {
   const reply = await attempt(() => io.mode(command), { status: 'failed', reason: 'operator_command_failed' })
   const valid = reply && ['success', 'failed'].includes(reply.status) && safeOperatorReason(reply.reason)
   const mode = valid ? reply.status : 'failed', modeReason = valid ? reply.reason : 'operator_response_invalid'
-  if (mode !== 'success') return { app, mode, modeReason, ...(audio === undefined ? {} : { audio }), tv: 'tv_wake_skipped', outcome: action === 'music' && modeReason === 'operator_command_cancelled' ? 'music_cancelled' : `${action}_mode_failed` }
+  if (mode !== 'success') return { app, mode, modeReason, ...(audio === undefined ? {} : { audio }), tv: 'tv_wake_skipped', outcome: ['music', 'dance'].includes(action) && modeReason === 'operator_command_cancelled' ? `${action}_cancelled` : `${action}_mode_failed` }
   // Audio-only mode uses available macOS outputs. TV power, orientation, mouse
   // and the HDMI black cover are independent and must not gate music.
   if (action === 'music') return { app, mode, modeReason, audio, tv: 'tv_unchanged', outcome: 'music_preparing' }

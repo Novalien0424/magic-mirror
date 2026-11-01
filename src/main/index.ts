@@ -10,7 +10,7 @@ import { execFile } from 'node:child_process'
 import { createMacMediaFilePreparer, musicPrepareDeadlineSeconds } from './avatar/prepare-media-file'
 import { startOperatorControl } from './operator-control'
 import { createMirrorMode } from './mirror-mode'
-import { MUSIC_RESYNC_GAP_MS, parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
+import { musicResyncGapMs, parseLoopVideoCommand, parseOperatorLoopReport } from '../shared/operator-loop'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { mkdir, readFile, readdir, rename, writeFile, open } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -215,6 +215,8 @@ let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
 // STOP exits through app.exit() (no will-quit): the Airfoil route and shared device release here.
 let stopMusicOutput: (() => void) | undefined
+/** True while Airfoil plays the music device on every speaker (macOS only). */
+let airfoilActive: (() => boolean) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
 let musicLoop: ReturnType<typeof createMusicLoop> | undefined
 /** MusicLoop subfolder chosen by a Stream Deck folder key; undefined plays the folder itself. */
@@ -1225,7 +1227,7 @@ void app.whenReady().then(async () => {
       }
     },
     failed: reason => operatorLoop?.musicFailed(reason),
-    resyncGapMs: () => operatorLoop?.view().settings.musicResync ? MUSIC_RESYNC_GAP_MS : 0,
+    resyncGapMs: () => operatorLoop ? musicResyncGapMs(operatorLoop.view().settings, airfoilActive?.() ?? false) : 0,
     subfolder: () => musicFolder,
   })
   // The Stream Deck plugin titles its three folder keys from this file (names only, no paths).
@@ -1847,6 +1849,7 @@ void app.whenReady().then(async () => {
     })
     sharedMusicOutput.start()
     void airfoilRoute.start()
+    airfoilActive = airfoilRoute.isActive
     stopMusicOutput = () => { airfoilRoute.stop(); sharedMusicOutput.stop() }
     app.once('will-quit', () => stopMusicOutput?.())
   }

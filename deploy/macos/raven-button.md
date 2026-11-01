@@ -49,7 +49,7 @@ at once and exit 1 on failure. Completion is reported through the
 metadata-only log and quiet system sounds played on the alert output (the Jabra) only,
 never on every speaker (`stop-state --chime`): Glass for started/loop playing/`studio_ready`; Pop for Console or Desktop shown,
 MusicLoop/Dance preparing and already on/off; Tink for clean stop, Sosumi for a
-forced stop, Basso for failure/busy; a cancelled MusicLoop start plays nothing.
+forced stop, Basso for failure/busy; a cancelled MusicLoop/Dance start plays nothing.
 Requests are published atomically and processed in order. A stop followed by a
 start stays ordered. Requests older than 120 seconds are dropped with `expired`,
 leaving room for a forced app stop plus the bounded TV operation ahead of them.
@@ -115,8 +115,8 @@ while remaining files prepare; files over 200 MB are abnormal and skipped. The
 operator supplies files through shared `MusicLoop`, never a command argument.
 A queued STOP cancels this command's
 acknowledgement wait within a poll interval, allowing ordinary global shutdown to
-cancel a cloud preparation. A cancelled MusicLoop start has no chime; a cancelled
-DANCE logs `dance_mode_failed` with Basso. Main releases the
+cancel a cloud preparation. A cancelled MusicLoop or Dance start logs `music_cancelled`
+or `dance_cancelled` and plays no chime. Main releases the
 native child on mode change/quit; stdin EOF and parent loss also release it.
 
 ### Main acknowledgement mailbox
@@ -191,9 +191,9 @@ STOP also sets every external CoreAudio speaker's **output** (the required Jabra
 Speak2 75, plus Bluetooth speakers such as A1) to 0.70 unmuted and reads it back. The
 AirPlay Edifier is not a CoreAudio output: Airfoil gives it the Jabra's level when the
 app next connects it. It preserves input gain, selected default devices and the Mac
-mini speaker. A missing or ambiguous Jabra and failed verification are reported; the
-button log records only `jabra_output_reset_failed` (run `stop-state --reset-output` for
-the helper's own reason, e.g. `jabra_output_ambiguous`).
+mini speaker. A missing or ambiguous Jabra and failed verification are reported in the
+button log's `audio` as `jabra_output_missing`, `jabra_output_ambiguous` or
+`output_volume_verify_failed` (`jabra_output_reset_failed` for anything else).
 
 **Music page keys** (`raven-button.sh music-next|music-previous|music-folder-1..3`) send
 Main `music_next`, `music_previous` or `music_folder_N` directly when the app is running

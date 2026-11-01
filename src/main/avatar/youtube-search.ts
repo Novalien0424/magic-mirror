@@ -13,6 +13,9 @@ export function createYoutubeCredentialSource(read: (path: string) => Promise<st
 
 export type YoutubeSearch = (request: YoutubeSearchRequest) => Promise<YoutubeSearchReply>
 
+/** Search results requested; live/upcoming ones are dropped and the first 5 recorded kept. */
+const YOUTUBE_SEARCH_FETCH = 10
+
 async function readBoundedJson(response: Response): Promise<unknown> {
   if (!response.body) return null
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
@@ -42,7 +45,7 @@ export function createYoutubeSearch(options: { credentialSource: { get(): Promis
       const key = await options.credentialSource.get()
       if (!key) return failure('youtube_search_not_configured')
       const url = new URL('https://www.googleapis.com/youtube/v3/search')
-      url.search = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: '5', q: parsed.query,
+      url.search = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: String(YOUTUBE_SEARCH_FETCH), q: parsed.query,
         videoEmbeddable: 'true', videoSyndicated: 'true', safeSearch: 'moderate',
         fields: 'items(id/videoId,snippet(title,channelTitle,liveBroadcastContent))' }).toString()
       const response = await (options.fetchImpl ?? fetch)(url, { headers: { 'X-Goog-Api-Key': key },
@@ -54,11 +57,12 @@ export function createYoutubeSearch(options: { credentialSource: { get(): Promis
         return failure(quota ? 'youtube_search_quota_exceeded'
           : response.status === 401 || response.status === 403 ? 'youtube_search_access_denied' : 'youtube_search_unavailable')
       }
-      if (!Array.isArray(body?.items) || body.items.length > 5) return failure('youtube_search_unavailable')
+      if (!Array.isArray(body?.items) || body.items.length > YOUTUBE_SEARCH_FETCH) return failure('youtube_search_unavailable')
       // A live or upcoming broadcast never completes a once request (QA 10-31: a result
       // reporting 5 s kept playing for minutes), so only recorded videos are candidates.
+      // Fetch extra so live results do not leave the visitor with too few choices.
       const recorded = body.items.filter((item: { snippet?: { liveBroadcastContent?: unknown } }) =>
-        item?.snippet?.liveBroadcastContent !== 'live' && item?.snippet?.liveBroadcastContent !== 'upcoming')
+        item?.snippet?.liveBroadcastContent !== 'live' && item?.snippet?.liveBroadcastContent !== 'upcoming').slice(0, 5)
       const videos = recorded.map((item: { id?: { videoId?: unknown }; snippet?: { title?: unknown; channelTitle?: unknown } }) => ({
         url: `https://www.youtube.com/watch?v=${item.id?.videoId}`, title: item.snippet?.title, channel: item.snippet?.channelTitle,
       }))
