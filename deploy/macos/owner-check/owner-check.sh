@@ -73,20 +73,6 @@ wake_media() {
   $repo/node_modules/.bin/esbuild $src/lib.ts --bundle --platform=node --format=cjs \
     --log-level=warning --outfile=$work/lib.cjs
 
-  $work/audiodev > $out/devices_before.json
-  local defaults
-  defaults=$(node -e 'const d=require(process.argv[1]); console.log(d.defaultInput+"|"+d.defaultOutput)' $out/devices_before.json)
-  if [[ $defaults != 'Jabra Speak2 75|Jabra Speak2 75' ]]; then
-    print "ABORT: the Jabra must be the default input and output (now: $defaults)."
-    return 1
-  fi
-  local cells=(C0 C1 C2 C3 C4 C5 C6)
-  if grep -q 'T749-fHD720' $out/devices_before.json; then
-    cells+=(TVPROBE C7)
-  else
-    print 'TV audio device not present (TV off?): the TV cells are skipped.'
-  fi
-
   print 'Generating test audio (silent)...'
   export MM_REPO=$repo MM_WAKE_WORK=$work MM_WAKE_OUT=$out
   node $src/gen.cjs
@@ -100,6 +86,26 @@ wake_media() {
   if electron_running; then
     print 'ABORT: Raven is still running.'
     return 1
+  fi
+
+  # While Raven runs the default output is its "Magic Mirror Speakers" device; audio-prefer
+  # returns it to the Jabra once Raven has quit, so read the devices only after the stop.
+  local defaults=''
+  for i in {1..10}; do
+    $work/audiodev > $out/devices_before.json
+    defaults=$(node -e 'const d=require(process.argv[1]); console.log(d.defaultInput+"|"+d.defaultOutput)' $out/devices_before.json)
+    [[ $defaults == 'Jabra Speak2 75|Jabra Speak2 75' ]] && break
+    sleep 1
+  done
+  if [[ $defaults != 'Jabra Speak2 75|Jabra Speak2 75' ]]; then
+    print "ABORT: the Jabra must be the default input and output (now: $defaults)."
+    return 1
+  fi
+  local cells=(C0 C1 C2 C3 C4 C5 C6)
+  if grep -q 'T749-fHD720' $out/devices_before.json; then
+    cells+=(TVPROBE C7)
+  else
+    print 'TV audio device not present (TV off?): the TV cells are skipped.'
   fi
 
   print "Running cells: ${cells[*]}"
@@ -133,17 +139,19 @@ boot_evidence() {
       $HOME/Library/Logs/MagicMirror/app.out.log 2>/dev/null |
       awk '/MAIN_READY/{b=""} {b=b $0 "\n"} END{printf "%s", b}'
     print '\n== BetterDisplay'; pgrep -x BetterDisplay >/dev/null && print running || print 'NOT running'
-    print '\n== Karabiner button prerequisites'
-    pgrep -x karabiner_grabber >/dev/null && print 'grabber running' || print 'grabber unavailable'
-    systemextensionsctl list 2>/dev/null | grep -i 'Karabiner' || print 'Karabiner driver extension unavailable'
+    print '\n== Music route (Airfoil)'
+    [[ -d /Library/Audio/Plug-Ins/HAL/MagicMirrorMusic.driver ]] && print 'Magic Mirror Music driver installed' || print 'Magic Mirror Music driver MISSING'
+    pgrep -x Airfoil >/dev/null && print 'Airfoil running' || print 'Airfoil not running (Raven launches it)'
+    print '\n== Board keep-awake'
+    launchctl print gui/$(id -u)/com.magicmirror.board-keep-awake 2>&1 | grep -E '^\s*(state|runs|last exit code) =' | head -3
     print '\n== Displays'
     system_profiler SPDisplaysDataType 2>/dev/null | grep -E '^ {8}\S.*:$|Resolution|Rotation|Main Display'
     print '\n== Audio defaults'
     system_profiler SPAudioDataType 2>/dev/null | grep -E '^ {8}\S.*:$|Default (Input|Output) Device'
     print '\n== Network'; scutil --nwi | grep -E 'Network interfaces|address|reach' | head -6
     print '\n== TV (ADB)'
-    adb -P 5038 connect 192.168.77.2:5555 2>&1 | head -1
-    adb -P 5038 -s 192.168.77.2:5555 shell 'echo boot_count=$(settings get global boot_count);
+    adb -H 127.0.0.1 -P 5038 connect 192.168.77.2:5555 2>&1 | head -1
+    adb -H 127.0.0.1 -P 5038 -s 192.168.77.2:5555 shell 'echo boot_count=$(settings get global boot_count);
       dumpsys power 2>/dev/null | grep -m1 mWakefulness=;
       dumpsys activity activities 2>/dev/null | grep -m1 mResumedActivity' 2>&1 | sed 's/^ *//'
   } 2>&1 | tee $f

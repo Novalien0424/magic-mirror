@@ -1,10 +1,12 @@
 # Magic Mirror operator controls
 
 The helper operates the existing user LaunchAgent
-`gui/$(id -u)/com.magicmirror.launchagent`. It serializes start/stop/loop/console/studio/desktop/music requests,
-debounces successful repeated actions for three seconds, and holds the shared
-Electron operation lease. An active QA owner rejects the request with
-`electron_owner_busy`; it never takes over that owner's app. Launchd remains the
+`gui/$(id -u)/com.magicmirror.launchagent`. It serializes the eight mode keys'
+requests (start/stop/loop/console/studio/desktop/music/dance), debounces successful
+repeated actions for three seconds, and holds the shared Electron operation lease.
+An active QA owner rejects a queued request with `electron_owner_busy`; it never
+takes over that owner's app. VOL± and the Music page keys act at once, outside the
+queue and the lease (below). Launchd remains the
 sole crash restart owner. The helper does not load credentials or model config,
 open a microphone, or change TV-presence shutdown policy. The same serialized
 operation also controls the wired TV through the existing trusted board ADB daemon.
@@ -25,21 +27,29 @@ opened by Stream Deck:
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-dance.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-volume-up.sh
 /Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-volume-down.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-music-previous.sh
+/Users/novalien0424/magic-mirror/deploy/macos/magic-mirror-music-next.sh
 ```
+
+The Music page's three folder keys are the Magic Mirror Controls plugin's action
+(`com.magicmirror.controls.folder`), not wrapper apps.
 
 Each fixes its action and calls the existing queue helper using canonical paths.
 The chain uses `/bin/zsh` and `/opt/homebrew/bin/node`, without depending on the
 launcher's working directory or interactive shell PATH. It does not run npm,
 build the app, edit a plist, or launch Electron directly. The installed field
 plist must already exist at
-`~/Library/LaunchAgents/com.magicmirror.launchagent.plist`. Creating application
-wrappers and configuring Stream Deck are separate integration steps.
+`~/Library/LaunchAgents/com.magicmirror.launchagent.plist`. `install-stream-deck-controls.sh`
+creates the twelve wrapper apps and `install-stream-deck-plugin.sh` the plugin; profiles:
+[Stream Deck](stream-deck.md#reinstall-the-local-controls).
 
-The scripts return after **queueing** the request; exit zero is queue acceptance,
-not proof that the app started/stopped. Completion is reported through the
+The eight mode-key scripts return after **queueing** the request; exit zero is queue
+acceptance, not proof that the app started/stopped. VOL± and the Music page keys run
+at once and exit 1 on failure. Completion is reported through the
 metadata-only log and quiet system sounds played on the alert output (the Jabra) only,
-never on every speaker (`stop-state --chime`): Glass for started/loop playing/`studio_ready`, Pop for Console shown/already on/off,
-Tink for clean stop, Sosumi for a forced stop, and Basso for failure/busy.
+never on every speaker (`stop-state --chime`): Glass for started/loop playing/`studio_ready`; Pop for Console or Desktop shown,
+MusicLoop/Dance preparing and already on/off; Tink for clean stop, Sosumi for a
+forced stop, Basso for failure/busy; a cancelled MusicLoop start plays nothing.
 Requests are published atomically and processed in order. A stop followed by a
 start stays ordered. Requests older than 120 seconds are dropped with `expired`,
 leaving room for a forced app stop plus the bounded TV operation ahead of them.
@@ -58,7 +68,7 @@ The combined control then waits up to ten seconds for this Main's existing
 `MAIN_READY`, Mirror `WINDOW_LOADED` and `RENDERER_READY` metadata, invalidated by
 logged mirror failure/recreation or app exit, and rechecks the Main PID. Only
 then does it send Main `normal` for START, `play_loop` for LOOP, `show_console`
-for CONSOLE, `studio` for STUDIO, `music_loop` for MUSIC LOOP, or `desktop` for DESKTOP. Only a successful
+for CONSOLE, `studio` for STUDIO, `music_loop` for MUSIC LOOP, `dance_floor` for DANCE, or `desktop` for DESKTOP. Only a successful
 acknowledgement permits TV wake and HDMI selection for display modes. MUSIC LOOP
 leaves TV power, orientation, mouse and the HDMI black cover unchanged.
 Missing/ambiguous readiness
@@ -74,7 +84,8 @@ CONSOLE reuses the current renderer and waits at most ten seconds for its
 load/bridge readiness, then places it in the mirror display's work area above
 the kiosk window. It preserves unsaved edits and current playback. Repeats
 show/focus rather than hide it. From Desktop, CONSOLE first resumes the saved
-avatar mode. START/STUDIO/LOOP/DESKTOP hide the Console; STOP closes the
+avatar mode. START/STUDIO/LOOP/DESKTOP/MUSIC LOOP/DANCE and the folder keys hide the
+Console (edits are kept); STOP closes the
 whole application, so all current and future owned program modes end together.
 
 DESKTOP closes the input gate before releasing voice/wake/camera/scenes, waits for
@@ -85,13 +96,18 @@ mode acknowledgement; Remote Console can open on the main monitor while the TV
 remains on Desktop. DESKTOP wakes HDMI and connects the TV mouse like CONSOLE;
 its success result is `desktop_shown`.
 
-MUSIC LOOP selects Main's native all-output music mode and reports `music_preparing`
+MUSIC LOOP selects Main's native music mode (on the Airfoil route it plays into "Magic
+Mirror Music" and Airfoil reaches every speaker; the direct speaker group is the
+fallback, see [Stream Deck](stream-deck.md#musicloop)) and reports `music_preparing`
 after Main accepts the mode. Console reports actual playback after native progress.
 Before sending that mode command, each accepted press calls the existing native
 output reset/read-back once to put every external speaker at 70%. Playback VOL± and
 physical volume changes then persist until another MUSIC LOOP, START or STOP press. No timer or track callback resets
 volume. Reset failure is retained in the command's `audio` metadata and does not
-block other outputs.
+block other outputs. START also resets every speaker to 70%, about 6 s after the TV
+wakes; a failure is kept in `audio` and START still reports `started`. STUDIO does not
+reset volume; with the avatar's image skill off Main refuses it (`studio_skill_disabled`
+in the app log, `studio_mode_failed` and Basso here).
 Downloads do not block command acknowledgement or controls. Music does not call
 the TV/ADB path, so a sleeping or unreachable TV cannot produce a music failure
 beep. Ready tracks repeat
@@ -99,7 +115,8 @@ while remaining files prepare; files over 200 MB are abnormal and skipped. The
 operator supplies files through shared `MusicLoop`, never a command argument.
 A queued STOP cancels this command's
 acknowledgement wait within a poll interval, allowing ordinary global shutdown to
-cancel a cloud preparation. Cancellation has no failure chime. Main releases the
+cancel a cloud preparation. A cancelled MusicLoop start has no chime; a cancelled
+DANCE logs `dance_mode_failed` with Basso. Main releases the
 native child on mode change/quit; stdin EOF and parent loss also release it.
 
 ### Main acknowledgement mailbox
@@ -110,7 +127,7 @@ matching `app.getPath('userData')/operator-control` in Main. It publishes an ato
 request under `requests/<UUID>.json`:
 
 ```json
-{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|show_console_main|studio|desktop|music_loop","issuedAt":0,"expiresAt":45000}
+{"version":1,"id":"<UUID>","action":"normal|play_loop|show_console|show_console_main|studio|desktop|music_loop|dance_floor|music_folder_1|music_folder_2|music_folder_3|music_next|music_previous","issuedAt":0,"expiresAt":45000}
 ```
 
 `issuedAt` is `Date.now()` at creation; `expiresAt` is exactly 45,000 ms later.
@@ -165,38 +182,43 @@ Those failure results require inspection before another start.
 STOP first covers the T749 HDMI display (or, when its bridge loses the EDID name,
 the single unnamed non-main display) with a native, opaque black window. It
 survives Electron shutdown, covers desktop/menu/Dock and hides the cursor only on
-that display. START/LOOP/STUDIO/CONSOLE/DESKTOP clear it after renderer readiness and the
+that display. START/LOOP/STUDIO/CONSOLE/DESKTOP/DANCE clear it after renderer readiness and the
 mode acknowledgement. The operator monitor remains usable. A missing display or
 failed cover is reported; TV, app, mouse and audio cleanup still run independently.
 The cover does not restart Electron and has no LaunchAgent.
 
-STOP also sets every external speaker's **output** (the required Jabra Speak2 75,
-plus Bluetooth speakers such as the Edifier and A1) to 0.70 unmuted and reads it
-back. It preserves input gain, selected default devices and the Mac mini speaker.
-A missing or ambiguous Jabra and failed verification are reported.
+STOP also sets every external CoreAudio speaker's **output** (the required Jabra
+Speak2 75, plus Bluetooth speakers such as A1) to 0.70 unmuted and reads it back. The
+AirPlay Edifier is not a CoreAudio output: Airfoil gives it the Jabra's level when the
+app next connects it. It preserves input gain, selected default devices and the Mac
+mini speaker. A missing or ambiguous Jabra and failed verification are reported; the
+button log records only `jabra_output_reset_failed` (run `stop-state --reset-output` for
+the helper's own reason, e.g. `jabra_output_ambiguous`).
 
 **Music page keys** (`raven-button.sh music-next|music-previous|music-folder-1..3`) send
 Main `music_next`, `music_previous` or `music_folder_N` directly when the app is running
 (no queue, no TV, no app start); they log `music_next`/… or `music_key_failed`/
 `music_not_running` with Main's reason and play Pop or Basso. Main checks a folder before
-switching, so a refused folder keeps the current music.
+switching, so a refused folder keeps the current music. A folder key works in any mode
+while the app runs: it starts MusicLoop on that folder (no 70% reset) and hides the
+Console. PREV/NEXT outside MusicLoop give `music_key_failed` with Basso.
 
-**Playback VOL±** (`raven-button.sh volume-up|volume-down`, Stream Deck Playback page)
+**VOL±** (`raven-button.sh volume-up|volume-down`, on the Playback and Music pages)
 runs the same helper's `--volume-up/--volume-down` at once, outside the queue and the
-Electron lease: every external speaker ±10% together on a 5% grid, VOL+ unmutes.
+Electron lease: every external CoreAudio speaker ±10% together on a 5% grid, VOL+
+unmutes; AirPlay speakers follow the Jabra through Airfoil while the app runs.
 It logs `volume_up`/`volume_down` or `volume_step_failed` and plays Pop or Basso,
 detached so the wrapper app exits in about 0.2 s and quick repeats are not dropped. Install the signed user-owned helper with
 `zsh deploy/macos/install-stop-state.sh` when deploying these controls.
 
 STOP first confirms Android Asleep/display OFF, sending explicit key 223 only
-when needed, then always performs the app stop. START/LOOP/CONSOLE/STUDIO/DESKTOP send explicit wake key
+when needed, then always performs the app stop and releases the TV mouse. START/LOOP/CONSOLE/STUDIO/DESKTOP/DANCE send explicit wake key
 224 when needed, open `com.android.rockchip.camera2/.RockchipCamera2`, and
-verify Awake/display ON. Confirmed standby needs no repeated sleep injection.
+verify Awake/display ON; CONSOLE and DESKTOP also connect the TV mouse (up to 10 s).
+Confirmed standby needs no repeated sleep injection.
 Before any sleep/wake key the helper ensures a root kernel wakelock
-(`magicmirror_standby`) on the board, so standby only turns the screen off: without
-it the board's kernel retried deep suspend every ~10 s, each attempt cycling Ethernet
-and the RK628 HDMI bridge until both wedged (RCA 2026-10-31; no ADB 10-26 to 10-31,
-then an unnamed HDMI panel, cured only by power cycles). The wakelock is lost on a
+(`magicmirror_standby`) on the board, so standby only turns the screen off; without it
+the board cycled Ethernet and the HDMI bridge until both wedged ([RCA](../../DECISIONS.md#2026-10-31--console-dance-stop-musicloop-volume-and-studio-ending-owner-rulings)). The wakelock is lost on a
 board reboot; `install-board-keep-awake.sh` adds a two-minute per-user tick that
 re-applies it through the root ADB server (metadata log `board-keep-awake.log`).
 This is **standby, not Android shutdown or mains power-off**. The board and wired
@@ -208,33 +230,15 @@ target `192.168.77.2:5555`; mDNS stays disabled. The installed root daemon must
 already be available. Reuse its working transport, connecting only if a shell
 probe fails, allowing 350 ms for transport settling before verification/retry.
 Device work is bounded to 12 seconds with at most one retry and
-individual ADB commands capped at three seconds. No new background polling or
-service is added. The TV budget is additional to the app's start/stop budget.
+individual ADB commands capped at three seconds. The button path adds no polling;
+the keep-awake tick is the only board poller. The TV budget is additional to the app's start/stop budget.
 Completion logs contain separate app/TV outcomes; command failures log only the
 step and a fixed failure/timeout reason, never raw device output.
 
 TV failure leaves app cleanup enabled and produces Basso. Successful combined
-operations retain the usual sounds. START/LOOP/CONSOLE/STUDIO/DESKTOP do not repair full power loss or a
+operations retain the usual sounds. START/LOOP/CONSOLE/STUDIO/DESKTOP/DANCE do not repair full power loss or a
 dead/untrusted ADB connection. A complete Mac login/boot screen blackout is outside
 these session controls.
-
-## Existing Flic/Karabiner route
-
-Configure Flic Universal keyboard events to emit **F13 for push and F14 for hold**.
-Verify those two actual events in Karabiner-EventViewer before installing a rule.
-Do not assume a Bluetooth button holds an HID key down for the physical duration.
-The precise hold timing and reconnect behavior require the physical device.
-
-Generate the rule using the button's observed Bluetooth `device_address`:
-
-```sh
-node scripts/raven-button-karabiner.mjs ACTUAL_DEVICE_ADDRESS > /tmp/raven-button.json
-```
-
-The generator refuses an absent/malformed address. Add that generated rule to
-Karabiner's complex modifications after its driver approvals are complete. It
-consumes only this device's F13/F14, leaving other keyboards untouched. No
-Karabiner installation, system approval, pairing or purchase has been performed.
 
 Metadata-only feedback is in `~/Library/Logs/MagicMirror/button.log` (256 KiB plus
 one rotated file). `electron_owner_busy` means another operation owns Raven.
@@ -243,10 +247,12 @@ after a crash/reboot. Do not unlink their lock files. Diagnostic owner JSON may
 remain after a crash, but does not block acquisition. Physical reboot/button
 acceptance still requires the actual device.
 
-Validate all ten physical acceptance cases in the third audit, including duplicate
-holds, hold then push, mid-media stop, reconnect, key suppression and power-cut
-login. The unit tests cover launchd ordering and device scoping, not Bluetooth.
+## Flic/Karabiner route (design only, not deployed)
 
-Primary references: [Flic Universal](https://flic.io/applications/flic-universal),
-[Karabiner device conditions](https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/conditions/device/),
-[shell commands](https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/to/shell-command/).
+The Stream Deck Neo is the deployed control; Karabiner is not installed. An earlier
+design maps a Flic Universal button (F13 push, F14 hold) through a Karabiner rule from
+`node scripts/raven-button-karabiner.mjs <device_address>`, which consumes only that
+device's keys. It needs the physical button, Karabiner driver approval and the
+third-audit physical cases before use. References:
+[Flic Universal](https://flic.io/applications/flic-universal),
+[Karabiner device conditions](https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/conditions/device/).

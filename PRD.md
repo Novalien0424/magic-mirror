@@ -31,7 +31,7 @@
 | STOP | 停止 App 與所有播放，HDMI 蓋上原生黑幕，所有外接喇叭設回 70%，電視待機並釋放電視滑鼠；電視傳輸失敗仍完成本機停止與黑幕。待機只關螢幕，電視主機板保持連線，讓 START 能喚醒它。 |
 
 - **音樂頁**（MUSIC LOOP 後）：前三個子資料夾鍵（顯示資料夾名稱，依名稱排序，第四個以後忽略）播放該資料夾；
-  PREV／NEXT 立即換上一首／下一首；VOL＋、VOL－、STOP。雲端尚未下載或沒有音樂的資料夾會被拒絕，目前的音樂繼續播放。
+  PREV／NEXT 立即換上一首／下一首；VOL＋、VOL－、STOP。資料夾鍵在 App 執行中的任何模式都會直接開始該資料夾的 MusicLoop（不重設 70%）。雲端尚未下載或沒有音樂的資料夾會被拒絕，目前的音樂繼續播放。
 - **播放頁**（VIDEO LOOP 後）：只有 VOL＋、VOL－、STOP。按鍵當下就換頁，所以模式失敗也停在此頁，以 STOP 回主選單；
   從 Console 回到 Avatar 時，播放頁保留到按 STOP。
 - **音量**：VOL＋／VOL－ 立即把所有外接喇叭一起調高／調低 10%；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
@@ -83,8 +83,8 @@ Studio 的名字只是本次作品的稱呼，不會因此取得私人記憶。�
 
 MusicLoop：把音樂（MP3、M4A、AAC、WAV、AIFF、FLAC、CAF，單檔 ≤ **200,000,000 bytes**，更大的視為異常並跳過）放進
 `Common/MusicLoop` → 按 MUSIC LOOP → 依自然檔名順序（「2」在「10」前）循環此資料夾本身的檔案，子資料夾由音樂頁按鍵播放 →
-本機曲目先播，雲端檔案在背景下載後於曲目交界加入；某檔失敗或仍在下載不會停掉可播放的音樂 → STOP。
-重複按 MUSIC LOOP 不重啟播放；STOP 後再按會重新載入資料夾。MusicLoop 期間電視不在不會讓 App 關閉。
+仍在雲端的曲目先跳過，背景下載後於曲目交界加入；某檔失敗或仍在下載不會停掉可播放的音樂 → STOP。
+重複按 MUSIC LOOP 不重啟播放（正在播子資料夾時則回到 MusicLoop 本身的檔案）；STOP 後再按會重新載入資料夾。MusicLoop 期間電視不在不會讓 App 關閉。
 
 Dance Floor：選定曲目與動作設定 → Start（或 DANCE FLOOR 鍵）→ 準備媒體、分析節拍、Raven 逐字說「Ready to Party?」→
 循環音樂並擺動 → 調整強度／音量／時間補償 → STOP 或切換模式。預設 `Common/DanceFloor.m4a`，也可從 `Common/DanceFloor`
@@ -102,6 +102,7 @@ Dance Floor：選定曲目與動作設定 → Start（或 DANCE FLOOR 鍵）→ 
   Airfoil 路徑不含電視，電視此時不播音樂。
 - Raven 的語音、提示音與對話中本機影片的原聲只走 Jabra（回音消除只聽得到自己的輸出，嘴型也同步）。有外接喇叭時不用 Mac mini 內建喇叭。
 - 直接輸出時藍牙喇叭會漸漸漂移：Console → Loop Video 可勾選「Re-sync Bluetooth speakers between MusicLoop songs」，每首歌之間停 1.2 秒重新對齊。
+  這個停頓在 Airfoil 路徑也會發生，但此時不需要。
 
 ## 4. 主持人的設定旅程
 

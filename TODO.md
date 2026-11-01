@@ -72,6 +72,15 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Maintenance (DECISIONS says it must not gate conversation); deleting an avatar
   leaves its private memories unreachable; the Studio picture appears just before
   its reveal line; a MusicLoop intent can briefly resume on START after a crash.
+- [ ] **Unused Studio picture-hold setting (audit 11-01).** `holdSeconds` (default 45,
+  10–300) is still stored and validated (`src/shared/portrait-studio.ts`, Console issue
+  check), but no Console control or runtime code uses it: the picture stays through the
+  transfer line and then clears (PRD §4). Remove the field with a config migration, or
+  wire it up if the owner wants a timed hold.
+- [ ] **YouTube live/upcoming filter shrinks the result set (audit 11-01).** The search
+  asks for 5 results and then drops live and upcoming broadcasts
+  (`src/main/avatar/youtube-search.ts`), so a query whose top 5 are mostly live returns
+  fewer or no playable videos. Consider requesting more and keeping the first 5 recorded.
 - [ ] **Provider rates after the night QA (11-01).** Fixed and verified: spell cue stall
   (a spell cutting an unspoken line closed the visit, `scene_dialogue_cancel_failed`;
   `--live` 0 of 2 → pass), YouTube search argument shape and live/upcoming results

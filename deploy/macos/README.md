@@ -3,17 +3,24 @@
 This folder holds the operator tooling that turns the venue Mac mini plus the
 HAOCROWN smart mirror into the Magic Mirror glass. None of it is part of the
 Electron app. **Current deployment status** (what is installed, verified, and
-pending) is under "Resume here" in `PROGRESS.md`. Audio device policy is in `DECISIONS.md`
-(2026-10-03).
+pending) is under "Current delivery" in `PROGRESS.md`. Audio policy: `DECISIONS.md`
+2026-10-03, 2026-10-31 (every speaker, 70%) and 2026-11-01 (Airfoil).
 
 ## Hardware chain
 
 ```
 Mac mini ──HDMI 1920x1080@60 (macOS-rotated 90°)──▶ RK628D HDMI-in ─▶ ZC-3568D Android 11 board ─▶ 1080x1920 portrait panel behind two-way glass
-Mac mini ◀─USB─ Jabra Speak2 75   (default mic + speaker)
+Mac mini ◀─USB─ Jabra Speak2 75   (default mic, alerts and Raven's voice; music via Airfoil)
+Mac mini ─Bluetooth─▶ A1 speaker · ─Wi-Fi/AirPlay─▶ Edifier M330 II   (music via Airfoil)
+Mac mini ◀─USB─ Stream Deck Neo  (operator keys)
 Mac mini ◀─USB─ Arducam 1080P Low Light (UVC camera inside the frame)
 Mac mini en0 192.168.77.1 ──direct Ethernet/adb──▶ mirror eth0 192.168.77.2:5555
+TV USB ◀─ Xiaomi mouse receiver, shared to the Mac over that Ethernet (VirtualHere)
 ```
+
+While the app runs, macOS's default output is its "Magic Mirror Speakers" device;
+music reaches the speakers through Airfoil and the "Magic Mirror Music" virtual
+device ([Airfoil music route](stream-deck.md#musicloop)).
 
 The mirror is an Android device, not a monitor. It shows the Mac only while the
 Rockchip HDMI-in app `com.android.rockchip.camera2/.RockchipCamera2` is in front.
@@ -37,19 +44,23 @@ Rockchip's stock RK628D default and does not describe the panel.
 Homebrew adb 37.x aborts on macOS 27 in its mDNS code. Always export
 `ADB_MDNS=0 ADB_MDNS_AUTO_CONNECT=0` before running adb.
 For operator access to the installed daemon's connection, use
-`adb -P 5038 -s 192.168.77.2:5555 ...` after
-`adb -P 5038 connect 192.168.77.2:5555`.
+`adb -H 127.0.0.1 -P 5038 -s 192.168.77.2:5555 ...` after
+`adb -H 127.0.0.1 -P 5038 connect 192.168.77.2:5555`. Keep `-H`: without it a stopped
+root daemon is replaced by a user ADB server on 5038, which then blocks the daemon.
 
-The old `com.magicmirror.board-hdmi` watchdog is **disabled and unloaded**.
+The old `com.magicmirror.board-hdmi` watchdog is **disabled and unloaded** (its plist
+remains in `/Library/LaunchDaemons`).
 Do not reinstall it unchanged: its Wi-Fi address and rotation are obsolete.
 AnyLauncher owns TV boot; the new board-ADB daemon only owns the localhost ADB
-server. It neither polls HDMI nor supervises Electron.
+server. It neither polls HDMI nor supervises Electron. The per-user keep-awake tick
+(`install-board-keep-awake.sh`) contacts the board every two minutes to hold its
+standby wakelock ([button runbook](raven-button.md#tv-standbywake)).
 
 ## One-time Mac setup
 
 ```sh
 brew install --cask android-platform-tools
-swiftc -O deploy/macos/displayctl.swift -o /usr/local/bin/displayctl   # or any dir on PATH
+mkdir -p ~/.local/bin && swiftc -O deploy/macos/displayctl.swift -o ~/.local/bin/displayctl   # any dir on PATH
 
 displayctl list
 displayctl mode   T749 1920 1080 60      # EDID-preferred; macOS defaults to 2160p30, which the board renders badly
@@ -59,7 +70,23 @@ displayctl main   Virtual              # Virtual 16:9 stays MAIN; T749 is extend
 
 sudo zsh deploy/macos/install-board-adb-daemon.sh    # localhost ADB only (root LaunchDaemon)
 zsh deploy/macos/install-audio-prefer.sh             # Jabra = default mic + speaker; app's all-speakers device = default output while it runs
+zsh deploy/macos/install-board-keep-awake.sh         # board standby wakelock tick (every 2 min)
 ```
+
+Music sync (owner-approved, 2026-11-01): install and license **Airfoil 5.13** in
+`/Applications`, then build and install the virtual device with the app stopped:
+
+```sh
+zsh deploy/macos/music-device/build.sh
+sudo zsh deploy/macos/music-device/install.sh         # /Library/Audio/Plug-Ins/HAL/MagicMirrorMusic.driver
+```
+
+Name AirPlay speakers `EDIFIER…` so the app connects them. Calibration (Airfoil
+`syncOffsets`, the device's reported latency) and re-tuning are in the
+[Airfoil music route](stream-deck.md#musicloop) and `ops/music-device/calibration.json`.
+macOS may ask once to let Electron control Airfoil (Automation); allow it.
+Stream Deck keys, TV mouse and Remote Console have their own installers in
+[Stream Deck](stream-deck.md#reinstall-the-local-controls).
 
 Once rotated, macOS reports the display's modes rotated too: `displayctl mode T749 1080 1920 60`.
 
@@ -93,24 +120,25 @@ After a platform-tools update, rerun the installer to refresh the copied binary.
 
 ### Manual start/stop and TV standby
 
-The connected Stream Deck Neo has dedicated START/STOP controls:
+The Stream Deck Neo has eight mode keys plus Playback and Music pages:
 [setup, scripts and verification](stream-deck.md). STOP puts the TV in standby
 before closing Magic Mirror. START launches the saved active avatar's application
 and wakes the TV onto HDMI. The same controls can be invoked from the canonical
 checkout:
-
-**Standby is not full Android shutdown.** Keep the installed ADB service running:
 
 ```sh
 ./deploy/macos/magic-mirror-start.sh
 ./deploy/macos/magic-mirror-stop.sh
 ```
 
+**Standby is not full Android shutdown.** Keep the installed ADB service running.
+
 Startup enters reflective Dormant: a black HDMI picture with ambience is
 expected until wake. The held-stop check ended BGM and all app/worker processes.
 The field LaunchAgent sets `MIRROR_TV_HOST=192.168.77.2` alongside
 `MIRROR_DISPLAY=T749`. Main gracefully quits when both the target display and
-wired TV are absent continuously for at least 15 seconds. Either signal
+wired TV are absent continuously for at least 15 seconds (after a 180 s startup grace
+while the TV has not yet been seen; never during MusicLoop). Either signal
 returning, or an uncertain probe, resets the countdown. The network check accepts
 an open/refused TCP port or a ping response; an offline ADB session alone is not
 TV absence. `TV_PRESENCE` markers and Console metadata record state changes.
@@ -130,7 +158,9 @@ simple fullscreen. Crash restart returned the HDMI Mirror ready. Login and clean
 in `PROGRESS.md`. This checkout deployment runs the `npm run build` output through
 local Electron; it is not proof of a signed or packaged production deployment.
 The packaged template remains at
-[`resources/macos/com.magicmirror.launchagent.plist`](../../resources/macos/com.magicmirror.launchagent.plist).
+[`resources/macos/com.magicmirror.launchagent.plist`](../../resources/macos/com.magicmirror.launchagent.plist);
+it is not venue-ready (it logs to `launchagent.out.log`, which the buttons do not read,
+and lacks `MIRROR_DISPLAY`, `MIRROR_TV_HOST` and `ExitTimeOut`).
 
 The field definition uses these exact paths and settings:
 
@@ -155,7 +185,8 @@ npm run build
 
 Fresh build and typecheck evidence is linked from `PROGRESS.md`.
 The executable must exist and be executable, and the build must produce the
-Main entry plus the complete preload and renderer outputs at the paths above.
+Main entry plus the complete preload, renderer and `out/native/` helpers (music-loop,
+camera-tracker, dance-analysis, media-file-prepare) at the paths above.
 The log directory must already exist and be writable by `novalien0424` before
 bootstrap; launchd does not create its parent directories. This configuration
 does not load `.env` or contain credentials. Electron Main alone loads
@@ -176,7 +207,9 @@ supervise Electron, and no additional app login item or restart owner is added.
 `RunAtLoad=true` starts the app when the agent is loaded at login.
 `KeepAlive={SuccessfulExit=false}` restarts a nonzero failure, with
 `ThrottleInterval=10` limiting restart frequency. A clean quit (exit 0) stays
-stopped until the next login or an explicit operator kickstart.
+stopped until the next login or an operator start. Neo STOP also unloads the job, so
+start again with START or `magic-mirror-start.sh` (it bootstraps the job and clears
+STOP's black cover); a bare `launchctl kickstart` fails then and would leave the cover.
 `ProcessType=Interactive` is configured. The app must never call `app.relaunch()`;
 its existing recovery contract allows one renderer recreation before exit 1.
 
@@ -200,6 +233,10 @@ Actual UI, camera streaming, speech, hotplug and reboot evidence belongs in
 | Audio preference | `~/Library/Logs/MagicMirror/audio-prefer.log` (`PREFERRED_AUDIO_*`, `DEFAULT_SET*`) |
 | App stdout | `/Users/novalien0424/Library/Logs/MagicMirror/app.out.log` |
 | App stderr | `/Users/novalien0424/Library/Logs/MagicMirror/app.err.log` |
+| Stream Deck buttons | `~/Library/Logs/MagicMirror/button.log` |
+| Board keep-awake | `~/Library/Logs/MagicMirror/board-keep-awake.log` (`board_unreachable` when the board is down) |
+| Music route | `MUSIC_OUTPUT music_output_airfoil_*` markers in `app.out.log` |
+| Owner field checks | `~/Library/Logs/MagicMirror/owner-check/` |
 
 App stdout/stderr must remain metadata-only: no transcripts, conversation
 audio, extracted memory values, injected private context, images, embeddings,
@@ -213,8 +250,9 @@ or credentials. The log paths do not authorize recording private content.
 | Wrong orientation | Verify Mac rotation 90° and Android `user_rotation=2`; operator confirmed this pair upright. |
 | Mac reports Generic Display, not T749 | Check BetterDisplay's unchanged-EDID fallback and extended layout; see the linked TV evidence. |
 | Jabra missing from Sound settings | It shows only its HID interface when off or charging. Press its power button. |
-| Camera frame mostly ceiling / face from below | Mount nearer eye level, tilted slightly down; frontal faces matter for recognition (Phase 5) |
-| Camera opens but gives no frames (`Unable to send device request` in `/usr/bin/log`) | UVC firmware hung. Unplug and replug the camera. Note that zsh's `log` builtin shadows `/usr/bin/log`. |
+| Camera frame mostly ceiling / face from below | Mount nearer eye level, tilted slightly down; frontal faces matter for gaze tracking |
+| Camera opens but gives no frames (`Unable to send device request` in `/usr/bin/log`) | UVC firmware hung. The app resets and re-enumerates the camera itself; replug only after it reports a failed recovery. Note that zsh's `log` builtin shadows `/usr/bin/log`. |
+| TV board drops off Ethernet in standby | Check `board-keep-awake.log`; the wakelock is lost on a board reboot until the next tick. Before the 10-31 fix this needed a power cycle. |
 | ADB unavailable/offline | Check `system/com.magicmirror.board-adb`, localhost port 5038 and Ethernet first. mDNS is disabled. During boot, retry once after settling. A stale host transport previously required an ADB-server restart; it did not prove the TV was off. |
 
 ## Removal
@@ -223,4 +261,18 @@ or credentials. The log paths do not authorize recording private content.
 sudo launchctl bootout system/com.magicmirror.board-adb
 sudo rm /Library/LaunchDaemons/com.magicmirror.board-adb.plist
 launchctl bootout gui/$(id -u)/com.magicmirror.audio-prefer && rm ~/Library/LaunchAgents/com.magicmirror.audio-prefer.plist
+launchctl bootout gui/$(id -u)/com.magicmirror.board-keep-awake && rm ~/Library/LaunchAgents/com.magicmirror.board-keep-awake.plist
+sudo rm /Library/LaunchDaemons/com.magicmirror.board-hdmi.plist     # disabled leftover
+sudo rm -rf /Library/Audio/Plug-Ins/HAL/MagicMirrorMusic.driver && sudo killall coreaudiod
 ```
+
+Stream Deck wrappers live in `~/Applications/Magic Mirror Controls/`, the plugin under
+Stream Deck's Plugins folder, and helpers in `~/Library/Application Support/MagicMirror/`;
+see [Stream Deck](stream-deck.md) and the [TV mouse](stream-deck.md#tv-connected-mouse-and-remote-desktop) section for their removal.
+
+## Owner field checks
+
+[`owner-check/owner-check.sh`](owner-check/owner-check.sh) runs owner-present checks and
+saves metadata to `~/Library/Logs/MagicMirror/owner-check/`: `screenlock` (turn the screen
+lock off), `wake-media` (about 12 minutes of audible wake-during-media tests; it stops
+Raven and restarts it afterwards) and `boot` (post-boot evidence).
