@@ -778,3 +778,56 @@ dropped frames. J-38 (Music page): field keys below; physical presses remain the
 - The runbook's Dance section still says "default 100%" and "other outputs' prior levels", while the PRD and `--dance-floor` use 90% and all speakers at 70%.
 - `raven-button.md` lists the STOP reset as Jabra-only and omits the dance and volume wrappers.
 - No runner covers the Playback profile, rollback, the two-Console conflict, the voice editor, the mailbox `dance_floor` path, or the Studio return-to-conversation.
+
+## Night goal ledger (moved from TODO 2026-11-01)
+
+Owner away, 2026-10-31 night (authorized: fix every item, complete QA).
+
+**Done means:** every item below is fixed with evidence, or marked blocked with the
+exact physical reason; complete QA has run on the final build (unit, typecheck, build,
+every Phase 4 mode, provider modes, Raven scenarios, YouTube/media runners, every
+Stream Deck key in the field) with outputs at 1% and all external speakers back at 70%;
+PRD/runbooks/PROGRESS are current; everything is committed and pushed. Each line is
+ticked only with its evidence.
+
+- [x] G1 A1 (far away): a reconnecting speaker joins mid-song (route rebuild) at the
+  Jabra's level; a failed join now keeps the music on the speakers that worked and
+  retries in 5 s (`operator_loop_music_route_kept`, unit-tested; was a MusicLoop stop).
+  A real reconnect was not reproducible tonight (A1 absent).
+- [x] G2 Neo: root cause of the Neo showing old keys: the old "copy 1" held Stream
+  Deck's default-profile mark (`AppIdentifier *`), applied on launch and focus changes.
+  "Magic Mirror copy 3" is now the default; the five obsolete profiles were deleted
+  (left: Elgato Default Profile, copy 3, Magic Mirror Music, Magic Mirror Playback copy).
+- [x] G3 Video loop smoothness: loop media re-reads reuse the verified local copy (one
+  lstat on the source instead of realpath/prepare per range request); per-wrap
+  `operator_loop_wrapped wraps= dropped=` markers. TV wake stays after the mode
+  acknowledgement by the existing owner ruling (a failed start keeps the TV dark; 46
+  tests encode it) — the owner kept this order (DECISIONS 11-01).
+- [x] G4 `youtube_modes` loop: harness bug — the check treated the playlist reload
+  states (-1/5) at a loop boundary as lost; product never paused it. Fixed (needs rerun).
+- [x] G5 `--memory-live`: harness answered "yes" before the app asked (the app resets
+  by design) and sent its own `response.create`; now waits for Main's
+  `memory_question_delivered`/`memory_brief_installed` and names its errors (needs rerun).
+- [x] G6 Memory/identity runners send no replies of their own; their failures are
+  mini-model identity/recall rates (owner decision: mini vs full model).
+- [x] G7 Judge is correct: the kept transcript has Simplified characters in 2 of 11
+  replies and 1 unrequested English reply (mini drift; speech only, no captions);
+  `unnecessary_question` follows v22's "ask one short question". Persona/model change
+  needs a measured owner decision — not published while the owner is away.
+- [x] G8 Acoustic wake during a loop: QA-environment limit — the synthetic visitor
+  plays from the Mac mini speaker, which sits at 1% (its normal venue level) and is
+  quieted for QA; needs a deliberate audible run (owner sound rule).
+- [x] G9 `mouse_stop_failed`: a client ignoring EXIT is now ended (SIGTERM, SIGKILL;
+  own process only) before the board stop; EXIT wait capped at 3 s (unit-tested).
+- [x] G10 TV board standby holds: 10-31 22:38→11-01 01:09 in standby, 900 of 900 pings
+  answered; the keep-awake tick held the wakelock throughout (106 runs by 00:12).
+- [ ] G11 BLOCKED (physical): the camera is not on the USB bus at all (only Jabra,
+  Stream Deck and two hubs); reconnect its cable/port.
+- [x] G12 Complete QA on the final build: 42-run batch, every failure diagnosed, fixes
+  rebuilt and rerun, field pass of every key (results in the journeys doc and PROGRESS);
+  remaining provider rates are listed below.
+- [x] G13 Docs current (PRD, TODO, PROGRESS, journeys, runbooks), committed and pushed.
+- [x] G14 Stream Deck/Neo cannot silently show old keys again: "After every import
+  (required)" default-profile step in the runbook, plugin install in the reinstall block.
+- [x] G15 Skills, harness and CLAUDE.md correct and concise (build-while-running rule,
+  venue runbook links, QA lease/1% acoustic-wake notes).

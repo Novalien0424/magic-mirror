@@ -2,9 +2,9 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy`. Canonical Mac, user LaunchAgent; the app is running
-(VIDEO LOOP) with the Airfoil route since 16:05 11-01. Products and stories: [PRD](PRD.md);
-open work: [TODO](TODO.md) (night goal G1–G15). Previous detail:
+Runtime: `field/macmini-deploy`. Canonical Mac, user LaunchAgent; the app is stopped (owner
+STOP 17:49 11-01). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md);
+night goal G1–G15 ledger: [journeys](docs/testing/user-journeys-2026-10-31.md#night-goal-ledger-moved-from-todo-2026-11-01). Previous detail:
 [archived handoff 10-31](docs/archive/progress-before-night-qa-2026-11-01.md) ·
 [journeys and results](docs/testing/user-journeys-2026-10-31.md).
 
@@ -57,8 +57,9 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
   70%: START, VIDEO LOOP, MUSIC LOOP, NEXT, PREV, VOL+, VOL−, folder key 1 (84 songs), MUSIC
   LOOP, CONSOLE, DESKTOP, STUDIO, DANCE, VIDEO LOOP: every outcome success; music and Dance
   routed through Airfoil (`outputs=1`, `music_output_airfoil_ready`), Edifier at the Jabra's
-  70%. START/MUSIC LOOP logged `jabra_output_reset_failed` because a second Jabra is attached.
-  Left running: VIDEO LOOP for the owner's visual check.
+  70%. START/MUSIC LOOP logged `jabra_output_reset_failed` because a second Jabra was attached.
+- 17:49 11-01: the owner unplugged the second Jabra and pressed STOP: `stopped`, speakers
+  `jabra_output_70`, Airfoil left with no speaker connected and the route flag removed.
 
 QA on the final builds (outputs at 1%, speakers back to 70%): full unit suite 2952
 passed (2 skipped), typecheck clean. Phase 4: all 22 modes run; after fixes `--live`,
@@ -70,9 +71,9 @@ the night QA").
 
 ## Next work / unresolved boundaries
 
-1. Owner, physical: watch VIDEO LOOP/YouTube lip-sync and listen across rooms; unplug the
-   second Jabra and check the two Jabras are not linked; press each Neo key once; the camera
-   is damaged (G11).
+1. Owner, physical: watch VIDEO LOOP/YouTube lip-sync and listen across rooms; check the
+   unplugged second Jabra is not still linked to the venue Jabra; press each Neo key once;
+   the camera is damaged.
 2. Owner decisions: mini vs full dialogue model (farewell preamble, YouTube search-then-ask,
    tool routes, identity/recall quality); Raven's ~30 s in-character refusals. (VIDEO LOOP's
    TV wake order stays: DECISIONS 11-01.)

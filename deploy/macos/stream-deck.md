@@ -24,7 +24,7 @@ Magic Mirror profiles are preserved.
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Same as START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI. |
 | Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Loop ready audio files of up to 200 MB from shared `MusicLoop` on every external speaker while remaining files download. TV black; voice and camera off. The deck switches to the Music page. |
-| Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio through all external outputs (Bluetooth included; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
+| Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio on every speaker of the music route (Airfoil; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
 | Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, and reset every external speaker (Jabra Speak2 75, Bluetooth speakers) to 70% unmuted. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
@@ -115,8 +115,9 @@ produces an explicit Console message.
 
 Each accepted MUSIC LOOP press first sets every external speaker to **70%** and verifies
 the native read-back. This happens once per press, including a repeat press while
-music is running. Afterwards the Music page's VOL+/VOL− (and Jabra's physical
-volume buttons) adjust it; there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
+music is running. Afterwards the Music page's VOL+/VOL− move every external speaker;
+Jabra's physical volume buttons move the Jabra, and AirPlay speakers follow it (A1 keeps
+its level); there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
 
 **Airfoil music route (2026-11-01, owner ruling; Airfoil 5.13 licensed).** Every music
@@ -146,7 +147,8 @@ back by it). A1 still wanders about ±25 ms per stream start (Bluetooth). Re-tun
 adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with Airfoil quit,
 relaunch, re-measure; change `mmlt` if the total moves.
 
-**Bluetooth drift and re-sync (2026-10-31).** Bluetooth speakers drift apart over long
+**Bluetooth drift and re-sync (2026-10-31; the direct route used when Airfoil is down).**
+Bluetooth speakers drift apart over long
 playback inside their own buffers, invisible to macOS (static reported latency, exact
 44.1 kHz); the venue links are weak (Edifier ~6% / A1 ~12% median retransmissions at
 −75/−80 dBm). macOS suspends each Bluetooth stream within milliseconds when audio stops,
@@ -173,16 +175,17 @@ clock); improve the radio (line of sight, Mac on Ethernet or 5/6 GHz, USB 3 hubs
 away from the Mac mini — [Apple](https://support.apple.com/en-us/102766)); then the re-sync
 pause. AirPlay 2 and LE Audio sync properly but are not practical from macOS multi-output today.
 
-Main owns the player and a temporary private macOS multi-output route. Current
-outputs are Jabra, HDMI and Mac mini Speakers. Connected physical outputs are
-rediscovered during playback; virtual and aggregate devices are excluded to avoid
-duplicate routes. Input gain and device mute/volume are preserved; while the
+Main owns the player and a temporary private macOS multi-output route: on the Airfoil
+route it wraps only Magic Mirror Music; on the direct route, every connected physical
+output (Jabra, Bluetooth, HDMI), the Mac mini speaker only when there is no other.
+Outputs are rediscovered during playback; virtual and aggregate devices are excluded
+from the direct route to avoid duplicates. Input gain and device mute/volume are preserved; while the
 app runs the default output is the shared "Magic Mirror Speakers" device (see
 [README](README.md)), which this private route does not use. The route duplicates one stereo stream across the available outputs;
 it does not concatenate their channels. MUSIC LOOP does not wake the TV or depend
 on its ADB connection, HDMI or power: with the TV off the app keeps playing (the
-TV-absent exit is held during MusicLoop) and the command still succeeds. HDMI receives music if the connected TV is already able to
-play audio; TV power remains unchanged.
+TV-absent exit is held during MusicLoop) and the command still succeeds. On the direct route HDMI receives music if the connected TV is already able to
+play audio (the Airfoil route leaves the TV out); TV power remains unchanged.
 
 START, STUDIO, VIDEO LOOP, DESKTOP and Return to Avatar release MusicLoop before
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the

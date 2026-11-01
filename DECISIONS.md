@@ -47,7 +47,8 @@
   2026-10-31: suspend attempts in standby cycled Ethernet and the HDMI bridge
   every ~10 s until both wedged (10-26 to 10-31, cured only by power cycles).
 - **Playback page for the loops:** VIDEO LOOP and MUSIC LOOP switch the Stream
-  Deck to a page with only VOL+, VOL− and STOP; STOP stops as usual and returns
+  Deck to a page with only VOL+, VOL− and STOP (MUSIC LOOP's page later gained the
+  folder and song keys above); STOP stops as usual and returns
   to the main keys. VOL± moves every external speaker 10% together (Mac mini
   speaker and HDMI untouched); STOP/START/MUSIC LOOP still return them to 70%.
   Built-in Stream Deck actions only (Multi Action + Switch Profile); the page
