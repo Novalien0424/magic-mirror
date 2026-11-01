@@ -3,6 +3,7 @@ import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop, musicLoopFiles, musicSubfolders } from './music-loop'
 import { createSharedMusicOutput } from './shared-music-output'
+import { createAirfoilRoute } from './airfoil-route'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
 import { execFile } from 'node:child_process'
@@ -212,6 +213,8 @@ let shutdownStarted = false
 let stopMainLiveness: (() => void) | undefined
 let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
+// STOP exits through app.exit() (no will-quit): the Airfoil route and shared device release here.
+let stopMusicOutput: (() => void) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
 let musicLoop: ReturnType<typeof createMusicLoop> | undefined
 /** MusicLoop subfolder chosen by a Stream Deck folder key; undefined plays the folder itself. */
@@ -1826,16 +1829,26 @@ void app.whenReady().then(async () => {
   stopYoutube = () => youtubePlayer.stop()
   app.once('before-quit', () => youtubePlayer.stop())
   if (process.platform === 'darwin') {
+    const degradedMusicOutput = (reason: string) => {
+      marker('MUSIC_OUTPUT', { reason })
+      runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
+    }
+    // Airfoil plays every venue speaker in sync; the helpers follow its flag file.
+    const airfoilRoute = createAirfoilRoute({
+      flagPath: join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/music-device/airfoil-route'),
+      report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
+      degraded: degradedMusicOutput,
+    })
     const sharedMusicOutput = createSharedMusicOutput({
       executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
-      degraded: reason => {
-        marker('MUSIC_OUTPUT', { reason })
-        runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
-      },
+      degraded: degradedMusicOutput,
+      level: value => airfoilRoute.setLevel(value),
     })
     sharedMusicOutput.start()
-    app.once('will-quit', () => sharedMusicOutput.stop())
+    void airfoilRoute.start()
+    stopMusicOutput = () => { airfoilRoute.stop(); sharedMusicOutput.stop() }
+    app.once('will-quit', () => stopMusicOutput?.())
   }
   sceneRuntimeControl = registerIpcHandlers({
     onConsoleSceneStatus: status => webConsole?.publish('console:scene-status', status),
@@ -2217,6 +2230,7 @@ function stopQuitResources(): void {
   }
   try { globalShortcut.unregisterAll() } catch { marker('SHUTDOWN_FAILED', { reason: 'shortcut_release_failed' }) }
   try { displaySleepBlocker?.stop() } catch { marker('SHUTDOWN_FAILED', { reason: 'display_blocker_release_failed' }) }
+  try { stopMusicOutput?.() } catch { marker('SHUTDOWN_FAILED', { reason: 'music_output_release_failed' }) }
 }
 
 app.on('before-quit', () => { shutdownStarted = true; void cameraTracking?.stop(); stopMainLiveness?.() })

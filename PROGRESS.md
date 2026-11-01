@@ -2,14 +2,23 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy` (pushed). Canonical Mac, user LaunchAgent; the app is
-left stopped (STOP state) after the night QA. Products and stories: [PRD](PRD.md);
+Runtime: `field/macmini-deploy`. Canonical Mac, user LaunchAgent; the app is running
+(VIDEO LOOP) with the Airfoil route since 16:05 11-01. Products and stories: [PRD](PRD.md);
 open work: [TODO](TODO.md) (night goal G1–G15). Previous detail:
 [archived handoff 10-31](docs/archive/progress-before-night-qa-2026-11-01.md) ·
 [journeys and results](docs/testing/user-journeys-2026-10-31.md).
 
 Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commit):
 
+- **All music in sync through Airfoil (11-01 afternoon):** the Edifier is on Wi-Fi/AirPlay;
+  every music source plays into the new virtual output "Magic Mirror Music"
+  ([music-device/](deploy/macos/music-device/), installed with the owner's admin password), and
+  Airfoil (licensed) plays it on the Jabra, A1 and the Edifier. Main's
+  [airfoil-route](src/main/airfoil-route.ts) connects/reconnects speakers and falls back to the
+  direct group. Measured, not by ear ([speaker-sync/](deploy/macos/speaker-sync/), a second
+  Jabra as mic, an iPad memo for the Jabra): Edifier +0.8 ms and A1 +26 ms from the Jabra;
+  total 2148 ms, reported to Chromium so VIDEO LOOP/YouTube pictures wait for the sound.
+  Calibration record: runbook "Airfoil music route".
 - **Neo / Stream Deck:** three-profile package (main "Magic Mirror copy 3", Playback,
   Music). Cause of the Neo silently showing old keys: an older copy held Stream Deck's
   default-profile mark (`AppIdentifier *`), applied at launch and on focus changes.
@@ -44,13 +53,12 @@ Delivered 10-31 → 11-01 (commits 41b684f, f59c5e4, 41229ce and the night commi
 
 ## Last observed runtime — not a live health guarantee
 
-- 01:27–01:32 Taipei 11-01, field pass on the final build through the real Stream Deck
-  command path (outputs at 1%): START, VIDEO LOOP, VOL±, STOP, MUSIC LOOP, NEXT (track 2),
-  PREV (track 1), folder key 1 (Yunelle, 84 songs from song 1), MUSIC LOOP back to the main
-  folder (5 songs), STOP, CONSOLE, DESKTOP, STUDIO, DANCE (raised to 90%, re-quieted), STOP:
-  every outcome success; each STOP put the TV in standby with the black cover. Music
-  outputs 3 (A1 absent). End state: app stopped, Jabra and Edifier 70% unmuted (read
-  back), Neo on "Magic Mirror copy 3" (default), Music page titles `["Yunelle"]`.
+- 16:05–16:10 Taipei 11-01, build with the Airfoil route, through the real button paths at
+  70%: START, VIDEO LOOP, MUSIC LOOP, NEXT, PREV, VOL+, VOL−, folder key 1 (84 songs), MUSIC
+  LOOP, CONSOLE, DESKTOP, STUDIO, DANCE, VIDEO LOOP: every outcome success; music and Dance
+  routed through Airfoil (`outputs=1`, `music_output_airfoil_ready`), Edifier at the Jabra's
+  70%. START/MUSIC LOOP logged `jabra_output_reset_failed` because a second Jabra is attached.
+  Left running: VIDEO LOOP for the owner's visual check.
 
 QA on the final builds (outputs at 1%, speakers back to 70%): full unit suite 2952
 passed (2 skipped), typecheck clean. Phase 4: all 22 modes run; after fixes `--live`,
@@ -62,8 +70,9 @@ the night QA").
 
 ## Next work / unresolved boundaries
 
-1. Owner, physical: press each Neo key once (main, Playback, Music page) and listen across
-   song changes; reconnect the camera (it is not on the USB bus at all: G11).
+1. Owner, physical: watch VIDEO LOOP/YouTube lip-sync and listen across rooms; unplug the
+   second Jabra and check the two Jabras are not linked; press each Neo key once; the camera
+   is damaged (G11).
 2. Owner decisions: mini vs full dialogue model (farewell preamble, YouTube search-then-ask,
    tool routes, identity/recall quality); Raven's ~30 s in-character refusals. (VIDEO LOOP's
    TV wake order stays: DECISIONS 11-01.)

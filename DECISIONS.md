@@ -1,5 +1,18 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-01 — All music through Airfoil, in sync (owner rulings)
+
+- The Edifier M330 II moved to Wi-Fi/AirPlay; the owner bought Airfoil 5.13 to sync
+  ALL speakers (Jabra, Bluetooth A1, AirPlay Edifier, a future second Edifier). Every
+  music source plays into the virtual "Magic Mirror Music" device (owner-approved
+  driver install, BlackHole-based); pictures and Dance follow its reported delay.
+  Raven's voice stays direct on the Jabra (echo cancellation). The TV is outside the
+  Airfoil group until its delay can be measured.
+- Sync is measured, not judged by ear (owner: ears are hard to trust); calibration
+  values and method are recorded in the Stream Deck runbook and `calibration.json`.
+- The second Jabra Speak2 75 is a measurement aid only and is unplugged after tests;
+  with two Jabras attached, START/MUSIC LOOP's 70% reset refuses (`jabra_output_ambiguous`).
+
 ## 2026-11-01 — VIDEO LOOP wakes the TV after playback (owner ruling)
 
 - VIDEO LOOP keeps waking the TV only after the loop is confirmed playing, so a

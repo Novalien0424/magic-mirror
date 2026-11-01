@@ -1,6 +1,6 @@
 # Magic Mirror — 產品需求與使用者故事
 
-更新：2026-10-31。適用於單一場域的 Mac mini／直立電視／Raven；本文件是目前產品入口。
+更新：2026-11-01。適用於單一場域的 Mac mini／直立電視／Raven；本文件是目前產品入口。
 「已實作」代表有程式與操作入口，不等於已完成所有現場驗收。已知缺口見 [TODO](TODO.md)，
 部署與最近證據見 [PROGRESS](PROGRESS.md)，約束與裁決見 [AGENTS](AGENTS.md)／[DECISIONS](DECISIONS.md)。
 [舊版 PRD](docs/Magic_Mirror_PRD_v0.3.md) 保留原始需求與階段規劃，不代表今天全部可用。
@@ -82,12 +82,14 @@ MusicLoop：主持人放入音樂 → 按 MUSIC LOOP → 本機可用曲目先�
 Dance Floor：選定曲目與動作設定 → Start → 準備媒體、分析節拍、Raven 逐字說「Ready to Party?」→ 循環音樂並擺動 →
 調整強度／音量／時間補償 → STOP 或切換模式。預設 `Common/DanceFloor.m4a`，也可從 `Common/DanceFloor` 選曲；
 啟動預設 90% 音量（主持人指示 2026-10-31），之後允許實體調整。使用真實播放時鐘、節拍與能量驅動現有頭、身體、眼睛；
-不聲稱有獨立手腳、讀取群眾動作或已校正所有喇叭與電視延遲。時鐘失聯停止動作；崩潰後不自動恢復大音量播放。
+不聲稱有獨立手腳、讀取群眾動作或已校正電視延遲。時鐘失聯停止動作；崩潰後不自動恢復大音量播放。
 
-兩種音樂模式把同一立體聲訊號送到當時可用的實體輸出（包括藍牙喇叭如 Edifier；有外接喇叭時不使用 Mac mini 內建喇叭，因它在現場與其他喇叭不同步）；可寫入音量的裝置才套用音量設定，
-固定音量 HDMI 仍受外部擴大機控制。不能把軟體時鐘測量當作現場聽覺同步驗收。
-藍牙喇叭斷線時其餘喇叭照常播放；重新連線時於播放中自動加入，並套用與 Jabra 相同的音量（主持人指示 2026-10-31）。對話中的音樂、主持人循環播放與 YouTube 同樣送到所有外接喇叭（主持人指示 2026-10-31）；Raven 的語音與提示音只走 Jabra，
-讓它的回音消除只處理自己的輸出；本機影片的原聲也留在 Jabra 以維持口型同步。
+**所有音樂經 Airfoil 同步（主持人指示 2026-11-01）**：MusicLoop、Dance Floor、VIDEO LOOP、對話中的音樂與 YouTube 都送進虛擬輸出「Magic Mirror Music」，
+由 Airfoil（已購買）同步播放到 Jabra、藍牙喇叭（A1）與名稱為 EDIFIER 的 AirPlay 喇叭（之後加購的 Edifier 依名稱自動加入）。整體延遲約 2.15 秒；
+此裝置回報同一延遲，影片畫面與 Dance 動作因此一起延後，與聲音同步。各喇叭的對齊值以實測校正並記錄於 [喇叭同步](deploy/macos/stream-deck.md)；
+藍牙喇叭本身仍有約 ±25 ms 的浮動。Airfoil 無法使用時自動改回直接輸出（Jabra、藍牙、HDMI；Edifier 暫時無聲），並在 Console 顯示原因。
+AirPlay 喇叭跟隨 Jabra 的音量（VOL±、Dance、STOP 後的 70%）；藍牙喇叭斷線後自動重新連線並套用 Jabra 的音量。電視（HDMI）目前不在 Airfoil 同步群組內。
+Raven 的語音與提示音只走 Jabra，讓它的回音消除只處理自己的輸出；本機影片的原聲也留在 Jabra。有外接喇叭時不使用 Mac mini 內建喇叭。
 
 ## 4. 主持人的完整設定旅程
 

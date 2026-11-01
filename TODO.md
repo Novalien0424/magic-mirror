@@ -146,26 +146,16 @@ ticked only with its evidence.
   takes the Jabra's level. Not yet seen live: a speaker leaving or rejoining mid-song (no
   rebuild, `speaker_matched` or `route_kept` event since the code shipped); Main's side is
   unit-tested only. The Edifier reads −78 dBm (11-01).
-- [ ] **Second Edifier M330 II (owner considering).** Speakers are spread across the house,
-  so cables are out. Three Bluetooth streams (2 Edifier + A1) are untested, and the Mac
-  sends SBC (the M330 II lists SBC/LDAC; Macs do not use LDAC). Wi-Fi/AirPlay suits the
-  range, but macOS sends system or app audio to one AirPlay speaker only (multi-speaker is
-  Music-app only). AirPlay also runs about 2 s behind, so the Jabra and Bluetooth speakers
-  must be delayed to match, and Dance/VIDEO/YouTube need their picture or motion synced.
-  Options: Airfoil (third-party, mixes AirPlay + Bluetooth + local in sync; supports macOS
-  27) or AirPlay 2 in our own player (unproven on macOS). Airfoil 5.13.0 trial (notarized,
-  Rogue Amoeba) installed in /Applications on 11-01 for the by-ear test; remove it if not
-  adopted. Waiting on: the Edifier joining Wi-Fi (not advertising AirPlay yet) and the
-  owner approving the Mac's permission prompts (Automation for Airfoil is pending).
-  Wi-Fi setup (11-01): the iPad showed no "Set Up New AirPlay Speaker" because the Edifier
-  sat in Bluetooth mode, connected to the Mac. Steps: on the Mac, System Settings →
-  Bluetooth → EDIFIER M330 Ⅱ → Disconnect (not Forget). On the iPad (same Wi-Fi as the Mac),
-  connect it to the speaker by Bluetooth and use the EDIFIER ConneX app's Wi-Fi/AirPlay
-  setup (install any firmware update first), naming it "Edifier WiFi". Fallback: switch the
-  speaker out of Bluetooth mode, then use iPad Settings → Wi-Fi → Set Up New AirPlay Speaker.
-  Steps are inferred from Edifier's other AirPlay manuals; no M330 II manual was found.
-  Check: `dns-sd -B _raop._tcp`. After the test, reconnect the Edifier over Bluetooth
-  (MusicLoop and the shared speakers use Bluetooth).
+- [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
+  "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
+  Open: (1) owner, physical: unplug the second Jabra (START/MUSIC LOOP 70% reset refuses
+  while two Jabras are attached) and check whether the two Jabras are linked to each other
+  (a +336 ms train in the iPad memo looked like the second unit echoing the first);
+  (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
+  exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra's hidden
+  ≈108 ms rests on one iPad memo; re-check with a real mic; (4) watch A1 (±25 ms per stream
+  start; weak link) and confirm by eye that VIDEO LOOP/YouTube pictures match the sound;
+  (5) a second Edifier joins by name: re-run `speaker-sync/measure.sh` and set its offset.
 - [ ] **Video loop smoothness.** Loop re-reads now reuse the local copy and each wrap logs
   `operator_loop_wrapped wraps= dropped=` (G3). Open: the board's camera-preview HDMI
   path (the TV wake order stays: DECISIONS 11-01). Watch the wrap markers in the room.

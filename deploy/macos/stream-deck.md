@@ -119,6 +119,33 @@ music is running. Afterwards the Music page's VOL+/VOL− (and Jabra's physical
 volume buttons) adjust it; there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
 
+**Airfoil music route (2026-11-01, owner ruling; Airfoil 5.13 licensed).** Every music
+source (MusicLoop, Dance Floor, VIDEO LOOP, conversation music, YouTube) plays into the
+virtual output **Magic Mirror Music** ([music-device/](music-device/): pinned BlackHole
+v0.7.1, GPL-3.0, 48 kHz, plus a settable reported latency, custom property `mmlt` in
+frames). Airfoil reads that device and plays the Jabra ("Computer"), every Bluetooth
+speaker it lists and every AirPlay speaker named EDIFIER (a second Edifier joins by name).
+Main (`src/main/airfoil-route.ts`) launches Airfoil, sets the source, connects and
+reconnects speakers every 10 s, keeps AirPlay speakers at the Jabra's level, and writes
+`ops/music-device/airfoil-route` only once the Jabra is connected; the music-loop helpers
+then wrap only the music device (the public "Magic Mirror Speakers" default output stays).
+Without Airfoil the flag goes and the direct group below returns (Edifier silent;
+`MUSIC_OUTPUT music_output_airfoil_*` reason). The TV (HDMI) is not in the Airfoil group.
+Raven's voice stays on the Jabra.
+
+Calibration (2026-11-01, `~/Library/Application Support/MagicMirror/ops/music-device/calibration.json`):
+measured with [speaker-sync/measure.sh](speaker-sync/measure.sh) (host-clock chirps; mic = a second Jabra
+Speak2 75, which cannot hear another Jabra) and an iPad Voice Memo for the Jabra's hidden
+playback delay (≈108 ms beyond its report; a second train at +336 ms was likely the linked
+second Jabra). Untuned, relative to Airfoil's wired path: Edifier +68 ms, A1 −40 ± 25 ms,
+Jabra +108 ms. Airfoil `syncOffsets` (seconds; Computer/Bluetooth positive = play earlier,
+0–1 s; AirPlay positive = later, ±1 s; applied 30–60 s after connecting): Computer 0.148,
+A1 0, Edifier −0.108. Verified: Edifier +0.8 ms and A1 +26 ms from the Jabra's time; total
+delay ≈ 2148 ms, so `mmlt` = 103104 frames (Chromium reads 2148.4 ms and holds video frames
+back by it). A1 still wanders about ±25 ms per stream start (Bluetooth). Re-tune after
+adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with Airfoil quit,
+relaunch, re-measure; change `mmlt` if the total moves.
+
 **Bluetooth drift and re-sync (2026-10-31).** Bluetooth speakers drift apart over long
 playback inside their own buffers, invisible to macOS (static reported latency, exact
 44.1 kHz); the venue links are weak (Edifier ~6% / A1 ~12% median retransmissions at

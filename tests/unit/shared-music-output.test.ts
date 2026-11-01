@@ -19,7 +19,7 @@ describe('shared music output owner', () => {
     children[0]!.stdout.write('{"event":"shared","outputs":4,"wireless":2,"uid":"private"}\n')
     children[0]!.stdout.write('{"event":"shared_failed","reason":"x"}\n')
     await vi.waitFor(() => expect(degraded).toHaveBeenCalledWith('music_output_shared_route_failed'))
-    expect(report).toHaveBeenCalledWith('music_output_shared_ready', { outputs: 4, wireless: 2 })
+    expect(report).toHaveBeenCalledWith('music_output_shared_ready', { outputs: 4, wireless: 2, airfoil: 0 })
     children[0]!.stdout.write('{"event":"speaker_matched","level":0.7000001}\n')
     await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_speaker_matched', { level: 70 }))
     children[0]!.emit('exit', 1)

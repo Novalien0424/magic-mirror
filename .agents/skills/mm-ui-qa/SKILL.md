@@ -37,6 +37,13 @@ Use guaranteed cleanup, not a success-only restore; report a failed reset/read-b
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.
 
+Speaker sync (2026-11-01): music reaches the speakers through Airfoil and runs
+≈2.15 s behind the source; AirPlay speakers follow the Jabra's level, so 1% QA on
+the Jabra quiets them too. Judge sync by measurement, never by ear: STOP, then
+`deploy/macos/speaker-sync/measure.sh <mic-uid>` (runbook "Airfoil music route").
+A Jabra mic cannot hear another Jabra. Two attached Jabras make the 70% reset
+refuse (`jabra_output_ambiguous`): report it, do not work around it.
+
 Electron QA holds the operator lease, so venue Stream Deck presses fail with
 `electron_owner_busy` meanwhile: tell the owner before a long batch. Acoustic wake
 uses the Mac mini speaker as the synthetic visitor; at its normal 1% venue level a
