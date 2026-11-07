@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { spokenCommandKey, isSpellAttempt, opensWithSpokenPhrase } from '../../src/shared/spoken-command'
+import { spokenCommandKey, isSpellAttempt, matchSearchPhrase, opensWithSpokenPhrase } from '../../src/shared/spoken-command'
 import { createSpellTriggerGuard } from '../../src/main/scenes/spell-trigger'
 
 describe('approved whole-utterance pronunciation folds', () => {
@@ -37,14 +37,20 @@ describe('approved whole-utterance pronunciation folds', () => {
   })
 })
 
-describe('online search opening phrase (owner ruling 2026-10-14)', () => {
-  it.each(['在雲上找找', '在雲上找找。', '在云上找找晴天', '再雲上找找，播放晴天', '在雲上找找 Moonlit Lake'])('opens with the phrase: %s', text => {
-    expect(opensWithSpokenPhrase(text, '在雲上找找')).toBe(true)
+describe('online search phrase, not strict (owner rulings 2026-10-14, 2026-11-07)', () => {
+  it.each([
+    ['幫我在雲上找 周杰倫青花瓷撥放', 'request'], ['幫我在雲上找周深的組曲撥放', 'request'], ['在雲上找找晴天', 'request'],
+    ['再雲上找找，播放晴天', 'request'], ['在云上找找 Moonlit Lake', 'request'], ['在雲上找晴天', 'request'], ['請幫我雲上找晴天', 'request'],
+    ['可不可以幫我在雲上找晴天', 'request'], ['有沒有辦法在雲上找晴天', 'request'], ['Raven 幫我在雲上找晴天', 'request'],
+    ['在雲上找找', 'alone'], ['在雲上找找。', 'alone'], ['幫我在雲上找一下', 'alone'], ['雲上找找', 'alone'],
+  ])('unlocks: %s', (text, kind) => {
+    expect(matchSearchPhrase(text, '在雲上找找')).toBe(kind)
   })
-  it.each(['幫我在雲上找找晴天', '不要在雲上找找', '「在雲上找找」晴天', '在雲上找晴天', '雲上找找', ''])('does not open with the phrase: %s', text => {
-    expect(opensWithSpokenPhrase(text, '在雲上找找')).toBe(false)
+  it.each(['不要在雲上找找', '別在雲上找晴天', '沒在雲上找晴天', '「在雲上找找」晴天', '我朋友昨天跟我說可以在雲上找歌', '晴天', ''])('does not unlock: %s', text => {
+    expect(matchSearchPhrase(text, '在雲上找找')).toBeUndefined()
   })
-  it('never matches an empty phrase', () => {
-    expect(opensWithSpokenPhrase('晴天', '')).toBe(false)
+  it('never matches an empty phrase, and the strict opening check stays for spells', () => {
+    expect(matchSearchPhrase('晴天', '')).toBeUndefined()
+    expect(opensWithSpokenPhrase('幫我施放咒語', '施放咒語')).toBe(false)
   })
 })

@@ -1959,10 +1959,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' })
       return 'ignored'
     }
-    if (result === 'accepted' && request.action !== 'stop' && request.mode === 'loop'
-      && current() && mediaSkill.isActive() && runtime.requestSleep) {
+    // A loop, and every YouTube song or video found online (owner 2026-11-07: Raven goes Dormant
+    // while it plays and stays Dormant after a play-once), hands off to Dormant.
+    const handoff = request.action !== 'stop' && (request.mode === 'loop' || request.action === 'play_youtube')
+    if (result === 'accepted' && handoff && current() && mediaSkill.isActive() && runtime.requestSleep) {
       // Let the existing lifecycle release Realtime's mic before the local
-      // wake worker acquires it. The loop survives this intentional sleep.
+      // wake worker acquires it. The media survives this intentional sleep.
       sleepingMedia = true
       try {
         const sleep = await runtime.requestSleep()
@@ -1970,6 +1972,11 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) options.youtube?.setDormant?.(true)
       } catch {
         sleepingMedia = false
+        // A play-once keeps playing in the conversation; a loop needs the wake handoff.
+        if (request.mode !== 'loop') {
+          emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_dormant_handoff_failed' })
+          return result
+        }
         if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) mediaSkill.stop('media_wake_handoff_failed')
         return { status: 'failed', code: 'media_loop_unavailable' }
       }

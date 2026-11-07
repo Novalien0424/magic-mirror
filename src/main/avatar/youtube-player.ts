@@ -1,7 +1,6 @@
 import { session, WebContentsView, type BrowserWindow } from 'electron'
 import type { YoutubePlayback, YoutubePlayer } from '../../shared/youtube-media'
 import type { AudioPreferences } from '../../shared/audio-devices'
-import { DORMANT_MEDIA_GAIN } from '../../shared/media-volume'
 
 // The installed application's ID, used as YouTube's required desktop Referer.
 export const YOUTUBE_PLAYER_ORIGIN = 'https://com.magicmirror.app'
@@ -55,13 +54,15 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
     setDormant(value) {
       if (dormant === value) return
       dormant = value
-      options.report?.(value ? 'dormant_media_attenuated' : 'dormant_media_volume_restored')
+      options.report?.(value ? 'dormant_media_full_volume' : 'dormant_media_volume_restored')
     },
     play(request, report) {
       this.stop()
       const parent = getWindow()
       if (!parent || parent.isDestroyed() || !parent.isVisible() || parent.isMinimized()) return false
-      const volume = () => Math.round(request.gain * (dormant && request.mode === 'loop' ? DORMANT_MEDIA_GAIN : 1)
+      // Handed off to Dormant (owner 2026-11-07), the song plays at full scale: the speakers' calibrated
+      // default levels set its loudness, with no Raven to talk over and no Dormant duck.
+      const volume = () => dormant ? 100 : Math.round(request.gain
         * (options.preferences?.().volumes?.[request.kind === 'music' ? 'bgm' : 'effects'] ?? 1) * 100)
       let appliedVolume = volume(), outputId = options.preferences?.().outputId ?? ''
       if (outputId) options.report?.('youtube_system_audio_output')

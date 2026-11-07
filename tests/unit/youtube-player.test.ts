@@ -27,14 +27,14 @@ const parent = () => Object.assign(new EventEmitter(), { isDestroyed: () => fals
 afterEach(() => { vi.useRealTimers(); f.views.length = 0; f.partitions.length = 0; f.state = { state: -1, time: 0, error: false } })
 
 describe('isolated visible YouTube player', () => {
-  it('attenuates only Dormant loops by 12 dB and restores their selected volume', async () => {
+  it('plays at full scale while handed off to Dormant and restores the selected volume', async () => {
     vi.useFakeTimers()
     const player = createYoutubePlayer(() => parent() as never), report = vi.fn()
     player.play({ ...request, mode: 'loop' }, report)
     const contents = f.views[0].webContents
     player.setDormant?.(true)
     await vi.advanceTimersByTimeAsync(500)
-    expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(13)')
+    expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(100)')
     player.setDormant?.(false)
     await vi.advanceTimersByTimeAsync(500)
     expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(50)')
@@ -42,7 +42,8 @@ describe('isolated visible YouTube player', () => {
     player.play(request, report)
     player.setDormant?.(true)
     await vi.advanceTimersByTimeAsync(500)
-    expect(f.views[1].webContents.executeJavaScript).not.toHaveBeenCalledWith('void player?.setVolume(13)')
+    // A play-once handed to Dormant plays at full scale too.
+    expect(f.views[1].webContents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(100)')
     player.stop()
   })
   it('uses elapsed playback progress across NTP jumps and still times out a stuck player', async () => {

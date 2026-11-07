@@ -1,5 +1,18 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-07 — Online songs: relaxed phrase, Dormant playback (owner rulings, night)
+
+- The online search phrase "should not be too strict": its core may follow a short lead-in
+  such as 幫我, 請, 麻煩你 or 可不可以幫我 (up to six syllables), the repeated last character
+  is optional, and 雲上找 without 在 counts (sound-alike keys as before). A negation before it
+  (A-not-A questions such as 可不可以 excepted), quotes, or a later mention still do not
+  unlock. Supersedes the strict opening match of 2026-10-14 for this phrase only.
+- A song or video found online hands Raven to Dormant as soon as it plays (silent sleep, mic to
+  the wake worker) and Raven stays Dormant after a play-once ends; the conversation does not
+  resume. It plays at full scale on the music route, so every speaker plays it at its default
+  level (no Dormant duck for YouTube; supersedes the 12 dB loop duck of 2026-10-11 for YouTube).
+  Local media keeps its earlier behaviour. STOP quits the app and stops the song.
+
 ## 2026-11-07 — Speakers calibrated to the Jabra (owner ruling)
 
 - The speakers are not equally loud at the same setting (owner's sound meter at 1 m:

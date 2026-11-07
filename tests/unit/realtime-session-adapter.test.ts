@@ -297,7 +297,7 @@ describe("RealtimeSession adapter", () => {
       expect(onFindMedia).toHaveBeenLastCalledWith({ query: 'Night piano', kind: 'music' }, expect.anything())
     } finally { await handle.close('manual_stop') }
   })
-  it('allows online media only when a final transcript opens with the hidden phrase', async () => {
+  it('allows online media only when the hidden phrase leads the final transcript (not strict: 幫我…, 找 once)', async () => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     const found = 'https://www.youtube.com/watch?v=M7lc1UVf-VE', other = 'https://youtu.be/abcdefghijk';
     const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const,
@@ -315,14 +315,14 @@ describe("RealtimeSession adapter", () => {
     const find = () => tools.find(t => t.name === 'find_media').invoke({}, '{"query":"Moonlit Lake","kind":"music"}');
     const play = (url: string) => tools.find(t => t.name === 'play_youtube').invoke({}, JSON.stringify({ url, kind: 'music', mode: 'once' }));
     for (const [id, transcript] of [['youtube', 'Play Moonlit Lake on YouTube.'], ['negated', '不要在雲上找找月光湖'],
-      ['quoted', '「在雲上找找」是什麼意思？'], ['inside', '幫我在雲上找找月光湖']]) {
+      ['quoted', '「在雲上找找」是什麼意思？'], ['late', '我朋友昨天跟我說可以在雲上找找月光湖']]) {
       turn(id, transcript);
       expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaNoMatch });
       expect(await search()).toMatchObject({ code: 'media_source_restricted', next: REALTIME_PROMPTS.mediaNoMatch });
       expect(await play(other)).toMatchObject({ code: 'media_source_restricted' });
     }
     expect(onSearchYoutube).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
-    turn('cloud', '在雲上找找 Moonlit Lake');
+    turn('cloud', '幫我在雲上找 Moonlit Lake 播放');
     expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaOnlineSearch });
     expect(await search()).toMatchObject({ youtube: { code: 'youtube_search_results' } });
     turn('selection', 'Play the first one.');

@@ -1381,7 +1381,7 @@ function AvatarApp({ interruptComposition }: AppProps = {}): React.JSX.Element {
         data-media-video={mediaSkillState.hideAvatar} data-studio-cover={studioShown && studioCoversAvatar(studioView)}
         style={{ '--media-fade-ms': `${studioFade ? 900 : mediaSkillState.fadeMs}ms` } as import('react').CSSProperties}>
         <PresentationStage payload={presentation}
-          lifecycle={mediaSkillState.active && !mediaSkillState.hideAvatar ? 'active' : view.state} onPhase={phase => {
+          lifecycle={mediaSkillState.active && !mediaSkillState.hideAvatar && view.state !== 'dormant' ? 'active' : view.state} onPhase={phase => {
           presentationPhaseRef.current = phase
           setPresentationPhase(phase)
           greetingGateRef.current?.update(presentationRef.current.config, phase, presentationLifecycleRef.current)

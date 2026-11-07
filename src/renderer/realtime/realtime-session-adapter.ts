@@ -12,7 +12,7 @@ import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEven
 import { playSpeechScript } from './speech-script'
 import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../shared/image-skill'
 import { MemoryDialogue } from './memory-dialogue'
-import { isSpellAttempt, opensWithSpokenPhrase, spokenCommandKey } from '../../shared/spoken-command'
+import { isSpellAttempt, matchSearchPhrase, spokenCommandKey } from '../../shared/spoken-command'
 import { bindRealtimeTools, type RealtimeToolHandler, type ToolFailureReason } from './realtime-tool-bindings'
 import { mergedMediaTool } from './merged-media-tool'
 import { MediaSearchContext } from './media-search-context'
@@ -1844,8 +1844,9 @@ export function createRealtimeSession(
       }
       if (mediaInput) return
       if (!commandTurnOwned && (!memoryLatestItem || memoryLatestItem === itemId)) {
-        if (opensWithSpokenPhrase(transcript, cloudSearchPhrase)) {
-          onlineTurns = spokenCommandKey(transcript) === spokenCommandKey(cloudSearchPhrase) ? 2 : 1
+        const searchPhrase = matchSearchPhrase(transcript, cloudSearchPhrase)
+        if (searchPhrase) {
+          onlineTurns = searchPhrase === 'alone' ? 2 : 1
           memoryInput('control', itemId)
           emitMetadata(input, 'realtime_observer_event', 'info', 'media_online_unlocked', sessionGeneration, createdAt)
         } else onlineTurns = Math.max(0, onlineTurns - 1)

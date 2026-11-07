@@ -102,6 +102,13 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   takes the Jabra's level. Not yet seen live: a speaker leaving or rejoining mid-song (no
   rebuild, `speaker_matched` or `route_kept` event since the code shipped); Main's side is
   unit-tested only.
+- [ ] **Online songs (owner 11-07 night).** The relaxed phrase and Dormant playback are done and
+  QA-passed (`cloud_songs`: both owner sentences found, played, Raven Dormant during and after).
+  Open: (1) the owner judges by ear in the room (QA ran at 1%); (2) local media keeps the old
+  behaviour (conversation resumes; local video sound on the Jabra; local Dormant loops 12 dB
+  quieter); (3) mini still says a word before playing on some turns (judge `tool_silence`);
+  (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
+  `npm run build` and passes on rerun.
 - [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
   "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
   Open: (1) the second Jabra now plays through Jabra's link (11-07: silent while the USB Jabra

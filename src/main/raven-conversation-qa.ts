@@ -263,6 +263,27 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     if (!events(since).some(e => e.reason === 'media_playing') || input.runtime.snapshot().lifecycle !== 'active') throw Error('raven_qa_media_not_started')
     await delay(500)
   }
+  // Owner 2026-11-07: a song found online hands Raven to Dormant while it plays (mic released to the
+  // wake worker) and Raven stays Dormant, not drawn awake, after the play-once finishes.
+  const youtubeOnceDormant = async (since: number) => {
+    await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released && (await state()).media, 'once_dormant_handoff', 30000)
+    await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'once_wake_microphone', 12000)
+    try {
+      await wait(async () => {
+        await youtubeNearEnd(await youtubeState())
+        return events(since).some(e => e.reason === 'media_completed')
+      }, 'media_completed', 120000)
+    } catch (error) {
+      const remote = await youtubeState()
+      if (remote) input.onEvidence({ step: 'youtube_playback_timeout', status: 'info',
+        item: `state=${remote.state};seconds=${Math.round(remote.time)};duration=${Math.round(remote.duration)};error=${remote.error}` })
+      throw error
+    }
+    await delay(3000)
+    const after = await state()
+    if (input.runtime.snapshot().lifecycle !== 'dormant' || after.media || after.phase === 'awake') throw Error('raven_qa_not_dormant_after_media')
+    input.onEvidence({ step: 'dormant_after_media', status: 'info', item: `lifecycle=dormant;phase=${after.phase};media=${after.media}` })
+  }
   const youtubeState = async () => {
     const view = webContents.getAllWebContents().find(c => c.getURL() === 'https://com.magicmirror.app/youtube-player')
     return view?.executeJavaScript('({...window.youtubePlaybackState(),duration:player?.getDuration?.()??0})') as Promise<{ state: number; time: number; error: number; duration: number }> | undefined
@@ -498,7 +519,8 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     }
     if (turn.expected.mode !== 'none') {
       await wait(async () => events(since).some(e => e.reason === 'media_playing'), 'player_start', 65000)
-      if (turn.expected.mode === 'once') await localCompleted(since)
+      if (turn.expected.mode === 'once' && playback?.name === 'play_youtube') await youtubeOnceDormant(since)
+      else if (turn.expected.mode === 'once') await localCompleted(since)
       else await loopDormant(playback?.name === 'play_youtube')
     }
     const checks = turn.expected.runtimeChecks
@@ -608,6 +630,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
             await start()
           })
           if (!ready) { missingPrerequisite = true; report({ step: stage, status: 'not_executed', reason: 'raven_qa_prerequisite_failed' }); continue }
+        }
+        if (turn.before === 'new_visit') {
+          if (!await check(stage + '_new_visit', start)) { missingPrerequisite = true; report({ step: stage, status: 'not_executed', reason: 'raven_qa_prerequisite_failed' }); continue }
         }
         if (turn.before === 'operator_stop_loop') {
           let looping = input.runtime.snapshot().lifecycle === 'dormant' && (await state()).media

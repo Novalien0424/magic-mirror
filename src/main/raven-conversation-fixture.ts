@@ -3,7 +3,7 @@
  */
 export type RavenScenarioId =
   | 'empathy_context' | 'local_media' | 'phonetic_media' | 'local_scope' | 'default_fallback'
-  | 'youtube_modes' | 'local_loop' | 'identity_denial' | 'two_visit_memory' | 'sleep_spells' | 'spell_control' | 'character_consistency'
+  | 'youtube_modes' | 'cloud_songs' | 'local_loop' | 'identity_denial' | 'two_visit_memory' | 'sleep_spells' | 'spell_control' | 'character_consistency'
 export type RavenFixtureBinding = 'youtubeQuery' | 'approvedSpell' | 'sleepPhrase' | 'cloudSearchPhrase'
 /** memory.* denotes the catalog's memory tool with that action, not another tool. */
 export type RavenFixtureTool =
@@ -23,7 +23,7 @@ export type RavenRuntimeCheck =
   | 'question_played' | 'private_memory_unlocked' | 'policy_disclosed'
   | 'clean_owner_session' | 'turn_start_owner' | 'control_extraction_skipped'
   | 'memory_saved' | 'learning_settled' | 'no_scene_trigger' | 'approved_exact_scene'
-  | 'scene_once' | 'scene_without_announcement_gate' | 'farewell_tail_before_close'
+  | 'scene_once' | 'scene_without_announcement_gate' | 'farewell_tail_before_close' | 'dormant_after_media'
 export interface RavenSemanticCriterion {
   readonly category: RavenSemanticCategory
   readonly expectation: string
@@ -48,7 +48,7 @@ export interface RavenFixtureTurn {
   readonly language: 'en' | 'zh-TW'
   readonly visitorText: string
   readonly before: 'ready' | 'once_finished' | 'operator_stop_loop' | 'identity_question_played'
-    | 'identity_confirmed' | 'learning_settled' | 'close_then_new_visit_after_learning' | 'scene_finished'
+    | 'identity_confirmed' | 'learning_settled' | 'close_then_new_visit_after_learning' | 'scene_finished' | 'new_visit'
   readonly expected: RavenTurnExpectation
 }
 export interface RavenConversationScenario {
@@ -355,14 +355,7 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
           criterion('source_choice', 'Choose a clear actual returned YouTube result; never guess a URL or claim discovery proves playback.')],
         expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube'], ['search_youtube', 'play_youtube']], source: 'local_then_youtube',
           mode: 'once', reply: 'silent', qualityDimensions: [] },
-        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
-      turn({ id: 'after_fallback', language: 'en', before: 'once_finished', visitorText: 'Now I would like a quiet evening. What is one simple idea?',
-        criteria: [criterion('media_return', 'Conversation resumes normally after natural once completion; offer a small relevant idea.')], checks: ['conversation_resumed'] }),
-      turn({ id: 'chinese_fallback', language: 'zh-TW', visitorText: '{{cloudSearchPhrase}}，換一個影片，幫我播放五秒倒數計時，最後有鈴聲的那種。',
-        criteria: [criterion('local_first', 'This new request opens with the online search phrase: search local then YouTube on a miss; do not claim internet search is prohibited.'),
-          criterion('source_choice', 'Play an actual matching returned result without asking permission to search.')],
-        expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube'], ['search_youtube', 'play_youtube']], source: 'local_then_youtube', mode: 'once', reply: 'silent', qualityDimensions: [] },
-        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed', 'dormant_after_media'] }),
     ],
   },
   {
@@ -370,13 +363,9 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
       turn({ id: 'youtube_without_phrase', language: 'en', visitorText: 'On YouTube, play the video {{youtubeQuery}}.',
         criteria: [criterion('local_scope', 'Naming YouTube without the opening phrase does not allow online search: explain the local miss briefly; never search online, offer an online search or hint how to enable one.')],
         expected: { toolRoutes: [['find_media'], ['find_media', 'find_media']], source: 'local_only', reply: 'local_unavailable' }, checks: ['source_scope'] }),
-      turn({ id: 'youtube_once', language: 'zh-TW', visitorText: '{{cloudSearchPhrase}}，播放 {{youtubeQuery}} 這部影片。',
-        criteria: [criterion('source_choice', 'The opening phrase allows online search; use an actual returned URL, default once, and stay silent on playback.')],
-        expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube'], ['search_youtube', 'play_youtube']], source: 'youtube', mode: 'once', reply: 'silent', qualityDimensions: [] },
-        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed'] }),
-      turn({ id: 'youtube_loop', language: 'zh-TW', before: 'once_finished',
+      turn({ id: 'youtube_loop', language: 'zh-TW',
         visitorText: '{{cloudSearchPhrase}}，循環播放 {{youtubeQuery}} 這部影片。',
-        criteria: [criterion('command_intent', 'An explicit loop now overrides the previous once request. Do not promise playback or sleep independently.')],
+        criteria: [criterion('command_intent', 'An explicit loop request: search online and loop an actual returned result. Do not promise playback or sleep independently.')],
         expected: { toolRoutes: [['play_youtube'], ['search_youtube', 'play_youtube'], ['find_media', 'search_youtube', 'play_youtube']], source: 'youtube', mode: 'loop', reply: 'silent', qualityDimensions: [] },
         checks: ['source_scope', 'mode', 'selection', 'playback_started', 'loop_boundary', 'mic_release_before_acquire'] }),
       turn({ id: 'after_youtube_loop', language: 'zh-TW', before: 'operator_stop_loop', visitorText: '我們繼續聊吧。我今晚只想放鬆，有什麼簡單的建議？',
@@ -384,6 +373,20 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
         checks: ['conversation_resumed', 'mic_release_before_acquire'] }),
       turn({ id: 'quoted_youtube', language: 'en', visitorText: 'Imagine someone saying "loop a YouTube video". I am not asking you to do it; what makes repetition soothing?',
         criteria: [criterion('command_intent', 'The hypothetical, quoted and negated request must trigger no search or playback; discuss repetition.')] }),
+    ],
+  },
+  {
+    // Owner 2026-11-07: these exact requests must work; the song plays on every speaker at the
+    // default levels while Raven is Dormant, and Raven stays Dormant after the song.
+    id: 'cloud_songs', setup: 'fresh_guest', prerequisites: ['Online search allowed; actual YouTube results for both requests.'], turns: [
+      turn({ id: 'jay_chou_song', language: 'zh-TW', visitorText: '幫我在雲上找 周杰倫青花瓷撥放',
+        criteria: [criterion('source_choice', 'The relaxed online search phrase opens the request: find and play an actual returned YouTube result for Jay Chou\'s 青花瓷 without asking permission; stay silent on playback.')],
+        expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube'], ['search_youtube', 'play_youtube']], source: 'local_then_youtube', mode: 'once', reply: 'silent', qualityDimensions: [] },
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed', 'dormant_after_media'] }),
+      turn({ id: 'zhou_shen_medley', language: 'zh-TW', visit: 2, before: 'new_visit', visitorText: '幫我在雲上找周深的組曲撥放',
+        criteria: [criterion('source_choice', 'Find and play an actual returned YouTube medley (組曲) by Zhou Shen without asking permission; stay silent on playback.')],
+        expected: { toolRoutes: [['find_media', 'search_youtube', 'play_youtube'], ['search_youtube', 'play_youtube']], source: 'local_then_youtube', mode: 'once', reply: 'silent', qualityDimensions: [] },
+        checks: ['source_scope', 'mode', 'selection', 'playback_started', 'once_completed', 'dormant_after_media'] }),
     ],
   },
   {

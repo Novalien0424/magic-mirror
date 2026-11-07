@@ -33,7 +33,7 @@ describe('bounded synthetic Raven fixture', () => {
   it('has immutable independent scenarios, unique turn/category codes and bounded catalog routes', () => {
     expect(recursivelyFrozen(RAVEN_CONVERSATION_FIXTURE)).toBe(true)
     expect(new Set(RAVEN_CONVERSATION_SCENARIOS.map(s => s.id)).size).toBe(RAVEN_CONVERSATION_SCENARIOS.length)
-    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(12)
+    expect(RAVEN_CONVERSATION_SCENARIOS.length).toBe(13)
     for (const s of RAVEN_CONVERSATION_SCENARIOS) {
       expect(s.turns.length).toBeGreaterThan(1)
       expect(s.turns.length).toBeLessThanOrEqual(12)
@@ -100,12 +100,21 @@ describe('bounded synthetic Raven fixture', () => {
       expect(turn.expected.source).toBe('local_only')
       expect(turn.expected.toolRoutes.flat().some(tool => tool.includes('youtube'))).toBe(false)
     }
-    for (const [id, turnId] of [['default_fallback', 'cloud_external'], ['default_fallback', 'chinese_fallback'], ['youtube_modes', 'youtube_once'], ['youtube_modes', 'youtube_loop']] as const) {
+    for (const [id, turnId] of [['default_fallback', 'cloud_external'], ['youtube_modes', 'youtube_loop']] as const) {
       const turn = fixtureTurn(id, turnId)
       expect(turn.visitorText.startsWith('{{cloudSearchPhrase}}')).toBe(true)
       expect(turn.expected.toolRoutes.every(route => route.at(-1) === 'play_youtube')).toBe(true)
       expect(turn.expected.runtimeChecks).toContain('selection')
     }
+    // Owner 2026-11-07: the relaxed phrase in the owner's own words; a YouTube play-once leaves Raven Dormant.
+    const songs = scenario('cloud_songs')
+    expect(songs.turns.map(turn => turn.visitorText)).toEqual(['幫我在雲上找 周杰倫青花瓷撥放', '幫我在雲上找周深的組曲撥放'])
+    for (const turn of [...songs.turns, fixtureTurn('default_fallback', 'cloud_external')]) {
+      expect(turn.expected.mode).toBe('once')
+      expect(turn.expected.toolRoutes.every(route => route.at(-1) === 'play_youtube')).toBe(true)
+      expect(turn.expected.runtimeChecks).toEqual(expect.arrayContaining(['playback_started', 'once_completed', 'dormant_after_media']))
+    }
+    expect(songs.turns[1]!.before).toBe('new_visit')
     expect(fixtureTurn('default_fallback', 'cloud_external').expected.criteria.some(c => c.category === 'local_first')).toBe(true)
   })
 

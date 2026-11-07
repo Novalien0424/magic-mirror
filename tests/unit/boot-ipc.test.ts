@@ -629,7 +629,7 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     expect(JSON.stringify(events)).not.toContain('private-query')
     expect(JSON.stringify(events)).not.toContain('Rain')
   })
-  it('routes YouTube once completion and loop wake ownership through the existing media lifecycle', async () => {
+  it('hands every YouTube play-once and loop to Dormant through the existing media lifecycle', async () => {
     const fixtures = makeTrackedRendererWindows(), events: MetadataEvent[] = [], send = vi.spyOn(fixtures.mirrorSender, 'send')
     const snapshot = { ...createStartingSnapshot(), lifecycle: 'active', realtimeSessionId: 'youtube-session', sessionGeneration: 3 }
     const config = { configVersion: 1, spells: [], scenes: [], sceneActions: [], adapters: { lighting: 'mock', fog: 'mock' },
@@ -644,13 +644,13 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     const once = handler(event, { request, identity })
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledOnce())
     report({ ...context, status: 'acknowledged' }); expect(await once).toBe('accepted')
-    expect(requestSleep).not.toHaveBeenCalled()
+    expect(requestSleep).toHaveBeenCalledOnce()
     report({ ...context, status: 'completed' })
     expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ active: false, hideAvatar: false }))
     const loop = handler(event, { request: { ...request, mode: 'loop' }, identity })
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledTimes(2))
     report({ ...context, status: 'acknowledged' }); expect(await loop).toBe('accepted')
-    expect(requestSleep).toHaveBeenCalledOnce()
+    expect(requestSleep).toHaveBeenCalledTimes(2)
     await registered.control.stopAll({ preserveSleepingMedia: true })
     expect(youtube.stop).toHaveBeenCalledOnce()
     await registered.control.stopAll()
