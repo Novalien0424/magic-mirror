@@ -75,12 +75,18 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
       const emit = (status: 'acknowledged' | 'completed' | 'failed') => report({ ...request.context, status,
         ...(status === 'failed' ? { errorCode: failureCode } : {}) })
       const fail = () => { if (!stopped) { cleanup(); emit('failed') } }
+      // While Raven sleeps (every online song, owner 2026-11-07) the player fills the mirror and
+      // YouTube centres the 16:9 picture with black above and below. Awake (a failed handoff), music
+      // keeps the avatar visible above a real, unobscured player strip. The mirror's simple full
+      // screen does not always emit 'resize', so every poll re-checks the bounds.
       const layout = () => {
         const [width, height] = parent.getContentSize()
         if (width < 200 || height < 200) { fail(); return }
-        // Music keeps the avatar visible above a real, unobscured YouTube player.
-        const playerHeight = request.kind === 'music' ? Math.min(height, Math.max(200, Math.round(width * 9 / 16))) : height
-        view.setBounds({ x: 0, y: height - playerHeight, width, height: playerHeight })
+        const playerHeight = dormant || request.kind !== 'music' ? height : Math.min(height, Math.max(200, Math.round(width * 9 / 16)))
+        const target = { x: 0, y: height - playerHeight, width, height: playerHeight }
+        const current = typeof view.getBounds === 'function' ? view.getBounds() : undefined
+        if (current && current.x === target.x && current.y === target.y && current.width === target.width && current.height === target.height) return
+        view.setBounds(target)
       }
       const cleanup = () => {
         if (stopped) return
@@ -93,6 +99,8 @@ export function createYoutubePlayer(getWindow: () => BrowserWindow | undefined, 
           .catch(() => { options.report?.('youtube_storage_cleanup_failed') })
       }
       const poll = async () => {
+        if (stopped) return
+        layout()
         if (stopped) return
         if (now() - lastProgress > (started ? 30000 : 60000)) { failureCode = 'youtube_playback_timeout'; fail(); return }
         if (polling) return

@@ -267,7 +267,9 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   // wake worker) and Raven stays Dormant, not drawn awake, after the play-once finishes.
   const youtubeOnceDormant = async (since: number) => {
     await wait(async () => input.runtime.snapshot().lifecycle === 'dormant' && (await state()).released && (await state()).media, 'once_dormant_handoff', 30000)
-    await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'once_wake_microphone', 12000)
+    // The wake listener stays off while the song plays (the Jabra's open microphone puts it ~150 ms
+    // ahead of the other speakers) and returns after it.
+    if (['signal', 'silent'].includes((await wakeInput())?.state ?? '')) throw Error('raven_qa_wake_microphone_during_song')
     try {
       await wait(async () => {
         await youtubeNearEnd(await youtubeState())
@@ -279,6 +281,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         item: `state=${remote.state};seconds=${Math.round(remote.time)};duration=${Math.round(remote.duration)};error=${remote.error}` })
       throw error
     }
+    await wait(async () => ['signal', 'silent'].includes((await wakeInput())?.state ?? ''), 'once_wake_microphone_restored', 15000)
     await delay(3000)
     const after = await state()
     if (input.runtime.snapshot().lifecycle !== 'dormant' || after.media || after.phase === 'awake') throw Error('raven_qa_not_dormant_after_media')

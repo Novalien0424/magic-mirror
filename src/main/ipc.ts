@@ -172,6 +172,8 @@ export interface RegisterIpcHandlersOptions {
   readonly onConsoleSceneStatus?: (status: SceneStatusEvent) => void
   readonly isShuttingDown?: () => boolean
   readonly youtube?: import('../shared/youtube-media').YoutubePlayer
+  /** Release (true) or restore (false) the Dormant wake microphone around an online song. */
+  readonly mediaWakeMicrophone?: (released: boolean) => unknown | PromiseLike<unknown>
   readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
   readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
   readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
@@ -1314,7 +1316,13 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     musicGain: 1,
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
-  let sleepingMedia = false
+  let sleepingMedia = false, mediaMicrophoneReleased = false
+  // The wake listener returns once the online song has ended or stopped, by any path.
+  const restoreMediaMicrophone = () => {
+    if (!mediaMicrophoneReleased) return
+    mediaMicrophoneReleased = false
+    void Promise.resolve(options.mediaWakeMicrophone?.(false)).catch(() => undefined)
+  }
   let imageSkill: ReturnType<typeof registerImageSkillIpc> | undefined
   const mediaSkill = createMediaSkillRuntime({
     youtube: options.youtube,
@@ -1324,7 +1332,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       return dispatchMirrorAvatarControl(command, windows)
     },
     report: reason => {
-      if (!mediaSkill.isActive()) sleepingMedia = false
+      if (!mediaSkill.isActive()) { sleepingMedia = false; restoreMediaMicrophone() }
       emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime',
         status: /failed|timeout|unavailable/.test(reason) ? 'degraded' : 'info', reason })
     },
@@ -1967,11 +1975,18 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       // wake worker acquires it. The media survives this intentional sleep.
       sleepingMedia = true
       try {
+        // Release the wake listener before Dormant would take the microphone (the Jabra plays
+        // ~150 ms early with its microphone open); restored when the song ends or stops.
+        if (request.action === 'play_youtube' && request.mode === 'once' && options.mediaWakeMicrophone) {
+          mediaMicrophoneReleased = true
+          await options.mediaWakeMicrophone(true)
+        }
         const sleep = await runtime.requestSleep()
         if (readProperty(sleep, 'status') !== 'success') throw new Error('media_wake_handoff_failed')
         if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) options.youtube?.setDormant?.(true)
       } catch {
         sleepingMedia = false
+        restoreMediaMicrophone()
         // A play-once keeps playing in the conversation; a loop needs the wake handoff.
         if (request.mode !== 'loop') {
           emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_dormant_handoff_failed' })
@@ -2678,6 +2693,7 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
         if (!options?.preserveSleepingMedia || !sleepingMedia) {
           sleepingMedia = false
           mediaSkill.stop()
+          restoreMediaMicrophone()
         }
         await cachedSceneRuntime?.value.stopAll()
       })

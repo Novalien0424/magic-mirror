@@ -216,6 +216,10 @@ let requestedExitCode: number | null = null
 let stopYoutube: (() => void) | undefined
 // STOP exits through app.exit() (no will-quit): the Airfoil route and shared device release here.
 let stopMusicOutput: (() => void) | undefined
+// An online song plays in Dormant without the wake listener: with its microphone open the Jabra
+// switches to its call path and plays ~150 ms ahead of the calibrated speakers (measured 2026-11-07).
+let wakeSuspendedForMedia = false
+const wakeInputSuspended = (): boolean => (operatorLoop?.isInputSuspended() ?? false) || wakeSuspendedForMedia
 /** True while Airfoil plays the music device on every speaker (macOS only). */
 let airfoilActive: (() => boolean) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
@@ -310,7 +314,7 @@ function configureWakeRuntime(runtime: BootRuntime): Promise<void> {
 }
 
 async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
-  if (operatorLoop?.isInputSuspended()) { await wakeSupervisor?.release(); return }
+  if (wakeInputSuspended()) { await wakeSupervisor?.release(); return }
   if (
     typeof runtime.getPublishedWakeConfigForRuntime !== 'function'
     || typeof runtime.setWakeRuntimeStatus !== 'function'
@@ -371,7 +375,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
       : await wakeSupervisor.updateConfig({ package: workerPackage })
     if (updated.status !== 'success') return
     configuredWakeSignature = signature
-    if (!operatorLoop?.isInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
+    if (!wakeInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
       await wakeSupervisor.acquire()
     }
     return
@@ -380,7 +384,7 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
   const supervisor = createWakeSupervisor({
     spawn: spawnWakeWorker,
     onWake: () => {
-      if (operatorLoop?.isInputSuspended()) { marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_ignored' }); return }
+      if (wakeInputSuspended()) { marker(wakeSuspendedForMedia ? 'MEDIA_WAKE' : 'OPERATOR_LOOP', { reason: wakeSuspendedForMedia ? 'media_wake_ignored' : 'operator_loop_wake_ignored' }); return }
       void activation?.handleWake().catch(() => reportMainDegradation('wake', 'wake_activation_failed', 'wake_activation_rejected'))
     },
     onStatus: (snapshot) => {
@@ -403,13 +407,13 @@ async function applyWakeRuntimeConfig(runtime: BootRuntime): Promise<void> {
     getLifecycle: () => runtime.snapshot().lifecycle,
     beforeStart: () => stopScenes(),
     startConversation: () => runtime.manualStart(),
-    reacquireWake: () => operatorLoop?.isInputSuspended() ? Promise.resolve({ status: 'success' as const, reason: 'operator_loop_no_microphone' }) : supervisor.acquire(),
+    reacquireWake: () => wakeInputSuspended() ? Promise.resolve({ status: 'success' as const, reason: wakeSuspendedForMedia ? 'media_no_microphone' : 'operator_loop_no_microphone' }) : supervisor.acquire(),
   })
   wakeSupervisor = supervisor
   const started = await supervisor.start({ package: workerPackage })
   if (started.status === 'failed') return
   configuredWakeSignature = signature
-  if (!operatorLoop?.isInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
+  if (!wakeInputSuspended() && (runtime.snapshot().lifecycle === 'dormant' || runtime.snapshot().lifecycle === 'offlineLoop')) {
     await supervisor.acquire()
   }
 }
@@ -1329,7 +1333,7 @@ void app.whenReady().then(async () => {
     },
     resumeAvatar: async () => {
       await configureWakeRuntime(runtime)
-      if (!operatorLoop?.isInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+      if (!wakeInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
         const result = await wakeSupervisor?.acquire()
         if (result?.status === 'failed') marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_restore_failed' })
       }
@@ -1367,7 +1371,7 @@ void app.whenReady().then(async () => {
     clientSecretBroker,
     onFatalFailure: fatalMainFailure,
     rebuildWakeOwner: () => {
-      if (operatorLoop?.isInputSuspended()) return Promise.resolve({ status: 'success', reason: 'operator_loop_no_microphone' })
+      if (wakeInputSuspended()) return Promise.resolve({ status: 'success', reason: wakeSuspendedForMedia ? 'media_no_microphone' : 'operator_loop_no_microphone' })
       if (wakeOwnerRebuild) return wakeOwnerRebuild
       const rebuilding = (async (): Promise<WakeSupervisorResult> => {
         await wakeCalibration?.stop(false)
@@ -1377,7 +1381,7 @@ void app.whenReady().then(async () => {
           platform: `${process.platform}-${process.arch}`, customKeywordsDirectory: join(app.getPath('userData'), 'wake-keywords'),
           forceCustomKeywords: wakeTuningIsActive(wake) })
         if (!loaded.ok) return { status: 'failed', reason: loaded.reason }
-        if (operatorLoop?.isInputSuspended()) return { status: 'success', reason: 'operator_loop_no_microphone' }
+        if (wakeInputSuspended()) return { status: 'success', reason: wakeSuspendedForMedia ? 'media_no_microphone' : 'operator_loop_no_microphone' }
         return wakeSupervisor.restart({ package: createWakeWorkerPackage(loaded, wake) })
       })().finally(() => { wakeOwnerRebuild = null })
       wakeOwnerRebuild = rebuilding
@@ -1390,11 +1394,11 @@ void app.whenReady().then(async () => {
         return wakeSupervisor?.release() ?? { status: 'success' as const, reason: 'wake_microphone_not_configured' }
       },
       acquire: async () => {
-        if (operatorLoop?.isInputSuspended()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        if (wakeInputSuspended()) return { status: 'success' as const, reason: wakeSuspendedForMedia ? 'media_no_microphone' : 'operator_loop_no_microphone' }
         await wakeOwnerRebuild
         const calibration = await wakeCalibration?.stop(false)
         if (shutdownStarted || calibration?.status === 'failed') return { status: 'failed' as const, reason: 'wake_microphone_acquire_cancelled' }
-        if (operatorLoop?.isInputSuspended()) return { status: 'success' as const, reason: 'operator_loop_no_microphone' }
+        if (wakeInputSuspended()) return { status: 'success' as const, reason: wakeSuspendedForMedia ? 'media_no_microphone' : 'operator_loop_no_microphone' }
         if (!wakeSupervisor) return { status: 'degraded' as const, reason: 'wake_microphone_not_configured' }
         const result = await wakeSupervisor.acquire()
         return result.status === 'failed' && (wakeSupervisor.microphoneUnowned() || isWakeMicrophoneDeviceUnavailable(result.reason))
@@ -1861,6 +1865,18 @@ void app.whenReady().then(async () => {
     app.once('will-quit', () => stopMusicOutput?.())
   }
   sceneRuntimeControl = registerIpcHandlers({
+    // Owner 2026-11-07: an online song plays in Dormant with the Jabra microphone released, so the
+    // Jabra stays on its calibrated music path; the wake listener returns when the song ends or stops.
+    mediaWakeMicrophone: async (released: boolean) => {
+      if (wakeSuspendedForMedia === released) return
+      wakeSuspendedForMedia = released
+      marker('MEDIA_WAKE', { reason: released ? 'media_wake_microphone_released' : 'media_wake_microphone_restored' })
+      if (released) { await wakeSupervisor?.release(); return }
+      if (!wakeInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
+        const result = await wakeSupervisor?.acquire()
+        if (result?.status === 'failed') reportMainDegradation('wake', 'media_wake', 'media_wake_restore_failed')
+      }
+    },
     onConsoleSceneStatus: status => webConsole?.publish('console:scene-status', status),
     isShuttingDown: () => shutdownStarted,
     youtube: youtubePlayer,
@@ -2130,6 +2146,8 @@ void app.whenReady().then(async () => {
     const previousLifecycle = mainLifecycle
     mainLifecycle = snapshot.lifecycle
     cameraTracking?.update(operatorLoop?.isInputSuspended() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
+    // An online song keeps its Dormant volume and full-mirror picture only while Raven sleeps.
+    if (previousLifecycle !== snapshot.lifecycle && ['activating', 'active'].includes(snapshot.lifecycle)) youtubePlayer?.setDormant?.(false)
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
       stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {

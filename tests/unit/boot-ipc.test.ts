@@ -636,16 +636,20 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
       musicAssets: [], visualAssets: [], avatarCatalog: { activeAvatarId: 'raven', locks: [], avatars: [{ id: 'raven' }] } }
     let report!: (value: any) => void, context: any
     const youtube = { play: vi.fn((request, callback) => { context = request.context; report = callback; return true }), stop: vi.fn() }
-    const requestSleep = vi.fn(async () => ({ status: 'success' }))
+    const requestSleep = vi.fn(async () => ({ status: 'success' })), mediaWakeMicrophone = vi.fn()
     const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never,
-      fixtures.windows, events, undefined, { youtube })
+      fixtures.windows, events, undefined, { youtube, mediaWakeMicrophone })
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!, event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'youtube-session', sessionGeneration: 3 }, request = { action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'once' }
     const once = handler(event, { request, identity })
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledOnce())
     report({ ...context, status: 'acknowledged' }); expect(await once).toBe('accepted')
     expect(requestSleep).toHaveBeenCalledOnce()
+    // The wake listener gives up the Jabra microphone before Dormant and returns after the song.
+    expect(mediaWakeMicrophone.mock.calls).toEqual([[true]])
+    expect(mediaWakeMicrophone.mock.invocationCallOrder[0]).toBeLessThan(requestSleep.mock.invocationCallOrder[0]!)
     report({ ...context, status: 'completed' })
+    expect(mediaWakeMicrophone.mock.calls).toEqual([[true], [false]])
     expect(send).toHaveBeenLastCalledWith('mirror:avatar-control', expect.objectContaining({ active: false, hideAvatar: false }))
     const loop = handler(event, { request: { ...request, mode: 'loop' }, identity })
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledTimes(2))

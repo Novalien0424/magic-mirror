@@ -8,9 +8,10 @@ after it; STOP must stop it; songs play on every speaker at the default levels. 
 
 ## Changes
 
-- `matchSearchPhrase` (`src/shared/spoken-command.ts`): lead-in up to six syllables, optional
-  repeated last character, 雲上找 without 在; negation (A-not-A excepted), quotes and later mentions
-  still block. Used by the Realtime adapter; unit-tested with the owner's sentences.
+- `matchSearchPhrase` (`src/shared/spoken-command.ts`): natural "search online" wordings (an online
+  place plus a search verb, e.g. 幫我在雲上找, 幫我再網路上找, 在 YouTube 上找, 上網查查) or the configured
+  phrase, after a lead-in of up to six syllables; negation (A-not-A excepted), quotes and later
+  mentions still block; 油管 is excluded (sounds like 有關). Unit-tested with the owner's sentences.
 - Every `play_youtube` hands Raven to Dormant (`src/main/ipc.ts`); a failed handoff keeps a
   play-once playing in the conversation. YouTube plays at full scale while Dormant
   (`youtube-player.ts`), so the speakers' calibrated levels set the loudness. The mirror no longer
@@ -31,3 +32,30 @@ Also: unit suite 151 files / 2343 tests pass (the six `phase4-qa-runner` cases f
 first full run right after `npm run build` and pass on rerun). Airfoil's Bluetooth settle and the
 keep-A1-connected STOP were verified live (START/STOP/START cycles, A1 joined 6 min 34 s after its
 first connect, resumed its settle across a quick STOP/START, then played at once).
+
+## Second round (owner feedback: phrase too strict, YouTube less in sync, picture off-centre)
+
+- **Sync cause measured.** Chirps through Airfoil, A1's mic, Jabra 80% / Edifier 30%: with the Jabra
+  microphone closed the Jabras were −4 ms from the Edifier; with it held open (as the Dormant wake
+  listener did during a YouTube song) they were −140 and −157 ms (the speakerphone's call path),
+  back to normal once closed. MusicLoop releases the microphone, so local music sounded fine.
+  YouTube audio itself went only to "Magic Mirror Music" (process routing monitor), i.e. Airfoil.
+- **Fix.** During an online play-once the wake listener is released before Raven sleeps and returns
+  after the song (`mediaWakeMicrophone`); online loops keep voice wake. Search results carry
+  `mediaOnlinePlay` (play the best fit when asked to play, no choice question): one earlier run's
+  medley turn searched but asked instead of playing (`raven_qa_tool_route`).
+- **Picture.** The YouTube view is laid out from the window size on every poll (the mirror's simple
+  full screen does not always emit `resize`) and fills the mirror with the 16:9 picture centred
+  while Raven sleeps; awake, music keeps the strip below the avatar.
+- **Independent audit** (read-only agent) findings fixed: wake release limited to play-once (loops
+  had lost voice wake), 油管/有關 collision, ASR spaces and 查查, stale VOL± group level (the shared
+  output helper now rewrites it while the Jabra is below 100%), awake layout/volume after Dormant,
+  a failed Bluetooth join and a failed wake restore are now Console degradations.
+
+| Run | Result |
+| --- | --- |
+| `2026-11-07T14-13-16-936Z` | Routing monitor run: first song passed; the medley turn searched but did not play (`raven_qa_tool_route`, model asked). Exit 2. |
+| `2026-11-07T14-46-51-392Z` | After the fixes: both sentences played, wake listener off during each song and restored after, Dormant after; judge passed; YouTube audio only to "Magic Mirror Music". Exit 0. |
+
+Unit suite 151 files / 2361 tests pass (the six `phase4-qa-runner` cases fail intermittently in
+some full runs and always pass alone).

@@ -35,6 +35,8 @@ describe('isolated visible YouTube player', () => {
     player.setDormant?.(true)
     await vi.advanceTimersByTimeAsync(500)
     expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(100)')
+    // Asleep, the player fills the mirror and YouTube centres the picture; the poll applies it.
+    expect(f.views[0].setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 1080, height: 1920 })
     player.setDormant?.(false)
     await vi.advanceTimersByTimeAsync(500)
     expect(contents.executeJavaScript).toHaveBeenCalledWith('void player?.setVolume(50)')
@@ -102,6 +104,7 @@ describe('isolated visible YouTube player', () => {
     vi.useFakeTimers()
     const win = parent(), report = vi.fn(), player = createYoutubePlayer(() => win as never)
     player.play({ ...request, mode: 'loop', kind: 'music' }, report)
+    // Awake (a failed Dormant handoff), music keeps the avatar visible above the player strip.
     expect(f.views[0].setBounds).toHaveBeenCalledWith({ x: 0, y: 1312, width: 1080, height: 608 })
     f.state = { state: 1, time: 1, error: false }
     await vi.advanceTimersByTimeAsync(500)

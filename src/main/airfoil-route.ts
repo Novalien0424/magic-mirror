@@ -165,7 +165,10 @@ export function createAirfoilRoute(input: {
       if (!speaker.connected) { settling.delete(speaker.id); continue }
       if (!settled(speaker)) continue
       settling.delete(speaker.id)
-      try { await run(VOLUME, [speaker.id, '1']); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch { settling.set(speaker.id, clock() - settleMs) }
+      try { await run(VOLUME, [speaker.id, '1']); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch {
+        settling.set(speaker.id, clock() - settleMs)
+        input.degraded('music_output_bluetooth_join_failed')
+      }
     }
     saveSettling()
     // AirPlay connects finish after the first poll; a late or returning speaker counts as reconnected.

@@ -43,10 +43,18 @@ describe('online search phrase, not strict (owner rulings 2026-10-14, 2026-11-07
     ['再雲上找找，播放晴天', 'request'], ['在云上找找 Moonlit Lake', 'request'], ['在雲上找晴天', 'request'], ['請幫我雲上找晴天', 'request'],
     ['可不可以幫我在雲上找晴天', 'request'], ['有沒有辦法在雲上找晴天', 'request'], ['Raven 幫我在雲上找晴天', 'request'],
     ['在雲上找找', 'alone'], ['在雲上找找。', 'alone'], ['幫我在雲上找一下', 'alone'], ['雲上找找', 'alone'],
+    // Any natural "look it up online" wording (owner 2026-11-07).
+    ['幫我再網路上找周杰倫青花瓷', 'request'], ['幫我上網找青花瓷', 'request'], ['幫我在網上搜尋周深', 'request'],
+    ['在YouTube上找青花瓷', 'request'], ['請幫我搜尋網路上的晴天', 'request'],
+    ['幫我在線上查一下', 'alone'], ['幫我用網路查一下', 'alone'],
+    ['在 YouTube 上找青花瓷', 'request'], ['幫我上網查查青花瓷', 'request'], ['Raven 可以幫我在網路上找晴天', 'request'], ['播放YouTube上的晴天', 'request'],
   ])('unlocks: %s', (text, kind) => {
     expect(matchSearchPhrase(text, '在雲上找找')).toBe(kind)
   })
-  it.each(['不要在雲上找找', '別在雲上找晴天', '沒在雲上找晴天', '「在雲上找找」晴天', '我朋友昨天跟我說可以在雲上找歌', '晴天', ''])('does not unlock: %s', text => {
+  it.each(['不要在雲上找找', '別在雲上找晴天', '沒在雲上找晴天', '「在雲上找找」晴天', '我朋友昨天跟我說可以在雲上找歌', '晴天', '',
+    '不要上網找', '別在網路上找晴天', '「在網路上找」是什麼', '播放晴天', '幫我找晴天',
+    // 油管 sounds like 有關, so it is not an online place (independent audit 2026-11-07).
+    '播放有關下雨的音樂', '幫我找有關海的影片'])('does not unlock: %s', text => {
     expect(matchSearchPhrase(text, '在雲上找找')).toBeUndefined()
   })
   it('never matches an empty phrase, and the strict opening check stays for spells', () => {

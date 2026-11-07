@@ -2,16 +2,23 @@
 
 ## 2026-11-07 — Online songs: relaxed phrase, Dormant playback (owner rulings, night)
 
-- The online search phrase "should not be too strict": its core may follow a short lead-in
-  such as 幫我, 請, 麻煩你 or 可不可以幫我 (up to six syllables), the repeated last character
-  is optional, and 雲上找 without 在 counts (sound-alike keys as before). A negation before it
-  (A-not-A questions such as 可不可以 excepted), quotes, or a later mention still do not
-  unlock. Supersedes the strict opening match of 2026-10-14 for this phrase only.
-- A song or video found online hands Raven to Dormant as soon as it plays (silent sleep, mic to
-  the wake worker) and Raven stays Dormant after a play-once ends; the conversation does not
-  resume. It plays at full scale on the music route, so every speaker plays it at its default
-  level (no Dormant duck for YouTube; supersedes the 12 dB loop duck of 2026-10-11 for YouTube).
-  Local media keeps its earlier behaviour. STOP quits the app and stops the song.
+- Online search is not hidden or strict any more (owner: 「幫我在雲上找，幫我再網路上找等等都
+  should work」). It unlocks when, within the first six syllables (a lead-in such as 幫我, 幫我再,
+  請 or 可不可以幫我), the visitor names an online place with a search verb — 雲上/雲端/網路(上)/
+  網上/線上/上網/YouTube(上) with 找/搜/搜尋/搜索/查/查查/查詢/尋找/播放; 網路, 雲端 and YouTube
+  also verb-first (搜尋網路, 播放YouTube上的…) — or the avatar's configured phrase (repeated last
+  character optional). Deterministic sound-alike keys as before (invariant 7's prefix exception
+  now covers this list); a negation before it (A-not-A questions such as 可不可以 excepted),
+  quotes, or a later mention still do not unlock. 油管 is excluded (it sounds like 有關).
+  Supersedes the 10-14 strict phrase and "saying YouTube no longer goes online".
+- A song or video found online hands Raven to Dormant as soon as it plays (silent sleep) and
+  Raven stays Dormant after a play-once ends; the conversation does not resume. During a
+  play-once the wake listener is off: with its microphone open the Jabra plays ~150 ms ahead of
+  the calibrated speakers (measured 2026-11-07), so the song cannot be stopped by voice; STOP,
+  Console Stop All or a mode key stop it, and the wake listener returns afterwards. Online loops
+  keep the wake listener (ruling 2026-10-11) at the cost of that Jabra offset. YouTube plays at full
+  scale while Raven sleeps (every speaker at its default level, no Dormant duck), filling the mirror
+  with the picture centred. Local media keeps its earlier behaviour.
 
 ## 2026-11-07 — Speakers calibrated to the Jabra (owner ruling)
 

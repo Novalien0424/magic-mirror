@@ -36,6 +36,8 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
         ...(image?.next ? { next: image.next } : {}),
         // Studio guidance is application/operator text; the guest list only ever appears as ≤3 matched candidates.
         ...(studio ? { studio: { code: studio.code, ...(studio.candidates ? { candidates: studio.candidates } : {}) }, ...(studio.next ? { next: studio.next } : {}) } : {}),
+        // Owner 2026-11-07: a requested song found online plays without a choice question.
+        ...(spec.handler === 'search_youtube' && youtube?.code === 'youtube_search_results' && youtube.videos.length ? { next: REALTIME_PROMPTS.mediaOnlinePlay } : {}),
         ...(spec.handler === 'find_media' && media?.code === 'media_discovery_no_match'
           ? { next: next === 'search_youtube' ? REALTIME_PROMPTS.mediaOnlineSearch : REALTIME_PROMPTS.mediaNoMatch } : {}),
         ...(failureCode === 'media_source_restricted' || failureCode === 'media_source_unconfirmed' ? { next: REALTIME_PROMPTS.mediaNoMatch } : {}),

@@ -324,7 +324,8 @@ describe("RealtimeSession adapter", () => {
     expect(onSearchYoutube).not.toHaveBeenCalled(); expect(onMediaRequest).not.toHaveBeenCalled();
     turn('cloud', '幫我在雲上找 Moonlit Lake 播放');
     expect(await find()).toMatchObject({ next: REALTIME_PROMPTS.mediaOnlineSearch });
-    expect(await search()).toMatchObject({ youtube: { code: 'youtube_search_results' } });
+    // Actual results come with the instruction to play the best fit without a choice question.
+    expect(await search()).toMatchObject({ youtube: { code: 'youtube_search_results' }, next: REALTIME_PROMPTS.mediaOnlinePlay });
     turn('selection', 'Play the first one.');
     await play(found);
     expect(await play(other)).toMatchObject({ code: 'media_source_restricted' });
@@ -348,12 +349,13 @@ describe("RealtimeSession adapter", () => {
     const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), avatar, onSearchYoutube,
       onFindMedia: async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 }) });
     const search = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools.find(t => t.name === 'search_youtube');
-    for (const [id, transcript] of [['default', '在雲上找找月光湖'], ['custom', '芝麻開門，月光湖']]) {
+    // Natural online wordings always work (owner 2026-11-07); the avatar's own phrase is an extra way in.
+    for (const [id, transcript] of [['natural', '幫我再網路上找月光湖'], ['custom', '芝麻開門，月光湖'], ['plain', '幫我找月光湖']]) {
       probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: id });
       probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript });
       await search.invoke({}, '{"query":"月光湖"}');
     }
-    expect(onSearchYoutube).toHaveBeenCalledOnce();
+    expect(onSearchYoutube).toHaveBeenCalledTimes(2);
     await handle.close('user_requested');
   });
   it('recovers a literal visitor title after an empty model query without selecting playback or logging the transcript', async () => {

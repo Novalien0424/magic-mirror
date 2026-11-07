@@ -399,8 +399,16 @@ final class SharedOutput {
     // A reconnecting speaker can push its stored level a moment after it appears.
     DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: apply)
   }
-  /// The group (Jabra) level for Main to apply to AirPlay speakers with their offsets.
+  var lastStoredGroup: Float32 = -1
+  /// The group (Jabra) level for Main to apply to AirPlay speakers with their offsets. While the
+  /// Jabra is below 100% its level is the group level, so the stored VOL± level is kept equal to
+  /// it: Dance, QA restores and the Jabra's own buttons then never leave a stale value above 1.
   func reportLevel() {
+    if let jabra = physical.first(where: { !$0.builtIn && speakerLevels.isJabra(outputName($0.id)) }), let current = outputLevel(jabra.id),
+      current < 0.995, abs(current - lastStoredGroup) >= 0.005 {
+      lastStoredGroup = current
+      try? String(format: "%.2f\n", current).write(to: SpeakerLevels.groupFile, atomically: true, encoding: .utf8)
+    }
     guard let level = groupLevel(physical), abs(level - lastLevel) >= 0.01 else { return }
     lastLevel = level; emit("level", ["level": Double(level)])
   }

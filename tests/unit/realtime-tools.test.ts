@@ -207,6 +207,7 @@ describe('structured Realtime tool catalog', () => {
     handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_no_match', resources: [], total: 0 }, next: 'search_youtube' })
     expect(await call(tool, '{"query":"missing","kind":"music"}')).toMatchObject({ next: REALTIME_PROMPTS.mediaOnlineSearch })
     expect(REALTIME_PROMPTS.mediaOnlineSearch).toContain('search_youtube')
+    expect(REALTIME_PROMPTS.mediaOnlinePlay).toContain('play_youtube')
     handler.mockResolvedValueOnce({ outcome: 'accepted', media: { ...media, code: 'media_discovery_stale', resources: [], total: 0 } })
     expect(isBackgroundResult(await call(tool, '{"query":"rain","kind":"music"}'))).toBe(true)
   })

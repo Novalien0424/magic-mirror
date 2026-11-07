@@ -41,23 +41,34 @@ const SEARCH_LEAD_LIMIT = 6
 const NEGATIONS = new Set(['p:bu', 'p:bie', 'p:mei', 'p:wu', 'p:mo', 'p:ben'])
 const QUOTES = /^x:[「」『』“”‘’"'«»]$/u
 const SEARCH_FILLERS = new Set(['p:yi', 'p:xia', 'p:ba', 'p:a', 'p:ma', 'p:hao', 'p:ne', 'p:o', 'p:kan', 'p:la', 'p:ya', 'p:zhao'])
+/** Natural ways to say "look it up online" (owner 2026-11-07: 幫我在雲上找, 幫我再網路上找 and the like). */
+const ONLINE_PLACES = ['雲上', '雲端', '雲端上', '網路上', '網路', '網上', '線上', '上網', 'youtube上', 'youtube']
+/** Places that can also follow the verb (搜尋網路, 播放YouTube上的…) without sounding like everyday words. */
+const VERB_FIRST_PLACES = ['網路', '網路上', '雲端', 'youtube', 'youtube上']
+const ONLINE_VERBS = ['找', '找找', '搜', '搜尋', '搜索', '查', '查查', '查詢', '尋找', '播放']
+let onlineCores: string[][] | undefined
+// Spaces from the recognizer (「在 YouTube 上找」) are not words.
+const keysOf = (text: string): string[] => spokenCommandKey(text.toLowerCase()).split('|').filter(key => key && key !== 'x: ')
 
 /**
- * The online search phrase, deliberately not strict (owner 2026-11-07). Its core (a repeated
- * last syllable optional: 在雲上找找 → 在雲上找; or without its first syllable when three remain:
- * 雲上找) may follow a short lead-in such as 幫我, 請, 麻煩你 or 可不可以幫我 (at most six syllables,
- * Latin words count once). A negation before it (不, 別, 沒, 勿, 莫, 甭; A-not-A questions such as
- * 可不可以 and 有沒有 are not negations), a quotation mark, or a later mention does not unlock.
- * Returns 'alone' when only fillers follow (the next turn is covered too), 'request' when a request
- * follows, or undefined.
+ * Online search, deliberately relaxed (owner 2026-11-07). It unlocks when, within the first six
+ * syllables (Latin words count once; a lead-in such as 幫我, 幫我再, 請 or 可不可以幫我), the
+ * transcript says an online place with a search verb in either order (雲上找, 網路上找, 上網查,
+ * 搜尋網路, YouTube上找…) or the avatar's configured phrase (its repeated last character
+ * optional, or without its first syllable when three remain). A negation before it (不, 別, 沒,
+ * 勿, 莫, 甭; A-not-A questions such as 可不可以 and 有沒有 excepted), a quotation mark, or a later
+ * mention does not unlock. Returns 'alone' when only fillers follow (the next turn is covered
+ * too), 'request' when a request follows, or undefined.
  */
 export function matchSearchPhrase(value: string, phrase: string): 'alone' | 'request' | undefined {
-  const phraseKeys = spokenCommandKey(phrase).split('|').filter(Boolean)
-  if (!phraseKeys.length) return undefined
+  onlineCores ??= [...ONLINE_PLACES.flatMap(place => ONLINE_VERBS.map(verb => keysOf(place + verb))),
+    ...VERB_FIRST_PLACES.flatMap(place => ONLINE_VERBS.map(verb => keysOf(verb + place)))]
+  const phraseKeys = keysOf(phrase)
   const repeated = phraseKeys.length > 1 && phraseKeys.at(-1) === phraseKeys.at(-2)
   const base = repeated ? phraseKeys.slice(0, -1) : phraseKeys
-  const cores = base.length - 1 >= 3 ? [base, base.slice(1)] : [base]
-  const keys = spokenCommandKey(value).split('|').filter(Boolean)
+  const configured = !base.length ? [] : base.length - 1 >= 3 ? [base, base.slice(1)] : [base]
+  const cores = [...configured, ...onlineCores].filter(core => core.length > 1).sort((x, y) => y.length - x.length)
+  const keys = keysOf(value)
   // Latin words count once toward the lead-in limit.
   const tokens: string[][] = []
   for (const key of keys) {
