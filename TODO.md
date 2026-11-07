@@ -104,11 +104,10 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   unit-tested only.
 - [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
   "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
-  Open: (1) the second Jabra is linked to the venue Jabra with Jabra's link (owner 11-07; yellow
-  Smart button) but played nothing in two direct tests (left, right, both channels, mic open):
-  every sound came from the USB Jabra, and the linked unit's volume buttons did not move the
-  USB unit's level. Relinked 11-07 (USB unit pressed first); re-test pending. If it plays,
-  measure its delay (the 11-01 iPad memo had a +336 ms train) before using it for music;
+  Open: (1) the second Jabra now plays through Jabra's link (11-07: silent while the USB Jabra
+  had been pressed second; relinked with the USB Jabra first, owner confirmed both play). Its
+  delay against the USB Jabra is unmeasured (the 11-01 iPad memo had a +336 ms train; Airfoil
+  cannot offset it separately); measure with a non-Jabra mic, and its loudness at 1 m;
   (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
   exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra's hidden
   ≈108 ms rests on one iPad memo; re-check with a real mic; (4) watch A1 (±25 ms per stream

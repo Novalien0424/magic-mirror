@@ -4,15 +4,16 @@
 
 - The speakers are not equally loud at the same setting (owner's sound meter at 1 m:
   Edifier +10/+11 dB and A1 +4/+6 dB over the Jabra at 30%/70%). Normal levels are now
-  Jabra 70%, A1 55%, Edifier 40%, kept in machine-local
+  Jabra 80%, A1 65%, Edifier 50% (measured match 70/55/40, then the owner's choice by ear
+  one VOL+ higher), kept in machine-local
   `ops/music-device/speaker-levels.json`; every place that returned speakers to 70%
   (STOP, START, MUSIC LOOP press, Dance end, QA cleanup) uses these, and VOL±, Dance
   volume and reconnects keep each speaker's offset from the Jabra. Supersedes "All
   speakers at 70%" (2026-10-31). The owner may fine-tune by ear; the tuned levels then
   become the file's values.
-- The second Jabra Speak2 75 is linked to the venue Jabra with Jabra's own link
-  (owner); the Mac sees one Jabra. Whether the linked unit plays the venue's audio is
-  still open (TODO). It must not be plugged into the Mac (two Jabras refuse the reset).
+- The second Jabra Speak2 75 is a venue speaker through Jabra's own link to the USB Jabra
+  (owner; supersedes "measurement aid only" below); the Mac sees one Jabra. Link with the
+  USB Jabra pressed first. It must not be plugged into the Mac (two Jabras refuse the reset).
 
 ## 2026-11-01 — Mini kept, short refusals, Studio hold retired (owner rulings, evening)
 

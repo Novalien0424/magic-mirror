@@ -22,7 +22,7 @@ Identify each audio route explicitly; each proves only its own boundary. Provide
 
 Owner sound directive (2026-10-17, clarified 2026-10-23/31, 2026-11-07): **outputs at 1%
 during QA are intentional; after QA every external speaker returns to its calibrated normal level
-(Jabra 70%, A1 55%, Edifier 40%: `ops/music-device/speaker-levels.json`), even if its captured
+(Jabra 80%, A1 65%, Edifier 50% since the owner's 11-07 tuning: `ops/music-device/speaker-levels.json`), even if its captured
 starting volume was lower.** Before sound-producing QA, capture output/mute by
 device identity and use the minimum output level (tested Mac system route: 1%).
 On success, failure or cancellation, first finish/release owned test playback,

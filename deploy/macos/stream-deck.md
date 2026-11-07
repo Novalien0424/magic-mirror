@@ -164,14 +164,20 @@ each, 10 s band-limited pink noise through the music route; background 49 dB): J
 Edifier 71/85 dB, A1 65/80 dB at 30%/70%. Every speaker rises about 3.5 dB per 10%, so one
 fixed offset per speaker matches them at any volume. The **normal levels** (owner ruling) live
 in `~/Library/Application Support/MagicMirror/ops/music-device/speaker-levels.json`:
-`{"normal": {"Jabra Speak2 75": 0.70, "A1": 0.55, "EDIFIER": 0.40}}` (keys match a speaker whose
+`{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}` (measured match 0.70/0.55/0.40;
+the owner then chose one VOL+ step higher by ear during MusicLoop; keys match a speaker whose
 name starts with them; an unlisted speaker follows the Jabra; a missing file means 70% each,
 and Main logs `MUSIC_OUTPUT music_output_levels_uncalibrated`). START, STOP, MUSIC LOOP, the
 end of Dance and QA restores set these; VOL±, Dance volume and a reconnecting speaker keep
 each speaker's offset from the Jabra (`stop-state`, `music-loop`, `qa-output-volume`, Main's
 `speaker-levels.ts`; 5% floor for a quieter speaker while the Jabra plays). The Jabra's
 CoreAudio level carries it and A1 (Airfoil volume 1); the Edifier's Airfoil (AirPlay) volume
-carries its offset. The linked second Jabra is not part of the Mac's group (see TODO).
+carries its offset. The button log's `jabra_output_70` means the normal-level reset passed.
+
+The second Jabra Speak2 75 is linked to the venue Jabra with Jabra's own link and plays the
+same sound; the Mac sees one Jabra. Link order matters (11-07): with the USB Jabra pressed
+second it played nothing; unlink (hold Smart 8 s), then press Smart on the **USB Jabra first**
+and the second unit next. Never plug the second unit into the Mac (two Jabras refuse the reset).
 
 Re-calibrate after moving, adding or replacing a speaker: STOP, then play the same hiss on one
 speaker at a time at 30% and 70% (Airfoil connected to that speaker only; the Jabra held open
