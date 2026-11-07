@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { DEFAULT_SPEAKER_LEVELS, speakerTargetLevel, type SpeakerLevels } from './speaker-levels'
 
 /**
  * Venue music through Airfoil (Rogue Amoeba). All music plays into the "Magic Mirror Music"
@@ -81,6 +82,8 @@ export function createAirfoilRoute(input: {
   installed?: () => boolean
   /** Detached disconnect at quit: it must finish after Electron exits. */
   disconnectDetached?: (ids: string[]) => void
+  /** Calibrated normal levels: AirPlay speakers keep their offset from the Jabra's level. */
+  levels?: SpeakerLevels
   pollMs?: number
 }) {
   const run = input.run ?? runOsascript
@@ -90,9 +93,12 @@ export function createAirfoilRoute(input: {
     if (on) { await mkdir(dirname(input.flagPath), { recursive: true }); await writeFile(input.flagPath, 'airfoil\n') }
     else await rm(input.flagPath, { force: true })
   })
-  let stopped = false, active = false, failures = 0, level = 0.7, timer: ReturnType<typeof setTimeout> | undefined
+  const levels = input.levels ?? DEFAULT_SPEAKER_LEVELS
+  let stopped = false, active = false, failures = 0, level = levels.jabra, timer: ReturnType<typeof setTimeout> | undefined
   let targets: AirfoilSpeaker[] = [], lastReason = '', joined = new Set<string>()
-  const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? level : 1
+  // Computer (Jabra) and Bluetooth play at full Airfoil volume: their CoreAudio levels carry the
+  // calibration. AirPlay speakers have only Airfoil's volume, so it carries their offset.
+  const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? speakerTargetLevel(levels, speaker.name, level) : 1
   const setActive = async (on: boolean, reason?: string) => {
     if (on !== active) { await writeFlag(on).catch(() => undefined); active = on }
     if (!on && reason && reason !== lastReason) input.degraded(reason)
@@ -144,11 +150,11 @@ export function createAirfoilRoute(input: {
       await launch().catch(() => undefined)
       void loop()
     },
-    /** Group level from the Jabra (VOL±, Dance, STOP restores); AirPlay speakers follow it. */
+    /** Group level from the Jabra (VOL±, Dance, STOP restores); AirPlay speakers follow it with their offsets. */
     setLevel(next: number): void {
       if (!Number.isFinite(next)) return
       level = Math.min(1, Math.max(0, next))
-      for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'airplay') void run(VOLUME, [speaker.id, String(level)]).catch(() => undefined)
+      for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'airplay') void run(VOLUME, [speaker.id, String(volumeFor(speaker))]).catch(() => undefined)
     },
     /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. */
     stop(): void {

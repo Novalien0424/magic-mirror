@@ -101,10 +101,11 @@ Mirror Music" and Airfoil reaches every speaker; the direct speaker group is the
 fallback, see [Stream Deck](stream-deck.md#musicloop)) and reports `music_preparing`
 after Main accepts the mode. Console reports actual playback after native progress.
 Before sending that mode command, each accepted press calls the existing native
-output reset/read-back once to put every external speaker at 70%. Playback VOL± and
+output reset/read-back once to put every external speaker at its calibrated normal level
+([Stream Deck: speaker levels](stream-deck.md#speaker-levels-calibrated-2026-11-07)). Playback VOL± and
 physical volume changes then persist until another MUSIC LOOP, START or STOP press. No timer or track callback resets
 volume. Reset failure is retained in the command's `audio` metadata and does not
-block other outputs. START also resets every speaker to 70%, about 6 s after the TV
+block other outputs. START also resets every speaker to its normal level, about 6 s after the TV
 wakes; a failure is kept in `audio` and START still reports `started`. STUDIO does not
 reset volume; with the avatar's image skill off Main refuses it (`studio_skill_disabled`
 in the app log, `studio_mode_failed` and Basso here).
@@ -200,7 +201,7 @@ Main `music_next`, `music_previous` or `music_folder_N` directly when the app is
 (no queue, no TV, no app start); they log `music_next`/… or `music_key_failed`/
 `music_not_running` with Main's reason and play Pop or Basso. Main checks a folder before
 switching, so a refused folder keeps the current music. A folder key works in any mode
-while the app runs: it starts MusicLoop on that folder (no 70% reset) and hides the
+while the app runs: it starts MusicLoop on that folder (no speaker-level reset) and hides the
 Console. PREV/NEXT outside MusicLoop give `music_key_failed` with Basso.
 
 **VOL±** (`raven-button.sh volume-up|volume-down`, on the Playback and Music pages)

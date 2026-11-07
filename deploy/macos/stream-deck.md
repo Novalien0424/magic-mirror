@@ -12,21 +12,21 @@ Older Magic Mirror copies were deleted (see "After every import" below).
 
 | Position | Button | Action |
 | --- | --- | --- |
-| First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI; about 6 s later reset every speaker to 70%. |
+| First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI; about 6 s later reset every speaker to its normal level ([speaker levels](#speaker-levels-calibrated-2026-11-07)). |
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
 | Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. The deck switches to the Playback page. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
-| Bottom left (`0,1`) | Amber **STUDIO** | Like START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI; no 70% reset. Refused (Basso) when the avatar's image skill is off. |
-| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Set every speaker to 70%, then loop the audio files (up to 200 MB each) of shared `MusicLoop` in file-name order on every speaker while remaining files download. TV black; voice and camera off. The deck switches to the Music page. |
+| Bottom left (`0,1`) | Amber **STUDIO** | Like START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI; no speaker-level reset. Refused (Basso) when the avatar's image skill is off. |
+| Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Set every speaker to its normal level, then loop the audio files (up to 200 MB each) of shared `MusicLoop` in file-name order on every speaker while remaining files download. TV black; voice and camera off. The deck switches to the Music page. |
 | Bottom third (`2,1`) | **DANCE FLOOR** | Play selected Dance Floor audio on every speaker of the music route (Airfoil; the Mac's built-in speaker is skipped when another speaker is present), default 90%, after Raven says "Ready to Party?", with Raven's beat-driven head/body motion. Voice listening and camera stay off. |
-| Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, release the TV mouse, and reset every external CoreAudio speaker (Jabra Speak2 75, Bluetooth speakers such as A1) to 70% unmuted; the AirPlay Edifier takes the Jabra's level when the app next connects it. The black cover stays until another control has a ready app and acknowledged mode. |
+| Bottom right (`3,1`) | Red **STOP** | Cover T749 HDMI with pure black, put the TV in standby, stop Magic Mirror and its owned processes, unload its job, release the TV mouse, and reset every external CoreAudio speaker (Jabra Speak2 75, Bluetooth speakers such as A1) to its normal level, unmuted; the AirPlay Edifier takes its normal level when the app next connects it. The black cover stays until another control has a ready app and acknowledged mode. |
 
 START selects normal Conversation mode, including from Desktop or loop playback.
 STUDIO likewise returns from Desktop or the loop to the avatar,
 then selects Interactive Studio mode: the mirror now wakes to the avatar's Studio
 wake phrase (default 「招喚渡鴉使者」), runs the studio and ends each visit with the
 studio farewell and Dormant. VIDEO LOOP and CONSOLE leave the mirror mode alone;
-STOP retains its black HDMI and all-speakers 70% policy.
+STOP retains its black HDMI and all-speakers normal-level policy.
 Display controls first verify the venue's Mac 90° portrait orientation.
 MUSIC LOOP leaves TV power, orientation, mouse and the HDMI black cover alone.
 DESKTOP keeps Electron running with input suspended; it does not discard Console
@@ -100,7 +100,7 @@ deadlock avoided"), or one without music, is refused with Basso and the current 
 keeps playing — make it Available offline in Finder first. PREV/NEXT replace the song at
 once. These keys talk to a running app directly (no queue). PREV/NEXT do nothing
 without MusicLoop (Basso); a folder key works in any mode while the app runs: it starts
-MusicLoop on that folder and hides Console, without the 70% reset. Install or update the
+MusicLoop on that folder and hides Console, without the speaker-level reset. Install or update the
 plugin with `zsh deploy/macos/install-stream-deck-plugin.sh` (restarts Stream Deck; it never
 edits profiles). Re-import the profile package only on first install or when
 `prepare-stream-deck-profile.py` changes.
@@ -116,11 +116,11 @@ files; while a folder key's subfolder plays, MUSIC LOOP returns to those files. 
 MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.
 
-Each accepted MUSIC LOOP press first sets every external speaker to **70%** and verifies
-the native read-back. This happens once per press, including a repeat press while
-music is running. Afterwards the Music page's VOL+/VOL− move every external speaker;
-Jabra's physical volume buttons move the Jabra, and AirPlay speakers follow it (A1 keeps
-its level); there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
+Each accepted MUSIC LOOP press first sets every external speaker to its **normal level**
+(below) and verifies the native read-back. This happens once per press, including a repeat
+press while music is running. Afterwards the Music page's VOL+/VOL− move every external
+speaker, keeping their offsets; Jabra's physical volume buttons move the Jabra, and AirPlay
+speakers follow it with their offset (A1 keeps its level); there is no periodic reset or per-track volume enforcement. A missing/unavailable Jabra
 reset is recorded in button diagnostics; music can still use other outputs.
 
 **Airfoil music route (2026-11-01, owner ruling; Airfoil 5.13 licensed).** Every music
@@ -156,6 +156,28 @@ Dance clock lags by this value, so pictures and Dance reach the panel with the s
 or set it with [music-device/latency.swift](music-device/latency.swift) (`latency [frames]`).
 Re-tune after adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with
 Airfoil quit, relaunch, re-measure; reset `mmlt` if the audio total or the TV path changes.
+
+### Speaker levels (calibrated 2026-11-07)
+
+The speakers are not equally loud at the same setting (owner's Android sound meter, 1 m from
+each, 10 s band-limited pink noise through the music route; background 49 dB): Jabra 61/74 dB,
+Edifier 71/85 dB, A1 65/80 dB at 30%/70%. Every speaker rises about 3.5 dB per 10%, so one
+fixed offset per speaker matches them at any volume. The **normal levels** (owner ruling) live
+in `~/Library/Application Support/MagicMirror/ops/music-device/speaker-levels.json`:
+`{"normal": {"Jabra Speak2 75": 0.70, "A1": 0.55, "EDIFIER": 0.40}}` (keys match a speaker whose
+name starts with them; an unlisted speaker follows the Jabra; a missing file means 70% each,
+and Main logs `MUSIC_OUTPUT music_output_levels_uncalibrated`). START, STOP, MUSIC LOOP, the
+end of Dance and QA restores set these; VOL±, Dance volume and a reconnecting speaker keep
+each speaker's offset from the Jabra (`stop-state`, `music-loop`, `qa-output-volume`, Main's
+`speaker-levels.ts`; 5% floor for a quieter speaker while the Jabra plays). The Jabra's
+CoreAudio level carries it and A1 (Airfoil volume 1); the Edifier's Airfoil (AirPlay) volume
+carries its offset. The linked second Jabra is not part of the Mac's group (see TODO).
+
+Re-calibrate after moving, adding or replacing a speaker: STOP, then play the same hiss on one
+speaker at a time at 30% and 70% (Airfoil connected to that speaker only; the Jabra held open
+so its level holds), read the meter at 1 m, set each speaker's normal level to the Jabra's
+minus its measured dB difference / 3.5 dB per 10%, edit the file, and START. Owner fine-tuning
+by ear can replace the numbers directly.
 
 **Bluetooth drift and re-sync (2026-10-31; the direct route used when Airfoil is down).**
 Bluetooth speakers drift apart over long
@@ -194,7 +216,7 @@ play audio (the Airfoil route leaves the TV out); TV power remains unchanged.
 START, STUDIO, VIDEO LOOP, DANCE FLOOR, DESKTOP and Return to Avatar release MusicLoop before
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the
 same Main shutdown as all other modes**, destroys its temporary audio route,
-sleeps TV, keeps HDMI black and restores every external CoreAudio speaker to 70%. A queued STOP interrupts a
+sleeps TV, keeps HDMI black and restores every external CoreAudio speaker to its normal level. A queued STOP interrupts a
 pending MusicLoop-start wait. No separate restart service is installed.
 
 [Initial delivery](../../docs/testing/music-loop-2026-10-26.md) ·
@@ -216,10 +238,10 @@ remain free afterward. Fixed-volume HDMI depends on the TV's own setting.
 Music timing drives head and torso motion; this portrait rig has no independent
 arms/legs. Positive timing offset advances Raven and negative delays Raven.
 
-STOP releases Dance and returns every external speaker to 70% unmuted (switching to
+STOP releases Dance and returns every external speaker to its normal level, unmuted (switching to
 another mode does the same; field-checked 2026-10-31).
 The Console's Stop Dance Floor and global Stop All during Dance end Dance only:
-they restore output levels (every external speaker 70%) and return Raven to Conversation while
+they restore output levels (every external speaker at its normal level) and return Raven to Conversation while
 the app keeps running. Only the physical STOP key runs the shutdown/black-cover
 operation (owner ruling 2026-10-31). Return to Avatar and other mode keys release
 Dance before switching. Opening Console preserves Dance. Crashes do not restart
@@ -232,14 +254,14 @@ Playback copy** profile (MUSIC LOOP has its own Music page, above), which has on
 
 | Position | Key | Action |
 | --- | --- | --- |
-| Top left (`0,0`) | **VOL +** | Every external CoreAudio speaker (Jabra, A1) 10% louder together, snapped to 5% steps, unmuted; AirPlay speakers follow the Jabra. |
-| Bottom left (`0,1`) | **VOL −** | Every external speaker 10% quieter together (0% is the floor). |
-| Bottom right (`3,1`) | Red **STOP** | The normal STOP (shutdown, black HDMI, every external speaker 70%), then back to the main profile. |
+| Top left (`0,0`) | **VOL +** | The Jabra 10% louder (snapped to 5% steps), unmuted; every other speaker (A1, AirPlay Edifier) keeps its calibrated offset from the Jabra. |
+| Bottom left (`0,1`) | **VOL −** | The same, 10% quieter (0% is the floor; a quieter speaker stays at 5% while the Jabra plays). |
+| Bottom right (`3,1`) | Red **STOP** | The normal STOP (shutdown, black HDMI, every external speaker at its normal level), then back to the main profile. |
 
 VOL± acts at once, outside the control queue, so it never waits behind a slow start;
 it does not touch the app, TV or Electron lease and plays Pop (Basso on failure). The
 Mac mini speaker and fixed-volume HDMI are untouched, and STOP/START/MUSIC LOOP return
-the speakers to 70%. Stream Deck's built-in actions switch the page on the press, not
+the speakers to their normal levels. Stream Deck's built-in actions switch the page on the press, not
 on the result: a failed loop still shows Playback, and its STOP recovers. Leaving a
 loop through the Console (Return to Avatar) leaves the deck on Playback until STOP.
 

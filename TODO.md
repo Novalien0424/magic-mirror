@@ -21,8 +21,10 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   (re-applies it after board reboots, installed 10-31 20:50) held a 1.6 h standby with 0
   drops; confirm a full overnight. A mouse client ignoring EXIT is now ended.
 - [ ] **Post-restart Jabra volume (history).** STOP read-back was 70%; one later startup
-  observation was 6.25%. Final explicit 70% held. Investigate if reproducible;
-  cause is unknown, and continuous volume enforcement would prevent the owner's
+  observation was 6.25%. Final explicit 70% held. Likely cause found 11-07: opening the
+  Jabra's microphone (as Raven does at start) switched its output from 70% to 0.0625 within
+  the same second, twice in a row; the level stayed there after the mic closed. START's
+  reset ~6 s after ready covers it; continuous volume enforcement would prevent the owner's
   physical-button adjustment. [Evidence](docs/testing/dance-floor-checks-2026-10-30.json).
 - [ ] **USB camera stability.** Blocked (physical, 11-01): the camera is damaged and not
   on the USB bus; replace or reconnect it. Before that, temporary 96×96 / 5 fps mode delivered frames but
@@ -102,9 +104,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   unit-tested only.
 - [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
   "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
-  Open: (1) the second Jabra is unplugged (11-01; STOP's 70% reset passes again): check it
-  is not still linked to the venue Jabra (a +336 ms train in the iPad memo looked like the
-  second unit echoing the first);
+  Open: (1) the second Jabra is linked to the venue Jabra with Jabra's link (owner 11-07; yellow
+  Smart button) but played nothing in two direct tests (left, right, both channels, mic open):
+  every sound came from the USB Jabra, and the linked unit's volume buttons did not move the
+  USB unit's level. Relinked 11-07 (USB unit pressed first); re-test pending. If it plays,
+  measure its delay (the 11-01 iPad memo had a +336 ms train) before using it for music;
   (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
   exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra's hidden
   ≈108 ms rests on one iPad memo; re-check with a real mic; (4) watch A1 (±25 ms per stream

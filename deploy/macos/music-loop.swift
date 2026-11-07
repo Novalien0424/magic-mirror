@@ -22,6 +22,42 @@ func textProperty(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) 
   return value?.takeRetainedValue() as String?
 }
 struct Output: Equatable { let id: AudioDeviceID; let uid: String; var wireless = false; var builtIn = false }
+func outputName(_ id: AudioDeviceID) -> String { textProperty(id, kAudioObjectPropertyName) ?? "" }
+/// Calibrated normal levels (owner 2026-11-07): `ops/music-device/speaker-levels.json`,
+/// `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`. The Jabra is the
+/// reference; a speaker whose name starts with another key keeps that key's offset from the
+/// Jabra; unlisted speakers follow the Jabra. Missing or invalid file: every speaker 70%.
+/// Same rule in stop-state.swift, qa-output-volume.swift and src/main/speaker-levels.ts.
+struct SpeakerLevels {
+  static let jabraName = "Jabra Speak2 75"
+  var jabra: Float32 = 0.7, others: [(String, Float32)] = [], calibrated = false
+  init() {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MagicMirror/ops/music-device/speaker-levels.json")
+    guard let data = try? Data(contentsOf: url), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let normal = root["normal"] as? [String: Any] else { return }
+    var reference: Float32?, parsed: [(String, Float32)] = []
+    for (key, raw) in normal {
+      guard !key.isEmpty, let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+        number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 1 else { return }
+      if key.caseInsensitiveCompare(Self.jabraName) == .orderedSame { reference = number.floatValue } else { parsed.append((key, number.floatValue)) }
+    }
+    guard let reference else { return }
+    jabra = reference; others = parsed.sorted { $0.0.count > $1.0.count }; calibrated = true
+  }
+  func isJabra(_ name: String) -> Bool { name.localizedCaseInsensitiveContains(Self.jabraName) }
+  func normal(_ name: String) -> Float32 {
+    isJabra(name) ? jabra : others.first { name.lowercased().hasPrefix($0.0.lowercased()) }?.1 ?? jabra
+  }
+  /// A speaker's level for a Jabra level: its normal offset, clamped; a quieter speaker never
+  /// goes silent while the Jabra plays (5% floor).
+  func target(_ name: String, jabraLevel group: Float32) -> Float32 {
+    let value = min(1, max(0, group + normal(name) - jabra)), floor = min(group, 0.05)
+    return group > 0 && value < floor ? floor : value
+  }
+  /// The Jabra-equivalent level of a speaker currently at `value` (inverse of `target`).
+  func jabraLevel(_ name: String, at value: Float32) -> Float32 { min(1, max(0, value - normal(name) + jabra)) }
+}
+let speakerLevels = SpeakerLevels()
 /// Airfoil route: while Main's flag file exists, music goes only to the "Magic Mirror Music"
 /// virtual device; Airfoil reads it and plays every speaker in sync. Without the flag (Airfoil
 /// down or STOP) the helpers rebuild the direct speaker group below.
@@ -107,9 +143,11 @@ final class Playback {
   var savedVolumes: [(Output, UInt32, Float32)] = []
   var danceVolumeStarted = false
 
-  func setDanceVolume(_ value: Float32, capture: Bool) {
+  /// Dance volume is the Jabra's level; other external speakers keep their calibrated offsets.
+  func setDanceVolume(_ jabraValue: Float32, capture: Bool) {
     var controlled = 0, verified = true
     for output in physicalOutputs() {
+      let value = output.builtIn ? jabraValue : speakerLevels.target(outputName(output.id), jabraLevel: jabraValue)
       var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
       let elements: [UInt32] = AudioObjectHasProperty(output.id, &main) ? [0] : [1, 2]
       for element in elements {
@@ -131,9 +169,9 @@ final class Playback {
     for (old, element, previous) in savedVolumes {
       guard let output = physicalOutputs().first(where: { $0.uid == old.uid }) else { continue }
       var property = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
-      var level: Float32 = output.builtIn ? previous : 0.7
+      var level: Float32 = output.builtIn ? previous : speakerLevels.normal(outputName(output.id))
       var size: UInt32 = 4, observed: Float32 = 0
-      // Every external speaker returns to normal use: 70% and unmuted (the Jabra's firmware mutes at step 0).
+      // Every external speaker returns to normal use: its calibrated level, unmuted (the Jabra's firmware mutes at step 0).
       var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), off: UInt32 = 0
       if !output.builtIn && AudioObjectHasProperty(output.id, &mute) { AudioObjectSetPropertyData(output.id, &mute, 0, nil, 4, &off) }
       if AudioObjectSetPropertyData(output.id, &property, 0, nil, 4, &level) != noErr
@@ -327,21 +365,32 @@ final class SharedOutput {
     }
     if status == noErr, stale != 0 { AudioHardwareDestroyAggregateDevice(stale) }
   }
-  /// A speaker that joins later (a Bluetooth reconnect) takes the group's level, from the
-  /// first steady speaker with a volume control (the wired Jabra): macOS would restore its
-  /// own stale level, e.g. 1% after QA, beside speakers at 70% or the owner's VOL± level.
+  /// The group (Jabra) level of steady external speakers: the Jabra's own level, else the first
+  /// speaker with a volume control, converted back through its calibrated offset.
+  func groupLevel(_ outputs: [Output]) -> Float32? {
+    let external = outputs.filter { !$0.builtIn }
+    if let jabra = external.first(where: { speakerLevels.isJabra(outputName($0.id)) }), let level = outputLevel(jabra.id) { return level }
+    return external.lazy.compactMap { output in outputLevel(output.id).map { speakerLevels.jabraLevel(outputName(output.id), at: $0) } }.first
+  }
+  /// A speaker that joins later (a Bluetooth reconnect) takes the group's level plus its own
+  /// calibrated offset: macOS would restore its own stale level, e.g. 1% after QA, beside
+  /// speakers at their normal or the owner's VOL± level.
   func matchJoined(_ previous: [Output], _ next: [Output]) {
     let joined = next.filter { output in !output.builtIn && !previous.contains { $0.uid == output.uid } }
-    guard !joined.isEmpty, let level = next.filter({ output in !output.builtIn && previous.contains { $0.uid == output.uid } })
-      .lazy.compactMap({ outputLevel($0.id) }).first else { return }
-    let apply = { for output in joined where setOutputLevel(output.id, level) { emit("speaker_matched", ["level": Double(level)]) } }
+    guard !joined.isEmpty, let group = groupLevel(next.filter { output in previous.contains { $0.uid == output.uid } }) else { return }
+    let apply = {
+      for output in joined {
+        let level = speakerLevels.target(outputName(output.id), jabraLevel: group)
+        if setOutputLevel(output.id, level) { emit("speaker_matched", ["level": Double(level)]) }
+      }
+    }
     apply()
     // A reconnecting speaker can push its stored level a moment after it appears.
     DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: apply)
   }
-  /// The group level (first steady external speaker, the Jabra) for Main to mirror on AirPlay speakers.
+  /// The group (Jabra) level for Main to apply to AirPlay speakers with their offsets.
   func reportLevel() {
-    guard let level = physical.filter({ !$0.builtIn }).lazy.compactMap({ outputLevel($0.id) }).first, abs(level - lastLevel) >= 0.01 else { return }
+    guard let level = groupLevel(physical), abs(level - lastLevel) >= 0.01 else { return }
     lastLevel = level; emit("level", ["level": Double(level)])
   }
   func update() {

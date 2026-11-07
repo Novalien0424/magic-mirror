@@ -1,5 +1,5 @@
-// Fixed venue policies: black HDMI, portrait orientation, every external speaker OUTPUT at 70%
-// (Playback VOL± steps them together).
+// Fixed venue policies: black HDMI, portrait orientation, every external speaker OUTPUT at its
+// calibrated normal level (Playback VOL± steps them together, keeping their offsets).
 // No microphone, input-gain, credential, default-device or restart ownership.
 import AppKit
 import CoreAudio
@@ -61,23 +61,49 @@ func outputDevices() -> [(id: AudioDeviceID, name: String, builtIn: Bool)] {
     return (id, value as String, transport == kAudioDeviceTransportTypeBuiltIn)
   }
 }
-/// Sets (reset), steps (Playback VOL±) or reads one output; a reset is 70% unmuted.
-/// Nil when it has no writable volume (HDMI TV).
-func level(_ id: AudioDeviceID, _ reset: Bool, step: Float32 = 0) -> (volumes: [Float32], muted: Bool)? {
+/// Calibrated normal levels (owner 2026-11-07): `ops/music-device/speaker-levels.json`,
+/// `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`. The Jabra is the
+/// reference; a speaker whose name starts with another key keeps that key's offset from the
+/// Jabra; unlisted speakers follow the Jabra. Missing or invalid file: every speaker 70%.
+/// Same rule in music-loop.swift, qa-output-volume.swift and src/main/speaker-levels.ts.
+struct SpeakerLevels {
+  static let jabraName = "Jabra Speak2 75"
+  var jabra: Float32 = 0.7, others: [(String, Float32)] = [], calibrated = false
+  init() {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MagicMirror/ops/music-device/speaker-levels.json")
+    guard let data = try? Data(contentsOf: url), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let normal = root["normal"] as? [String: Any] else { return }
+    var reference: Float32?, parsed: [(String, Float32)] = []
+    for (key, raw) in normal {
+      guard !key.isEmpty, let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+        number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 1 else { return }
+      if key.caseInsensitiveCompare(Self.jabraName) == .orderedSame { reference = number.floatValue } else { parsed.append((key, number.floatValue)) }
+    }
+    guard let reference else { return }
+    jabra = reference; others = parsed.sorted { $0.0.count > $1.0.count }; calibrated = true
+  }
+  func isJabra(_ name: String) -> Bool { name.localizedCaseInsensitiveContains(Self.jabraName) }
+  func normal(_ name: String) -> Float32 {
+    isJabra(name) ? jabra : others.first { name.lowercased().hasPrefix($0.0.lowercased()) }?.1 ?? jabra
+  }
+  /// A speaker's level for a Jabra level: its normal offset, clamped; a quieter speaker never
+  /// goes silent while the Jabra plays (5% floor).
+  func target(_ name: String, jabraLevel group: Float32) -> Float32 {
+    let value = min(1, max(0, group + normal(name) - jabra)), floor = min(group, 0.05)
+    return group > 0 && value < floor ? floor : value
+  }
+}
+let speakerLevels = SpeakerLevels()
+/// Sets (when `target` is given) or reads one output. Nil when it has no writable volume (HDMI TV).
+func level(_ id: AudioDeviceID, set target: Float32? = nil, unmute: Bool = false) -> (volumes: [Float32], muted: Bool)? {
   var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
   var values: [Float32] = []
   for element: UInt32 in AudioObjectHasProperty(id, &main) ? [0] : [1, 2] {
     var p = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element), writable: DarwinBoolean = false
     guard AudioObjectHasProperty(id, &p), AudioObjectIsPropertySettable(id, &p, &writable) == noErr, writable.boolValue else { continue }
     var value: Float32 = 0, size = UInt32(MemoryLayout<Float32>.size)
-    if step != 0 {
-      guard AudioObjectGetPropertyData(id, &p, 0, nil, &size, &value) == noErr else { fail("output_volume_read_failed") }
-      // Snap to 5% so hardware rounding (Jabra 0.701) never drifts the speakers apart.
-      value = min(1, max(0, ((value + step) * 20).rounded() / 20))
-    }
-    if reset || step != 0 {
-      if reset { value = 0.7 }
-      guard AudioObjectSetPropertyData(id, &p, 0, nil, size, &value) == noErr else { fail("output_volume_set_failed") }
+    if var next = target {
+      guard AudioObjectSetPropertyData(id, &p, 0, nil, size, &next) == noErr else { fail("output_volume_set_failed") }
     }
     guard AudioObjectGetPropertyData(id, &p, 0, nil, &size, &value) == noErr else { fail("output_volume_read_failed") }
     values.append(value)
@@ -87,41 +113,59 @@ func level(_ id: AudioDeviceID, _ reset: Bool, step: Float32 = 0) -> (volumes: [
   // write does not clear that, so a reset or VOL+ also unmutes. Input gain is never touched.
   var mute = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput), muted: UInt32 = 0, muteSize = UInt32(MemoryLayout<UInt32>.size)
   let hasMute = AudioObjectHasProperty(id, &mute)
-  if (reset || step > 0) && hasMute {
+  if unmute && hasMute {
     var off: UInt32 = 0
     guard AudioObjectSetPropertyData(id, &mute, 0, nil, muteSize, &off) == noErr else { fail("output_unmute_failed") }
   }
   if hasMute && AudioObjectGetPropertyData(id, &mute, 0, nil, &muteSize, &muted) != noErr { fail("output_mute_read_failed") }
   return (values, muted != 0)
 }
-// Normal use is every external speaker at 70% unmuted (owner 2026-10-31). The Jabra is
-// required; the Mac mini speaker is excluded from music and keeps its level.
+// Normal use is every external speaker at its calibrated level, unmuted (owner 2026-11-07;
+// 70% each before). The Jabra is required; the Mac mini speaker is excluded from music and
+// keeps its level.
 func volume(_ reset: Bool) {
   let external = outputDevices().filter { !$0.builtIn }
-  let jabras = external.filter { $0.name.localizedCaseInsensitiveContains("Jabra Speak2 75") }
+  let jabras = external.filter { speakerLevels.isJabra($0.name) }
   guard jabras.count == 1 else { fail(jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
-  guard let jabra = level(jabras[0].id, reset) else { fail("jabra_volume_unavailable") }
-  var speakers: [[String: Any]] = [], uncontrolled = 0, verified = !jabra.volumes.contains(where: { abs($0 - 0.7) > 0.015 }) && !jabra.muted
+  let near = { (values: [Float32], target: Float32) in !values.contains(where: { abs($0 - target) > 0.015 }) }
+  guard let jabra = level(jabras[0].id, set: reset ? speakerLevels.jabra : nil, unmute: reset) else { fail("jabra_volume_unavailable") }
+  var speakers: [[String: Any]] = [], uncontrolled = 0, verified = near(jabra.volumes, speakerLevels.jabra) && !jabra.muted
   for output in external where output.id != jabras[0].id {
-    guard let other = level(output.id, reset) else { uncontrolled += 1; continue }
-    verified = verified && !other.volumes.contains(where: { abs($0 - 0.7) > 0.015 }) && !other.muted
-    speakers.append(["output": output.name, "volumes": other.volumes, "muted": other.muted])
+    let normal = speakerLevels.normal(output.name)
+    guard let other = level(output.id, set: reset ? normal : nil, unmute: reset) else { uncontrolled += 1; continue }
+    verified = verified && near(other.volumes, normal) && !other.muted
+    speakers.append(["output": output.name, "volumes": other.volumes, "muted": other.muted, "normal": normal])
   }
-  let data = try! JSONSerialization.data(withJSONObject: ["output": "Jabra Speak2 75", "volumes": jabra.volumes, "reset": reset, "muted": jabra.muted,
+  let data = try! JSONSerialization.data(withJSONObject: ["output": SpeakerLevels.jabraName, "volumes": jabra.volumes, "reset": reset, "muted": jabra.muted,
+    "normal": speakerLevels.jabra, "levels": speakerLevels.calibrated ? "calibrated" : "default",
     "speakers": speakers, "uncontrolled": uncontrolled], options: [.sortedKeys])
   print(String(data: data, encoding: .utf8)!)
   if reset && !verified { fail("output_volume_verify_failed") }
 }
-// Playback VOL± (Stream Deck): every external speaker moves 10% together; the Jabra is
-// not required here, and the Mac mini speaker and fixed-volume HDMI are left alone.
+// Playback VOL± (Stream Deck): the Jabra moves 10% (snapped to 5% so hardware rounding such
+// as 0.701 never drifts) and every other external speaker keeps its calibrated offset from
+// it. Without exactly one Jabra each speaker steps on its own. The Mac mini speaker and
+// fixed-volume HDMI are left alone.
 func stepVolume(_ step: Float32) {
+  let external = outputDevices().filter { !$0.builtIn }
+  let jabras = external.filter { speakerLevels.isJabra($0.name) }
+  let snap = { (value: Float32) in min(1, max(0, ((value + step) * 20).rounded() / 20)) }
   var speakers: [[String: Any]] = []
-  for output in outputDevices() where !output.builtIn {
-    guard let changed = level(output.id, false, step: step) else { continue }
-    speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
+  if jabras.count == 1, let now = level(jabras[0].id)?.volumes.first {
+    let group = snap(now)
+    for output in external {
+      let target = output.id == jabras[0].id ? group : speakerLevels.target(output.name, jabraLevel: group)
+      guard let changed = level(output.id, set: target, unmute: step > 0) else { continue }
+      speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
+    }
+  } else {
+    for output in external {
+      guard let now = level(output.id)?.volumes.first, let changed = level(output.id, set: snap(now), unmute: step > 0) else { continue }
+      speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
+    }
   }
   guard !speakers.isEmpty else { fail("output_volume_unavailable") }
-  let data = try! JSONSerialization.data(withJSONObject: ["step": step, "speakers": speakers], options: [.sortedKeys])
+  let data = try! JSONSerialization.data(withJSONObject: ["step": step, "speakers": speakers, "levels": speakerLevels.calibrated ? "calibrated" : "default"], options: [.sortedKeys])
   print(String(data: data, encoding: .utf8)!)
 }
 

@@ -20,28 +20,29 @@ Require exit 0 plus expected executed cases for a pass; inspect the relevant scr
 
 Identify each audio route explicitly; each proves only its own boundary. Provider dialogue is probabilistic: one pass or failure is a sample, so report rates over repeated runs ([prompt evidence](../roleplay-control-prompts/SKILL.md)).
 
-Owner sound directive (2026-10-17, clarified 2026-10-23/31): **outputs at 1%
-during QA are intentional; after QA every external speaker returns to 70%, even if its captured
+Owner sound directive (2026-10-17, clarified 2026-10-23/31, 2026-11-07): **outputs at 1%
+during QA are intentional; after QA every external speaker returns to its calibrated normal level
+(Jabra 70%, A1 55%, Edifier 40%: `ops/music-device/speaker-levels.json`), even if its captured
 starting volume was lower.** Before sound-producing QA, capture output/mute by
 device identity and use the minimum output level (tested Mac system route: 1%).
 On success, failure or cancellation, first finish/release owned test playback,
-then restore every external output (Jabra and Bluetooth speakers) to 70% unmuted
-(owner 2026-10-31) with the installed native helper
+then restore every external output (Jabra and Bluetooth speakers) to its normal level, unmuted
+(owner 2026-10-31/11-07) with the installed native helper
 `"$HOME/Library/Application Support/MagicMirror/ops/stop-state" --reset-output` and
 verify with `--output-status`. The helper accepts hardware rounding within 1.5
 percentage points. The Mac mini speaker returns to its captured level and mute;
 never change input gain. Protect any alternate output selected by the test too.
-In field button QA, START/STOP/MUSIC LOOP reset to 70%, Dance raises to 90%
-after its welcome and leaving Dance restores 70%: re-quiet after each.
+In field button QA, START/STOP/MUSIC LOOP reset to the normal levels, Dance raises the Jabra to 90%
+(others keep their offsets) after its welcome and leaving Dance restores them: re-quiet after each.
 Use guaranteed cleanup, not a success-only restore; report a failed reset/read-back
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.
 
 Speaker sync (2026-11-01): music reaches the speakers through Airfoil and runs
-≈2.15 s behind the source; AirPlay speakers follow the Jabra's level, so 1% QA on
-the Jabra quiets them too. Judge sync by measurement, never by ear: STOP, then
+≈2.15 s behind the source; AirPlay speakers follow the Jabra's level with their offset
+(5% floor, never above the Jabra), so 1% QA on the Jabra quiets them too. Judge sync by measurement, never by ear: STOP, then
 `deploy/macos/speaker-sync/measure.sh <mic-uid>` (runbook "Airfoil music route").
-A Jabra mic cannot hear another Jabra. Two attached Jabras make the 70% reset
+A Jabra mic cannot hear another Jabra. Two attached Jabras make the normal-level reset
 refuse (`jabra_output_ambiguous`): report it, do not work around it.
 
 Electron QA holds the operator lease, so venue Stream Deck presses fail with

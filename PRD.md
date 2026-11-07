@@ -21,21 +21,23 @@
 
 | Neo 按鍵 | 結果 |
 |---|---|
-| START | 回到一般 Conversation（喚醒、語音、相機），喚醒電視，所有外接喇叭設為 70%。 |
+| START | 回到一般 Conversation（喚醒、語音、相機），喚醒電視，所有外接喇叭設為各自的一般音量。 |
 | CONSOLE | 在電視上開啟 Console，保留正在播放的 MusicLoop／Dance Floor 與未保存的編輯；Remote Console 捷徑改在 Mac 主顯示器開啟。 |
 | VIDEO LOOP | 循環播放已保存的影片（影片原音或獨立音樂），暫停對話與喚醒；確認開始播放後才喚醒電視。Neo 切到播放頁。 |
 | DESKTOP | 暫停語音、喚醒與相機，在電視顯示直立的 macOS 桌面並連接電視滑鼠；按其他模式鍵回到該功能。 |
 | STUDIO | 進入 Interactive Studio 模式，以該模式喚醒詞（預設「招喚渡鴉使者」）開始新的訪談。 |
 | MUSIC LOOP | 只播放音樂（見第 3 節）；不喚醒電視，電視開啟、待機或斷電都照常播放。Neo 切到音樂頁。 |
 | DANCE FLOOR | Raven 說「Ready to Party?」，接著播放選定音樂並依節拍擺動。 |
-| STOP | 停止 App 與所有播放，HDMI 蓋上原生黑幕，所有外接喇叭設回 70%，電視待機並釋放電視滑鼠；電視傳輸失敗仍完成本機停止與黑幕。待機只關螢幕，電視主機板保持連線，讓 START 能喚醒它。 |
+| STOP | 停止 App 與所有播放，HDMI 蓋上原生黑幕，所有外接喇叭設回各自的一般音量，電視待機並釋放電視滑鼠；電視傳輸失敗仍完成本機停止與黑幕。待機只關螢幕，電視主機板保持連線，讓 START 能喚醒它。 |
 
 - **音樂頁**（MUSIC LOOP 後）：前三個子資料夾鍵（顯示資料夾名稱，依名稱排序，第四個以後忽略）播放該資料夾；
-  PREV／NEXT 立即換上一首／下一首；VOL＋、VOL－、STOP。資料夾鍵在 App 執行中的任何模式都會直接開始該資料夾的 MusicLoop（不重設 70%）。雲端尚未下載或沒有音樂的資料夾會被拒絕，目前的音樂繼續播放。
+  PREV／NEXT 立即換上一首／下一首；VOL＋、VOL－、STOP。資料夾鍵在 App 執行中的任何模式都會直接開始該資料夾的 MusicLoop（不重設音量）。雲端尚未下載或沒有音樂的資料夾會被拒絕，目前的音樂繼續播放。
 - **播放頁**（VIDEO LOOP 後）：只有 VOL＋、VOL－、STOP。按鍵當下就換頁，所以模式失敗也停在此頁，以 STOP 回主選單；
   從 Console 回到 Avatar 時，播放頁保留到按 STOP。
-- **音量**：VOL＋／VOL－ 立即把所有外接喇叭一起調高／調低 10%；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
-  START、STOP、每次按 MUSIC LOOP（音樂已在播放時也一樣）與 Dance 結束，都把所有外接喇叭設回 70%（解除靜音）；
+- **音量**：各喇叭在相同設定下音量不同，因此以 Jabra 為基準校準：一般音量 Jabra 70%、A1 55%、Edifier 40%（現場 1 公尺實測，
+  數值在 `ops/music-device/speaker-levels.json`）。VOL＋／VOL－ 立即把 Jabra 調高／調低 10%，其他喇叭保持與 Jabra 的固定差距
+  （Jabra 播放中較小聲的喇叭最低 5%）；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
+  START、STOP、每次按 MUSIC LOOP（音樂已在播放時也一樣）與 Dance 結束，都把所有外接喇叭設回一般音量（解除靜音）；
   Dance 在歡迎詞後升到 Dance 音量（預設 90%）。播放中不強制音量。Mac mini 內建喇叭維持原狀，HDMI 沒有 Mac 端音量。
 
 模式切換會釋放前一模式的音訊、計時器與裝置；開啟 Console 不算模式切換。Console 的 **Stop All**（場景／測試效果）

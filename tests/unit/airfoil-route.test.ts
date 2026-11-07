@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AIRFOIL_LOCAL_ID, AIRFOIL_SOURCE, airfoilKind, createAirfoilRoute, parseAirfoilSpeakers } from '../../src/main/airfoil-route'
+import { parseSpeakerLevels } from '../../src/main/speaker-levels'
 
 const LIST = [
   `${AIRFOIL_LOCAL_ID}\tComputer\tfalse`,
@@ -51,6 +52,27 @@ describe('Airfoil venue route', () => {
     route.stop()
     expect(flags.at(-1)).toBe(false)
     expect(degraded).not.toHaveBeenCalled()
+  })
+
+  it('keeps the calibrated AirPlay offset from the Jabra level, with a floor while the Jabra plays', async () => {
+    const airfoil = fakeAirfoil(), report = vi.fn()
+    const levels = parseSpeakerLevels(JSON.stringify({ normal: { 'Jabra Speak2 75': 0.7, A1: 0.55, EDIFIER: 0.4 } }))
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, levels })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    const edifier = 'AABBCC001133@EDIFIER M330 Ⅱ 1133'
+    // Connected at the Jabra's normal 70%: the Edifier gets its normal 40%; Computer and Bluetooth stay at 1.
+    expect(airfoil.volumes.get(edifier)).toBe(0.4)
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
+    expect(airfoil.volumes.get('AA-BB-CC-00-11-22:output')).toBe(1)
+    route.setLevel(0.9)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.6))
+    route.setLevel(0.3)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.05))
+    route.setLevel(0)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0))
+    route.stop()
   })
 
   it('falls back to the direct speakers with one reason when Airfoil stops answering', async () => {

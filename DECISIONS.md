@@ -1,5 +1,19 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-07 — Speakers calibrated to the Jabra (owner ruling)
+
+- The speakers are not equally loud at the same setting (owner's sound meter at 1 m:
+  Edifier +10/+11 dB and A1 +4/+6 dB over the Jabra at 30%/70%). Normal levels are now
+  Jabra 70%, A1 55%, Edifier 40%, kept in machine-local
+  `ops/music-device/speaker-levels.json`; every place that returned speakers to 70%
+  (STOP, START, MUSIC LOOP press, Dance end, QA cleanup) uses these, and VOL±, Dance
+  volume and reconnects keep each speaker's offset from the Jabra. Supersedes "All
+  speakers at 70%" (2026-10-31). The owner may fine-tune by ear; the tuned levels then
+  become the file's values.
+- The second Jabra Speak2 75 is linked to the venue Jabra with Jabra's own link
+  (owner); the Mac sees one Jabra. Whether the linked unit plays the venue's audio is
+  still open (TODO). It must not be plugged into the Mac (two Jabras refuse the reset).
+
 ## 2026-11-01 — Mini kept, short refusals, Studio hold retired (owner rulings, evening)
 
 - Keep `gpt-realtime-2.1-mini` for dialogue for now; its measured rates stay open in TODO.

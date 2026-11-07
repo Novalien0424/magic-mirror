@@ -4,6 +4,7 @@ import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop, musicLoopFiles, musicSubfolders } from './music-loop'
 import { createSharedMusicOutput } from './shared-music-output'
 import { createAirfoilRoute } from './airfoil-route'
+import { parseSpeakerLevels } from './speaker-levels'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
 import { execFile } from 'node:child_process'
@@ -1836,10 +1837,16 @@ void app.whenReady().then(async () => {
       runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
     }
     // Airfoil plays every venue speaker in sync; the helpers follow its flag file.
+    const musicDeviceOps = join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/music-device')
+    let levelsText: string | undefined
+    try { levelsText = readFileSync(join(musicDeviceOps, 'speaker-levels.json'), 'utf8') } catch { levelsText = undefined }
+    const speakerLevels = parseSpeakerLevels(levelsText)
+    if (!speakerLevels.calibrated) marker('MUSIC_OUTPUT', { reason: 'music_output_levels_uncalibrated' })
     const airfoilRoute = createAirfoilRoute({
-      flagPath: join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/music-device/airfoil-route'),
+      flagPath: join(musicDeviceOps, 'airfoil-route'),
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
       degraded: degradedMusicOutput,
+      levels: speakerLevels,
     })
     const sharedMusicOutput = createSharedMusicOutput({
       executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
