@@ -147,6 +147,15 @@ Jabra +108 ms. Airfoil `syncOffsets` (seconds; Computer/Bluetooth positive = pla
 A1 0, Edifier −0.108. Verified: Edifier +0.8 ms and A1 +26 ms from the Jabra's time; total
 audio delay ≈ 2148 ms. A1 still wanders about ±25 ms per stream start (Bluetooth).
 
+Re-tuned 2026-11-07 for the linked second Jabra (the linked pair plays in sync with itself, but
+about 38 ms later than the single Jabra did): **Computer 0.186, A1 0.040, Edifier −0.108**.
+Measured with the same chirp trains (one speaker audible, trains interleaved J/E/J/E to cancel
+drift): A1's own call mic (HFP, 8 kHz) halfway between Jabra 1 and the Edifier for Jabra vs
+Edifier (residual 6 ms), then the Jabra mic with A1 beside the Edifier for A1 vs Edifier
+(residual 2 ms, repeats ±10 ms). A Jabra mic cannot hear the linked Jabras (echo cancelling),
+and ear tests were too uncertain below ~50 ms. The Edifier offset and `mmlt` are unchanged.
+Values and method: `calibration.json` (`retune`).
+
 TV picture delay (2026-11-01 evening): the TV shows a Mac frame **67 ms** later (Mac draw →
 board composition; three runs 68/67/62 ms, p10–p90 50–85 ms in 60 Hz steps), measured with
 [speaker-sync/tv-picture/measure.sh](speaker-sync/tv-picture/measure.sh) while the TV is awake

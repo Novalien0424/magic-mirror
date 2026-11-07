@@ -105,12 +105,13 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 - [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
   "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
   Open: (1) the second Jabra now plays through Jabra's link (11-07: silent while the USB Jabra
-  had been pressed second; relinked with the USB Jabra first, owner confirmed both play). Its
-  delay against the USB Jabra is unmeasured (the 11-01 iPad memo had a +336 ms train; Airfoil
-  cannot offset it separately); measure with a non-Jabra mic, and its loudness at 1 m;
+  had been pressed second; relinked with the USB Jabra first, owner confirmed both play, in sync
+  by ear). The pair was ~38 ms late against the 11-01 values; re-tuned 11-07 (Computer 0.186,
+  A1 0.040; runbook). Its loudness at 1 m is unmeasured;
   (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
-  exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra's hidden
-  ≈108 ms rests on one iPad memo; re-check with a real mic; (4) watch A1 (±25 ms per stream
+  exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra pair's absolute delay
+  still rests on the 11-01 iPad memo (11-07 re-tune is relative to the Edifier; lip-sync `mmlt`
+  unchanged); (4) watch A1 (±25 ms per stream
   start; weak link). The TV picture path is measured (67 ms, `tv-picture/measure.sh`) and
   compensated (reported latency 2081 ms); lip-sync now rests on the audio total (2148 ms);
   a glance at VIDEO LOOP/YouTube is still a useful sanity check;
