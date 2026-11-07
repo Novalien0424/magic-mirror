@@ -153,7 +153,7 @@ export function createAirfoilRoute(input: {
     /** Group level from the Jabra (VOL±, Dance, STOP restores); AirPlay speakers follow it with their offsets. */
     setLevel(next: number): void {
       if (!Number.isFinite(next)) return
-      level = Math.min(1, Math.max(0, next))
+      level = Math.min(2, Math.max(0, next))
       for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'airplay') void run(VOLUME, [speaker.id, String(volumeFor(speaker))]).catch(() => undefined)
     },
     /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. */

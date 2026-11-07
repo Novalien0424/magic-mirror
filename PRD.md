@@ -36,8 +36,8 @@
   從 Console 回到 Avatar 時，播放頁保留到按 STOP。
 - **音量**：各喇叭在相同設定下音量不同，因此以 Jabra 為基準校準：一般音量 Jabra 80%、A1 65%、Edifier 50%（現場 1 公尺實測後由店主依聽感微調，
   數值在 `ops/music-device/speaker-levels.json`）。VOL＋／VOL－ 立即把 Jabra 調高／調低 10%，其他喇叭保持與 Jabra 的固定差距
-  （Jabra 播放中較小聲的喇叭最低 5%）；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
-  START、STOP、每次按 MUSIC LOOP（音樂已在播放時也一樣）與 Dance 結束，都把所有外接喇叭設回一般音量（解除靜音）；
+  （Jabra 播放中較小聲的喇叭最低 5%）；Jabra 到 100% 後繼續按 VOL＋，其他喇叭每次再加 10%，直到全部 100%（含 Edifier）；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
+  START、STOP、每次按 MUSIC LOOP 或 VIDEO LOOP（已在播放時也一樣）與 Dance 結束，都把所有外接喇叭設回一般音量（解除靜音）；
   Dance 在歡迎詞後升到 Dance 音量（預設 90%）。播放中不強制音量。Mac mini 內建喇叭維持原狀，HDMI 沒有 Mac 端音量。
 
 模式切換會釋放前一模式的音訊、計時器與裝置；開啟 Console 不算模式切換。Console 的 **Stop All**（場景／測試效果）

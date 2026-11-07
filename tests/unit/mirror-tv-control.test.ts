@@ -144,6 +144,15 @@ describe('combined Stream Deck sequence', () => {
     await operateMirrorControl('music', io)
     expect(volume).toBe(0.7); expect(io.resetAudio).toHaveBeenCalledTimes(2)
   })
+  it('returns the speakers to their normal levels once per VIDEO LOOP press, before playback', async () => {
+    const base = control('already_on')
+    const io = { ...base, resetAudio: vi.fn(async () => { base.order.push('audio_normal'); return 'jabra_output_70' }) }
+    expect(await operateMirrorControl('loop', io)).toMatchObject({ audio: 'jabra_output_70', outcome: 'loop_playing' })
+    expect(base.order.indexOf('audio_normal')).toBeGreaterThan(base.order.indexOf('ready'))
+    expect(base.order.indexOf('audio_normal')).toBeLessThan(base.order.indexOf('play_loop'))
+    await operateMirrorControl('loop', io)
+    expect(io.resetAudio).toHaveBeenCalledTimes(2)
+  })
   it.each(['unavailable', 'exception'])('records a %s Jabra reset without blocking other music outputs', async failure => {
     const io = { ...control(), resetAudio: vi.fn(async () => {
       if (failure === 'exception') throw Error('private device error')

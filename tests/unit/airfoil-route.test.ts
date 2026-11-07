@@ -72,6 +72,11 @@ describe('Airfoil venue route', () => {
     await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.05))
     route.setLevel(0)
     await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0))
+    // Above the Jabra's 100% the group level keeps rising until the Edifier reaches 100%.
+    route.setLevel(1.1)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.8))
+    route.setLevel(1.5)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(1))
     route.stop()
   })
 

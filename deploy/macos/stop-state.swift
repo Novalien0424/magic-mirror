@@ -86,11 +86,22 @@ struct SpeakerLevels {
   func normal(_ name: String) -> Float32 {
     isJabra(name) ? jabra : others.first { name.lowercased().hasPrefix($0.0.lowercased()) }?.1 ?? jabra
   }
-  /// A speaker's level for a Jabra level: its normal offset, clamped; a quieter speaker never
-  /// goes silent while the Jabra plays (5% floor).
+  /// A speaker's level for a group (Jabra) level: its normal offset, clamped; a quieter speaker
+  /// never goes silent while the Jabra plays (5% floor). The group level may exceed 1 (Jabra
+  /// held at 100%) so that further VOL+ presses bring every speaker to 100% (owner 2026-11-07).
   func target(_ name: String, jabraLevel group: Float32) -> Float32 {
     let value = min(1, max(0, group + normal(name) - jabra)), floor = min(group, 0.05)
     return group > 0 && value < floor ? floor : value
+  }
+  /// Highest useful group level: every speaker at 100%.
+  var maxGroup: Float32 { 1 + max(0, others.map { jabra - $0.1 }.max() ?? 0) }
+  static let groupFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MagicMirror/ops/music-device/group-level")
+  /// The group level for a Jabra level: the Jabra's own below 100%, else the last VOL± level
+  /// stored by stop-state (at least 1).
+  func group(jabraLevel level: Float32) -> Float32 {
+    guard level >= 0.995 else { return level }
+    let stored = (try? String(contentsOf: Self.groupFile, encoding: .utf8)).flatMap { Float32($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 1
+    return max(level, min(maxGroup, stored.isFinite ? stored : 1))
   }
 }
 let speakerLevels = SpeakerLevels()
@@ -129,6 +140,7 @@ func volume(_ reset: Bool) {
   guard jabras.count == 1 else { fail(jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
   let near = { (values: [Float32], target: Float32) in !values.contains(where: { abs($0 - target) > 0.015 }) }
   guard let jabra = level(jabras[0].id, set: reset ? speakerLevels.jabra : nil, unmute: reset) else { fail("jabra_volume_unavailable") }
+  if reset { storeGroup(speakerLevels.jabra) }
   var speakers: [[String: Any]] = [], uncontrolled = 0, verified = near(jabra.volumes, speakerLevels.jabra) && !jabra.muted
   for output in external where output.id != jabras[0].id {
     let normal = speakerLevels.normal(output.name)
@@ -142,25 +154,32 @@ func volume(_ reset: Bool) {
   print(String(data: data, encoding: .utf8)!)
   if reset && !verified { fail("output_volume_verify_failed") }
 }
-// Playback VOL± (Stream Deck): the Jabra moves 10% (snapped to 5% so hardware rounding such
-// as 0.701 never drifts) and every other external speaker keeps its calibrated offset from
-// it. Without exactly one Jabra each speaker steps on its own. The Mac mini speaker and
-// fixed-volume HDMI are left alone.
+/// The group level for music-loop to report to Main (AirPlay speakers) while the Jabra is at 100%.
+func storeGroup(_ value: Float32) {
+  try? FileManager.default.createDirectory(at: SpeakerLevels.groupFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+  try? String(format: "%.2f\n", value).write(to: SpeakerLevels.groupFile, atomically: true, encoding: .utf8)
+}
+// Playback VOL± (Stream Deck): the group level moves 10% (snapped to 5% so hardware rounding
+// such as 0.701 never drifts): the Jabra follows it up to 100% and every other external
+// speaker keeps its calibrated offset; above the Jabra's 100% further VOL+ presses raise the
+// others until every speaker is at 100%. Without exactly one Jabra each speaker steps on its
+// own. The Mac mini speaker and fixed-volume HDMI are left alone.
 func stepVolume(_ step: Float32) {
   let external = outputDevices().filter { !$0.builtIn }
   let jabras = external.filter { speakerLevels.isJabra($0.name) }
-  let snap = { (value: Float32) in min(1, max(0, ((value + step) * 20).rounded() / 20)) }
+  let snap = { (value: Float32, top: Float32) in min(top, max(0, ((value + step) * 20).rounded() / 20)) }
   var speakers: [[String: Any]] = []
   if jabras.count == 1, let now = level(jabras[0].id)?.volumes.first {
-    let group = snap(now)
+    let group = snap(speakerLevels.group(jabraLevel: now), speakerLevels.maxGroup)
+    storeGroup(group)
     for output in external {
-      let target = output.id == jabras[0].id ? group : speakerLevels.target(output.name, jabraLevel: group)
+      let target = output.id == jabras[0].id ? min(1, group) : speakerLevels.target(output.name, jabraLevel: group)
       guard let changed = level(output.id, set: target, unmute: step > 0) else { continue }
       speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
     }
   } else {
     for output in external {
-      guard let now = level(output.id)?.volumes.first, let changed = level(output.id, set: snap(now), unmute: step > 0) else { continue }
+      guard let now = level(output.id)?.volumes.first, let changed = level(output.id, set: snap(now, 1), unmute: step > 0) else { continue }
       speakers.append(["output": output.name, "volumes": changed.volumes, "muted": changed.muted])
     }
   }

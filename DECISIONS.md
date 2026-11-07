@@ -11,6 +11,9 @@
   volume and reconnects keep each speaker's offset from the Jabra. Supersedes "All
   speakers at 70%" (2026-10-31). The owner may fine-tune by ear; the tuned levels then
   become the file's values.
+- VOL+ can always take every speaker to 100%, the Edifier included: past the Jabra's 100%
+  further presses raise the others until all are at 100%. Every VIDEO LOOP press now resets
+  to the normal levels like MUSIC LOOP and STOP.
 - The second Jabra Speak2 75 is a venue speaker through Jabra's own link to the USB Jabra
   (owner; supersedes "measurement aid only" below); the Mac sees one Jabra. Link with the
   USB Jabra pressed first. It must not be plugged into the Mac (two Jabras refuse the reset).

@@ -103,7 +103,8 @@ after Main accepts the mode. Console reports actual playback after native progre
 Before sending that mode command, each accepted press calls the existing native
 output reset/read-back once to put every external speaker at its calibrated normal level
 ([Stream Deck: speaker levels](stream-deck.md#speaker-levels-calibrated-2026-11-07)). Playback VOL± and
-physical volume changes then persist until another MUSIC LOOP, START or STOP press. No timer or track callback resets
+physical volume changes then persist until another MUSIC LOOP, VIDEO LOOP, START or STOP
+press (VIDEO LOOP makes the same one reset before `play_loop`, owner 2026-11-07). No timer or track callback resets
 volume. Reset failure is retained in the command's `audio` metadata and does not
 block other outputs. START also resets every speaker to its normal level, about 6 s after the TV
 wakes; a failure is kept in `audio` and START still reports `started`. STUDIO does not

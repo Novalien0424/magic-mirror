@@ -24,6 +24,10 @@ describe('calibrated speaker levels', () => {
     expect(speakerTargetLevel(levels, 'EDIFIER M330', 0)).toBe(0)
     const louder = parseSpeakerLevels(JSON.stringify({ normal: { 'Jabra Speak2 75': 0.7, A1: 0.9 } }))
     expect(speakerTargetLevel(louder, 'A1', 0.9)).toBe(1)
+    // Group levels above 1 (Jabra held at 100%) bring the quieter speakers up to 100%.
+    expect(speakerTargetLevel(levels, 'EDIFIER M330', 1.2)).toBe(0.9)
+    expect(speakerTargetLevel(levels, 'EDIFIER M330', 1.3)).toBe(1)
+    expect(speakerTargetLevel(levels, 'Jabra Speak2 75', 1.3)).toBe(1)
   })
 
   it('falls back to every speaker at 70% when the file is missing or invalid', () => {

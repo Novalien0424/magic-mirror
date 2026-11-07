@@ -131,9 +131,10 @@ export async function operateMirrorControl(action, io) {
   if (!['started', 'already_on'].includes(app)) return { app, tv: 'tv_wake_skipped', outcome: app }
   const ready = await attempt(() => io.ready(), false)
   if (!ready) return { app, tv: 'tv_wake_skipped', outcome: `${action}_not_ready` }
-  // One reset per accepted button press, before playback starts. Never enforce
+  // One reset to the normal speaker levels per accepted MUSIC LOOP or VIDEO LOOP press, before
+  // playback starts (owner 2026-11-07: re-pressing a loop returns to the defaults). Never enforce
   // volume during playback: the visitor can use Jabra's physical volume buttons.
-  const audio = action === 'music' ? await attempt(() => io.resetAudio(), 'jabra_output_reset_failed') : undefined
+  const audio = action === 'music' || (action === 'loop' && io.resetAudio) ? await attempt(() => io.resetAudio(), 'jabra_output_reset_failed') : undefined
   // Console is a separate window; showing it must preserve the current media mode.
   // START selects Conversation and STUDIO Interactive Studio; LOOP leaves the mirror mode alone.
   const command = { start: 'normal', loop: 'play_loop', console: 'show_console', studio: 'studio', desktop: 'desktop', music: 'music_loop', dance: 'dance_floor' }[action]
@@ -152,8 +153,8 @@ export async function operateMirrorControl(action, io) {
   const tv = await attempt(() => io.tv('awake'), 'tv_awake_failed')
   const mouse = ['console', 'desktop'].includes(action) && tv === 'tv_awake' && io.mouse
     ? await attempt(() => io.mouse('start'), 'mouse_start_failed') : undefined
-  // START returns the Jabra to 70% unmuted (owner 2026-10-31) only after the app has opened
-  // it: an earlier write is replaced by the speaker's own stored step when the stream opens.
+  // START returns the speakers to their normal levels, unmuted (owner 2026-10-31/11-07), only
+  // after the app has opened the Jabra: opening its microphone switches it to a stored step.
   const started = action === 'start' && io.resetAudio
     ? (await (io.settle ?? io.wait ?? (ms => new Promise(done => setTimeout(done, ms))))(6000), await attempt(() => io.resetAudio(), 'jabra_output_reset_failed')) : audio
   return { app, mode, modeReason, tv, ...(started === undefined ? {} : { audio: started }), ...(mouse === undefined ? {} : { mouse }), outcome: tv === 'tv_awake'

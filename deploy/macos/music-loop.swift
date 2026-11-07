@@ -48,11 +48,22 @@ struct SpeakerLevels {
   func normal(_ name: String) -> Float32 {
     isJabra(name) ? jabra : others.first { name.lowercased().hasPrefix($0.0.lowercased()) }?.1 ?? jabra
   }
-  /// A speaker's level for a Jabra level: its normal offset, clamped; a quieter speaker never
-  /// goes silent while the Jabra plays (5% floor).
+  /// A speaker's level for a group (Jabra) level: its normal offset, clamped; a quieter speaker
+  /// never goes silent while the Jabra plays (5% floor). The group level may exceed 1 (Jabra
+  /// held at 100%) so that further VOL+ presses bring every speaker to 100% (owner 2026-11-07).
   func target(_ name: String, jabraLevel group: Float32) -> Float32 {
     let value = min(1, max(0, group + normal(name) - jabra)), floor = min(group, 0.05)
     return group > 0 && value < floor ? floor : value
+  }
+  /// Highest useful group level: every speaker at 100%.
+  var maxGroup: Float32 { 1 + max(0, others.map { jabra - $0.1 }.max() ?? 0) }
+  static let groupFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MagicMirror/ops/music-device/group-level")
+  /// The group level for a Jabra level: the Jabra's own below 100%, else the last VOL± level
+  /// stored by stop-state (at least 1).
+  func group(jabraLevel level: Float32) -> Float32 {
+    guard level >= 0.995 else { return level }
+    let stored = (try? String(contentsOf: Self.groupFile, encoding: .utf8)).flatMap { Float32($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 1
+    return max(level, min(maxGroup, stored.isFinite ? stored : 1))
   }
   /// The Jabra-equivalent level of a speaker currently at `value` (inverse of `target`).
   func jabraLevel(_ name: String, at value: Float32) -> Float32 { min(1, max(0, value - normal(name) + jabra)) }
@@ -369,7 +380,7 @@ final class SharedOutput {
   /// speaker with a volume control, converted back through its calibrated offset.
   func groupLevel(_ outputs: [Output]) -> Float32? {
     let external = outputs.filter { !$0.builtIn }
-    if let jabra = external.first(where: { speakerLevels.isJabra(outputName($0.id)) }), let level = outputLevel(jabra.id) { return level }
+    if let jabra = external.first(where: { speakerLevels.isJabra(outputName($0.id)) }), let level = outputLevel(jabra.id) { return speakerLevels.group(jabraLevel: level) }
     return external.lazy.compactMap { output in outputLevel(output.id).map { speakerLevels.jabraLevel(outputName(output.id), at: $0) } }.first
   }
   /// A speaker that joins later (a Bluetooth reconnect) takes the group's level plus its own

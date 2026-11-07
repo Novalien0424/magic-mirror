@@ -14,7 +14,7 @@ Older Magic Mirror copies were deleted (see "After every import" below).
 | --- | --- | --- |
 | First / left (`0,0`) | Green **START MIRROR** | Ensure Magic Mirror is running and ready, require Main's successful `normal` acknowledgement (Conversation mode), then wake the TV onto HDMI; about 6 s later reset every speaker to its normal level ([speaker levels](#speaker-levels-calibrated-2026-11-07)). |
 | Second (`1,0`) | Purple **CONSOLE** | Bring the existing Console above the mirror display, preserving current playback and unsaved edits; start the app and wake HDMI if needed. |
-| Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. The deck switches to the Playback page. |
+| Third (`2,0`) | Blue **VIDEO LOOP** | Ensure Magic Mirror is running and ready, set every speaker to its normal level (each press), require Main's successful `play_loop` acknowledgement of actual playback, then wake the TV onto HDMI. The deck switches to the Playback page. |
 | Top right (`3,0`) | Teal **DESKTOP** | Pause voice, wake listening, camera and media; hide both Mirror windows, preserving unsaved Console edits; show the portrait macOS desktop and connect the TV mouse. |
 | Bottom left (`0,1`) | Amber **STUDIO** | Like START, but require Main's successful `studio` acknowledgement (Interactive Studio mode) before waking HDMI; no speaker-level reset. Refused (Basso) when the avatar's image skill is off. |
 | Bottom second (`1,1`) | Turquoise **MUSIC LOOP** | Set every speaker to its normal level, then loop the audio files (up to 200 MB each) of shared `MusicLoop` in file-name order on every speaker while remaining files download. TV black; voice and camera off. The deck switches to the Music page. |
@@ -167,10 +167,14 @@ in `~/Library/Application Support/MagicMirror/ops/music-device/speaker-levels.js
 `{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}` (measured match 0.70/0.55/0.40;
 the owner then chose one VOL+ step higher by ear during MusicLoop; keys match a speaker whose
 name starts with them; an unlisted speaker follows the Jabra; a missing file means 70% each,
-and Main logs `MUSIC_OUTPUT music_output_levels_uncalibrated`). START, STOP, MUSIC LOOP, the
-end of Dance and QA restores set these; VOL±, Dance volume and a reconnecting speaker keep
+and Main logs `MUSIC_OUTPUT music_output_levels_uncalibrated`). START, STOP, every MUSIC LOOP and
+VIDEO LOOP press, the end of Dance and QA restores set these; VOL±, Dance volume and a reconnecting speaker keep
 each speaker's offset from the Jabra (`stop-state`, `music-loop`, `qa-output-volume`, Main's
-`speaker-levels.ts`; 5% floor for a quieter speaker while the Jabra plays). The Jabra's
+`speaker-levels.ts`; 5% floor for a quieter speaker while the Jabra plays). VOL+ can always reach
+100% on every speaker (owner): once the Jabra is at 100%, further presses raise the others 10% each
+until all are at 100% (from the 80/65/50 defaults: 2 presses to the Jabra's 100%, 5 to all 100%);
+`stop-state` keeps that group level in `ops/music-device/group-level` (above 1 only while the Jabra
+is at 100%) and `music-loop` reports it to Main for the AirPlay speakers. The Jabra's
 CoreAudio level carries it and A1 (Airfoil volume 1); the Edifier's Airfoil (AirPlay) volume
 carries its offset. The button log's `jabra_output_70` means the normal-level reset passed.
 
@@ -260,13 +264,13 @@ Playback copy** profile (MUSIC LOOP has its own Music page, above), which has on
 
 | Position | Key | Action |
 | --- | --- | --- |
-| Top left (`0,0`) | **VOL +** | The Jabra 10% louder (snapped to 5% steps), unmuted; every other speaker (A1, AirPlay Edifier) keeps its calibrated offset from the Jabra. |
+| Top left (`0,0`) | **VOL +** | The Jabra 10% louder (snapped to 5% steps), unmuted; every other speaker (A1, AirPlay Edifier) keeps its calibrated offset from the Jabra; at the Jabra's 100% further presses raise the others until every speaker is at 100%. |
 | Bottom left (`0,1`) | **VOL −** | The same, 10% quieter (0% is the floor; a quieter speaker stays at 5% while the Jabra plays). |
 | Bottom right (`3,1`) | Red **STOP** | The normal STOP (shutdown, black HDMI, every external speaker at its normal level), then back to the main profile. |
 
 VOL± acts at once, outside the control queue, so it never waits behind a slow start;
 it does not touch the app, TV or Electron lease and plays Pop (Basso on failure). The
-Mac mini speaker and fixed-volume HDMI are untouched, and STOP/START/MUSIC LOOP return
+Mac mini speaker and fixed-volume HDMI are untouched, and STOP/START/MUSIC LOOP/VIDEO LOOP return
 the speakers to their normal levels. Stream Deck's built-in actions switch the page on the press, not
 on the result: a failed loop still shows Playback, and its STOP recovers. Leaving a
 loop through the Console (Return to Avatar) leaves the deck on Playback until STOP.

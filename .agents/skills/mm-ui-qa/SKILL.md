@@ -32,7 +32,7 @@ then restore every external output (Jabra and Bluetooth speakers) to its normal 
 verify with `--output-status`. The helper accepts hardware rounding within 1.5
 percentage points. The Mac mini speaker returns to its captured level and mute;
 never change input gain. Protect any alternate output selected by the test too.
-In field button QA, START/STOP/MUSIC LOOP reset to the normal levels, Dance raises the Jabra to 90%
+In field button QA, START/STOP/MUSIC LOOP/VIDEO LOOP reset to the normal levels, Dance raises the Jabra to 90%
 (others keep their offsets) after its welcome and leaving Dance restores them: re-quiet after each.
 Use guaranteed cleanup, not a success-only restore; report a failed reset/read-back
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not

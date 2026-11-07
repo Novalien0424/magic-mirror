@@ -33,8 +33,9 @@ export function createSharedMusicOutput(input: {
       // A reconnected speaker was set to the group's level (percent, metadata only).
       else if (event.event === 'speaker_matched' && typeof event.level === 'number' && Number.isFinite(event.level))
         input.report('music_output_speaker_matched', { level: Math.round(Math.min(1, Math.max(0, event.level)) * 100) })
+      // The group level exceeds 1 while the Jabra is at 100% and VOL+ raises the others further.
       else if (event.event === 'level' && typeof event.level === 'number' && Number.isFinite(event.level))
-        input.level?.(Math.min(1, Math.max(0, event.level)))
+        input.level?.(Math.min(2, Math.max(0, event.level)))
     })
     next.once('error', () => { if (child === next) child = undefined; if (!stopped) input.degraded('music_output_shared_unavailable') })
     next.once('exit', () => {
