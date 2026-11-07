@@ -117,6 +117,48 @@ describe('Airfoil venue route', () => {
     route.stop()
   })
 
+  it('releases the Jabra and AirPlay speakers at stop but keeps Bluetooth connected, so the next start skips the settle', async () => {
+    const airfoil = fakeAirfoil(), released: string[][] = [], a1 = 'AA-BB-CC-00-11-22:output'
+    const options = { flagPath: '/flag', degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 60_000, now: () => 0, disconnectDetached: (ids: string[]) => { released.push(ids); ids.forEach(id => airfoil.connected.delete(id)) } }
+    const first = createAirfoilRoute({ ...options, report: vi.fn() })
+    await first.start()
+    await vi.waitFor(() => expect(airfoil.connected.size).toBe(3))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    first.stop()
+    expect(released).toEqual([[AIRFOIL_LOCAL_ID, 'AABBCC001133@EDIFIER M330 Ⅱ 1133']])
+    expect([...airfoil.connected]).toEqual([a1])
+    // The next run finds A1 still connected and in sync: it plays at once.
+    const report = vi.fn(), second = createAirfoilRoute({ ...options, report })
+    await second.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(a1)).toBe(1)
+    expect(report).not.toHaveBeenCalledWith('music_output_bluetooth_settling', expect.anything())
+    second.stop()
+  })
+
+  it('resumes the settle time of a Bluetooth speaker kept connected through a quick stop and start', async () => {
+    let t = 0, state: Record<string, number> = {}
+    const airfoil = fakeAirfoil(), a1 = 'AA-BB-CC-00-11-22:output'
+    const options = { flagPath: '/flag', degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 1000, now: () => t,
+      settleState: { load: () => state, save: (next: Record<string, number>) => { state = { ...next } } },
+      disconnectDetached: (ids: string[]) => ids.forEach(id => airfoil.connected.delete(id)) }
+    const first = createAirfoilRoute({ ...options, report: vi.fn() })
+    await first.start()
+    await vi.waitFor(() => expect(state[a1]).toBe(0))
+    first.stop()
+    t = 400
+    const report = vi.fn(), second = createAirfoilRoute({ ...options, report })
+    await second.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(a1)).toBe(0)
+    t = 1000
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(1))
+    expect(state).toEqual({})
+    second.stop()
+  })
+
   it('falls back to the direct speakers with one reason when Airfoil stops answering', async () => {
     const airfoil = fakeAirfoil(), flags: boolean[] = [], degraded = vi.fn(), launch = vi.fn(async () => {})
     const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded, run: airfoil.run, launch, installed: () => true,

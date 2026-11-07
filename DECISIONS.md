@@ -11,6 +11,9 @@
   volume and reconnects keep each speaker's offset from the Jabra. Supersedes "All
   speakers at 70%" (2026-10-31). The owner may fine-tune by ear; the tuned levels then
   become the file's values.
+- A1 (Bluetooth) stays connected in Airfoil through STOP so it stays in sync and the next start
+  needs no 6.5 min settle; STOP still releases the Jabra and the Edifier (owner, after the night
+  sync measurements). A1 is kept awake while the app is stopped.
 - VOL+ can always take every speaker to 100%, the Edifier included: past the Jabra's 100%
   further presses raise the others until all are at 100%. Every VIDEO LOOP press now resets
   to the normal levels like MUSIC LOOP and STOP.

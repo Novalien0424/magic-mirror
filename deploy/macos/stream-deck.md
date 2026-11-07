@@ -163,8 +163,11 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   Edifier, then wanders ±20 ms with occasional 30–40 ms jumps (weak link; Rogue Amoeba: sliders
   cannot fix fluctuating latency). Main therefore keeps a freshly connected or reconnected
   Bluetooth speaker at Airfoil volume 0 for 6.5 min (`BLUETOOTH_SETTLE_MS`, markers
-  `music_output_bluetooth_settling` / `_joined`); A1 then joins in sync. A Bluetooth speaker
-  already connected when Main starts plays at once.
+  `music_output_bluetooth_settling` / `_joined`); A1 then joins in sync. Bluetooth speakers stay
+  connected in Airfoil through STOP (owner 2026-11-07), so they stay in sync and the next start
+  plays them at once; a quick STOP/START resumes the remaining settle time
+  (`ops/music-device/bluetooth-settle.json`). Only a fresh connect (A1 left Bluetooth, Airfoil or
+  Mac restart) waits again. STOP still releases the Jabra and AirPlay speakers.
 - Ear tests were unreliable below ~50 ms, and a 1–2 min settle is too short for A1: measure from
   connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 

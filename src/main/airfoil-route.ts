@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DEFAULT_SPEAKER_LEVELS, speakerTargetLevel, type SpeakerLevels } from './speaker-levels'
 
 /**
@@ -89,6 +89,8 @@ export function createAirfoilRoute(input: {
   levels?: SpeakerLevels
   /** How long a freshly connected Bluetooth speaker stays silent while Airfoil syncs it. */
   bluetoothSettleMs?: number
+  /** Settle start times of Bluetooth speakers kept connected through a stop (epoch ms by id). */
+  settleState?: { load(): Record<string, number>; save(state: Record<string, number>): void }
   now?: () => number
   pollMs?: number
 }) {
@@ -107,6 +109,18 @@ export function createAirfoilRoute(input: {
   // in sync at once). The speaker streams at Airfoil volume 0 meanwhile and then joins in sync.
   const settleMs = input.bluetoothSettleMs ?? BLUETOOTH_SETTLE_MS, clock = input.now ?? Date.now
   const settling = new Map<string, number>()
+  const statePath = join(dirname(input.flagPath), 'bluetooth-settle.json')
+  const settleState = input.settleState ?? {
+    load: () => { try { return JSON.parse(readFileSync(statePath, 'utf8')) as Record<string, number> } catch { return {} } },
+    save: (state: Record<string, number>) => { try { writeFileSync(statePath, JSON.stringify(state)) } catch { /* best effort */ } },
+  }
+  let savedSettling = ''
+  const saveSettling = () => {
+    const next = JSON.stringify(Object.fromEntries(settling))
+    if (next !== savedSettling) { savedSettling = next; settleState.save(Object.fromEntries(settling)) }
+  }
+  // A Bluetooth speaker kept connected through a stop resumes its settle time from the file.
+  let resumed: Record<string, number> = {}
   const settled = (speaker: AirfoilSpeaker) => { const since = settling.get(speaker.id); return since === undefined || clock() - since >= settleMs }
   // Computer (Jabra) and Bluetooth play at full Airfoil volume: their CoreAudio levels carry the
   // calibration. AirPlay speakers have only Airfoil's volume, so it carries their offset.
@@ -138,10 +152,13 @@ export function createAirfoilRoute(input: {
       // before Main started has been in sync for an unknown time and plays at once.
       const fresh = !speaker.connected && airfoilKind(speaker) === 'bluetooth'
       if (fresh) settling.set(speaker.id, clock())
+      else if (speaker.connected && airfoilKind(speaker) === 'bluetooth' && Number.isFinite(resumed[speaker.id])
+        && clock() - resumed[speaker.id]! < settleMs) settling.set(speaker.id, resumed[speaker.id]!)
       try { speaker.connected = (await run(CONNECT, [speaker.id, String(volumeFor(speaker))])) === 'true' } catch { speaker.connected = false }
       if (fresh && !speaker.connected) settling.delete(speaker.id)
       else if (fresh) settlingNow++
     }
+    resumed = {}
     if (settlingNow) input.report('music_output_bluetooth_settling', { speakers: settlingNow, seconds: Math.round(settleMs / 1000) })
     for (const speaker of targets) {
       if (!settling.has(speaker.id)) continue
@@ -150,6 +167,7 @@ export function createAirfoilRoute(input: {
       settling.delete(speaker.id)
       try { await run(VOLUME, [speaker.id, '1']); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch { settling.set(speaker.id, clock() - settleMs) }
     }
+    saveSettling()
     // AirPlay connects finish after the first poll; a late or returning speaker counts as reconnected.
     const now = new Set(targets.filter(speaker => speaker.connected).map(speaker => speaker.id))
     const reconnected = [...now].filter(id => !joined.has(id) || dropped.has(id)).length
@@ -175,6 +193,7 @@ export function createAirfoilRoute(input: {
       if (!(input.installed ?? (() => existsSync('/Applications/Airfoil.app')))()) return input.report('music_output_airfoil_not_installed')
       // A previous run that died keeps no stale route: music is direct until Airfoil is verified.
       await writeFlag(false).catch(() => undefined); active = false
+      resumed = settleState.load()
       await launch().catch(() => undefined)
       void loop()
     },
@@ -184,12 +203,14 @@ export function createAirfoilRoute(input: {
       level = Math.min(2, Math.max(0, next))
       for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'airplay') void run(VOLUME, [speaker.id, String(volumeFor(speaker))]).catch(() => undefined)
     },
-    /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. */
+    /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. Bluetooth
+     * speakers stay connected (owner 2026-11-07): Airfoil keeps them in sync while the app is
+     * stopped, so the next start needs no settle time. Computer and AirPlay speakers are released. */
     stop(): void {
       stopped = true; clearTimeout(timer); active = false
       if (input.writeFlag) void input.writeFlag(false).catch(() => undefined)
       else rmSync(input.flagPath, { force: true })
-      const ids = targets.filter(speaker => speaker.connected).map(speaker => speaker.id)
+      const ids = targets.filter(speaker => speaker.connected && airfoilKind(speaker) !== 'bluetooth').map(speaker => speaker.id)
       if (!ids.length) return
       if (input.disconnectDetached) input.disconnectDetached(ids)
       else spawn('/usr/bin/osascript', ['-e', DISCONNECT, ...ids], { detached: true, stdio: 'ignore' }).unref()
