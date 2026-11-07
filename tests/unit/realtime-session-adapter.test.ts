@@ -343,6 +343,39 @@ describe("RealtimeSession adapter", () => {
     expect(JSON.stringify(sink.mock.calls)).not.toMatch(/Moonlit|雲上/u);
     await handle.close('user_requested');
   });
+  it('plays the first online result itself when the visitor asked to play and the model only answered', async () => {
+    const probe = makeAdapterProbe(), onMediaRequest = vi.fn(async (_request: unknown, _identity: unknown) => 'accepted' as const);
+    const first = 'https://www.youtube.com/watch?v=M7lc1UVf-VE', second = 'https://youtu.be/abcdefghijk';
+    const onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const,
+      videos: [{ url: first, title: '周深 組曲', channel: 'A' }, { url: second, title: '周深 組曲 Live', channel: 'B' }] }));
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), vi.fn(), probe), onSearchYoutube, onMediaRequest,
+      onFindMedia: async () => ({ status: 'accepted' as const, code: 'media_discovery_no_match', resources: [], total: 0 }) });
+    const tools = (probe.agentConstructorCalls[0][0] as { tools: any[] }).tools;
+    const turn = (id: string, transcript: string) => {
+      probe.emit('transport_event', { type: 'input_audio_buffer.speech_started', item_id: id });
+      probe.emit('transport_event', { type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript });
+    };
+    const search = () => tools.find(t => t.name === 'search_youtube').invoke({}, '{"query":"周深 組曲"}');
+    // The model searched, then asked which one instead of playing: the application plays the first result.
+    turn('medley', '幫我在雲上找周深的組曲撥放');
+    await search();
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'search', status: 'completed', output: [{ type: 'function_call', name: 'search_youtube' }] } });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'asked', status: 'completed', output: [{ content: [{ type: 'audio', transcript: '哪一個？' }] }] } });
+    await vi.waitFor(() => expect(onMediaRequest).toHaveBeenCalledWith({ action: 'play_youtube', kind: 'music', url: first, mode: 'once' }, expect.anything()));
+    // An information request does not autoplay, and the model's own play_youtube cancels the fallback.
+    onMediaRequest.mockClear();
+    turn('info', '幫我上網查一下周深有幾首歌');
+    await search();
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'answer', status: 'completed', output: [{ content: [{ type: 'audio', transcript: '很多首。' }] }] } });
+    turn('own', '幫我再網路上找周深的組曲播放');
+    await search();
+    await tools.find(t => t.name === 'play_youtube').invoke({}, JSON.stringify({ url: second, kind: 'music', mode: 'once' }));
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'played', status: 'completed', output: [{ type: 'function_call', name: 'play_youtube' }] } });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'quiet', status: 'completed', output: [] } });
+    await new Promise(resolve => setTimeout(resolve, 600));
+    expect(onMediaRequest.mock.calls.map(([request]) => request)).toEqual([{ action: 'play_youtube', kind: 'music', url: second, mode: 'once' }]);
+    await handle.close('user_requested');
+  });
   it('uses the avatar\'s configured online search phrase', async () => {
     const probe = makeAdapterProbe(), onSearchYoutube = vi.fn(async () => ({ status: 'accepted' as const, code: 'youtube_search_results' as const, videos: [] }));
     const avatar = { name: 'Ren', personality: 'Friendly guide.', speakingStyle: '', wakeGreeting: '', sleepFarewell: '晚安。', cloudSearchPhrase: '芝麻開門' };

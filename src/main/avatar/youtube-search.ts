@@ -1,3 +1,4 @@
+import { youtubeVideoId } from '../../shared/youtube-media'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseEnv } from 'node:util'
@@ -63,9 +64,12 @@ export function createYoutubeSearch(options: { credentialSource: { get(): Promis
       // Fetch extra so live results do not leave the visitor with too few choices.
       const recorded = body.items.filter((item: { snippet?: { liveBroadcastContent?: unknown } }) =>
         item?.snippet?.liveBroadcastContent !== 'live' && item?.snippet?.liveBroadcastContent !== 'upcoming').slice(0, 5)
+      // One odd result (empty channel, control characters, a very long title) must not sink the
+      // whole search: clean each label and drop only results that remain unusable.
+      const clean = (value: unknown) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 200).trim() : ''
       const videos = recorded.map((item: { id?: { videoId?: unknown }; snippet?: { title?: unknown; channelTitle?: unknown } }) => ({
-        url: `https://www.youtube.com/watch?v=${item.id?.videoId}`, title: item.snippet?.title, channel: item.snippet?.channelTitle,
-      }))
+        url: `https://www.youtube.com/watch?v=${item.id?.videoId}`, title: clean(item.snippet?.title), channel: clean(item.snippet?.channelTitle) || 'YouTube',
+      })).filter((video: { url: string; title: string }) => video.title && youtubeVideoId(video.url))
       return parseYoutubeSearchReply({ status: 'accepted', code: 'youtube_search_results', videos }) ?? failure('youtube_search_unavailable')
     } catch { return failure('youtube_search_unavailable') }
     finally { busy = false }

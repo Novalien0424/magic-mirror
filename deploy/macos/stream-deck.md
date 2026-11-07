@@ -168,6 +168,12 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   plays them at once; a quick STOP/START resumes the remaining settle time
   (`ops/music-device/bluetooth-settle.json`). Only a fresh connect (A1 left Bluetooth, Airfoil or
   Mac restart) waits again. STOP still releases the Jabra and AirPlay speakers.
+- **The Jabra plays ~150 ms early while its microphone is open** (its call path; measured 11-07
+  with A1's mic: −4 ms closed, −140/−157 ms open). Owner ruling: sync over voice control. Main
+  sets the Jabras' Airfoil volume to 0 while their microphone is open (a conversation, or the
+  Dormant wake listener) so music plays on A1 and the Edifier only, and every song or loop handed
+  to Dormant releases the wake listener (no voice wake during music; STOP ends it). The
+  calibration above assumes the microphone closed.
 - Ear tests were unreliable below ~50 ms, and a 1–2 min settle is too short for A1: measure from
   connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 

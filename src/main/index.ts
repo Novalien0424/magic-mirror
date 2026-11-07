@@ -220,6 +220,14 @@ let stopMusicOutput: (() => void) | undefined
 // switches to its call path and plays ~150 ms ahead of the calibrated speakers (measured 2026-11-07).
 let wakeSuspendedForMedia = false
 const wakeInputSuspended = (): boolean => (operatorLoop?.isInputSuspended() ?? false) || wakeSuspendedForMedia
+// The Jabra's microphone is open in a conversation and whenever the wake listener holds it; the
+// Jabras then sit out the Airfoil music (owner 2026-11-07: sync over voice control).
+const jabraMicrophoneOpen = (): boolean => {
+  const lifecycle = bootRuntime?.snapshot().lifecycle
+  return ['activating', 'active', 'suspending'].includes(lifecycle ?? '')
+    || (['dormant', 'offlineLoop'].includes(lifecycle ?? '') && !wakeInputSuspended())
+}
+let refreshJabraMusic: (() => void) | undefined
 /** True while Airfoil plays the music device on every speaker (macOS only). */
 let airfoilActive: (() => boolean) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
@@ -1328,11 +1336,13 @@ void app.whenReady().then(async () => {
       // A released worker stays alive with no input stream. microphoneUnowned()
       // means the entire child has exited, not that release failed.
       if (result && result.status !== 'success') throw Error('operator_loop_microphone_release_failed')
+      refreshJabraMusic?.()
       marker('OPERATOR_LOOP', { reason: 'operator_loop_inputs_released', wake: wakeSupervisor?.snapshot().status ?? 'not_configured',
         lifecycle: runtime.snapshot().lifecycle, camera: 'released' })
     },
     resumeAvatar: async () => {
       await configureWakeRuntime(runtime)
+      refreshJabraMusic?.()
       if (!wakeInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
         const result = await wakeSupervisor?.acquire()
         if (result?.status === 'failed') marker('OPERATOR_LOOP', { reason: 'operator_loop_wake_restore_failed' })
@@ -1851,7 +1861,9 @@ void app.whenReady().then(async () => {
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
       degraded: degradedMusicOutput,
       levels: speakerLevels,
+      localMusic: () => !jabraMicrophoneOpen(),
     })
+    refreshJabraMusic = airfoilRoute.refreshLocal
     const sharedMusicOutput = createSharedMusicOutput({
       executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
@@ -1871,7 +1883,8 @@ void app.whenReady().then(async () => {
       if (wakeSuspendedForMedia === released) return
       wakeSuspendedForMedia = released
       marker('MEDIA_WAKE', { reason: released ? 'media_wake_microphone_released' : 'media_wake_microphone_restored' })
-      if (released) { await wakeSupervisor?.release(); return }
+      if (released) { await wakeSupervisor?.release(); refreshJabraMusic?.(); return }
+      refreshJabraMusic?.()
       if (!wakeInputSuspended() && ['dormant', 'offlineLoop'].includes(runtime.snapshot().lifecycle)) {
         const result = await wakeSupervisor?.acquire()
         if (result?.status === 'failed') reportMainDegradation('wake', 'media_wake', 'media_wake_restore_failed')
@@ -2148,6 +2161,7 @@ void app.whenReady().then(async () => {
     cameraTracking?.update(operatorLoop?.isInputSuspended() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
     // An online song keeps its Dormant volume and full-mirror picture only while Raven sleeps.
     if (previousLifecycle !== snapshot.lifecycle && ['activating', 'active'].includes(snapshot.lifecycle)) youtubePlayer?.setDormant?.(false)
+    if (previousLifecycle !== snapshot.lifecycle) refreshJabraMusic?.()
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
       stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {

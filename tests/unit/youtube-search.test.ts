@@ -54,6 +54,18 @@ describe('YouTube search and video boundary', () => {
     const [url] = fetchImpl.mock.calls[0] as unknown as [URL]
     expect(url.searchParams.get('fields')).toContain('liveBroadcastContent')
   })
+  it('cleans odd result labels instead of failing the whole search', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ items: [
+      { id: { videoId: 'emptychanna' }, snippet: { title: '10 second timer', channelTitle: '' } },
+      { id: { videoId: 'controlchar' }, snippet: { title: 'Alarm\ncountdown', channelTitle: 'Fixture' } },
+      { id: { videoId: 'longtitleaa' }, snippet: { title: 'x'.repeat(300), channelTitle: 'Fixture' } },
+      { id: { videoId: 'notitleaaaa' }, snippet: { channelTitle: 'Fixture' } },
+    ] }))
+    const result = await createYoutubeSearch({ credentialSource: { get: async () => 'synthetic-key' }, fetchImpl })({ query: '10 second countdown timer with alarm' })
+    expect(result).toMatchObject({ status: 'accepted', code: 'youtube_search_results' })
+    expect(result.videos.map(video => [video.title.length > 100 ? 'long' : video.title, video.channel])).toEqual([
+      ['10 second timer', 'YouTube'], ['Alarm countdown', 'Fixture'], ['long', 'Fixture']])
+  })
   it('requests extra results so live ones still leave five recorded choices', async () => {
     const item = (videoId: string, liveBroadcastContent: string) => ({ id: { videoId }, snippet: { title: videoId, channelTitle: 'Fixture', liveBroadcastContent } })
     const items = [...['livea', 'liveb', 'livec', 'lived'].map(id => item(id.padEnd(11, 'a'), 'live')),

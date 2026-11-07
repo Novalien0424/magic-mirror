@@ -106,10 +106,8 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   QA-passed (`cloud_songs`: both owner sentences found, played, Raven Dormant during and after).
   Open: (1) the owner judges by ear in the room (QA ran at 1%); (2) local media keeps the old
   behaviour (conversation resumes; local video sound on the Jabra; local Dormant loops 12 dB
-  quieter); (2b) the Jabra plays ~150 ms early whenever its microphone is open (measured 11-07),
-  so music during a conversation (local media, background music) and online/local Dormant loops
-  (wake listener on) are out of sync on the Jabras — owner to choose between voice wake/stop
-  during music and sync; (3) mini still says a word before playing on some turns (judge `tool_silence`);
+  quieter); (2b) done 11-07 (owner: sync over voice control): no wake listener during any
+  Dormant music, and the Jabras sit out music while their microphone is open; (3) mini still says a word before playing on some turns (judge `tool_silence`);
   (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
   `npm run build` and passes on rerun.
 - [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook

@@ -59,3 +59,29 @@ first connect, resumed its settle across a quick STOP/START, then played at once
 
 Unit suite 151 files / 2361 tests pass (the six `phase4-qa-runner` cases fail intermittently in
 some full runs and always pass alone).
+
+## Third round (owner: sync over voice control; STOP must reset everything)
+
+- Every song or loop handed to Dormant (online or local) plays with the wake listener off; the
+  Jabras sit out Airfoil music while their microphone is open (conversation, or the wake listener
+  in Dormant), so A1 and the Edifier play it. QA loop checks now require no wake listener during
+  the loop, then an operator stop and a fresh conversation (the acoustic wake-during-loop helper was
+  removed).
+- A requested song from an online search must play: if the model only answers, the application
+  plays YouTube's first result (`media_online_autoplay`; unit-tested, not needed in the runs below).
+- YouTube search cleans odd result labels instead of failing the whole search (the QA loop query
+  returned `youtube_search_unavailable` twice before, results after).
+
+| Run | Result |
+| --- | --- |
+| `2026-11-07T15-03-04-727Z` | Medley turn searched but did not play (model). Exit 2. |
+| `2026-11-07T15-04-38-271Z` | Online loop: `youtube_search_unavailable`; operator stop + fresh conversation passed. Exit 2. |
+| `2026-11-07T15-07-59-249Z` | Local loop: weak local match, no loop (model); operator stop + fresh conversation passed. Exit 2. |
+| `2026-11-07T15-14-09-677Z`, `2026-11-07T15-15-31-052Z` | Both sentences played (model's own play_youtube), wake listener off during each song, Dormant after. Exit 0. |
+| `2026-11-07T15-16-55-495Z` | Online loop: search unavailable again (before the label fix). Exit 2. |
+| `2026-11-07T15-20-20-529Z` | Local loop played, no wake listener during it, operator stop, fresh conversation. Exit 0. |
+| `2026-11-07T15-23-27-166Z` | After the search fix: online loop played, no wake listener during it, operator stop, fresh conversation, quoted request ignored. Exit 0. |
+
+Live (production, outputs held at 1%): MUSIC LOOP (Jabra microphone closed, only Airfoil's
+music input) → STOP (app gone) → START (conversation, Jabra microphone open) → STOP (black, TV
+standby, levels reset, microphone closed).

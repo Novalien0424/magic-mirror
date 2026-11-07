@@ -39,6 +39,7 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'media_source_restricted',
   'media_source_unconfirmed',
   'media_online_unlocked',
+  'media_online_autoplay',
   'media_discovery_visitor_clue',
   'media_selection_required',
   'camera_result_stale',

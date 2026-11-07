@@ -1975,9 +1975,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       // wake worker acquires it. The media survives this intentional sleep.
       sleepingMedia = true
       try {
-        // Release the wake listener before Dormant would take the microphone (the Jabra plays
-        // ~150 ms early with its microphone open); restored when the song ends or stops.
-        if (request.action === 'play_youtube' && request.mode === 'once' && options.mediaWakeMicrophone) {
+        // Owner 2026-11-07: sync over voice control. Release the wake listener before Dormant would
+        // take the microphone (the Jabra plays ~150 ms early with it open), for every song or loop;
+        // restored when the media ends or is stopped (STOP, Console Stop All, a mode key).
+        if (options.mediaWakeMicrophone) {
           mediaMicrophoneReleased = true
           await options.mediaWakeMicrophone(true)
         }

@@ -185,6 +185,10 @@ function readProperty(value: unknown, key: string): unknown {
   }
 }
 
+// The visitor's own words in an online-search turn (owner 2026-11-07: a requested song must play).
+const ONLINE_PLAY_INTENT = /播放|撥放|播|放|聽|唱|play|listen/iu
+const ONLINE_MUSIC_INTENT = /歌|曲|音樂|聽|唱|song|music|listen/iu
+const ONLINE_LOOP_INTENT = /循環|重複|一直播|loop|repeat/iu
 /** False only when response.done lists its whole output and none of it is audio. */
 function responseHasAudio(response: unknown): boolean {
   const output = readProperty(response, 'output')
@@ -496,6 +500,9 @@ export function createRealtimeSession(
   let onlineTurns = 0
   const onlineCandidates = new Set<string>()
   let localSearchClue: { generation: number; text: string } | undefined
+  // Owner 2026-11-07: a song the visitor asked to play from an online search must play. If the
+  // model ends that turn without play_youtube, the application plays YouTube's first result.
+  let onlineAutoPlay: { generation: number; request: import('../../shared/media-skill').MediaSkillRequest } | undefined
   let lastLocalSearch: { generation: number; query: string; media: import('../../shared/media-discovery').MediaDiscoveryReply } | undefined
   const mediaSearch = new MediaSearchContext()
   let memoryInputQueue: Promise<unknown> = Promise.resolve()
@@ -917,10 +924,14 @@ export function createRealtimeSession(
           ?? { status: 'failed' as const, code: 'youtube_search_not_configured' as const, videos: [] })
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
         if (youtube.status === 'accepted') { onlineCandidates.clear(); for (const video of youtube.videos) onlineCandidates.add(video.url) }
+        const clue = localSearchClue?.generation === generation ? localSearchClue.text : '', first = youtube.status === 'accepted' ? youtube.videos[0] : undefined
+        onlineAutoPlay = first && ONLINE_PLAY_INTENT.test(clue) ? { generation, request: { action: 'play_youtube',
+          kind: ONLINE_MUSIC_INTENT.test(clue) ? 'music' : 'video', url: first.url, mode: ONLINE_LOOP_INTENT.test(clue) ? 'loop' : 'once' } } : undefined
         return { outcome: youtube.status, youtube }
       },
       play_youtube: async args => {
         const generation = memoryTurnGeneration
+        onlineAutoPlay = undefined
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || !input.onMediaRequest) return 'ignored'
         const restriction = onlineCandidates.has(args.url as string) ? undefined : await onlineMediaRestriction()
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return 'ignored'
@@ -1494,6 +1505,18 @@ export function createRealtimeSession(
         else if (cue.signal.aborted) cue.abort()
       }
       if (type === 'response.done') { pumpSpeech(); resumeRevisedCommand() }
+      // The model's final answer of the turn (no tool call) ended without playing the requested song.
+      const output = readProperty(response, 'output')
+      if (type === 'response.done' && onlineAutoPlay && onlineAutoPlay.generation === memoryTurnGeneration
+        && !(Array.isArray(output) && output.some(item => readProperty(item, 'type') === 'function_call'))) {
+        const pending = onlineAutoPlay
+        onlineAutoPlay = undefined
+        setTimeout(() => {
+          if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || pending.generation !== memoryTurnGeneration || !input.onMediaRequest) return
+          emitMetadata(input, 'realtime_observer_event', 'info', 'media_online_autoplay', sessionGeneration, createdAt)
+          void requestMedia(pending.request).catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
+        }, 400)
+      }
     }
     if (type === 'output_audio_buffer.stopped' || type === 'output_audio_buffer.cleared') {
       const responseId = readProperty(event, 'response_id')

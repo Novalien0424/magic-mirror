@@ -655,6 +655,8 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledTimes(2))
     report({ ...context, status: 'acknowledged' }); expect(await loop).toBe('accepted')
     expect(requestSleep).toHaveBeenCalledTimes(2)
+    // Loops play without the wake listener too (owner: sync over voice control); a stop restores it.
+    expect(mediaWakeMicrophone.mock.calls).toEqual([[true], [false], [true]])
     await registered.control.stopAll({ preserveSleepingMedia: true })
     expect(youtube.stop).toHaveBeenCalledOnce()
     await registered.control.stopAll()

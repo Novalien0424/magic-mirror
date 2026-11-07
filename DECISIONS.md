@@ -1,5 +1,21 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-07 — Sync over voice control during music (owner ruling, late night)
+
+- The Jabra plays ~150 ms ahead of the calibrated speakers whenever its microphone is open, so
+  the owner chose sync: no voice wake while music plays. Every song or loop that hands Raven to
+  Dormant (online or local) plays with the wake listener off; it returns when the music ends or
+  is stopped. Supersedes "Dormant loops still use the configured native wake phrase" (2026-10-11)
+  and the online-loop exception below.
+- While the Jabra's microphone is open (a conversation, or the wake listener in Dormant), the
+  Jabras sit out the Airfoil music and carry only Raven's voice; A1 and the Edifier play it.
+- A song the visitor asked to play from an online search must play: if the model only answers
+  (for example asks which result), the application plays YouTube's first result itself
+  (`media_online_autoplay`). An information request (no play/listen words) does not autoplay.
+- The owner ends music with the physical STOP. STOP quits the app, so it resets everything:
+  the next key press starts with the wake listener and the Jabra microphone working, and START
+  resets the speaker levels after the microphone opens. A mode key during music also restores it.
+
 ## 2026-11-07 — Online songs: relaxed phrase, Dormant playback (owner rulings, night)
 
 - Online search is not hidden or strict any more (owner: 「幫我在雲上找，幫我再網路上找等等都

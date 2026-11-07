@@ -89,6 +89,8 @@ export function createAirfoilRoute(input: {
   levels?: SpeakerLevels
   /** How long a freshly connected Bluetooth speaker stays silent while Airfoil syncs it. */
   bluetoothSettleMs?: number
+  /** False while the Jabra's microphone is open: it then plays ~150 ms early, so it sits out music. */
+  localMusic?: () => boolean
   /** Settle start times of Bluetooth speakers kept connected through a stop (epoch ms by id). */
   settleState?: { load(): Record<string, number>; save(state: Record<string, number>): void }
   now?: () => number
@@ -124,8 +126,18 @@ export function createAirfoilRoute(input: {
   const settled = (speaker: AirfoilSpeaker) => { const since = settling.get(speaker.id); return since === undefined || clock() - since >= settleMs }
   // Computer (Jabra) and Bluetooth play at full Airfoil volume: their CoreAudio levels carry the
   // calibration. AirPlay speakers have only Airfoil's volume, so it carries their offset.
+  const localOn = () => input.localMusic?.() ?? true
+  let localApplied = true
   const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? speakerTargetLevel(levels, speaker.name, level)
-    : airfoilKind(speaker) === 'bluetooth' && !settled(speaker) ? 0 : 1
+    : airfoilKind(speaker) === 'bluetooth' && !settled(speaker) ? 0 : airfoilKind(speaker) === 'local' && !localOn() ? 0 : 1
+  // Applies the Jabra's music state now (Main calls it on every microphone change; each poll re-checks).
+  const refreshLocal = () => {
+    const on = localOn()
+    if (on === localApplied) return
+    localApplied = on
+    for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'local') void run(VOLUME, [speaker.id, on ? '1' : '0']).catch(() => undefined)
+    input.report(on ? 'music_output_jabra_music_on' : 'music_output_jabra_music_off')
+  }
   const setActive = async (on: boolean, reason?: string) => {
     if (on !== active) { await writeFlag(on).catch(() => undefined); active = on }
     if (!on && reason && reason !== lastReason) input.degraded(reason)
@@ -159,6 +171,8 @@ export function createAirfoilRoute(input: {
       else if (fresh) settlingNow++
     }
     resumed = {}
+    if (!active) localApplied = localOn()
+    refreshLocal()
     if (settlingNow) input.report('music_output_bluetooth_settling', { speakers: settlingNow, seconds: Math.round(settleMs / 1000) })
     for (const speaker of targets) {
       if (!settling.has(speaker.id)) continue
@@ -219,5 +233,6 @@ export function createAirfoilRoute(input: {
       else spawn('/usr/bin/osascript', ['-e', DISCONNECT, ...ids], { detached: true, stdio: 'ignore' }).unref()
     },
     isActive: () => active,
+    refreshLocal,
   }
 }

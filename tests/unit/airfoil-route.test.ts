@@ -159,6 +159,24 @@ describe('Airfoil venue route', () => {
     second.stop()
   })
 
+  it('keeps the Jabras out of the music while their microphone is open (it then plays ~150 ms early)', async () => {
+    let micOpen = true
+    const airfoil = fakeAirfoil(), report = vi.fn()
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 0, localMusic: () => !micOpen })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(0)
+    micOpen = false; route.refreshLocal()
+    await vi.waitFor(() => expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1))
+    expect(report).toHaveBeenCalledWith('music_output_jabra_music_on')
+    // Each poll re-checks, so a missed notification is corrected within one poll.
+    micOpen = true
+    await vi.waitFor(() => expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(0))
+    expect(report).toHaveBeenCalledWith('music_output_jabra_music_off')
+    route.stop()
+  })
+
   it('falls back to the direct speakers with one reason when Airfoil stops answering', async () => {
     const airfoil = fakeAirfoil(), flags: boolean[] = [], degraded = vi.fn(), launch = vi.fn(async () => {})
     const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded, run: airfoil.run, launch, installed: () => true,
