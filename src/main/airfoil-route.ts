@@ -28,6 +28,9 @@ export function airfoilKind(speaker: Pick<AirfoilSpeaker, 'id' | 'name'>): Airfo
   return undefined
 }
 
+/** Bluetooth sync settle time after Airfoil connects a speaker (measured ~6 min, 2026-11-07). */
+export const BLUETOOTH_SETTLE_MS = 6.5 * 60_000
+
 export function parseAirfoilSpeakers(text: string): AirfoilSpeaker[] {
   return text.split('\n').map(line => line.split('\t')).filter(parts => parts.length === 3 && parts[0])
     .map(([id, name, connected]) => ({ id: id!, name: name!, connected: connected === 'true' }))
@@ -84,6 +87,9 @@ export function createAirfoilRoute(input: {
   disconnectDetached?: (ids: string[]) => void
   /** Calibrated normal levels: AirPlay speakers keep their offset from the Jabra's level. */
   levels?: SpeakerLevels
+  /** How long a freshly connected Bluetooth speaker stays silent while Airfoil syncs it. */
+  bluetoothSettleMs?: number
+  now?: () => number
   pollMs?: number
 }) {
   const run = input.run ?? runOsascript
@@ -96,9 +102,16 @@ export function createAirfoilRoute(input: {
   const levels = input.levels ?? DEFAULT_SPEAKER_LEVELS
   let stopped = false, active = false, failures = 0, level = levels.jabra, timer: ReturnType<typeof setTimeout> | undefined
   let targets: AirfoilSpeaker[] = [], lastReason = '', joined = new Set<string>()
+  // Measured 2026-11-07: after Airfoil connects a Bluetooth speaker (A1) it starts ~130 ms late
+  // and glides into sync at ~20 ms/min, settling after ~6 min (the Jabra and AirPlay speakers are
+  // in sync at once). The speaker streams at Airfoil volume 0 meanwhile and then joins in sync.
+  const settleMs = input.bluetoothSettleMs ?? BLUETOOTH_SETTLE_MS, clock = input.now ?? Date.now
+  const settling = new Map<string, number>()
+  const settled = (speaker: AirfoilSpeaker) => { const since = settling.get(speaker.id); return since === undefined || clock() - since >= settleMs }
   // Computer (Jabra) and Bluetooth play at full Airfoil volume: their CoreAudio levels carry the
   // calibration. AirPlay speakers have only Airfoil's volume, so it carries their offset.
-  const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? speakerTargetLevel(levels, speaker.name, level) : 1
+  const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? speakerTargetLevel(levels, speaker.name, level)
+    : airfoilKind(speaker) === 'bluetooth' && !settled(speaker) ? 0 : 1
   const setActive = async (on: boolean, reason?: string) => {
     if (on !== active) { await writeFlag(on).catch(() => undefined); active = on }
     if (!on && reason && reason !== lastReason) input.degraded(reason)
@@ -118,9 +131,24 @@ export function createAirfoilRoute(input: {
     failures = 0
     targets = speakers.filter(speaker => airfoilKind(speaker))
     const dropped = new Set(targets.filter(speaker => !speaker.connected).map(speaker => speaker.id))
+    let settlingNow = 0
     for (const speaker of targets) {
       if (speaker.connected && active) continue
+      // A Bluetooth speaker this run connects starts its settle time; one already connected
+      // before Main started has been in sync for an unknown time and plays at once.
+      const fresh = !speaker.connected && airfoilKind(speaker) === 'bluetooth'
+      if (fresh) settling.set(speaker.id, clock())
       try { speaker.connected = (await run(CONNECT, [speaker.id, String(volumeFor(speaker))])) === 'true' } catch { speaker.connected = false }
+      if (fresh && !speaker.connected) settling.delete(speaker.id)
+      else if (fresh) settlingNow++
+    }
+    if (settlingNow) input.report('music_output_bluetooth_settling', { speakers: settlingNow, seconds: Math.round(settleMs / 1000) })
+    for (const speaker of targets) {
+      if (!settling.has(speaker.id)) continue
+      if (!speaker.connected) { settling.delete(speaker.id); continue }
+      if (!settled(speaker)) continue
+      settling.delete(speaker.id)
+      try { await run(VOLUME, [speaker.id, '1']); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch { settling.set(speaker.id, clock() - settleMs) }
     }
     // AirPlay connects finish after the first poll; a late or returning speaker counts as reconnected.
     const now = new Set(targets.filter(speaker => speaker.connected).map(speaker => speaker.id))

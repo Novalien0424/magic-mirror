@@ -106,8 +106,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
   Open: (1) the second Jabra now plays through Jabra's link (11-07: silent while the USB Jabra
   had been pressed second; relinked with the USB Jabra first, owner confirmed both play, in sync
-  by ear). The pair was ~38 ms late against the 11-01 values; re-tuned 11-07 (Computer 0.186,
-  A1 0.040; runbook). Its loudness at 1 m is unmeasured;
+  by ear). Night re-tune 11-07: Computer 0.246, A1 0 (runbook); A1 now joins 6.5 min after each
+  connect (Airfoil's Bluetooth sync glide). Owner to judge by ear on the next session; still open:
+  A1 wanders ±20 ms with 30–40 ms jumps on its weak link (move it nearer the Mac mini, or an AirPlay
+  speaker instead), and keeping A1 connected through STOP would skip the 6.5 min wait (owner's call:
+  A1 and the Edifier would stay linked overnight). Its loudness at 1 m is unmeasured;
   (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
   exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra pair's absolute delay
   still rests on the 11-01 iPad memo (11-07 re-tune is relative to the Edifier; lip-sync `mmlt`

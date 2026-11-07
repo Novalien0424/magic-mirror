@@ -65,7 +65,8 @@ describe('Airfoil venue route', () => {
     // Connected at the Jabra's normal 70%: the Edifier gets its normal 40%; Computer and Bluetooth stay at 1.
     expect(airfoil.volumes.get(edifier)).toBe(0.4)
     expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
-    expect(airfoil.volumes.get('AA-BB-CC-00-11-22:output')).toBe(1)
+    // A freshly connected Bluetooth speaker stays silent while Airfoil syncs it (next test).
+    expect(airfoil.volumes.get('AA-BB-CC-00-11-22:output')).toBe(0)
     route.setLevel(0.9)
     await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.6))
     route.setLevel(0.3)
@@ -77,6 +78,42 @@ describe('Airfoil venue route', () => {
     await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.8))
     route.setLevel(1.5)
     await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(1))
+    route.stop()
+  })
+
+  it('keeps a freshly connected Bluetooth speaker silent until Airfoil has synced it, again after a reconnect', async () => {
+    let t = 0
+    const airfoil = fakeAirfoil(), report = vi.fn(), a1 = 'AA-BB-CC-00-11-22:output'
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 1000, now: () => t })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(a1)).toBe(0)
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
+    expect(report).toHaveBeenCalledWith('music_output_bluetooth_settling', { speakers: 1, seconds: 1 })
+    t = 1000
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(1))
+    expect(report).toHaveBeenCalledWith('music_output_bluetooth_joined', { speakers: 1 })
+    // A1 leaves Bluetooth and returns: silent again until it has settled.
+    airfoil.connected.delete(a1)
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(0))
+    t = 1999
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(airfoil.volumes.get(a1)).toBe(0)
+    t = 2500
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(1))
+    route.stop()
+  })
+
+  it('plays a Bluetooth speaker at once when it was already connected before Main started', async () => {
+    const airfoil = fakeAirfoil(), report = vi.fn(), a1 = 'AA-BB-CC-00-11-22:output'
+    airfoil.connected.add(a1)
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 60_000, now: () => 0 })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(a1)).toBe(1)
+    expect(report).not.toHaveBeenCalledWith('music_output_bluetooth_settling', expect.anything())
     route.stop()
   })
 

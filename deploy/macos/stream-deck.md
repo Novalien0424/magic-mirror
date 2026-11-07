@@ -147,14 +147,26 @@ Jabra +108 ms. Airfoil `syncOffsets` (seconds; Computer/Bluetooth positive = pla
 A1 0, Edifier −0.108. Verified: Edifier +0.8 ms and A1 +26 ms from the Jabra's time; total
 audio delay ≈ 2148 ms. A1 still wanders about ±25 ms per stream start (Bluetooth).
 
-Re-tuned 2026-11-07 for the linked second Jabra (the linked pair plays in sync with itself, but
-about 38 ms later than the single Jabra did): **Computer 0.186, A1 0.040, Edifier −0.108**.
-Measured with the same chirp trains (one speaker audible, trains interleaved J/E/J/E to cancel
-drift): A1's own call mic (HFP, 8 kHz) halfway between Jabra 1 and the Edifier for Jabra vs
-Edifier (residual 6 ms), then the Jabra mic with A1 beside the Edifier for A1 vs Edifier
-(residual 2 ms, repeats ±10 ms). A Jabra mic cannot hear the linked Jabras (echo cancelling),
-and ear tests were too uncertain below ~50 ms. The Edifier offset and `mmlt` are unchanged.
-Values and method: `calibration.json` (`retune`).
+Re-tuned 2026-11-07 (night) for the linked second Jabra: **Computer 0.246, A1 0, Edifier −0.108**
+(`mmlt` unchanged). Method: the same chirp trains, one speaker audible at a time, alternating
+blocks, recorded **from the moment Airfoil connects** for 6–15 min. Mics: A1's own call mic (HFP,
+8 kHz, opened through an Electron child) hears the Jabras and the Edifier; the Jabra mic hears A1
+and the Edifier but never the linked Jabras (echo cancelling). Findings:
+
+- The linked Jabra pair plays in sync with itself and ~60 ms later than the single Jabra; with
+  Computer 0.246 it is +6..+15 ms from the Edifier from the first seconds. It held through
+  reconnects, an Airfoil relaunch, 12 min idle and a mic open. (An earlier −6 ms reading at 0.186
+  was probably taken while the second Jabra was not linked.)
+- The Edifier is steady within ±3 ms over 15 min.
+- **A1 (Bluetooth) glides after every connect:** it starts ~130 ms late and moves ~20 ms/min,
+  settling after ~6 min whatever its offset; settled at offset 0 it is about −4 ms from the
+  Edifier, then wanders ±20 ms with occasional 30–40 ms jumps (weak link; Rogue Amoeba: sliders
+  cannot fix fluctuating latency). Main therefore keeps a freshly connected or reconnected
+  Bluetooth speaker at Airfoil volume 0 for 6.5 min (`BLUETOOTH_SETTLE_MS`, markers
+  `music_output_bluetooth_settling` / `_joined`); A1 then joins in sync. A Bluetooth speaker
+  already connected when Main starts plays at once.
+- Ear tests were unreliable below ~50 ms, and a 1–2 min settle is too short for A1: measure from
+  connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 
 TV picture delay (2026-11-01 evening): the TV shows a Mac frame **67 ms** later (Mac draw →
 board composition; three runs 68/67/62 ms, p10–p90 50–85 ms in 60 Hz steps), measured with

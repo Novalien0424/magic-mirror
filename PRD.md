@@ -98,7 +98,8 @@ Dance Floor：選定曲目與動作設定 → Start（或 DANCE FLOOR 鍵）→ 
 - 所有音樂（MusicLoop、Dance Floor、VIDEO LOOP、對話中的音樂與 YouTube）送進虛擬輸出「Magic Mirror Music」，由 Airfoil
   同步播放到 Jabra、Airfoil 列出的藍牙喇叭（現為 A1）與名稱以 EDIFIER 開頭的 AirPlay 喇叭；新的 Edifier 依名稱自動加入，需重新測量對齊。
 - 對齊值以儀器實測，不靠耳朵；數值與重新校正步驟見 [runbook](deploy/macos/stream-deck.md#musicloop)「Airfoil music route」。
-  藍牙喇叭每次開始串流仍有約 ±25 ms 浮動。
+  藍牙喇叭每次開始串流仍有約 ±25 ms 浮動；Airfoil 連上藍牙喇叭（A1）後約 6 分鐘才同步到位，所以 A1 在連上或重連後
+  先靜音 6.5 分鐘再加入，避免一開始的回音（2026-11-07 實測）。
 - 聲音比來源晚約 2.15 秒，電視顯示畫面本身晚約 67 ms；音樂裝置因此回報 2.08 秒，VIDEO LOOP／YouTube 的畫面與 Dance 動作延後到與聲音同時抵達。
 - Airfoil 每 10 秒重連掉線的喇叭；無法使用時改回直接輸出（Jabra、藍牙、HDMI；Edifier 無聲），並在 Console 顯示原因。
   Airfoil 路徑不含電視，電視此時不播音樂。
