@@ -127,16 +127,54 @@ export function createAirfoilRoute(input: {
   // Computer (Jabra) and Bluetooth play at full Airfoil volume: their CoreAudio levels carry the
   // calibration. AirPlay speakers have only Airfoil's volume, so it carries their offset.
   const localOn = () => input.localMusic?.() ?? true
-  let localApplied = true
+  // The Jabra music state and AirPlay volumes Airfoil last confirmed; a failed write keeps the
+  // old value, so the next poll retries it.
+  let localApplied = true, localWriting = false, localFailed = false, airplayFailed = false
+  const airplayApplied = new Map<string, number>()
   const volumeFor = (speaker: AirfoilSpeaker) => airfoilKind(speaker) === 'airplay' ? speakerTargetLevel(levels, speaker.name, level)
     : airfoilKind(speaker) === 'bluetooth' && !settled(speaker) ? 0 : airfoilKind(speaker) === 'local' && !localOn() ? 0 : 1
+  // One osascript at a time per speaker: an older slow write can never land after a newer one.
+  const lanes = new Map<string, Promise<unknown>>()
+  const serial = <T>(id: string, task: () => Promise<T>): Promise<T> => {
+    const result = (lanes.get(id) ?? Promise.resolve()).then(task)
+    const tail = result.catch(() => undefined)
+    lanes.set(id, tail)
+    void tail.then(() => { if (lanes.get(id) === tail) lanes.delete(id) })
+    return result
+  }
   // Applies the Jabra's music state now (Main calls it on every microphone change; each poll re-checks).
-  const refreshLocal = () => {
+  const refreshLocal = (): void => {
     const on = localOn()
-    if (on === localApplied) return
-    localApplied = on
-    for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'local') void run(VOLUME, [speaker.id, on ? '1' : '0']).catch(() => undefined)
-    input.report(on ? 'music_output_jabra_music_on' : 'music_output_jabra_music_off')
+    if (localWriting || on === localApplied) return
+    localWriting = true
+    const locals = targets.filter(speaker => speaker.connected && airfoilKind(speaker) === 'local')
+    void Promise.all(locals.map(speaker => serial(speaker.id, () => run(VOLUME, [speaker.id, on ? '1' : '0'])))).then(() => {
+      localApplied = on; localFailed = false
+      input.report(on ? 'music_output_jabra_music_on' : 'music_output_jabra_music_off')
+      return true
+    }, () => {
+      if (!localFailed) { localFailed = true; input.degraded('music_output_jabra_music_failed') }
+      return false
+    }).then(applied => {
+      localWriting = false
+      // The microphone may have changed during the write; a failure waits for the next poll.
+      if (applied) refreshLocal()
+    })
+  }
+  // AirPlay speakers carry their offset in Airfoil's volume; each write uses the latest level.
+  const refreshAirplay = (): void => {
+    for (const speaker of targets) {
+      if (!speaker.connected || airfoilKind(speaker) !== 'airplay') continue
+      void serial(speaker.id, async () => {
+        const value = volumeFor(speaker)
+        if (airplayApplied.get(speaker.id) === value) return
+        await run(VOLUME, [speaker.id, String(value)])
+        airplayApplied.set(speaker.id, value); airplayFailed = false
+      }).catch(() => {
+        airplayApplied.delete(speaker.id)
+        if (!airplayFailed) { airplayFailed = true; input.degraded('music_output_airplay_level_failed') }
+      })
+    }
   }
   const setActive = async (on: boolean, reason?: string) => {
     if (on !== active) { await writeFlag(on).catch(() => undefined); active = on }
@@ -166,20 +204,23 @@ export function createAirfoilRoute(input: {
       if (fresh) settling.set(speaker.id, clock())
       else if (speaker.connected && airfoilKind(speaker) === 'bluetooth' && Number.isFinite(resumed[speaker.id])
         && clock() - resumed[speaker.id]! < settleMs) settling.set(speaker.id, resumed[speaker.id]!)
-      try { speaker.connected = (await run(CONNECT, [speaker.id, String(volumeFor(speaker))])) === 'true' } catch { speaker.connected = false }
+      const value = volumeFor(speaker)
+      try { speaker.connected = (await serial(speaker.id, () => run(CONNECT, [speaker.id, String(value)]))) === 'true' } catch { speaker.connected = false }
+      if (speaker.connected && airfoilKind(speaker) === 'airplay') airplayApplied.set(speaker.id, value)
+      else airplayApplied.delete(speaker.id)
       if (fresh && !speaker.connected) settling.delete(speaker.id)
       else if (fresh) settlingNow++
     }
     resumed = {}
-    if (!active) localApplied = localOn()
-    refreshLocal()
+    if (!active && !localWriting) localApplied = localOn()
+    refreshLocal(); refreshAirplay()
     if (settlingNow) input.report('music_output_bluetooth_settling', { speakers: settlingNow, seconds: Math.round(settleMs / 1000) })
     for (const speaker of targets) {
       if (!settling.has(speaker.id)) continue
       if (!speaker.connected) { settling.delete(speaker.id); continue }
       if (!settled(speaker)) continue
       settling.delete(speaker.id)
-      try { await run(VOLUME, [speaker.id, '1']); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch {
+      try { await serial(speaker.id, () => run(VOLUME, [speaker.id, '1'])); input.report('music_output_bluetooth_joined', { speakers: 1 }) } catch {
         settling.set(speaker.id, clock() - settleMs)
         input.degraded('music_output_bluetooth_join_failed')
       }
@@ -218,7 +259,7 @@ export function createAirfoilRoute(input: {
     setLevel(next: number): void {
       if (!Number.isFinite(next)) return
       level = Math.min(2, Math.max(0, next))
-      for (const speaker of targets) if (speaker.connected && airfoilKind(speaker) === 'airplay') void run(VOLUME, [speaker.id, String(volumeFor(speaker))]).catch(() => undefined)
+      refreshAirplay()
     },
     /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. Bluetooth
      * speakers stay connected (owner 2026-11-07): Airfoil keeps them in sync while the app is

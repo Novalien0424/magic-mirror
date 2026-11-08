@@ -177,6 +177,67 @@ describe('Airfoil venue route', () => {
     route.stop()
   })
 
+  it('commits a Jabra music change only after Airfoil applied it, retries a failed write on the next poll, one write at a time', async () => {
+    let micOpen = false, failNext = 0, inFlight = 0, overlapped = false
+    const airfoil = fakeAirfoil(), report = vi.fn(), degraded = vi.fn()
+    const run = vi.fn(async (script: string, args: string[] = []) => {
+      if (args[0] !== AIRFOIL_LOCAL_ID || script.includes('every speaker')) return airfoil.run(script, args)
+      if (inFlight++) overlapped = true
+      try {
+        await new Promise(resolve => setTimeout(resolve, 15))
+        if (failNext > 0 && !script.includes('connect to')) { failNext--; throw Error('osascript timeout') }
+        return await airfoil.run(script, args)
+      } finally { inFlight-- }
+    })
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded, run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 0, localMusic: () => !micOpen })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
+    failNext = 2; micOpen = true; route.refreshLocal(); route.refreshLocal()
+    await vi.waitFor(() => expect(degraded).toHaveBeenCalledWith('music_output_jabra_music_failed'))
+    expect(report).not.toHaveBeenCalledWith('music_output_jabra_music_off')
+    // The failed write is not recorded as applied: a later poll writes it again and only then reports.
+    await vi.waitFor(() => expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(0))
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_jabra_music_off'))
+    expect(degraded.mock.calls.filter(([reason]) => reason === 'music_output_jabra_music_failed')).toHaveLength(1)
+    // A microphone change during a write is applied right after it.
+    micOpen = false; route.refreshLocal(); micOpen = true; route.refreshLocal(); micOpen = false; route.refreshLocal()
+    await vi.waitFor(() => expect(report.mock.calls.filter(([reason]) => reason === 'music_output_jabra_music_on')).toHaveLength(1))
+    await new Promise(resolve => setTimeout(resolve, 60))
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
+    expect(overlapped).toBe(false)
+    route.stop()
+  })
+
+  it('retries a failed AirPlay level on the next poll and applies only the latest level, in order', async () => {
+    let failNext = 0, inFlight = 0, overlapped = false
+    const airfoil = fakeAirfoil(), report = vi.fn(), degraded = vi.fn(), edifier = 'AABBCC001133@EDIFIER M330 Ⅱ 1133'
+    const run = vi.fn(async (script: string, args: string[] = []) => {
+      if (args[0] !== edifier) return airfoil.run(script, args)
+      if (inFlight++) overlapped = true
+      try {
+        await new Promise(resolve => setTimeout(resolve, 10))
+        if (failNext > 0 && !script.includes('connect to')) { failNext--; throw Error('osascript timeout') }
+        return await airfoil.run(script, args)
+      } finally { inFlight-- }
+    })
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded, run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5 })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    failNext = 1; route.setLevel(0.42)
+    await vi.waitFor(() => expect(degraded).toHaveBeenCalledWith('music_output_airplay_level_failed'))
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.42))
+    route.setLevel(0.5); route.setLevel(0.6); route.setLevel(0.3)
+    await vi.waitFor(() => expect(airfoil.volumes.get(edifier)).toBe(0.3))
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(airfoil.volumes.get(edifier)).toBe(0.3)
+    expect(overlapped).toBe(false)
+    expect(degraded).toHaveBeenCalledTimes(1)
+    route.stop()
+  })
+
   it('falls back to the direct speakers with one reason when Airfoil stops answering', async () => {
     const airfoil = fakeAirfoil(), flags: boolean[] = [], degraded = vi.fn(), launch = vi.fn(async () => {})
     const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded, run: airfoil.run, launch, installed: () => true,

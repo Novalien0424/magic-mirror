@@ -12,6 +12,7 @@ import { parseMediaDiscoveryRequest, rankMediaResources, type MediaDiscoveryRepl
 import { mediaClueKey } from '../shared/media-clue'
 import { mediaPhoneticKey } from '../shared/media-phonetics'
 import { parseYoutubeSearchRequest, type YoutubeSearchReply } from '../shared/youtube-search'
+import { youtubeVideoId } from '../shared/youtube-media'
 import { wakeCalibrationCommandSchema } from '../shared/wake-calibration'
 import { parseAvatarSessionSettings } from '../shared/avatar-prompt'
 import { parseSceneTestScope } from '../shared/scene-test-scope'
@@ -1317,6 +1318,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
   })
   let cachedSceneRuntime: { readonly key: string; readonly value: SceneRuntime } | null = null
   let sleepingMedia = false, mediaMicrophoneReleased = false
+  // Videos Main's own YouTube search returned per session identity: play_youtube accepts only
+  // these, never a URL the model invented (audit 2026-11-08). The last two identities survive a rollover.
+  const searchedYoutube = new Map<string, Set<string>>()
+  const youtubeKey = (identity: unknown) => `${String(readProperty(identity, 'realtimeSessionId'))}:${String(readProperty(identity, 'sessionGeneration'))}`
   // The wake listener returns once the online song has ended or stopped, by any path.
   const restoreMediaMicrophone = () => {
     if (!mediaMicrophoneReleased) return
@@ -1341,6 +1346,19 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     report: (reason, status) => emit(telemetry, { module: 'avatar', event: 'image_service', source: 'runtime', status, reason }) })
   const imageEnabled = (identity?: import('./studio/studio-runtime').StudioIdentity) =>
     runtime.getAvatarSkillsForRuntime?.(identity).imageGeneration ?? false
+  // A visit uses the Studio settings published when its session started, like the renderer's agent
+  // (published changes apply to the next visit, audit 2026-11-08); without a session, the live ones.
+  const liveExperience = async () => {
+    const config = await runtime.getPublishedSceneConfigForRuntime?.()
+    const catalog = config?.avatarCatalog
+    return config ? catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience() : null
+  }
+  const sessionKey = () => { const snapshot = runtime.snapshot(); return snapshot.realtimeSessionId ? `${snapshot.realtimeSessionId}:${snapshot.sessionGeneration}` : null }
+  let pinnedExperience: { key: string, value: ReturnType<typeof liveExperience> } | undefined
+  runtime.subscribe?.(() => {
+    const key = sessionKey()
+    if (key && pinnedExperience?.key !== key) pinnedExperience = { key, value: liveExperience().catch(() => null) }
+  })
   const studio = registerStudioIpc({
     images, imageEnabled,
     ipcMain,
@@ -1353,9 +1371,8 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     snapshot: () => runtime.snapshot(),
     subscribe: listener => runtime.subscribe?.(listener),
     experience: async () => {
-      const config = await runtime.getPublishedSceneConfigForRuntime?.()
-      const catalog = config?.avatarCatalog
-      return config ? catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.experience ?? defaultExperience() : null
+      const key = sessionKey()
+      return key && pinnedExperience?.key === key ? pinnedExperience.value : liveExperience()
     },
     dispatch: command => {
       if (command.type === 'studio_view' && (!command.view || !imageSkill?.studioPending())) imageSkill?.close('image_studio_changed')
@@ -1899,6 +1916,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       }
     } catch { result = reply(`${prefix}_unavailable`, 'failed') as MediaDiscoveryReply | YoutubeSearchReply }
     if (!current()) return stale()
+    if (source === 'youtube' && result.status === 'accepted') {
+      const key = youtubeKey(identity), ids = searchedYoutube.get(key) ?? new Set<string>()
+      for (const video of (result as YoutubeSearchReply).videos) { const id = youtubeVideoId(video.url); if (id) ids.add(id) }
+      searchedYoutube.delete(key); searchedYoutube.set(key, ids)
+      if (searchedYoutube.size > 2) searchedYoutube.delete(searchedYoutube.keys().next().value!)
+    }
     emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: result.status === 'accepted' ? 'info' : 'degraded', reason: result.code })
     return result
   })
@@ -1938,6 +1961,12 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
       const catalog = config?.avatarCatalog
       const folderEntries = options.getFolderMedia?.(catalog?.activeAvatarId ?? '') ?? []
       const skill = folderMediaSkill(catalog?.avatars.find(a => a.id === catalog.activeAvatarId)?.mediaSkill ?? DEFAULT_MEDIA_SKILL, folderEntries)
+      const searched = request.action === 'play_youtube' && searchedYoutube.get(youtubeKey(identity))?.has(youtubeVideoId(request.url) ?? '')
+      if (request.action === 'play_youtube' && options.youtube && !searched) {
+        emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason: 'media_youtube_not_searched' })
+        failureCode = 'media_not_found'
+        return 'rejected'
+      }
       const available = request.action === 'play_youtube' ? !!options.youtube : skill.resources.some(r => r.kind === request.kind && r.assetId === request.assetId)
         && (folderEntries.some(entry => entry.assetId === request.assetId && entry.kind === request.kind) || (request.kind !== 'music'
           ? config.visualAssets.some(a => a.id === request.assetId && a.kind === request.kind) : config.musicAssets.some(a => a.id === request.assetId)))
@@ -1964,6 +1993,9 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     const result = typeof outcome === 'string' ? outcome : await outcome.pending
     if (result === 'accepted' && request.action !== 'stop'
       && (!current() || typeof outcome === 'string' || outcome.runId !== mediaSkill.activeRunId())) {
+      // Its session ended or rolled over while it started (YouTube can take ~15 s): stop this run,
+      // never a newer one, so it cannot play on in a conversation without its Dormant handoff.
+      if (typeof outcome !== 'string' && outcome.runId === mediaSkill.activeRunId()) mediaSkill.stop('media_session_stale')
       emit(telemetry, { module: 'avatar', event: 'media_skill', source: 'runtime', status: 'info', reason: 'media_session_stale' })
       return 'ignored'
     }

@@ -1,5 +1,34 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-08 — Audit fixes (owner: "fix everything")
+
+Report: [audit fixes 2026-11-08](docs/testing/audit-fixes-2026-11-08.md).
+
+- **Studio, abandoned visit:** a visitor who is silent from the name through the first question has
+  left. That visit ends with the editable `abandoned` line, paints nothing and spends no image.
+  Any visitor input keeps the full journey.
+- **Studio, settings and failures:**
+  - A visit uses the Studio settings published when its session started.
+  - A painting gets one retry for a transient error.
+  - After a quota or sign-in failure, new Studio visits are refused for 15 minutes, or until a
+    picture succeeds.
+  - Main finishes a painting step that never starts (30 s) and a keepsake that is never delivered
+    (60 s) on its own.
+  - The Console has "End this visit". The name-match test and the test picture stay on the Mac;
+    the remote Console cannot run them.
+- **Online songs:** the play-the-first-result fallback needs an explicit play request (a
+  deterministic phrase list with sound-alike keys, blocked by a negation just before it). Single
+  characters such as 放, 聽, 唱 or 播 are not requests. Main plays only a video its own search
+  returned in that session.
+- **Sleep:** a farewell the visitor talks over still ends the visit, as long as Raven had started it.
+  A farewell that never reports its end returns Raven to Dormant after 30 s.
+- **Dance:** leaving Dance by any path resets every speaker to its normal level. Stop Dance Floor ends
+  only Dance.
+- **MusicLoop and Dance:** the player restarts once after an unexpected exit. A stalled song is
+  retried, and skipped only after 3 stalls in a row.
+- **Not changed:** the hourly Realtime rollover still applies during a Studio visit. The
+  provider's 60-minute hard session cap leaves nothing to postpone it to.
+
 ## 2026-11-07 — Sync over voice control during music (owner ruling, late night)
 
 - The Jabra plays ~150 ms ahead of the calibrated speakers whenever its microphone is open, so

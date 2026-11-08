@@ -39,7 +39,11 @@ overwrite that selection when starting or stopping.
 Normal avatar wake behavior and TV presence policy still apply. STOP closes the
 application as well as sleeping the TV. Starting again bootstraps the same
 installed LaunchAgent. VIDEO LOOP uses Main's approved loop; repeated LOOP is
-idempotent in Main and does not restart playback. The controls do not supply a
+idempotent in Main and does not restart playback. A stalled loop reloads once by itself; after
+5 min of healthy playback that reload is available again (`operator_loop_recovery_rearmed`). A
+loop that failed before it started playing (e.g. a microphone release) never blocks the next
+START. MUSIC LOOP or DANCE FLOOR pressed while a VIDEO LOOP is still preparing wins
+(`operator_loop_start_superseded`). The controls do not supply a
 media path. START, STUDIO, DESKTOP, VIDEO LOOP, MUSIC LOOP, DANCE FLOOR and the folder
 keys hide Console without destroying its unsaved editor state. Repeated CONSOLE shows/focuses it; close the
 window or press START/STUDIO/VIDEO LOOP to return to the mirror view.
@@ -98,7 +102,9 @@ main keys). A folder key plays that subfolder (with its own subfolders); the key
 folder playing shows ▶. A folder Google Drive has not downloaded yet ("Resource
 deadlock avoided"), or one without music, is refused with Basso and the current music
 keeps playing — make it Available offline in Finder first. PREV/NEXT replace the song at
-once. These keys talk to a running app directly (no queue). PREV/NEXT do nothing
+once with the nearest ready song that way, skipping one still being cached; with no other ready
+song the press is refused with Basso (`operator_loop_music_skip_unavailable`) and the music keeps
+playing. These keys talk to a running app directly (no queue). PREV/NEXT do nothing
 without MusicLoop (Basso); a folder key works in any mode while the app runs: it starts
 MusicLoop on that folder and hides Console, without the speaker-level reset. Install or update the
 plugin with `zsh deploy/macos/install-stream-deck-plugin.sh` (restarts Stream Deck; it never
@@ -111,7 +117,12 @@ downloaded and then joins at a track boundary. Ready tracks keep repeating while
 background download completes. If none are ready, Console shows
 downloading/preparing and playback begins automatically. Downloads have a finite
 size-based timeout (883 seconds at 200 MB); failure skips that file and preserves
-playable music. Repeated MUSIC LOOP preserves playback and preparation of the MusicLoop
+playable music. A song whose playback stalls for 12 s is skipped and tried again later
+(`operator_loop_music_stall_skipped`; Dance retries its one track); three stalls in a row without a
+finished pass retire it for the session. If the native player exits or fails its route, Main
+restarts it once per failure streak (`operator_loop_music_player_restarting`), continuing after
+the interrupted song; a second failure before any song finishes leaves MusicLoop/Dance failed in
+Console until the next key press. Repeated MUSIC LOOP preserves playback and preparation of the MusicLoop
 files; while a folder key's subfolder plays, MUSIC LOOP returns to those files. STOP then
 MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.
@@ -173,7 +184,9 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   sets the Jabras' Airfoil volume to 0 while their microphone is open (a conversation, or the
   Dormant wake listener) so music plays on A1 and the Edifier only, and every song or loop handed
   to Dormant releases the wake listener (no voice wake during music; STOP ends it). The
-  calibration above assumes the microphone closed.
+  calibration above assumes the microphone closed. A failed Airfoil volume write is not taken as
+  applied: Main reports `music_output_jabra_music_failed` or `music_output_airplay_level_failed`
+  once and retries on the next 10 s poll; writes to one speaker never overlap.
 - Ear tests were unreliable below ~50 ms, and a 1–2 min settle is too short for A1: measure from
   connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 
@@ -206,7 +219,9 @@ until all are at 100% (from the 80/65/50 defaults: 2 presses to the Jabra's 100%
 `stop-state` keeps that group level in `ops/music-device/group-level` (above 1 only while the Jabra
 is at 100%) and `music-loop` reports it to Main for the AirPlay speakers. The Jabra's
 CoreAudio level carries it and A1 (Airfoil volume 1); the Edifier's Airfoil (AirPlay) volume
-carries its offset. The button log's `jabra_output_70` means the normal-level reset passed.
+carries its offset. The button log's `jabra_output_70` means the normal-level reset passed (a stable
+token, not a 70% level). Without exactly one Jabra the reset still returns the other speakers to
+normal, then fails with `jabra_output_missing` or `jabra_output_ambiguous`.
 
 **Jabra call volume (2026-11-08).** The Jabra keeps a second stored volume for its call path,
 which it enters when a conversation opens its microphone with echo cancellation (the app's wake
@@ -272,7 +287,8 @@ START, STUDIO, VIDEO LOOP, DANCE FLOOR, DESKTOP and Return to Avatar release Mus
 changing modes. CONSOLE preserves it and shows status. **STOP ends it through the
 same Main shutdown as all other modes**, destroys its temporary audio route,
 sleeps TV, keeps HDMI black and restores every external CoreAudio speaker to its normal level. A queued STOP interrupts a
-pending MusicLoop-start wait. No separate restart service is installed.
+pending MusicLoop, Dance or VIDEO LOOP start wait (logged `music_cancelled`, `dance_cancelled` or
+`loop_cancelled`, no chime). No separate restart service is installed.
 
 [Initial delivery](../../docs/testing/music-loop-2026-10-26.md) ·
 [Download follow-up, checks and limits](../../docs/testing/music-loop-downloads-2026-10-26.md).
@@ -294,13 +310,18 @@ Music timing drives head and torso motion; this portrait rig has no independent
 arms/legs. Positive timing offset advances Raven and negative delays Raven.
 
 STOP releases Dance and returns every external speaker to its normal level, unmuted (switching to
-another mode does the same; field-checked 2026-10-31).
+another mode does the same; field-checked 2026-10-31). Main runs that reset once after the Dance
+player has exited, whichever way Dance ends (Console Stop, a mode key, VIDEO LOOP, a renderer
+reload); a failure is logged `operator_loop_dance_volume_restore_failed` and never blocks the
+switch. A saved track that no longer exists plays the first available track
+(`dance_track_fallback`); `Common/DanceFloor` is optional and the app never creates it.
 The Console's Stop Dance Floor and global Stop All during Dance end Dance only:
 they restore output levels (every external speaker at its normal level) and return Raven to Conversation while
 the app keeps running. Only the physical STOP key runs the shutdown/black-cover
 operation (owner ruling 2026-10-31). Return to Avatar and other mode keys release
-Dance before switching. Opening Console preserves Dance. Crashes do not restart
-Dance automatically. [Journey, measurements and physical exclusions](../../docs/testing/dance-floor-delivery-2026-10-30.md).
+Dance before switching. Opening Console preserves Dance. Stop Dance Floor is available only
+while Dance runs. App or renderer crashes do not restart Dance automatically (only a native
+player failure during a running Dance gets its one restart, above). [Journey, measurements and physical exclusions](../../docs/testing/dance-floor-delivery-2026-10-30.md).
 
 ## Playback page
 

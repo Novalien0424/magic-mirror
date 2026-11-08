@@ -7,12 +7,12 @@ import {
   type RealtimeSessionOptions,
 } from '@openai/agents/realtime'
 import { avatarRealtimeTools, buildAvatarPrompt, buildStudioCommentPrompt, buildStudioPrompt, studioToolSpecs, type AvatarSessionSettings } from '../../shared/avatar-prompt'
-import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioReplyLanguage, studioRevealInstructions } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFarewellSpeech, studioFirstStepInstructions, studioPrompt, studioReplyLanguage } from '../../shared/portrait-studio-config'
 import type { StudioEventIdentity, StudioReply, StudioRequest, StudioSessionEvent, StudioStep } from '../../shared/portrait-studio'
 import { playSpeechScript } from './speech-script'
 import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../shared/image-skill'
 import { MemoryDialogue } from './memory-dialogue'
-import { isSpellAttempt, matchSearchPhrase, spokenCommandKey } from '../../shared/spoken-command'
+import { isSpellAttempt, matchPlayRequest, matchSearchPhrase, spokenCommandKey } from '../../shared/spoken-command'
 import { bindRealtimeTools, type RealtimeToolHandler, type ToolFailureReason } from './realtime-tool-bindings'
 import { mergedMediaTool } from './merged-media-tool'
 import { MediaSearchContext } from './media-search-context'
@@ -186,7 +186,8 @@ function readProperty(value: unknown, key: string): unknown {
 }
 
 // The visitor's own words in an online-search turn (owner 2026-11-07: a requested song must play).
-const ONLINE_PLAY_INTENT = /播放|撥放|播|放|聽|唱|play|listen/iu
+/** A farewell that never reports its end still returns Raven to Dormant. */
+const SLEEP_FAREWELL_WATCHDOG_MS = 30_000
 const ONLINE_MUSIC_INTENT = /歌|曲|音樂|聽|唱|song|music|listen/iu
 const ONLINE_LOOP_INTENT = /循環|重複|一直播|loop|repeat/iu
 /** False only when response.done lists its whole output and none of it is audio. */
@@ -483,6 +484,9 @@ export function createRealtimeSession(
   let farewellAudioStarted = false
   let farewellScript: Promise<boolean> | undefined
   let sleepAudioSuppressed = false
+  // A farewell that is talked over or never finishes still ends the visit once (audit 2026-11-08).
+  let sleepWatchdog: ReturnType<typeof setTimeout> | undefined
+  let sleepRequested = false
   let commandTurnOwned = false
   let partialCommandItem = '', partialCommandText = '', committedCommandItem = ''
   const finalCommandInputs = new Set<string>()
@@ -583,7 +587,6 @@ export function createRealtimeSession(
   let studioStarts = 0
   let studioEnter: Promise<boolean> | undefined
   let studioAgentSwap: Promise<unknown> = Promise.resolve()
-  let studioRevealImageItem: string | undefined
   // A studio started by Main (wake, Mirror mode switch, Console) gets its first step with `enter`;
   // a visitor's own request gets it in the tool result instead.
   let studioNameReadBack: { run: number; name: string; inputs: number; stepId?: string } | undefined, visitorInputs = 0, studioEnteredInputs = -1, studioRevealInputs = -1
@@ -591,7 +594,6 @@ export function createRealtimeSession(
   const listedItems = new Set<string>()
   let studioFirstStep = '', studioFirstStepPending = false, studioFirstLanguage: 'zh' | 'en' = 'zh'
   // The run whose final reveal is speaking; the application finishes it when that reply ends.
-  let studioFinalReveal: number | undefined
   let studioStep: StudioStep | undefined
   let studioStepAbort = new AbortController()
   let studioStepSpeaking = false
@@ -609,10 +611,11 @@ export function createRealtimeSession(
   let studioDefaultStart: Promise<boolean> | undefined
   let studioDefaultSettle: ((started: boolean) => void) | undefined
   let studioDefaultTimer: ReturnType<typeof setTimeout> | undefined
+  // After the default start gave up (Persona greeting played), Main's late enter must not greet again.
+  let studioDefaultAbandoned = false
   let studioImageSequence = 0
   let studioSendSequence = 0
   // Main's latest portrait revision in the current run; an older one is never revealed after it.
-  let studioRevision = 0
   let imageRun = '', imageUrl = '', imageClosed = true, imageRevealInputs = -1, imageLastRequestInputs = -1
   let imageConsent: { id: string; ticket: string; armed: boolean; startedInputs: number; abort: AbortController } | undefined
   let imagePhotoPending = false, imageRevealItem: string | undefined
@@ -770,6 +773,7 @@ export function createRealtimeSession(
         }
         const unavailable = { outcome: 'failed' as const, studio: { status: 'failed' as const, code: 'studio_unavailable', next: studioPrompt(input.avatar?.experience?.studio, 'unavailable') } }
         if (input.onImageRequest) await imageRequest({ action: 'dismiss' })
+        studioDefaultAbandoned = false
         const reply = await studioRequest({ action: 'start', source: 'visitor' })
         if (!reply) return unavailable
         // The swap precedes the tool output, so the studio agent asks the name question.
@@ -925,7 +929,7 @@ export function createRealtimeSession(
         if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || generation !== memoryTurnGeneration) return stale()
         if (youtube.status === 'accepted') { onlineCandidates.clear(); for (const video of youtube.videos) onlineCandidates.add(video.url) }
         const clue = localSearchClue?.generation === generation ? localSearchClue.text : '', first = youtube.status === 'accepted' ? youtube.videos[0] : undefined
-        onlineAutoPlay = first && ONLINE_PLAY_INTENT.test(clue) ? { generation, request: { action: 'play_youtube',
+        onlineAutoPlay = first && matchPlayRequest(clue) ? { generation, request: { action: 'play_youtube',
           kind: ONLINE_MUSIC_INTENT.test(clue) ? 'music' : 'video', url: first.url, mode: ONLINE_LOOP_INTENT.test(clue) ? 'loop' : 'once' } } : undefined
         return { outcome: youtube.status, youtube }
       },
@@ -1217,16 +1221,7 @@ export function createRealtimeSession(
     )
   }
 
-  const emitConnectFailed = (reason: RealtimeMetadataReason): void => {
-    emitMetadata(
-      input,
-      'realtime_connect_failed',
-      'failed',
-      reason,
-      sessionGeneration,
-      createdAt,
-    )
-  }
+
 
   const emitDisconnected = (reason: RealtimeMetadataReason): void => {
     emitMetadata(
@@ -1260,6 +1255,7 @@ export function createRealtimeSession(
   const closeLegacySession = (): void => {
     if (closed) return
     closed = true
+    clearTimeout(sleepWatchdog)
     setStudioCapturePaused(false)
     clearCommandCandidate()
     memoryDialogue.close()
@@ -1456,16 +1452,6 @@ export function createRealtimeSession(
           // Application studio replies (the reveal) have no visitor turn; their metadata marks them.
           const studioReply = typeof readProperty(metadata, 'mirror_studio') === 'string' || !!itemId && studioTurnItems.has(itemId)
           if (type === 'response.done' && Array.isArray(output)) for (const item of output) trackStudioItem(item, studioReply)
-          if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio_final') === 'true' && studioFinalReveal !== undefined) {
-            // No change is left: the reveal handed the picture over, so the application finishes the studio
-            // (the model is not asked to call studio_finish, which it tended to do before describing).
-            const run = studioFinalReveal; studioFinalReveal = undefined
-            if (sameStudioRun(run)) void studioRequest({ action: 'finish' })
-          }
-          if (type === 'response.done' && readProperty(readProperty(response, 'metadata'), 'mirror_studio') === 'reveal' && studioRevealImageItem) {
-            // The downscaled image served one reveal; keep it out of later billed context.
-            deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined
-          }
           if (type === 'response.done' && readProperty(metadata, 'mirror_image') === 'reveal' && imageRevealItem) {
             deleteConversationItem(imageRevealItem, 'image'); imageRevealItem = undefined
           }
@@ -1478,12 +1464,10 @@ export function createRealtimeSession(
         const responseId = readProperty(response, 'id')
         if (typeof responseId === 'string') farewellResponseId = responseId
         if (type === 'response.done' && readProperty(response, 'status') !== 'completed') {
-          returnToDormantPending = false
-          farewellRequested = false
-          farewellResponseId = undefined
-          farewellAudioStarted = false
-          sleepAudioSuppressed = false
-          emitMetadata(input, 'realtime_observer_event', 'degraded', 'sleep_request_failed', sessionGeneration, createdAt)
+          // Raven already began the farewell when the visitor spoke over it: the visit still ends.
+          if (!returnToDormantPending) { /* Already finishing after its output ended. */ }
+          else if (farewellAudioStarted) finishSleep('sleep_farewell_interrupted', false)
+          else resetSleep('sleep_request_failed')
         }
       }
       const cueId = readProperty(readProperty(response, 'metadata'), 'mirror_scene_cue')
@@ -1505,6 +1489,13 @@ export function createRealtimeSession(
         else if (cue.signal.aborted) cue.abort()
       }
       if (type === 'response.done') { pumpSpeech(); resumeRevisedCommand() }
+      // A cancelled response never runs its sleep call, so its early mute must not outlive it.
+      const doneOutput = readProperty(response, 'output')
+      if (type === 'response.done' && readProperty(response, 'status') !== 'completed' && sleepAudioSuppressed
+        && !returnToDormantPending && !farewellRequested && Array.isArray(doneOutput)
+        && doneOutput.some(item => readProperty(item, 'type') === 'function_call' && sleepToolNames.has(readProperty(item, 'name') as string))) {
+        resetSleep('sleep_tool_cancelled', 'info')
+      }
       // The model's final answer of the turn (no tool call) ended without playing the requested song.
       const output = readProperty(response, 'output')
       if (type === 'response.done' && onlineAutoPlay && onlineAutoPlay.generation === memoryTurnGeneration
@@ -1512,8 +1503,11 @@ export function createRealtimeSession(
         const pending = onlineAutoPlay
         onlineAutoPlay = undefined
         setTimeout(() => {
-          if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || pending.generation !== memoryTurnGeneration || !input.onMediaRequest) return
-          emitMetadata(input, 'realtime_observer_event', 'info', 'media_online_autoplay', sessionGeneration, createdAt)
+          if (closed || commandTurnOwned || mediaPlaybackActive || returnToDormantPending || pending.generation !== memoryTurnGeneration || !input.onMediaRequest) {
+            emitMetadata(input, 'realtime_observer_event', 'info', 'media_online_autoplay_skipped', sessionGeneration, createdAt)
+            return
+          }
+          emitMetadata(input, 'realtime_observer_event', 'info', 'mode' in pending.request && pending.request.mode === 'loop' ? 'media_online_autoplay_loop' : 'media_online_autoplay', sessionGeneration, createdAt)
           void requestMedia(pending.request).catch(() => emitMetadata(input, 'realtime_observer_event', 'degraded', 'tool_execution_failed', sessionGeneration, createdAt))
         }, 400)
       }
@@ -1564,8 +1558,13 @@ export function createRealtimeSession(
     if (type === 'output_audio_buffer.cleared') {
       releaseFinishedCues()
       // A server-VAD barge-in clears output without output_audio_buffer.stopped;
-      // Main must still learn playback ended, or its idle timer stays paused.
-      emitMetadata(input, 'realtime_observer_event', 'success', 'cause=output_interrupted', sessionGeneration, createdAt)
+      // Main must still learn playback ended (idle timer) and the avatar that it was cut off.
+      notifyAudioActivity('interrupted')
+      // The visitor talked over Raven's farewell: WebRTC sends no stopped (nor audio_interrupted)
+      // for it, so the visit ends here instead of leaving Raven awake with every reply muted.
+      const clearedId = readProperty(event, 'response_id')
+      if (returnToDormantPending && farewellRequested && farewellAudioStarted && typeof clearedId === 'string'
+        && (clearedId === farewellResponseId || farewellParts.has(clearedId))) finishSleep('sleep_farewell_interrupted', false)
     }
     if (type === 'ready' || (type === 'connection_change' && rawEventStatus(event) === 'connected')) {
       emitReady('cause=connect_succeeded')
@@ -1636,47 +1635,7 @@ export function createRealtimeSession(
       notifyOutputAudioBufferStopped()
       notifyAudioActivity('output_stopped')
       if (returnToDormantPending && farewellAudioStarted && farewellResponseId && readProperty(event, 'response_id') === farewellResponseId) {
-        returnToDormantPending = false
-        const request = input.onReturnToDormant
-        if (request === undefined) {
-          emitMetadata(
-            input,
-            'realtime_observer_event',
-            'degraded',
-            'sleep_request_unavailable',
-            sessionGeneration,
-            createdAt,
-          )
-          return
-        }
-        try {
-          const ownerResponseId = farewellResponseId
-          void Promise.resolve(input.waitForOutputTail?.()).then(async () => {
-            if (farewellScript && !await farewellScript) return
-            if (!closed && farewellRequested && farewellResponseId === ownerResponseId) {
-              emitMetadata(input, 'realtime_observer_event', 'success', 'sleep_farewell_completed', sessionGeneration, createdAt)
-              return request()
-            }
-          }).catch(() => {
-            emitMetadata(
-              input,
-              'realtime_observer_event',
-              'failed',
-              'sleep_request_failed',
-              sessionGeneration,
-              createdAt,
-            )
-          })
-        } catch {
-          emitMetadata(
-            input,
-            'realtime_observer_event',
-            'failed',
-            'sleep_request_failed',
-            sessionGeneration,
-            createdAt,
-          )
-        }
+        finishSleep('sleep_farewell_completed', true)
       }
       return
     }
@@ -1990,6 +1949,8 @@ export function createRealtimeSession(
     }
     if (closed || !returnToDormantPending || farewellRequested || !sleepToolNames.has(readProperty(completedTool, 'name') as string)) return
     farewellRequested = true
+    clearTimeout(sleepWatchdog)
+    sleepWatchdog = setTimeout(() => { if (!closed && farewellRequested && !sleepRequested) finishSleep('sleep_farewell_watchdog', false) }, SLEEP_FAREWELL_WATCHDOG_MS)
     try {
       // One response with no conversation input: no invitation or tool follow-up.
       const response = { ...buildSpeechResponse(farewell, input.avatar?.speakingStyle ?? ''),
@@ -1998,24 +1959,45 @@ export function createRealtimeSession(
       else if (transport.requestResponse) transport.requestResponse(response)
       else transport.sendEvent({ type: 'response.create', response })
     } catch {
-      returnToDormantPending = false
-      farewellRequested = false
-      sleepAudioSuppressed = false
-      emitMetadata(input, 'realtime_observer_event', 'failed', 'sleep_request_failed', sessionGeneration, createdAt)
+      resetSleep('sleep_request_failed', 'failed')
     }
   })
   // Interruption and completion stay on official RealtimeSession event surfaces.
-  session.on('audio_interrupted', () => {
-    cancelPendingGreeting('wake_greeting_cancelled_interrupt')
+  // WebRTC (the only transport used) never emits audio_interrupted or audio_stopped; barge-in
+  // arrives as output_audio_buffer.cleared and is handled with the transport events above.
+
+  /** Ends the visit after the farewell: completed, talked over (no stopped event), or a watchdog. */
+  function finishSleep(reason: 'sleep_farewell_completed' | 'sleep_farewell_interrupted' | 'sleep_farewell_watchdog', waitScript: boolean): void {
+    returnToDormantPending = false
+    clearTimeout(sleepWatchdog); sleepWatchdog = undefined
+    const request = input.onReturnToDormant
+    if (request === undefined) {
+      emitMetadata(input, 'realtime_observer_event', 'degraded', 'sleep_request_unavailable', sessionGeneration, createdAt)
+      return
+    }
+    const ownerResponseId = farewellResponseId
+    void Promise.resolve(input.waitForOutputTail?.()).then(async () => {
+      if (waitScript && farewellScript && !await farewellScript) return
+      if (closed || sleepRequested || !farewellRequested || farewellResponseId !== ownerResponseId) return
+      sleepRequested = true
+      emitMetadata(input, 'realtime_observer_event', reason === 'sleep_farewell_watchdog' ? 'degraded' : 'success', reason, sessionGeneration, createdAt)
+      return request()
+    }).catch(() => {
+      // A refused sleep must not leave Raven awake with every reply muted.
+      sleepRequested = false
+      resetSleep('sleep_request_failed', 'failed')
+    })
+  }
+  function resetSleep(reason: 'sleep_request_failed' | 'sleep_tool_cancelled', status: 'info' | 'degraded' | 'failed' = 'degraded'): void {
+    clearTimeout(sleepWatchdog); sleepWatchdog = undefined
     returnToDormantPending = false
     returnToDormantAudioStarted = false
     farewellRequested = false
     farewellResponseId = undefined
     farewellAudioStarted = false
     sleepAudioSuppressed = false
-    notifyAudioActivity('interrupted')
-  })
-  session.on('audio_stopped', () => {})
+    emitMetadata(input, 'realtime_observer_event', status, reason, sessionGeneration, createdAt)
+  }
 
   emitMetadata(
     input,
@@ -2120,7 +2102,8 @@ export function createRealtimeSession(
     try {
       await session.interrupt()
     } catch {
-      emitConnectFailed('cause=transport_error')
+      // A mid-session interrupt failure is not a connect failure (log triage, audit 2026-11-08).
+      emitMetadata(input, 'realtime_observer_event', 'degraded', 'realtime_interrupt_failed', sessionGeneration, createdAt)
     }
   }
 
@@ -2138,7 +2121,7 @@ export function createRealtimeSession(
     memoryDialogue.close()
     for (const done of memoryInputWaiters) done()
     for (const task of idleTasks.splice(0)) clearTimeout(task.timer)
-    clearTimeout(idleRetryTimer); clearTimeout(studioDefaultTimer)
+    clearTimeout(idleRetryTimer); clearTimeout(studioDefaultTimer); clearTimeout(sleepWatchdog)
     studioDefaultSettle?.(false); studioDefaultSettle = undefined
     studioItems.clear(); studioCalls.clear(); studioTurnItems.clear(); studioSends.clear()
     closePromise = (async () => {
@@ -2367,7 +2350,7 @@ export function createRealtimeSession(
   function trackStudioItem(item: unknown, studioTurn = false): void {
     const itemId = readProperty(item, 'id'), kind = readProperty(item, 'type'), callId = readProperty(item, 'call_id')
     // Application system items (hints) hold no visitor content.
-    if (typeof itemId !== 'string' || itemId === studioRevealImageItem || readProperty(item, 'role') === 'system') return
+    if (typeof itemId !== 'string' || readProperty(item, 'role') === 'system') return
     // A late item event for an item already removed must not queue a second delete.
     if (deletedItemIds.has(itemId)) return
     if (kind === 'function_call' || kind === 'function_call_output') {
@@ -2391,7 +2374,6 @@ export function createRealtimeSession(
   function cleanupStudioItems(): void {
     // A studio entered again keeps its history until it closes too.
     if (closed || studioActive) return
-    if (studioRevealImageItem) { deleteConversationItem(studioRevealImageItem, 'image'); studioRevealImageItem = undefined }
     for (const itemId of studioItems) {
       if (createdInputItemIds.has(itemId) && !retrievedItems.has(itemId)) mediaCleanupPending.add(itemId)
       else if (listedItems.has(itemId)) deleteConversationItem(itemId, 'turn')
@@ -2528,6 +2510,7 @@ export function createRealtimeSession(
     studioDefaultSettle = undefined
     clearTimeout(studioDefaultTimer); studioDefaultTimer = undefined
     if (!started && !closed) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_default_unavailable', sessionGeneration, createdAt)
+    if (!started) studioDefaultAbandoned = true
     settle(started)
   }
   /** False, with a metadata reason, when work queued for an earlier studio run would reach a later one. */
@@ -2599,7 +2582,8 @@ export function createRealtimeSession(
         if (!current()) return
         if (step.phase === 'painting' || step.phase === 'revising') {
           const result = await studioRequest({ action: 'paint', stepId: step.id })
-          if (!current() || result?.status !== 'accepted') return
+          if (!current()) return
+          if (result?.status !== 'accepted') { emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_paint_not_accepted', sessionGeneration, createdAt); return }
           if (step.phase === 'painting') await say(PORTRAIT_STUDIO.journey[step.language].waiting, 'waiting')
         } else if (step.phase === 'keepsake') await studioRequest({ action: 'deliver', stepId: step.id })
         else if (step.phase === 'reveal' && step.final) await studioRequest({ action: 'finish' })
@@ -2689,47 +2673,6 @@ export function createRealtimeSession(
       return false
     }
   }
-  /** A reveal belongs to its run and to Main's latest revision in that run. */
-  function currentStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, run: number): boolean {
-    if (!sameStudioRun(run)) return false
-    if (event.revision === studioRevision) return true
-    emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
-    return false
-  }
-  async function revealStudioImage(event: Extract<StudioSessionEvent, { event: 'ready' }>, run: number): Promise<void> {
-    let dataUrl: string | null = null
-    try { dataUrl = await input.prepareStudioImage?.(event.imageUrl) ?? null } catch { dataUrl = null }
-    if (closed || !currentStudioReveal(event, run)) return
-    if (!dataUrl) emitMetadata(input, 'realtime_observer_event', 'degraded', 'studio_image_prepare_failed', sessionGeneration, createdAt)
-    whenIdle(() => sendStudioReveal(event, dataUrl, false, run))
-  }
-  function sendStudioReveal(event: Extract<StudioSessionEvent, { event: 'ready' }>, dataUrl: string | null, retried: boolean, run: number): boolean {
-    if (closed || !currentStudioReveal(event, run)) return false
-    const studio = input.avatar?.experience?.studio
-    const instructions = studioRevealInstructions(studioInstructions, studio, { seen: !!dataUrl, language: event.language, final: event.revisionsLeft <= 0 })
-    try {
-      if (dataUrl) {
-        if (studioRevealImageItem) deleteConversationItem(studioRevealImageItem, 'image')
-        studioRevealImageItem = `studio_img_${sessionGeneration}_${++studioImageSequence}`.slice(0, 32)
-        transport.sendEvent({ type: 'conversation.item.create', item: { id: studioRevealImageItem, type: 'message', role: 'user',
-          content: [{ type: 'input_image', image_url: dataUrl }] } })
-      }
-      const eventId = `studio-${sessionGeneration}-${++studioSendSequence}`
-      rememberStudioSend(eventId, () => {
-        if (retried) emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_reveal_failed', sessionGeneration, createdAt)
-        else whenIdle(() => sendStudioReveal(event, dataUrl, true, run))
-      })
-      const final = event.revisionsLeft <= 0
-      if (final) studioFinalReveal = run
-      studioRevealInputs = visitorInputs
-      transport.sendEvent({ type: 'response.create', event_id: eventId, response: { instructions, ...(final ? { tool_choice: 'none' as const } : {}),
-        metadata: { mirror_studio: 'reveal', ...(final ? { mirror_studio_final: 'true' } : {}) } } })
-      return true
-    } catch {
-      emitMetadata(input, 'realtime_observer_event', 'failed', 'studio_reveal_failed', sessionGeneration, createdAt)
-      return false
-    }
-  }
   function studioEvent(event: StudioSessionEvent, identity: StudioEventIdentity): void {
     if (closed || !studioAgent) return
     if (identity.realtimeSessionId !== input.sessionId || identity.sessionGeneration !== sessionGeneration) {
@@ -2739,6 +2682,11 @@ export function createRealtimeSession(
     if (event.event === 'enter') {
       // A studio-default session speaks the start script as its wake greeting.
       const greets = studioDefaultSettle !== undefined
+      if (!greets && studioDefaultAbandoned) {
+        emitMetadata(input, 'realtime_observer_event', 'info', 'studio_default_late_enter_ignored', sessionGeneration, createdAt)
+        void studioRequest({ action: 'exit' })
+        return
+      }
       void enterStudio().then(entered => {
         if (!entered) void studioRequest({ action: 'exit' })
         if (entered) { studioFirstLanguage = event.language; noteStudioFirstStep(event.firstStep); studioStep = event.step }
@@ -2754,12 +2702,11 @@ export function createRealtimeSession(
     if (event.event === 'step') { queueStudioStep(event.step); return }
     if (event.event === 'ready') {
       if (event.step) {
-        studioRevision = event.revision
         queueStudioStep(event.step, undefined, true)
         return
       }
-      if (studioActive) { studioRevision = event.revision; void revealStudioImage(event, studioStarts) }
-      else emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
+      // Main attaches the reveal step to every ready event; one without it is never shown.
+      emitMetadata(input, 'realtime_observer_event', 'info', 'studio_event_stale', sessionGeneration, createdAt)
       return
     }
     // A run's closing line and farewell still play after its own exit, never after a newer run starts.

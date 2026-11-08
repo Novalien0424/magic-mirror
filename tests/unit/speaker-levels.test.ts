@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SPEAKER_LEVELS, normalSpeakerLevel, parseSpeakerLevels, speakerTargetLevel } from '../../src/main/speaker-levels'
 
@@ -36,5 +38,29 @@ describe('calibrated speaker levels', () => {
       expect(parseSpeakerLevels(text)).toBe(DEFAULT_SPEAKER_LEVELS)
     }
     expect(speakerTargetLevel(DEFAULT_SPEAKER_LEVELS, 'EDIFIER M330', 0.42)).toBe(0.42)
+  })
+
+  // The rule lives in four places (Main and three single-file native helpers). This vector is the
+  // reference the Swift copies implement; the parity check below fails if one copy drifts.
+  it('matches the documented venue vector (owner levels 80/65/50)', () => {
+    const levels = parseSpeakerLevels(JSON.stringify({ normal: { 'Jabra Speak2 75': 0.8, A1: 0.65, EDIFIER: 0.5 } }))
+    const vector: Array<[name: string, jabra: number, expected: number]> = [
+      ['Jabra Speak2 75', 0.8, 0.8], ['A1', 0.8, 0.65], ['EDIFIER M330 Ⅱ 1133', 0.8, 0.5], ['Unlisted', 0.8, 0.8],
+      ['A1', 0.9, 0.75], ['EDIFIER M330 Ⅱ 1133', 1, 0.7], ['EDIFIER M330 Ⅱ 1133', 1.3, 1], ['A1', 1.3, 1],
+      ['EDIFIER M330 Ⅱ 1133', 0.3, 0.05], ['EDIFIER M330 Ⅱ 1133', 0.04, 0.04], ['A1', 0, 0],
+    ]
+    for (const [name, jabra, expected] of vector) expect(speakerTargetLevel(levels, name, jabra)).toBe(expected)
+  })
+  it('keeps the native helpers on the same rule as Main', () => {
+    const swift = (name: string) => readFileSync(join(__dirname, '../../deploy/macos', name), 'utf8')
+    const block = (text: string) => text.slice(text.indexOf('struct SpeakerLevels {'), text.indexOf('let speakerLevels = SpeakerLevels()'))
+      .replace(/^ {2}\/\/\/ The Jabra-equivalent level[^\n]*\n[^\n]*\n/m, '') // music-loop's extra inverse helper
+    const stop = block(swift('stop-state.swift')), music = block(swift('music-loop.swift'))
+    expect(stop).toContain('min(1, max(0, group + normal(name) - jabra)), floor = min(group, 0.05)')
+    expect(stop).toContain('var jabra: Float32 = 0.7')
+    expect(music).toBe(stop)
+    const qa = swift('qa-output-volume.swift')
+    for (const rule of ['return 0.7 }', 'caseInsensitiveCompare("Jabra Speak2 75")', 'sorted { $0.0.count > $1.0.count }', 'hasPrefix($0.0.lowercased())']) expect(qa).toContain(rule)
+    expect(DEFAULT_SPEAKER_LEVELS.jabra).toBe(0.7)
   })
 })

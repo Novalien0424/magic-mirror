@@ -58,7 +58,7 @@ export const STUDIO_PROMPT_INFO: Readonly<Record<StudioPromptStage, { label: str
   exited: { label: 'Visitor stops the studio', when: 'When the visitor stops the studio to keep chatting; the visit continues as a conversation.' },
 })
 export const STUDIO_PLACEHOLDER_INFO: Readonly<Record<string, string>> = Object.freeze({
-  question: 'the question text', name: 'the name the avatar heard', candidates: 'up to three matching guest names',
+  question: 'the question text', name: 'the name the avatar heard', candidates: 'the closest matching guest name (the one being read back)',
   index: 'the question number', count: 'the number of questions', followUp: 'the Offer a change or Final version prompt',
   language: "the visitor's language",
   answer: "the visitor's answer, quoted as data",
@@ -146,11 +146,12 @@ export function studioScreenIssue(key: StudioScreenKey, text: unknown): string {
 }
 
 /** What the avatar says when a picture cannot be made, in both languages (spoken verbatim). */
-export const STUDIO_FAILURE_KEYS = Object.freeze(['studio_auth_required', 'studio_quota_exhausted', 'studio_image_refused', 'revision_failed', 'default'] as const)
+export const STUDIO_FAILURE_KEYS = Object.freeze(['studio_auth_required', 'studio_quota_exhausted', 'studio_image_refused', 'revision_failed', 'abandoned', 'default'] as const)
 export type StudioFailureKey = typeof STUDIO_FAILURE_KEYS[number]
 export const STUDIO_FAILURE_INFO: Readonly<Record<StudioFailureKey, string>> = Object.freeze({
   studio_auth_required: 'ChatGPT sign-in missing or rejected', studio_quota_exhausted: 'ChatGPT plan image limit reached',
-  studio_image_refused: 'Image refused by the safety system', revision_failed: 'A change failed (the earlier picture stays)', default: 'Any other failure',
+  studio_image_refused: 'Image refused by the safety system', revision_failed: 'A change failed (the earlier picture stays)',
+  abandoned: 'Nobody answered the name or the first question (the visit ends without a picture)', default: 'Any other failure',
 })
 export function studioFailureIssue(text: unknown): string {
   return templateIssue(text, 200, { required: [], optional: [] }, 'Enter this line, or reset it to the default.', false)
@@ -403,36 +404,26 @@ export function parseStudioReply(value: unknown): StudioReply | null {
 export type StudioImageFailure =
   | 'studio_auth_required' | 'studio_quota_exhausted' | 'studio_image_refused' | 'studio_model_rejected'
   | 'studio_provider_contract' | 'studio_image_timeout' | 'studio_image_unavailable' | 'studio_cancelled'
+  /** Main's deadline: the Mirror never asked to start the painting after its cue. */
+  | 'studio_paint_timeout'
 
 // ---------- Mirror view and session events (Main → renderer) ----------
 
 export type StudioPhase = 'name' | 'confirm' | 'question' | 'painting' | 'reveal' | 'revising' | 'keepsake'
+/** What the glass shows: progress, the name and the picture. No answers, questions or captions (never rendered). */
 export interface StudioView {
   phase: StudioPhase
   language: StudioLanguage
   questionCount: number
   answered: number
-  /** Current question text in the session language (operator text). */
-  prompt?: string
   /** The visitor's own name, displayed on the glass. */
   name?: string
-  chips: string[]
-  change?: string
   imageUrl?: string
   lettering: 'nameplate' | 'painted'
   picture: StudioPictureType
   revisionsLeft: number
-  holdEndsAt?: number
   /** False when the experience skips the name step. */
   askName: boolean
-  /** On-glass text resolved by Main for this language (operator edits or versioned defaults). */
-  text: StudioScreenView
-}
-export type StudioScreenView = Record<Exclude<StudioScreenKey, 'captions'>, string> & { captions: string[] }
-function parseScreenView(value: unknown): value is StudioScreenView {
-  return record(value) && exact(value, [...STUDIO_SCREEN_KEYS]) && STUDIO_SCREEN_KEYS.every(key => key === 'captions'
-    ? Array.isArray(value.captions) && value.captions.length >= 1 && value.captions.length <= 6 && value.captions.every(line => studioText(line, STUDIO_SCREEN_MAX))
-    : studioText(value[key], 80))
 }
 
 export function parseStudioView(value: unknown): StudioView | null {
@@ -440,17 +431,13 @@ export function parseStudioView(value: unknown): StudioView | null {
     || (value.language !== 'zh' && value.language !== 'en') || !Number.isInteger(value.questionCount) || !Number.isInteger(value.answered)
     || (value.questionCount as number) < 1 || (value.questionCount as number) > STUDIO_MAX_QUESTIONS
     || (value.answered as number) < 0 || (value.answered as number) > (value.questionCount as number)
-    || !Array.isArray(value.chips) || value.chips.length > STUDIO_MAX_QUESTIONS || !value.chips.every(chip => studioText(chip, 80))
     || (value.lettering !== 'nameplate' && value.lettering !== 'painted') || !STUDIO_PICTURE_TYPES.includes(value.picture as StudioPictureType)
     || !Number.isInteger(value.revisionsLeft) || (value.revisionsLeft as number) < 0 || (value.revisionsLeft as number) > 3
-    || typeof value.askName !== 'boolean' || !parseScreenView(value.text)) return null
-  const allowed = ['phase', 'language', 'questionCount', 'answered', 'prompt', 'name', 'chips', 'change', 'imageUrl', 'lettering', 'picture', 'revisionsLeft', 'holdEndsAt', 'askName', 'text']
+    || typeof value.askName !== 'boolean') return null
+  const allowed = ['phase', 'language', 'questionCount', 'answered', 'name', 'imageUrl', 'lettering', 'picture', 'revisionsLeft', 'askName']
   if (!Object.keys(value).every(key => allowed.includes(key))) return null
-  if ('prompt' in value && !studioText(value.prompt, STUDIO_QUESTION_MAX, false, true)) return null
   if ('name' in value && !studioText(value.name, 40)) return null
-  if ('change' in value && !studioText(value.change, 120)) return null
   if ('imageUrl' in value && (typeof value.imageUrl !== 'string' || !/^magic-mirror-media:\/\/studio\/[a-z0-9-]{8,64}$/.test(value.imageUrl))) return null
-  if ('holdEndsAt' in value && (!Number.isSafeInteger(value.holdEndsAt) || (value.holdEndsAt as number) <= 0)) return null
   return structuredClone(value) as unknown as StudioView
 }
 
@@ -518,7 +505,8 @@ export function parseStudioSessionEvent(value: unknown): StudioSessionEvent | nu
 export const STUDIO_MIRROR_CHANNEL = 'mirror:studio'
 export const STUDIO_CONSOLE_CHANNEL = 'console:studio'
 export type StudioAuthStatus = 'signed_in' | 'missing' | 'invalid' | 'expired' | 'refresh_failed'
-export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'test' } | { action: 'mode'; mode: MirrorMode }
+/** `exit` returns the visitor to conversation; `end` ends the visit as if it had finished (studio farewell in Studio mode). */
+export type StudioConsoleCommand = { action: 'status' } | { action: 'start' } | { action: 'exit' } | { action: 'end' } | { action: 'test' } | { action: 'mode'; mode: MirrorMode }
   | { action: 'match_name'; name: string; guests: GuestListSettings }
 export interface StudioConsoleStatus {
   imageSkillEnabled?: boolean
@@ -531,6 +519,8 @@ export interface StudioConsoleStatus {
   mirrorMode: MirrorMode
   /** The active avatar's studio wake phrase (what visitors say in Interactive Studio mode). */
   wakePhrase?: string
+  /** Metadata only. `pausedUntil`: Studio visits fall back to conversation until then (a recent plan-limit or sign-in failure). */
+  lastImageFailure?: { code: string; at: string; pausedUntil?: string }
 }
 export interface StudioConsoleResult {
   status: StudioConsoleStatus
@@ -548,6 +538,6 @@ export function parseStudioConsoleCommand(value: unknown): StudioConsoleCommand 
   }
   if (record(value) && value.action === 'mode') return exact(value, ['action', 'mode']) && (value.mode === 'conversation' || value.mode === 'studio')
     ? { action: 'mode', mode: value.mode } : null
-  return record(value) && exact(value, ['action']) && ['status', 'start', 'exit', 'test'].includes(value.action as string)
+  return record(value) && exact(value, ['action']) && ['status', 'start', 'exit', 'end', 'test'].includes(value.action as string)
     ? { action: value.action as Exclude<StudioConsoleCommand['action'], 'mode' | 'match_name'> } : null
 }

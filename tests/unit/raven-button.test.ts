@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // @ts-expect-error Plain JavaScript shared with the deployed CLI.
-import { mirrorRendererReady, waitForMirrorReady, operateButton, parseLaunchdState, parseProcessSnapshot, parseQueuedRequest, processTree } from '../../scripts/raven-button.mjs'
+import { mirrorRendererReady, waitForMirrorReady, operateButton, parseLaunchdState, parseProcessSnapshot, parseQueuedRequest, processTree, STOP_CANCELS, stopQueued } from '../../scripts/raven-button.mjs'
 // @ts-expect-error Plain JavaScript config generator.
 import { ravenButtonMapping } from '../../scripts/raven-button-karabiner.mjs'
 
@@ -52,6 +52,21 @@ describe('readiness before waking TV', () => {
 })
 
 describe('Raven launchd button', () => {
+  it('lets a fresh queued STOP abandon a pending MusicLoop, Dance or VIDEO LOOP start', () => {
+    expect(STOP_CANCELS).toEqual(expect.arrayContaining(['music_loop', 'dance_floor', 'play_loop']))
+    expect(STOP_CANCELS).not.toContain('normal')
+    const queue = mkdtempSync(join(tmpdir(), 'mm-button-queue-'))
+    try {
+      const now = 1_800_000_000_000
+      writeFileSync(join(queue, `${'1'.padStart(24, '0')}-1.json`), JSON.stringify({ action: 'music', at: now }))
+      writeFileSync(join(queue, `${'2'.padStart(24, '0')}-1.json.tmp`), JSON.stringify({ action: 'stop', at: now }))
+      expect(stopQueued(queue, now)).toBe(false) // a partial write is not a press yet
+      writeFileSync(join(queue, `${'3'.padStart(24, '0')}-1.json`), JSON.stringify({ action: 'stop', at: now - 121000 }))
+      expect(stopQueued(queue, now)).toBe(false) // an expired STOP is ignored
+      writeFileSync(join(queue, `${'4'.padStart(24, '0')}-1.json`), JSON.stringify({ action: 'stop', at: now }))
+      expect(stopQueued(queue, now)).toBe(true)
+    } finally { rmSync(queue, { recursive: true, force: true }) }
+  })
   it('rejects malformed or partial queue files instead of throwing', () => {
     expect(parseQueuedRequest('{"action":"start","at":1')).toBeNull()
     expect(parseQueuedRequest('')).toBeNull()

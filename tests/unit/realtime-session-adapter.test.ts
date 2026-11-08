@@ -367,6 +367,12 @@ describe("RealtimeSession adapter", () => {
     turn('info', '幫我上網查一下周深有幾首歌');
     await search();
     probe.emit('transport_event', { type: 'response.done', response: { id: 'answer', status: 'completed', output: [{ content: [{ type: 'audio', transcript: '很多首。' }] }] } });
+    // Single characters (放 in 開放, 唱 in 演唱會) and negated requests are not requests to play (audit 2026-11-08).
+    for (const [id, text] of [['open', '幫我在網路上找周深演唱會的開放時間'], ['later', '幫我在雲上找周深的組曲先不要播放']]) {
+      turn(id, text)
+      await search()
+      probe.emit('transport_event', { type: 'response.done', response: { id: `${id}-answer`, status: 'completed', output: [{ content: [{ type: 'audio', transcript: '好。' }] }] } })
+    }
     turn('own', '幫我再網路上找周深的組曲播放');
     await search();
     await tools.find(t => t.name === 'play_youtube').invoke({}, JSON.stringify({ url: second, kind: 'music', mode: 'once' }));
@@ -858,7 +864,7 @@ describe("RealtimeSession adapter", () => {
     expect(onReturnToDormant).toHaveBeenCalledOnce();
     await handle.close('manual_stop');
   });
-  it.each(['finish', 'interrupt', 'close'] as const)('waits for farewell output tail and handles %s during that wait', async action => {
+  it.each(['finish', 'barge_in', 'close'] as const)('waits for farewell output tail and handles %s during that wait', async action => {
     const probe = makeAdapterProbe(), onReturnToDormant = vi.fn(), eventSink = vi.fn();
     let finishTail!: () => void;
     const waitForOutputTail = vi.fn(() => new Promise<void>(resolve => { finishTail = resolve }));
@@ -873,11 +879,58 @@ describe("RealtimeSession adapter", () => {
     expect(waitForOutputTail).toHaveBeenCalledOnce();
     expect(onReturnToDormant).not.toHaveBeenCalled();
     expect(eventSink.mock.calls.some(([event]) => event.reason === 'sleep_farewell_completed')).toBe(false);
-    if (action === 'interrupt') probe.emit('audio_interrupted', {});
+    // A barge-in after the farewell ended (WebRTC clears, never audio_interrupted) does not undo the sleep.
+    if (action === 'barge_in') probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'farewell' });
     if (action === 'close') await handle.close('manual_stop');
     finishTail(); await Promise.resolve();
-    expect(onReturnToDormant).toHaveBeenCalledTimes(action === 'finish' ? 1 : 0);
-    expect(eventSink.mock.calls.some(([event]) => event.reason === 'sleep_farewell_completed')).toBe(action === 'finish');
+    expect(onReturnToDormant).toHaveBeenCalledTimes(action === 'close' ? 0 : 1);
+    expect(eventSink.mock.calls.some(([event]) => event.reason === 'sleep_farewell_completed')).toBe(action !== 'close');
+    expect(waitForOutputTail).toHaveBeenCalledOnce();
+    await handle.close('manual_stop');
+  });
+  it('ends the visit when the visitor talks over the farewell, or when the farewell never reports its end', async () => {
+    const probe = makeAdapterProbe(), onReturnToDormant = vi.fn(), eventSink = vi.fn();
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), eventSink, probe), onReturnToDormant, waitForOutputTail: async () => undefined });
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] };
+    await agent.tools[0].invoke({}, '{}');
+    probe.emit('agent_tool_end', {}, agent, agent.tools[0]);
+    const request = probe.sendEvent.mock.calls[0][0];
+    probe.emit('transport_event', { type: 'response.created', response: { id: 'farewell', metadata: request.response.metadata } });
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'farewell' });
+    // Server-VAD barge-in: the farewell's output is cleared and no stopped event follows.
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', response_id: 'farewell' });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'farewell', status: 'cancelled', metadata: request.response.metadata } });
+    await vi.waitFor(() => expect(onReturnToDormant).toHaveBeenCalledOnce());
+    expect(eventSink.mock.calls.filter(([event]) => event.reason === 'sleep_farewell_interrupted')).toHaveLength(1);
+    await handle.close('manual_stop');
+
+    vi.useFakeTimers();
+    try {
+      const silent = makeAdapterProbe(), sleep = vi.fn(), sink = vi.fn();
+      const second = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, silent), onReturnToDormant: sleep, waitForOutputTail: async () => undefined });
+      const tools = (silent.agentConstructorCalls[0][0] as { tools: { invoke(context: unknown, input: string): Promise<unknown> }[] }).tools;
+      await tools[0].invoke({}, '{}');
+      silent.emit('agent_tool_end', {}, silent.agentConstructorCalls[0][0], tools[0]);
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(sleep).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(sleep).toHaveBeenCalledOnce();
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'sleep_farewell_watchdog', status: 'degraded' }));
+      await second.close('manual_stop');
+    } finally { vi.useRealTimers(); }
+  });
+  it('lifts the sleep mute when the response carrying the sleep call is cancelled before the call runs', async () => {
+    const probe = makeAdapterProbe(), eventSink = vi.fn();
+    const handle = createRealtimeSession(makeSessionInput(makeSnapshot(), eventSink, probe));
+    const agent = probe.agentConstructorCalls[0][0] as { tools: { name: string }[] };
+    const sleepName = agent.tools[0].name;
+    probe.emit('transport_event', { type: 'response.output_item.added', response_id: 'cut', item: { type: 'function_call', name: sleepName } });
+    probe.emit('transport_event', { type: 'response.done', response: { id: 'cut', status: 'cancelled', output: [{ type: 'function_call', name: sleepName }] } });
+    expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'sleep_tool_cancelled' }));
+    eventSink.mockClear();
+    probe.emit('transport_event', { type: 'output_audio_buffer.started', response_id: 'next' });
+    expect(eventSink.mock.calls.some(([event]) => event.reason === 'sleep_nonfarewell_output_suppressed')).toBe(false);
+    expect(eventSink).toHaveBeenCalledWith(expect.objectContaining({ reason: 'cause=output_started' }));
     await handle.close('manual_stop');
   });
   it('clears local processed speech on sleep intent and only opens output for its farewell', async () => {
@@ -969,13 +1022,13 @@ describe("RealtimeSession adapter", () => {
     probe.emit('audio_stopped', {});
     expect(eventSink.mock.calls.map(([event]) => event.reason)).toEqual(['cause=output_started']);
     probe.emit('transport_event', { type: 'output_audio_buffer.stopped', realtimeSessionId: 'session-a' });
-    probe.emit('audio_interrupted', {});
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', realtimeSessionId: 'session-a' });
     expect(eventSink.mock.calls.map(([event]) => [event.realtimeSessionId, event.reason])).toEqual([
       ['session-a', 'cause=output_started'], ['session-a', 'cause=output_stopped'], ['session-a', 'cause=output_interrupted'],
     ]);
     await handle.close('manual_stop');
     eventSink.mockClear();
-    probe.emit('audio_interrupted', {});
+    probe.emit('transport_event', { type: 'output_audio_buffer.cleared', realtimeSessionId: 'session-a' });
     expect(eventSink.mock.calls.some(([event]) => event.reason === 'cause=output_interrupted')).toBe(false);
   });
 
@@ -1474,7 +1527,7 @@ describe("RealtimeSession adapter", () => {
       type: "output_audio_buffer.started",
       realtimeSessionId: "session-a",
     });
-    probe.emit("audio_interrupted", {});
+    probe.emit("transport_event", { type: "output_audio_buffer.cleared", realtimeSessionId: "session-a" });
     probe.emit("transport_event", {
       type: "output_audio_buffer.stopped",
       realtimeSessionId: "session-a",
@@ -1624,7 +1677,7 @@ describe("RealtimeSession adapter", () => {
     await handle.close('user_requested');
   });
 
-  it.each(['visitor', 'close', 'interrupt', 'sdk_interrupt'] as const)('suppresses a late greeting after %s and aborts the visual wait', async action => {
+  it.each(['visitor', 'close', 'interrupt'] as const)('suppresses a late greeting after %s and aborts the visual wait', async action => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let reveal!: () => void;
     let signal!: AbortSignal;
@@ -1634,7 +1687,6 @@ describe("RealtimeSession adapter", () => {
     if (action === 'visitor') probe.emit('transport_event', { type: 'input_audio_buffer.speech_started' });
     if (action === 'close') await handle.close('user_requested');
     if (action === 'interrupt') await handle.interrupt();
-    if (action === 'sdk_interrupt') probe.emit('audio_interrupted', {});
     expect(signal.aborted).toBe(true);
     reveal(); for (let i = 0; i < 4; i++) await Promise.resolve();
     expect(probe.sendEvent).not.toHaveBeenCalled();

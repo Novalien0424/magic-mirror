@@ -320,7 +320,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
         help="The avatar asks these questions in order (after the name, when it is asked). Each answer enters the image prompt through its own image prompt line." /></legend>
       <HelpField help={FIELD_HELP.studioAskName}><input type="checkbox" checked={askName}
         onChange={e => setStudio({ askName: e.currentTarget.checked })} /> Ask for a name first</HelpField>
-      <p className="console__muted">Each question waits for up to 30 seconds of silence after speech finishes. No name: 無名之人. No answer: 未回答, followed by “不回答 也是一種回答”.</p>
+      <p className="console__muted">Each question waits for up to 30 seconds of silence after speech finishes. No name: 無名之人. No answer: 未回答, followed by “不回答 也是一種回答”. If the visitor never speaks before the first question times out, nobody is there: the visit ends with the “Nobody answered” line (More settings › Spoken failure lines) and paints nothing.</p>
       <p className="console__muted">Only the first question addresses the visitor by name. Questions and guidance are spoken; the Mirror shows only the visitor’s name as text. Replies stay in Traditional Chinese unless the visitor explicitly requests English.</p>
       <div className="experiences-editor__question experiences-editor__question--name" role="group" aria-label="Name question, asked first" data-off={!askName || undefined}>
         <div className="experiences-editor__question-head"><strong>{askName ? 'Name question · asked first' : 'Name question · off'}</strong></div>

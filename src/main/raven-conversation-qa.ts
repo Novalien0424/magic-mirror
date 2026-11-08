@@ -119,7 +119,13 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     const end = Date.now() + timeout
     while (Date.now() < end) {
       if (Date.now() - started > 2100000) throw Error('raven_qa_budget_exceeded')
-      if (await predicate()) return
+      // A page probe that never answers (executeJavaScript on a stuck view) fails by name instead
+      // of holding the run until the 35-minute budget (2026-11-08: a run sat 24 minutes).
+      let hung: ReturnType<typeof setTimeout> | undefined
+      const answered = await Promise.race([predicate(), new Promise<never>((_, reject) => {
+        hung = setTimeout(() => reject(Error(`raven_qa_${reason}_probe_hung`)), 15000)
+      })]).finally(() => clearTimeout(hung))
+      if (answered) return
       await delay(100)
     }
     throw Error('raven_qa_' + reason)
@@ -438,7 +444,14 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const configuration = await evaluate<Record<string, unknown>>(`const q=window.__ravenQa;const describe=a=>{const values=a.filter(Boolean),t=values.at(-1);return {count:values.length,fields:Object.keys(t??{}).sort(),modelMatches:t?.model===${JSON.stringify((await input.runtime.getPublishedSessionModelSnapshotForDiagnostics()).inputTranscription)},keywordCount:Array.isArray(t?.keywords)?t.keywords.length:null,keywordPresent:t?.keywords?.includes(${JSON.stringify(bindings.approvedSpell)})??false,languages:t?.languages??[],delay:t?.delay??null}};return {requested:describe(q.transcriptionRequests),acknowledged:describe(q.transcriptionConfigs)}`)
       spellRecognition.push({ stage, transcriptItems: heard.length, comparisons, configuration })
     }
-    const operations = mediaOperations(calls, observed)
+    let operations = mediaOperations(calls, observed)
+    // When the model only answers after an online search the visitor asked to play, the application
+    // plays the first result itself (media_online_autoplay, 2026-11-07); it fires shortly after the reply.
+    if (['youtube', 'local_then_youtube'].includes(turn.expected.source) && operations.at(-1)?.name === 'search_youtube' && !operations.some(c => c.name === 'play_youtube')) {
+      const autoplay = () => events(since).find(e => e.reason === 'media_online_autoplay' || e.reason === 'media_online_autoplay_loop')
+      const autoplayed = await wait(async () => !!autoplay(), 'online_autoplay', 5000).then(() => true, () => false)
+      if (autoplayed) operations = [...operations, { ...operations.at(-1)!, name: 'play_youtube', args: { mode: autoplay()?.reason === 'media_online_autoplay_loop' ? 'loop' : 'once' } }]
+    }
     const route = operations.map(c => c.name === 'memory' ? `memory.${c.args?.action}` : c.name)
     if (!turn.expected.toolRoutes.some(r => JSON.stringify(r) === JSON.stringify(route))) throw Error('raven_qa_tool_route')
     const playback = operations.find(c => c.name === 'play_media' || c.name === 'play_youtube')

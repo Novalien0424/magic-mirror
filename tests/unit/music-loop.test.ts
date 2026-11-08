@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink, chmod, realpath, truncate } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, chmod, realpath, truncate, readFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMusicLoop, musicLoopFiles, musicSubfolders, MUSIC_LOOP_MAX_BYTES } from '../../src/main/music-loop'
+import { createMusicLoop, musicLoopFiles, musicSubfolders, MUSIC_LOOP_MAX_BYTES, MUSIC_STALL_LIMIT } from '../../src/main/music-loop'
 import { createOperatorLoop } from '../../src/main/operator-loop'
 
 const roots: string[] = [], players: ReturnType<typeof createMusicLoop>[] = []
@@ -341,5 +341,105 @@ setInterval(() => {}, 1000);
       finish(true); await Promise.resolve()
       expect(controller.view().snapshot.mode).toBe('avatar')
     } finally { controller.dispose() }
+  })
+})
+
+describe('MusicLoop and Dance recovery (2026-11-08 audit)', () => {
+  /** A helper whose behaviour depends on how many times it has been started (counted on disk). */
+  async function countingPlayer(f: Awaited<ReturnType<typeof playerFixture>>, body: string) {
+    const runs = join(f.root, 'runs'), played = join(f.root, 'played')
+    await writeFile(f.input.executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+const run = (fs.existsSync(${JSON.stringify(runs)}) ? Number(fs.readFileSync(${JSON.stringify(runs)}, 'utf8')) : 0) + 1;
+fs.writeFileSync(${JSON.stringify(runs)}, String(run));
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+let plays = 0;
+send({event:'ready',outputs:1});
+require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+  const m = JSON.parse(line); plays++;
+  fs.appendFileSync(${JSON.stringify(played)}, m.path.split('/').pop() + '\\n');
+  ${body}
+}).on('close', () => process.exit(0));
+`)
+    return {
+      runs: async () => Number(await readFile(runs, 'utf8').catch(() => '0')),
+      played: async () => (await readFile(played, 'utf8').catch(() => '')).split('\n').filter(Boolean),
+    }
+  }
+  it('restarts a helper that exits mid-song once and continues after that song', async () => {
+    const f = await playerFixture(['01-long.wav', '02-long.wav', '03-long.wav'])
+    const helper = await countingPlayer(f, `send({event:'playing',id:m.id,outputs:1}); if (run === 1) setTimeout(() => process.exit(3), 30);`)
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(async () => expect(await helper.played()).toEqual(['01-long.wav', '02-long.wav']))
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_player_exited', undefined)
+    expect(f.input.report.mock.calls.filter(([reason]) => reason === 'operator_loop_music_player_restarting')).toHaveLength(1)
+    expect(f.input.failed).not.toHaveBeenCalled()
+    expect(await helper.runs()).toBe(2)
+  })
+  it('carries the pending first-play acknowledgement over a restart before any song played', async () => {
+    const f = await playerFixture(['01-long.wav'])
+    const helper = await countingPlayer(f, `if (run === 1) process.exit(3); send({event:'playing',id:m.id,outputs:1});`)
+    expect(await f.player.start()).toBe(true)
+    expect(await helper.runs()).toBe(2)
+    expect(f.input.failed).not.toHaveBeenCalled()
+  })
+  it('stays failed after a second exit in the same failure streak; a finished song starts a new streak', async () => {
+    const f = await playerFixture(['01-long.wav', '02-long.wav'])
+    const helper = await countingPlayer(f, `send({event:'playing',id:m.id,outputs:1}); setTimeout(() => process.exit(3), 30);`)
+    expect(await f.player.start()).toBe(true)
+    await vi.waitFor(() => expect(f.input.failed).toHaveBeenCalledWith('operator_loop_music_player_exited'))
+    expect(await helper.runs()).toBe(2)
+    const g = await playerFixture(['01.wav', '02.wav'])
+    // Each helper finishes one song before it exits, so every exit is a new streak (bounded here to three runs).
+    const recovering = await countingPlayer(g, `send({event:'playing',id:m.id,outputs:1});
+  if (plays === 1) setTimeout(() => send({event:'ended',id:m.id}), 20); else if (run < 3) process.exit(3);`)
+    expect(await g.player.start()).toBe(true)
+    await vi.waitFor(async () => expect(await recovering.runs()).toBe(3))
+    expect(g.input.failed).not.toHaveBeenCalled()
+  })
+  it('tries a stalled song again (Dance has only one) and retires it only after repeated stalls', async () => {
+    const f = await playerFixture(['01-long.wav'])
+    await countingPlayer(f, `if (plays < ${MUSIC_STALL_LIMIT}) send({event:'track_failed',id:m.id,reason:'operator_loop_music_stalled'}); else send({event:'playing',id:m.id,outputs:1});`)
+    expect(await f.player.start()).toBe(true)
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_stall_skipped', { stalls: MUSIC_STALL_LIMIT - 1 })
+    expect(f.input.failed).not.toHaveBeenCalled()
+    const g = await playerFixture(['01-long.wav'])
+    await countingPlayer(g, `send({event:'track_failed',id:m.id,reason:'operator_loop_music_stalled'});`)
+    expect(await g.player.start()).toBe(false)
+    expect(g.input.report).toHaveBeenCalledWith('operator_loop_music_stall_failed', undefined)
+    expect(g.input.failed).toHaveBeenCalledWith('operator_loop_music_no_playable_tracks')
+  })
+  it('jumps Next past a song still caching instead of waiting while the old song plays on', async () => {
+    const f = await playerFixture(['01-long.wav', '02-long.wav', '03-long.wav'])
+    f.input.cached.mockImplementation(async path => path.endsWith('02-long.wav') ? undefined : path)
+    f.input.prepare.mockImplementation((_path, _size, _mtime, signal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Error('cancelled')), { once: true })
+    }))
+    const played: string[] = []
+    Object.assign(f.input, { beforePlay: vi.fn(async (path: string) => { played.push(path.split('/').pop()!) }) })
+    const player = createMusicLoop(f.input); players.push(player)
+    await f.player.stop()
+    expect(await player.start()).toBe(true)
+    expect(played).toEqual(['01-long.wav'])
+    const pressed = Date.now()
+    expect(player.skip(1)).toBe(true)
+    await vi.waitFor(() => expect(played).toEqual(['01-long.wav', '03-long.wav']))
+    expect(Date.now() - pressed).toBeLessThan(2000)
+    expect(player.skip(-1)).toBe(true)
+    await vi.waitFor(() => expect(played.at(-1)).toBe('01-long.wav'))
+  })
+  it('refuses Next with a reason when no other song is ready', async () => {
+    const f = await playerFixture(['01-long.wav'])
+    expect(await f.player.start()).toBe(true)
+    expect(f.player.skip(1)).toBe(false)
+    expect(f.input.report).toHaveBeenCalledWith('operator_loop_music_skip_unavailable', undefined)
+  })
+  it('plays the Dance default from Common without a DanceFloor folder and never creates one', async () => {
+    const { root } = await fixture([])
+    await expect(musicLoopFiles(root, 'DanceFloor')).rejects.toThrow('operator_loop_music_empty')
+    await writeFile(join(root, 'DanceFloor.m4a'), 'fixture')
+    expect(await musicLoopFiles(root, 'DanceFloor')).toEqual([join(root, 'DanceFloor.m4a')])
+    await expect(access(join(root, 'DanceFloor'))).rejects.toThrow()
+    await expect(musicLoopFiles(join(root, 'missing-common'), 'DanceFloor')).rejects.toThrow('operator_loop_music_folder_missing')
   })
 })

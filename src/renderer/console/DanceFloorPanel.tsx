@@ -18,6 +18,8 @@ const reasons: Record<string, string> = {
   dance_request_rejected: 'The request was rejected. Check the values and retry.',
 }
 const explain = (reason: string): string => reasons[reason] ?? `Dance Floor needs attention (${reason}).`
+/** Stop acts only while Dance owns the player (Main sets the frame idle whenever Dance is not running). */
+export const danceStopAvailable = (view: DanceView | undefined): boolean => !!view && view.frame.status !== 'idle'
 export function DanceFloorPanel({ bridge, visible }: { bridge: ConsoleBridge | null | undefined; visible: boolean }): React.JSX.Element {
   const [view, setView] = useState<DanceView>(), [draft, setDraft] = useState<DanceSettings>({ ...DEFAULT_DANCE })
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [message, setMessage] = useState('')
@@ -86,11 +88,11 @@ export function DanceFloorPanel({ bridge, visible }: { bridge: ConsoleBridge | n
     <div className="console__action-row">
       <button disabled={busy || !dirty.current} onClick={() => void run({ action: 'save', settings: draft })}>Save settings</button>
       <button disabled={busy || dirty.current || active || !view?.tracks.length} onClick={() => void run({ action: 'start' })}>Start Dance Floor</button>
-      <button onClick={() => void run({ action: 'stop' })}>Stop Dance Floor</button>
+      <button disabled={!danceStopAvailable(view)} onClick={() => void run({ action: 'stop' })}>Stop Dance Floor</button>
     </div>
     {dirty.current && <p>Save your changes before starting.</p>}
     {view && view.outputs.count > 0 && <p>{view.outputs.count} outputs · {view.outputs.controlled} writable volume controls · {view.outputs.verified ? 'last volume command verified' : 'volume needs attention'}</p>}
-    <p className="console__muted">Stop ends music and DJ speech, restores the speakers (Jabra 70%) and returns Raven to Conversation; the app keeps running. The physical STOP key still shuts the installation down. Change track and restart to use another selection.</p>
+    <p className="console__muted">Stop ends music and DJ speech, restores the speakers to their normal levels and returns Raven to Conversation; the app keeps running. The physical STOP key still shuts the installation down. Change track and restart to use another selection.</p>
     {message && <p role="status">{message}</p>}{(error || view && readError) && <p role="alert">{error || readError}</p>}
   </section>
 }

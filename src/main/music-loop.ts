@@ -8,6 +8,8 @@ const AUDIO: Record<string, string> = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4
 export const MUSIC_LOOP_MAX_BYTES = 200_000_000
 /** Longest wait for the next song in name order while its on-disk source is cached. */
 export const MUSIC_ORDER_WAIT_MS = 15_000
+/** Consecutive 12 s playback stalls (no finished pass between them) before a song sits out the session. */
+export const MUSIC_STALL_LIMIT = 3
 const byName = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true })
 const folderName = (name: string) => !!name && !name.startsWith('.') && !/[/\\]/.test(name) && name !== '..'
 
@@ -37,7 +39,16 @@ export async function musicLoopFiles(shared: string | undefined, folder: 'MusicL
   }
   try {
     if (await realpath(root) !== root || !(await lstat(root)).isDirectory()) throw Error()
-  } catch { throw Error('operator_loop_music_folder_missing') }
+  } catch (error) {
+    // Dance's default lives in Common itself, so its extra-track folder is optional; it is
+    // never created inside the shared cloud folder.
+    if (folder === 'DanceFloor' && (error as NodeJS.ErrnoException).code === 'ENOENT'
+      && await lstat(shared).then(stat => stat.isDirectory(), () => false)) {
+      if (files.length) return files
+      throw Error('operator_loop_music_empty')
+    }
+    throw Error('operator_loop_music_folder_missing')
+  }
   let visited = 0
   const walk = async (directory: string, depth: number): Promise<void> => {
     if (depth > 16) throw Error('operator_loop_music_folder_limit')
@@ -106,9 +117,211 @@ export function createMusicLoop(input: {
     stopping = attempt.catch(() => undefined)
     return attempt
   }
-  const fail = (reason: string) => {
-    report(reason); input.failed(reason)
+  // Automatic helper restarts since the last song that played to its end (one per failure streak).
+  let streak = 0
+  const fail = (reason: string, restart?: () => void) => {
+    report(reason)
+    if (restart && streak === 0) { streak++; report('operator_loop_music_player_restarting'); restart(); return }
+    input.failed(reason)
     void stop().catch(() => report('operator_loop_music_stop_failed'))
+  }
+  /** `resume` is the song a restarted helper was playing: playback continues after it. */
+  const launch = async (resume?: string): Promise<boolean> => {
+    await stop()
+    const run = revision, cancellation = new AbortController(); abort = cancellation
+    // onDisk: the source is already on this Mac (Google Drive "Available offline"), so its cache copy is quick.
+    // stalls: consecutive playback stalls; a stalled song is retried later, not banned at once.
+    type Track = { path: string; size: number; mtime: number; local?: string; status: 'pending' | 'ready' | 'failed'; onDisk?: boolean; stalls?: number }
+    const tracks: Track[] = []
+    let oversized = 0
+    try {
+      const files = (await musicLoopFiles(await input.sharedRoot(), input.folder, () => report('operator_loop_music_folder_skipped'), input.subfolder?.()))
+        .filter(path => input.select?.(path) ?? true)
+      for (const path of files) {
+        if (run !== revision) return false
+        try {
+          const stat = await lstat(path)
+          if (!stat.isFile() || stat.size === 0 || await realpath(path) !== path) throw Error()
+          if (stat.size > MUSIC_LOOP_MAX_BYTES) {
+            oversized++; report('operator_loop_music_oversize_skipped', { bytes: stat.size, limit: MUSIC_LOOP_MAX_BYTES }); continue
+          }
+          const local = await input.cached?.(path, stat.size, stat.mtimeMs)
+          tracks.push({ path, size: stat.size, mtime: stat.mtimeMs, local, status: local ? 'ready' : 'pending' })
+        } catch { report('operator_loop_music_file_skipped') }
+      }
+      if (!tracks.length) throw Error(oversized === files.length ? 'operator_loop_music_all_oversize' : 'operator_loop_music_no_playable_tracks')
+    } catch (error) {
+      if (run !== revision) return false
+      fail(error instanceof Error && /^operator_loop_music_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_music_scan_failed')
+      return false
+    }
+    if (run !== revision) return false
+    report('operator_loop_music_playlist_loaded', { tracks: tracks.length })
+    const firstPlayed = new Promise<boolean>(resolve => { settle = resolve })
+    // Only native route startup is bounded here. Download deadlines belong to the preparer.
+    deadline = setTimeout(() => { if (run === revision) fail('operator_loop_music_start_timeout') }, 35000)
+    const process = spawn(input.executable, [], { stdio: ['pipe', 'pipe', 'pipe'] }); child = process
+    process.stderr.resume()
+    let current: number | undefined, last: number | undefined, trackId = 0, cycles = 0
+    let routeReady = false, picking = false, audible = false, skipped = false, jumping = false, lastState = ''
+    if (resume !== undefined) { const index = tracks.findIndex(t => t.path === resume); if (index >= 0) { last = index; skipped = true } }
+    // A restarted helper keeps the first-play acknowledgement of the start that is still waiting for it.
+    const restart = () => {
+      const carry = settle, playing = tracks[current ?? last ?? -1]?.path; settle = undefined
+      void launch(playing).then(success => carry?.(success), () => { carry?.(false); fail('operator_loop_music_stop_failed') })
+    }
+    const pendingCount = () => tracks.filter(t => t.status === 'pending').length
+    const state = () => {
+      if (run !== revision) return
+      const pending = pendingCount(), status = audible ? 'playing' : 'preparing'
+      const key = status + ':' + pending
+      if (key !== lastState) {
+        lastState = key; input.state?.(status, pending, oversized)
+        report('operator_loop_music_download_status', { ready: tracks.filter(t => t.status === 'ready').length, pending })
+      }
+    }
+    const unchanged = async (track: Track) => {
+      const stat = await lstat(track.path)
+      return stat.isFile() && stat.size === track.size && stat.mtimeMs === track.mtime && await realpath(track.path) === track.path
+    }
+    const orderWaits = new Map<number, number>()
+    let waiting = false
+    const next = async () => {
+      if (picking || !routeReady || current !== undefined || run !== revision) return
+      picking = true; waiting = false
+      try {
+        for (let offset = 1; offset <= tracks.length; offset++) {
+          const index = ((last ?? -1) + offset) % tracks.length, track = tracks[index]!
+          // File-name order (owner 2026-10-31): wait briefly for the next song while its
+          // on-disk source is copied into the cache; only cloud-only songs are skipped.
+          // A Previous/Next press jumps to a ready song at once instead of waiting.
+          if (track.status === 'pending' && track.onDisk !== false && !jumping) {
+            let deadline = orderWaits.get(index)
+            if (deadline === undefined) {
+              orderWaits.set(index, deadline = Date.now() + MUSIC_ORDER_WAIT_MS)
+              setTimeout(() => { if (run === revision) void next() }, MUSIC_ORDER_WAIT_MS)
+            }
+            if (Date.now() < deadline) { waiting = true; return }
+          }
+          if (track.status !== 'ready') continue
+          try {
+            if (!await unchanged(track) || !track.local) throw Error()
+            const cached = await lstat(track.local)
+            if (!cached.isFile() || cached.size !== track.size || await realpath(track.local) !== track.local) throw Error()
+            if (run !== revision) return
+            // A Previous/Next jump is not a completed pass through the playlist.
+            if (!skipped && last !== undefined && index <= last) { cycles++; report('operator_loop_music_playlist_repeated', { cycles }) }
+            skipped = false
+            const id = ++trackId, mime = AUDIO[extname(track.path).toLowerCase()]!
+            await input.beforePlay?.(track.local, mime, id, cancellation.signal)
+            if (run !== revision) return
+            current = last = index
+            process.stdin.write(JSON.stringify({ action: 'play', id, path: track.local, mime, gain: input.gain ?? 1,
+              ...(input.danceVolume ? { danceVolume: input.danceVolume() } : {}) }) + '\n')
+            return
+          } catch { track.status = 'failed'; report('operator_loop_music_file_skipped') }
+        }
+        if (run !== revision) return
+        if (tracks.some(t => t.status === 'ready')) return // a download completed during validation
+        if (!pendingCount()) fail('operator_loop_music_no_playable_tracks')
+        else state()
+      } finally {
+        picking = false; jumping = false
+        if (!waiting && run === revision && current === undefined && tracks.some(t => t.status === 'ready')) void next()
+      }
+    }
+    skipper = delta => {
+      const from = current ?? last
+      // A press always acts or is refused with a reason: the nearest ready song that way, never
+      // one still caching while the old song plays on.
+      let target: number | undefined
+      for (let step = 1; from !== undefined && step < tracks.length && target === undefined; step++) {
+        const index = ((from + delta * step) % tracks.length + tracks.length) % tracks.length
+        if (tracks[index]!.status === 'ready') target = index
+      }
+      if (run !== revision || !routeReady || picking || target === undefined) { report('operator_loop_music_skip_unavailable'); return false }
+      // next() starts after `last`.
+      last = (target - 1 + tracks.length) % tracks.length
+      current = undefined; audible = false; skipped = true; jumping = true
+      report(delta === 1 ? 'operator_loop_music_next' : 'operator_loop_music_previous')
+      void next()
+      return true
+    }
+    createInterface({ input: process.stdout }).on('line', line => {
+      try {
+        if (line.length > 2048) throw Error()
+        const event = JSON.parse(line)
+        // Shutdown read-back is useful after revision invalidation too.
+        if (run !== revision) {
+          if (event.event === 'volume_restore_failed') input.nativeEvent?.(event)
+          return
+        }
+        input.nativeEvent?.(event)
+        if (event.event === 'ready' && Number.isSafeInteger(event.outputs) && event.outputs > 0) {
+          clearTimeout(deadline); routeReady = true
+          report('operator_loop_music_outputs_ready', { outputs: event.outputs, wireless: Number.isSafeInteger(event.wireless) ? event.wireless : 0 })
+          void next()
+        } else if (event.event === 'playing' && event.id === trackId && current !== undefined) {
+          audible = true; settle?.(true); settle = undefined; state()
+          report('operator_loop_music_playing', { tracks: tracks.length, outputs: event.outputs, track: current + 1, cycles })
+        } else if (['ended', 'track_failed'].includes(event.event) && event.id === trackId && current !== undefined) {
+          const track = tracks[current]!
+          if (event.event === 'ended') { streak = 0; track.stalls = 0 }
+          // A stalled song (Dance plays one) is tried again; only repeated stalls or a decode failure retire it.
+          else if (event.reason === 'operator_loop_music_stalled' && (track.stalls = (track.stalls ?? 0) + 1) < MUSIC_STALL_LIMIT) {
+            report('operator_loop_music_stall_skipped', { stalls: track.stalls })
+          } else {
+            track.status = 'failed'
+            report(event.reason === 'operator_loop_music_stalled' ? 'operator_loop_music_stall_failed' : 'operator_loop_music_decode_skipped')
+          }
+          current = undefined; audible = false
+          const gap = event.event === 'ended' ? input.resyncGapMs?.() ?? 0 : 0
+          if (gap > 0) {
+            // The finished player is already released, so every output is idle for the gap.
+            report('operator_loop_music_resync_gap', { ms: gap })
+            setTimeout(() => { if (run === revision) void next() }, gap)
+          } else void next()
+        } else if (event.event === 'route_kept' && Number.isSafeInteger(event.outputs)) {
+          // A speaker could not join yet; playback continued on the previous speakers.
+          report('operator_loop_music_route_kept', { outputs: event.outputs })
+        } else if (event.event === 'failed') {
+          fail(typeof event.reason === 'string' && /^operator_loop_music_[a-z_]+$/.test(event.reason) ? event.reason : 'operator_loop_music_player_failed', restart)
+        }
+      } catch { fail('operator_loop_music_protocol_invalid') }
+    })
+    process.on('error', () => { if (run === revision) fail('operator_loop_music_player_unavailable', restart) })
+    process.stdin.on('error', () => { if (run === revision) fail('operator_loop_music_player_unavailable', restart) })
+    process.on('exit', () => { if (run === revision) fail('operator_loop_music_player_exited', restart) })
+    preparation = (async () => {
+      const local: Track[] = [], remote: Track[] = []
+      // All cache hits are already playable. Probe source metadata without downloading.
+      for (const track of tracks.filter(t => t.status === 'pending')) {
+        if (run !== revision) return
+        let available = false
+        try { available = await input.isLocal?.(track.path, cancellation.signal) ?? false }
+        catch { if (run === revision) report('operator_loop_music_availability_unknown') }
+        track.onDisk = available
+        ;(available ? local : remote).push(track)
+      }
+      // Classification decides waiting (on disk) or skipping (cloud-only) for the next song.
+      state(); void next()
+      for (const track of [...local, ...remote]) {
+        if (run !== revision) return
+        try {
+          if (!await unchanged(track)) throw Error()
+          const prepared = await input.prepare(track.path, track.size, track.mtime, cancellation.signal)
+          if (run !== revision) return
+          if (!await unchanged(track)) throw Error()
+          track.local = prepared; track.status = 'ready'
+          report('operator_loop_music_file_ready')
+        } catch {
+          if (run !== revision) return
+          track.status = 'failed'; report('operator_loop_music_download_failed')
+        }
+        state(); void next()
+      }
+    })().catch(() => { if (run === revision) fail('operator_loop_music_prepare_failed') })
+    return firstPlayed
   }
   return {
     stop,
@@ -117,179 +330,6 @@ export function createMusicLoop(input: {
     setVolume(value: number) {
       if (child && Number.isFinite(value) && value >= 0 && value <= 1) child.stdin.write(JSON.stringify({ action: 'volume', value }) + '\n')
     },
-    async start(): Promise<boolean> {
-      await stop()
-      const run = revision, cancellation = new AbortController(); abort = cancellation
-      // onDisk: the source is already on this Mac (Google Drive "Available offline"), so its cache copy is quick.
-      type Track = { path: string; size: number; mtime: number; local?: string; status: 'pending' | 'ready' | 'failed'; onDisk?: boolean }
-      const tracks: Track[] = []
-      let oversized = 0
-      try {
-        const files = (await musicLoopFiles(await input.sharedRoot(), input.folder, () => report('operator_loop_music_folder_skipped'), input.subfolder?.()))
-          .filter(path => input.select?.(path) ?? true)
-        for (const path of files) {
-          if (run !== revision) return false
-          try {
-            const stat = await lstat(path)
-            if (!stat.isFile() || stat.size === 0 || await realpath(path) !== path) throw Error()
-            if (stat.size > MUSIC_LOOP_MAX_BYTES) {
-              oversized++; report('operator_loop_music_oversize_skipped', { bytes: stat.size, limit: MUSIC_LOOP_MAX_BYTES }); continue
-            }
-            const local = await input.cached?.(path, stat.size, stat.mtimeMs)
-            tracks.push({ path, size: stat.size, mtime: stat.mtimeMs, local, status: local ? 'ready' : 'pending' })
-          } catch { report('operator_loop_music_file_skipped') }
-        }
-        if (!tracks.length) throw Error(oversized === files.length ? 'operator_loop_music_all_oversize' : 'operator_loop_music_no_playable_tracks')
-      } catch (error) {
-        if (run !== revision) return false
-        fail(error instanceof Error && /^operator_loop_music_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_music_scan_failed')
-        return false
-      }
-      if (run !== revision) return false
-      report('operator_loop_music_playlist_loaded', { tracks: tracks.length })
-      const firstPlayed = new Promise<boolean>(resolve => { settle = resolve })
-      // Only native route startup is bounded here. Download deadlines belong to the preparer.
-      deadline = setTimeout(() => { if (run === revision) fail('operator_loop_music_start_timeout') }, 35000)
-      const process = spawn(input.executable, [], { stdio: ['pipe', 'pipe', 'pipe'] }); child = process
-      process.stderr.resume()
-      let current: number | undefined, last: number | undefined, trackId = 0, cycles = 0
-      let routeReady = false, picking = false, audible = false, skipped = false, lastState = ''
-      const pendingCount = () => tracks.filter(t => t.status === 'pending').length
-      const state = () => {
-        if (run !== revision) return
-        const pending = pendingCount(), status = audible ? 'playing' : 'preparing'
-        const key = status + ':' + pending
-        if (key !== lastState) {
-          lastState = key; input.state?.(status, pending, oversized)
-          report('operator_loop_music_download_status', { ready: tracks.filter(t => t.status === 'ready').length, pending })
-        }
-      }
-      const unchanged = async (track: Track) => {
-        const stat = await lstat(track.path)
-        return stat.isFile() && stat.size === track.size && stat.mtimeMs === track.mtime && await realpath(track.path) === track.path
-      }
-      const orderWaits = new Map<number, number>()
-      let waiting = false
-      const next = async () => {
-        if (picking || !routeReady || current !== undefined || run !== revision) return
-        picking = true; waiting = false
-        try {
-          for (let offset = 1; offset <= tracks.length; offset++) {
-            const index = ((last ?? -1) + offset) % tracks.length, track = tracks[index]!
-            // File-name order (owner 2026-10-31): wait briefly for the next song while its
-            // on-disk source is copied into the cache; only cloud-only songs are skipped.
-            if (track.status === 'pending' && track.onDisk !== false) {
-              let deadline = orderWaits.get(index)
-              if (deadline === undefined) {
-                orderWaits.set(index, deadline = Date.now() + MUSIC_ORDER_WAIT_MS)
-                setTimeout(() => { if (run === revision) void next() }, MUSIC_ORDER_WAIT_MS)
-              }
-              if (Date.now() < deadline) { waiting = true; return }
-            }
-            if (track.status !== 'ready') continue
-            try {
-              if (!await unchanged(track) || !track.local) throw Error()
-              const cached = await lstat(track.local)
-              if (!cached.isFile() || cached.size !== track.size || await realpath(track.local) !== track.local) throw Error()
-              if (run !== revision) return
-              // A Previous/Next jump is not a completed pass through the playlist.
-              if (!skipped && last !== undefined && index <= last) { cycles++; report('operator_loop_music_playlist_repeated', { cycles }) }
-              skipped = false
-              const id = ++trackId, mime = AUDIO[extname(track.path).toLowerCase()]!
-              await input.beforePlay?.(track.local, mime, id, cancellation.signal)
-              if (run !== revision) return
-              current = last = index
-              process.stdin.write(JSON.stringify({ action: 'play', id, path: track.local, mime, gain: input.gain ?? 1,
-                ...(input.danceVolume ? { danceVolume: input.danceVolume() } : {}) }) + '\n')
-              return
-            } catch { track.status = 'failed'; report('operator_loop_music_file_skipped') }
-          }
-          if (run !== revision) return
-          if (tracks.some(t => t.status === 'ready')) return // a download completed during validation
-          if (!pendingCount()) fail('operator_loop_music_no_playable_tracks')
-          else state()
-        } finally {
-          picking = false
-          if (!waiting && run === revision && current === undefined && tracks.some(t => t.status === 'ready')) void next()
-        }
-      }
-      skipper = delta => {
-        const from = current ?? last
-        if (run !== revision || !routeReady || picking || from === undefined || !tracks.some(t => t.status === 'ready')) return false
-        // next() starts after `last`: forward continues from the current song, back from two before it.
-        last = ((from + (delta === 1 ? 0 : -2)) % tracks.length + tracks.length) % tracks.length
-        current = undefined; audible = false; skipped = true
-        report(delta === 1 ? 'operator_loop_music_next' : 'operator_loop_music_previous')
-        void next()
-        return true
-      }
-      createInterface({ input: process.stdout }).on('line', line => {
-        try {
-          if (line.length > 2048) throw Error()
-          const event = JSON.parse(line)
-          // Shutdown read-back is useful after revision invalidation too.
-          if (run !== revision) {
-            if (event.event === 'volume_restore_failed') input.nativeEvent?.(event)
-            return
-          }
-          input.nativeEvent?.(event)
-          if (event.event === 'ready' && Number.isSafeInteger(event.outputs) && event.outputs > 0) {
-            clearTimeout(deadline); routeReady = true
-            report('operator_loop_music_outputs_ready', { outputs: event.outputs, wireless: Number.isSafeInteger(event.wireless) ? event.wireless : 0 })
-            void next()
-          } else if (event.event === 'playing' && event.id === trackId && current !== undefined) {
-            audible = true; settle?.(true); settle = undefined; state()
-            report('operator_loop_music_playing', { tracks: tracks.length, outputs: event.outputs, track: current + 1, cycles })
-          } else if (['ended', 'track_failed'].includes(event.event) && event.id === trackId && current !== undefined) {
-            if (event.event === 'track_failed') { tracks[current]!.status = 'failed'; report('operator_loop_music_decode_skipped') }
-            current = undefined; audible = false
-            const gap = event.event === 'ended' ? input.resyncGapMs?.() ?? 0 : 0
-            if (gap > 0) {
-              // The finished player is already released, so every output is idle for the gap.
-              report('operator_loop_music_resync_gap', { ms: gap })
-              setTimeout(() => { if (run === revision) void next() }, gap)
-            } else void next()
-          } else if (event.event === 'route_kept' && Number.isSafeInteger(event.outputs)) {
-            // A speaker could not join yet; playback continued on the previous speakers.
-            report('operator_loop_music_route_kept', { outputs: event.outputs })
-          } else if (event.event === 'failed') {
-            fail(typeof event.reason === 'string' && /^operator_loop_music_[a-z_]+$/.test(event.reason) ? event.reason : 'operator_loop_music_player_failed')
-          }
-        } catch { fail('operator_loop_music_protocol_invalid') }
-      })
-      process.on('error', () => { if (run === revision) fail('operator_loop_music_player_unavailable') })
-      process.stdin.on('error', () => { if (run === revision) fail('operator_loop_music_player_unavailable') })
-      process.on('exit', () => { if (run === revision) fail('operator_loop_music_player_exited') })
-      preparation = (async () => {
-        const local: Track[] = [], remote: Track[] = []
-        // All cache hits are already playable. Probe source metadata without downloading.
-        for (const track of tracks.filter(t => t.status === 'pending')) {
-          if (run !== revision) return
-          let available = false
-          try { available = await input.isLocal?.(track.path, cancellation.signal) ?? false }
-          catch { if (run === revision) report('operator_loop_music_availability_unknown') }
-          track.onDisk = available
-          ;(available ? local : remote).push(track)
-        }
-        // Classification decides waiting (on disk) or skipping (cloud-only) for the next song.
-        state(); void next()
-        for (const track of [...local, ...remote]) {
-          if (run !== revision) return
-          try {
-            if (!await unchanged(track)) throw Error()
-            const prepared = await input.prepare(track.path, track.size, track.mtime, cancellation.signal)
-            if (run !== revision) return
-            if (!await unchanged(track)) throw Error()
-            track.local = prepared; track.status = 'ready'
-            report('operator_loop_music_file_ready')
-          } catch {
-            if (run !== revision) return
-            track.status = 'failed'; report('operator_loop_music_download_failed')
-          }
-          state(); void next()
-        }
-      })().catch(() => { if (run === revision) fail('operator_loop_music_prepare_failed') })
-      return firstPlayed
-    },
+    start(): Promise<boolean> { streak = 0; return launch() },
   }
 }

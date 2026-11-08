@@ -2,6 +2,9 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 
+/** A helper that ran this long before exiting earns a fresh automatic restart. */
+export const SHARED_OUTPUT_HEALTHY_MS = 10 * 60_000
+
 /**
  * Main owns the venue's public "Magic Mirror Speakers" device (music-loop --shared-output).
  * audio-prefer makes it the macOS default output while it exists, so renderer music,
@@ -16,12 +19,15 @@ export function createSharedMusicOutput(input: {
   level?(value: number): void
   spawnImpl?: typeof spawn
   restartDelayMs?: number
+  now?: () => number
 }) {
   let child: ChildProcessByStdio<Writable, Readable, null> | undefined, stopped = false, restarts = 0
   let timer: ReturnType<typeof setTimeout> | undefined
+  const now = input.now ?? Date.now
   const start = (): void => {
     if (stopped || child) return
     const next = (input.spawnImpl ?? spawn)(input.executable, ['--shared-output'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const startedAt = now()
     child = next
     next.stdin.on('error', () => undefined)
     createInterface({ input: next.stdout }).on('line', line => {
@@ -42,7 +48,9 @@ export function createSharedMusicOutput(input: {
       if (child !== next) return
       child = undefined
       if (stopped) return
-      // One restart covers a transient helper failure; a repeated exit stays degraded.
+      // One restart covers a transient helper failure; a repeated exit stays degraded. A helper
+      // that ran healthily first gets its restart back, so one exit a day never ends the route.
+      if (now() - startedAt >= SHARED_OUTPUT_HEALTHY_MS) restarts = 0
       if (restarts++ < 1) { input.report('music_output_shared_restarting'); timer = setTimeout(start, input.restartDelayMs ?? 2000) }
       else input.degraded('music_output_shared_exited')
     })

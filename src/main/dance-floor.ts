@@ -145,11 +145,15 @@ export function createDanceFloor(input: {
     view: (): DanceView => structuredClone({ settings, tracks, frame, outputs }),
     welcomeLanguage: (): DanceSettings['language'] => started.language,
     async refresh() {
+      // Common/DanceFloor is optional (the default lives in Common): never created in the shared cloud folder.
       const root = await input.sharedRoot()
-      if (root) await mkdir(join(root, 'DanceFloor'), { recursive: true, mode: 0o700 })
       try {
         const files = await musicLoopFiles(root, 'DanceFloor')
-        const found = await Promise.all(files.map(async path => ({ id: danceTrackId(path), name: basename(path), bytes: (await lstat(path)).size })))
+        // One file the provider cannot stat is skipped, never the whole list.
+        const found = (await Promise.all(files.map(async path => {
+          try { return { id: danceTrackId(path), name: basename(path), bytes: (await lstat(path)).size } }
+          catch { input.report('dance_track_skipped'); return undefined }
+        }))).filter(t => t !== undefined)
         tracks = found.filter(t => t.bytes > 0 && t.bytes <= MUSIC_LOOP_MAX_BYTES)
         oversized = found.filter(t => t.bytes > MUSIC_LOOP_MAX_BYTES).length
         if (oversized) input.report('dance_track_oversize_skipped', { tracks: oversized, limit: MUSIC_LOOP_MAX_BYTES })
@@ -171,9 +175,11 @@ export function createDanceFloor(input: {
       await controller.stop(); const run = generation
       await controller.refresh()
       if (run !== generation) return false
-      chosen = settings.track || tracks[0]?.id || ''; first = true; analysis = undefined; analysed.clear()
+      // A saved track that was renamed or removed falls back to the first track instead of a silent Dance.
+      if (settings.track && !tracks.some(t => t.id === settings.track) && tracks.length) input.report('dance_track_fallback')
+      chosen = tracks.some(t => t.id === settings.track) ? settings.track : tracks[0]?.id || ''; first = true; analysis = undefined; analysed.clear()
       started = { welcome: settings.welcome, language: settings.language }
-      if (!chosen || !tracks.some(t => t.id === chosen)) {
+      if (!chosen) {
         const reason = !tracks.length && oversized ? 'dance_track_oversize' : 'dance_track_missing'
         publish({ status: 'failed', reason }); input.failed(`operator_loop_${reason}`); return false
       }

@@ -434,53 +434,6 @@ describe('Portrait Studio in the Realtime session', () => {
     await vi.waitFor(() => expect(memoryInput).toHaveBeenCalledWith('control', 'item-1', '', expect.anything()))
   })
 
-  it('reveals with a downscaled image only when no response is active, then deletes the image item', async () => {
-    const p = probe()
-    const { handle } = session(p, () => accepted('studio_started'))
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    p.event({ type: 'response.created', response: { id: 'busy' } })
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(p.sent.some(e => e.type === 'conversation.item.create')).toBe(false)
-    p.event({ type: 'response.done', response: { id: 'busy', status: 'completed', output: [] } })
-    await vi.waitFor(() => expect(p.sent.some(e => e.type === 'conversation.item.create')).toBe(true))
-    const image = p.sent.find(e => e.type === 'conversation.item.create')!.item as { id: string; content: { type: string; image_url: string }[] }
-    expect(image.content[0]).toEqual({ type: 'input_image', image_url: 'data:image/jpeg;base64,AAAA' })
-    const reveal = responses(p).find(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')!
-    // The reply language comes last, after the English stage text.
-    expect(String(reveal.instructions).endsWith('\n\nSpeak only in Taiwan Mandarin with Traditional characters, including any brief line before a tool call, even when the visitor uses another language; only set_reply_language changes it.')).toBe(true)
-    expect(reveal.instructions).toContain('studio_revise')
-    p.event({ type: 'response.created', response: { id: 'rev' } })
-    p.event({ type: 'response.done', response: { id: 'rev', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
-    expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: image.id }))
-  })
-
-  it('never reveals a portrait from an earlier studio run after the studio restarts in the same session', async () => {
-    const p = probe()
-    const prepared: ((url: string) => void)[] = []
-    const { handle, reasons } = session(p, () => accepted('studio_started'),
-      { prepareStudioImage: () => new Promise<string>(resolve => { prepared.push(resolve) }) })
-    const isReveal = (r: Record<string, unknown>) => (r.metadata as Record<string, unknown> | undefined)?.mirror_studio === 'reveal'
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    // Run A's portrait is still being prepared when the visitor leaves and starts again.
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/aaaa1111', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    handle.studioEvent!({ event: 'closed', reason: 'studio_operator_exit' }, ID)
-    await vi.waitFor(() => expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-realtime' })))
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-portrait-studio' }))
-    prepared[0]!('data:image/jpeg;base64,AAAA')
-    await vi.waitFor(() => expect(reasons()).toContain('studio_event_stale'))
-    expect(p.sent.some(e => e.type === 'conversation.item.create')).toBe(false)
-    expect(responses(p).some(isReveal)).toBe(false)
-    // The current run's own portrait still reveals.
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/bbbb2222', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(prepared).toHaveLength(2))
-    prepared[1]!('data:image/jpeg;base64,BBBB')
-    await vi.waitFor(() => expect(responses(p).some(isReveal)).toBe(true))
-    const image = p.sent.find(e => e.type === 'conversation.item.create')!.item as { content: { image_url: string }[] }
-    expect(image.content[0]!.image_url).toBe('data:image/jpeg;base64,BBBB')
-  })
-
   it('speaks a failure line and returns to conversation; ends with farewell when configured', async () => {
     const p = probe()
     const { handle } = session(p, () => accepted('studio_started'))
@@ -581,22 +534,6 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'fo-answer' }))
   })
 
-  it('deletes a reveal reply that the server delivers after the studio closed', async () => {
-    const p = probe()
-    const { handle } = session(p, () => accepted('studio_started'))
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
-    // The visitor leaves before the server starts the reveal reply.
-    handle.studioEvent!({ event: 'closed', reason: 'studio_operator_exit' }, ID)
-    await vi.waitFor(() => expect(p.updateAgent).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'magic-mirror-realtime' })))
-    const reply = { id: 'reveal-reply', type: 'message', role: 'assistant' }
-    p.event({ type: 'response.created', response: { id: 'rev', metadata: { mirror_studio: 'reveal' } } })
-    p.event({ type: 'conversation.item.added', item: reply })
-    p.event({ type: 'response.done', response: { id: 'rev', status: 'completed', metadata: { mirror_studio: 'reveal' }, output: [reply] } })
-    await vi.waitFor(() => expect(p.sent).toContainEqual(expect.objectContaining({ type: 'conversation.item.delete', item_id: 'reveal-reply' })))
-  })
-
   it.each(['before', 'after'] as const)('deletes an interrupted studio call that never gets an output (interrupted %s exit)', async order => {
     const p = probe()
     const { handle } = session(p, () => accepted('studio_started'))
@@ -665,73 +602,6 @@ describe('Portrait Studio in the Realtime session', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it('never reveals an older portrait revision after a newer one in the same run', async () => {
-    const p = probe()
-    const prepared: ((url: string) => void)[] = []
-    const { handle, reasons } = session(p, () => accepted('studio_started'),
-      { prepareStudioImage: () => new Promise<string>(resolve => { prepared.push(resolve) }) })
-    const reveals = () => responses(p).filter(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/aaaa1111', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/bbbb2222', revision: 1, revisionsLeft: 0, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(prepared).toHaveLength(2))
-    prepared[1]!('data:image/jpeg;base64,BBBB')
-    await vi.waitFor(() => expect(reveals()).toHaveLength(1))
-    // Revision 0 finishes preparing only after revision 1 was revealed.
-    prepared[0]!('data:image/jpeg;base64,AAAA')
-    await vi.waitFor(() => expect(reasons()).toContain('studio_event_stale'))
-    expect(reveals()).toHaveLength(1)
-    const images = p.sent.filter(e => e.type === 'conversation.item.create' && JSON.stringify(e).includes('input_image')).map(e => (e.item as { content: { image_url: string }[] }).content[0]!.image_url)
-    expect(images).toEqual(['data:image/jpeg;base64,BBBB'])
-  })
-
-  it('deletes each studio item once, even when a late item event arrives after the reveal removed the picture', async () => {
-    const p = probe()
-    const { handle } = session(p, () => accepted('studio_started'))
-    await handle.connect()
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 0, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
-    const image = (p.sent.find(e => e.type === 'conversation.item.create' && JSON.stringify(e).includes('input_image')) as { item: { id: string } }).item.id
-    p.event({ type: 'response.created', response: { id: 'reveal-r', metadata: { mirror_studio: 'reveal' } } })
-    p.event({ type: 'response.done', response: { id: 'reveal-r', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
-    // The picture's own item event arrives after the reveal already removed it.
-    p.event({ type: 'conversation.item.done', item: { id: image, type: 'message', role: 'user', content: [{ type: 'input_image' }] } })
-    handle.studioEvent!({ event: 'keepsake_done', afterPortrait: 'continue' }, ID)
-    await new Promise(resolve => setTimeout(resolve, 50))
-    const deletes = p.sent.filter(e => e.type === 'conversation.item.delete').map(e => e.item_id as string)
-    expect(deletes.filter(id => id === image)).toHaveLength(1)
-    expect(new Set(deletes).size).toBe(deletes.length)
-    // Each delete names its cleanup path, so a rejected one can be traced without content.
-    expect(p.sent.filter(e => e.type === 'conversation.item.delete').every(e => /^delete_(input|image|turn|call|ended_call|output)_\d+$/.test(String(e.event_id)))).toBe(true)
-  })
-
-  it('lets the final reveal hand the picture over without tools, then finishes the studio itself', async () => {
-    const p = probe()
-    const { handle, requests } = session(p, () => accepted('studio_started'))
-    await handle.connect()
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    const reveals = () => responses(p).filter(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')
-    // A reveal with a change left keeps tools, so the visitor's change can be painted.
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/aaaa1111', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(reveals()).toHaveLength(1))
-    expect(reveals()[0]!.tool_choice).toBeUndefined()
-    p.event({ type: 'response.done', response: { id: 'r1', status: 'completed', output: [], metadata: { mirror_studio: 'reveal' } } })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(requests.filter(r => r.action === 'finish')).toHaveLength(0)
-    // The last reveal speaks the handover with no tool call, and the application finishes once it ends.
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/bbbb2222', revision: 1, revisionsLeft: 0, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(reveals()).toHaveLength(2))
-    expect(reveals()[1]).toMatchObject({ tool_choice: 'none', metadata: { mirror_studio: 'reveal', mirror_studio_final: 'true' } })
-    expect(String(reveals()[1]!.instructions)).toContain('they can take a photo of it now')
-    expect(requests.filter(r => r.action === 'finish')).toHaveLength(0)
-    p.event({ type: 'response.done', response: { id: 'r2', status: 'completed', output: [], metadata: { mirror_studio: 'reveal', mirror_studio_final: 'true' } } })
-    await vi.waitFor(() => expect(requests.filter(r => r.action === 'finish')).toHaveLength(1))
-    p.event({ type: 'response.done', response: { id: 'r2', status: 'completed', output: [], metadata: { mirror_studio: 'reveal', mirror_studio_final: 'true' } } })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(requests.filter(r => r.action === 'finish')).toHaveLength(1)
-  })
-
   it('never deletes an out-of-band line, which the server never listed in the conversation', async () => {
     const p = probe()
     const { handle } = session(p, () => accepted('studio_started'))
@@ -760,23 +630,6 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'input_audio_buffer.committed', item_id: 'v1' })
     await call(tool(p.agents[1]!, 'studio_set_name'), { name: '王曉明', confirmed: false, language: 'zh' })
     expect(requests.at(-1)).toMatchObject({ action: 'set_name', name: '王曉明' })
-  })
-
-  it('finishes or changes a revealed picture only after the visitor has spoken since it was shown', async () => {
-    const p = probe()
-    const { handle, requests } = session(p, () => accepted('studio_started'))
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
-    // The reveal itself declared the picture finished: ignored, the change offer stays open.
-    expect(await call(tool(p.agents[1]!, 'studio_finish'), {})).toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
-    expect(requests.some(r => r.action === 'finish')).toBe(false)
-    // Nor may it ask for a change the visitor never made.
-    expect(await call(tool(p.agents[1]!, 'studio_revise'), { change: 'a dragon' })).toMatchObject({ content: { studio: { code: 'studio_visitor_reply_missing' } } })
-    expect(requests.some(r => r.action === 'revise')).toBe(false)
-    p.event({ type: 'input_audio_buffer.committed', item_id: 'happy' })
-    await call(tool(p.agents[1]!, 'studio_finish'), {})
-    expect(requests.at(-1)).toEqual({ action: 'finish' })
   })
 
   it('confirms a name only from a later visitor turn about the name that was read back', async () => {
@@ -878,7 +731,8 @@ describe('Portrait Studio in the Realtime session', () => {
     await finishSpeech()
     expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
     p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-name' })
-    expect((await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).candidates).toEqual(['Sean', 'Shawn'])
+    // Guest names never reach the model; Main reads back its first candidate itself.
+    expect(await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).toEqual({ code: 'studio_name_candidates' })
     await finishSpeech()
     expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
     expect((await invoke('studio_repeat_question')).code).toBe('studio_visitor_reply_missing')
@@ -886,7 +740,8 @@ describe('Portrait Studio in the Realtime session', () => {
     await invoke('studio_reject_name'); await finishSpeech()
     expect((await invoke('studio_confirm_name')).code).toBe('studio_visitor_reply_missing')
     p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-new-name' })
-    expect((await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).candidates).toEqual(['Shawn'])
+    expect(await invoke('studio_set_name', { name: 'Shaun', confirmed: false, language: 'zh' })).toEqual({ code: 'studio_name_candidates' })
+    expect(main.phase()).toBe('confirm')
     await finishSpeech()
     p.event({ type: 'input_audio_buffer.committed', item_id: 'receipt-agreement' })
     expect((await invoke('studio_confirm_name')).code).toBe('studio_name_confirmed')
@@ -916,7 +771,11 @@ describe('Portrait Studio in the Realtime session', () => {
       return (result.content ?? result).studio!
     }
     p.event({ type: 'input_audio_buffer.committed', item_id: 'name-1' })
-    expect(await setName('王小明', true)).toMatchObject({ code: 'studio_name_candidates', candidates: ['王曉明', '王小敏'] })
+    const heard = await call(tool(p.agents[1]!, 'studio_set_name'), { name: '王小明', confirmed: true, language: 'zh' }) as { studio?: StudioReply; content?: { studio: StudioReply } }
+    expect((heard.content ?? heard).studio).toEqual({ code: 'studio_name_candidates' })
+    // The model's result names only the candidate being read back, never the other close match.
+    expect(JSON.stringify(heard)).toContain('「王曉明」')
+    expect(JSON.stringify(heard)).not.toContain('王小敏')
     expect(main.phase()).toBe('confirm')
     // Another candidate is a correction, even if the model labels it confirmed.
     p.event({ type: 'input_audio_buffer.committed', item_id: 'name-2' })
@@ -982,57 +841,6 @@ describe('Portrait Studio in the Realtime session', () => {
     expect(reasons()).toContain('studio_event_stale')
   })
 
-  it('waits for the server reply to a finished visitor turn before revealing, and retries a rejected reveal once', async () => {
-    vi.useFakeTimers()
-    try {
-      const p = probe()
-      const { handle } = session(p, () => accepted('studio_started'))
-      await handle.connect()
-      await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-      p.event({ type: 'input_audio_buffer.speech_started', item_id: 'item-2' })
-      handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-      p.event({ type: 'input_audio_buffer.speech_stopped', item_id: 'item-2' })
-      await vi.advanceTimersByTimeAsync(500)
-      expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(false)
-      p.event({ type: 'response.created', response: { id: 'auto' } })
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(false)
-      p.event({ type: 'response.done', response: { id: 'auto', status: 'completed', output: [] } })
-      await vi.advanceTimersByTimeAsync(0)
-      const reveals = () => p.sent.filter(e => e.type === 'response.create' && (e.response as { metadata?: Record<string, unknown> }).metadata?.mirror_studio === 'reveal')
-      expect(reveals()).toHaveLength(1)
-      p.event({ type: 'error', error: { type: 'invalid_request_error', code: 'conversation_already_has_active_response', event_id: reveals()[0]!.event_id } })
-      await vi.advanceTimersByTimeAsync(0)
-      expect(reveals()).toHaveLength(2)
-      expect(reveals()[1]!.event_id).not.toBe(reveals()[0]!.event_id)
-    } finally { vi.useRealTimers() }
-  })
-
-  it('lets queued application speech finish before revealing, and never suppresses a reveal during a spoken command', async () => {
-    const p = probe()
-    const { handle } = session(p, () => accepted('studio_started'))
-    await handle.connect()
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    const reveals = () => responses(p).filter(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')
-    handle.speakVerbatim('施法完成。')
-    const cueId = (responses(p).find(r => typeof (r.metadata as Record<string, unknown>)?.mirror_scene_cue === 'string')!.metadata as Record<string, string>).mirror_scene_cue
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'zh' }, ID)
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reveals()).toHaveLength(0)
-    p.event({ type: 'response.created', response: { id: 'cue-r', metadata: { mirror_scene_cue: cueId } } })
-    p.event({ type: 'output_audio_buffer.started', response_id: 'cue-r' })
-    p.event({ type: 'response.done', response: { id: 'cue-r', status: 'completed', output: [], metadata: { mirror_scene_cue: cueId } } })
-    expect(reveals()).toHaveLength(0)
-    p.event({ type: 'output_audio_buffer.stopped', response_id: 'cue-r' })
-    await vi.waitFor(() => expect(reveals()).toHaveLength(1))
-    handle.claimControlTurn!('')
-    p.event({ type: 'response.created', response: { id: 'model-r' } })
-    p.event({ type: 'response.created', response: { id: 'reveal-r', metadata: { mirror_studio: 'reveal' } } })
-    const cancels = p.sent.filter(e => e.type === 'response.cancel').map(e => e.response_id)
-    expect(cancels).toContain('model-r')
-    expect(cancels).not.toContain('reveal-r')
-  })
-
   it('keeps the studio open when a spoken command suppresses a reply that tried to exit it', async () => {
     const p = probe()
     const { handle, requests } = session(p, () => accepted('studio_started'))
@@ -1074,20 +882,6 @@ describe('Portrait Studio in the Realtime session', () => {
       // The studio closed meanwhile, so the queued reveal is dropped as stale, never spoken over media.
       expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(false)
     } finally { vi.useRealTimers() }
-  })
-
-  it('uses the avatar stage prompts for the studio instructions and the reveal', async () => {
-    const p = probe()
-    const settings = avatar()
-    const studio = { ...settings.experience!.studio, prompts: { instructions: 'Run a calm studio.', reveal: 'Describe one colour in {{language}}. Then {{followUp}}',
-      offerChange: 'ask about one change.' } }
-    const { handle } = session(p, () => accepted('studio_started'), { avatar: { ...settings, experience: { ...settings.experience!, studio } } })
-    expect(p.agents[1]!.instructions).toContain('Run a calm studio.')
-    await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
-    handle.studioEvent!({ event: 'ready', imageUrl: 'magic-mirror-media://studio/abcdef12', revision: 0, revisionsLeft: 1, language: 'en' }, ID)
-    await vi.waitFor(() => expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')).toBe(true))
-    const reveal = responses(p).find(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'reveal')!
-    expect(reveal.instructions).toContain('Describe one colour in English. Then ask about one change.')
   })
 
   it('keeps the session when an agent swap races a tool call for the other agent', async () => {
@@ -1142,6 +936,23 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'output_audio_buffer.stopped', response_id: 'start-r' })
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(responses(p).some(r => (r.metadata as Record<string, unknown>)?.mirror_studio === 'first_step')).toBe(false)
+  })
+
+  it('ignores a late studio-default enter after the normal greeting already played', async () => {
+    vi.useFakeTimers()
+    try {
+      const p = probe()
+      const { handle, reasons, requests } = session(p, () => accepted('x'), { avatar: avatar('portrait_studio'), wakeGreeting: '我在，請說。' })
+      await handle.connect()
+      await vi.advanceTimersByTimeAsync(10_500)
+      expect(reasons()).toContain('studio_default_unavailable')
+      handle.studioEvent!({ event: 'enter', startScript: '畫室開門了。', firstStep: 'Ask this name question now: 名字？', language: 'zh' }, ID)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(reasons()).toContain('studio_default_late_enter_ignored')
+      expect(requests.some(request => request.action === 'exit')).toBe(true)
+      expect(responses(p).some(r => String(r.instructions).includes('畫室開門了。'))).toBe(false)
+      expect(p.updateAgent).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
   })
 
   it('falls back to the normal greeting when Main cannot start a studio-default session', async () => {

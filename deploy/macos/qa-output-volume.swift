@@ -12,8 +12,8 @@ func text(_ id: UInt32, _ s: AudioObjectPropertySelector) -> String {
   return value?.takeRetainedValue() as String? ?? ""
 }
 /// Calibrated normal levels (owner 2026-11-07): `ops/music-device/speaker-levels.json`,
-/// `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`; a speaker whose name
-/// starts with a key uses it, others the Jabra's. Missing or invalid file: 70%.
+/// e.g. `{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}`; a speaker whose name
+/// starts with a key uses it, others the Jabra's. Missing or invalid file: 70% (uncalibrated).
 /// Same rule in stop-state.swift, music-loop.swift and src/main/speaker-levels.ts.
 func normalLevel(_ name: String) -> Float32 {
   let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/MagicMirror/ops/music-device/speaker-levels.json")

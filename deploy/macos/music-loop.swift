@@ -24,10 +24,11 @@ func textProperty(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) 
 struct Output: Equatable { let id: AudioDeviceID; let uid: String; var wireless = false; var builtIn = false }
 func outputName(_ id: AudioDeviceID) -> String { textProperty(id, kAudioObjectPropertyName) ?? "" }
 /// Calibrated normal levels (owner 2026-11-07): `ops/music-device/speaker-levels.json`,
-/// `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`. The Jabra is the
+/// e.g. `{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}`. The Jabra is the
 /// reference; a speaker whose name starts with another key keeps that key's offset from the
 /// Jabra; unlisted speakers follow the Jabra. Missing or invalid file: every speaker 70%.
-/// Same rule in stop-state.swift, qa-output-volume.swift and src/main/speaker-levels.ts.
+/// Same rule (kept identical) in stop-state.swift, qa-output-volume.swift and src/main/speaker-levels.ts;
+/// tests/unit/speaker-levels.test.ts checks the copies match.
 struct SpeakerLevels {
   static let jabraName = "Jabra Speak2 75"
   var jabra: Float32 = 0.7, others: [(String, Float32)] = [], calibrated = false
@@ -302,8 +303,9 @@ final class Playback {
     }
     next.play()
   }
-  func trackFailed(_ id: Int) {
-    releaseItem(); emit("track_failed", ["id": id, "reason": "operator_loop_music_decode_failed"])
+  /// A stall is its own reason: Main tries a stalled song again, a decode failure never.
+  func trackFailed(_ id: Int, _ reason: String = "operator_loop_music_decode_failed") {
+    releaseItem(); emit("track_failed", ["id": id, "reason": reason])
   }
   func start() {
     setRoute(outputs())
@@ -324,7 +326,7 @@ final class Playback {
           self.reportedPlaying = true
           emit("playing", ["id": self.track, "outputs": self.route.count])
         }
-      } else if Date().timeIntervalSince(self.lastAdvance) > 12 { self.trackFailed(self.track) }
+      } else if Date().timeIntervalSince(self.lastAdvance) > 12 { self.trackFailed(self.track, "operator_loop_music_stalled") }
     }
   }
 }

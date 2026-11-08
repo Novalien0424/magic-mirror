@@ -3,7 +3,7 @@ import {
   studioFarewellIssue, studioWakePhraseIssue, STUDIO_FAILURE_KEYS, STUDIO_IMAGE_PROMPT_KEYS, STUDIO_PROMPT_STAGES, STUDIO_SCREEN_KEYS, studioFailureIssue, studioImageLineIssue,
   studioImagePromptIssue, studioNameFontIssue, studioPictureType, studioPromptIssue, studioScreenIssue,
   type StudioFailureKey, type StudioPictureType, type StudioImagePromptKey, type StudioLanguage, type StudioPromptStage, type StudioQuestion, type StudioScreenKey,
-  type StudioScreenView, type StudioSettings,
+  type StudioSettings,
 } from './portrait-studio'
 import { DEFAULT_STUDIO_OFFER } from './realtime-tools'
 
@@ -133,21 +133,11 @@ export function studioQuestionLine(question: Pick<StudioQuestion, 'slot' | 'imag
   return question.imageLine ?? config.imagePrompt.slots[question.slot]
 }
 
-/** Versioned on-glass text; captions are stored one per line. */
+/** Versioned on-glass text; captions are stored one per line. Retired from the glass; saved edits stay valid. */
 export const STUDIO_SCREEN_DEFAULTS: Readonly<Record<StudioLanguage, Readonly<Record<StudioScreenKey, string>>>> = config.screen
 for (const language of ['zh', 'en'] as const) for (const key of STUDIO_SCREEN_KEYS) {
   if (studioScreenIssue(key, config.screen[language][key])) throw new Error('invalid_portrait_studio_config')
 }
 export function studioScreenText(settings: Settings, key: StudioScreenKey, language: StudioLanguage): string {
   return settings?.screenText?.[key]?.[language] ?? STUDIO_SCREEN_DEFAULTS[language][key]
-}
-/** Everything the glass shows for one language, with the question counter already filled in. */
-export function studioScreenView(settings: Settings, language: StudioLanguage, index: number, count: number): StudioScreenView {
-  const text = (key: StudioScreenKey) => studioScreenText(settings, key, language)
-  return {
-    nameLabel: text('nameLabel'), confirmLabel: text('confirmLabel'), confirmQuestion: text('confirmQuestion'),
-    questionLabel: renderStudioText(text('questionLabel'), { index: String(index), count: String(count) }),
-    changePrefix: text('changePrefix'), changeHint: text('changeHint'), doneHint: text('doneHint'), finalHint: text('finalHint'),
-    photoHint: text('photoHint'), captions: text('captions').split('\n').map(line => line.trim()).filter(Boolean),
-  }
 }

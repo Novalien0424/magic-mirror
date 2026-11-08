@@ -75,6 +75,41 @@ describe('Codex backend portrait image provider', () => {
     expect(await pending).toMatchObject({ ok: false, code: 'studio_cancelled' })
   })
 
+  it('retries one transient status inside the deadline, never a plan limit, and only once in all', async () => {
+    const quick = { 'retry-after': '0' }
+    const run = (fetchImpl: ReturnType<typeof vi.fn>, reports: string[] = []) => createCodexImageProvider({ credentials: credentials(), settings,
+      fetchImpl: fetchImpl as unknown as typeof fetch, report: reason => reports.push(reason) }).generate({ prompt: 'p', quality: 'medium', picture: 'portrait' })
+    for (const status of [503, 504, 429, 408]) {
+      const flaky = vi.fn().mockResolvedValueOnce(new Response('busy', { status, headers: quick })).mockResolvedValueOnce(ok())
+      const reports: string[] = []
+      expect((await run(flaky, reports)).ok).toBe(true)
+      expect(flaky).toHaveBeenCalledTimes(2)
+      expect(reports).toEqual(['studio_image_status_retry'])
+    }
+    const down = vi.fn(async () => new Response('busy', { status: 502, headers: quick }))
+    expect(await run(down)).toMatchObject({ ok: false, code: 'studio_image_unavailable', httpStatus: 502 })
+    expect(down).toHaveBeenCalledTimes(2)
+    const limit = vi.fn(async () => new Response('{"error":{"code":"usage_limit_reached"}}', { status: 429 }))
+    expect(await run(limit)).toMatchObject({ ok: false, code: 'studio_quota_exhausted' })
+    expect(limit).toHaveBeenCalledOnce()
+    const longWait = vi.fn(async () => new Response('', { status: 429, headers: { 'retry-after': '120' } }))
+    expect(await run(longWait)).toMatchObject({ ok: false, code: 'studio_quota_exhausted' })
+    expect(longWait).toHaveBeenCalledOnce()
+    // A network retry already used the one retry.
+    const both = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValue(new Response('busy', { status: 503, headers: quick }))
+    expect(await run(both)).toMatchObject({ ok: false, code: 'studio_image_unavailable' })
+    expect(both).toHaveBeenCalledTimes(2)
+  })
+
+  it('classifies a 403 content block as a refusal, not a sign-in failure', () => {
+    expect(classifyImageFailure(403, '{"error":{"code":"moderation_blocked","message":"rejected by the safety system"}}')).toBe('studio_image_refused')
+    expect(classifyImageFailure(403, '{"error":{"type":"content_policy_violation"}}')).toBe('studio_image_refused')
+    // A CDN block page also says "blocked"; that is access, not content.
+    expect(classifyImageFailure(403, '<html>Sorry, you have been blocked</html>')).toBe('studio_auth_required')
+    expect(classifyImageFailure(403, '')).toBe('studio_auth_required')
+    expect(classifyImageFailure(408, '')).toBe('studio_image_timeout')
+  })
+
   it('recognizes image formats by signature', () => {
     expect(imageMimeType(PNG)).toBe('image/png')
     expect(imageMimeType(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg')

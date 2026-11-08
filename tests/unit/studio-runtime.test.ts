@@ -39,6 +39,11 @@ function completeCue(h: ReturnType<typeof harness>, action: 'paint' | 'deliver')
   const step = (h.events().filter(e => e.event === 'step').at(-1) as unknown as { step: { id: string } }).step
   h.runtime.handle({ action, stepId: step.id }, identity)
 }
+/** The visitor says the name, hears it read back and agrees. */
+function confirmName(h: ReturnType<typeof harness>, name: string, language: 'zh' | 'en' = 'zh') {
+  h.runtime.handle({ action: 'set_name', name, confirmed: false, language }, identity)
+  return h.runtime.handle({ action: 'set_name', name, confirmed: true, language }, identity)
+}
 afterEach(() => { vi.useRealTimers() })
 
 describe('portrait studio runtime', () => {
@@ -51,8 +56,10 @@ describe('portrait studio runtime', () => {
     let oldStep = first.step!.id
     for (const [index, candidate] of experience.guests.names.entries()) {
       const heard = h.runtime.handle({ action: 'set_name', name: '曉明', confirmed: false, language: 'zh' }, identity)
-      expect(heard.candidates?.[0]).toBe(candidate)
-      expect(heard.candidates?.length).toBeLessThanOrEqual(3)
+      // Only the candidate Main reads back leaves Main; the other matches stay there.
+      expect(heard.candidates).toEqual([candidate])
+      expect(heard.next).toContain(`「${candidate}」`)
+      for (const other of experience.guests.names.filter(name => name !== candidate)) expect(heard.next).not.toContain(other)
       expect(h.runtime.handle({ action: 'confirm_name', stepId: oldStep }, identity).code).toBe('studio_step_stale')
       oldStep = heard.step!.id
       if (index < 3) h.runtime.handle({ action: 'reject_name' }, identity)
@@ -84,7 +91,7 @@ describe('portrait studio runtime', () => {
   it('reports an unchanged provider edit as a failed revision and retains the original picture', async () => {
     const h = harness({ results: [okImage, okImage] })
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: '測試', confirmed: true, language: 'zh' }, identity)
+    confirmName(h, '測試')
     await answerAll(h); h.release()
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     h.runtime.handle({ action: 'revise', change: 'red wings' }, identity)
@@ -98,7 +105,7 @@ describe('portrait studio runtime', () => {
   it('keeps the Avatar visible through the last comment and drawing cue, and the picture visible through the revision cue', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: '測試', confirmed: true, language: 'zh' }, identity)
+    confirmName(h, '測試')
     for (let question = 1; question <= 4; question++) h.runtime.handle({ action: 'answer', question, answer: 'synthetic answer', language: 'zh' }, identity)
     expect(h.runtime.phase()).toBe('painting')
     expect(h.views().at(-1)).toMatchObject({ phase: 'question' })
@@ -131,7 +138,8 @@ describe('portrait studio runtime', () => {
     const english = harness({ experience: { ...defaultExperience(), studio: { ...defaultExperience().studio, askName: false,
       startScript: 'Welcome, traveller. Answer three questions.' } } })
     expect(english.runtime.start(identity, english.experience, 'console').next).toContain(english.experience.studio.questions[0]!.zh)
-    expect(english.views().at(-1)).toMatchObject({ language: 'zh', prompt: english.experience.studio.questions[0]!.zh })
+    expect(english.views().at(-1)).toMatchObject({ language: 'zh', phase: 'question' })
+    expect(english.views().at(-1)).not.toHaveProperty('prompt')
     const chinese = harness()
     expect(chinese.runtime.start(identity, chinese.experience, 'console').next).toContain('準備好的話就告訴我你的名字')
     expect(chinese.views().at(-1)).toMatchObject({ language: 'zh' })
@@ -179,7 +187,7 @@ describe('portrait studio runtime', () => {
   it('never puts the visitor name into the image prompt in nameplate mode, and keeps telemetry metadata-only', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)
+    confirmName(h, '王曉明')
     await answerAll(h)
     h.release()
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
@@ -210,7 +218,9 @@ describe('portrait studio runtime', () => {
       .toMatchObject({ code: 'studio_name_candidates', candidates: ['王曉明'] })
     expect(h.runtime.handle({ action: 'set_name', name: '陌生人', confirmed: true, language: 'zh' }, identity))
       .toMatchObject({ status: 'rejected', code: 'studio_name_not_listed' })
-    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_confirmed' })
+    // A "confirmed" name without its read-back is read back first.
+    expect(h.runtime.handle({ action: 'set_name', name: '林美玲', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_heard' })
+    expect(h.runtime.handle({ action: 'set_name', name: '林美玲', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_confirmed' })
   })
 
   it('rejects wrong steps, ignores duplicates and stale sessions', () => {
@@ -218,7 +228,7 @@ describe('portrait studio runtime', () => {
     h.runtime.start(identity, h.experience, 'visitor')
     expect(h.runtime.start(identity, h.experience, 'visitor')).toMatchObject({ status: 'ignored', code: 'studio_start_duplicate' })
     expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'x', language: 'zh' }, identity)).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
-    h.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
+    confirmName(h, 'Amy', 'en')
     h.runtime.handle({ action: 'answer', question: 1, answer: 'owl', language: 'en' }, identity)
     expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'owl', language: 'en' }, identity)).toMatchObject({ status: 'ignored', code: 'studio_answer_duplicate' })
     // A different answer to the question just recorded replaces it and the current question is asked again.
@@ -232,7 +242,7 @@ describe('portrait studio runtime', () => {
   it('reports failures in character, closes, and releases the idle hold; a failed change keeps the portrait', async () => {
     const failing = harness({ results: [{ ok: false, code: 'studio_quota_exhausted', elapsedMs: 5 }] })
     failing.runtime.start(identity, failing.experience, 'visitor')
-    failing.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
+    confirmName(failing, 'Amy', 'en')
     await answerAll(failing)
     failing.release()
     await vi.waitFor(() => expect(failing.runtime.isActive()).toBe(false))
@@ -241,7 +251,7 @@ describe('portrait studio runtime', () => {
 
     const edit = harness({ results: [okImage, { ok: false, code: 'studio_image_unavailable', elapsedMs: 5 }] })
     edit.runtime.start(identity, edit.experience, 'visitor')
-    edit.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
+    confirmName(edit, 'Amy', 'en')
     await answerAll(edit)
     edit.release()
     await vi.waitFor(() => expect(edit.runtime.phase()).toBe('reveal'))
@@ -254,7 +264,7 @@ describe('portrait studio runtime', () => {
   it('aborts painting on close and ignores a late image; unavailable provider rejects start', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' }, identity)
+    confirmName(h, 'Amy', 'en')
     await answerAll(h)
     expect(h.calls[0]!.signal?.aborted).toBe(false)
     h.runtime.close('studio_session_ended')
@@ -278,7 +288,7 @@ describe('portrait studio runtime', () => {
   it('closes when its session is replaced or ends, releasing the idle hold', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)
+    confirmName(h, '王曉明')
     await answerAll(h)
     h.runtime.syncIdentity(identity)
     expect(h.runtime.isActive()).toBe(true)
@@ -295,7 +305,7 @@ describe('portrait studio runtime', () => {
   it('gives transfer guidance while the final cue is playing', async () => {
     const h = harness()
     h.runtime.start(identity, h.experience, 'visitor')
-    h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)
+    confirmName(h, '王曉明')
     await answerAll(h)
     h.release()
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
@@ -327,7 +337,8 @@ describe('portrait studio runtime', () => {
     expect(started.next).toContain(base.studio.questions[0]!.zh)
     const view = parseStudioView(h.views().at(-1))!
     expect(view).toMatchObject({ phase: 'question', askName: false })
-    expect(view.text.questionLabel).toBe('第 1 關')
+    // Saved on-glass text stays valid but is no longer sent: the glass shows only progress, name and picture.
+    expect(view).not.toHaveProperty('text')
     expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
     expect(h.reports).toContain('studio_started_mode')
     await answerAll(h)
@@ -346,13 +357,137 @@ describe('portrait studio runtime', () => {
       const h = harness({ experience })
       h.release()
       expect(h.runtime.start(identity, experience, source).status).toBe('accepted')
-      h.runtime.handle({ action: 'set_name', name: 'Mira', confirmed: true, language: 'en' }, identity)
+      confirmName(h, 'Mira', 'en')
       await answerAll(h)
       await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
       h.runtime.handle({ action: 'finish' }, identity)
       await vi.advanceTimersByTimeAsync(45_000)
       completeCue(h, 'deliver')
       expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: source === 'mode' || source === 'session_default' ? 'farewell' : 'continue' })
+    }
+  })
+
+  it('confirms only agreement with the pending read-back and keeps the read-back spelling', () => {
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    // "Confirmed" before any read-back is a name to read back.
+    expect(h.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_heard' })
+    expect(h.runtime.phase()).toBe('confirm')
+    // The same name in another script agrees; the read-back spelling is kept.
+    expect(h.runtime.handle({ action: 'set_name', name: '王晓明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_confirmed' })
+    expect(h.views().at(-1)).toMatchObject({ phase: 'question', name: '王曉明' })
+    expect(h.reports.filter(r => r === 'studio_name_confirmed')).toHaveLength(1)
+
+    const denied = harness()
+    denied.runtime.start(identity, denied.experience, 'visitor')
+    denied.runtime.handle({ action: 'set_name', name: '王小明', confirmed: false, language: 'zh' }, identity)
+    denied.runtime.handle({ action: 'reject_name' }, identity)
+    // A denied name labelled confirmed is read back again, never accepted directly.
+    expect(denied.runtime.handle({ action: 'set_name', name: '王小明', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_heard' })
+    expect(denied.runtime.phase()).toBe('confirm')
+    // A different "confirmed" name during a read-back is a correction.
+    expect(denied.runtime.handle({ action: 'set_name', name: '李小華', confirmed: true, language: 'zh' }, identity)).toMatchObject({ code: 'studio_name_heard', next: expect.stringContaining('「李小華」') })
+    expect(denied.reports).not.toContain('studio_name_confirmed')
+  })
+
+  it('fails a painting the Mirror never starts, and fails only the change when a repaint never starts', async () => {
+    vi.useFakeTimers()
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    confirmName(h, '測試')
+    for (let i = 1; i <= 4; i++) h.runtime.handle({ action: 'answer', question: i, answer: `a${i}`, language: 'zh' }, identity)
+    await vi.advanceTimersByTimeAsync(PORTRAIT_STUDIO.journey.paintStartMs - 1)
+    expect(h.runtime.phase()).toBe('painting')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.calls).toHaveLength(0)
+    expect(h.runtime.isActive()).toBe(false)
+    expect(h.events().at(-1)).toMatchObject({ event: 'failed', code: 'studio_paint_timeout', keepPortrait: false, line: expect.stringContaining('畫布') })
+    expect(h.reports).toEqual(expect.arrayContaining(['studio_paint_timeout', 'studio_failed_paint_timeout']))
+
+    const repaint = harness()
+    repaint.release()
+    repaint.runtime.start(identity, repaint.experience, 'visitor')
+    confirmName(repaint, '測試')
+    await answerAll(repaint)
+    await vi.waitFor(() => expect(repaint.runtime.phase()).toBe('reveal'))
+    // A painting that started in time is never failed by the deadline.
+    await vi.advanceTimersByTimeAsync(PORTRAIT_STUDIO.journey.paintStartMs)
+    expect(repaint.reports).not.toContain('studio_paint_timeout')
+    repaint.runtime.handle({ action: 'revise', change: 'snow' }, identity)
+    await vi.advanceTimersByTimeAsync(PORTRAIT_STUDIO.journey.paintStartMs)
+    expect(repaint.runtime.phase()).toBe('keepsake')
+    expect(repaint.events()).toContainEqual(expect.objectContaining({ event: 'failed', code: 'studio_paint_timeout', keepPortrait: true }))
+    expect(repaint.calls).toHaveLength(1)
+  })
+
+  it('delivers a keepsake the Mirror never delivers, once, and reports the deadline', async () => {
+    vi.useFakeTimers()
+    const delivered = vi.fn()
+    const commands: { type: string; event?: unknown }[] = [], reports: string[] = []
+    const runtime = createStudioRuntime({ provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
+      dispatch: command => { commands.push(command as never); return true }, activity: vi.fn(), report: reason => reports.push(reason),
+      keepsakeSinks: [{ name: 'printer', deliver: delivered }] })
+    const h = { runtime, events: () => commands.filter(c => c.type === 'studio_event').map(c => c.event as { event: string }) } as unknown as ReturnType<typeof harness>
+    runtime.start(identity, defaultExperience(), 'mode')
+    confirmName(h, '測試')
+    await answerAll(h)
+    await vi.waitFor(() => expect(runtime.phase()).toBe('reveal'))
+    runtime.handle({ action: 'finish' }, identity)
+    await vi.advanceTimersByTimeAsync(PORTRAIT_STUDIO.journey.keepsakeMs - 1)
+    expect(delivered).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(delivered).toHaveBeenCalledOnce()
+    expect(reports).toEqual(expect.arrayContaining(['studio_keepsake_timeout', 'studio_completed']))
+    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'farewell' })
+    expect(runtime.isActive()).toBe(false)
+  })
+
+  it('reports an async keepsake sink failure without blocking the farewell', async () => {
+    const reports: string[] = [], commands: { type: string; event?: unknown }[] = []
+    const runtime = createStudioRuntime({ provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
+      dispatch: command => { commands.push(command as never); return true }, activity: vi.fn(), report: reason => reports.push(reason),
+      keepsakeSinks: [{ name: 'printer', deliver: async () => { throw new Error('offline') } }, { name: 'sync', deliver: () => { throw new Error('x') } }] })
+    const h = { runtime, events: () => commands.filter(c => c.type === 'studio_event').map(c => c.event as { event: string }) } as unknown as ReturnType<typeof harness>
+    runtime.start(identity, defaultExperience(), 'visitor')
+    confirmName(h, '測試')
+    await answerAll(h)
+    await vi.waitFor(() => expect(runtime.phase()).toBe('reveal'))
+    runtime.handle({ action: 'finish' }, identity)
+    completeCue(h, 'deliver')
+    expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'continue' })
+    await vi.waitFor(() => expect(reports).toEqual(expect.arrayContaining(['studio_keepsake_printer_failed', 'studio_keepsake_sync_failed'])))
+    expect(reports.join(' ')).not.toContain('offline')
+  })
+
+  it('replaces the last answer once, only while the step issued for it is current, and reports it', () => {
+    const h = harness()
+    h.runtime.start(identity, h.experience, 'visitor')
+    confirmName(h, 'Amy', 'en')
+    h.runtime.handle({ action: 'answer', question: 1, answer: 'owl', language: 'en' }, identity)
+    expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'dragon', language: 'en' }, identity)).toMatchObject({ code: 'studio_answer_replaced' })
+    expect(h.reports).toContain('studio_answer_replaced')
+    expect(h.runtime.handle({ action: 'answer', question: 1, answer: 'phoenix', language: 'en' }, identity)).toMatchObject({ status: 'ignored', code: 'studio_answer_duplicate' })
+    h.runtime.handle({ action: 'answer', question: 2, answer: 'forest', language: 'en' }, identity)
+    h.runtime.handle({ action: 'repeat' }, identity)
+    // After a later step (here a repeat), question 2's answer is no longer the one being commented on.
+    expect(h.runtime.handle({ action: 'answer', question: 2, answer: 'desert', language: 'en' }, identity)).toMatchObject({ status: 'ignored', code: 'studio_answer_duplicate' })
+    expect(h.reports.filter(r => r === 'studio_answer_replaced')).toHaveLength(1)
+  })
+
+  it('lets the operator end a visit: Studio-mode visits get the farewell, conversation visits return to it', async () => {
+    for (const [source, afterPortrait] of [['mode', 'farewell'], ['session_default', 'farewell'], ['visitor', 'continue']] as const) {
+      const h = harness({ experience: { ...defaultExperience(), defaultMode: 'portrait_studio' } })
+      expect(h.runtime.end('studio_operator_ended')).toBe(false)
+      h.runtime.start(identity, h.experience, source)
+      confirmName(h, '測試')
+      await answerAll(h)
+      expect(h.runtime.end('studio_operator_ended')).toBe(true)
+      expect(h.calls[0]!.signal?.aborted).toBe(true)
+      expect(h.events().at(-1)).toEqual({ event: 'keepsake_done', afterPortrait })
+      expect(h.events().some(e => e.event === 'closed')).toBe(false)
+      expect(h.reports).toContain('studio_operator_ended')
+      expect(h.views().at(-1)).toBeNull()
+      expect(h.activity.map(a => a.split(':')[0])).toEqual(['started', 'finished'])
     }
   })
 })

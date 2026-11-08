@@ -8,12 +8,12 @@ import {
 } from '../../../src/renderer/console/ExperiencesEditor'
 import {
   STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_NAME_FONT, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFarewellSpeech,
-  studioImagePromptDefault, studioScreenView,
+  studioImagePromptDefault, studioScreenText,
 } from '../../../src/shared/portrait-studio-config'
 import { buildPortraitPrompt } from '../../../src/shared/studio-image-prompt'
 import {
   STUDIO_LOGIN_COMMAND, STUDIO_USAGE_URL, StudioLiveControls, StudioStatusPanel, safePreviewUrl, studioActionText, studioAuthText,
-  studioFailureText, studioPhaseText,
+  studioFailureText, studioLastFailureText, studioPhaseText,
 } from '../../../src/renderer/console/StudioStatusPanel'
 import { FIELD_HELP } from '../../../src/renderer/console/field-help-text'
 import { NumberInput } from '../../../src/renderer/console/NumberInput'
@@ -274,6 +274,15 @@ describe('Portrait Studio status panel', () => {
     expect(missing).toContain('Not signed in')
     expect(missing).toContain(`<code class="studio-status__selectable">${STUDIO_LOGIN_COMMAND}</code>`)
     expect(missing).toContain('Not recorded')
+    const failure = { code: 'studio_quota_exhausted', at: '2026-11-08T10:00:00.000Z', pausedUntil: '2026-11-08T10:15:00.000Z' }
+    const paused = renderToStaticMarkup(React.createElement(StudioStatusPanel, { bridge: null, initialStatus: { ...base, lastImageFailure: failure } }))
+    expect(paused).toContain('Last picture failure')
+    expect(paused).toContain('image limit is reached')
+    expect(paused).toContain('New visits fall back to conversation until')
+    expect(paused).not.toContain('studio_quota_exhausted')
+    expect(studioLastFailureText({ code: 'studio_image_unavailable', at: failure.at })).not.toContain('fall back')
+    expect(studioLastFailureText({ code: 'studio_new_thing', at: failure.at })).toContain('studio_new_thing')
+    expect(studioLastFailureText(undefined)).toBe('')
   })
 
   it('translates every image failure code and live action', () => {
@@ -285,6 +294,10 @@ describe('Portrait Studio status panel', () => {
     expect(studioFailureText('studio_unknown_thing')).toContain('studio_unknown_thing')
     expect(studioActionText('studio_requires_active_session')).toMatch(/Start a conversation first/)
     expect(studioActionText('studio_operator_exit')).toMatch(/Back to conversation/)
+    expect(studioActionText('studio_operator_ended')).toMatch(/visit ended/)
+    expect(studioActionText('studio_paused_quota_exhausted')).toMatch(/image limit/)
+    expect(studioActionText('studio_paused_auth_required')).toMatch(/Sign in again/)
+    expect(studioFailureText('studio_paint_timeout')).not.toMatch(/studio_/)
     expect(studioPhaseText({ active: true, phase: 'painting' })).toBe('Painting')
     expect(studioPhaseText({ active: false })).toBe('Not running')
     expect(studioPhaseText(null)).toBe('Status unknown')
@@ -394,8 +407,9 @@ describe('Interactive Studio tuning', () => {
     experience = setScreenText(experience, 'captions', 'en', 'Shuffling the cards…\nDrawing your fate…')
     experience = setFailureLine(experience, 'default', 'zh', '牌卡出了點狀況，我們聊聊吧。')
     expect(parseAvatarExperience(experience)).toEqual(experience)
-    expect(studioScreenView(experience.studio, 'zh', 2, 4).questionLabel).toBe('第 2 關')
-    expect(studioScreenView(experience.studio, 'en', 1, 4).captions).toEqual(['Shuffling the cards…', 'Drawing your fate…'])
+    // Retired from the glass, saved on-glass text still loads and resolves.
+    expect(studioScreenText(experience.studio, 'questionLabel', 'zh')).toBe('第 {{index}} 關')
+    expect(studioScreenText(experience.studio, 'captions', 'en')).toBe('Shuffling the cards…\nDrawing your fate…')
     expect(experience.studio.failureLines?.default?.en).toBe("Something went wrong with the canvas. Let's talk instead.")
     expect(sessionExperience(experience).studio).not.toHaveProperty('screenText')
     expect(sessionExperience(experience).studio).not.toHaveProperty('failureLines')

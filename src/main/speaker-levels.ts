@@ -1,10 +1,11 @@
 /**
  * Calibrated normal speaker levels (owner 2026-11-07), machine-local
- * `ops/music-device/speaker-levels.json`: `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`.
+ * `ops/music-device/speaker-levels.json`, e.g. `{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}`.
  * The Jabra is the reference. A speaker whose name starts with another key (case-insensitive,
  * longest key first) keeps that key's offset from the Jabra; unlisted speakers follow the Jabra.
  * A missing or invalid file means every speaker 70% (uncalibrated). Same rule in the native
- * helpers stop-state.swift, music-loop.swift and qa-output-volume.swift.
+ * helpers stop-state.swift, music-loop.swift and qa-output-volume.swift (each compiled alone, so
+ * the copies stay; tests/unit/speaker-levels.test.ts checks they match).
  */
 export const JABRA_OUTPUT = 'Jabra Speak2 75'
 export const SPEAKER_LEVEL_FLOOR = 0.05

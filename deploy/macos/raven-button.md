@@ -117,8 +117,8 @@ while remaining files prepare; files over 200 MB are abnormal and skipped. The
 operator supplies files through shared `MusicLoop`, never a command argument.
 A queued STOP cancels this command's
 acknowledgement wait within a poll interval, allowing ordinary global shutdown to
-cancel a cloud preparation. A cancelled MusicLoop or Dance start logs `music_cancelled`
-or `dance_cancelled` and plays no chime. Main releases the
+cancel a cloud preparation. A cancelled MusicLoop, Dance or VIDEO LOOP start logs `music_cancelled`,
+`dance_cancelled` or `loop_cancelled` and plays no chime. Main releases the
 native child on mode change/quit; stdin EOF and parent loss also release it.
 
 ### Main acknowledgement mailbox

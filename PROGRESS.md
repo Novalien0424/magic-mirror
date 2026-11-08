@@ -3,11 +3,24 @@
 ## Current delivery
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
-Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08: `stopped`, `tv_standby`,
-`blackout_covered`; then silent device checks, last stop about 10:00); speakers at the defaults (Jabra 80%
-in normal playback and in its call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
+Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA apps,
+the last one ended about 12:30); speakers at the defaults (Jabra 80% in normal playback and in its
+call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
+`stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
 [DECISIONS](DECISIONS.md) (2026-11-07 entries). Previous handoff:
 [archived 11-01](docs/archive/progress-before-online-songs-2026-11-07.md).
+
+Audit and fixes 11-08 (owner: "clean up; audit loops, Raven and Studio; fix everything; commit,
+push, deploy"):
+
+- 292 MB of old test artifacts moved to the Trash; a leaking unit test fixed.
+- Audit fixes across Raven (farewell talked over, online-song fallback, searched-only YouTube),
+  the loops (START after a failed loop, reload re-arm, Airfoil retries, player restart, Dance speaker
+  reset) and Studio (Main deadlines, per-visit settings, name confirmation, image retry and pause,
+  abandoned visit, End this visit).
+- Rulings: DECISIONS 2026-11-08. Report:
+  [audit fixes](docs/testing/audit-fixes-2026-11-08.md).
+- Live QA at 1%: all pass except `youtube_modes` (the model plays an explicit loop request as once; TODO).
 
 Fixed 11-08 (owner: Raven started very quiet and STOP did not help): the Jabra has a separate
 call-path volume, set only during a call. The 11-07 night's 1% sound work had left it muted, and

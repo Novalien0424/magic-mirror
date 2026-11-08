@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoSettings, type LoopVideoView, type OperatorLoopReport, type OperatorLoopSnapshot } from '../shared/operator-loop'
 const writeFileAtomic = require('write-file-atomic') as { sync(path: string, value: string, options?: { mode: number }): void }
+/** A recovered loop that has played this long without trouble gets its one automatic reload back. */
+export const OPERATOR_LOOP_HEALTHY_MS = 5 * 60_000
 
 /** One appliance playback owner. Avatar settings and conversations are never saved here. */
 export function createOperatorLoop(input: {
@@ -14,6 +16,8 @@ export function createOperatorLoop(input: {
   smoothness?(wraps: number, dropped: number): void
   music?: { start(): Promise<boolean>; stop(): Promise<void> }
   dance?: { start(): Promise<boolean>; stop(): Promise<void> }
+  /** Every speaker back to its normal level (Dance sets its own volume; runs once after leaving Dance). */
+  resetSpeakers?(): Promise<void>
 }) {
   let settings = { ...DEFAULT_LOOP_VIDEO }, intent: OperatorLoopSnapshot['mode'] = 'avatar'
   let loadFailed = false
@@ -33,10 +37,26 @@ export function createOperatorLoop(input: {
   let setup: Promise<void> = Promise.resolve()
   let released: { generation: number; resolve(): void } | null = null
   let releasedGeneration = -1
+  // Only a launched generation can have a mounted player that reports `released`; a loop that
+  // failed before launch (input release, validation) renders black and never reports.
+  let launchedGeneration = -1
+  let healthySince: number | undefined
+  // A VIDEO LOOP start that kept the running music while it validates; a repeat press abandons it.
+  let cancelPlay: (() => void) | undefined
+  // Dance may have changed the speaker volume; leaving it resets them once.
+  let danceVolume = false
   let reportedReason = ''
   const persist = () => {
     writeFileAtomic.sync(input.path, JSON.stringify({ version: 1, settings, intent: intent === 'dance' || intent === 'black' ? 'avatar' : intent }), { mode: 0o600 })
     loadFailed = false
+  }
+  // The mode file only restores a mode after a crash: a failed write never fails the mode change.
+  const persistIntent = () => { try { persist() } catch { input.report('operator_loop_save_failed') } }
+  // After the Dance player has exited (a killed helper skips its own volume restore).
+  const restoreSpeakers = async () => {
+    if (!danceVolume) return
+    danceVolume = false
+    try { await input.resetSpeakers?.() } catch { input.report('operator_loop_dance_volume_restore_failed') }
   }
   const publish = (patch: Partial<OperatorLoopSnapshot>) => {
     snapshot = { ...snapshot, ...patch }
@@ -52,8 +72,9 @@ export function createOperatorLoop(input: {
   let lastWraps = 0, lastDropped = 0
   const launch = (recovering: boolean) => {
     lastVideo = lastAudio = lastFrames = undefined; lastWraps = 0; lastDropped = 0
-    reportedReason = ''
+    reportedReason = ''; healthySince = undefined
     publish({ mode: 'loop', status: recovering ? 'recovering' : 'preparing', reason: recovering ? 'operator_loop_reloading' : 'operator_loop_loading', generation: snapshot.generation + 1 })
+    launchedGeneration = snapshot.generation
     watch()
   }
   const recover = (reason: string) => {
@@ -88,26 +109,30 @@ export function createOperatorLoop(input: {
       const musicReleased = keepMusic ? Promise.resolve() : stopAudio()
       void musicReleased.catch(() => undefined)
       const chosen = { ...settings }
-      let resolve!: (value: boolean) => void
+      let resolve!: (value: boolean) => void, abandoned = false
+      const stale = () => disposed || abandoned || run !== revision
+      cancelPlay = keepMusic ? () => { abandoned = true; abandonValidation?.() } : undefined
       const promise = new Promise<boolean>(done => { resolve = done })
       pending = { promise, resolve }
       void queue(async () => {
         try {
+          if (stale()) return
           await musicReleased
           const valid = await new Promise<boolean>((resolve, reject) => {
             abandonValidation = () => resolve(false)
             input.validate(chosen).then(resolve, reject)
           }).finally(() => { abandonValidation = undefined })
           if (!valid) throw Error('operator_loop_media_unavailable')
-          if (disposed || run !== revision) return
-          intent = 'loop'; persist()
+          if (stale()) return
+          intent = 'loop'; persistIntent()
           await stopAudio()
+          await restoreSpeakers()
           // Inhibit wake before ending Realtime so sleep cannot reacquire a mic.
           await input.suspendAvatar()
-          if (disposed || run !== revision) return
+          if (stale()) return
           snapshot.settings = chosen; retry = 0; launch(false)
         } catch (error) {
-          if (disposed || run !== revision) return
+          if (stale()) return
           const reason = error instanceof Error && /^operator_loop_[a-z0-9_]+$/.test(error.message) ? error.message : 'operator_loop_start_failed'
           settle(false)
           if (intent === 'loop') fail(reason)
@@ -118,8 +143,14 @@ export function createOperatorLoop(input: {
     },
     /** `force` restarts a running MusicLoop (folder key); a plain repeat press keeps playback. */
     async normal(target: 'avatar' | 'desktop' | 'music' | 'dance' | 'black' = 'avatar', force = false): Promise<boolean> {
-      if (!force && (target === 'music' || target === 'dance') && intent === target && snapshot.mode === target && snapshot.generation > 0
-        && ['playing', 'preparing'].includes(snapshot.status)) return true
+      const repeat = !force && (target === 'music' || target === 'dance') && intent === target && snapshot.mode === target && snapshot.generation > 0
+        && ['playing', 'preparing'].includes(snapshot.status)
+      // The latest press wins: a VIDEO LOOP start still validating behind this playback is abandoned.
+      // One that already cancelled a pending start (no playback kept) falls through to a restart.
+      if (repeat && (!pending || cancelPlay)) {
+        if (pending) { cancelPlay?.(); cancelPlay = undefined; settle(false); input.report('operator_loop_start_superseded') }
+        return true
+      }
       const run = ++revision
       clear(); settle(false); abandonValidation?.()
       // Cancel a slow native start/cloud copy before entering the transition queue.
@@ -134,10 +165,12 @@ export function createOperatorLoop(input: {
         if (target !== 'avatar') intent = target
         try {
           await musicReleased
+          if (target !== 'dance') await restoreSpeakers()
           if (target !== 'avatar') await input.suspendAvatar()
           if (disposed || run !== revision) return
-          // Keep the input gate closed until both old playback elements release.
-          const release = visibleLoop && oldGeneration > 0 && releasedGeneration !== oldGeneration ? new Promise<void>((resolve, reject) => {
+          // Keep the input gate closed until both old playback elements release. Only a launched
+          // generation has a player; waiting for one that never mounted would fail every START.
+          const release = visibleLoop && oldGeneration > 0 && launchedGeneration === oldGeneration && releasedGeneration !== oldGeneration ? new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => { released = null; reject(Error('operator_loop_release_timeout')) }, 4000)
             released = { generation: oldGeneration, resolve: () => { clearTimeout(timeout); released = null; resolve() } }
           }) : Promise.resolve()
@@ -145,7 +178,8 @@ export function createOperatorLoop(input: {
           publish({ mode: target, status: audio ? 'preparing' : 'idle', reason: audio ? `operator_loop_${target}_preparing` : target === 'desktop' ? 'operator_loop_desktop' : 'operator_loop_stopped', generation: oldGeneration + 1 })
           await release
           if (disposed || run !== revision) return
-          intent = target; persist()
+          intent = target; persistIntent()
+          if (target === 'dance') danceVolume = true
           if (target === 'music' || target === 'dance') {
             // Acknowledge mode ownership, not playback. Downloads must not hold
             // the operator mailbox/transition queue hostage for minutes or hours.
@@ -169,7 +203,6 @@ export function createOperatorLoop(input: {
     desktop(): Promise<boolean> { return controller.normal('desktop') },
     music(restart = false): Promise<boolean> { return controller.normal('music', restart) },
     dance(): Promise<boolean> { return controller.normal('dance') },
-    black(): Promise<boolean> { return controller.normal('black') },
     danceFailed(reason: string) { if (!disposed && intent === 'dance') publish({ status: 'failed', reason }) },
     musicFailed(reason: string) {
       if (!disposed && intent === 'music') publish({ status: 'failed', reason })
@@ -213,10 +246,14 @@ export function createOperatorLoop(input: {
       }
       if (advanced) {
         watch()
-        if (snapshot.status !== 'playing') { publish({ status: 'playing', reason: 'operator_loop_playing' }); settle(true) }
+        if (snapshot.status !== 'playing') { publish({ status: 'playing', reason: 'operator_loop_playing' }); settle(true); healthySince = Date.now() }
+        // A stall hours after one recovery gets its own automatic reload, not a black failed loop.
+        else if (retry > 0 && healthySince !== undefined && Date.now() - healthySince >= OPERATOR_LOOP_HEALTHY_MS) {
+          retry = 0; input.report('operator_loop_recovery_rearmed')
+        }
       }
     },
-    clearIntent() { intent = 'avatar'; try { persist() } catch { input.report('operator_loop_save_failed') } },
+    clearIntent() { intent = 'avatar'; persistIntent() },
     dispose() {
       disposed = true; ++revision; clear(); settle(false); abandonValidation?.(); released?.resolve()
       void stopAudio().catch(() => input.report('operator_loop_music_stop_failed'))

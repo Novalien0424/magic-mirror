@@ -366,7 +366,7 @@ export const RAVEN_CONVERSATION_SCENARIOS: readonly RavenConversationScenario[] 
       turn({ id: 'youtube_loop', language: 'zh-TW',
         visitorText: '{{cloudSearchPhrase}}，循環播放 {{youtubeQuery}} 這部影片。',
         criteria: [criterion('command_intent', 'An explicit loop request: search online and loop an actual returned result. Do not promise playback or sleep independently.')],
-        expected: { toolRoutes: [['play_youtube'], ['search_youtube', 'play_youtube'], ['find_media', 'search_youtube', 'play_youtube']], source: 'youtube', mode: 'loop', reply: 'silent', qualityDimensions: [] },
+        expected: { toolRoutes: [['search_youtube', 'play_youtube'], ['find_media', 'search_youtube', 'play_youtube'], ['play_youtube', 'search_youtube', 'play_youtube']], source: 'youtube', mode: 'loop', reply: 'silent', qualityDimensions: [] },
         checks: ['source_scope', 'mode', 'selection', 'playback_started', 'loop_boundary', 'mic_release_before_acquire'] }),
       turn({ id: 'after_youtube_loop', language: 'zh-TW', before: 'operator_stop_loop', visitorText: '我們繼續聊吧。我今晚只想放鬆，有什麼簡單的建議？',
         criteria: [criterion('media_return', 'After the operator stops the loop and Active is restored, respond naturally to relaxing; no unsolicited new playback.')],

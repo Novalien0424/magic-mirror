@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt, studioScreenView } from '../../shared/portrait-studio-config'
+import { PORTRAIT_STUDIO, renderStudioText, studioFailureLine, studioPrompt } from '../../shared/portrait-studio-config'
 import { STUDIO_ANSWER_MAX, studioPictureType, studioStartLanguage } from '../../shared/portrait-studio'
 import { literalSpeechText, speechScriptText } from '../../shared/speech-script'
 import type {
@@ -16,10 +16,10 @@ export type StudioStartSource = 'visitor' | 'session_default' | 'console' | 'mod
 
 /**
  * Output seam for the finished picture. The deferred printer is a no-op today.
- * Every final picture is handed to each sink after the transfer cue plays; a failing sink only
- * reports `studio_keepsake_<name>_failed` and never blocks the farewell.
+ * Every final picture is handed to each sink after the transfer cue plays; a failing sink (thrown or
+ * rejected) only reports `studio_keepsake_<name>_failed` and never blocks or delays the farewell.
  */
-export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void }
+export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void | Promise<void> }
 
 interface StoredImage { readonly bytes: Buffer; readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp' }
 interface Run {
@@ -37,15 +37,20 @@ interface Run {
   revision: number
   change?: string
   imageId?: string
-  holdEndsAt?: number
   abort?: AbortController
-  holdTimer?: ReturnType<typeof setTimeout>
   activityHeld: boolean
   photo?: StoredImage
   step?: StudioStep
   stepSequence: number
   silenceTimer?: ReturnType<typeof setTimeout>
+  /** Main's own deadline for a step only the Mirror can complete (start painting, deliver the keepsake). */
+  deadlineTimer?: ReturnType<typeof setTimeout>
   delivered: boolean
+  /** Any visitor reply or speech this visit; a visit without one ends instead of painting an empty mirror. */
+  heard: boolean
+  abandoned: boolean
+  /** The step issued right after the last recorded answer: only then may that answer be corrected. */
+  replaceable?: string
 }
 
 // Technical guidance stays versioned; operator-editable stage prompts come from the run's avatar.
@@ -63,6 +68,8 @@ export function createStudioRuntime(input: {
   dispatch(command: { type: 'studio_view'; view: StudioView | null } | { type: 'studio_event'; event: StudioSessionEvent; identity: StudioIdentity }): boolean
   activity(kind: 'started' | 'finished', runId: string): void
   report(reason: string, status?: 'info' | 'degraded', timingMs?: number): void
+  /** Each provider outcome of a run (metadata only); cancellations are not outcomes. */
+  imageResult?(result: { ok: true } | { ok: false; code: StudioImageFailure }): void
   stopMedia?(): Promise<void> | void
   keepsakeSinks?: readonly KeepsakeSink[]
   now?: () => number
@@ -79,45 +86,71 @@ export function createStudioRuntime(input: {
   const currentStep = (r: Run): string => r.phase === 'confirm' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.confirm, { name: r.name })
     : r.phase === 'name' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.name, { question: speechScriptText(nameQuestion(r)) })
     : r.phase === 'question' ? renderStudioText(PORTRAIT_STUDIO.journey.steps.question, { index: String(r.answers.length + 1), count: String(r.experience.studio.questions.length), question: speechScriptText(questionText(r, r.answers.length)) })
-    : r.phase === 'reveal' ? PORTRAIT_STUDIO.journey.steps.reveal : r.phase === 'keepsake' ? PORTRAIT_STUDIO.journey.steps.keepsake : PORTRAIT_STUDIO.journey.steps.painting
+    : r.phase === 'reveal' ? PORTRAIT_STUDIO.journey.steps.reveal
+    : r.phase === 'keepsake' ? PORTRAIT_STUDIO.journey.steps[r.abandoned ? 'abandoned' : 'keepsake'] : PORTRAIT_STUDIO.journey.steps.painting
 
+  // Only what the glass renders: answers, questions and the change request stay out of the view.
   function view(r: Run): StudioView {
-    const count = r.experience.studio.questions.length
     return {
-      phase: r.phase, language: r.language, questionCount: count, answered: r.answers.length,
-      ...(r.phase === 'name' ? { prompt: speechScriptText(nameQuestion(r)) } : r.phase === 'question' ? { prompt: speechScriptText(questionText(r, r.answers.length)) } : {}),
+      phase: r.phase, language: r.language, questionCount: r.experience.studio.questions.length, answered: r.answers.length,
       ...(r.name && r.phase !== 'name' ? { name: r.name } : {}),
-      chips: r.answers.map(answer => answer.slice(0, 24)),
-      ...(r.change && r.phase === 'revising' ? { change: r.change.slice(0, 120) } : {}),
       ...(r.imageId && ['reveal', 'revising', 'keepsake'].includes(r.phase) ? { imageUrl: `magic-mirror-media://studio/${r.imageId}` } : {}),
       lettering: r.experience.studio.nameLettering, picture: studioPictureType(r.experience.studio), revisionsLeft: r.revisionsLeft,
-      ...(r.holdEndsAt ? { holdEndsAt: r.holdEndsAt } : {}),
-      askName: asksName(r.experience), text: studioScreenView(r.experience.studio, r.language, Math.min(r.answers.length + 1, count), count),
+      askName: asksName(r.experience),
     }
   }
   const publish = (r: Run) => {
+    if (run !== r) return
+    // An abandoned visit leaves the glass; only its closing line is spoken.
+    if (r.abandoned) { input.dispatch({ type: 'studio_view', view: null }); return }
     // The last answer/revision queues speech first. Keep the existing visitor
     // view until the renderer acknowledges completed drawing-cue playback.
-    if (run === r && (!['painting', 'revising'].includes(r.phase) || r.abort)) input.dispatch({ type: 'studio_view', view: view(r) })
+    if (!['painting', 'revising'].includes(r.phase) || r.abort) input.dispatch({ type: 'studio_view', view: view(r) })
   }
   // Painting and transfer own their completion, independently of conversation idle.
   const hold = (r: Run) => { if (!r.activityHeld) { r.activityHeld = true; input.activity('started', r.id) } }
   const release = (r: Run) => { if (r.activityHeld) { r.activityHeld = false; input.activity('finished', r.id) } }
   const stopSilence = (r: Run) => { clearTimeout(r.silenceTimer); r.silenceTimer = undefined }
+  const stopDeadline = (r: Run) => { clearTimeout(r.deadlineTimer); r.deadlineTimer = undefined }
+  const afterPortrait = (r: Run) => r.source === 'mode' || r.source === 'session_default' ? 'farewell' as const : 'continue' as const
   function step(r: Run, extra: Pick<StudioStep, 'comment' | 'silent'> = {}, dispatch = true): StudioStep {
     stopSilence(r)
+    stopDeadline(r)
     const text = lines(r)
     const spokenName = /^[A-Za-z -]+$/.test(r.name) ? [...r.name].join(' ') : literalSpeechText(r.name)
     const speech = r.phase === 'name' ? nameQuestion(r)
       : r.phase === 'confirm' ? renderStudioText(text.confirm, { name: spokenName })
       : r.phase === 'question' ? (r.name && r.answers.length === 0 ? renderStudioText(text.address, { name: literalSpeechText(r.name) }) : '') + questionText(r, r.answers.length)
       : r.phase === 'painting' ? text.painting : r.phase === 'revising' ? text.repainting
-      : r.phase === 'reveal' ? text.reveal + (r.revisionsLeft > 0 ? `[pause=1s]${text.offerChange}` : '') : text.transfer
+      : r.phase === 'reveal' ? text.reveal + (r.revisionsLeft > 0 ? `[pause=1s]${text.offerChange}` : '')
+      : r.abandoned ? studioFailureLine('abandoned', r.language, r.experience.studio) : text.transfer
     r.step = { id: `${r.id}-${++r.stepSequence}`, phase: r.phase, speech, guidance: currentStep(r), language: r.language,
       ...(r.phase === 'reveal' ? { final: r.revisionsLeft <= 0 } : {}), ...extra }
     publish(r)
     if (dispatch) input.dispatch({ type: 'studio_event', event: { event: 'step', step: r.step }, identity: r.identity })
+    armDeadline(r)
     return r.step
+  }
+  /**
+   * The Mirror starts the painting and delivers the keepsake after their cues. A lost renderer step
+   * must not keep the mirror awake until the session rollover: Main fails or finishes it itself.
+   */
+  function armDeadline(r: Run): void {
+    const stepId = r.step?.id
+    if ((r.phase === 'painting' || r.phase === 'revising') && !r.abort) {
+      r.deadlineTimer = setTimeout(() => {
+        r.deadlineTimer = undefined
+        if (run !== r || r.step?.id !== stepId || r.abort) return
+        fail(r, 'studio_paint_timeout', r.phase === 'revising')
+      }, PORTRAIT_STUDIO.journey.paintStartMs)
+    } else if (r.phase === 'keepsake') {
+      r.deadlineTimer = setTimeout(() => {
+        r.deadlineTimer = undefined
+        if (run !== r || r.delivered) return
+        input.report('studio_keepsake_timeout', 'degraded')
+        deliver(r)
+      }, PORTRAIT_STUDIO.journey.keepsakeMs)
+    }
   }
   function armSilence(r: Run): void {
     if (r.silenceTimer || !['name', 'confirm', 'question', 'reveal'].includes(r.phase)) return
@@ -130,8 +163,11 @@ export function createStudioRuntime(input: {
         r.name = PORTRAIT_STUDIO.journey.fallbackName
         r.phase = 'question'
         step(r)
-      } else if (r.phase === 'question') recordAnswer(r, PORTRAIT_STUDIO.journey.unanswered, true)
-      else if (r.phase === 'reveal') startKeepsake(r, true)
+      } else if (r.phase === 'question') {
+        // Owner 2026-11-08: nobody gave a name or answered the first question, so nobody is there.
+        if (!r.heard && r.answers.length === 0) { r.abandoned = true; input.report('studio_abandoned'); startKeepsake(r) }
+        else recordAnswer(r, PORTRAIT_STUDIO.journey.unanswered, true)
+      } else if (r.phase === 'reveal') startKeepsake(r, true)
     }, PORTRAIT_STUDIO.journey.silenceMs)
     input.report('studio_wait_started')
   }
@@ -139,7 +175,8 @@ export function createStudioRuntime(input: {
     r.answers.push(answer.trim().slice(0, STUDIO_ANSWER_MAX))
     input.report(silent ? 'studio_answer_unanswered' : 'studio_answer_recorded')
     if (r.answers.length === r.experience.studio.questions.length) r.phase = 'painting'
-    step(r, silent ? { silent: true } : { comment: answer })
+    const next = step(r, silent ? { silent: true } : { comment: answer })
+    r.replaceable = r.phase === 'question' ? next.id : undefined
   }
 
   function close(reason: string, notify = true): void {
@@ -147,8 +184,8 @@ export function createStudioRuntime(input: {
     if (!r) return
     run = null
     r.abort?.abort()
-    clearTimeout(r.holdTimer)
     stopSilence(r)
+    stopDeadline(r)
     images.clear()
     r.photo = undefined
     // Always release the idle-timer hold, on every exit path.
@@ -159,6 +196,7 @@ export function createStudioRuntime(input: {
   }
 
   function fail(r: Run, code: StudioImageFailure, keepPortrait: boolean): void {
+    stopDeadline(r)
     if (run !== r) return
     input.report(code, 'degraded')
     if (keepPortrait && r.imageId) {
@@ -178,17 +216,26 @@ export function createStudioRuntime(input: {
   function deliver(r: Run): StudioReply {
     if (r.delivered) return reply('ignored', 'studio_finish_duplicate')
     r.delivered = true
+    stopDeadline(r)
     const image = r.imageId ? images.get(r.imageId) : undefined
     if (image) for (const sink of input.keepsakeSinks ?? []) {
-      try { sink.deliver({ bytes: image.bytes, mimeType: image.mimeType }) } catch { input.report(`studio_keepsake_${sink.name}_failed`, 'degraded') }
+      const failed = () => input.report(`studio_keepsake_${sink.name}_failed`, 'degraded')
+      try { void Promise.resolve(sink.deliver({ bytes: image.bytes, mimeType: image.mimeType })).catch(failed) } catch { failed() }
     }
-    input.report('studio_transfer_completed')
+    if (!r.abandoned) input.report('studio_transfer_completed')
     // Studio-mode visits end with the farewell and Dormant; a studio started inside a
     // conversation (visitor or Console) returns to it (DECISIONS 2026-10-18, owner 2026-10-31).
-    const afterPortrait = r.source === 'mode' || r.source === 'session_default' ? 'farewell' : 'continue'
-    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait }, identity: r.identity })
-    close('studio_completed', false)
+    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: afterPortrait(r) }, identity: r.identity })
+    close(r.abandoned ? 'studio_abandoned_ended' : 'studio_completed', false)
     return reply('accepted', 'studio_delivered')
+  }
+  /** Operator ending: the visit finishes as if completed (Studio farewell in Studio mode), without a keepsake. */
+  function end(reason: string): boolean {
+    const r = run
+    if (!r) return false
+    input.dispatch({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: afterPortrait(r) }, identity: r.identity })
+    close(reason, false)
+    return true
   }
 
   async function paint(r: Run, kind: 'generate' | 'edit'): Promise<void> {
@@ -196,6 +243,7 @@ export function createStudioRuntime(input: {
     if (!provider) { fail(r, 'studio_image_unavailable', kind === 'edit'); return }
     const abort = new AbortController()
     r.abort = abort
+    stopDeadline(r)
     hold(r)
     publish(r)
     const quality = r.experience.studio.quality, picture = studioPictureType(r.experience.studio)
@@ -212,6 +260,7 @@ export function createStudioRuntime(input: {
         : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return
+    try { input.imageResult?.(result.ok ? { ok: true } : { ok: false, code: result.code }) } catch { /* diagnostics only */ }
     if (!result.ok) { fail(r, result.code, kind === 'edit'); return }
     if (kind === 'edit' && previous?.bytes.equals(result.image)) {
       input.report('studio_revision_unchanged', 'degraded')
@@ -236,13 +285,14 @@ export function createStudioRuntime(input: {
     if (run) close('studio_session_replaced')
     // Application code owns authorization: a renderer cannot claim a default it was not given.
     if (source === 'visitor' && !experience.visitorMayRequest || source === 'session_default' && experience.defaultMode !== 'portrait_studio') {
-      input.report('studio_start_not_enabled', 'degraded')
+      input.report('studio_not_enabled', 'degraded')
       return reply('rejected', 'studio_not_enabled', studioPrompt(experience.studio, 'unavailable'))
     }
     if (!input.provider()) { input.report('studio_unavailable', 'degraded'); return reply('rejected', 'studio_unavailable', studioPrompt(experience.studio, 'unavailable')) }
     void Promise.resolve(input.stopMedia?.()).catch(() => input.report('studio_media_stop_failed', 'degraded'))
     const r: Run = { id: `studio-${randomUUID()}`, identity, experience: structuredClone(experience), source, language: studioStartLanguage(experience.studio.startScript), phase: asksName(experience) ? 'name' : 'question',
-      name: '', rejectedNames: new Set(), answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false, stepSequence: 0, delivered: false }
+      name: '', rejectedNames: new Set(), answers: [], revisionsLeft: experience.studio.revisionsAllowed, revision: 0, activityHeld: false, stepSequence: 0, delivered: false,
+      heard: false, abandoned: false }
     run = r
     input.report(`studio_started_${source}`)
     return { ...reply('accepted', 'studio_started', currentStep(r)), step: step(r, {}, false) }
@@ -254,6 +304,7 @@ export function createStudioRuntime(input: {
     if (request.action === 'exit') { close('studio_exited', false); return reply('accepted', 'studio_exited', prompt(r, 'exited')) }
     if (request.action === 'language') {
       if (r.phase === 'keepsake') return reply('ignored', 'studio_language_stale')
+      r.heard = true
       r.language = request.language
       // Repeat only a pending question. Never restart a painting or consume an answer.
       const repeat = ['name', 'confirm', 'question', 'reveal'].includes(r.phase)
@@ -265,6 +316,7 @@ export function createStudioRuntime(input: {
     }
     if ('stepId' in request) {
       if (request.stepId !== r.step?.id) return reply('ignored', 'studio_step_stale')
+      if (request.action === 'confirm_name' || request.action === 'step_activity') r.heard = true
       if (request.action === 'confirm_name') {
         if (r.phase !== 'confirm' || !r.name) return reply('rejected', 'studio_wrong_step', currentStep(r))
         r.phase = 'question'
@@ -282,6 +334,8 @@ export function createStudioRuntime(input: {
         return reply('accepted', 'studio_painting')
       }
     }
+    // Every remaining action is the model recording a visitor reply.
+    r.heard = true
     if (request.action === 'reject_name') {
       if (r.phase !== 'confirm') return reply('rejected', 'studio_wrong_step')
       r.rejectedNames.add(guestTextKey(r.name))
@@ -299,30 +353,30 @@ export function createStudioRuntime(input: {
       if (r.phase !== 'name' && r.phase !== 'confirm') return r.phase === 'question' && request.confirmed && guestTextKey(request.name) === guestTextKey(r.name)
         ? reply('ignored', 'studio_name_duplicate') : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       const name = request.name.trim()
-      const list = guests(r)
-      if (r.phase === 'confirm' && !request.confirmed && guestTextKey(name) !== guestTextKey(r.name)) r.rejectedNames.add(guestTextKey(r.name))
-      const candidates = list.length ? matchGuestNames(name, list, 3, r.experience.guests.aliases, r.rejectedNames) : []
-      const listed = candidates.find(guest => guestTextKey(guest) === guestTextKey(name))
-      if (r.experience.guests.match === 'only' && list.length && !listed) {
-        if (!candidates.length) { r.name = ''; r.phase = 'name'; step(r); input.report('studio_name_not_listed'); return { ...reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')), step: r.step } }
-        r.name = candidates[0]!
-        r.phase = 'confirm'; step(r)
-        return { ...reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates), step: r.step }
-      }
-      // Only the visitor's acceptance of a read-back confirms; an unconfirmed name is read back again.
-      if (request.confirmed) {
-        r.name = name
+      // Only agreement with the pending read-back confirms, and keeps the read-back (list) spelling.
+      // Any other "confirmed" name is a new name: it is read back like an unconfirmed one.
+      if (request.confirmed && r.phase === 'confirm' && r.name && guestTextKey(name) === guestTextKey(r.name)) {
         r.phase = 'question'
         input.report('studio_name_confirmed')
         step(r)
         return reply('accepted', 'studio_name_confirmed', currentStep(r))
       }
+      const list = guests(r)
+      if (r.phase === 'confirm' && guestTextKey(name) !== guestTextKey(r.name)) r.rejectedNames.add(guestTextKey(r.name))
+      const candidates = list.length ? matchGuestNames(name, list, 3, r.experience.guests.aliases, r.rejectedNames) : []
+      const listed = candidates.find(guest => guestTextKey(guest) === guestTextKey(name))
+      // Main reads back the first candidate itself; no other guest's name leaves Main.
+      const suggested = () => ({ ...reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: `「${r.name}」` }), [r.name]), step: r.step })
+      if (r.experience.guests.match === 'only' && list.length && !listed) {
+        if (!candidates.length) { r.name = ''; r.phase = 'name'; step(r); input.report('studio_name_not_listed'); return { ...reply('rejected', 'studio_name_not_listed', prompt(r, 'guestOnly')), step: r.step } }
+        r.name = candidates[0]!
+        r.phase = 'confirm'; step(r)
+        return suggested()
+      }
       r.name = listed ?? candidates[0] ?? name
       r.phase = 'confirm'
       step(r)
-      if (candidates.length && !listed) {
-        return { ...reply('accepted', 'studio_name_candidates', renderStudioText(prompt(r, 'chooseGuest'), { candidates: candidates.map(c => `「${c}」`).join('、') }), candidates), step: r.step }
-      }
+      if (candidates.length && !listed) return suggested()
       return { ...reply('accepted', 'studio_name_heard', currentStep(r)), step: r.step }
     }
     if (request.action === 'answer') {
@@ -330,10 +384,13 @@ export function createStudioRuntime(input: {
       if (r.phase !== 'question') return request.question < expected ? reply('ignored', 'studio_answer_duplicate')
         : reply('rejected', 'studio_wrong_step', renderStudioText(G.wrongStep, { current: currentStep(r) }))
       // A different answer to the question just recorded replaces it (a visitor's correction, or a
-      // reply the model recorded too early); the same answer again stays silent.
+      // reply the model recorded too early), once, while the step issued for it is still current; the
+      // same answer again, or one after a later step, stays a duplicate.
       const text = request.answer.trim().slice(0, STUDIO_ANSWER_MAX)
-      if (request.question === expected - 1 && r.answers.length && text !== r.answers.at(-1)) {
+      if (request.question === expected - 1 && r.answers.length && text !== r.answers.at(-1) && r.replaceable && r.replaceable === r.step?.id) {
         r.answers[r.answers.length - 1] = text
+        r.replaceable = undefined
+        input.report('studio_answer_replaced')
         step(r, { comment: text })
         return reply('accepted', 'studio_answer_replaced', currentStep(r))
       }
@@ -371,6 +428,7 @@ export function createStudioRuntime(input: {
     start,
     handle,
     close,
+    end,
     syncIdentity,
     isActive: () => run !== null,
     activeFor: (identity: StudioIdentity) => run !== null && sameIdentity(run.identity, identity),

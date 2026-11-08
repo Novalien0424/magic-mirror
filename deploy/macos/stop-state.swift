@@ -62,10 +62,11 @@ func outputDevices() -> [(id: AudioDeviceID, name: String, builtIn: Bool)] {
   }
 }
 /// Calibrated normal levels (owner 2026-11-07): `ops/music-device/speaker-levels.json`,
-/// `{"normal": {"Jabra Speak2 75": 0.7, "A1": 0.55, "EDIFIER": 0.4}}`. The Jabra is the
+/// e.g. `{"normal": {"Jabra Speak2 75": 0.80, "A1": 0.65, "EDIFIER": 0.50}}`. The Jabra is the
 /// reference; a speaker whose name starts with another key keeps that key's offset from the
 /// Jabra; unlisted speakers follow the Jabra. Missing or invalid file: every speaker 70%.
-/// Same rule in music-loop.swift, qa-output-volume.swift and src/main/speaker-levels.ts.
+/// Same rule (kept identical) in music-loop.swift, qa-output-volume.swift and src/main/speaker-levels.ts;
+/// tests/unit/speaker-levels.test.ts checks the copies match.
 struct SpeakerLevels {
   static let jabraName = "Jabra Speak2 75"
   var jabra: Float32 = 0.7, others: [(String, Float32)] = [], calibrated = false
@@ -132,26 +133,29 @@ func level(_ id: AudioDeviceID, set target: Float32? = nil, unmute: Bool = false
   return (values, muted != 0)
 }
 // Normal use is every external speaker at its calibrated level, unmuted (owner 2026-11-07;
-// 70% each before). The Jabra is required; the Mac mini speaker is excluded from music and
-// keeps its level.
+// 70% each before). The Jabra is required, but without exactly one controllable Jabra the
+// other speakers still return to normal before its reason is reported (a second Jabra is never
+// touched). The Mac mini speaker is excluded from music and keeps its level.
 func volume(_ reset: Bool) {
   let external = outputDevices().filter { !$0.builtIn }
   let jabras = external.filter { speakerLevels.isJabra($0.name) }
-  guard jabras.count == 1 else { fail(jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
   let near = { (values: [Float32], target: Float32) in !values.contains(where: { abs($0 - target) > 0.015 }) }
-  guard let jabra = level(jabras[0].id, set: reset ? speakerLevels.jabra : nil, unmute: reset) else { fail("jabra_volume_unavailable") }
+  var jabraFailure: String? = jabras.count == 1 ? nil : jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous"
+  let jabra = jabraFailure == nil ? level(jabras[0].id, set: reset ? speakerLevels.jabra : nil, unmute: reset) : nil
+  if jabraFailure == nil && jabra == nil { jabraFailure = "jabra_volume_unavailable" }
   if reset { storeGroup(speakerLevels.jabra) }
-  var speakers: [[String: Any]] = [], uncontrolled = 0, verified = near(jabra.volumes, speakerLevels.jabra) && !jabra.muted
-  for output in external where output.id != jabras[0].id {
+  var speakers: [[String: Any]] = [], uncontrolled = 0, verified = jabra.map { near($0.volumes, speakerLevels.jabra) && !$0.muted } ?? false
+  for output in external where !speakerLevels.isJabra(output.name) {
     let normal = speakerLevels.normal(output.name)
     guard let other = level(output.id, set: reset ? normal : nil, unmute: reset) else { uncontrolled += 1; continue }
     verified = verified && near(other.volumes, normal) && !other.muted
     speakers.append(["output": output.name, "volumes": other.volumes, "muted": other.muted, "normal": normal])
   }
-  let data = try! JSONSerialization.data(withJSONObject: ["output": SpeakerLevels.jabraName, "volumes": jabra.volumes, "reset": reset, "muted": jabra.muted,
+  let data = try! JSONSerialization.data(withJSONObject: ["output": SpeakerLevels.jabraName, "volumes": jabra?.volumes ?? [], "reset": reset, "muted": jabra?.muted ?? false,
     "normal": speakerLevels.jabra, "levels": speakerLevels.calibrated ? "calibrated" : "default",
-    "speakers": speakers, "uncontrolled": uncontrolled], options: [.sortedKeys])
+    "speakers": speakers, "uncontrolled": uncontrolled, "jabra": jabraFailure ?? "ready"], options: [.sortedKeys])
   print(String(data: data, encoding: .utf8)!)
+  if let jabraFailure { fail(jabraFailure) }
   if reset && !verified { fail("output_volume_verify_failed") }
 }
 // A conversation opens the Jabra with echo cancellation, which switches it to its call path and

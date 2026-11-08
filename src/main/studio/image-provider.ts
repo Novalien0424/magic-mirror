@@ -48,14 +48,35 @@ async function readBounded(response: Response, limit: number): Promise<Buffer | 
 
 /** Classifies provider errors into metadata codes; error text never leaves this function. */
 export function classifyImageFailure(status: number, body: string): StudioImageFailure {
+  const text = body.toLowerCase()
+  // A content block can arrive as 403. Bare "blocked" is not enough there: a CDN block page says it too.
+  if (status === 403 && /moderation|safety|content[_ ]policy|policy_violation/.test(text)) return 'studio_image_refused'
   if (status === 401 || status === 403) return 'studio_auth_required'
   if (status === 429) return 'studio_quota_exhausted'
-  const text = body.toLowerCase()
   if (status === 400 && /moderation|safety|content[_ ]policy|policy_violation|blocked/.test(text)) return 'studio_image_refused'
   if ((status === 400 || status === 404) && /model/.test(text)) return 'studio_model_rejected'
   if (status >= 500) return 'studio_image_unavailable'
+  if (status === 408) return 'studio_image_timeout'
   return 'studio_provider_contract'
 }
+
+const RETRY_AFTER_MAX_MS = 10_000
+/**
+ * Delay before the one retry of a transient status (gateway timeout, 5xx, rate limit), or null:
+ * a plan limit, or a server asking for a longer wait than a visitor can stand in front of the mirror.
+ */
+function transientRetryDelay(status: number, body: string, retryAfter: string | null): number | null {
+  if (status !== 408 && status !== 429 && status < 500) return null
+  if (status === 429 && /usage_limit|quota|limit_reached|billing|insufficient/.test(body.toLowerCase())) return null
+  const seconds = retryAfter === null ? NaN : Number(retryAfter)
+  const wait = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : 1000
+  return wait > RETRY_AFTER_MAX_MS ? null : Math.max(wait, 250)
+}
+const pause = (ms: number, signal: AbortSignal) => new Promise<void>(resolve => {
+  const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+  const timer = setTimeout(done, ms)
+  signal.addEventListener('abort', done, { once: true })
+})
 
 /**
  * Portrait generation on the owner's ChatGPT plan through the Codex backend
@@ -78,7 +99,8 @@ export function createCodexImageProvider(input: {
     if (!credential) return done({ ok: false, code: 'studio_auth_required' })
     const deadline = AbortSignal.timeout(input.settings.timeoutMs)
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline
-    let refreshed = false, retriedNetwork = false
+    // One retry in all for a transient failure (AGENTS retry limit), inside the same deadline.
+    let refreshed = false, retried = false
     while (true) {
       if (signal?.aborted) return done({ ok: false, code: 'studio_cancelled' })
       let response: Response
@@ -95,8 +117,8 @@ export function createCodexImageProvider(input: {
       } catch {
         if (signal?.aborted) return done({ ok: false, code: 'studio_cancelled' })
         if (deadline.aborted) return done({ ok: false, code: 'studio_image_timeout' })
-        // One retry for a connection failure before any response (AGENTS retry limit).
-        if (!retriedNetwork) { retriedNetwork = true; report('studio_image_network_retry'); continue }
+        // A connection failure before any response.
+        if (!retried) { retried = true; report('studio_image_network_retry'); continue }
         return done({ ok: false, code: 'studio_image_unavailable' })
       }
       if (response.status === 401 && !refreshed) {
@@ -109,6 +131,13 @@ export function createCodexImageProvider(input: {
       try {
         if (!response.ok) {
           const text = (await readBounded(response, MAX_ERROR_BYTES))?.toString('utf8') ?? ''
+          const delay = retried ? null : transientRetryDelay(response.status, text, response.headers.get('retry-after'))
+          if (delay !== null) {
+            retried = true
+            report('studio_image_status_retry')
+            await pause(delay, combined)
+            continue
+          }
           return done({ ok: false, code: classifyImageFailure(response.status, text), httpStatus: response.status })
         }
         const raw = await readBounded(response, MAX_RESPONSE_BYTES)

@@ -8,10 +8,12 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 
 - [ ] **Studio operator rescue.** Speech-failure recovery is implemented (10-31:
   one retry per fixed line, then the visit continues with `studio_speech_skipped`).
-  Still open: a visible safe exit and a current-visit name retry/correction
-  control with fresh verbal read-back. The 10-24 name repair fixed candidate
-  selection, receipt-based confirmation and tool-only repeats, but explicitly
-  left these two gaps open.
+  The visible safe exit is done (11-08: Console "End this visit"). Still open: a current-visit
+  name retry/correction control with fresh verbal read-back. The 10-24 name repair fixed candidate
+  selection, receipt-based confirmation and tool-only repeats.
+  Known limit (audit 11-08): the hourly Realtime rollover can close a Studio visit started late in a
+  60-minute session; the provider's hard cap leaves nothing to postpone it to. Starting the rollover
+  early before a Studio visit would avoid it.
   [Audit](docs/testing/studio-journey-audit-2026-10-24.md) ·
   [Repair boundary](docs/testing/guest-name-repair-2026-10-24.md).
 - [ ] **TV board standby (RCA 10-31, fixed; confirm overnight).** Standby made
@@ -90,7 +92,8 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   goodbye, 0 of 4); YouTube search then asking instead of playing (`youtube_once` 2 of 4,
   loop 1 of 3, media-intent 2 of 3); `local_media` tool route 0 of 3;
   `--memory-conversation` quality 0 of 2; `image_skill` 1 of 4 (chat-while-painting
-  timeout); acoustic wake during a loop at the 1% QA level (environment). The ~30 s
+  timeout); 11-08: an explicit online loop request (「循環播放 … 這部影片」) played as `once` by
+  the model in 2 of 3 `youtube_modes` runs (fix in the tool/prompt catalog, not code); acoustic wake during a loop at the 1% QA level (environment). The ~30 s
   spell refusal came from `--spells-live`'s fixture persona, not Raven (Raven v23 asks for
   one or two sentences).
 - [ ] **Music page in the room.** AI_Stuff is Available offline (owner, 10-31); the Yunelle

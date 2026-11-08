@@ -34,8 +34,8 @@ export function bindRealtimeTools(specs: readonly RealtimeToolSpec[], handlers: 
       const { status, code } = spec.results[outcome]
       const payload = { status, code: image?.code ?? failureCode ?? code, ...(memory ? { memory: modelMemory } : {}), ...(media ? { media } : {}), ...(youtube ? { youtube } : {}), ...(next ? { next } : {}), ...(playback ? { playback } : {}),
         ...(image?.next ? { next: image.next } : {}),
-        // Studio guidance is application/operator text; the guest list only ever appears as ≤3 matched candidates.
-        ...(studio ? { studio: { code: studio.code, ...(studio.candidates ? { candidates: studio.candidates } : {}) }, ...(studio.next ? { next: studio.next } : {}) } : {}),
+        // Studio guidance is application/operator text. Guest names stay out: Main reads back the one candidate itself.
+        ...(studio ? { studio: { code: studio.code }, ...(studio.next ? { next: studio.next } : {}) } : {}),
         // Owner 2026-11-07: a requested song found online plays without a choice question.
         ...(spec.handler === 'search_youtube' && youtube?.code === 'youtube_search_results' && youtube.videos.length ? { next: REALTIME_PROMPTS.mediaOnlinePlay } : {}),
         ...(spec.handler === 'find_media' && media?.code === 'media_discovery_no_match'

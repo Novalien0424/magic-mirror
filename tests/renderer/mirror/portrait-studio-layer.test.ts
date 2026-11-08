@@ -2,15 +2,11 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { PortraitStudioLayer, studioCoversAvatar } from '../../../src/renderer/mirror/portrait-studio-layer'
-import type { StudioPhase, StudioView } from '../../../src/shared/portrait-studio'
-import { studioScreenView } from '../../../src/shared/portrait-studio-config'
+import { parseStudioView, type StudioPhase, type StudioView } from '../../../src/shared/portrait-studio'
 
 const IMAGE = 'magic-mirror-media://studio/abcd1234-ef56'
-const view = (patch: Partial<StudioView> = {}): StudioView => {
-  const base = { phase: 'name' as const, language: 'zh' as const, questionCount: 4, answered: 0, chips: [], lettering: 'nameplate' as const,
-    picture: 'portrait' as const, revisionsLeft: 1, askName: true, ...patch }
-  return { ...base, text: patch.text ?? studioScreenView(undefined, base.language, Math.min(base.answered + 1, base.questionCount), base.questionCount) }
-}
+const view = (patch: Partial<StudioView> = {}): StudioView => ({ phase: 'name', language: 'zh', questionCount: 4, answered: 0, lettering: 'nameplate',
+  picture: 'portrait', revisionsLeft: 1, askName: true, ...patch })
 const render = (value: StudioView | null) => renderToStaticMarkup(createElement(PortraitStudioLayer, { view: value }))
 const visibleText = (html: string) => html.replace(/<[^>]*>/g, '')
 const feathers = (html: string) => [...html.matchAll(/data-state="(lit|current|unlit)"/g)].map(match => match[1])
@@ -19,11 +15,16 @@ const phases: StudioPhase[] = ['name', 'confirm', 'question', 'painting', 'revea
 describe('PortraitStudioLayer', () => {
   it('renders nothing without a visit', () => expect(render(null)).toBe(''))
 
+  it('accepts no answers, questions, change requests or captions in the view payload', () => {
+    expect(parseStudioView(view())).toEqual(view())
+    for (const extra of [{ prompt: 'A spoken question' }, { chips: ['Private answer'] }, { change: 'Make it snow' }, { holdEndsAt: Date.now() + 38000 }, { text: {} }]) {
+      expect(parseStudioView({ ...view(), ...extra })).toBeNull()
+    }
+  })
+
   it.each(phases)('shows only the name when appropriate, never captions or answers, in %s', phase => {
     for (const language of ['zh', 'en'] as const) {
-      const html = render(view({ phase, language, name: '王曉明', prompt: 'A spoken question', chips: ['Private answer'],
-        change: 'Make it snow', holdEndsAt: Date.now() + 38000, imageUrl: IMAGE,
-        text: { ...studioScreenView(undefined, language, 2, 4), captions: ['Custom painting caption'], questionLabel: 'Custom question label' } }))
+      const html = render(view({ phase, language, name: '王曉明', imageUrl: IMAGE }))
       expect(visibleText(html)).toBe(['confirm', 'reveal', 'keepsake'].includes(phase) ? '王曉明' : '')
       expect(html).not.toContain('role="timer"')
       expect(html).toContain(`lang="${language === 'en' ? 'en' : 'zh-Hant'}"`)

@@ -1317,10 +1317,18 @@ void app.whenReady().then(async () => {
       if (signal.aborted) abort()
     }),
   })
+  let danceSpeakerResetFailed = false
   operatorLoop = createOperatorLoop({
     path: join(app.getPath('userData'), 'operator-loop.json'),
     music: musicLoop,
     dance: danceFloor,
+    // Leaving Dance by any path resets every speaker to its normal level once; QA keeps its 1% hold.
+    ...(isDarwin && !phase4QaEnabled ? { resetSpeakers: () => new Promise<void>((done, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
+      ['--reset-output'], { timeout: 5000 }, error => {
+        danceSpeakerResetFailed = !!error
+        if (!error) { done(); return }
+        reportMainDegradation('audio', 'speaker_levels', 'operator_loop_dance_volume_restore_failed'); reject(Error('operator_loop_dance_volume_restore_failed'))
+      })) } : {}),
     validate: async settings => {
       await mediaFoldersReady
       await bounded(mediaFolders.refresh(), 12000)
@@ -1612,11 +1620,14 @@ void app.whenReady().then(async () => {
       }
       if (command.action === 'stop') {
         ++danceConsoleRequest
+        // Stop Dance Floor ends Dance only, never a MusicLoop or VIDEO LOOP (audit 2026-11-08).
+        if (operatorLoop!.view().snapshot.mode !== 'dance') { marker('DANCE_FLOOR', { reason: 'dance_stop_not_dancing' }); return { ok: true, value: danceFloor!.view() } }
         // Console Stop and Stop All end Dance and return to Conversation; only the
         // physical STOP key shuts the installation down (owner ruling 2026-10-31).
+        danceSpeakerResetFailed = false
         if (!await operatorLoop!.normal() || !showMirrorWindow()) throw Error('dance_stop_failed')
-        if (isDarwin) await new Promise<void>((resolveStop, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
-          ['--reset-output'], { timeout: 5000 }, error => error ? reject(Error('dance_volume_restore_failed')) : resolveStop()))
+        // normal() already reset the speakers once, after the Dance player exited.
+        if (danceSpeakerResetFailed) throw Error('dance_volume_restore_failed')
       }
       return { ok: true, value: danceFloor!.view() }
     } catch (error) {
@@ -1883,7 +1894,10 @@ void app.whenReady().then(async () => {
       executable: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/out/native/music-loop') : join(app.getAppPath(), 'out/native/music-loop'),
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
       degraded: degradedMusicOutput,
-      level: value => airfoilRoute.setLevel(value),
+      // During a conversation the Jabra reads its separate call volume (Raven's voice), not the music
+      // level, so the AirPlay speakers keep the last music level (audit 2026-11-08). The wake
+      // listener's capture does not switch it (measured 2026-11-08), so Dormant levels still follow.
+      level: value => { if (!['activating', 'active', 'suspending'].includes(bootRuntime?.snapshot().lifecycle ?? '')) airfoilRoute.setLevel(value) },
     })
     sharedMusicOutput.start()
     void airfoilRoute.start()

@@ -39,10 +39,20 @@ const FAILURES: Readonly<Record<string, string>> = {
   studio_image_unavailable: 'The image service could not be reached. Check the internet connection, then try again.',
   studio_cancelled: 'The test picture was cancelled.',
   studio_config_unavailable: 'Published Interactive Studio settings are unavailable. Reload the Console settings, then try again.',
+  studio_paint_timeout: 'The Mirror never started the painting after its cue, so the visit ended without a picture. Check Events; if it repeats, restart the app.',
 }
 
 export function studioFailureText(code: string | undefined): string {
   return (code && FAILURES[code]) || `The test picture failed${code ? ` (${code})` : ''}. Try again; if it repeats, check Events for the reason.`
+}
+
+/** The last failed picture (visit or test) and whether new visits are paused by it. Metadata only. */
+export function studioLastFailureText(failure: StudioConsoleStatus['lastImageFailure'], locale?: string): string {
+  if (!failure) return ''
+  const reason = FAILURES[failure.code]?.split('. ')[0] ?? `Picture failed (${failure.code})`
+  const paused = failure.pausedUntil
+    ? ` New visits fall back to conversation until ${formatRefreshTime(failure.pausedUntil, locale)}, or until a test picture succeeds.` : ''
+  return `Last picture failure, ${formatRefreshTime(failure.at, locale)}: ${reason.replace(/\.$/, '')}.${paused}`
 }
 
 const ACTIONS: Readonly<Record<string, string>> = {
@@ -55,7 +65,10 @@ const ACTIONS: Readonly<Record<string, string>> = {
   studio_unavailable: 'Interactive Studio is unavailable. Check ChatGPT sign-in in System → Studio service and that settings are published.',
   studio_not_enabled: 'Interactive Studio is turned off for this avatar.',
   studio_operator_exit: 'Back to conversation. The studio closed and its picture was cleared.',
+  studio_operator_ended: 'The visit ended. In Interactive Studio mode the avatar says the Studio farewell and sleeps; a visit asked for in conversation returns to it.',
   studio_not_active: 'Interactive Studio is not running.',
+  studio_paused_quota_exhausted: 'Not started: the ChatGPT plan’s image limit was reached recently. Visits resume after 15 minutes or a successful test picture (System → Studio service).',
+  studio_paused_auth_required: 'Not started: ChatGPT rejected the sign-in recently. Sign in again, then run a test picture (System → Studio service) to resume visits.',
   mirror_mode_studio: 'Mirror mode: Interactive Studio. The mirror now wakes to the studio wake phrase; a visitor already in conversation enters the studio now.',
   mirror_mode_conversation: 'Mirror mode: Conversation. The mirror now wakes to the Persona wake phrase; a running studio closes now.',
   mirror_mode_save_failed: 'The Mirror mode could not be saved and was not changed. Check Events, then try again.',
@@ -175,6 +188,8 @@ export function StudioStatusPanel({ bridge, visible = true, initialStatus = null
       <p className="studio-status__auth"><Badge tone={auth.tone}>{auth.label}</Badge></p>
       {auth.action && <p className="studio-status__action">{auth.action}</p>}
       {auth.needsLogin && <p>Command: <code className="studio-status__selectable">{STUDIO_LOGIN_COMMAND}</code></p>}
+      {status.lastImageFailure && <p className={status.lastImageFailure.pausedUntil ? 'console__fault' : 'console__muted'} role="status">
+        {studioLastFailureText(status.lastImageFailure)}</p>}
       <dl className="studio-status__facts">
         <dt>Last sign-in refresh</dt><dd>{formatRefreshTime(status.lastRefresh)}</dd>
         <dt>Image model</dt><dd><code className="studio-status__selectable" title="Read-only; comes from versioned configuration.">{status.modelId}</code></dd>
@@ -327,6 +342,8 @@ export function StudioLiveControls({ bridge, bridgeAvailable, lifecycle, visible
     {readFailure && !mode && <span className="console__status console__status--failed" role="status" title={modeUnknown}>Mode unknown · status read failed</span>}
     {visitorRun && <HelpButton placement="below" help="Ends the studio the visitor asked for, clears its picture from the Mirror and returns to conversation."
       disabled={!available || busy} onClick={() => void run({ action: 'exit' })}>Back to conversation</HelpButton>}
+    {status?.active && !visitorRun && <HelpButton placement="below" help="Ends this Studio visit now without a picture: the avatar says the Studio farewell and the mirror sleeps. Mirror mode stays Interactive Studio."
+      disabled={!available || busy} onClick={() => void run({ action: 'end' })}>End this visit</HelpButton>}
     {!onMessage && <p className="console__result studio-live__result" role="status" aria-live="polite">
       {message && <><span aria-hidden="true">{ICONS[message.tone]}</span> {message.text}</>}
     </p>}

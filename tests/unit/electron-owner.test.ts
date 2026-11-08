@@ -22,7 +22,8 @@ describe('Electron operation ownership', () => {
     acquireElectronOwner('next', dir)()
   })
   it('refuses an invalid ownership record instead of deleting an unknown directory', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'mirror-owner-')); roots.push(root)
+    // The lease's lock and metadata files sit beside its directory.
+    const root = await mkdtemp(join(tmpdir(), 'mirror-owner-')); roots.push(root, root + '.lock', root + '.json')
     await writeFile(join(root, 'owner.json'), '{}')
     expect(() => acquireElectronOwner('test', root)).toThrow('electron_owner_record_invalid')
   })

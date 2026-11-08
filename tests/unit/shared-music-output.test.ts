@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { createSharedMusicOutput } from '../../src/main/shared-music-output'
+import { createSharedMusicOutput, SHARED_OUTPUT_HEALTHY_MS } from '../../src/main/shared-music-output'
 
 function fakeChild() {
   const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), kill: vi.fn() })
@@ -28,6 +28,25 @@ describe('shared music output owner', () => {
     children[1]!.emit('exit', 1)
     expect(degraded).toHaveBeenLastCalledWith('music_output_shared_exited')
     expect(children).toHaveLength(2)
+  })
+
+  it('earns its restart back after a healthy period, so a rare exit never ends the shared route', async () => {
+    let time = 0
+    const children: ReturnType<typeof fakeChild>[] = []
+    const spawnImpl = vi.fn(() => { const child = fakeChild(); children.push(child); return child })
+    const report = vi.fn(), degraded = vi.fn()
+    const output = createSharedMusicOutput({ executable: '/helper', report, degraded, spawnImpl: spawnImpl as never, restartDelayMs: 0, now: () => time })
+    output.start()
+    children[0]!.emit('exit', 1) // early exit: the one restart
+    await vi.waitFor(() => expect(children).toHaveLength(2))
+    time += SHARED_OUTPUT_HEALTHY_MS
+    children[1]!.emit('exit', 1) // hours later: restarts again
+    await vi.waitFor(() => expect(children).toHaveLength(3))
+    expect(degraded).not.toHaveBeenCalled()
+    children[2]!.emit('exit', 1) // an immediate repeat stays degraded
+    expect(degraded).toHaveBeenCalledWith('music_output_shared_exited')
+    expect(children).toHaveLength(3)
+    output.stop()
   })
 
   it('releases the helper on stop without reporting a failure', () => {

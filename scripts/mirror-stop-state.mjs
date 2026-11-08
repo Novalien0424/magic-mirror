@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 /** Fixed failure reasons `stop-state --reset-output` prints; anything else stays generic. */
-const RESET_REASONS = new Set(['jabra_output_missing', 'jabra_output_ambiguous', 'output_volume_verify_failed'])
+const RESET_REASONS = new Set(['jabra_output_missing', 'jabra_output_ambiguous', 'jabra_volume_unavailable', 'output_volume_verify_failed'])
 
 /** Fixed native helpers; no shell, device fallback, input gain or raw diagnostics. */
 export function createStopStateIo() {
@@ -49,6 +49,7 @@ export function createStopStateIo() {
     },
     resetAudio: async () => {
       const result = spawnSync(binary, ['--reset-output'], { encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL' })
+      // Stable log token kept for runbooks and button logs: every speaker at its normal level (not 70%).
       if (result.status === 0 && !result.error && !result.signal) return 'jabra_output_70'
       // Keep the helper's own fixed reason (e.g. two Jabras attached) instead of a generic failure.
       const reason = String(result.stdout ?? '').trim().split('\n').at(-1)

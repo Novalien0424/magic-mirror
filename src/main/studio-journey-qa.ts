@@ -285,7 +285,7 @@ export async function runStudioJourneyQa(input: Phase4QaInput): Promise<Phase4Qa
     await wait("return !studioSection().textContent.includes('Text on the mirror') && studioSection().textContent.includes('Mirror shows only the visitor’s name')")
     await edit("open('Spoken failure lines')")
     await edit("set(byLabel('Any other failure in Traditional Chinese'), '牌陣散了，我們先聊聊吧。')")
-    await wait("return studioSection().textContent.includes('1 of 5 edited.')")
+    await wait("return studioSection().textContent.includes('1 of 6 edited.')")
     pass()
 
     step = 'journey_offer_prompt'

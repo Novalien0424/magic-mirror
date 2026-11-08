@@ -160,6 +160,20 @@ export function parseQueuedRequest(text) {
   } catch { return null }
 }
 
+/** Mode starts a queued STOP abandons instead of waiting up to the command deadline; the STOP's
+ * own shutdown then ends the pending start in Main. */
+export const STOP_CANCELS = ['music_loop', 'dance_floor', 'play_loop']
+
+/** True while a fresh STOP press waits in the button queue. */
+export function stopQueued(queue, now = Date.now()) {
+  return readdirSync(queue).filter(n => /^\d+-\d+\.json$/.test(n)).some(name => {
+    try {
+      const next = parseQueuedRequest(readFileSync(join(queue, name), 'utf8'))
+      return next?.action === 'stop' && now - next.at <= 120000
+    } catch { return false }
+  })
+}
+
 /** Fixed launchd/process IO, shared with the bounded native STOP check. */
 export function createButtonIo() {
   const domain = `gui/${process.getuid()}`, job = domain + '/com.magicmirror.launchagent'
@@ -263,14 +277,9 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           app: action => operateButton(action, io),
           tv: action => operateTv(action, createTvIo((step, outcome) => record('tv', outcome, { step }))),
           ready: () => waitForMirrorReady(io),
-          // Let a queued STOP reach Main even while a cold MusicLoop file is
+          // Let a queued STOP reach Main even while a cold MusicLoop file or loop video is
           // preparing. The normal STOP path owns shutdown; no extra kill owner.
-          mode: action => sendOperatorCommand(action, { ...createOperatorIo(), cancelled: () => ['music_loop', 'dance_floor'].includes(action)
-            && readdirSync(queue).filter(n => /^\d+-\d+\.json$/.test(n)).some(name => {
-              try { const next = parseQueuedRequest(readFileSync(join(queue, name), 'utf8'))
-                return next?.action === 'stop' && Date.now() - next.at <= 120000
-              } catch { return false }
-            }) }),
+          mode: action => sendOperatorCommand(action, { ...createOperatorIo(), cancelled: () => STOP_CANCELS.includes(action) && stopQueued(queue) }),
           mouse: async action => {
             const mouse = await operateMouse(action, createMouseIo((step, outcome) => record('mouse', outcome, { step })))
             if (action === 'start' && mouse === 'mouse_started') {
@@ -288,8 +297,8 @@ if (process.argv[1] && resolve(process.argv[1]) === file) {
           writeFileSync(lastPress + '.tmp', JSON.stringify(previous), { mode: 0o600 })
           renameSync(lastPress + '.tmp', lastPress)
         }
-        // A STOP that cancels a pending MusicLoop/Dance start is not a failure: no chime.
-        if (outcome !== 'music_cancelled' && outcome !== 'dance_cancelled') feedback(outcome)
+        // A STOP that cancels a pending MusicLoop/Dance/VIDEO LOOP start is not a failure: no chime.
+        if (!['music_cancelled', 'dance_cancelled', 'loop_cancelled'].includes(outcome)) feedback(outcome)
       }
     } catch { record('press', 'helper_failed'); process.exitCode = 1 }
     finally {

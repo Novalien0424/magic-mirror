@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { spokenCommandKey, isSpellAttempt, matchSearchPhrase, opensWithSpokenPhrase } from '../../src/shared/spoken-command'
+import { spokenCommandKey, isSpellAttempt, matchPlayRequest, matchSearchPhrase, opensWithSpokenPhrase } from '../../src/shared/spoken-command'
 import { createSpellTriggerGuard } from '../../src/main/scenes/spell-trigger'
 
 describe('approved whole-utterance pronunciation folds', () => {
@@ -60,5 +60,17 @@ describe('online search phrase, not strict (owner rulings 2026-10-14, 2026-11-07
   it('never matches an empty phrase, and the strict opening check stays for spells', () => {
     expect(matchSearchPhrase('晴天', '')).toBeUndefined()
     expect(opensWithSpokenPhrase('幫我施放咒語', '施放咒語')).toBe(false)
+  })
+})
+
+describe('play requests for the online-song fallback', () => {
+  it('accepts real requests to play or hear the result', () => {
+    for (const text of ['幫我在雲上找 周杰倫青花瓷撥放', '幫我在雲上找周深的組曲撥放', '在YouTube上找告白氣球放給我聽', '我想聽周杰倫的晴天',
+      '上網找一首歌播一下', '幫我放鄧紫棋', '幫我在網路上找周深唱一首', 'search youtube and play it']) expect(matchPlayRequest(text), text).toBe(true)
+  })
+  it('never treats information questions, single characters or negated requests as play requests', () => {
+    for (const text of ['幫我在雲上找周杰倫最近有沒有開演唱會', '幫我上網查這部劇什麼時候播出', '幫我在網路上找故宮的開放時間', '幫我在雲上找這首歌好不好聽',
+      '幫我在雲上找周深的組曲先不要播放', '幫我上網查查 不想聽', '先別放給我聽', '要不要聽', "search online but don't play it", 'do not play it',
+      '我聽說周杰倫要來', 'display the lyrics']) expect(matchPlayRequest(text), text).toBe(false)
   })
 })

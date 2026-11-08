@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
 import { deferredPrinterSkill } from '../../src/main/studio/printer-skill'
-import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, type StudioSessionEvent, type StudioStep } from '../../src/shared/portrait-studio'
+import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, type StudioSessionEvent, type StudioStep, type StudioView } from '../../src/shared/portrait-studio'
+import { PORTRAIT_STUDIO } from '../../src/shared/portrait-studio-config'
 import { parseSpeechScript } from '../../src/shared/speech-script'
 import { playSpeechScript } from '../../src/renderer/realtime/speech-script'
 
 const identity = { realtimeSessionId: 'test-soul', sessionGeneration: 1 }
 function visit(count = 4) {
-  const events: StudioSessionEvent[] = [], reports: string[] = []
+  const events: StudioSessionEvent[] = [], reports: string[] = [], views: (StudioView | null)[] = []
   let current: StudioStep
   const generate = vi.fn(async () => ({ ok: true as const, image: Buffer.from('synthetic-image'), mimeType: 'image/png' as const, elapsedMs: 1 }))
   const printer = deferredPrinterSkill(reason => reports.push(reason))
@@ -15,13 +16,14 @@ function visit(count = 4) {
   const runtime = createStudioRuntime({ provider: () => ({ generate, edit: generate }), activity: vi.fn(), report: reason => reports.push(reason),
     keepsakeSinks: [printer], dispatch: command => {
       if (command.type === 'studio_event') { events.push(command.event); if ('step' in command.event && command.event.step) current = command.event.step }
+      else views.push(command.view)
       return true
     } })
   const experience = defaultExperience()
   experience.studio.questions = experience.studio.questions.slice(0, count)
   current = runtime.start(identity, experience, 'visitor').step!
-  const signal = (action: 'step_ready' | 'step_activity' | 'paint' | 'deliver', stepId = current.id) => runtime.handle({ action, stepId }, identity)
-  return { runtime, events, reports, generate, deliver, current: () => current, signal }
+  const signal = (action: 'step_ready' | 'step_activity' | 'paint' | 'deliver' | 'confirm_name', stepId = current.id) => runtime.handle({ action, stepId }, identity)
+  return { runtime, events, reports, views, generate, deliver, current: () => current, signal }
 }
 afterEach(() => vi.useRealTimers())
 
@@ -86,10 +88,46 @@ describe('Gate thirty-three application journey', () => {
     v.runtime.close('test_complete')
   })
 
+  it('ends a visit nobody answers: no name and no first answer means no painting, only the closing line', async () => {
+    vi.useFakeTimers()
+    const v = visit()
+    v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
+    expect(v.current().speech).toMatch(/^無名之人啊，/)
+    v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
+    expect(v.current()).toMatchObject({ phase: 'keepsake', speech: '看來你的靈魂還沒準備好，下次再來吧。' })
+    expect(v.current().silent).toBeUndefined()
+    expect(v.current().guidance).toBe(PORTRAIT_STUDIO.journey.steps.abandoned)
+    expect(v.reports).toContain('studio_abandoned')
+    expect(v.reports).not.toContain('studio_answer_unanswered')
+    // The glass clears; nothing is painted, printed or transferred.
+    expect(v.views.at(-1)).toBeNull()
+    v.signal('deliver')
+    expect(v.generate).not.toHaveBeenCalled()
+    expect(v.deliver).not.toHaveBeenCalled()
+    expect(v.reports).not.toContain('studio_transfer_completed')
+    expect(v.reports).toContain('studio_abandoned_ended')
+    expect(v.events.at(-1)).toEqual({ event: 'keepsake_done', afterPortrait: 'continue' })
+    expect(v.runtime.isActive()).toBe(false)
+  })
+
+  it('still paints when the visitor spoke at all, even if every answer is silent', async () => {
+    vi.useFakeTimers()
+    const v = visit(1)
+    v.signal('step_ready')
+    v.signal('step_activity') // the visitor started to talk, then fell silent
+    v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
+    v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
+    expect(v.runtime.phase()).toBe('painting')
+    expect(v.reports).not.toContain('studio_abandoned')
+    v.runtime.close('test_complete')
+  })
+
   it.each([1, 2, 4])('supports %i questions, acknowledges every silent answer and orders generation and printer after cues', async count => {
     vi.useFakeTimers()
     const v = visit(count)
-    v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
+    v.runtime.handle({ action: 'set_name', name: 'Amy', confirmed: false, language: 'zh' }, identity)
+    v.signal('confirm_name')
+    expect(v.current().phase).toBe('question')
     for (let i = 0; i < count; i++) {
       v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
       expect(v.current().silent).toBe(true)
@@ -106,6 +144,7 @@ describe('Gate thirty-three application journey', () => {
     expect(v.current()).toMatchObject({ phase: 'keepsake', silent: true, speech: '現在讓我們把你的靈魂傳遞出去' })
     await vi.advanceTimersByTimeAsync(45000)
     expect(v.deliver).not.toHaveBeenCalled()
+    expect(v.reports).not.toContain('studio_keepsake_timeout')
     const transfer = v.current().id
     v.signal('deliver'); v.signal('deliver', transfer)
     expect(v.deliver).toHaveBeenCalledOnce()
@@ -118,6 +157,7 @@ describe('Gate thirty-three application journey', () => {
   it('preserves reflective reasons and cancels timers when the session closes', async () => {
     vi.useFakeTimers()
     const v = visit()
+    v.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: false, language: 'zh' }, identity)
     v.runtime.handle({ action: 'set_name', name: '王曉明', confirmed: true, language: 'zh' }, identity)
     const answer = '我自己去旅行，因為我想證明我可以獨立。'.repeat(10)
     v.runtime.handle({ action: 'answer', question: 1, answer, language: 'zh' }, identity)

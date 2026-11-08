@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createOperatorLoop } from '../../src/main/operator-loop'
+import { createOperatorLoop, OPERATOR_LOOP_HEALTHY_MS } from '../../src/main/operator-loop'
 import { MUSIC_RESYNC_GAP_MS, musicResyncGapMs, type LoopVideoSettings, type OperatorLoopSnapshot } from '../../src/shared/operator-loop'
 
 const settings: LoopVideoSettings = {
@@ -79,7 +79,7 @@ describe('operator loop appliance controller', () => {
     expect(controller.isInputSuspended()).toBe(true)
     expect(JSON.parse(readFileSync(path, 'utf8')).intent).toBe('avatar')
     expect(f.resumeAvatar).not.toHaveBeenCalled()
-    await controller.black(); started.resolve(true); await vi.advanceTimersByTimeAsync(0)
+    await controller.normal('black'); started.resolve(true); await vi.advanceTimersByTimeAsync(0)
     expect(controller.view().snapshot.mode).toBe('black')
     expect(dance.stop).toHaveBeenCalled()
     expect(fixture(path).controller.view().snapshot.mode).toBe('avatar')
@@ -338,6 +338,139 @@ describe('operator loop appliance controller', () => {
     expect(f.controller.view().snapshot).toEqual(stopped)
     expect(f.publish.mock.calls.some(([snapshot]) => snapshot.status === 'playing' || snapshot.status === 'recovering')).toBe(false)
     expect(JSON.parse(readFileSync(f.path, 'utf8')).intent).toBe('avatar')
+  })
+})
+
+describe('operator loop recovery and ownership (2026-11-08 audit)', () => {
+  it('never waits for a release from a loop that failed before its player mounted, so START still works', async () => {
+    const f = fixture()
+    expect(await f.controller.normal()).toBe(true) // START: generation 1, no player
+    f.suspendAvatar.mockRejectedValueOnce(Error('private microphone failure'))
+    expect(await f.controller.play()).toBe(false)
+    expect(f.controller.view().snapshot).toMatchObject({ mode: 'loop', status: 'failed', generation: 1 })
+    // The Mirror renders black for this generation and never reports `released`.
+    const returning = observed(f.controller.normal())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(returning).toHaveBeenCalledExactlyOnceWith(true)
+    expect(f.controller.view().snapshot).toMatchObject({ mode: 'avatar', status: 'idle' })
+    expect(f.controller.isInputSuspended()).toBe(false)
+    expect(f.report).not.toHaveBeenCalledWith('operator_loop_release_failed')
+  })
+  it('a release timeout fails one START, never every later one', async () => {
+    const f = await start()
+    advancePlayback(f.controller, f.generation); expect(await f.playing).toBe(true)
+    const first = observed(f.controller.normal())
+    await vi.advanceTimersByTimeAsync(4000) // the renderer never reports release
+    expect(first).toHaveBeenCalledWith(false)
+    expect(f.controller.view().snapshot).toMatchObject({ mode: 'loop', status: 'failed', reason: 'operator_loop_release_failed' })
+    const second = observed(f.controller.normal())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(second).toHaveBeenCalledWith(true)
+    expect(f.controller.view().snapshot.mode).toBe('avatar')
+  })
+  it('re-arms the one automatic reload after a recovered loop has played healthily for five minutes', async () => {
+    const f = await start()
+    await vi.advanceTimersByTimeAsync(8000) // first stall: one automatic reload
+    let generation = f.controller.view().snapshot.generation, time = 0
+    expect(f.controller.view().snapshot).toMatchObject({ status: 'recovering', generation: f.generation + 1 })
+    const tick = () => { time += 100; f.controller.report({ generation, status: 'progress', videoTimeMs: time, frames: time / 10 }) }
+    tick(); tick()
+    expect(f.controller.view().snapshot.status).toBe('playing')
+    for (let elapsed = 0; elapsed <= OPERATOR_LOOP_HEALTHY_MS; elapsed += 1000) { tick(); await vi.advanceTimersByTimeAsync(1000) }
+    expect(f.report).toHaveBeenCalledWith('operator_loop_recovery_rearmed')
+    await vi.advanceTimersByTimeAsync(8000) // a stall hours later reloads again instead of failing black
+    generation = f.controller.view().snapshot.generation
+    expect(f.controller.view().snapshot).toMatchObject({ mode: 'loop', status: 'recovering', generation: f.generation + 2 })
+    // Without another healthy period the next stall still fails visibly.
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(f.controller.view().snapshot).toMatchObject({ mode: 'loop', status: 'failed', generation })
+  })
+  it('reports an unwritable mode file and still changes modes', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mm-operator-loop-test-')); directories.push(directory)
+    const f = fixture(join(directory, 'missing', 'loop.json'))
+    expect(await f.controller.desktop()).toBe(true)
+    expect(f.report).toHaveBeenCalledWith('operator_loop_save_failed')
+    const playing = f.controller.play()
+    await vi.advanceTimersByTimeAsync(0)
+    advancePlayback(f.controller, f.controller.view().snapshot.generation)
+    expect(await playing).toBe(true)
+    const returning = f.controller.normal()
+    await vi.advanceTimersByTimeAsync(0)
+    f.controller.report({ generation: f.controller.view().snapshot.generation - 1, status: 'released' })
+    expect(await returning).toBe(true)
+    expect(f.report).not.toHaveBeenCalledWith('operator_loop_release_failed')
+    expect(f.controller.isInputSuspended()).toBe(false)
+  })
+  it('lets a repeated MUSIC LOOP press win over a VIDEO LOOP start still validating behind the music', async () => {
+    const f = fixture(), gate = deferred<boolean>()
+    const music = { start: vi.fn(async () => true), stop: vi.fn(async () => {}) }
+    const controller = createOperatorLoop({ ...f, path: fixturePath(), music }); controllers.push(controller)
+    expect(await controller.music()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.view().snapshot).toMatchObject({ mode: 'music', status: 'playing' })
+    const stops = music.stop.mock.calls.length, suspensions = f.suspendAvatar.mock.calls.length
+    f.validate.mockImplementationOnce(() => gate.promise)
+    const video = observed(controller.play())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await controller.music()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(video).toHaveBeenCalledExactlyOnceWith(false)
+    gate.resolve(true) // the cloud video arrives later and must not take over
+    await vi.advanceTimersByTimeAsync(24000)
+    expect(controller.view().snapshot).toMatchObject({ mode: 'music', status: 'playing' })
+    expect(controller.isLoopMode()).toBe(false)
+    expect(music.start).toHaveBeenCalledOnce()
+    expect(music.stop).toHaveBeenCalledTimes(stops)
+    expect(f.suspendAvatar).toHaveBeenCalledTimes(suspensions)
+    expect(f.report).toHaveBeenCalledWith('operator_loop_start_superseded')
+  })
+  it('restarts a pending music start that a VIDEO LOOP press had already cancelled', async () => {
+    const f = fixture(), gate = deferred<boolean>(), started: Array<(value: boolean) => void> = []
+    const music = { start: vi.fn(() => new Promise<boolean>(resolve => { started.push(resolve) })), stop: vi.fn(async () => { started.at(-1)?.(false) }) }
+    const controller = createOperatorLoop({ ...f, path: fixturePath(), music }); controllers.push(controller)
+    expect(await controller.music()).toBe(true) // still preparing
+    f.validate.mockImplementationOnce(() => gate.promise)
+    void controller.play() // cancels the pending start while the video validates
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await controller.music()).toBe(true)
+    expect(music.start).toHaveBeenCalledTimes(2)
+    gate.resolve(true); await vi.advanceTimersByTimeAsync(0)
+    expect(controller.isMusicMode()).toBe(true)
+  })
+  it('returns the speakers to their normal levels once after Dance ends by any path, after the player exits', async () => {
+    const f = fixture(), order: string[] = []
+    const dance = { start: vi.fn(async () => true), stop: vi.fn(async () => { order.push('dance_stop') }) }
+    const resetSpeakers = vi.fn(async () => { order.push('reset') }), music = { start: vi.fn(async () => true), stop: vi.fn(async () => {}) }
+    const controller = createOperatorLoop({ ...f, path: fixturePath(), dance, music, resetSpeakers }); controllers.push(controller)
+    expect(await controller.dance()).toBe(true)
+    expect(resetSpeakers).not.toHaveBeenCalled()
+    order.length = 0
+    expect(await controller.desktop()).toBe(true)
+    expect(order).toEqual(['dance_stop', 'reset'])
+    expect(await controller.normal()).toBe(true)
+    expect(resetSpeakers).toHaveBeenCalledOnce()
+    // Music, VIDEO LOOP and a renderer reload leave Dance the same way.
+    expect(await controller.dance()).toBe(true)
+    expect(await controller.music()).toBe(true)
+    expect(resetSpeakers).toHaveBeenCalledTimes(2)
+    expect(await controller.dance()).toBe(true)
+    const playing = controller.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(resetSpeakers).toHaveBeenCalledTimes(3)
+    advancePlayback(controller, controller.view().snapshot.generation); expect(await playing).toBe(true)
+    const back = controller.dance()
+    await vi.advanceTimersByTimeAsync(0)
+    controller.report({ generation: controller.view().snapshot.generation - 1, status: 'released' })
+    expect(await back).toBe(true)
+    resetSpeakers.mockRejectedValueOnce(Error('private helper failure'))
+    controller.rendererReady()
+    await vi.waitFor(() => expect(controller.view().snapshot.mode).toBe('avatar'))
+    expect(resetSpeakers).toHaveBeenCalledTimes(4)
+    expect(f.report).toHaveBeenCalledWith('operator_loop_dance_volume_restore_failed')
+    // A failed reset never gates the mode change; nothing is retried without another Dance.
+    expect(controller.isInputSuspended()).toBe(false)
+    expect(await controller.desktop()).toBe(true)
+    expect(resetSpeakers).toHaveBeenCalledTimes(4)
   })
 })
 

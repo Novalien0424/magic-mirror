@@ -637,10 +637,17 @@ describe('Phase 0 Task 8 Main boot and IPC RED contract', () => {
     let report!: (value: any) => void, context: any
     const youtube = { play: vi.fn((request, callback) => { context = request.context; report = callback; return true }), stop: vi.fn() }
     const requestSleep = vi.fn(async () => ({ status: 'success' })), mediaWakeMicrophone = vi.fn()
+    const searchYoutube = vi.fn(async () => ({ status: 'accepted', code: 'youtube_search_results', videos: [{ url: 'https://www.youtube.com/watch?v=abcdefghijk', title: 'Song', channel: 'Channel' }] }))
     const registered = registerTestIpcHandlers({ ...makeLifecycleNeutralMetadataRuntime([], snapshot), requestSleep, getPublishedSceneConfigForRuntime: async () => config } as never,
-      fixtures.windows, events, undefined, { youtube, mediaWakeMicrophone })
+      fixtures.windows, events, undefined, { youtube, mediaWakeMicrophone, searchYoutube } as never)
     const handler = registered.handlers.get(MIRROR_IPC_CHANNELS.mediaSkill)!, event = { sender: fixtures.mirrorSender, senderFrame: fixtures.mirrorFrame }
     const identity = { realtimeSessionId: 'youtube-session', sessionGeneration: 3 }, request = { action: 'play_youtube', kind: 'music', url: 'https://youtu.be/abcdefghijk', mode: 'once' }
+    // Main plays only a video its own search returned for this session, never an invented URL.
+    expect(await handler(event, { request, identity })).toEqual({ status: 'rejected', code: 'media_not_found' })
+    expect(events.some(entry => entry.reason === 'media_youtube_not_searched')).toBe(true)
+    expect(youtube.play).not.toHaveBeenCalled()
+    await registered.handlers.get(MIRROR_IPC_CHANNELS.searchYoutube)!(event, { request: { query: 'song' }, identity })
+    expect(await handler(event, { request: { ...request, url: 'https://youtu.be/zzzzzzzzzzz' }, identity })).toEqual({ status: 'rejected', code: 'media_not_found' })
     const once = handler(event, { request, identity })
     await vi.waitFor(() => expect(youtube.play).toHaveBeenCalledOnce())
     report({ ...context, status: 'acknowledged' }); expect(await once).toBe('accepted')

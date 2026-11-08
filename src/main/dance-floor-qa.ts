@@ -119,10 +119,12 @@ export async function runDanceFloorQa(input: Phase4QaInput): Promise<Phase4QaRes
   await wait(()=>ui(`return document.querySelector('.live-bar__result')?.textContent.includes('Dance Floor stopped.')`))
   await wait(()=>ui(`return !button('Start Dance Floor').disabled`))
   pass('dance_global_stop_all')
-  // Save a selected file, remove it, then start: deterministic visible recovery.
+  // Save a selected file, remove it, then start: Dance falls back to the first remaining track
+  // (dance_track_fallback, 2026-11-08) instead of failing after the button already chimed.
   const path=join(userData,'dance-shared','DanceFloor.m4a');await rename(path,path+'.held')
-  await click('Start Dance Floor');await wait(async()=> (await view()).frame.reason==='dance_track_missing')
-  pass('dance_missing_track_visible');await rename(path+'.held',path)
+  await click('Start Dance Floor');await wait(async()=> ['preparing','welcome','playing'].includes((await view()).frame.status))
+  await click('Stop Dance Floor');await wait(async()=> (await view()).frame.status==='idle')
+  pass('dance_missing_track_fallback');await rename(path+'.held',path)
   await click('Refresh tracks');await click('Start Dance Floor');await click('Stop Dance Floor')
   await wait(async()=> (await view()).frame.status==='idle');await new Promise(r=>setTimeout(r,800))
   if((await view()).frame.status!=='idle')throw Error('dance_qa_late_start')

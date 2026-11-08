@@ -117,8 +117,8 @@ describe('combined Stream Deck sequence', () => {
     expect((await operateMirrorControl('stop', io)).outcome).toBe('stopped')
     expect(io.app).toHaveBeenLastCalledWith('stop')
   })
-  it('reports a STOP-cancelled MusicLoop or Dance start as cancelled, not failed', async () => {
-    for (const [action, outcome] of [['music', 'music_cancelled'], ['dance', 'dance_cancelled']]) {
+  it('reports a STOP-cancelled MusicLoop, Dance or VIDEO LOOP start as cancelled, not failed', async () => {
+    for (const [action, outcome] of [['music', 'music_cancelled'], ['dance', 'dance_cancelled'], ['loop', 'loop_cancelled']]) {
       const io = { ...control(), mode: vi.fn(async () => ({ status: 'failed', reason: 'operator_command_cancelled' })) }
       expect(await operateMirrorControl(action, io)).toMatchObject({ outcome, tv: 'tv_wake_skipped' })
     }
@@ -131,7 +131,7 @@ describe('combined Stream Deck sequence', () => {
     expect(io.tv).not.toHaveBeenCalled(); expect(io.portrait).not.toHaveBeenCalled()
     expect(io.blackout).not.toHaveBeenCalled(); expect(io.mouse).not.toHaveBeenCalled()
   })
-  it('sets Jabra to 70% once before each music press and leaves subsequent physical volume changes alone', async () => {
+  it('sets every speaker to its normal level once before each music press and leaves subsequent physical volume changes alone', async () => {
     const base = control('already_on')
     let volume = 0.1
     const io = { ...base, resetAudio: vi.fn(async () => { base.order.push('audio_70'); volume = 0.7; return 'jabra_output_70' }) }
@@ -184,7 +184,7 @@ describe('combined Stream Deck sequence', () => {
     expect(io.order.slice(4)).toEqual(action === 'stop' ? ['standby', 'stop']
       : ['start', 'ready', { start: 'normal', loop: 'play_loop', studio: 'studio', console: 'show_console' }[action], 'awake'])
   })
-  it('covers HDMI before shutdown and resets Jabra to 70% even when TV or app cleanup fails', async () => {
+  it('covers HDMI before shutdown and resets the speakers to their normal levels even when TV or app cleanup fails', async () => {
     const order: string[] = []
     const io = { blackout: async (action: string) => { order.push(action); return 'blackout_covered' },
       tv: async () => { order.push('standby'); throw Error('private device failure') },
@@ -306,7 +306,7 @@ describe('combined Stream Deck sequence', () => {
     expect(io.order).toEqual(['start', 'ready', 'show_console', 'awake'])
     expect(io.mode).toHaveBeenCalledExactlyOnceWith('show_console')
   })
-  it('returns the Jabra to 70% unmuted on START only after the app is ready', async () => {
+  it('returns the speakers to their normal levels unmuted on START only after the app is ready', async () => {
     const io = { ...control(), settle: vi.fn(async () => { io.order.push('settle') }), resetAudio: vi.fn(async () => { io.order.push('audio_70'); return 'jabra_output_70' }) }
     expect(await operateMirrorControl('start', io)).toMatchObject({ audio: 'jabra_output_70', outcome: 'started' })
     expect(io.order).toEqual(['start', 'ready', 'normal', 'awake', 'settle', 'audio_70'])

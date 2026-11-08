@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorConfigSchema } from '../../src/main/config-service'
 import { newAvatar } from '../../src/renderer/console/profile-workspace'
-import { registerStudioIpc } from '../../src/main/studio/studio-ipc'
+import { registerStudioIpc, STUDIO_DEFAULT_START_DEADLINE_MS, STUDIO_IMAGE_PAUSE_MS } from '../../src/main/studio/studio-ipc'
+import { createWebConsoleRegistry, isWebConsoleEvent } from '../../src/main/web-console'
 import { createAvatarImageService } from '../../src/main/avatar/image-service'
 import { avatarProfileSessionSettings, parseAvatarSessionSettings } from '../../src/shared/avatar-prompt'
 import { defaultExperience, parseAvatarExperience, parseStudioSessionEvent, parseStudioView, STUDIO_CONSOLE_CHANNEL, STUDIO_MIRROR_CHANNEL,
@@ -85,7 +86,8 @@ describe('Portrait Studio configuration', () => {
 
 describe('Portrait Studio IPC', () => {
   type Snapshot = { lifecycle: string; realtimeSessionId: string | null; sessionGeneration: number }
-  function harness(options: { enabled?: boolean; lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode'] } = {}) {
+  function harness(options: { enabled?: boolean; lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode']
+    fetchImpl?: typeof fetch; now?: () => number; photoPending?: () => boolean } = {}) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const dispatched: unknown[] = []
     const reports: string[] = []
@@ -93,12 +95,15 @@ describe('Portrait Studio IPC', () => {
     const listeners: ((value: Snapshot) => void)[] = []
     const credentials: ChatgptCredentialSource = { get: async () => options.auth === 'missing' ? null : ({ accessToken: 't', accountId: 'a' }),
       refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }), keepAlive: options.keepAlive }
-    const fetchImpl = vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
+    const fetchImpl = options.fetchImpl ?? vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
     const images = createAvatarImageService({ credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
+    // Registered through the Remote Console registry, which marks its own events as remote.
+    const registry = createWebConsoleRegistry({ handle: (channel, handler) => { handlers.set(channel, handler) }, on: () => undefined })
     registerStudioIpc({
       images, imageEnabled: () => options.enabled !== false,
-      ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler) } },
-      authorize: (event, kind) => event === kind,
+      ipcMain: registry.registrar,
+      authorize: (event, kind) => event === kind || kind === 'console' && isWebConsoleEvent(event),
+      ...(options.now ? { now: options.now } : {}), ...(options.photoPending ? { photoPending: options.photoPending } : {}),
       payloadRejected: () => reports.push('payload_rejected'),
       snapshot: () => snapshot,
       subscribe: listener => { listeners.push(listener); listener(snapshot) },
@@ -110,9 +115,11 @@ describe('Portrait Studio IPC', () => {
     const mirror = (request: unknown, identity: unknown = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }) =>
       handlers.get(STUDIO_MIRROR_CHANNEL)!('mirror', { request, identity })
     const console = (command: unknown, sender = 'console') => handlers.get(STUDIO_CONSOLE_CHANNEL)!(sender, command)
+    const remote = (command: unknown) => registry.invoke('studio', [command])
     const move = (next: Snapshot) => { snapshot = next; for (const listener of listeners) listener(next) }
-    return { mirror, console, dispatched, reports, move, fetchImpl }
+    return { mirror, console, remote, dispatched, reports, move, fetchImpl }
   }
+  const lastStep = (h: ReturnType<typeof harness>) => (h.dispatched as { event?: { step?: { id: string } } }[]).filter(c => c.event?.step).at(-1)!.event!.step!.id
   const RT1 = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
 
   it('previews unsaved guest aliases through Console only, without persistence, speech or provider use', async () => {
@@ -243,6 +250,99 @@ describe('Portrait Studio IPC', () => {
     await vi.waitFor(() => expect(signedOut.dispatched).toContainEqual({ type: 'studio_event',
       event: { event: 'closed', reason: 'studio_default_unavailable' }, identity: RT1 }))
     expect(signedOut.reports).toContain('studio_auth_required')
+  })
+
+  it('reports every non-accepted Mirror reply once, with its code as the metadata reason', async () => {
+    let pending = false
+    const h = harness({ photoPending: () => pending })
+    await h.mirror({ action: 'start', source: 'visitor' })
+    expect(await h.mirror({ action: 'step_ready', stepId: 'studio-not-the-current-step' })).toMatchObject({ status: 'ignored', code: 'studio_step_stale' })
+    expect(await h.mirror({ action: 'finish' })).toMatchObject({ status: 'rejected', code: 'studio_wrong_step' })
+    expect(await h.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'ignored', code: 'studio_start_duplicate' })
+    expect(await h.mirror({ action: 'set_name', name: 'Amy', confirmed: false, language: 'en' })).toMatchObject({ status: 'accepted' })
+    pending = true
+    expect(await h.mirror({ action: 'repeat' })).toMatchObject({ status: 'ignored', code: 'studio_photo_pending' })
+    for (const code of ['studio_step_stale', 'studio_wrong_step', 'studio_start_duplicate', 'studio_photo_pending']) expect(h.reports.filter(r => r === code)).toHaveLength(1)
+    expect(h.reports).not.toContain('studio_name_heard')
+    // A reply the runtime already reported is not reported twice.
+    const off = harness({ experience: async () => ({ ...defaultExperience(), visitorMayRequest: false }) })
+    expect(await off.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ code: 'studio_not_enabled' })
+    expect(off.reports.filter(r => r === 'studio_not_enabled')).toHaveLength(1)
+  })
+
+  it('pauses new visits after a plan-limit failure, shows it in Console status, and resumes on a test picture or after 15 minutes', async () => {
+    let clock = Date.parse('2026-11-08T10:00:00Z'), quota = true
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8)])
+    const fetchImpl = vi.fn(async () => quota ? new Response('{"error":{"code":"usage_limit_reached"}}', { status: 429 })
+      : new Response(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }))) as unknown as typeof fetch
+    const h = harness({ fetchImpl, now: () => clock })
+    // A full interview whose picture hits the plan limit.
+    await h.mirror({ action: 'start', source: 'visitor' })
+    await h.mirror({ action: 'set_name', name: 'Amy', confirmed: false, language: 'en' })
+    await h.mirror({ action: 'set_name', name: 'Amy', confirmed: true, language: 'en' })
+    for (let question = 1; question <= 4; question++) await h.mirror({ action: 'answer', question, answer: 'owl', language: 'en' })
+    await h.mirror({ action: 'paint', stepId: lastStep(h) })
+    await vi.waitFor(() => expect(h.reports).toContain('studio_failed_quota_exhausted'))
+    // A plan limit is not retried.
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(await h.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'rejected', code: 'studio_unavailable' })
+    expect(h.reports).toContain('studio_paused_quota_exhausted')
+    const refused = await h.console({ action: 'start' }) as { value: { action: { code: string }; status: { lastImageFailure: unknown } } }
+    expect(refused.value.action.code).toBe('studio_paused_quota_exhausted')
+    expect(refused.value.status.lastImageFailure).toEqual({ code: 'studio_quota_exhausted', at: '2026-11-08T10:00:00.000Z', pausedUntil: '2026-11-08T10:15:00.000Z' })
+    expect(JSON.stringify(refused)).not.toContain('usage_limit')
+    clock += STUDIO_IMAGE_PAUSE_MS
+    expect(await h.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'accepted', code: 'studio_started' })
+    // A successful test picture lifts a pause at once; the failure stays visible without it.
+    const tested = harness({ fetchImpl, now: () => clock })
+    expect(await tested.console({ action: 'test' })).toMatchObject({ value: { test: { ok: false, code: 'studio_quota_exhausted' } } })
+    expect(await tested.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'rejected' })
+    quota = false
+    expect(await tested.console({ action: 'test' })).toMatchObject({ value: { test: { ok: true }, status: { lastImageFailure: { code: 'studio_quota_exhausted' } } } })
+    const status = await tested.console({ action: 'status' }) as { value: { status: { lastImageFailure: Record<string, unknown> } } }
+    expect(status.value.status.lastImageFailure).not.toHaveProperty('pausedUntil')
+    expect(await tested.mirror({ action: 'start', source: 'visitor' })).toMatchObject({ status: 'accepted', code: 'studio_started' })
+  })
+
+  it('gives up a slow studio-default start before the Mirror does and never enters late', async () => {
+    vi.useFakeTimers()
+    try {
+      let release!: () => void
+      const gate = new Promise<void>(resolve => { release = resolve })
+      const h = harness({ lifecycle: 'activating', experience: async () => { await gate; return { ...defaultExperience(), defaultMode: 'portrait_studio' as const } } })
+      h.move({ lifecycle: 'active', realtimeSessionId: 'rt-1', sessionGeneration: 1 })
+      await vi.advanceTimersByTimeAsync(STUDIO_DEFAULT_START_DEADLINE_MS - 1)
+      expect(h.dispatched).toEqual([])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(h.dispatched).toEqual([{ type: 'studio_event', event: { event: 'closed', reason: 'studio_default_unavailable' }, identity: RT1 }])
+      expect(h.reports).toContain('studio_default_timeout')
+      release()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(h.dispatched).toHaveLength(1)
+      expect(h.reports).not.toContain('studio_started_session_default')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('lets the operator end the current visit as if it had finished', async () => {
+    const h = harness()
+    expect(await h.console({ action: 'end' })).toMatchObject({ ok: true, value: { action: { status: 'ignored', code: 'studio_not_active' } } })
+    await h.console({ action: 'start' })
+    expect(await h.console({ action: 'end' })).toMatchObject({ ok: true, value: { status: { active: false }, action: { status: 'accepted', code: 'studio_operator_ended' } } })
+    expect(h.dispatched).toContainEqual({ type: 'studio_event', event: { event: 'keepsake_done', afterPortrait: 'continue' }, identity: RT1 })
+    expect(h.dispatched).not.toContainEqual(expect.objectContaining({ event: expect.objectContaining({ event: 'closed' }) }))
+    expect(h.reports).toContain('studio_operator_ended')
+  })
+
+  it('keeps the name-match test and the test picture on the Mac; Remote Console keeps the live controls', async () => {
+    const h = harness()
+    const command = { action: 'match_name', name: 'Amy', guests: { names: ['Amy'], match: 'prefer' } }
+    expect(await h.remote(command)).toEqual({ ok: false, error: 'console_request_rejected', reason: 'cause=mac_local_only' })
+    expect(await h.remote({ action: 'test' })).toEqual({ ok: false, error: 'console_request_rejected', reason: 'cause=mac_local_only' })
+    expect(h.reports).toEqual(expect.arrayContaining(['studio_remote_match_name_rejected', 'studio_remote_test_rejected']))
+    expect(h.fetchImpl).not.toHaveBeenCalled()
+    expect(await h.remote({ action: 'status' })).toMatchObject({ ok: true })
+    expect(await h.remote({ action: 'start' })).toMatchObject({ ok: true, value: { action: { code: 'studio_started' } } })
+    expect(await h.console(command)).toMatchObject({ ok: true, value: { nameMatches: ['Amy'] } })
   })
 
   describe('Mirror mode switch', () => {

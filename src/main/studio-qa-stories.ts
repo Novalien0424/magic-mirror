@@ -77,14 +77,16 @@ export const STUDIO_QA_STORIES: readonly StudioQaStory[] = Object.freeze([
     },
   },
   {
-    id: 'soul_silence', title: 'Gate thirty-three: two edited questions, silent name and silent answers',
+    id: 'soul_silence', title: 'Gate thirty-three: two edited questions, silent name, one answer and one silent answer',
     studio: { questions: [
       { id: 'quiet', zh: '說說你最珍惜的一段安靜時光。[pause=1s]為什麼呢？', en: 'What quiet moment do you cherish, and why?', slot: 'mood' },
       { id: 'wish', zh: '接下來，你希望多一點什麼？', en: 'What would you like more of next?', slot: 'detail' },
     ] },
     visitor: {
       name: { say: '我叫王曉明。', intended: '無名之人', correction: '我叫王曉明。', confirm: '對。' },
-      silentName: true, silentQuestions: [1, 2], silentPreference: true, answers: ['保持沉默。', '保持沉默。'], changes: [], thanks: '我很喜歡這個靈魂，不需要修改，謝謝你。',
+      // A visitor silent through the name and the first question has left: that visit ends without a
+      // painting (studio_abandoned, 2026-11-08), so this story answers the first question.
+      silentName: true, silentQuestions: [2], silentPreference: true, answers: ['清晨一個人散步的時候，因為很安靜。', '保持沉默。'], changes: [], thanks: '我很喜歡這個靈魂，不需要修改，謝謝你。',
     },
   },
   {

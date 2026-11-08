@@ -89,6 +89,28 @@ export function matchSearchPhrase(value: string, phrase: string): 'alone' | 'req
   return undefined
 }
 
+/** Ways a visitor asks to hear or watch the result (撥放 folds to 播放). Single characters such as
+ * 放, 聽, 唱 or 播 alone are not requests: 開放時間, 好不好聽, 演唱會, 播出 (audit 2026-11-08). */
+const PLAY_PHRASES = ['播放', '播一下', '播一首', '播首', '播給', '幫我播', '放一下', '放一首', '放首', '放給', '幫我放',
+  '來一首', '想聽', '要聽', '聽聽', '聽一下', '唱一首', '唱首', '唱給']
+let playKeys: string[][] | undefined
+/**
+ * Whether the request asks to play what is found (the online-song fallback when the model only
+ * answers). A negation in the two syllables before the phrase (不要播放, 先別放給我聽, 不想聽,
+ * 要不要聽) does not ask; English counts whole words (play, listen) unless a negation precedes.
+ */
+export function matchPlayRequest(value: string): boolean {
+  playKeys ??= PLAY_PHRASES.map(keysOf)
+  const keys = keysOf(value)
+  for (let start = 0; start < keys.length; start++) {
+    const phrase = playKeys.find(candidate => candidate.every((key, index) => keys[start + index] === key))
+    if (phrase && !keys.slice(Math.max(0, start - 2), start).some(key => NEGATIONS.has(key))) return true
+  }
+  const words = value.toLowerCase().match(/[a-z']+/gu) ?? []
+  return words.some((word, index) => (word === 'play' || word === 'listen')
+    && !['not', "don't", 'dont', 'never', 'no'].includes(words[index - 1] ?? '') && !(words[index - 2] === 'do' && words[index - 1] === 'not'))
+}
+
 export function isSpellAttempt(value: string): boolean {
   return opensWithSpokenPhrase(value, '施放咒語')
 }
