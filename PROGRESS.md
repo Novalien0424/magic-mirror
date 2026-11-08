@@ -3,8 +3,8 @@
 ## Current delivery
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
-Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA and
-speaker-sync tests, the last ended 22:24); speakers at the defaults (Jabra 80% in normal playback and in its
+Mac, user LaunchAgent. The app is stopped (owner MUSIC LOOP → STOP 15:19 Taipei 11-08; afterwards only QA
+and speaker-sync tests, the last ended 22:24; no START since, checked at clock-out 11-09 06:34); speakers at the defaults (Jabra 80% in normal playback and in its
 call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
 `stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
 [DECISIONS](DECISIONS.md). Previous handoff:
