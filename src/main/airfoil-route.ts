@@ -6,14 +6,16 @@ import { DEFAULT_SPEAKER_LEVELS, speakerTargetLevel, type SpeakerLevels } from '
 
 /**
  * Venue music through Airfoil (Rogue Amoeba). All music plays into the "Magic Mirror Music"
- * virtual device (music-loop helpers, while the flag file exists); Airfoil reads that device
- * and plays it on the Jabra ("Computer"), Bluetooth speakers and AirPlay speakers named
+ * virtual output (music-loop helpers, while the flag file exists); Airfoil reads its separate
+ * zero-latency "Magic Mirror Capture" input, so the output's video compensation cannot be
+ * counted again by Core Audio when the driver loads. Airfoil plays it on the Jabra
+ * ("Computer"), Bluetooth speakers and AirPlay speakers named
  * EDIFIER, in sync. The device reports Airfoil's measured delay, so Chromium and AVPlayer
  * hold pictures back to match. Raven's voice never enters this path (it stays on the Jabra).
  * Without Airfoil the flag is removed and music falls back to the direct speaker group.
  * Diagnostics are counts and reason codes only.
  */
-export const AIRFOIL_SOURCE = 'Magic Mirror Music'
+export const AIRFOIL_SOURCE = 'Magic Mirror Capture'
 export const AIRFOIL_LOCAL_ID = 'com.rogueamoeba.airfoil.LocalSpeaker'
 
 export interface AirfoilSpeaker { id: string; name: string; connected: boolean }
@@ -30,6 +32,8 @@ export function airfoilKind(speaker: Pick<AirfoilSpeaker, 'id' | 'name'>): Airfo
 
 /** Bluetooth sync settle time after Airfoil connects a speaker (measured ~6 min, 2026-11-07). */
 export const BLUETOOTH_SETTLE_MS = 6.5 * 60_000
+/** An AirPlay connect normally lands on the next 10 s poll; this long without one is a degrade. */
+export const AIRPLAY_MISSING_MS = 30_000
 
 export function parseAirfoilSpeakers(text: string): AirfoilSpeaker[] {
   return text.split('\n').map(line => line.split('\t')).filter(parts => parts.length === 3 && parts[0])
@@ -106,6 +110,9 @@ export function createAirfoilRoute(input: {
   const levels = input.levels ?? DEFAULT_SPEAKER_LEVELS
   let stopped = false, active = false, failures = 0, level = levels.jabra, timer: ReturnType<typeof setTimeout> | undefined
   let targets: AirfoilSpeaker[] = [], lastReason = '', joined = new Set<string>()
+  // 2026-11-08: after a reboot the Edifier was off the network, then listed but unresolvable, and
+  // music played on the Jabra alone with no reason anywhere. Since when no AirPlay speaker plays.
+  let airplayMissingSince: number | undefined, airplayMissing = false
   // Measured 2026-11-07: after Airfoil connects a Bluetooth speaker (A1) it starts ~130 ms late
   // and glides into sync at ~20 ms/min, settling after ~6 min (the Jabra and AirPlay speakers are
   // in sync at once). The speaker streams at Airfoil volume 0 meanwhile and then joins in sync.
@@ -238,6 +245,17 @@ export function createAirfoilRoute(input: {
     const count = (kind: AirfoilKind) => targets.filter(speaker => speaker.connected && airfoilKind(speaker) === kind).length
     if (!wasActive) input.report('music_output_airfoil_ready', { speakers: targets.filter(s => s.connected).length, airplay: count('airplay'), bluetooth: count('bluetooth') })
     else if (reconnected) input.report('music_output_airfoil_speaker_reconnected', { speakers: reconnected })
+    // No AirPlay speaker (Edifier) for 30 s: listed but refusing, or not found on the network at all.
+    if (count('airplay')) {
+      if (airplayMissing) input.report('music_output_airplay_restored', { speakers: count('airplay') })
+      airplayMissingSince = undefined; airplayMissing = false
+    } else {
+      airplayMissingSince ??= clock()
+      if (!airplayMissing && clock() - airplayMissingSince >= AIRPLAY_MISSING_MS) {
+        airplayMissing = true
+        input.degraded(targets.some(speaker => airfoilKind(speaker) === 'airplay') ? 'music_output_airplay_unreachable' : 'music_output_airplay_not_found')
+      }
+    }
   }
   const loop = async (): Promise<void> => {
     if (stopped) return
@@ -251,6 +269,7 @@ export function createAirfoilRoute(input: {
       if (!(input.installed ?? (() => existsSync('/Applications/Airfoil.app')))()) return input.report('music_output_airfoil_not_installed')
       // A previous run that died keeps no stale route: music is direct until Airfoil is verified.
       await writeFlag(false).catch(() => undefined); active = false
+      airplayMissingSince = undefined; airplayMissing = false
       resumed = settleState.load()
       await launch().catch(() => undefined)
       void loop()

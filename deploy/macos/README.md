@@ -81,6 +81,9 @@ zsh deploy/macos/music-device/build.sh
 sudo zsh deploy/macos/music-device/install.sh         # /Library/Audio/Plug-Ins/HAL/MagicMirrorMusic.driver
 ```
 
+The driver exposes **Magic Mirror Music** (playback, with video compensation) and
+**Magic Mirror Capture** (input, zero reported latency). Airfoil must read Capture;
+deploy the matching app build with this driver. The installer verifies both endpoints.
 Name AirPlay speakers `EDIFIER…` so the app connects them. Calibration (Airfoil
 `syncOffsets`, the device's reported latency) and re-tuning are in the
 [Airfoil music route](stream-deck.md#musicloop) and `ops/music-device/calibration.json`.

@@ -138,14 +138,19 @@ reset is recorded in button diagnostics; music can still use other outputs.
 source (MusicLoop, Dance Floor, VIDEO LOOP, conversation music, YouTube) plays into the
 virtual output **Magic Mirror Music** ([music-device/](music-device/): pinned BlackHole
 v0.7.1, GPL-3.0, 48 kHz, plus a settable reported latency, custom property `mmlt` in
-frames). Airfoil reads that device and plays the Jabra ("Computer"), every Bluetooth
+frames). Since 2026-11-08 this is a playback-only endpoint; Airfoil reads the separate
+input-only **Magic Mirror Capture**, which shares its samples and reports zero latency.
+This prevents the video compensation being added again to Mac-side sound after a cold
+Core Audio load. Airfoil plays the Jabra ("Computer"), every Bluetooth
 speaker it lists and every AirPlay speaker named EDIFIER (a second Edifier joins by name).
 Main (`src/main/airfoil-route.ts`) launches Airfoil, sets the source, connects and
 reconnects speakers every 10 s, keeps AirPlay speakers at the Jabra's level, and writes
 `ops/music-device/airfoil-route` only once the Jabra is connected; the music-loop helpers
 then wrap only the music device (the public "Magic Mirror Speakers" default output stays).
 Without Airfoil the flag goes and the direct group below returns (Edifier silent;
-`MUSIC_OUTPUT music_output_airfoil_*` reason). The TV (HDMI) is not in the Airfoil group.
+`MUSIC_OUTPUT music_output_airfoil_*` reason). No AirPlay speaker for 30 s is reported once:
+`music_output_airplay_unreachable` (listed, not connecting) or `_not_found` (not listed; the
+Edifier stopped answering Bonjour on 11-08, so power-cycle it), then `_restored`. The TV (HDMI) is not in the Airfoil group.
 Raven's voice stays on the Jabra.
 
 Calibration (2026-11-01, `~/Library/Application Support/MagicMirror/ops/music-device/calibration.json`):
@@ -190,6 +195,11 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
 - Ear tests were unreliable below ~50 ms, and a 1–2 min settle is too short for A1: measure from
   connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 
+Current calibration, **2026-11-08 after the split-driver fix: Computer 0.222, A1 0,
+Edifier −0.108**. Two cold driver loads passed. Final Jabra–Edifier block differences
+were 1–5 ms; settled A1–Edifier differences were 4–7 ms. Normal Bluetooth variation
+and the A1 settle hold above remain. [Evidence](../../docs/testing/airfoil-sync-2026-11-08-followup.md).
+
 TV picture delay (2026-11-01 evening): the TV shows a Mac frame **67 ms** later (Mac draw →
 board composition; three runs 68/67/62 ms, p10–p90 50–85 ms in 60 Hz steps), measured with
 [speaker-sync/tv-picture/measure.sh](speaker-sync/tv-picture/measure.sh) while the TV is awake
@@ -197,8 +207,26 @@ board composition; three runs 68/67/62 ms, p10–p90 50–85 ms in 60 Hz steps),
 frames (2081 ms; was 103104 = 2148 ms). Chromium holds video frames back and AVPlayer's
 Dance clock lags by this value, so pictures and Dance reach the panel with the sound. Read
 or set it with [music-device/latency.swift](music-device/latency.swift) (`latency [frames]`).
-Re-tune after adding a speaker: STOP, run `measure.sh <mic-uid>`, write `syncOffsets` with
-Airfoil quit, relaunch, re-measure; reset `mmlt` if the audio total or the TV path changes.
+Re-tune after adding a speaker: STOP, measure with
+[speaker-sync/measure-continuous.sh](speaker-sync/measure-continuous.sh) + `scan.py`
+(0–30 s; header has the microphones and lease command). Use a RAM disk for recordings,
+one continuous microphone, and alternating speaker blocks. Use A1's mic for the Jabras
+with A1 transmission off; use the Jabra mic for A1. The runner restores normal levels
+and deletes its raw recording. It leaves connections intact between measurements.
+After the last run disconnect Computer/Edifier, leaving A1 connected for its settle hold.
+To change calibration,
+write `syncOffsets` with Airfoil quit (values beyond the ±1 s sliders are ignored), relaunch,
+re-measure ≥2 min after Edifier connects and ≥6.5 min for a fresh A1 connection;
+reset `mmlt` if the audio total or the TV path changes.
+
+**Cold-start fault (2026-11-08):** the old duplex device's persisted `mmlt` made
+Mac-side playback an extra 2081 ms late. Setting it to zero and relaunching Airfoil
+did not clear Core Audio's cached state; reloading Core Audio and the driver exposed
+the cause. The split playback/capture endpoints above retain picture compensation.
+Measurements and remaining limits:
+[follow-up](../../docs/testing/airfoil-sync-2026-11-08-followup.md).
+Separately, a relaunched Airfoil can miss an unreachable Edifier until it re-announces;
+check discovery/readiness before judging sync.
 
 ### Speaker levels (calibrated 2026-11-07)
 

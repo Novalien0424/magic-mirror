@@ -178,14 +178,14 @@ describe('Airfoil venue route', () => {
   })
 
   it('commits a Jabra music change only after Airfoil applied it, retries a failed write on the next poll, one write at a time', async () => {
-    let micOpen = false, failNext = 0, inFlight = 0, overlapped = false
+    let micOpen = false, failWrites = false, inFlight = 0, overlapped = false
     const airfoil = fakeAirfoil(), report = vi.fn(), degraded = vi.fn()
     const run = vi.fn(async (script: string, args: string[] = []) => {
       if (args[0] !== AIRFOIL_LOCAL_ID || script.includes('every speaker')) return airfoil.run(script, args)
       if (inFlight++) overlapped = true
       try {
         await new Promise(resolve => setTimeout(resolve, 15))
-        if (failNext > 0 && !script.includes('connect to')) { failNext--; throw Error('osascript timeout') }
+        if (failWrites && !script.includes('connect to')) throw Error('osascript timeout')
         return await airfoil.run(script, args)
       } finally { inFlight-- }
     })
@@ -194,10 +194,14 @@ describe('Airfoil venue route', () => {
     await route.start()
     await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
     expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
-    failNext = 2; micOpen = true; route.refreshLocal(); route.refreshLocal()
+    failWrites = true; micOpen = true; route.refreshLocal(); route.refreshLocal()
     await vi.waitFor(() => expect(degraded).toHaveBeenCalledWith('music_output_jabra_music_failed'))
     expect(report).not.toHaveBeenCalledWith('music_output_jabra_music_off')
+    expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(1)
     // The failed write is not recorded as applied: a later poll writes it again and only then reports.
+    // Keep the failure active until the assertion: a finite two-failure window
+    // could finish before waitFor's 50 ms observation, making this test race.
+    failWrites = false
     await vi.waitFor(() => expect(airfoil.volumes.get(AIRFOIL_LOCAL_ID)).toBe(0))
     await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_jabra_music_off'))
     expect(degraded.mock.calls.filter(([reason]) => reason === 'music_output_jabra_music_failed')).toHaveLength(1)
@@ -253,6 +257,38 @@ describe('Airfoil venue route', () => {
     airfoil.failList(false)
     await vi.waitFor(() => expect(flags.at(-1)).toBe(true))
     route.stop()
+  })
+
+  it('reports once when no AirPlay speaker plays for 30 s, unreachable or not found, and when it returns', async () => {
+    let t = 0, refuse = true
+    const edifier = 'AABBCC001133@EDIFIER M330 Ⅱ 1133', airfoil = fakeAirfoil(), report = vi.fn(), degraded = vi.fn()
+    // The Edifier is listed but Airfoil cannot connect it (off the network after a reboot, 2026-11-08).
+    const run = vi.fn(async (script: string, args: string[] = []) =>
+      script.includes('connect to') && args[0] === edifier && refuse ? 'false' : airfoil.run(script, args))
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded, run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, now: () => t })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 2, airplay: 0, bluetooth: 1 }))
+    t = 29_999
+    await new Promise(done => setTimeout(done, 30))
+    expect(degraded).not.toHaveBeenCalled()
+    t = 30_000
+    await vi.waitFor(() => expect(degraded).toHaveBeenCalledWith('music_output_airplay_unreachable'))
+    await new Promise(done => setTimeout(done, 30))
+    expect(degraded).toHaveBeenCalledTimes(1)
+    refuse = false
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airplay_restored', { speakers: 1 }))
+    route.stop()
+    // A fresh Airfoil that does not list the Edifier at all.
+    t = 0
+    const hidden = fakeAirfoil(LIST.split('\n').filter(line => !line.includes('EDIFIER')).join('\n')), missing = vi.fn(), ready = vi.fn()
+    const second = createAirfoilRoute({ flagPath: '/flag', report: ready, degraded: missing, run: hidden.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, now: () => t })
+    await second.start()
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 2, airplay: 0, bluetooth: 1 }))
+    t = 30_000
+    await vi.waitFor(() => expect(missing).toHaveBeenCalledWith('music_output_airplay_not_found'))
+    second.stop()
   })
 
   it('keeps direct speakers when the Jabra (Computer) cannot join, or Airfoil is not installed', async () => {

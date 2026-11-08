@@ -2,7 +2,9 @@
 # output latency so Chromium/AVPlayer delay pictures to match Airfoil's playout delay.
 # The HAL treats kAudioDevicePropertyLatency as read-only, so the value is set through a
 # custom device property 'mmlt' (CFNumber, frames at 48 kHz), persisted in the plug-in's
-# storage. The input side (read by Airfoil) always reports 0.
+# storage. Airfoil reads a separate capture-only device that reports zero in
+# every scope. A duplex device with a persisted output delay made Core Audio
+# add that delay again to Airfoil's local outputs after a fresh driver load.
 import sys
 
 path = sys.argv[1]
@@ -81,8 +83,18 @@ old_latency = """			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAud
 assert body.count(old_latency) == 1
 body = body.replace(old_latency, """			FailWithAction(inDataSize < sizeof(UInt32), theAnswer = kAudioHardwareBadPropertySizeError, Done, "BlackHole_GetDevicePropertyData: not enough space for the return value of kAudioDevicePropertyLatency for the device");
 			pthread_mutex_lock(&gPlugIn_StateMutex);
-			*((UInt32*)outData) = (inAddress->mScope == kAudioObjectPropertyScopeOutput) ? gDevice_OutputReportedLatency : 0;
+			*((UInt32*)outData) = (inObjectID == kObjectID_Device && inAddress->mScope == kAudioObjectPropertyScopeOutput) ? gDevice_OutputReportedLatency : 0;
 			pthread_mutex_unlock(&gPlugIn_StateMutex);""", 1)
+s = s[:start] + body + s[end:]
+
+# With the split endpoint build, the input stream belongs to the capture device.
+# Upstream's mirrored-device default assigns both stream owners to device 1.
+start = s.index("static OSStatus\tBlackHole_GetStreamPropertyData(")
+end = s.index("static OSStatus\tBlackHole_SetStreamPropertyData(", start)
+body = s[start:end]
+old_owner = "*((AudioObjectID*)outData) = kObjectID_Device;"
+assert body.count(old_owner) == 1
+body = body.replace(old_owner, "*((AudioObjectID*)outData) = (inObjectID == kObjectID_Stream_Input) ? kObjectID_Device2 : kObjectID_Device;", 1)
 s = s[:start] + body + s[end:]
 
 # Set: clamp, store, persist and announce both the custom property and the device latency.

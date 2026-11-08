@@ -115,23 +115,12 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Dormant music, and the Jabras sit out music while their microphone is open; (3) mini still says a word before playing on some turns (judge `tool_silence`);
   (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
   `npm run build` and passes on rerun.
-- [ ] **Airfoil sync — open items (11-01).** All music now plays through Airfoil (runbook
-  "Airfoil music route"; calibrated Edifier +0.8 ms, A1 +26 ms from the Jabra, total 2148 ms).
-  Open: (1) the second Jabra now plays through Jabra's link (11-07: silent while the USB Jabra
-  had been pressed second; relinked with the USB Jabra first, owner confirmed both play, in sync
-  by ear). Night re-tune 11-07: Computer 0.246, A1 0 (runbook); A1 now joins 6.5 min after each
-  connect (Airfoil's Bluetooth sync glide). Owner to judge by ear on the next session; still open:
-  A1 wanders ±20 ms with 30–40 ms jumps on its weak link (move it nearer the Mac mini, or an AirPlay
-  speaker instead); A1 now stays connected through STOP (owner), so only a fresh connect waits.
-  Its loudness at 1 m is unmeasured;
-  (2) the TV (HDMI) is outside the Airfoil group: measure its delay once a non-Jabra mic
-  exists, then add it (e.g. Computer = Jabra + HDMI multi-output); (3) the Jabra pair's absolute delay
-  still rests on the 11-01 iPad memo (11-07 re-tune is relative to the Edifier; lip-sync `mmlt`
-  unchanged); (4) watch A1 (±25 ms per stream
-  start; weak link). The TV picture path is measured (67 ms, `tv-picture/measure.sh`) and
-  compensated (reported latency 2081 ms); lip-sync now rests on the audio total (2148 ms);
-  a glance at VIDEO LOOP/YouTube is still a useful sanity check;
-  (5) a second Edifier joins by name: re-run `speaker-sync/measure.sh` and set its offset.
+- [ ] **Airfoil sync — open items.** All music plays through Airfoil (runbook "Airfoil music route").
+  (1) A1 wanders ±20 ms with 30–40 ms jumps on its weak link and joins 6.5 min after a fresh connect
+  (it stays connected through STOP); move it nearer the Mac mini or replace it. (2) The TV (HDMI) is
+  outside the Airfoil group; its picture delay (67 ms) is compensated in `mmlt` (2081 ms), so lip-sync
+  rests on the audio total. (3) The Jabra pair's absolute delay rests on the 11-01 iPad memo. (4) A
+  second Edifier joins by name: measure it with `speaker-sync/measure-continuous.sh` and set its offset.
 - [ ] **Video loop smoothness.** Loop re-reads now reuse the local copy and each wrap logs
   `operator_loop_wrapped wraps= dropped=`. Open: the board's camera-preview HDMI
   path (the TV wake order stays: DECISIONS 11-01). Watch the wrap markers in the room.

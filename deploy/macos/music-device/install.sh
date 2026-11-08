@@ -16,6 +16,12 @@ fi
 codesign --verify "$STAGED"
 rm -rf "$TARGET"; cp -R "$STAGED" "$TARGET"; chown -R root:wheel "$TARGET"; chmod -R go-w "$TARGET"
 killall coreaudiod 2>/dev/null || true
-for i in {1..20}; do sleep 1; system_profiler SPAudioDataType 2>/dev/null | grep -q "Magic Mirror Music:" && break; done
-system_profiler SPAudioDataType 2>/dev/null | grep -q "Magic Mirror Music:" \
-  && print "INSTALLED: Magic Mirror Music is present" || { print -u2 "driver copied but the device did not appear"; exit 1; }
+for i in {1..20}; do
+  sleep 1
+  AUDIO_DEVICES=$(system_profiler SPAudioDataType 2>/dev/null || true)
+  if [[ "$AUDIO_DEVICES" == *"Magic Mirror Music:"* && "$AUDIO_DEVICES" == *"Magic Mirror Capture:"* ]]; then
+    print "INSTALLED: Magic Mirror Music and Magic Mirror Capture are present"
+    exit 0
+  fi
+done
+print -u2 "driver copied but the playback/capture pair did not appear"; exit 1

@@ -2,13 +2,29 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
+Runtime: `field/macmini-deploy` canonical working tree (sync changes deployed locally, not committed). Canonical
 Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA apps,
-the last one ended about 12:30); speakers at the defaults (Jabra 80% in normal playback and in its
+the latest speaker-sync tests ended about 20:15); speakers at the defaults (Jabra 80% in normal playback and in its
 call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
 `stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
 [DECISIONS](DECISIONS.md) (2026-11-07 entries). Previous handoff:
 [archived 11-01](docs/archive/progress-before-online-songs-2026-11-07.md).
+
+**Fixed/deployed 11-08 — Airfoil's two-second sync fault.** Cold-loading the old duplex
+virtual driver with `mmlt=99888` adds 2081 ms to Mac-side sound; setting zero and merely
+relaunching Airfoil did not clear Core Audio's state. A controlled zero/nonzero cold-load
+test proved the cause. The installed driver now separates playback **Magic Mirror Music**
+(video compensation retained) from input **Magic Mirror Capture** (Airfoil source, zero latency).
+Two fresh driver loads passed. Final acoustic block differences: Jabra–Edifier 1–5 ms;
+settled A1–Edifier 4–7 ms. Computer offset is now 0.222; A1 0, Edifier −0.108 and `mmlt`
+99888 remain. Driver signature, typechecks, 13 route tests, build, real Main routing and
+native shared-output creation passed. A1's settle hold and Bluetooth variation remain.
+Normal app stays stopped; A1 connected, Computer/Edifier released, levels restored.
+[Investigation, failures, evidence and limits](docs/testing/airfoil-sync-2026-11-08-followup.md).
+Earlier [debug log](docs/testing/airfoil-sync-2026-11-08-debug-log.md) and
+[research brief](docs/testing/airfoil-sync-2026-11-08.md) are superseded conclusions.
+The previously added `music_output_airplay_unreachable` / `_not_found` / `_restored`
+diagnostics remain; those failure/recovery paths were unit-tested, not forced live here.
 
 Audit and fixes 11-08 (owner: "clean up; audit loops, Raven and Studio; fix everything; commit,
 push, deploy"):

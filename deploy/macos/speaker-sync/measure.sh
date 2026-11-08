@@ -21,7 +21,7 @@ swiftc -O "$SRC/probe-play.swift" -o "$WORK/mmsync-play"
 swiftc -O "$SRC/probe-record.swift" -o "$WORK/mmsync-rec"
 speakers=$(osascript -e 'tell application "Airfoil"
 set linked volume to false
-set current audio source to (first device source whose name is "Magic Mirror Music")
+set current audio source to (first device source whose name is "Magic Mirror Capture")
 set out to ""
 repeat with s in every speaker
 set i to id of s

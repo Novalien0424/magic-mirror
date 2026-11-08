@@ -38,11 +38,30 @@ Use guaranteed cleanup, not a success-only restore; report a failed reset/read-b
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.
 
-Speaker sync (2026-11-01): music reaches the speakers through Airfoil and runs
+Speaker sync (2026-11-08): music reaches the speakers through Airfoil and runs
 ≈2.15 s behind the source; AirPlay speakers follow the Jabra's level with their offset
-(5% floor, never above the Jabra), so 1% QA on the Jabra quiets them too. Judge sync by measurement, never by ear: STOP, then
-`deploy/macos/speaker-sync/measure.sh <mic-uid>` (runbook "Airfoil music route").
-A Jabra mic cannot hear another Jabra. Two attached Jabras make the normal-level reset
+(5% floor, never above the Jabra), so 1% QA on the Jabra quiets them too. Judge sync by
+measurement, never by ear: STOP, Jabra at 100%, run
+`deploy/macos/speaker-sync/measure-continuous.sh` through the Electron lease with a fresh
+directory on a RAM disk (usage in its header). It records one continuous microphone,
+scans 0–30 s, deletes raw audio and resets/read-checks normal levels on exit. Settle ≥2 min
+after Edifier readiness, ≥390 s for fresh A1 output. Use A1 mic with `no-a1` for Jabra;
+use Jabra mic with `group` for A1. A Jabra mic cannot hear another Jabra, and opening
+A1's mic changes A1 playback to HFP. After the final run disconnect Computer/Edifier;
+leave A1 connected as STOP does. Never select Edifier in macOS Sound settings (it leaves
+Airfoil). Relaunch Airfoil only within authorized testing and check Edifier readiness.
+The split driver feeds Airfoil from zero-latency **Magic Mirror Capture**; producers use
+**Magic Mirror Music** with `mmlt` video compensation. The old duplex device acquired an
+extra 2081 ms after a cold Core Audio/driver load. Merely changing `mmlt` and relaunching
+Airfoil did not clear that state. Evidence: `docs/testing/airfoil-sync-2026-11-08-followup.md`.
+Exclusion rule (11-08 misdiagnosis): a test rules a variable out only if it resets the
+layer that caches it. Core Audio reads device latency (`mmlt`) at driver load, so an
+Airfoil relaunch proves nothing; with the app stopped and Airfoil quit, restart
+`coreaudiod` and run A/B/A. A gap equal to a configured value (2081 ms = 99888 frames)
+stays the prime suspect until such a control clears it. Test every controllable variable
+before blaming an unreadable layer (encrypted AirPlay, firmware), and check the runner
+does not undo the condition (`measure-a1.sh` reconnects A1).
+Two attached Jabras make the normal-level reset
 refuse (`jabra_output_ambiguous`): report it, do not work around it.
 
 Electron QA holds the operator lease, so venue Stream Deck presses fail with
