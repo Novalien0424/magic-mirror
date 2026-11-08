@@ -9,6 +9,63 @@ block differences are 1–5 ms, and settled A1–Edifier differences are 4–7 m
 This continues the [earlier debug log](airfoil-sync-2026-11-08-debug-log.md), preserving
 its observations while testing its exclusions independently. Times below are Taipei.
 
+## Root cause in plain English
+
+- **The old setup:** "Magic Mirror Music" was one virtual device with two sides. Music apps
+  play into its output side, and Airfoil listened to its input side and sent that sound
+  to every speaker.
+- **The delay setting:** the output side tells apps "this sound comes out 2.081 s later"
+  (`mmlt`). Videos hold their pictures back by that much, so they stay in step with the
+  speakers. That number is correct and still needed.
+- **What went wrong:** whenever macOS's audio system (`coreaudiod`) loaded the old device
+  with 2.081 s saved, that delay also ended up in Airfoil's timing for the speakers attached
+  to the Mac (Jabra and A1). They played at about 2.15 + 2.08 ≈ 4.2 s. The Edifier gets its
+  sound over Wi-Fi and kept playing at 2.15 s. That two-second gap was the echo.
+- **What is proven:** with 0 saved, a reload of the audio system removed exactly 2.081 s.
+  With 2.081 s saved, the next reload brought it back. The test ran zero, then nonzero.
+  Which component inside macOS or Airfoil adds the delay is not visible to us.
+- **Why the first debug log missed it:** it changed the value and relaunched only Airfoil.
+  The audio system reads the value when it loads the device, and relaunching Airfoil does
+  not reload it, so the test showed "no effect". Why 11-07 was still in sync is not proven.
+- **The fix:** two devices now share the same sound. "Magic Mirror Music" is output-only
+  and keeps the 2.081 s for the pictures. "Magic Mirror Capture" is input-only, reports
+  zero, and is the device Airfoil listens to, so the delay can no longer reach Airfoil.
+  The driver lives in `/Library/Audio/Plug-Ins/HAL` and its saved value survives restarts.
+- **Re-check:** at 21:00–21:07 the Jabra was 2–4 ms from the Edifier, five hours after the
+  last cold load (19:59) with 2.081 s saved.
+
+## A1 after START (fixed 22:25)
+
+Plain words: A1 (Bluetooth) needs ~6 min to line up after Airfoil starts feeding it. That
+restart happens not only when A1 connects but also whenever the **Jabra ("Computer") joins
+Airfoil** while A1 stays connected. STOP released the Jabra, so every START made A1 play
+~130 ms late (an echo) for ~6 minutes, although the 11-07 ruling assumed it stayed in sync.
+
+Measured with the Jabra microphone, A1 settled first, app stopped (A1 − Edifier, per-block
+medians, 12/12 chirps; minutes after the reconnect):
+
+| Reconnected | 0 | 1.3 | 2.6 | 3.9 | 5.2 | 6.5 min |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Jabra + Edifier (old START), 21:22 | +134 | +104 | +74 | +44 | +14 | +10 ms |
+| none (control), 21:30 | +10 | −11 | | | | |
+| Edifier only, 21:36 | +8 | +6 | +9 | +9 | +3 | −12 ms |
+| Jabra only, 21:45 | +115 | +107 | +51 | +23 | −4 | +2 ms |
+
+Fix (`src/main/airfoil-route.ts`): STOP keeps Computer and Bluetooth speakers connected
+and releases only AirPlay speakers. If Computer joins anyway (Airfoil relaunch, Jabra
+replug), each connected Bluetooth speaker sits out 6.5 min at Airfoil volume 0, reported as
+`music_output_bluetooth_resync_computer_joined`. Unit test fails on the old code, passes now.
+
+Proof with the real route and `out/native/music-loop --shared-output` against live Airfoil
+(the production START steps without Electron), from the new STOP state with A1 settled:
+START sent no re-settle and Edifier joined 10 s later; A1 − Edifier was **−1, +21, +17,
+−21 ms** at 0.1/1.4/2.7/4.0 min (A1's normal ±20 ms Bluetooth wander, no glide). The
+helper's brief direct group before the flag did not disturb A1. Jabra − Edifier right after
+an Edifier rejoin with Computer kept: +0.0 / +3.8 ms. A live Computer drop/rejoin produced
+the re-settle marker. One uninstrumented 21:58 start saw A1 or Computer disconnected (not
+identifiable; Airfoil logs nothing) and correctly held A1; the instrumented rerun saw none.
+Not yet seen: a real Stream Deck START with the production app.
+
 ## Evidence
 
 All measurements use generated irregular chirp trains and host-clock timestamps. Magic Mirror is stopped. Subsequent tests hold one physical microphone continuously across alternating speaker blocks. Audio is captured only on a temporary RAM disk; durable evidence contains numbers and settings, never room recordings. The established sync-probe levels are used (Jabra 100% during measurement); cleanup restores Jabra 80%, A1 65%, Edifier 50%.
@@ -103,7 +160,7 @@ remains; its existing 6.5-minute hold is retained.
   reported `music_output_airfoil_ready speakers=3 airplay=1 bluetooth=1`, and raised
   the production route flag. Built `out/native/music-loop --shared-output` created the
   public music route with `outputs=1 airfoil=1`. Closing it removed the aggregate;
-  route STOP removed the flag, disconnected Computer/Edifier and kept A1 connected.
+  route STOP removed the flag, disconnected Computer/Edifier and kept A1 connected (before the A1 fix).
 - Recorder cancellation through Electron, using a silent fake recorder: exit 0;
   SIGTERM released the owned child and Electron process and removed ownership metadata.
 
@@ -114,8 +171,8 @@ matching application build is deployed in `out/`. Final Airfoil source is Captur
 offsets are **Computer 0.222, A1 0, Edifier −0.108**, and `mmlt` remains **99888**.
 The machine-local calibration record includes these measurements and the prior record
 is retained beside the driver rollback. The app remains stopped. Normal levels are
-restored (Jabra 80%, A1 65%, Edifier 50%; Mac mini 1%); A1 stays connected, while
-Computer and Edifier are disconnected as normal STOP does.
+restored (Jabra 80%, A1 65%, Edifier 50%; Mac mini 1%). Since the A1 fix (22:25) STOP
+keeps Computer and A1 connected and releases only the Edifier; the venue is left so.
 All test processes and the Electron lease are released. The RAM disk was ejected;
 no room recording is retained. Final syntax/whitespace checks pass. Source changes
 remain uncommitted, preserving the pre-existing work in this checkout.

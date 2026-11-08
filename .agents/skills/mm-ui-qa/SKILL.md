@@ -38,29 +38,31 @@ Use guaranteed cleanup, not a success-only restore; report a failed reset/read-b
 instead of claiming restoration. Mark acoustic evidence as minimum-volume; do not
 silently raise volume to satisfy an acoustic threshold.
 
-Speaker sync (2026-11-08): music reaches the speakers through Airfoil and runs
-≈2.15 s behind the source; AirPlay speakers follow the Jabra's level with their offset
-(5% floor, never above the Jabra), so 1% QA on the Jabra quiets them too. Judge sync by
-measurement, never by ear: STOP, Jabra at 100%, run
-`deploy/macos/speaker-sync/measure-continuous.sh` through the Electron lease with a fresh
-directory on a RAM disk (usage in its header). It records one continuous microphone,
-scans 0–30 s, deletes raw audio and resets/read-checks normal levels on exit. Settle ≥2 min
-after Edifier readiness, ≥390 s for fresh A1 output. Use A1 mic with `no-a1` for Jabra;
-use Jabra mic with `group` for A1. A Jabra mic cannot hear another Jabra, and opening
-A1's mic changes A1 playback to HFP. After the final run disconnect Computer/Edifier;
-leave A1 connected as STOP does. Never select Edifier in macOS Sound settings (it leaves
-Airfoil). Relaunch Airfoil only within authorized testing and check Edifier readiness.
-The split driver feeds Airfoil from zero-latency **Magic Mirror Capture**; producers use
-**Magic Mirror Music** with `mmlt` video compensation. The old duplex device acquired an
-extra 2081 ms after a cold Core Audio/driver load. Merely changing `mmlt` and relaunching
-Airfoil did not clear that state. Evidence: `docs/testing/airfoil-sync-2026-11-08-followup.md`.
+Speaker sync (2026-11-08): music reaches the speakers through Airfoil ≈2.15 s behind the
+source; AirPlay speakers follow the Jabra's level with their offset (5% floor, never above
+the Jabra), so 1% QA on the Jabra quiets them too. Judge sync by measurement, never by ear:
+STOP, Jabra at 100%, run `deploy/macos/speaker-sync/measure-continuous.sh` through the
+Electron lease into a fresh RAM-disk directory (usage in its header); it records one
+continuous mic, scans 0–30 s, deletes raw audio and resets/read-checks levels. Jabras: A1
+mic with `no-a1`; A1: Jabra mic with `group` (a Jabra mic cannot hear a Jabra; A1's mic
+switches A1 to HFP). Compare speakers within one capture. Wait ≥2 min after an Edifier
+connect; A1 glides ~6 min (starts ~130 ms late) after its own connect **or a Computer
+(Jabra) join**, not after an Edifier join. End as STOP does: Computer and A1 connected,
+only the Edifier released; after reconnecting either, wait 6.5 min before START. Never
+select the Edifier in macOS Sound settings; relaunch Airfoil only in authorized tests.
+Root cause of the 11-08 2 s echo: the old music device was both what apps played into and
+what Airfoil listened to, so its 2.081 s picture delay (`mmlt`) leaked into Airfoil's
+timing for the Jabra and A1 whenever coreaudiod loaded it. Producers now use output-only
+**Magic Mirror Music**; Airfoil reads input-only **Magic Mirror Capture** (zero). Never
+point Airfoil at a device that reports latency. Evidence:
+`docs/testing/airfoil-sync-2026-11-08-followup.md`.
 Exclusion rule (11-08 misdiagnosis): a test rules a variable out only if it resets the
-layer that caches it. Core Audio reads device latency (`mmlt`) at driver load, so an
-Airfoil relaunch proves nothing; with the app stopped and Airfoil quit, restart
-`coreaudiod` and run A/B/A. A gap equal to a configured value (2081 ms = 99888 frames)
-stays the prime suspect until such a control clears it. Test every controllable variable
-before blaming an unreadable layer (encrypted AirPlay, firmware), and check the runner
-does not undo the condition (`measure-a1.sh` reconnects A1).
+layer that caches it (Core Audio reads `mmlt` at driver load; an Airfoil relaunch proves
+nothing: restart `coreaudiod` with the app stopped and Airfoil quit). Prefer A/B/A and
+isolate one change per run; a gap equal to a configured value (2081 ms = 99888 frames)
+stays the prime suspect. Test controllable variables before blaming opaque ones
+(encrypted AirPlay, firmware); check the runner does not undo the condition; a run
+contaminated by an earlier trigger is not a pass.
 Two attached Jabras make the normal-level reset
 refuse (`jabra_output_ambiguous`): report it, do not work around it.
 

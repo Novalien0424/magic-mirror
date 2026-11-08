@@ -116,6 +116,9 @@ export function createAirfoilRoute(input: {
   // Measured 2026-11-07: after Airfoil connects a Bluetooth speaker (A1) it starts ~130 ms late
   // and glides into sync at ~20 ms/min, settling after ~6 min (the Jabra and AirPlay speakers are
   // in sync at once). The speaker streams at Airfoil volume 0 meanwhile and then joins in sync.
+  // Measured 2026-11-08: the same glide restarts when the Computer output (Jabra) joins while A1
+  // stays connected (+115..134 ms at first); an Edifier reconnect leaves A1 in sync. So Computer
+  // stays connected through STOP, and a Computer join re-settles every connected Bluetooth speaker.
   const settleMs = input.bluetoothSettleMs ?? BLUETOOTH_SETTLE_MS, clock = input.now ?? Date.now
   const settling = new Map<string, number>()
   const statePath = join(dirname(input.flagPath), 'bluetooth-settle.json')
@@ -123,6 +126,8 @@ export function createAirfoilRoute(input: {
     load: () => { try { return JSON.parse(readFileSync(statePath, 'utf8')) as Record<string, number> } catch { return {} } },
     save: (state: Record<string, number>) => { try { writeFileSync(statePath, JSON.stringify(state)) } catch { /* best effort */ } },
   }
+  // Computer seen disconnected since it last played; its next join restarts the Bluetooth glide.
+  let localDown = false
   let savedSettling = ''
   const saveSettling = () => {
     const next = JSON.stringify(Object.fromEntries(settling))
@@ -202,6 +207,7 @@ export function createAirfoilRoute(input: {
     failures = 0
     targets = speakers.filter(speaker => airfoilKind(speaker))
     const dropped = new Set(targets.filter(speaker => !speaker.connected).map(speaker => speaker.id))
+    if (targets.some(speaker => airfoilKind(speaker) === 'local' && !speaker.connected)) localDown = true
     let settlingNow = 0
     for (const speaker of targets) {
       if (speaker.connected && active) continue
@@ -219,6 +225,16 @@ export function createAirfoilRoute(input: {
       else if (fresh) settlingNow++
     }
     resumed = {}
+    if (localDown && targets.some(speaker => speaker.connected && airfoilKind(speaker) === 'local')) {
+      localDown = false
+      let resyncing = 0
+      for (const speaker of targets) {
+        if (!speaker.connected || airfoilKind(speaker) !== 'bluetooth' || dropped.has(speaker.id)) continue
+        settling.set(speaker.id, clock()); resyncing++
+        try { await serial(speaker.id, () => run(VOLUME, [speaker.id, '0'])) } catch { input.degraded('music_output_bluetooth_resync_failed') }
+      }
+      if (resyncing) input.report('music_output_bluetooth_resync_computer_joined', { speakers: resyncing, seconds: Math.round(settleMs / 1000) })
+    }
     if (!active && !localWriting) localApplied = localOn()
     refreshLocal(); refreshAirplay()
     if (settlingNow) input.report('music_output_bluetooth_settling', { speakers: settlingNow, seconds: Math.round(settleMs / 1000) })
@@ -281,13 +297,14 @@ export function createAirfoilRoute(input: {
       refreshAirplay()
     },
     /** Synchronous for will-quit: the flag goes now, the disconnect finishes on its own. Bluetooth
-     * speakers stay connected (owner 2026-11-07): Airfoil keeps them in sync while the app is
-     * stopped, so the next start needs no settle time. Computer and AirPlay speakers are released. */
+     * speakers (owner 2026-11-07) and Computer (2026-11-08: its rejoin restarts the Bluetooth glide)
+     * stay connected, so Airfoil keeps them in sync while the app is stopped and the next start needs
+     * no settle time. Only AirPlay speakers are released; their reconnect leaves Bluetooth in sync. */
     stop(): void {
       stopped = true; clearTimeout(timer); active = false
       if (input.writeFlag) void input.writeFlag(false).catch(() => undefined)
       else rmSync(input.flagPath, { force: true })
-      const ids = targets.filter(speaker => speaker.connected && airfoilKind(speaker) !== 'bluetooth').map(speaker => speaker.id)
+      const ids = targets.filter(speaker => speaker.connected && airfoilKind(speaker) === 'airplay').map(speaker => speaker.id)
       if (!ids.length) return
       if (input.disconnectDetached) input.disconnectDetached(ids)
       else spawn('/usr/bin/osascript', ['-e', DISCONNECT, ...ids], { detached: true, stdio: 'ignore' }).unref()

@@ -5,7 +5,8 @@ set -euo pipefail
 # node scripts/electron-owner.mjs speaker-sync zsh deploy/macos/speaker-sync/measure-continuous.sh \
 #   /Volumes/MMSyncRAM/run no-a1 C2-60-12-F8-D1-A5:input 130 'J E J E'
 # For A1, use "group", the Jabra input UID, and >=390 s after a fresh connection.
-# Leaves connections intact between measurements; final operator cleanup releases Jabra/Edifier.
+# Leaves connections intact between measurements; final operator cleanup releases only the Edifier,
+# as STOP does. Reconnecting Computer or A1 restarts A1's ~6 min glide: wait 6.5 min before START.
 [[ $# == 5 && -n "${MIRROR_ELECTRON_OWNER_TOKEN:-}" ]] || { print -u2 'usage: run through electron-owner.mjs; RAM-dir group|no-a1 mic-UID settle-seconds "J E ..."'; exit 2; }
 W="${1:A}"; LABEL="${W:t}"; MODE="$2"; MIC="$3"; SETTLE="$4"; BLOCKS=(${=5})
 ROOT="${0:A:h:h:h:h}"; SRC="${0:A:h}"; BIN="$W/bin"

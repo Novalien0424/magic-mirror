@@ -179,11 +179,14 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   Edifier, then wanders ±20 ms with occasional 30–40 ms jumps (weak link; Rogue Amoeba: sliders
   cannot fix fluctuating latency). Main therefore keeps a freshly connected or reconnected
   Bluetooth speaker at Airfoil volume 0 for 6.5 min (`BLUETOOTH_SETTLE_MS`, markers
-  `music_output_bluetooth_settling` / `_joined`); A1 then joins in sync. Bluetooth speakers stay
-  connected in Airfoil through STOP (owner 2026-11-07), so they stay in sync and the next start
-  plays them at once; a quick STOP/START resumes the remaining settle time
-  (`ops/music-device/bluetooth-settle.json`). Only a fresh connect (A1 left Bluetooth, Airfoil or
-  Mac restart) waits again. STOP still releases the Jabra and AirPlay speakers.
+  `music_output_bluetooth_settling` / `_joined`); A1 then joins in sync. The glide also restarts
+  when **Computer (the Jabra) joins** while A1 stays connected (2026-11-08: +115/+134 ms, in sync
+  after ~6 min); an Edifier reconnect leaves A1 in sync. So STOP keeps Computer and Bluetooth
+  speakers connected and releases only AirPlay speakers, and the next start plays A1 at once
+  (measured −1..±21 ms from the first block). If Computer joins anyway (Airfoil relaunch, Jabra
+  replug), Main re-settles each connected Bluetooth speaker
+  (`music_output_bluetooth_resync_computer_joined`). A quick STOP/START resumes the remaining
+  settle time (`ops/music-device/bluetooth-settle.json`); a fresh A1 connect waits again.
 - **The Jabra plays ~150 ms early while its microphone is open** (its call path; measured 11-07
   with A1's mic: −4 ms closed, −140/−157 ms open). Owner ruling: sync over voice control. Main
   sets the Jabras' Airfoil volume to 0 while their microphone is open (a conversation, or the
@@ -213,16 +216,21 @@ Re-tune after adding a speaker: STOP, measure with
 one continuous microphone, and alternating speaker blocks. Use A1's mic for the Jabras
 with A1 transmission off; use the Jabra mic for A1. The runner restores normal levels
 and deletes its raw recording. It leaves connections intact between measurements.
-After the last run disconnect Computer/Edifier, leaving A1 connected for its settle hold.
+After the last run disconnect only the Edifier, as STOP does. A run that reconnected Computer
+or A1 (`no-a1`) restarts A1's glide: wait 6.5 min with both connected before START.
 To change calibration,
 write `syncOffsets` with Airfoil quit (values beyond the ±1 s sliders are ignored), relaunch,
 re-measure ≥2 min after Edifier connects and ≥6.5 min for a fresh A1 connection;
 reset `mmlt` if the audio total or the TV path changes.
 
-**Cold-start fault (2026-11-08):** the old duplex device's persisted `mmlt` made
-Mac-side playback an extra 2081 ms late. Setting it to zero and relaunching Airfoil
-did not clear Core Audio's cached state; reloading Core Audio and the driver exposed
-the cause. The split playback/capture endpoints above retain picture compensation.
+**Cold-start fault (2026-11-08), in plain words:** the old device was one device with two
+sides; apps played into it and Airfoil listened to it. Its 2.081 s picture delay (`mmlt`)
+also leaked into Airfoil's timing for the Mac-attached speakers (Jabra, A1) whenever macOS's
+audio system loaded the device, so they played ~2 s after the Wi-Fi Edifier: the echo.
+Relaunching Airfoil does not reload the audio system, so changing `mmlt` and relaunching
+Airfoil looked harmless; a Core Audio reload with 0, then 2.081 s saved, proved it. Now apps
+play into the output-only Music (keeps the picture delay) and Airfoil listens to the
+input-only Capture (reports zero), so the delay cannot reach Airfoil.
 Measurements and remaining limits:
 [follow-up](../../docs/testing/airfoil-sync-2026-11-08-followup.md).
 Separately, a relaunched Airfoil can miss an unreachable Edifier until it re-announces;

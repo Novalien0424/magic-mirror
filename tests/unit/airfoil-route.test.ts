@@ -105,9 +105,9 @@ describe('Airfoil venue route', () => {
     route.stop()
   })
 
-  it('plays a Bluetooth speaker at once when it was already connected before Main started', async () => {
+  it('plays a Bluetooth speaker at once when it and Computer were already connected before Main started', async () => {
     const airfoil = fakeAirfoil(), report = vi.fn(), a1 = 'AA-BB-CC-00-11-22:output'
-    airfoil.connected.add(a1)
+    airfoil.connected.add(a1); airfoil.connected.add(AIRFOIL_LOCAL_ID)
     const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
       writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 60_000, now: () => 0 })
     await route.start()
@@ -117,7 +117,40 @@ describe('Airfoil venue route', () => {
     route.stop()
   })
 
-  it('releases the Jabra and AirPlay speakers at stop but keeps Bluetooth connected, so the next start skips the settle', async () => {
+  it('re-settles a connected Bluetooth speaker whenever Computer joins (Airfoil restarts its glide), at start or mid-run', async () => {
+    let t = 0
+    const airfoil = fakeAirfoil(), report = vi.fn(), a1 = 'AA-BB-CC-00-11-22:output'
+    airfoil.connected.add(a1)
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 1000, now: () => t })
+    await route.start()
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))
+    expect(airfoil.volumes.get(a1)).toBe(0)
+    expect(report).toHaveBeenCalledWith('music_output_bluetooth_resync_computer_joined', { speakers: 1, seconds: 1 })
+    expect(report).not.toHaveBeenCalledWith('music_output_bluetooth_settling', expect.anything())
+    t = 1000
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(1))
+    // Computer drops and rejoins while A1 stays connected: A1 sits out the glide again.
+    airfoil.connected.delete(AIRFOIL_LOCAL_ID)
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(0))
+    expect(airfoil.connected.has(AIRFOIL_LOCAL_ID)).toBe(true)
+    t = 1999
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(airfoil.volumes.get(a1)).toBe(0)
+    t = 2500
+    await vi.waitFor(() => expect(airfoil.volumes.get(a1)).toBe(1))
+    // An Edifier reconnect leaves A1 in sync (measured 2026-11-08): no new settle.
+    const resyncs = report.mock.calls.filter(([reason]) => reason === 'music_output_bluetooth_resync_computer_joined').length
+    expect(resyncs).toBe(2)
+    airfoil.connected.delete('AABBCC001133@EDIFIER M330 Ⅱ 1133')
+    await vi.waitFor(() => expect(airfoil.connected.has('AABBCC001133@EDIFIER M330 Ⅱ 1133')).toBe(true))
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(airfoil.volumes.get(a1)).toBe(1)
+    expect(report.mock.calls.filter(([reason]) => reason === 'music_output_bluetooth_resync_computer_joined').length).toBe(resyncs)
+    route.stop()
+  })
+
+  it('releases only AirPlay speakers at stop, keeping Computer and Bluetooth connected, so the next start skips the settle', async () => {
     const airfoil = fakeAirfoil(), released: string[][] = [], a1 = 'AA-BB-CC-00-11-22:output'
     const options = { flagPath: '/flag', degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
       writeFlag: async () => {}, pollMs: 5, bluetoothSettleMs: 60_000, now: () => 0, disconnectDetached: (ids: string[]) => { released.push(ids); ids.forEach(id => airfoil.connected.delete(id)) } }
@@ -126,9 +159,9 @@ describe('Airfoil venue route', () => {
     await vi.waitFor(() => expect(airfoil.connected.size).toBe(3))
     await new Promise(resolve => setTimeout(resolve, 20))
     first.stop()
-    expect(released).toEqual([[AIRFOIL_LOCAL_ID, 'AABBCC001133@EDIFIER M330 Ⅱ 1133']])
-    expect([...airfoil.connected]).toEqual([a1])
-    // The next run finds A1 still connected and in sync: it plays at once.
+    expect(released).toEqual([['AABBCC001133@EDIFIER M330 Ⅱ 1133']])
+    expect([...airfoil.connected].sort()).toEqual([AIRFOIL_LOCAL_ID, a1].sort())
+    // The next run finds Computer and A1 still connected and in sync: A1 plays at once.
     const report = vi.fn(), second = createAirfoilRoute({ ...options, report })
     await second.start()
     await vi.waitFor(() => expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 3, airplay: 1, bluetooth: 1 }))

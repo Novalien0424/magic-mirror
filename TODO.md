@@ -117,7 +117,7 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   `npm run build` and passes on rerun.
 - [ ] **Airfoil sync — open items.** All music plays through Airfoil (runbook "Airfoil music route").
   (1) A1 wanders ±20 ms with 30–40 ms jumps on its weak link and joins 6.5 min after a fresh connect
-  (it stays connected through STOP); move it nearer the Mac mini or replace it. (2) The TV (HDMI) is
+  (it and the Jabra stay connected through STOP, so START plays it at once); move it nearer the Mac mini or replace it. (2) The TV (HDMI) is
   outside the Airfoil group; its picture delay (67 ms) is compensated in `mmlt` (2081 ms), so lip-sync
   rests on the audio total. (3) The Jabra pair's absolute delay rests on the 11-01 iPad memo. (4) A
   second Edifier joins by name: measure it with `speaker-sync/measure-continuous.sh` and set its offset.

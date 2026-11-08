@@ -3,28 +3,27 @@
 ## Current delivery
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
-Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA apps,
-the latest speaker-sync tests ended about 20:15); speakers at the defaults (Jabra 80% in normal playback and in its
+Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA and
+speaker-sync tests, the last ended 22:24); speakers at the defaults (Jabra 80% in normal playback and in its
 call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
 `stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
-[DECISIONS](DECISIONS.md) (2026-11-07 entries). Previous handoff:
+[DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-01](docs/archive/progress-before-online-songs-2026-11-07.md).
 
-**Fixed/deployed 11-08 — Airfoil's two-second sync fault.** Cold-loading the old duplex
-virtual driver with `mmlt=99888` adds 2081 ms to Mac-side sound; setting zero and merely
-relaunching Airfoil did not clear Core Audio's state. A controlled zero/nonzero cold-load
-test proved the cause. The installed driver now separates playback **Magic Mirror Music**
-(video compensation retained) from input **Magic Mirror Capture** (Airfoil source, zero latency).
-Two fresh driver loads passed. Final acoustic block differences: Jabra–Edifier 1–5 ms;
-settled A1–Edifier 4–7 ms. Computer offset is now 0.222; A1 0, Edifier −0.108 and `mmlt`
-99888 remain. Driver signature, typechecks, 13 route tests, build, real Main routing and
-native shared-output creation passed. A1's settle hold and Bluetooth variation remain.
-Normal app stays stopped; A1 connected, Computer/Edifier released, levels restored.
-[Investigation, failures, evidence and limits](docs/testing/airfoil-sync-2026-11-08-followup.md).
-Earlier [debug log](docs/testing/airfoil-sync-2026-11-08-debug-log.md) and
-[research brief](docs/testing/airfoil-sync-2026-11-08.md) are superseded conclusions.
-The previously added `music_output_airplay_unreachable` / `_not_found` / `_restored`
-diagnostics remain; those failure/recovery paths were unit-tested, not forced live here.
+**Fixed/deployed 11-08 — speaker sync** ([evidence and limits](docs/testing/airfoil-sync-2026-11-08-followup.md)):
+- **Two-second echo:** the old "Magic Mirror Music" device was both what apps play into and what
+  Airfoil listened to, so its 2.081 s picture delay leaked into Airfoil's timing for the Jabra
+  and A1 whenever Core Audio loaded it. The driver now has output-only **Magic Mirror Music**
+  (keeps the picture delay) and input-only **Magic Mirror Capture** (Airfoil's source, zero).
+  Re-checked 21:00: Jabra–Edifier +2/+4 ms. Offsets Computer 0.222, A1 0, Edifier −0.108; `mmlt` 99888.
+- **A1 late after START:** reconnecting the Jabra in Airfoil restarts A1's ~6 min glide
+  (+134 ms at first); STOP released the Jabra. STOP now keeps the Jabra and A1 connected and
+  releases only the Edifier; a Jabra rejoin re-settles A1 (`music_output_bluetooth_resync_computer_joined`).
+  Proved with the real route and music helper: A1 −1/+21/+17/−21 ms from the first block.
+  14 route tests, typecheck and build pass. Not yet seen: a real Stream Deck START.
+- The superseded [debug log](docs/testing/airfoil-sync-2026-11-08-debug-log.md) and
+  [brief](docs/testing/airfoil-sync-2026-11-08.md) are kept as history.
+  `music_output_airplay_unreachable` / `_not_found` / `_restored` were unit-tested, not forced live.
 
 Audit and fixes 11-08 (owner: "clean up; audit loops, Raven and Studio; fix everything; commit,
 push, deploy"):
@@ -52,7 +51,7 @@ Delivered 11-07 (commits c38dab7 → fce46fd):
   reset the defaults. Airfoil sync was re-tuned for the linked second Jabra.
   [Runbook](deploy/macos/stream-deck.md#speaker-levels-calibrated-2026-11-07).
 - **A1 Bluetooth:** a freshly connected A1 is held silent for 6.5 min while Airfoil's sync
-  settles, and it stays connected through STOP. The settle resumes across a quick STOP/START.
+  settles; it (and since 11-08 the Jabra) stays connected through STOP. The settle resumes across a quick STOP/START.
 - **Online songs:** natural wordings (幫我在雲上找, 幫我再網路上找, 在 YouTube 上找, 上網查查…)
   unlock the online search. A requested song always plays: the app plays YouTube's first
   result if the model only answers. While the song plays Raven is Dormant and stays Dormant
