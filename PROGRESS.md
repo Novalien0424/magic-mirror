@@ -2,7 +2,7 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy` canonical working tree (sync changes deployed locally, not committed). Canonical
+Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
 Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08; afterwards only QA apps,
 the latest speaker-sync tests ended about 20:15); speakers at the defaults (Jabra 80% in normal playback and in its
 call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
