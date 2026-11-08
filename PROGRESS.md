@@ -2,12 +2,19 @@
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy` at the commit with this handoff (code: `fce46fd`). Canonical
-Mac, user LaunchAgent. The app is stopped (STOP 23:27 Taipei 11-07: `stopped`, `tv_standby`,
-`blackout_covered`); speakers at the defaults (Jabra 80%, A1 65%, Edifier 50%; Mac mini
-speaker 1%). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
+Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
+Mac, user LaunchAgent. The app is stopped (owner STOP 09:21 Taipei 11-08: `stopped`, `tv_standby`,
+`blackout_covered`; then silent device checks, last stop about 10:00); speakers at the defaults (Jabra 80%
+in normal playback and in its call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
 [DECISIONS](DECISIONS.md) (2026-11-07 entries). Previous handoff:
 [archived 11-01](docs/archive/progress-before-online-songs-2026-11-07.md).
+
+Fixed 11-08 (owner: Raven started very quiet and STOP did not help): the Jabra has a separate
+call-path volume, set only during a call. The 11-07 night's 1% sound work had left it muted, and
+START/STOP resets run outside a call. The first conversation after each start/START/STUDIO now resets it to
+the Jabra's normal level (`stop-state --reset-voice`; QA runs skip it). Silent tests on the real
+Jabra passed; still to confirm with a real visitor.
+[Report](docs/testing/jabra-call-volume-2026-11-08.md).
 
 Delivered 11-07 (commits c38dab7 → fce46fd):
 

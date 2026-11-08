@@ -37,6 +37,7 @@
 - **音量**：各喇叭在相同設定下音量不同，因此以 Jabra 為基準校準：一般音量 Jabra 80%、A1 65%、Edifier 50%（現場 1 公尺實測後由店主依聽感微調，
   數值在 `ops/music-device/speaker-levels.json`）。VOL＋／VOL－ 立即把 Jabra 調高／調低 10%，其他喇叭保持與 Jabra 的固定差距
   （Jabra 播放中較小聲的喇叭最低 5%）；Jabra 到 100% 後繼續按 VOL＋，其他喇叭每次再加 10%，直到全部 100%（含 Edifier）；Jabra 的實體按鍵只調 Jabra，AirPlay 喇叭跟著它。
+  對話時 Jabra 改用另一組「通話音量」：每次啟動、START 或 STUDIO 之後的第一段對話開始時，自動設回 Jabra 一般音量；之後訪客用 Jabra 按鍵調的音量保留到下次 START（測試時的 1% 不會再留到正式使用）。
   START、STOP、每次按 MUSIC LOOP 或 VIDEO LOOP（已在播放時也一樣）與 Dance 結束，都把所有外接喇叭設回一般音量（解除靜音）；
   Dance 在歡迎詞後升到 Dance 音量（預設 90%）。播放中不強制音量。Mac mini 內建喇叭維持原狀，HDMI 沒有 Mac 端音量。
 

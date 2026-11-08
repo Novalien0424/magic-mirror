@@ -208,6 +208,21 @@ is at 100%) and `music-loop` reports it to Main for the AirPlay speakers. The Ja
 CoreAudio level carries it and A1 (Airfoil volume 1); the Edifier's Airfoil (AirPlay) volume
 carries its offset. The button log's `jabra_output_70` means the normal-level reset passed.
 
+**Jabra call volume (2026-11-08).** The Jabra keeps a second stored volume for its call path,
+which it enters when a conversation opens its microphone with echo cancellation (the app's wake
+listener does not). A write made during a call is stored once the call has held for a few seconds,
+and the level stays after the call ends. Its steps are coarse: 1% is step 0, which the Jabra reads as
+muted. START's and STOP's resets run outside a call and never reach it. After the 11-07 night's
+sound work at 1% it was left muted, and Raven was nearly silent after every START. Now Main runs
+`stop-state --reset-voice` as the first conversation after each app start, START or STUDIO
+begins: for 10 s it returns the Jabra to its normal level, unmuted, whenever it reads otherwise,
+with writes 0.3 s apart (the switch overrides writes made in its first second). The app log shows
+`JABRA_VOICE reason=jabra_voice_level_reset`; a failure is the Console degradation
+`jabra_voice_level_reset_failed`, and the next conversation retries. Later conversations keep what a
+visitor set with the Jabra's buttons. QA runs skip it (`jabra_voice_level_qa_skipped`) and keep
+their 1% hold. Raven QA conversations use synthetic input and never open the Jabra (`--physical`
+runs do); any capture that leaves a low call volume is fixed by the next production conversation.
+
 The second Jabra Speak2 75 is linked to the venue Jabra with Jabra's own link and plays the
 same sound; the Mac sees one Jabra. Link order matters (11-07): with the USB Jabra pressed
 second it played nothing; unlink (hold Smart 8 s), then press Smart on the **USB Jabra first**

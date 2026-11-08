@@ -154,6 +154,36 @@ func volume(_ reset: Bool) {
   print(String(data: data, encoding: .utf8)!)
   if reset && !verified { fail("output_volume_verify_failed") }
 }
+// A conversation opens the Jabra with echo cancellation, which switches it to its call path and
+// that path's own stored volume (found 2026-11-08: it had been left at 0, muted, during the
+// 11-07 sound work, and START's and STOP's resets, run outside a call, never reach it). Main runs this as a
+// conversation starts: for 10 s it returns the Jabra to its normal level, unmuted, whenever it
+// reads otherwise, so the write lands on the call path whether the switch comes before or after
+// it starts. The switch takes up to ~1 s while the capture starts and overrides writes made
+// during it (a stored 1% call volume is step 0, which the Jabra reads as muted), so writes are
+// 0.3 s apart, at most 8. Only the Jabra: other speakers, the group level and input gain are
+// untouched.
+func resetVoice() {
+  let jabras = outputDevices().filter { !$0.builtIn && speakerLevels.isJabra($0.name) }
+  guard jabras.count == 1 else { fail(jabras.isEmpty ? "jabra_output_missing" : "jabra_output_ambiguous") }
+  let target = speakerLevels.jabra, end = Date(timeIntervalSinceNow: 10)
+  let off = { (state: (volumes: [Float32], muted: Bool)) in state.muted || state.volumes.contains { abs($0 - target) > 0.015 } }
+  guard var state = level(jabras[0].id) else { fail("jabra_volume_unavailable") }
+  var writes = 0
+  while true {
+    if off(state) && writes < 8 {
+      writes += 1
+      guard level(jabras[0].id, set: target, unmute: true) != nil else { fail("jabra_volume_unavailable") }
+      Thread.sleep(forTimeInterval: 0.3)
+    } else if Date() >= end { break } else { Thread.sleep(forTimeInterval: 0.1) }
+    guard let next = level(jabras[0].id) else { fail("jabra_volume_unavailable") }
+    state = next
+  }
+  let data = try! JSONSerialization.data(withJSONObject: ["output": SpeakerLevels.jabraName, "volumes": state.volumes, "muted": state.muted,
+    "normal": target, "writes": writes], options: [.sortedKeys])
+  print(String(data: data, encoding: .utf8)!)
+  if off(state) { fail("output_volume_verify_failed") }
+}
 /// The group level for music-loop to report to Main (AirPlay speakers) while the Jabra is at 100%.
 func storeGroup(_ value: Float32) {
   try? FileManager.default.createDirectory(at: SpeakerLevels.groupFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -221,6 +251,7 @@ switch CommandLine.arguments.dropFirst().first {
 case "--chime": chime(CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "")
 case "--reset-output": volume(true)
 case "--output-status": volume(false)
+case "--reset-voice": resetVoice()
 case "--volume-up": stepVolume(0.1)
 case "--volume-down": stepVolume(-0.1)
 case "--portrait": portrait()

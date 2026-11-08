@@ -115,6 +115,7 @@ import { createWakeWorkerPackage, wakeTuningIsActive } from './wake/runtime-conf
 import { createWakeCalibration } from './wake/calibration'
 import { needsWakeMicrophonePermission, requestWakeMicrophonePermission } from './wake/microphone-permission'
 import { createYoutubePlayer } from './avatar/youtube-player'
+import { createJabraVoiceLevel } from './jabra-voice-level'
 import { createYoutubeCredentialSource, createYoutubeSearch } from './avatar/youtube-search'
 
 const isDarwin = process.platform === 'darwin'
@@ -228,6 +229,18 @@ const jabraMicrophoneOpen = (): boolean => {
     || (['dormant', 'offlineLoop'].includes(lifecycle ?? '') && !wakeInputSuspended())
 }
 let refreshJabraMusic: (() => void) | undefined
+/** Sets the Jabra's separate call volume as the first conversation after a start, START or STUDIO opens it. */
+const jabraVoiceLevel = isDarwin ? createJabraVoiceLevel({
+  enabled: !phase4QaEnabled && !phase1LiveSmokeEnabled && smokeMode.kind === 'off',
+  reset: () => new Promise<void>((done, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
+    ['--reset-voice'], { timeout: 15000 }, error => error ? reject(Error('jabra_voice_level_reset_failed')) : done())),
+  report: reason => {
+    marker('JABRA_VOICE', { reason })
+    try { bootRuntime?.telemetry.emit({ module: 'audio', event: 'jabra_voice_level', status: reason === 'jabra_voice_level_reset' ? 'success' : 'info', reason, source: 'runtime' }) }
+    catch { /* Diagnostics cannot gate the conversation. */ }
+  },
+  degraded: reason => { marker('JABRA_VOICE', { reason }); reportMainDegradation('audio', 'jabra_voice_level', reason) },
+}) : undefined
 /** True while Airfoil plays the music device on every speaker (macOS only). */
 let airfoilActive: (() => boolean) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
@@ -1670,6 +1683,8 @@ void app.whenReady().then(async () => {
         : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       void publishMusicFolders()
       if (!success) return false
+      // START and STUDIO return the next conversation to the Jabra's normal level.
+      if (action === 'normal' || action === 'studio') jabraVoiceLevel?.arm()
       hideConsoleWindow()
       // MusicLoop is audio-only and independent of the TV (owner 2026-10-31): with the
       // panel off the black Mirror simply stays hidden.
@@ -2161,7 +2176,7 @@ void app.whenReady().then(async () => {
     cameraTracking?.update(operatorLoop?.isInputSuspended() ? 'dormant' : snapshot.lifecycle, mirrorRendererReady)
     // An online song keeps its Dormant volume and full-mirror picture only while Raven sleeps.
     if (previousLifecycle !== snapshot.lifecycle && ['activating', 'active'].includes(snapshot.lifecycle)) youtubePlayer?.setDormant?.(false)
-    if (previousLifecycle !== snapshot.lifecycle) refreshJabraMusic?.()
+    if (previousLifecycle !== snapshot.lifecycle) { refreshJabraMusic?.(); jabraVoiceLevel?.lifecycle(snapshot.lifecycle) }
     if (previousLifecycle === 'active' && snapshot.lifecycle !== 'active') {
       stopScenes({ preserveSleepingMedia: snapshot.lifecycle === 'suspending' })
     } else if (previousLifecycle !== snapshot.lifecycle && (snapshot.lifecycle === 'maintenance' || snapshot.lifecycle === 'offlineLoop')) {

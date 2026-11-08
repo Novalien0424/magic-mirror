@@ -20,12 +20,14 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   wakelock; field STOP/START/CONSOLE/DESKTOP passed with 0 ping drops in standby. The keep-awake tick
   (re-applies it after board reboots, installed 10-31 20:50) held a 1.6 h standby with 0
   drops; confirm a full overnight. A mouse client ignoring EXIT is now ended.
-- [ ] **Post-restart Jabra volume (history).** STOP read-back was 70%; one later startup
-  observation was 6.25%. Final explicit 70% held. Likely cause found 11-07: opening the
-  Jabra's microphone (as Raven does at start) switched its output from 70% to 0.0625 within
-  the same second, twice in a row; the level stayed there after the mic closed. START's
-  reset ~6 s after ready covers it; continuous volume enforcement would prevent the owner's
-  physical-button adjustment. [Evidence](docs/testing/dance-floor-checks-2026-10-30.json).
+- [ ] **Jabra call volume (fixed 11-08, confirm in the room).** Cause of the low Raven voice at
+  START (and the earlier 6.25% startup readings): the Jabra's separate call-path volume, set
+  only during a call, had been left at step 0 (muted) during the 11-07 sound work. The first
+  conversation after each start/START/STUDIO now resets it (`stop-state --reset-voice`; runbook
+  "Jabra call volume"). Silent tests passed on the real Jabra with the conversation's own capture
+  and in a production start; a full production conversation needs a real visitor (synthetic wake
+  is never detected). Confirm Raven's voice at the normal level and `JABRA_VOICE
+  reason=jabra_voice_level_reset` in the app log. [Report](docs/testing/jabra-call-volume-2026-11-08.md).
 - [ ] **USB camera stability.** Blocked (physical, 11-01): the camera is damaged and not
   on the USB bus; replace or reconnect it. Before that, temporary 96×96 / 5 fps mode delivered frames but
   failed strict stability; one sample averaged 2.18 fps. Qualify cable/port/host or
