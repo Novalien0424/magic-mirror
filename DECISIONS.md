@@ -81,6 +81,9 @@ Report: [audit fixes 2026-11-08](docs/testing/audit-fixes-2026-11-08.md).
   app is stopped. **2026-11-08 (owner: fix the A1 unsync):** the Jabra (Computer) stays connected
   too, because its rejoin restarts A1's ~6 min glide (+134 ms after START, measured); STOP
   releases only the Edifier.
+- **2026-11-09 (owner):** a MUSIC/VIDEO LOOP pressed from STOP must start cleanly with every
+  speaker in sync; a short delay is fine. Its sound waits for the final Airfoil route with the
+  Edifier joined (bounded; runbook "A loop pressed from STOP").
 - VOL+ can always take every speaker to 100%, the Edifier included: past the Jabra's 100%
   further presses raise the others until all are at 100%. Every VIDEO LOOP press now resets
   to the normal levels like MUSIC LOOP and STOP.

@@ -3,6 +3,7 @@ import { DEFAULT_LOOP_VIDEO, parseLoopVideoSettings, type LoopVideoSettings, typ
 const writeFileAtomic = require('write-file-atomic') as { sync(path: string, value: string, options?: { mode: number }): void }
 /** A recovered loop that has played this long without trouble gets its one automatic reload back. */
 export const OPERATOR_LOOP_HEALTHY_MS = 5 * 60_000
+const SKIPPED = Symbol('skipped')
 
 /** One appliance playback owner. Avatar settings and conversations are never saved here. */
 export function createOperatorLoop(input: {
@@ -18,6 +19,9 @@ export function createOperatorLoop(input: {
   dance?: { start(): Promise<boolean>; stop(): Promise<void> }
   /** Every speaker back to its normal level (Dance sets its own volume; runs once after leaving Dance). */
   resetSpeakers?(): Promise<void>
+  /** Resolves (never rejects) once the app start's speaker route is final: a loop pressed from STOP
+   * then starts on every speaker at once instead of switching route after its first note. */
+  routeReady?(): Promise<void>
 }) {
   let settings = { ...DEFAULT_LOOP_VIDEO }, intent: OperatorLoopSnapshot['mode'] = 'avatar'
   let loadFailed = false
@@ -32,7 +36,8 @@ export function createOperatorLoop(input: {
   let revision = 0, disposed = false, retry = 0, timer: ReturnType<typeof setTimeout> | undefined
   let lastVideo: number | undefined, lastAudio: number | undefined, lastFrames: number | undefined
   let pending: { promise: Promise<boolean>; resolve(value: boolean): void } | null = null
-  // Return to Avatar and shutdown abandon a slow media check instead of queueing behind it.
+  // Return to Avatar and shutdown abandon a slow media check (or a cold start's speaker-route wait)
+  // instead of queueing behind it.
   let abandonValidation: (() => void) | undefined
   let setup: Promise<void> = Promise.resolve()
   let released: { generation: number; resolve(): void } | null = null
@@ -130,6 +135,11 @@ export function createOperatorLoop(input: {
           // Inhibit wake before ending Realtime so sleep cannot reacquire a mic.
           await input.suspendAvatar()
           if (stale()) return
+          await new Promise<void>(resolve => {
+            abandonValidation = resolve
+            void Promise.resolve(input.routeReady?.()).catch(() => undefined).then(() => resolve())
+          }).finally(() => { abandonValidation = undefined })
+          if (stale()) return
           snapshot.settings = chosen; retry = 0; launch(false)
         } catch (error) {
           if (stale()) return
@@ -183,8 +193,13 @@ export function createOperatorLoop(input: {
           if (target === 'music' || target === 'dance') {
             // Acknowledge mode ownership, not playback. Downloads must not hold
             // the operator mailbox/transition queue hostage for minutes or hours.
-            void Promise.resolve(input[target]?.start()).then(success => {
-              if (disposed || run !== revision || intent !== target) return
+            // A cold start's sound waits for the final speaker route; a press during the wait wins.
+            const current = () => !disposed && run === revision && intent === target
+            const started: Promise<boolean | undefined | typeof SKIPPED> = input.routeReady
+              ? input.routeReady().catch(() => undefined).then((): Promise<boolean> | boolean | undefined | typeof SKIPPED => current() ? input[target]?.start() : SKIPPED)
+              : Promise.resolve(input[target]?.start())
+            void started.then(success => {
+              if (success === SKIPPED || !current()) return
               if (!success && snapshot.status !== 'failed') publish({ status: 'failed', reason: `operator_loop_${target}_start_failed` })
               else if (success && snapshot.status === 'preparing') publish({ status: 'playing', reason: `operator_loop_${target}_playing` })
             }).catch(() => {

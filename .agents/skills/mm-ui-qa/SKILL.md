@@ -50,6 +50,11 @@ connect; A1 glides ~6 min (starts ~130 ms late) after its own connect **or a Com
 (Jabra) join**, not after an Edifier join. End as STOP does: Computer and A1 connected,
 only the Edifier released; after reconnecting either, wait 6.5 min before START. Never
 select the Edifier in macOS Sound settings; relaunch Airfoil only in authorized tests.
+A loop pressed from STOP must start after `music_output_route_settled` (11-09); check that
+order in `app.out.log`. A 1% cold-loop check on the production app: quiet with
+`deploy/macos/qa-output-volume.swift`, bootstrap the LaunchAgent, send
+`scripts/operator-command.mjs play_loop|music_loop`, end with the STOP key, then restore.
+Wait for `RENDERER_READY` before sending, as the key does, or the start is doubled.
 Root cause of the 11-08 2 s echo: the old music device was both what apps played into and
 what Airfoil listened to, so its 2.081 s picture delay (`mmlt`) leaked into Airfoil's
 timing for the Jabra and A1 whenever coreaudiod loaded it. Producers now use output-only

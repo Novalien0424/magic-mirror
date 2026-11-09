@@ -21,9 +21,18 @@ export function createSharedMusicOutput(input: {
   restartDelayMs?: number
   now?: () => number
 }) {
-  let child: ChildProcessByStdio<Writable, Readable, null> | undefined, stopped = false, restarts = 0
+  let child: ChildProcessByStdio<Writable, Readable, null> | undefined, stopped = false, restarts = 0, gone = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const now = input.now ?? Date.now
+  // The helper's current route and whether the macOS default output has reached it yet.
+  let route: { airfoil: boolean; isDefault: boolean } | undefined
+  let waiters: Array<{ airfoil: boolean; resolve(): void }> = []
+  const settle = () => {
+    waiters = waiters.filter(waiter => {
+      if (!gone && (!route?.isDefault || route.airfoil !== waiter.airfoil)) return true
+      waiter.resolve(); return false
+    })
+  }
   const start = (): void => {
     if (stopped || child) return
     const next = (input.spawnImpl ?? spawn)(input.executable, ['--shared-output'], { stdio: ['pipe', 'pipe', 'ignore'] })
@@ -34,8 +43,11 @@ export function createSharedMusicOutput(input: {
       let event: Record<string, unknown>
       try { event = JSON.parse(line) } catch { return }
       const count = (value: unknown) => Number.isInteger(value) ? value as number : 0
-      if (event.event === 'shared') input.report('music_output_shared_ready', { outputs: count(event.outputs), wireless: count(event.wireless), airfoil: count(event.airfoil) })
-      else if (event.event === 'shared_failed') input.degraded('music_output_shared_route_failed')
+      if (event.event === 'shared') {
+        route = { airfoil: count(event.airfoil) === 1, isDefault: false }
+        input.report('music_output_shared_ready', { outputs: count(event.outputs), wireless: count(event.wireless), airfoil: count(event.airfoil) })
+      } else if (event.event === 'default') { if (route) { route.isDefault = true; settle() } }
+      else if (event.event === 'shared_failed') { route = undefined; input.degraded('music_output_shared_route_failed') }
       // A reconnected speaker was set to the group's level (percent, metadata only).
       else if (event.event === 'speaker_matched' && typeof event.level === 'number' && Number.isFinite(event.level))
         input.report('music_output_speaker_matched', { level: Math.round(Math.min(1, Math.max(0, event.level)) * 100) })
@@ -43,22 +55,31 @@ export function createSharedMusicOutput(input: {
       else if (event.event === 'level' && typeof event.level === 'number' && Number.isFinite(event.level))
         input.level?.(Math.min(2, Math.max(0, event.level)))
     })
-    next.once('error', () => { if (child === next) child = undefined; if (!stopped) input.degraded('music_output_shared_unavailable') })
+    // Without the helper there is no route to wait for: waiting music plays on the default output.
+    next.once('error', () => {
+      if (child === next) child = undefined
+      if (!stopped) { input.degraded('music_output_shared_unavailable'); gone = true; settle() }
+    })
     next.once('exit', () => {
       if (child !== next) return
-      child = undefined
+      child = undefined; route = undefined
       if (stopped) return
       // One restart covers a transient helper failure; a repeated exit stays degraded. A helper
       // that ran healthily first gets its restart back, so one exit a day never ends the route.
       if (now() - startedAt >= SHARED_OUTPUT_HEALTHY_MS) restarts = 0
       if (restarts++ < 1) { input.report('music_output_shared_restarting'); timer = setTimeout(start, input.restartDelayMs ?? 2000) }
-      else input.degraded('music_output_shared_exited')
+      else { input.degraded('music_output_shared_exited'); gone = true; settle() }
     })
   }
   return {
     start,
+    /** Resolves once the helper's route is the Airfoil one (or the direct one) and macOS plays the
+     * default output through it, or once the helper is gone. Main bounds the wait. */
+    ready(airfoil: boolean): Promise<void> {
+      return new Promise(resolve => { waiters.push({ airfoil, resolve }); settle() })
+    },
     stop(): void {
-      stopped = true; clearTimeout(timer)
+      stopped = true; clearTimeout(timer); gone = true; settle()
       const current = child
       child = undefined
       // EOF lets the helper remove its public device; SIGTERM covers a stuck reader.

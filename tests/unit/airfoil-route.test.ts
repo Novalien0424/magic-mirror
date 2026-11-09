@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AIRFOIL_LOCAL_ID, AIRFOIL_SOURCE, airfoilKind, createAirfoilRoute, parseAirfoilSpeakers } from '../../src/main/airfoil-route'
+import { AIRFOIL_LOCAL_ID, AIRFOIL_SOURCE, AIRPLAY_START_WAIT_MS, airfoilKind, createAirfoilRoute, parseAirfoilSpeakers } from '../../src/main/airfoil-route'
 import { parseSpeakerLevels } from '../../src/main/speaker-levels'
 
 const LIST = [
@@ -336,5 +336,79 @@ describe('Airfoil venue route', () => {
     await createAirfoilRoute({ flagPath: '/flag', report, degraded: vi.fn(), run, installed: () => false }).start()
     expect(report).toHaveBeenCalledWith('music_output_airfoil_not_installed')
     expect(run).not.toHaveBeenCalled()
+  })
+})
+
+describe('the route a start waits for (owner 2026-11-09: a clean start on every speaker)', () => {
+  const edifier = 'AABBCC001133@EDIFIER M330 Ⅱ 1133'
+  // Airfoil answers a connect request before an AirPlay speaker has joined (measured ~0.9 s later).
+  function slowAirplay(joinOnList: number) {
+    const airfoil = fakeAirfoil()
+    let lists = 0, connects = 0
+    const run = vi.fn(async (script: string, args: string[] = []) => {
+      if (script.includes('connect to') && args[0] === edifier) { connects++; return 'false' }
+      if (script.includes('every speaker') && !args.length && ++lists === joinOnList) airfoil.connected.add(edifier)
+      return airfoil.run(script, args)
+    })
+    return { airfoil, run, lists: () => lists, connects: () => connects }
+  }
+
+  it('settles once Airfoil has joined the Edifier, watching without asking it to connect again', async () => {
+    const fake = slowAirplay(3), report = vi.fn(), degraded = vi.fn(), settled = vi.fn()
+    const route = createAirfoilRoute({ flagPath: '/flag', report, degraded, run: fake.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 60_000, probeMs: 5 })
+    await route.start()
+    void route.ready().then(value => settled(value, fake.lists()))
+    await vi.waitFor(() => expect(settled).toHaveBeenCalled())
+    // Ready came first without the Edifier; the probe saw it join on its second look (list 3) and
+    // the immediate poll (list 4) set its level and settled, long before the 60 s poll.
+    expect(report).toHaveBeenCalledWith('music_output_airfoil_ready', { speakers: 2, airplay: 0, bluetooth: 1 })
+    expect(settled).toHaveBeenCalledWith('airfoil', 4)
+    expect(fake.connects()).toBe(1)
+    expect(report).toHaveBeenCalledWith('music_output_airfoil_speaker_reconnected', { speakers: 1 })
+    expect(fake.airfoil.volumes.get(edifier)).toBe(0.7)
+    expect(degraded).not.toHaveBeenCalled()
+    route.stop()
+  })
+
+  it('starts without an Edifier that never joins, and says why', async () => {
+    let time = 0
+    const fake = slowAirplay(Infinity), degraded = vi.fn(), settled = vi.fn()
+    const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded, run: fake.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 60_000, probeMs: 5, now: () => time })
+    await route.start()
+    void route.ready().then(settled)
+    await vi.waitFor(() => expect(fake.lists()).toBeGreaterThan(2))
+    expect(settled).not.toHaveBeenCalled()
+    time = AIRPLAY_START_WAIT_MS
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledWith('airfoil'))
+    expect(degraded).toHaveBeenCalledWith('music_output_airplay_start_wait_expired')
+    expect(fake.connects()).toBe(1)
+    route.stop()
+  })
+
+  it('settles on the direct speakers when Airfoil is missing, cannot take the source, or the app stops', async () => {
+    await expect((async () => {
+      const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded: vi.fn(), run: vi.fn(), installed: () => false })
+      await route.start(); return route.ready()
+    })()).resolves.toBe('direct')
+    const airfoil = fakeAirfoil(), degraded = vi.fn()
+    const run = vi.fn(async (script: string, args: string[] = []) => {
+      if (script.includes('current audio source')) throw Error('no such source')
+      return airfoil.run(script, args)
+    })
+    const missing = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded, run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 60_000 })
+    await missing.start()
+    await expect(missing.ready()).resolves.toBe('direct')
+    expect(degraded).toHaveBeenCalledWith('music_output_airfoil_source_missing')
+    missing.stop()
+    const fake = slowAirplay(Infinity)
+    const stopping = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded: vi.fn(), run: fake.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 60_000, probeMs: 5 })
+    await stopping.start()
+    await vi.waitFor(() => expect(fake.lists()).toBeGreaterThan(1))
+    stopping.stop()
+    await expect(stopping.ready()).resolves.toBe('direct')
   })
 })

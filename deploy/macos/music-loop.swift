@@ -420,11 +420,14 @@ final class SharedOutput {
     physical = nextPhysical
     reportLevel()
     let next = outputs()
-    if built && next == route { return }
-    destroy(); route = next; built = true
+    if built && next == route { reportDefault(); return }
+    destroy(); route = next; built = true; defaultTarget = 0; defaultReported = false
     let airfoil = next.first?.uid == musicDeviceUID
     // One physical output needs no aggregate; the Airfoil route always gets the public device.
-    guard next.count > 1 || airfoil else { emit("shared", ["outputs": next.count, "wireless": 0]); return }
+    guard next.count > 1 || airfoil else {
+      defaultTarget = next.first?.id ?? 0
+      emit("shared", ["outputs": next.count, "wireless": 0]); reportDefault(); return
+    }
     let description: [String: Any] = [
       kAudioAggregateDeviceUIDKey: SharedOutput.uid,
       kAudioAggregateDeviceNameKey: "Magic Mirror Speakers",
@@ -439,7 +442,21 @@ final class SharedOutput {
     guard AudioHardwareCreateAggregateDevice(description as CFDictionary, &device) == noErr else {
       device = 0; built = false; emit("shared_failed", ["reason": "music_output_shared_route_failed"]); return
     }
+    defaultTarget = device
     emit("shared", ["outputs": next.count, "wireless": next.filter { $0.wireless }.count, "airfoil": airfoil ? 1 : 0])
+    reportDefault()
+  }
+  /// Renderer music plays to the macOS default output, which macOS or audio-prefer moves to a rebuilt
+  /// route a moment later. "default" tells Main this route now carries it, so a cold loop starts
+  /// only then (2026-11-09: one started on the route being replaced: 0.5 s, a pause, then the song).
+  var defaultTarget: AudioDeviceID = 0, defaultReported = false
+  func reportDefault() {
+    guard !defaultReported, defaultTarget != 0 else { return }
+    var property = address(kAudioHardwarePropertyDefaultOutputDevice), current: AudioDeviceID = 0
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &property, 0, nil, &size, &current) == noErr,
+      current == defaultTarget else { return }
+    defaultReported = true; emit("default")
   }
   func close() -> Never { destroy(); emit("stopped"); exit(0) }
   func start() {

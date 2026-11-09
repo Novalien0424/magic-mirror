@@ -3,8 +3,9 @@
 ## Current delivery
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
-Mac, user LaunchAgent. The app is stopped (owner MUSIC LOOP → STOP 15:19 Taipei 11-08; afterwards only QA
-and speaker-sync tests, the last ended 22:24; no START since, checked at clock-out 11-09 06:34); speakers at the defaults (Jabra 80% in normal playback and in its
+Mac, user LaunchAgent. The app is stopped (owner MUSIC LOOP → STOP 15:19 Taipei 11-08; afterwards only
+tests: speaker sync until 22:24, then two 1% cold-loop checks on the production app 11-09 15:36–15:38,
+each ended with the STOP key); speakers at the defaults (Jabra 80% in normal playback and in its
 call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
 `stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
 [DECISIONS](DECISIONS.md). Previous handoff:
@@ -21,6 +22,11 @@ call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes
   releases only the Edifier; a Jabra rejoin re-settles A1 (`music_output_bluetooth_resync_computer_joined`).
   Proved with the real route and music helper: A1 −1/+21/+17/−21 ms from the first block.
   14 route tests, typecheck and build pass. Not yet seen: a real Stream Deck START.
+- **Loop pressed from STOP (11-09):** it played ~0.5 s on the temporary direct speakers, stopped
+  while the route moved to Airfoil, then restarted; the Edifier joined ~10 s later. Its sound
+  now waits for the final route with the Edifier joined (`music_output_route_settled`, ~2 s
+  after start, bounded). Live at 1% on the production app: VIDEO LOOP and MUSIC LOOP each
+  started only after the route settled, with no fallback warning. Not yet heard by a person.
 - The superseded [debug log](docs/testing/airfoil-sync-2026-11-08-debug-log.md) and
   [brief](docs/testing/airfoil-sync-2026-11-08.md) are kept as history.
   `music_output_airplay_unreachable` / `_not_found` / `_restored` were unit-tested, not forced live.

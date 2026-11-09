@@ -106,6 +106,7 @@ Console 的 Stop Dance Floor 只在 Dance 進行中可按，不會停止 MusicLo
   先靜音 6.5 分鐘再加入，避免一開始的回音（2026-11-07 實測）。STOP 後 A1 與 Jabra 都保持連在 Airfoil（店主 2026-11-07；
   Jabra 自 2026-11-08 起，因為 Jabra 重新加入會讓 A1 再花約 6 分鐘對齊），下次啟動 A1 直接同步播放；
   A1 斷線、Jabra 重新加入或 Airfoil／Mac 重新啟動後才需再等。
+  從 STOP 按 MUSIC LOOP／VIDEO LOOP 時，會先等所有喇叭（含 Edifier）就緒（約 2 秒）再一起開始，不會先響半秒再中斷（店主 2026-11-09）。
 - 聲音比來源晚約 2.15 秒，電視顯示畫面本身晚約 67 ms；音樂裝置因此回報 2.08 秒，VIDEO LOOP／YouTube 的畫面與 Dance 動作延後到與聲音同時抵達。
 - Airfoil 每 10 秒重連掉線的喇叭；無法使用時改回直接輸出（Jabra、藍牙、HDMI；Edifier 無聲），並在 Console 顯示原因。
   Airfoil 路徑不含電視，電視此時不播音樂。

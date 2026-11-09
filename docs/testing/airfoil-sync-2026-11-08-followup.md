@@ -66,6 +66,32 @@ the re-settle marker. One uninstrumented 21:58 start saw A1 or Computer disconne
 identifiable; Airfoil logs nothing) and correctly held A1; the instrumented rerun saw none.
 Not yet seen: a real Stream Deck START with the production app.
 
+## Loop pressed from STOP (fixed 2026-11-09)
+
+Owner: "0.5 seconds of music, then paused, then the whole music"; wanted "a clean start (delay
+is fine) but everything in sync". Plain words: a loop key starts the app, and the app first
+builds a temporary direct speaker group (Jabra + A1) because Airfoil is not confirmed yet.
+The loop began on that group; ~0.4–0.6 s later the route moved to Airfoil (with its ~2 s
+delay), so the sound stopped and restarted. The Edifier joined only at the next 10 s poll,
+although Airfoil connects it in ~0.9 s (measured).
+
+Fix: Main holds a cold loop's sound until the start's route is final
+(`music_output_route_settled ms=…`): Airfoil active with the Edifier joined (watched every
+0.5 s without a second connect request; 12 s limit, `music_output_airplay_start_wait_expired`),
+the shared device rebuilt for it, and macOS's default output on it (new helper event
+`default`, ~30 ms after a rebuild). The limit from app start is 20 s
+(`music_output_route_wait_expired`); presses on a running app never wait. 7 new unit tests fail
+on the old code.
+
+Live, production app, speakers at 1%, from the STOP state (07:36/07:37 UTC): VIDEO LOOP: direct
+group 31.82, inputs released 32.01 (the old launch point), Airfoil 32.41, Airfoil device 32.87,
+Edifier 33.55, route settled 33.55 (2.0 s after start), loop loading 33.55, playing 34.57.
+MUSIC LOOP: route settled 1.95 s after start, first track only on the Airfoil device
+(`outputs=1`). Neither run had `operator_loop_output_default_fallback` (seen in 9 of 44 earlier
+loops), a wait expiry or an A1 re-settle. Not heard by a person yet. Regression:
+`run-phase4-qa.mjs --operator-loop` at 1% (run 2026-11-09T07-41-03-965Z) exit 0, 29/29 console
+checks; its route settled 2.9 s after its start. Run artifacts deleted after review.
+
 ## Evidence
 
 All measurements use generated irregular chirp trains and host-clock timestamps. Magic Mirror is stopped. Subsequent tests hold one physical microphone continuously across alternating speaker blocks. Audio is captured only on a temporary RAM disk; durable evidence contains numbers and settings, never room recordings. The established sync-probe levels are used (Jabra 100% during measurement); cleanup restores Jabra 80%, A1 65%, Edifier 50%.

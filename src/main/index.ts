@@ -3,7 +3,7 @@ import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop, musicLoopFiles, musicSubfolders } from './music-loop'
 import { createSharedMusicOutput } from './shared-music-output'
-import { createAirfoilRoute } from './airfoil-route'
+import { createAirfoilRoute, MUSIC_ROUTE_WAIT_MS } from './airfoil-route'
 import { parseSpeakerLevels } from './speaker-levels'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
@@ -243,6 +243,8 @@ const jabraVoiceLevel = isDarwin ? createJabraVoiceLevel({
 }) : undefined
 /** True while Airfoil plays the music device on every speaker (macOS only). */
 let airfoilActive: (() => boolean) | undefined
+/** Resolves once this start's speaker route is final (macOS only); loops start their sound after it. */
+let musicRouteReady: (() => Promise<void>) | undefined
 let operatorLoop: ReturnType<typeof createOperatorLoop> | undefined
 let musicLoop: ReturnType<typeof createMusicLoop> | undefined
 /** MusicLoop subfolder chosen by a Stream Deck folder key; undefined plays the folder itself. */
@@ -1322,6 +1324,7 @@ void app.whenReady().then(async () => {
     path: join(app.getPath('userData'), 'operator-loop.json'),
     music: musicLoop,
     dance: danceFloor,
+    routeReady: () => musicRouteReady?.() ?? Promise.resolve(),
     // Leaving Dance by any path resets every speaker to its normal level once; QA keeps its 1% hold.
     ...(isDarwin && !phase4QaEnabled ? { resetSpeakers: () => new Promise<void>((done, reject) => execFile(join(app.getPath('home'), 'Library/Application Support/MagicMirror/ops/stop-state'),
       ['--reset-output'], { timeout: 5000 }, error => {
@@ -1902,6 +1905,14 @@ void app.whenReady().then(async () => {
     sharedMusicOutput.start()
     void airfoilRoute.start()
     airfoilActive = airfoilRoute.isActive
+    // A loop pressed from STOP starts its sound only on the final route (owner 2026-11-09: "a clean
+    // start, delay is fine, everything in sync"): Airfoil with its AirPlay speaker joined, and the
+    // macOS default output on it. Bounded from the app start; later presses never wait.
+    const routeStartedAt = Date.now()
+    const routeSettled = bounded(airfoilRoute.ready().then(route => sharedMusicOutput.ready(route === 'airfoil')), MUSIC_ROUTE_WAIT_MS)
+      .then(() => marker('MUSIC_OUTPUT', { reason: 'music_output_route_settled', ms: Date.now() - routeStartedAt }),
+        () => degradedMusicOutput('music_output_route_wait_expired'))
+    musicRouteReady = () => routeSettled
     stopMusicOutput = () => { airfoilRoute.stop(); sharedMusicOutput.stop() }
     app.once('will-quit', () => stopMusicOutput?.())
   }

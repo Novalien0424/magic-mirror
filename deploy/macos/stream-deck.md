@@ -187,6 +187,13 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   replug), Main re-settles each connected Bluetooth speaker
   (`music_output_bluetooth_resync_computer_joined`). A quick STOP/START resumes the remaining
   settle time (`ops/music-device/bluetooth-settle.json`); a fresh A1 connect waits again.
+- **A loop pressed from STOP starts ~2 s after the app, on every speaker at once** (owner
+  2026-11-09: clean start, delay is fine). Main holds its sound until Airfoil plays with the
+  Edifier joined and macOS's default output is on the Airfoil device
+  (`music_output_route_settled ms=…`). Limits: 12 s for the Edifier
+  (`music_output_airplay_start_wait_expired`), 20 s from app start
+  (`music_output_route_wait_expired`); then it plays on what is ready. Before, it began on the
+  temporary direct group and restarted ~0.5 s later when the route moved to Airfoil.
 - **The Jabra plays ~150 ms early while its microphone is open** (its call path; measured 11-07
   with A1's mic: −4 ms closed, −140/−157 ms open). Owner ruling: sync over voice control. Main
   sets the Jabras' Airfoil volume to 0 while their microphone is open (a conversation, or the

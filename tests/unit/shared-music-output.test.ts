@@ -60,4 +60,31 @@ describe('shared music output owner', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(degraded).not.toHaveBeenCalled()
   })
+
+  it('is ready for a start only on the expected route once macOS plays the default output through it', async () => {
+    const child = fakeChild()
+    const output = createSharedMusicOutput({ executable: '/helper', report: vi.fn(), degraded: vi.fn(), spawnImpl: (() => child) as never })
+    output.start()
+    const lines = async (...events: string[]) => { for (const event of events) child.stdout.write(event + '\n'); await new Promise(done => setTimeout(done, 10)) }
+    const airfoil = vi.fn(), direct = vi.fn()
+    void output.ready(true).then(airfoil)
+    // At app start the direct group is built first and becomes the default: not yet the Airfoil route.
+    await lines('{"event":"shared","outputs":3,"wireless":1,"airfoil":0}', '{"event":"default"}')
+    expect(airfoil).not.toHaveBeenCalled()
+    void output.ready(false).then(direct)
+    await vi.waitFor(() => expect(direct).toHaveBeenCalled())
+    // Rebuilt for Airfoil, but macOS still points at the destroyed one: keep waiting.
+    await lines('{"event":"shared","outputs":1,"wireless":0,"airfoil":1}')
+    expect(airfoil).not.toHaveBeenCalled()
+    await lines('{"event":"default"}')
+    expect(airfoil).toHaveBeenCalledOnce()
+    // A later press on the settled route does not wait; a gone helper never holds music back.
+    await expect(output.ready(true)).resolves.toBeUndefined()
+    const stuck = vi.fn()
+    void output.ready(false).then(stuck)
+    await lines()
+    expect(stuck).not.toHaveBeenCalled()
+    output.stop()
+    await vi.waitFor(() => expect(stuck).toHaveBeenCalled())
+  })
 })
