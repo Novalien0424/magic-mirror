@@ -4,61 +4,46 @@ Finish the requested outcome with the smallest correct change and relevant
 evidence. Prioritize correctness/privacy, scope, then time/token cost; preserve
 others' edits and stop at the proven boundary or concrete blocker.
 
-## Authority and execution
+## Context and execution
 
-Latest user request/routing → AGENTS → newer DECISIONS → product/spec/plan/stack
-→ PROGRESS → domain facts → history. [PRD](PRD.md) is the current feature/user-story
-reference; [PROGRESS](PROGRESS.md) is the current handoff; [TODO](TODO.md) is
-open-only. Versioned product baselines and completed ledgers are history, not
-startup instructions. DECISIONS owns rulings; keep harness English and domain
-facts in maintained `.agents/skills`.
+Clock in with branch/status and the relevant [PROGRESS](PROGRESS.md) section.
+Latest user request → this contract → newer DECISIONS → product/spec/plan/stack
+→ PROGRESS → domain references → history. [PRD](PRD.md) owns current stories;
+[TODO](TODO.md) is open-only. Read only what the task needs.
 
-- Clock in: inspect branch/status and current PROGRESS; latest request selects
-  work. Dated evidence is not a fresh health check. Read only relevant sections.
-- Explain/review/diagnose/plan means inspect/report; fix/change/build means
-  implement/check. Start at the named path/symbol/error with targeted `rg`.
-- In-scope reads, reversible edits, isolated tests and task-caused repairs are
-  authorized. Ask only for unresolved destructive actions, external writes,
-  purchases, credential rotation, irreversible migration or material expansion; prior
-  authority persists. No repeated plan/approval gate or adjacent cleanup.
-- External/flaky actions: at most one retry, then report the exact failure.
-  Stop/cancel/abort ends work; never restart or substitute it.
-- Report meaningful findings/blockers using current evidence or the smallest
-  direct capture.
+Implement requested changes through relevant checks and task-caused repairs.
+Inspection requests remain read-only. In-scope reads, reversible edits and
+isolated tests are authorized; prior authority persists. Ask only for unresolved
+destructive/external actions, purchases, credential rotation, irreversible
+migration or material expansion. Stop/cancel/abort ends work. External failures
+get at most one safe retry; retain the exact failure.
 
-## Verification and skills
+Use focused checks, broadening for affected integration, packaging, privacy,
+mic/restart ownership or release boundaries. Reuse unchanged passes. Review the
+final diff once unless it exposes a problem. No mandatory plan, review chain or
+full suite. Preserve others' edits, failed evidence and unsaved operator state.
 
-One agent normally implements/checks (2026-10-04); no mandatory chain, plan,
-approval gate, independent review or full suite. Use focused behavior tests or
-docs/config static checks; reuse
-unchanged passes. Broaden for affected integration, packaging, privacy,
-mic/restart ownership or release boundaries. Review the final diff once unless
-it exposes a problem. Retain full failures, summarize passes; artifacts are evidence,
-not untested acceptance.
+## Models and skills
 
-Prompts/tools come from the versioned catalog; code owns authorization/ordering.
-Use `roleplay-control-prompts` for behavior, without regex speech filters.
-QA starts at PROGRESS and `mm-ui-qa`; historical passes are not fresh QA.
+Astra orchestrates; delegate substantial separable implementation to Sol and
+screen work to Terra when useful. Small tasks stay with the current agent.
+Use the user-wide `implementer` and `computer_use` roles, or `codex-sol` /
+`codex-terra` aliases. See [user-wide harness](tools/codex-harness/README.md) for
+installation, catalog refresh and explicit model overrides. Do not pin worker
+versions or force maximum effort here. Workers own assigned paths/surfaces,
+preserve concurrent edits and return evidence; no nested delegation. One UI
+operator at a time. Root integrates without another mandatory review stage.
+
+Domain skills contain local contracts and fragile operations. Prompt behavior
+uses `roleplay-control-prompts`; the versioned catalog defines prompts/tools and
+code owns authorization/ordering. No regex speech filters. For invariant edge
+cases, read [details](.agents/references/invariant-details.md); for explicitly
+requested phase/demo/exit work, read [phase exits](.agents/references/phase-exits.md).
+
+QA starts with current PROGRESS and `mm-ui-qa`; old passes are historical.
 Never overlap normal Electron, Electron QA or full `npm test` (includes Electron
-smoke). Preserve unsaved operator edits before reload/restart.
-
-## Optional delegation
-
-Only independent substantial work that saves time. Root retains the selected
-model/effort; workers use PATH-resolved CLI, exact `nova-auto` / `gpt-6.1-sol` /
-`max`, without substitution:
-
-```zsh
-codex exec --profile nova-auto --ephemeral --cd '/Users/novalien0424/magic-mirror' -m gpt-6.1-sol -c 'model_reasoning_effort="max"' "$taskPrompt"
-```
-
-Windows: `--cd 'C:\Project\magic-mirror'`. Assign owned paths, invariant IDs and
-checks. Workers preserve others' edits, use `apply_patch` for source, and never
-delegate. Surveyors are read-only; testers run assigned checks. Root integrates
-without another review stage. Return commands, exits, results and checked IDs;
-retain failures. Evidence is metadata-only: no transcripts, audio, private
-context, memory values, credentials, images or embeddings. Cite primary external
-sources and distinguish inference.
+smoke). Evidence/handoffs are metadata-only: no transcripts, audio, private
+context, memory values, credentials, images or embeddings in diagnostic reports.
 
 ## Canonical product invariants
 

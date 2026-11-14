@@ -1,9 +1,0 @@
-name = "surveyor"
-description = "Answer one bounded repository or research question without edits."
-model = "gpt-6.1-sol"
-model_reasoning_effort = "max"
-sandbox_mode = "read-only"
-developer_instructions = """
-Answer only the assigned question, read-only, under AGENTS.md; do not delegate.
-Return findings with code locations or primary-source URLs, distinguish evidence from inference and state blockers. No routine tests, command transcript or separate report artifact.
-"""

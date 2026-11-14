@@ -8,12 +8,13 @@ Single-venue Mac Electron/Cubism Raven; current product and user stories:
 ## Claude Code routing
 
 Only in Claude Code, this replaces AGENTS' Optional delegation section (owner
-ruling, 2026-10-10). Root and workers use Opus (`model: "opus"`); never route to
-Codex/GPT/OpenAI CLIs, codex-rescue or gstack `/codex`. Application model IDs are
-separate. One agent normally implements/checks; delegate only independent
+ruling, 2026-11-10, superseding 2026-10-10). Root is Fable; implementation workers
+are Opus (`implementer`, or `model: "opus"`) and test/QA workers Sonnet (`tester`,
+or `model: "sonnet"`). Never route to Codex/GPT/OpenAI CLIs. Application model IDs
+are separate. One agent normally implements/checks; delegate only independent
 substantial work with owned paths, invariant IDs and checks. Workers preserve
-edits, stay scoped, never delegate and return metadata-only evidence. Global
-superpowers/gstack chains do not override this rule.
+edits, stay scoped, never delegate and return metadata-only evidence. A tester
+launches Electron only when its brief says so, under the no-overlap rule.
 
 Read maintained `.agents/skills/<name>/SKILL.md` and only relevant references:
 prompt/persona → `roleplay-control-prompts`; voice/Studio → `mm-realtime-voice`;

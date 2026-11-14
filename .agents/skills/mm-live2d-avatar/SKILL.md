@@ -1,6 +1,6 @@
 ---
 name: mm-live2d-avatar
-description: "Implement or review Magic Mirror Cubism rendering, motion/expression control, lip sync, framing or presentation media."
+description: "Change Magic Mirror Cubism rendering, motion, lip sync, framing or media presentation."
 ---
 
 # Cubism and presentation

@@ -1,6 +1,6 @@
 ---
 name: mm-electron-foundation
-description: "Implement or debug Magic Mirror Electron Main: lifecycle, IPC, SQLite/config persistence, credentials, BrowserWindows, crash recovery or worker ownership."
+description: "Change Magic Mirror Main lifecycle, IPC, persistence, windows or native workers."
 ---
 
 # Electron foundation

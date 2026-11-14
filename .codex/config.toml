@@ -1,8 +1,6 @@
 # Optional workers only; AGENTS.md defaults routine work to one agent.
-# CLI workers use the user-level nova-auto profile; never copy its contents here.
+# Family routing and roles are user-wide; see tools/codex-harness/README.md.
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 2
-default_subagent_model = "gpt-6.1-sol"
-default_subagent_reasoning_effort = "max"
 interrupt_message = true

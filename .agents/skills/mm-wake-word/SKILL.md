@@ -1,6 +1,6 @@
 ---
 name: mm-wake-word
-description: "Implement, tune or diagnose Magic Mirror sherpa-onnx wake detection, physical microphone input, keyword packages or wake-to-Realtime handoff."
+description: "Diagnose or tune Magic Mirror wake detection, keyword packages and microphone handoff."
 ---
 
 # Wake word

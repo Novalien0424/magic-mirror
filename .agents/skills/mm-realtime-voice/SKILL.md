@@ -1,6 +1,6 @@
 ---
 name: mm-realtime-voice
-description: "Implement or audit Magic Mirror Realtime voice, Interactive Studio visits, prompts/tools, playback, mic handoff, profile switching or memory extraction."
+description: "Change Magic Mirror Realtime sessions, tools, Studio visits, audio ownership or memory extraction."
 ---
 
 # Realtime voice

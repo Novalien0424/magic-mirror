@@ -1,6 +1,6 @@
 ---
 name: mm-face-identity
-description: "Implement or review Magic Mirror face detection, candidate matching, consented enrollment or embedding rebuild (YuNet/SFace, Phase 5)."
+description: "Design Magic Mirror face matching, consented enrollment or embedding rebuild; recognition is not yet implemented."
 ---
 
 # Face identity

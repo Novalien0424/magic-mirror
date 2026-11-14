@@ -1,9 +1,0 @@
-name = "tester"
-description = "Run a delegated set of focused checks and report the result."
-model = "gpt-6.1-sol"
-model_reasoning_effort = "max"
-sandbox_mode = "workspace-write"
-developer_instructions = """
-Run only assigned checks under AGENTS.md; no source changes, delegation or unrelated validation. Artifacts only when requested.
-Report commands, exits, key results and pending verification; retain full failures. Repeat passing checks only after relevant changes or new failures. No separate review stage.
-"""
