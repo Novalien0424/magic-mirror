@@ -1,5 +1,16 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-14 — Stream Deck pages stay during a loop (owner report)
+
+Evidence: [Stream Deck page 2026-11-14](docs/testing/stream-deck-page-2026-11-14.md).
+
+- **No default Stream Deck profile:** the Music and Playback pages must stay until a key
+  leaves them, whatever else happens on the Mac. No profile is marked default; only the keys'
+  Switch Profile actions change the page.
+- **MUSIC LOOP never restarts playing music:** pressed while a folder key's subfolder plays,
+  it keeps that music (supersedes "returns to MusicLoop's own files"). STOP, then MUSIC LOOP,
+  plays MusicLoop's own files.
+
 ## 2026-11-08 — Audit fixes (owner: "fix everything")
 
 Report: [audit fixes 2026-11-08](docs/testing/audit-fixes-2026-11-08.md).

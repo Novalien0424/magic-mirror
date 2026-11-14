@@ -10,7 +10,7 @@ and switches back. All ship in one package so Stream Deck maps the cross-profile
 references.
 
 The format is taken from Stream Deck 7.6's bundled Neo and package profiles. Import
-through Stream Deck; never edit its live profile database or replace the default profile.
+through Stream Deck; never edit its live profile database, and mark no profile as default (deploy/macos/stream-deck.md).
 """
 import json
 from pathlib import Path

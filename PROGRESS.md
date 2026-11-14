@@ -10,11 +10,19 @@ project skill entrypoints 38% smaller. Invariants and app runtime unchanged.
 New Codex sessions use the installed defaults; existing chats retain their model.
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
-LaunchAgent. The app is running in START (owner reboot 11:47, STOP 15:26 for the work below,
-START 15:48:57 Taipei 11-14) on the build made 15:28; speakers at the defaults (Jabra 80% in
-normal playback and in its call volume, A1 65%, Edifiers 50%; Mac mini speaker 1%). Products
-and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md).
-Previous handoff: [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
+LaunchAgent. The app is stopped (owner STOP 16:08 Taipei 11-14; afterwards only a 1% check
+16:38, ended with the STOP script); the build made 16:31 is deployed and the next START runs
+it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
+Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
+[TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
+[archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
+
+**Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
+the main profile was marked default, and Stream Deck selects the default profile whenever
+another app comes to the front, so the Music page fell back to the main keys (no VOL±), and
+MUSIC LOOP then restarted the music. Fixed: no profile is marked default (proven on/off/on
+with the plugin's new page log `deck.log`); MUSIC LOOP keeps a playing subfolder (live at 1%).
+Rulings: DECISIONS 2026-11-14. Not yet confirmed with a physical key press.
 
 **Sound system 11-14** ([investigation, evidence and limits](docs/testing/sound-system-2026-11-14.md)):
 - **Edifiers missing (09:05):** the Mac's Wi-Fi link (6 GHz multi-link, Orbi RBE771, up 5 d 18 h)
@@ -47,16 +55,21 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
+- 11-14 16:38, 1% check on the production app: MUSIC LOOP, folder 1, MUSIC LOOP again kept
+  the folder playing; route settled in 2.3 s; STOP; levels at the defaults.
 - 11-14 15:48:57 START on the new build: both Edifiers joined, route settled in 2.2 s, A1 at
-  once (kept connected), no fallback marker; `net-watch` `state=ok`. Before it, 15:30–15:44:
+  once (kept connected), no fallback marker; `net-watch` `state=ok`. Owner STOP 16:08. Before it, 15:30–15:44:
   three chirp runs at measurement level, levels read back at the defaults.
 - 11-14 11:47 cold boot: both Edifiers joined in 5 s; A1 joined after its 6.5 min hold.
-- Focused checks 11-14: 31 tests in the three music-output files, typecheck, build. The full
+- Focused checks 11-14: 31 tests in the three music-output files, 95 in the music and
+  operator files, typecheck, build. The full
   unit suite was last run 11-08 (151 files / 2364 tests); the six `phase4-qa-runner` cases
   still fail intermittently in the first full run after a build and pass alone (TODO).
 
 ## Next work / unresolved boundaries
 
+0. Owner, at the Neo: MUSIC LOOP, a folder key, then use the Mac (switch apps) for a while:
+   the Music page must stay; MUSIC LOOP again must not restart the song.
 1. Owner go-ahead for a simulated-fault test (temporary firewall rule dropping incoming group
    traffic on Wi-Fi): proves the Edifier fallback and whether playback survives the fault.
 2. At the next real fault: `/Library/Logs/MagicMirror/net-watch.log` (onset, roam count, heal

@@ -1691,10 +1691,13 @@ void app.whenReady().then(async () => {
       // START selects Conversation and INTERACTIVE STUDIO selects the studio, set before
       // the avatar returns so a fast wake already sees it. PLAY LOOP keeps the switch.
       if (action !== 'play_loop' && action !== 'music_loop' && action !== 'dance_floor' && !mirrorMode.set(action === 'studio' ? 'studio' : 'conversation', 'operator')) return false
-      // MUSIC LOOP plays the folder's own files; it restarts only when leaving a subfolder.
-      const leaveFolder = action === 'music_loop' && musicFolder !== undefined && operatorLoop!.isMusicMode()
-      if (action === 'music_loop') musicFolder = undefined
-      const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music(leaveFolder)
+      // MUSIC LOOP plays the folder's own files. Pressed while a subfolder already plays, it keeps
+      // that music (owner 2026-11-14: the deck had fallen back to the main keys, and the press that
+      // brought the Music page back restarted at the first song); STOP, then MUSIC LOOP, returns to
+      // the folder's own files.
+      const keepFolder = action === 'music_loop' && musicFolder !== undefined && operatorLoop!.isMusicMode()
+      if (action === 'music_loop' && !keepFolder) musicFolder = undefined
+      const success = await (action === 'dance_floor' ? operatorLoop!.dance() : action === 'music_loop' ? operatorLoop!.music()
         : action === 'play_loop' ? operatorLoop!.play() : operatorLoop!.normal())
       void publishMusicFolders()
       if (!success) return false

@@ -112,6 +112,11 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Dormant music, and the Jabras sit out music while their microphone is open; (3) mini still says a word before playing on some turns (judge `tool_silence`);
   (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
   `npm run build` and passes on rerun.
+- [ ] **Stream Deck page during a loop (11-14).** Fixed by removing the default-profile mark and
+  keeping a playing subfolder on MUSIC LOOP; proven without a physical press. Owner: press MUSIC
+  LOOP and a folder key, switch apps on the Mac, check the Music page stays (`deck.log`). Open: a
+  repeated MUSIC LOOP press still resets the speaker levels.
+  [Evidence](docs/testing/stream-deck-page-2026-11-14.md).
 - [ ] **Edifiers missing from the music (11-14).** The Mac's Wi-Fi link can stop receiving group
   (multicast) traffic after days; a reboot cured it, so the speakers were never at fault. Deployed:
   Main's local-record fallback and the `net-watch` daemon with Wi-Fi self-heal. Open: (1) prove the

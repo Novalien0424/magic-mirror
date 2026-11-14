@@ -6,7 +6,8 @@ firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 
 Installed profiles (2026-11-01): Elgato's **Default Profile**, the main **Magic Mirror
-copy 3** (the default profile, `AppIdentifier *`, eight keys below), **Magic Mirror
+copy 3** (the Neo's preferred profile, eight keys below; since 2026-11-14 **no profile is
+marked default**, see "Never mark a default profile"), **Magic Mirror
 Playback copy** (VIDEO LOOP's page) and **Magic Mirror Music** (MUSIC LOOP's page).
 Older Magic Mirror copies were deleted (see "After every import" below).
 
@@ -122,9 +123,10 @@ playable music. A song whose playback stalls for 12 s is skipped and tried again
 finished pass retire it for the session. If the native player exits or fails its route, Main
 restarts it once per failure streak (`operator_loop_music_player_restarting`), continuing after
 the interrupted song; a second failure before any song finishes leaves MusicLoop/Dance failed in
-Console until the next key press. Repeated MUSIC LOOP preserves playback and preparation of the MusicLoop
-files; while a folder key's subfolder plays, MUSIC LOOP returns to those files. STOP then
-MUSIC LOOP retries downloads and reloads added/removed files. An empty folder
+Console until the next key press. Repeated MUSIC LOOP preserves playback and preparation,
+also while a folder key's subfolder plays (owner 2026-11-14: it used to return to MusicLoop's
+own files from the first song). STOP then MUSIC LOOP plays MusicLoop's own files again,
+retries downloads and reloads added/removed files. An empty folder
 produces an explicit Console message.
 
 Each accepted MUSIC LOOP press first sets every external speaker to its **normal level**
@@ -405,13 +407,20 @@ the speakers to their normal levels. Stream Deck's built-in actions switch the p
 on the result: a failed loop still shows Playback, and its STOP recovers. Leaving a
 loop through the Console (Return to Avatar) leaves the deck on Playback until STOP.
 
-**Never steal focus during a loop.** Stream Deck answers any app activation (a focus
-change) by selecting its default profile, the main keys. Magic Mirror therefore shows
-the mirror without activating itself (`showInactive`) and does not re-toggle simple
-fullscreen when the mirror is already in place. Only CONSOLE and DESKTOP take focus,
-and their page is the main one. The control apps are `LSUIElement` applets, which do
-not take focus (checked 11-01). Before 11-01 every loop press reverted to the main
-keys about 1 s later, when the mirror window appeared.
+**Never mark a default profile (2026-11-14).** Stream Deck answers every app activation
+(any app coming to the front: a person or a remote session using the Mac, a dialog, its own
+update prompt) by selecting the profile marked default (`AppIdentifier: "*"` in its
+manifest), unless Stream Deck's own window is open. The main keys carried that mark, so the
+Music and Playback pages fell back to the main keys during a loop (owner 11-14 09:05–09:46:
+other apps came to the front from 09:27:55; VOL± was gone and MUSIC LOOP restarted the music). With no
+profile marked default Stream Deck never switches by itself: only the keys' Switch Profile
+actions change the page, and at launch it shows the Neo's preferred profile (the main keys).
+Proven on/off/on with the plugin's page log: mark on, first app switch hid the Music page;
+mark off, five app switches left it; mark on, hidden again. Not yet confirmed with a
+physical MUSIC LOOP press. `~/Library/Logs/MagicMirror/deck.log` records
+`music_page=shown|hidden`. Magic Mirror still shows the mirror without activating itself
+(`showInactive`, 11-01); that no longer decides the page.
+[Evidence](../../docs/testing/stream-deck-page-2026-11-14.md).
 
 ## Reinstall the local controls
 
@@ -426,13 +435,17 @@ open "$HOME/Applications/Magic Mirror Controls/Magic Mirror.streamDeckProfile"
 **After every import (required):** the package imports three new copies (main, Music,
 Playback), and Stream Deck may give the new ones a "copy" suffix while an old one keeps
 the plain name. Identify the new set by the new main copy's Switch Profile targets (or the
-newest `ProfilesV3` folders), not by name. In Stream Deck → Preferences → Profiles select
-the new main copy, tick **Make this my default profile**, then delete the superseded Magic
-Mirror copies (keep Elgato's Default Profile). Stream Deck shows the default profile at launch and on focus changes,
-so an old default silently brings back old keys (found 2026-10-31: the old "copy 1"
-was default, so the Neo lost the Music page after each Stream Deck restart). Verify with
-`AppIdentifier: "*"` on exactly the new main copy in
-`~/Library/Application Support/com.elgato.StreamDeck/ProfilesV3/*/manifest.json`.
+newest `ProfilesV3` folders), not by name. In Stream Deck select the new main copy as the
+Neo's profile, make sure **no** profile has "Make this my default profile" ticked, then
+delete the superseded Magic Mirror copies (keep Elgato's Default Profile). A default profile
+is selected at launch and on every app focus change, so it takes the Music and Playback pages
+away (2026-10-31: an old default copy brought back old keys; 2026-11-14: the main copy's mark
+dropped the Music page mid-loop). Verify that no
+`~/Library/Application Support/com.elgato.StreamDeck/ProfilesV3/*/manifest.json` has
+`AppIdentifier`, and that `defaults read com.elgato.StreamDeck Devices` shows the main copy
+as `ESDProfilesPreferred`. On 11-14 the mark was removed by deleting that one key with
+Stream Deck quit (it kept the change); the manifest before is in
+`~/Library/Caches/MagicMirror/stream-deck-main-manifest-before-2026-11-14.json`.
 
 The installer verifies its prerequisites, creates ad-hoc signed local apps,
 and only replaces apps with the matching Magic Mirror bundle identifiers. It

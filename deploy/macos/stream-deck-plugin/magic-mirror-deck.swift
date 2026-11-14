@@ -1,6 +1,8 @@
 // Magic Mirror Stream Deck plugin (SDK v2, native). Titles the Music page folder keys from
 // Main's names-only music-folders.json and runs the fixed raven-button.sh music-folder-N
 // on a press. No paths, playback or other controls; launchd/Electron ownership unchanged.
+// It also records when the Music page appears on or leaves the deck (deck.log, 2026-11-14:
+// the page was lost during a loop and nothing showed when or why).
 import Foundation
 
 let arguments = CommandLine.arguments
@@ -12,6 +14,15 @@ guard let port = argument("-port"), let pluginUUID = argument("-pluginUUID"), le
   let socketURL = URL(string: "ws://127.0.0.1:\(port)") else { exit(2) }
 let foldersFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/MagicMirror/music-folders.json")
 let button = "/Users/novalien0424/magic-mirror/deploy/macos/raven-button.sh"
+let deckLog = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/MagicMirror/deck.log")
+
+/// One metadata line: plugin start, Music page shown or hidden.
+func record(_ fields: String) {
+  let line = "DECK \(fields) at=\(ISO8601DateFormatter().string(from: Date()))\n"
+  guard let data = line.data(using: .utf8) else { return }
+  if let handle = try? FileHandle(forWritingTo: deckLog) { defer { try? handle.close() }; _ = try? handle.seekToEnd(); try? handle.write(contentsOf: data) }
+  else { try? data.write(to: deckLog) }
+}
 
 /// Key titles fit about eight characters per line; break long names over up to three lines.
 func keyTitle(_ name: String) -> String {
@@ -53,9 +64,12 @@ final class Plugin {
     switch event {
     case "willAppear":
       guard (1...3).contains(slot) else { return }
+      if slots.isEmpty { record("music_page=shown") }
       slots[context] = slot; shown[context] = nil; refresh()
     case "willDisappear":
+      let was = slots.count
       slots[context] = nil; shown[context] = nil
+      if was > 0 && slots.isEmpty { record("music_page=hidden") }
     case "keyDown":
       guard let slot = slots[context] else { return }
       let process = Process()
@@ -85,6 +99,7 @@ let socket = URLSession(configuration: .default).webSocketTask(with: socketURL)
 let plugin = Plugin(socket)
 socket.resume()
 plugin.send(["event": registerEvent, "uuid": pluginUUID])
+record("plugin=started")
 plugin.receive()
 Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in plugin.refresh() }
 RunLoop.main.run()
