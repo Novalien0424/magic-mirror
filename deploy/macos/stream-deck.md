@@ -100,7 +100,8 @@ Music**: the top row holds keys for the first three subfolders of MusicLoop in n
 order, titled with their names by the **Magic Mirror Controls** plugin (later folders
 are ignored); then VOL+, and on the bottom row PREV, NEXT, VOL− and STOP (back to the
 main keys). A folder key plays that subfolder (with its own subfolders); the key of the
-folder playing shows ▶. A folder Google Drive has not downloaded yet ("Resource
+folder playing shows ▶, and pressing it again keeps the song (2026-11-14; before, it restarted
+at the first song). To start a folder over, press STOP, MUSIC LOOP and the folder key. A folder Google Drive has not downloaded yet ("Resource
 deadlock avoided"), or one without music, is refused with Basso and the current music
 keeps playing — make it Available offline in Finder first. PREV/NEXT replace the song at
 once with the nearest ready song that way, skipping one still being cached; with no other ready
@@ -412,7 +413,9 @@ loop through the Console (Return to Avatar) leaves the deck on Playback until ST
 update prompt) by selecting the profile marked default (`AppIdentifier: "*"` in its
 manifest), unless Stream Deck's own window is open. The main keys carried that mark, so the
 Music and Playback pages fell back to the main keys during a loop (owner 11-14 09:05–09:46:
-other apps came to the front from 09:27:55; VOL± was gone and MUSIC LOOP restarted the music). With no
+other apps came to the front from 09:27:55; VOL± was gone and MUSIC LOOP restarted the music).
+A key's own helper app can come to the front too: at 09:47:02 a VOL− press did, the main keys
+came back under the finger and the next three presses at that position started DANCE FLOOR. With no
 profile marked default Stream Deck never switches by itself: only the keys' Switch Profile
 actions change the page, and at launch it shows the Neo's preferred profile (the main keys).
 Proven on/off/on with the plugin's page log: mark on, first app switch hid the Music page;
@@ -421,6 +424,11 @@ physical MUSIC LOOP press. `~/Library/Logs/MagicMirror/deck.log` records
 `music_page=shown|hidden`. Magic Mirror still shows the mirror without activating itself
 (`showInactive`, 11-01); that no longer decides the page.
 [Evidence](../../docs/testing/stream-deck-page-2026-11-14.md).
+
+**Rapid presses.** The eight mode keys run one at a time; the same mode key within 3 s of its
+last accepted press is dropped (`debounced` in `button.log`), and a repeated MUSIC LOOP, DANCE
+FLOOR or folder key keeps what plays. Different mode keys pressed quickly all run in order, so
+the last one decides. VOL± and PREV/NEXT count every press.
 
 ## Reinstall the local controls
 

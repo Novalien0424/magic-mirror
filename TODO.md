@@ -114,8 +114,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   `npm run build` and passes on rerun.
 - [ ] **Stream Deck page during a loop (11-14).** Fixed by removing the default-profile mark and
   keeping a playing subfolder on MUSIC LOOP; proven without a physical press. Owner: press MUSIC
-  LOOP and a folder key, switch apps on the Mac, check the Music page stays (`deck.log`). Open: a
-  repeated MUSIC LOOP press still resets the speaker levels.
+  LOOP and a folder key, switch apps on the Mac, press VOL− quickly several times, check the
+  Music page stays (`deck.log`). Open, owner's call: a repeated MUSIC LOOP press still resets
+  the speaker levels; a double tap on MUSIC LOOP may land on NEXT (untested).
   [Evidence](docs/testing/stream-deck-page-2026-11-14.md).
 - [ ] **Edifiers missing from the music (11-14).** The Mac's Wi-Fi link can stop receiving group
   (multicast) traffic after days; a reboot cured it, so the speakers were never at fault. Deployed:

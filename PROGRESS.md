@@ -10,9 +10,9 @@ project skill entrypoints 38% smaller. Invariants and app runtime unchanged.
 New Codex sessions use the installed defaults; existing chats retain their model.
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
-LaunchAgent. The app is stopped (owner STOP 16:08 Taipei 11-14; afterwards only a 1% check
-16:38, ended with the STOP script); the build made 16:31 is deployed and the next START runs
-it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
+LaunchAgent. The app is stopped (owner STOP 16:08 Taipei 11-14; afterwards only 1% checks
+16:38 and 16:51, ended with the STOP script); the build made 16:50 is deployed and the next
+START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
 Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
@@ -22,6 +22,10 @@ the main profile was marked default, and Stream Deck selects the default profile
 another app comes to the front, so the Music page fell back to the main keys (no VOL±), and
 MUSIC LOOP then restarted the music. Fixed: no profile is marked default (proven on/off/on
 with the plugin's new page log `deck.log`); MUSIC LOOP keeps a playing subfolder (live at 1%).
+Rapid-press audit of 09:46:54–09:47:31: a VOL− press brought its own helper app to the front,
+the main keys came back under the finger and three presses meant for VOL− started DANCE FLOOR;
+same cause, same fix. The queue and its 3 s same-key debounce worked. One gap closed: a folder
+key pressed again keeps its playing folder (live at 1%, 16:51).
 Rulings: DECISIONS 2026-11-14. Not yet confirmed with a physical key press.
 
 **Sound system 11-14** ([investigation, evidence and limits](docs/testing/sound-system-2026-11-14.md)):

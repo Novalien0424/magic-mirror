@@ -203,7 +203,8 @@ Main `music_next`, `music_previous` or `music_folder_N` directly when the app is
 `music_not_running` with Main's reason and play Pop or Basso. Main checks a folder before
 switching, so a refused folder keeps the current music. A folder key works in any mode
 while the app runs: it starts MusicLoop on that folder (no speaker-level reset) and hides the
-Console. PREV/NEXT outside MusicLoop give `music_key_failed` with Basso.
+Console; pressed again while that folder plays or prepares it keeps the song
+(`operator_loop_music_folder_kept`, 2026-11-14). PREV/NEXT outside MusicLoop give `music_key_failed` with Basso.
 
 **VOL±** (`raven-button.sh volume-up|volume-down`, on the Playback and Music pages)
 runs the same helper's `--volume-up/--volume-down` at once, outside the queue and the

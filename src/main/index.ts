@@ -1278,13 +1278,19 @@ void app.whenReady().then(async () => {
       writeFileSync(musicFoldersFile, JSON.stringify({ ...saved, active: null, playing: false }), { mode: 0o600 })
     } catch { /* No folder keys were published. */ }
   })
-  /** Folder key: check the folder first, so an unreadable or empty one keeps the current music. */
+  /** Folder key: check the folder first, so an unreadable or empty one keeps the current music.
+   * Pressed again while its folder already plays or prepares, it keeps the song (owner
+   * 2026-11-14: a repeated press must not restart at the first song). */
   const selectMusicFolder = async (slot: number): Promise<boolean> => {
+    let restart = true
     try {
       const shared = (await mediaFoldersReady, mediaFolders.view().shared?.path)
       const name = (await musicSubfolders(shared))[slot - 1]
       if (!name) throw Error('operator_loop_music_folder_missing')
       await musicLoopFiles(shared, 'MusicLoop', () => {}, name)
+      restart = !(musicFolder === name && operatorLoop!.isMusicMode()
+        && ['playing', 'preparing'].includes(operatorLoop!.view().snapshot.status))
+      if (!restart) marker('MUSIC_LOOP', { reason: 'operator_loop_music_folder_kept' })
       musicFolder = name
     } catch (error) {
       const reason = error instanceof Error && /^operator_loop_music_[a-z_]+$/.test(error.message) ? error.message : 'operator_loop_music_folder_unavailable'
@@ -1292,7 +1298,7 @@ void app.whenReady().then(async () => {
       runtime.telemetry.emit({ module: 'avatar', event: 'media_skill', source: 'runtime', status: 'degraded', reason })
       return false
     }
-    return operatorLoop!.music(true)
+    return operatorLoop!.music(restart)
   }
   let welcomeWait: { generation: number; signal: AbortSignal; claimed: boolean; finish(completed: boolean): void } | undefined
   danceFloor = createDanceFloor({

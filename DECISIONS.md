@@ -10,6 +10,9 @@ Evidence: [Stream Deck page 2026-11-14](docs/testing/stream-deck-page-2026-11-14
 - **MUSIC LOOP never restarts playing music:** pressed while a folder key's subfolder plays,
   it keeps that music (supersedes "returns to MusicLoop's own files"). STOP, then MUSIC LOOP,
   plays MusicLoop's own files.
+- **A folder key never restarts its own playing folder** (rapid-press audit, same day): pressed
+  again while that folder plays or prepares, it keeps the song. Agent's extension of the ruling
+  above, reported to the owner; VOL± and PREV/NEXT still count every press.
 
 ## 2026-11-08 — Audit fixes (owner: "fix everything")
 
