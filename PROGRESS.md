@@ -40,7 +40,8 @@ same cause, same fix. The queue and its 3 s same-key debounce worked. One gap cl
 key pressed again keeps its playing folder (live at 1%, 16:51).
 Rulings: DECISIONS 2026-11-14. Owner's own presses 17:02:40–17:05:35: MUSIC LOOP showed the
 Music page and it stayed until the STOP key (`deck.log`); app switching and rapid VOL− at the
-physical keys are not yet confirmed.
+physical keys are not yet confirmed. Stream Deck updated to 7.6.1 at 17:55 (owner's request);
+profiles, no-default setting, plugin and the page test re-verified on it.
 
 **Open from the owner's test 17:05, 11-14** ([measurements](docs/testing/video-loop-start-2026-11-14.md)):
 - VIDEO LOOP from STOP: "short sound first, then it plays later". The app's output is
@@ -98,15 +99,16 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Next work / unresolved boundaries
 
-0. **After the owner's macOS upgrade (planned right after this clock-out, from 27.0.1):** before
+0. **After the owner's macOS upgrade (27.0.1 → 27.2.1, postponed by the owner 11-14; Airfoil
+   5.13.0, Jabra Direct and firmware, router firmware are the latest; BetterDisplay 5.0.6 is
+   deliberately kept, 5.3.0 exists):** before
    the venue is used, press START and read `~/Library/Logs/MagicMirror/app.out.log`:
    `MUSIC_OUTPUT music_output_route_settled` with `airfoil_speaker_reconnected speakers=2`
    (music driver, Airfoil capture and its automation permission survived), `MIRROR_DISPLAY_SELECTED
    ... reason=match` (TV identity and BetterDisplay's EDID fallback), no microphone or camera
    failure marker. Then `launchctl print system/com.magicmirror.net-watch` and the board adb
    daemon, `net-watch.log` `state=ok`, and Stream Deck: no profile marked default, main keys
-   shown. A1 is silent for 6.5 min after a reboot by design. Check that Airfoil 5.13 supports
-   the new macOS before a major upgrade; without it the music falls back to the direct route.
+   shown. A1 is silent for 6.5 min after a reboot by design.
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.

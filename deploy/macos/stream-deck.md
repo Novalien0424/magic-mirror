@@ -1,7 +1,10 @@
 # Stream Deck Neo controls
 
-The venue Mac has Elgato Stream Deck 7.6.0 (23012), verified current by its own
-updater on 2026-10-17. The signed, notarized vendor installer was used. Neo
+The venue Mac has Elgato Stream Deck 7.6.1 (23033), installed 2026-11-14 from the signed,
+notarized vendor package (7.6.0 since 10-17). The update kept all profile files byte-identical,
+no profile marked default, the main keys preferred and the Magic Mirror Controls plugin; the
+Music page stayed through five app switches on 7.6.1. Backup of the 7.6.0 profiles, plugin and
+settings: `~/Library/Application Support/MagicMirror/backups/stream-deck-7.6.0-2026-11-14`. Neo
 firmware was updated successfully from 1.00.013 to 1.00.017; its update button
 disappeared afterward.
 

@@ -86,6 +86,15 @@ Owner: a second person pressed keys quickly and things went wrong; is there pres
   levels; a double tap on MUSIC LOOP could land its second tap on NEXT (same position once the
   Music page appears; not tested, no such pair in the button log).
 
+## Stream Deck 7.6.1 (17:55, owner's request)
+
+Updated 7.6.0 → 7.6.1 from Elgato's signed, notarized package with Stream Deck quit; Magic
+Mirror stopped. After it: 18 profile JSON files byte-identical, no profile marked default,
+main keys preferred, plugin connected, Neo attached. Music page preferred, background launch,
+five app switches (Finder, System Settings): `music_page=shown`, never hidden; main keys
+restored. Stream Deck logs one `Failed to save Node.js manifest` line at launch (its Node
+plugin runtime; our plugin is native). Not checked: a physical key press on 7.6.1.
+
 ## Limits
 
 - No physical key press was possible: the path "MUSIC LOOP key → Music page → app switch"
