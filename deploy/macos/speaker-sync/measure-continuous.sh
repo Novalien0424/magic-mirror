@@ -4,6 +4,7 @@ set -euo pipefail
 # Usage (canonical checkout, app stopped):
 # node scripts/electron-owner.mjs speaker-sync zsh deploy/macos/speaker-sync/measure-continuous.sh \
 #   /Volumes/MMSyncRAM/run no-a1 C2-60-12-F8-D1-A5:input 130 'J E J E'
+# Blocks: J Jabra (Computer), E Edifier 8D58, F Edifier 621E (the second one), A A1.
 # For A1, use "group", the Jabra input UID, and >=390 s after a fresh connection.
 # Leaves connections intact between measurements; final operator cleanup releases only the Edifier,
 # as STOP does. Reconnecting Computer or A1 restarts A1's ~6 min glide: wait 6.5 min before START.
@@ -13,7 +14,7 @@ ROOT="${0:A:h:h:h:h}"; SRC="${0:A:h}"; BIN="$W/bin"
 [[ "$MODE" == group || "$MODE" == no-a1 ]] || exit 2
 [[ "$SETTLE" == <-> && ${#BLOCKS} -gt 0 ]] || exit 2
 for blk in $BLOCKS; do
-  [[ "$blk" == J || "$blk" == E || "$blk" == A ]] || exit 2
+  [[ "$blk" == J || "$blk" == E || "$blk" == F || "$blk" == A ]] || exit 2
   if [[ "$blk" == A && ( "$MODE" != group || "$MIC" == C2-60-12-F8-D1-A5:input ) ]]; then print -u2 'A1 needs group mode and a separate microphone'; exit 2; fi
   if [[ "$blk" == J && "$MIC" == *Jabra* ]]; then print -u2 'The Jabra microphone cannot measure the Jabras'; exit 2; fi
 done
@@ -53,7 +54,9 @@ cleanup() {
   osascript -e 'tell application "Airfoil"
     set (volume of (first speaker whose id is "com.rogueamoeba.airfoil.LocalSpeaker")) to 0
     set (volume of (first speaker whose name is "A1")) to 0
-    set (volume of (first speaker whose name starts with "EDIFIER")) to 0.5
+    repeat with s in (every speaker whose name starts with "EDIFIER")
+      set (volume of s) to 0.5
+    end repeat
   end tell' || failed=1
   (( result != 0 )) && exit "$result"
   exit "$failed"
@@ -106,7 +109,7 @@ sleep "$SETTLE"
 n=0
 for blk in $BLOCKS; do
  n=$((n+1))
- if [[ $blk == J ]]; then target="com.rogueamoeba.airfoil.LocalSpeaker" vol=1.0; elif [[ $blk == A ]]; then target="C2-60-12-F8-D1-A5:output" vol=1.0; else target="6C1629028D58@EDIFIER M330 Ⅱ 8D58" vol=0.45; fi
+ if [[ $blk == J ]]; then target="com.rogueamoeba.airfoil.LocalSpeaker" vol=1.0; elif [[ $blk == A ]]; then target="C2-60-12-F8-D1-A5:output" vol=1.0; elif [[ $blk == F ]]; then target="6C162902621E@EDIFIER M330 Ⅱ 621E" vol=0.45; else target="6C1629028D58@EDIFIER M330 Ⅱ 8D58" vol=0.45; fi
  osascript - "$target" "$vol" <<'OSA' >/dev/null
 on run argv
  tell application "Airfoil"

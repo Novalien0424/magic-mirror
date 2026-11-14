@@ -115,12 +115,19 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Dormant music, and the Jabras sit out music while their microphone is open; (3) mini still says a word before playing on some turns (judge `tool_silence`);
   (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
   `npm run build` and passes on rerun.
+- [ ] **Edifiers missing from the music (11-14).** The Mac's Wi-Fi link can stop receiving group
+  (multicast) traffic after days; a reboot cured it, so the speakers were never at fault. Deployed:
+  Main's local-record fallback and the `net-watch` daemon with Wi-Fi self-heal. Open: (1) prove the
+  fallback in a simulated fault (temporary firewall rule; owner go-ahead needed); (2) at the next
+  fault read `net-watch.log` (onset, roam count, heal result) and check another 6 GHz client, to
+  separate router from Mac; (3) prevention: wired LAN for the Mac (needs a second adapter) or off
+  the 6 GHz multi-link network. [Investigation](docs/testing/sound-system-2026-11-14.md).
 - [ ] **Airfoil sync — open items.** All music plays through Airfoil (runbook "Airfoil music route").
   (1) A1 wanders ±20 ms with 30–40 ms jumps on its weak link and joins 6.5 min after a fresh connect
   (it and the Jabra stay connected through STOP, so START plays it at once); move it nearer the Mac mini or replace it. (2) The TV (HDMI) is
   outside the Airfoil group; its picture delay (67 ms) is compensated in `mmlt` (2081 ms), so lip-sync
-  rests on the audio total. (3) The Jabra pair's absolute delay rests on the 11-01 iPad memo. (4) A
-  second Edifier joins by name: measure it with `speaker-sync/measure-continuous.sh` and set its offset.
+  rests on the audio total. (3) The Jabra pair's absolute delay rests on the 11-01 iPad memo. (4) The
+  second Edifier (621E, offset −0.130 s, 6–13 ms behind the first on 11-14) has not been heard by a person.
 - [ ] **Video loop smoothness.** Loop re-reads now reuse the local copy and each wrap logs
   `operator_loop_wrapped wraps= dropped=`. Open: the board's camera-preview HDMI
   path (the TV wake order stays: DECISIONS 11-01). Watch the wrap markers in the room.

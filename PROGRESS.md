@@ -1,15 +1,35 @@
-# Magic Mirror — current handoff, 2026-11-08
+# Magic Mirror — current handoff, 2026-11-14
 
 ## Current delivery
 
-Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical
-Mac, user LaunchAgent. The app is stopped (owner MUSIC LOOP → STOP 15:19 Taipei 11-08; afterwards only
-tests: speaker sync until 22:24, then two 1% cold-loop checks on the production app 11-09 15:36–15:38,
-each ended with the STOP key); speakers at the defaults (Jabra 80% in normal playback and in its
-call volume, A1 65%, Edifier 50%; Mac mini speaker 1%). The build with all fixes is deployed (`out/`,
-`stop-state`); the next START runs it. Products and stories: [PRD](PRD.md); open work: [TODO](TODO.md); rulings:
-[DECISIONS](DECISIONS.md). Previous handoff:
+Runtime: `field/macmini-deploy` at the commit with this handoff (the 11-10 Codex harness
+changes are still uncommitted in the working tree). Canonical Mac, user LaunchAgent. The app is running in START (owner reboot 11:47,
+STOP 15:26 for the work below, START 15:48:57 Taipei 11-14) on the build made 15:28 from that
+working tree; speakers at the defaults (Jabra 80% in normal playback and in its call volume,
+A1 65%, Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
+[TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-01](docs/archive/progress-before-online-songs-2026-11-07.md).
+
+**Sound system 11-14** ([investigation, evidence and limits](docs/testing/sound-system-2026-11-14.md)):
+- **Edifiers missing (09:05):** the Mac's Wi-Fi link (6 GHz multi-link, Orbi RBE771, up 5 d 18 h)
+  received no group (multicast) traffic while unicast worked, so Airfoil, which finds AirPlay
+  speakers only by Bonjour group replies, listed neither. Both speakers were healthy. The
+  owner's reboot cured it at once. Router vs Mac is not separated: the system log did not reach
+  back to the onset.
+- **Deployed fallback:** when no Edifier is listed, Main asks by the unicast-reply path and
+  announces the speakers to the Mac's own Bonjour (`src/main/airplay-bonjour.ts`). 31 tests,
+  typecheck, build; the 15:48 START joined both Edifiers in 2.2 s with no fallback marker.
+  Listing a local record in Airfoil is proven; connecting and playing through one is **not**
+  (Airfoil merges a second record for a visible speaker).
+- **Installed watch:** root LaunchDaemon `com.magicmirror.net-watch` (every 5 min, owner chose
+  self-heal: Wi-Fi off/on when blind and the app is not running). Log
+  `/Library/Logs/MagicMirror/net-watch.log`; first line `state=ok`. Heal path not exercised.
+- **Second Edifier (621E):** was 112 ms behind the first; Airfoil offset −0.130 s leaves it
+  6–13 ms behind (measured, three runs). Not heard by a person.
+- **A1 silent after a reboot:** the designed 6.5 min hold after Airfoil reconnects it; it joined
+  at 11:54:25 by itself. No change.
+- Next: owner go-ahead for a simulated-fault test (temporary firewall rule) to prove the
+  fallback and whether playback survives without group traffic.
 
 **Fixed/deployed 11-08 — speaker sync** ([evidence and limits](docs/testing/airfoil-sync-2026-11-08-followup.md)):
 - **Two-second echo:** the old "Magic Mirror Music" device was both what apps play into and what

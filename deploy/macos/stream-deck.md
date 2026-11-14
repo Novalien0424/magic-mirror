@@ -149,9 +149,29 @@ reconnects speakers every 10 s, keeps AirPlay speakers at the Jabra's level, and
 then wrap only the music device (the public "Magic Mirror Speakers" default output stays).
 Without Airfoil the flag goes and the direct group below returns (Edifier silent;
 `MUSIC_OUTPUT music_output_airfoil_*` reason). No AirPlay speaker for 30 s is reported once:
-`music_output_airplay_unreachable` (listed, not connecting) or `_not_found` (not listed; the
-Edifier stopped answering Bonjour on 11-08, so power-cycle it), then `_restored`. The TV (HDMI) is not in the Airfoil group.
-Raven's voice stays on the Jabra.
+`music_output_airplay_unreachable` (listed, not connecting) or `_not_found` (not listed),
+then `_restored`. The TV (HDMI) is not in the Airfoil group. Raven's voice stays on the Jabra.
+
+**Edifier not listed (2026-11-14).** Do not power-cycle the speakers first. After days of
+uptime the Mac's Wi-Fi link (6 GHz, multi-link, Orbi RBE771) stopped receiving all group
+(multicast) traffic while unicast still worked; Airfoil finds AirPlay speakers only by
+Bonjour group replies, so both Edifiers vanished although healthy. A new Wi-Fi association
+(reboot) cured it; router vs Mac is not yet separated.
+- Main (`src/main/airplay-bonjour.ts`): when no Edifier is listed it asks both ways; speakers
+  that answer only the direct (unicast-reply) question are announced to the Mac's own Bonjour
+  with their unchanged records (`dns-sd -P`) so Airfoil lists them. Markers
+  `music_output_bonjour_group_blind`, `music_output_airplay_proxied speakers=`,
+  `_proxy_withdrawn`, `music_output_bonjour_group_restored`. Not yet proven in a fault.
+- LAN watch (`net-watch.swift`, `sudo zsh deploy/macos/install-net-watch.sh --heal`): root
+  LaunchDaemon `com.magicmirror.net-watch`, every 5 min, log
+  `/Library/Logs/MagicMirror/net-watch.log` (`state=ok|blind|quiet|offline`, roam count at the
+  onset). With `--heal` it turns Wi-Fi off and on when `blind`, only while Electron is not
+  running, at most hourly (`heal=wifi_rejoined result=`).
+- By hand: `curl http://<ip>:7000/info` for each speaker, then
+  `"/Library/Application Support/MagicMirror/net-watch" --once --state /tmp/nw.json`.
+- Second Edifier `621E`: Airfoil offset −0.130 s (11-14, 6–13 ms behind `8D58`); measure with
+  block `F` of `measure-continuous.sh`.
+[Investigation](../../docs/testing/sound-system-2026-11-14.md).
 
 Calibration (2026-11-01, `~/Library/Application Support/MagicMirror/ops/music-device/calibration.json`):
 measured with [speaker-sync/measure.sh](speaker-sync/measure.sh) (host-clock chirps; mic = a second Jabra

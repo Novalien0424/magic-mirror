@@ -39,6 +39,8 @@ export const AIRPLAY_MISSING_MS = 30_000
 export const AIRPLAY_START_WAIT_MS = 12_000
 /** The longest a loop pressed from STOP holds its sound for the final route, from the app start. */
 export const MUSIC_ROUTE_WAIT_MS = 20_000
+/** How often the Bonjour check repeats while no AirPlay speaker is listed or a local record stands in. */
+export const AIRPLAY_DISCOVERY_RETRY_MS = 60_000
 export type MusicRoute = 'airfoil' | 'direct'
 
 export function parseAirfoilSpeakers(text: string): AirfoilSpeaker[] {
@@ -107,6 +109,9 @@ export function createAirfoilRoute(input: {
   pollMs?: number
   /** How often a start checks whether Airfoil has finished connecting its AirPlay speaker. */
   probeMs?: number
+  /** Finds AirPlay speakers Airfoil does not list (the Mac can stop hearing Bonjour group replies
+   * after days on Wi-Fi, 2026-11-14) and announces them locally: see airplay-bonjour.ts. */
+  discovery?: { refresh(): Promise<{ speakers: number }>; active(): boolean; stop(): void }
 }) {
   const run = input.run ?? runOsascript
   const launch = input.launch ?? (() => new Promise<void>((resolve, reject) =>
@@ -204,6 +209,8 @@ export function createAirfoilRoute(input: {
   let decided: Promise<MusicRoute> = Promise.resolve('direct')
   const settleRoute = (route: MusicRoute) => { const done = decide; decide = undefined; done?.(route) }
   let airplayDeadline: number | undefined, probing = false
+  // Speakers that answer on the network but are not in Airfoil's list yet: a start waits for them too.
+  let expectAirplay = false, discovering = false, nextDiscovery = 0
   const setActive = async (on: boolean, reason?: string) => {
     if (on !== active) { await writeFlag(on).catch(() => undefined); active = on }
     if (!on && reason && reason !== lastReason) input.degraded(reason)
@@ -221,6 +228,8 @@ export function createAirfoilRoute(input: {
       let speakers: AirfoilSpeaker[] = []
       try { speakers = parseAirfoilSpeakers(await run(LIST)) } catch { /* the next poll decides */ }
       if (speakers.some(speaker => speaker.connected && airfoilKind(speaker) === 'airplay')) { pollNow(); break }
+      // A speaker Airfoil has only now listed has not been asked to connect: the poll does that once.
+      if (speakers.some(speaker => airfoilKind(speaker) === 'airplay' && !targets.some(target => target.id === speaker.id))) pollNow()
       if (clock() >= airplayDeadline) { input.degraded('music_output_airplay_start_wait_expired'); settleRoute('airfoil'); break }
     }
     probing = false
@@ -293,8 +302,19 @@ export function createAirfoilRoute(input: {
     const count = (kind: AirfoilKind) => targets.filter(speaker => speaker.connected && airfoilKind(speaker) === kind).length
     if (!wasActive) input.report('music_output_airfoil_ready', { speakers: targets.filter(s => s.connected).length, airplay: count('airplay'), bluetooth: count('bluetooth') })
     else if (reconnected) input.report('music_output_airfoil_speaker_reconnected', { speakers: reconnected })
+    const listed = targets.some(speaker => airfoilKind(speaker) === 'airplay')
+    if (input.discovery && !discovering && clock() >= nextDiscovery && (!listed || input.discovery.active())) {
+      nextDiscovery = clock() + AIRPLAY_DISCOVERY_RETRY_MS
+      discovering = true
+      const task = input.discovery.refresh().then(found => { if (found.speakers) expectAirplay = true }, () => undefined)
+        .then(() => { discovering = false })
+      // Only a start waits for the answer; later checks run beside the poll.
+      if (decide && !listed) await task
+      if (stopped) return
+    }
     if (decide) {
-      if (count('airplay') || !targets.some(speaker => airfoilKind(speaker) === 'airplay')) settleRoute('airfoil')
+      const waiting = listed || (expectAirplay && (airplayDeadline === undefined || clock() < airplayDeadline))
+      if (count('airplay') || !waiting) settleRoute('airfoil')
       else if (!probing) void probeAirplay()
     }
     // No AirPlay speaker (Edifier) for 30 s: listed but refusing, or not found on the network at all.
@@ -335,6 +355,7 @@ export function createAirfoilRoute(input: {
       // A previous run that died keeps no stale route: music is direct until Airfoil is verified.
       await writeFlag(false).catch(() => undefined); active = false
       airplayMissingSince = undefined; airplayMissing = false
+      expectAirplay = false; nextDiscovery = 0
       resumed = settleState.load()
       await launch().catch(() => undefined)
       void loop()
@@ -351,6 +372,7 @@ export function createAirfoilRoute(input: {
      * no settle time. Only AirPlay speakers are released; their reconnect leaves Bluetooth in sync. */
     stop(): void {
       stopped = true; clearTimeout(timer); active = false; settleRoute('direct')
+      input.discovery?.stop()
       if (input.writeFlag) void input.writeFlag(false).catch(() => undefined)
       else rmSync(input.flagPath, { force: true })
       const ids = targets.filter(speaker => speaker.connected && airfoilKind(speaker) === 'airplay').map(speaker => speaker.id)

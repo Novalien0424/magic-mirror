@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AIRFOIL_LOCAL_ID, AIRFOIL_SOURCE, AIRPLAY_START_WAIT_MS, airfoilKind, createAirfoilRoute, parseAirfoilSpeakers } from '../../src/main/airfoil-route'
+import { AIRFOIL_LOCAL_ID, AIRFOIL_SOURCE, AIRPLAY_DISCOVERY_RETRY_MS, AIRPLAY_START_WAIT_MS, airfoilKind, createAirfoilRoute, parseAirfoilSpeakers } from '../../src/main/airfoil-route'
 import { parseSpeakerLevels } from '../../src/main/speaker-levels'
 
 const LIST = [
@@ -384,6 +384,48 @@ describe('the route a start waits for (owner 2026-11-09: a clean start on every 
     await vi.waitFor(() => expect(settled).toHaveBeenCalledWith('airfoil'))
     expect(degraded).toHaveBeenCalledWith('music_output_airplay_start_wait_expired')
     expect(fake.connects()).toBe(1)
+    route.stop()
+  })
+
+  it('waits for an Edifier that answers on the network but Airfoil lists late (announced locally), then connects it once', async () => {
+    const NO_EDIFIER = LIST.split('\n').filter(line => !line.includes('EDIFIER')).join('\n')
+    let listing = NO_EDIFIER, time = 0
+    const airfoil = fakeAirfoil(), connects: string[] = [], settled = vi.fn()
+    const run = vi.fn(async (script: string, args: string[] = []) => {
+      if (script.includes('every speaker') && !args.length) return parseAirfoilSpeakers(listing).map(s => `${s.id}\t${s.name}\t${airfoil.connected.has(s.id)}`).join('\n')
+      if (script.includes('connect to')) connects.push(args[0]!)
+      return airfoil.run(script, args)
+    })
+    const discovery = { refresh: vi.fn(async () => ({ speakers: 1 })), active: () => false, stop: vi.fn() }
+    const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded: vi.fn(), run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 60_000, probeMs: 5, now: () => time, discovery })
+    await route.start()
+    void route.ready().then(settled)
+    await vi.waitFor(() => expect(discovery.refresh).toHaveBeenCalledTimes(1))
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(settled).not.toHaveBeenCalled()
+    listing = LIST
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledWith('airfoil'))
+    expect(connects.filter(id => id === edifier)).toHaveLength(1)
+    expect(discovery.refresh).toHaveBeenCalledTimes(1)
+    route.stop()
+    expect(discovery.stop).toHaveBeenCalled()
+  })
+
+  it('starts at once when no Edifier answers anywhere, and asks again only after a minute', async () => {
+    const NO_EDIFIER = LIST.split('\n').filter(line => !line.includes('EDIFIER')).join('\n')
+    let time = 0
+    const airfoil = fakeAirfoil(NO_EDIFIER), settled = vi.fn()
+    const discovery = { refresh: vi.fn(async () => ({ speakers: 0 })), active: () => false, stop: vi.fn() }
+    const route = createAirfoilRoute({ flagPath: '/flag', report: vi.fn(), degraded: vi.fn(), run: airfoil.run, launch: async () => {}, installed: () => true,
+      writeFlag: async () => {}, pollMs: 5, now: () => time, discovery })
+    await route.start()
+    void route.ready().then(settled)
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledWith('airfoil'))
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(discovery.refresh).toHaveBeenCalledTimes(1)
+    time = AIRPLAY_DISCOVERY_RETRY_MS
+    await vi.waitFor(() => expect(discovery.refresh).toHaveBeenCalledTimes(2))
     route.stop()
   })
 

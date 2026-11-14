@@ -3,7 +3,8 @@ import { createWebConsoleRegistry, parseWebConsoleConfig, startWebConsole } from
 import { createOperatorLoop } from './operator-loop'
 import { createMusicLoop, musicLoopFiles, musicSubfolders } from './music-loop'
 import { createSharedMusicOutput } from './shared-music-output'
-import { createAirfoilRoute, MUSIC_ROUTE_WAIT_MS } from './airfoil-route'
+import { airfoilKind, createAirfoilRoute, MUSIC_ROUTE_WAIT_MS } from './airfoil-route'
+import { createAirplayProxy } from './airplay-bonjour'
 import { parseSpeakerLevels } from './speaker-levels'
 import { createDanceFloor } from './dance-floor'
 import { parseDanceCommand, type DanceWelcomeBundle } from '../shared/dance-floor'
@@ -1885,12 +1886,21 @@ void app.whenReady().then(async () => {
     try { levelsText = readFileSync(join(musicDeviceOps, 'speaker-levels.json'), 'utf8') } catch { levelsText = undefined }
     const speakerLevels = parseSpeakerLevels(levelsText)
     if (!speakerLevels.calibrated) marker('MUSIC_OUTPUT', { reason: 'music_output_levels_uncalibrated' })
+    // Airfoil lists AirPlay speakers only from Bonjour group replies, which the Mac's Wi-Fi link can
+    // stop receiving after days (2026-11-14); the venue's Edifiers are then announced locally.
+    const airplayProxy = createAirplayProxy({
+      wanted: name => airfoilKind({ id: '', name }) === 'airplay',
+      report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
+      degraded: degradedMusicOutput,
+    })
+    airplayProxy.reap()
     const airfoilRoute = createAirfoilRoute({
       flagPath: join(musicDeviceOps, 'airfoil-route'),
       report: (reason, details) => marker('MUSIC_OUTPUT', { reason, ...details }),
       degraded: degradedMusicOutput,
       levels: speakerLevels,
       localMusic: () => !jabraMicrophoneOpen(),
+      discovery: airplayProxy,
     })
     refreshJabraMusic = airfoilRoute.refreshLocal
     const sharedMusicOutput = createSharedMusicOutput({
