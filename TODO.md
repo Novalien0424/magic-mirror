@@ -112,6 +112,14 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Dormant music, and the Jabras sit out music while their microphone is open; (3) mini still says a word before playing on some turns (judge `tool_silence`);
   (4) `phase4-qa-runner.test.ts` fails 6 cases only in the first full unit run right after
   `npm run build` and passes on rerun.
+- [ ] **VIDEO LOOP start sound (11-14).** Owner: a very short sound, then it plays later. App
+  output is clean; the Jabra seems to start ~1 s before A1 and the Edifiers. Find the cause with
+  a microphone other than the Jabra's, then fix. Tests at 1% unless the owner says otherwise.
+  [Measurements](docs/testing/video-loop-start-2026-11-14.md).
+- [ ] **TV dark while the Mac renders (11-14).** HDMI link to the board down 10 min after a
+  re-plug at 16:57; the keys still reported `tv_awake`. Confirm the trigger (system-report
+  tools) and consider reading the board's receiver state in the wake step.
+  [Evidence](docs/testing/video-loop-start-2026-11-14.md).
 - [ ] **Stream Deck page during a loop (11-14).** Fixed by removing the default-profile mark and
   keeping a playing subfolder on MUSIC LOOP; proven without a physical press. Owner: press MUSIC
   LOOP and a folder key, switch apps on the Mac, press VOL− quickly several times, check the

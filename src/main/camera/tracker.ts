@@ -47,6 +47,20 @@ export function parseCameraQaRateProbe(value: unknown): CameraQaRateProbe | null
   return probe as unknown as CameraQaRateProbe
 }
 
+/** Advertised descriptor format and its slowest rate, never inferred from observed frame delivery. */
+export interface CameraQaFormat { width: number; height: number; pixelFormat: number; fps: number }
+export function parseCameraQaFormat(value: unknown): CameraQaFormat | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (Object.keys(v).sort().join(',') !== 'fps,height,pixelFormat,type,width' || v.type !== 'qa_format') return null
+  for (const key of ['width', 'height', 'pixelFormat']) {
+    if (!Number.isSafeInteger(v[key]) || (v[key] as number) <= 0) return null
+  }
+  if ((v.width as number) > 8192 || (v.height as number) > 8192
+    || typeof v.fps !== 'number' || !Number.isFinite(v.fps) || v.fps <= 0 || v.fps > 1000) return null
+  return { width: v.width as number, height: v.height as number, pixelFormat: v.pixelFormat as number, fps: v.fps }
+}
+
 /** Conversation input: the selected device, else the system default ('default' follows it). */
 export function effectiveMicrophoneName(preferences: { inputId: string; inputLabel: string },
   devices: () => readonly { name: string; isDefault: boolean }[]): string {
@@ -59,11 +73,13 @@ export function startCameraTracking(input: {
   now?: () => number
   spawn?: (executable: string, args: string[], options: { stdio: 'pipe'; env: Record<string, string> }) => ChildProcessWithoutNullStreams
   executable: string
+  /** Empty selects the sole external USB camera; ambiguous discovery fails closed. */
   cameraName: string
   onTarget(target: CameraTarget | null): void
   onStatus(status: 'ready' | 'degraded', reason: string): void
   onFrame?(): void
   onQaSample?(sample: CameraQaSample): void
+  onQaFormat?(format: CameraQaFormat): void
   onQaRateProbe?(probe: CameraQaRateProbe): void
   /** Device name of the conversation microphone; a camera USB reset also resets its built-in microphone. */
   microphoneName?(): string
@@ -72,6 +88,7 @@ export function startCameraTracking(input: {
   const now = input.now ?? (() => performance.now())
   let child: ChildProcessWithoutNullStreams | null = null
   let stopped = false
+  let selectedCameraName = input.cameraName.trim()
   let restart: NodeJS.Timeout | undefined
   let retryDelay = 1000
   let lastFrameAt = 0
@@ -85,7 +102,7 @@ export function startCameraTracking(input: {
   }
   let statusKey = ''
   // Diagnostics describe events; they do not grant camera availability.
-  let unavailableReason: 'camera_permission_denied' | 'camera_device_absent' | null = null
+  let unavailableReason: 'camera_permission_denied' | 'camera_device_absent' | 'camera_device_ambiguous' | null = null
   let stale = true
   let captureSequence = 0
   let capturePending: { id: number; finish(value: CameraSnapshot | null): void } | null = null
@@ -131,7 +148,8 @@ export function startCameraTracking(input: {
     try {
       const name = input.microphoneName().trim()
       if (!name) return 'camera_usb_reset_microphone_unknown'
-      return name.toLowerCase().includes(input.cameraName.toLowerCase())
+      if (!selectedCameraName) return 'camera_usb_reset_camera_unknown'
+      return name.toLowerCase().includes(selectedCameraName.toLowerCase())
         ? 'camera_usb_reset_deferred_microphone' : null
     } catch { return 'camera_usb_reset_microphone_unknown' }
   }
@@ -239,6 +257,18 @@ export function startCameraTracking(input: {
         let value: unknown
         try { value = JSON.parse(line) } catch { status('degraded', 'camera_worker_message_invalid'); continue }
         lastMessageAt = now()
+        // Device identity stays on the private pipe and is never published to telemetry.
+        if (value && typeof value === 'object' && Object.keys(value).sort().join(',') === 'name,type'
+          && (value as { type?: unknown }).type === 'device' && typeof (value as { name?: unknown }).name === 'string'
+          && (value as { name: string }).name.length <= 512) {
+          selectedCameraName = (value as { name: string }).name.trim()
+          resetHeld = null
+          continue
+        }
+        if (input.onQaFormat) {
+          const format = parseCameraQaFormat(value)
+          if (format) { input.onQaFormat(format); continue }
+        }
         if (input.onQaRateProbe) {
           const probe = parseCameraQaRateProbe(value)
           if (probe) { input.onQaRateProbe(probe); continue }
@@ -301,7 +331,7 @@ export function startCameraTracking(input: {
             resetPending = false
             // Completion permits rediscovery; a reset receipt alone is not ready.
             resetNeeded = event.reason !== 'camera_usb_reset_complete'
-          } else if (event.reason === 'camera_permission_denied' || event.reason === 'camera_device_absent') {
+          } else if (event.reason === 'camera_permission_denied' || event.reason === 'camera_device_absent' || event.reason === 'camera_device_ambiguous') {
             unavailableReason = event.reason
             frameWatchArmed = false
             resetNeeded = false

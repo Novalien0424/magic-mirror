@@ -77,8 +77,8 @@ describe.skipIf(process.platform !== 'darwin')('native camera QA acceptance and 
     expect(result.frameReceiptsByWindow).toHaveLength(12); expect(mocks.writes[0]).not.toContain('data:image')
     expect(result.frameReceiptsByWindow.every((count: number) => count > 0)).toBe(mode !== 'empty_windows')
     expect(mocks.start.mock.results[0]!.value.capture).not.toHaveBeenCalled()
-    mocks.start.mock.calls[0]![0].spawn!('/helper', ['Arducam'], { stdio: 'pipe', env: {} })
-    expect(mocks.spawn).toHaveBeenCalledWith('/helper', ['Arducam', '--qa-delivery-only'], expect.anything())
+    mocks.start.mock.calls[0]![0].spawn!('/helper', [''], { stdio: 'pipe', env: {} })
+    expect(mocks.spawn).toHaveBeenCalledWith('/helper', ['', '--qa-delivery-only'], expect.anything())
   })
   it.each(['permission', 'owner', 'active', 'user_data'] as const)('delivery-only QA rejects %s before acquisition', async mode => {
     const f = fixture(); mocks.granted = mode !== 'permission'

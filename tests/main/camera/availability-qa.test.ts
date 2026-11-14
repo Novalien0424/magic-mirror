@@ -18,12 +18,19 @@ function fixture(kind = 'steady', check = 'screen') {
   vi.useFakeTimers(); vi.stubEnv('MIRROR_CAMERA_QA_CASE', 'baseline'); vi.stubEnv('MIRROR_CAMERA_QA_CHECK', check)
   mocks.granted = true; mocks.owner = false; mocks.externalOwner = false; mocks.decoded = kind !== 'decode'
   const fullHd = kind.startsWith('fullhd')
+  if (kind.startsWith('minimum')) vi.stubEnv('MIRROR_CAMERA_QA_CASE', 'minimum')
   mocks.width = fullHd ? kind === 'fullhd_resized' ? 1280 : 1920 : 640
   mocks.height = fullHd ? kind === 'fullhd_resized' ? 720 : 1080 : 480
   if (fullHd) vi.stubEnv('MIRROR_CAMERA_QA_CASE', 'mjpeg1080')
   mocks.writes = []; mocks.start.mockReset()
   mocks.start.mockImplementation(input => {
     mocks.owner = true; let sequence = 0
+    // Capability metadata is independent from sample metadata; mismatches must fail.
+    if (kind !== 'minimum_missing') {
+      input.onQaFormat?.({ width: 1920, height: 1080, pixelFormat: 2037741171, fps: 30 })
+      input.onQaFormat?.({ width: kind === 'minimum_wrong' ? 800 : 640,
+        height: 480, pixelFormat: 2037741171, fps: kind === 'minimum_wrong_rate' ? 10 : 15 })
+    }
     const sample = () => { sequence++; input.onQaSample?.({ sequence, sourceSeconds: sequence / 15,
       width: fullHd ? 1920 : kind === 'wrong_format' ? 320 : 640, height: fullHd ? 1080 : 480, pixelFormat: 875704438,
       inputWidth: fullHd ? 1920 : 640, inputHeight: fullHd ? 1080 : 480, inputPixelFormat: 2037741171, frameDurationSeconds: 1 / 15 }) }
@@ -64,6 +71,16 @@ describe.skipIf(process.platform !== 'darwin')('camera availability QA gates', (
     await vi.runAllTimersAsync(); await outcome
     expect(mocks.start).toHaveBeenCalledTimes(kind === 'steady' ? 20 : 1)
     expect(mocks.writes[0]).not.toContain('/9j/')
+  })
+  it.each(['minimum', 'minimum_wrong', 'minimum_wrong_rate', 'minimum_missing'])('minimum derives expectations from descriptors: %s', async kind => {
+    const pending = runCameraAvailabilityQa(fixture(kind))
+    const outcome = kind === 'minimum' ? expect(pending).resolves.toMatchObject({ consoleCheckCount: 1 })
+      : expect(pending).rejects.toThrow('camera_qa_availability_failed')
+    await vi.runAllTimersAsync(); await outcome
+    const result = JSON.parse(mocks.writes[0]!)
+    expect(result.passed).toBe(kind === 'minimum')
+    if (kind === 'minimum') expect(result.trials[0].expected).toEqual([640, 480, 15])
+    expect(mocks.start.mock.calls[0]![0].cameraName).toBe('')
   })
   it.each(['permission', 'owner', 'active', 'user_data'])('rejects %s before capture', async kind => {
     const input = fixture()

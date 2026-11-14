@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { Phase4QaInput, Phase4QaResult } from '../phase4-qa'
-import { startCameraTracking, type CameraQaRateProbe } from './tracker'
+import { startCameraTracking, type CameraQaFormat, type CameraQaRateProbe } from './tracker'
 import { CAMERA_QA_CASES, isCameraQaCase } from './qa-cases'
 import { cameraSampleMetrics } from './availability-metrics'
 
@@ -30,18 +30,22 @@ export async function runCameraAvailabilityQa(input: Phase4QaInput): Promise<Pha
       const at = performance.now(), metrics = cameraSampleMetrics(startupMs, durationMs)
       let resets = 0, restarts = 0, terminal = false, stale = false, maximumOwners = 0
       const rateProbes: CameraQaRateProbe[] = []
+      const advertisedFormats: CameraQaFormat[] = []
       const snapshots: { elapsedMs: number; requestMs: number; decoded: boolean; width: number; height: number }[] = []
-      const service = startCameraTracking({ executable, cameraName: 'Arducam',
+      const service = startCameraTracking({ executable, cameraName: '',
         spawn: (file, args, options) => spawn(file, [...args, '--qa-observe', ...CAMERA_QA_CASES[mode],
           ...(check === 'cycles' ? [] : ['--qa-delivery-only'])], options),
         onTarget: () => {},
+        onQaFormat: format => {
+          if (advertisedFormats.length < 512 && !advertisedFormats.some(value => JSON.stringify(value) === JSON.stringify(format))) advertisedFormats.push(format)
+        },
         onQaSample: sample => metrics.add(sample, performance.now() - at),
         onQaRateProbe: probe => { if (rateProbes.length < 10) rateProbes.push(probe) },
         onStatus: (status, reason) => {
           if (reason === 'camera_usb_reset_requested') resets++
           if (reason === 'camera_worker_restarting') restarts++
           if (reason === 'camera_qa_frame_timestamp_stale') stale = true
-          if (['camera_usb_recovery_exhausted', 'camera_permission_denied', 'camera_device_absent',
+          if (['camera_usb_recovery_exhausted', 'camera_permission_denied', 'camera_device_absent', 'camera_device_ambiguous',
             'camera_qa_format_unsupported', 'camera_qa_rate_unsupported', 'camera_qa_rate_api_rejected', 'camera_qa_mode_invalid', 'camera_worker_restarting'].includes(reason)) terminal = true
           if (statuses.length < 500) statuses.push({ cycle, status, reason, elapsedMs: Math.round(performance.now() - started) })
         },
@@ -73,15 +77,19 @@ export async function runCameraAvailabilityQa(input: Phase4QaInput): Promise<Pha
         }
       } finally { clearInterval(ownerWatch); await service.stop() }
       const elapsedMs = performance.now() - at, summary = metrics.result(elapsedMs), idleOwners = owners()
-      const expected = mode === 'minimum' ? [96, 96, 5] : mode.startsWith('low') ? [320, 240, mode === 'low15' ? 15 : 5] : /1080/.test(mode) ? [1920, 1080, mode === 'mjpeg1080' ? 15 : 5]
+      const minimum = advertisedFormats.toSorted((a, b) => a.width * a.height - b.width * b.height || a.fps - b.fps)[0]
+      const minimumVerified = !!minimum
+      const expected = mode === 'minimum' ? minimum ? [minimum.width, minimum.height, minimum.fps] : [0, 0, 0] : mode.startsWith('low') ? [320, 240, mode === 'low15' ? 15 : 5] : /1080/.test(mode) ? [1920, 1080, mode === 'mjpeg1080' ? 15 : 5]
         : /720/.test(mode) ? [1280, 720, ['yuy2720', 'mjpeg7205'].includes(mode) ? 5 : 15] : [640, 480, mode === 'vga5' ? 5 : 15]
       const apiRate = Number(mode.match(/_api([125])$/)?.[1] ?? 0)
       if (apiRate) expected[2] = apiRate
-      const sourceGapLimit = apiRate && apiRate < 5 ? 1000 / apiRate + 250 : 250
-      const receiptGapLimit = apiRate && apiRate < 5 ? sourceGapLimit + 250 : 500
-      const formatVerified = summary.formats.length === 1 && summary.formats.every(f => f.width === expected[0]
+      const expectedRate = expected[2]!
+      const sourceGapLimit = expectedRate > 0 && expectedRate < 5 ? 1000 / expectedRate + 250 : 250
+      const receiptGapLimit = expectedRate > 0 && expectedRate < 5 ? sourceGapLimit + 250 : 500
+      const formatVerified = (mode !== 'minimum' || minimumVerified) && summary.formats.length === 1 && summary.formats.every(f => f.width === expected[0]
         && f.height === expected[1] && f.inputWidth === expected[0] && f.inputHeight === expected[1]
-        && Math.abs(1 / f.frameDurationSeconds - expected[2]!) < 0.1)
+        && Math.abs(1 / f.frameDurationSeconds - expected[2]!) < 0.1
+        && (mode !== 'minimum' || f.inputPixelFormat === minimum!.pixelFormat))
       const trialPassed = !terminal && !stale && summary.staleSamples === 0 && formatVerified && maximumOwners === 1 && idleOwners === 0
         && (check === 'cycles'
           ? snapshots.length === (cycle === 0 ? 8 : 1) && snapshots.every(s => s.decoded
@@ -90,7 +98,7 @@ export async function runCameraAvailabilityQa(input: Phase4QaInput): Promise<Pha
           : elapsedMs >= startupMs + durationMs && summary.windows.every(n => n > 0) && resets === 0 && restarts === 0
             && summary.maxSourceGapMs <= sourceGapLimit && summary.maxReceiptGapMs <= receiptGapLimit
             && summary.windows.reduce((sum, count) => sum + count, 0) >= expected[2]! * durationMs / 1000)
-      trials.push({ cycle, elapsedMs, expected, ...summary, formatVerified, rateProbes, sourceGapLimit, receiptGapLimit, resets, restarts, terminal, stale,
+      trials.push({ cycle, elapsedMs, expected, advertisedFormats, ...summary, formatVerified, rateProbes, sourceGapLimit, receiptGapLimit, resets, restarts, terminal, stale,
         maximumOwners, idleOwners, snapshots, passed: trialPassed })
       if (!trialPassed) { passed = false; break }
       if (check === 'cycles' && cycle < 19) await wait([1000, 3000, 10000][cycle % 3]!)

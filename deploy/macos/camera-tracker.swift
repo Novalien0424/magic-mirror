@@ -4,6 +4,7 @@ import AVFoundation
 import Foundation
 import Vision
 import CoreImage
+import CoreAudio
 import Darwin
 
 setvbuf(stdout, nil, _IOLBF, 0)
@@ -40,7 +41,21 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var qaSourceTime = CMTime.invalid
     var reportedDrops = Set<String>()
     let imageContext = CIContext(options: [.cacheIntermediates: false])
-    let needle = CommandLine.arguments.dropFirst().first ?? "Arducam"
+    // Empty selector means the sole external USB video device, never an arbitrary first camera.
+    let needle = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("--") }) ?? ""
+
+    func candidates() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.external],
+            mediaType: .video, position: .unspecified).devices.filter {
+            $0.transportType == Int32(kAudioDeviceTransportTypeUSB)
+                && (needle.isEmpty || $0.localizedName.localizedCaseInsensitiveContains(needle))
+        }
+    }
+
+    func selected(_ devices: [AVCaptureDevice]) -> AVCaptureDevice? {
+        guard devices.count == 1 else { return nil }
+        return devices[0]
+    }
 
     func emit(_ value: [String: Any]) {
         guard let bytes = try? JSONSerialization.data(withJSONObject: value),
@@ -124,10 +139,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         // three against exactly one IOKit device; never reset by a name substring.
         var id = deviceID
         if id == nil {
-            let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.external],
-                mediaType: .video, position: .unspecified).devices.filter {
-                $0.localizedName.localizedCaseInsensitiveContains(needle)
-            }
+            let devices = candidates()
             // A replacement has no selected capture device yet. Refuse to
             // guess between identically named cameras before touching USB.
             guard devices.count == 1 else {
@@ -167,13 +179,10 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             status("camera_permission_denied")
             return
         }
-        let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: [.external],
-            mediaType: .video, position: .unspecified)
-        guard let device = discovery.devices.first(where: {
-            $0.localizedName.localizedCaseInsensitiveContains(needle)
-        }) else {
-            session?.stopRunning(); session = nil; deviceID = nil
-            status("camera_device_absent")
+        let devices = candidates()
+        guard let device = selected(devices) else {
+            releaseCapture(); deviceID = nil
+            status(devices.isEmpty ? "camera_device_absent" : "camera_device_ambiguous")
             return
         }
         if waitingForRecovery { return }
@@ -186,6 +195,8 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             return
         }
         deviceID = device.uniqueID
+        // Private Main pipe only: selected name protects its composite microphone from reset.
+        emit(["type": "device", "name": device.localizedName])
         do {
             let next = AVCaptureSession()
             next.beginConfiguration()
@@ -239,6 +250,16 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
                 return (size.width, size.height, CMFormatDescriptionGetMediaSubType(format.formatDescription), rate)
             }
+            if qaObserve {
+                // Complete descriptor inventory lets Main derive its expectation independently
+                // from this helper's choice and from active/delivered sample metadata.
+                for format in device.formats {
+                    guard let rate = format.videoSupportedFrameRateRanges.map(\.minFrameRate).min() else { continue }
+                    let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                    emit(["type": "qa_format", "width": Int(size.width), "height": Int(size.height),
+                        "pixelFormat": Int(CMFormatDescriptionGetMediaSubType(format.formatDescription)), "fps": rate])
+                }
+            }
             let desired = qaObserve && qaMode != "minimum" ? modes[qaMode ?? "vga15"] : minimum
             guard let desired else { next.commitConfiguration(); status("camera_qa_mode_invalid"); return }
             let configureAfterStart = qaObserve && CommandLine.arguments.contains("--qa-configure-after-start")
@@ -255,6 +276,9 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 return size.width == desired.0 && size.height == desired.1
                     && CMFormatDescriptionGetMediaSubType($0.formatDescription)
                         == desired.2
+                    && $0.videoSupportedFrameRateRanges.contains {
+                        abs($0.minFrameRate - desired.3) < 0.1 || abs($0.maxFrameRate - desired.3) < 0.1
+                    }
             }) {
                 selectedFormat = format
                 if !configureAfterStart { device.activeFormat = format }

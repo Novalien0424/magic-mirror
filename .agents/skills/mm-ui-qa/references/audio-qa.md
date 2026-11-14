@@ -60,6 +60,15 @@ fallback cannot be exercised on a healthy network. Measure the second Edifier wi
 The unified log keeps about two days, so a fault older than that has no onset evidence: the
 watch log is the record. Airfoil's AirPlay offset slider is not 1:1; iterate and re-measure.
 
+Room recordings (11-14): the Jabra microphone gates to about −72 dB while the Jabra's own
+speaker plays, including the ~1 s key-result chime, so it cannot observe the Jabra and shows
+false dropouts; mute "Computer" in Airfoil (`set (volume of s) to 0`, parentheses required) to
+hear the other speakers, and use another microphone for the Jabra. A recorder must restart
+when the app rebuilds its audio devices at start. Sound tests run at 1% unless the owner
+allows more for that test, and levels are restored. Never run System Information or
+`system_profiler` on this Mac: HDMI re-plug bursts began with them and the board then failed
+to lock for 10 min ([record](../../../../docs/testing/video-loop-start-2026-11-14.md)).
+
 Electron QA holds the operator lease, so venue Stream Deck presses fail with
 `electron_owner_busy` meanwhile: tell the owner before a long batch. Acoustic wake
 uses the Mac mini speaker as the synthetic visitor; at its normal 1% venue level a

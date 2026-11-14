@@ -18,7 +18,7 @@ export async function runNativeCameraDeliveryQa(input: Phase4QaInput): Promise<P
   const frameReceiptsByWindow = Array<number>(observationMs / windowMs).fill(0)
   const statuses: { status: string; reason: string; elapsedMs: number }[] = []
   let frameReceipts = 0, lastReceiptMs = startupMs, maxReceiptGapMs = 0, resets = 0, restarts = 0, observedMs = 0, completed = false, passed = false
-  const service = granted ? startCameraTracking({ executable, cameraName: 'Arducam',
+  const service = granted ? startCameraTracking({ executable, cameraName: '',
     spawn: (file, args, options) => spawn(file, [...args, '--qa-delivery-only'], options),
     onTarget: () => {}, onFrame: () => {
       const at = performance.now() - started
@@ -83,7 +83,7 @@ export async function runNativeCameraQa(input: Phase4QaInput): Promise<Phase4QaR
       const expectedSnapshots = 6
       const dimensions: { width: number; height: number }[] = []
       const service = granted ? startCameraTracking({
-        executable: join(app.getAppPath(), 'out/native/camera-tracker'), cameraName: 'Arducam',
+        executable: join(app.getAppPath(), 'out/native/camera-tracker'), cameraName: '',
         spawn: (executable, args, options) => spawn(executable,
           phase === 'automatic_usb_recovery' ? [...args, '--qa-stall-once'] : args, options),
         onTarget: () => { targets++ },

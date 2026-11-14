@@ -1777,7 +1777,7 @@ void app.whenReady().then(async () => {
         executable: app.isPackaged
           ? join(process.resourcesPath, 'app.asar.unpacked/out/native/camera-tracker')
           : join(app.getAppPath(), 'out/native/camera-tracker'),
-        cameraName: 'Arducam',
+        cameraName: '',
         microphoneName: () => effectiveMicrophoneName(getAudioPreferences().preferences, () => Microphone.devices()),
         onTarget: target => {
           const mirror = windows.get('mirror')

@@ -213,6 +213,31 @@ describe('Main-owned camera recovery', () => {
     expect(f.onStatus).toHaveBeenLastCalledWith('degraded', 'camera_usb_reset_requested')
     await f.service.stop()
   })
+  it.each(['', 'USB Camera'])('uses the privately selected camera name for microphone protection: %s', async selected => {
+    const f = fixture({ cameraName: '', microphoneName: () => 'USB Camera Microphone' }), worker = f.children[0]!
+    expect((f.spawn.mock.calls[0] as unknown as [string, string[]])[1]).toEqual([''])
+    worker.stdout.write(JSON.stringify({ type: 'device', name: selected }) + '\n{"type":"frame"}\n')
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(worker.stdin.read()).toBeNull()
+    expect(f.onStatus).toHaveBeenLastCalledWith('degraded', selected ? 'camera_usb_reset_deferred_microphone' : 'camera_usb_reset_camera_unknown')
+    expect(JSON.stringify(f.onStatus.mock.calls)).not.toContain('USB Camera')
+    await f.service.stop()
+  })
+  it('permits targeted reset with an auto-selected camera and a separate known microphone', async () => {
+    const f = fixture({ cameraName: '', microphoneName: () => 'Jabra Speak2 75' }), worker = f.children[0]!
+    worker.stdout.write('{"type":"device","name":"USB Camera"}\n{"type":"frame"}\n')
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(worker.stdin.read()?.toString()).toBe('{"type":"reset_usb"}\n')
+    await f.service.stop()
+  })
+  it('fails ambiguity without attempting a reset or waiting for a snapshot timeout', async () => {
+    const f = fixture({ cameraName: '' }), worker = f.children[0]!
+    worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_device_ambiguous"}\n')
+    expect(await f.service.capture()).toBeNull()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(worker.stdin.read()).toBeNull()
+    await f.service.stop()
+  })
   it('replaces a wedged helper without the USB reset while the camera microphone owns input', async () => {
     const f = fixture({ microphoneName: () => { throw new Error('enumeration failed') } }), worker = f.children[0]!
     worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_starting"}\n')

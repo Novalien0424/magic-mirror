@@ -2,6 +2,19 @@
 
 ## Current delivery
 
+**Replacement camera work, 11-14 (Codex):** compact repository/Claude handoff
+knowledge retained in [this index](docs/testing/claude-knowledge-2026-11-14.md).
+Production and native QA now select the sole external USB camera instead of
+hard-coding Arducam; minimum-mode QA derives expected dimensions/rate from
+advertised descriptors instead of assuming 96×96/5. 116 focused camera tests,
+TypeScript and Swift typechecks pass. **Source only, not deployed:** build was
+blocked by `electron_owner_busy`, then `electron_already_running` during separate
+sound work ([logs](.artifacts/camera-replacement-2026-11-14/)). At 17:29 Taipei,
+after owner-confirmed replug, macOS still lists zero cameras and only three USB
+hubs, Jabra and Stream Deck. Physical capture/recovery remain unverified; next:
+resolve USB enumeration, then build and run native delivery/stability/cycle QA
+when the shared runtime is available. Preserve the other operator's runtime.
+
 **Codex harness updated 11-10:** user-wide Astra orchestration, Sol implementation
 and Terra computer-use roles; catalog-resolved local aliases with login/hourly
 refresh. Two redundant skill entrypoints retired; useful details retained;
@@ -10,9 +23,8 @@ project skill entrypoints 38% smaller. Invariants and app runtime unchanged.
 New Codex sessions use the installed defaults; existing chats retain their model.
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
-LaunchAgent. The app is stopped (owner STOP 16:08 Taipei 11-14; afterwards only 1% checks
-16:38 and 16:51, ended with the STOP script); the build made 16:50 is deployed and the next
-START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
+LaunchAgent. The app is stopped (17:45 Taipei 11-14, after the owner's test and the agent's
+VIDEO LOOP measurements); the build made 16:50 is deployed and the next START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
 Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
@@ -27,6 +39,15 @@ the main keys came back under the finger and three presses meant for VOL− star
 same cause, same fix. The queue and its 3 s same-key debounce worked. One gap closed: a folder
 key pressed again keeps its playing folder (live at 1%, 16:51).
 Rulings: DECISIONS 2026-11-14. Not yet confirmed with a physical key press.
+
+**Open from the owner's test 17:05, 11-14** ([measurements](docs/testing/video-loop-start-2026-11-14.md)):
+- VIDEO LOOP from STOP: "short sound first, then it plays later". The app's output is
+  continuous; A1 and the Edifiers start ~2.3 s later without a burst; the Jabra appears to start
+  ~1 s ahead of them, not observable with its own microphone. Cause not established, nothing
+  changed. Needs a non-Jabra microphone (owner: tests at 1% only).
+- TV without picture 16:57–17:07 while the Mac rendered: the HDMI link to the board was down
+  (board receiver errors), probably set off by the agent's System Information /
+  `system_profiler`; not proven. Do not run those here.
 
 **Sound system 11-14** ([investigation, evidence and limits](docs/testing/sound-system-2026-11-14.md)):
 - **Edifiers missing (09:05):** the Mac's Wi-Fi link (6 GHz multi-link, Orbi RBE771, up 5 d 18 h)

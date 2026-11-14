@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { cameraSampleMetrics } from '../../../src/main/camera/availability-metrics'
-import { parseCameraQaRateProbe, parseCameraQaSample } from '../../../src/main/camera/tracker'
+import { parseCameraQaFormat, parseCameraQaRateProbe, parseCameraQaSample } from '../../../src/main/camera/tracker'
 
 const sample = { type: 'qa_sample', sequence: 1, sourceSeconds: 1, width: 1280, height: 720,
   inputWidth: 1280, inputHeight: 720, pixelFormat: 875704438, inputPixelFormat: 846624121, frameDurationSeconds: 1 / 15 }
 describe('camera availability measurement', () => {
+  it('accepts descriptor minimum metadata without names or sample-derived fields', () => {
+    const minimum = { type: 'qa_format', width: 640, height: 360, pixelFormat: 2037741171, fps: 7.5 }
+    expect(parseCameraQaFormat(minimum)).toEqual({ width: 640, height: 360, pixelFormat: 2037741171, fps: 7.5 })
+    for (const change of [{ name: 'private' }, { fps: 0 }, { fps: NaN }, { width: 0 }, { height: 9000 }, { pixelFormat: 1.5 }]) {
+      expect(parseCameraQaFormat({ ...minimum, ...change })).toBeNull()
+    }
+  })
   it('keeps rate API exceptions numeric and rejects private or malformed probe fields', () => {
     const probe = { type: 'qa_rate_probe', fps: 1, advertised: 0, minimumResult: 1, maximumResult: 1,
       restoreResult: 0, minimumSeconds: 0.2, maximumSeconds: 0.2 }
