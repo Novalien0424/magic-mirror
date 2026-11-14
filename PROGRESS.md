@@ -23,11 +23,22 @@ project skill entrypoints 38% smaller. Invariants and app runtime unchanged.
 New Codex sessions use the installed defaults; existing chats retain their model.
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
-LaunchAgent. The app is stopped (17:45 Taipei 11-14, after the owner's test and the agent's
-VIDEO LOOP measurements); the build made 16:50 is deployed and the next START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
+LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
+stopped (18:38, STOP key after the 1% loop check); the build made 16:50 is deployed and the next START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
 Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
+
+**Speakers after the macOS 27.2.1 upgrade, 11-14 evening:** the 18:14 start had only the Jabra
+(`music_output_airplay_not_found`, no A1). macOS now enforces Local Network privacy on Airfoil,
+which had no recorded choice: its Bonjour search was refused (`-65570`) while both Edifiers
+answered on the network. An Airfoil relaunch raised the dialog; the owner pressed Allow at 18:29
+and both Edifiers and A1 joined within a minute. 1% check 18:35–18:38 on the production app:
+cold VIDEO LOOP settled the route in 2.3 s (two Edifiers, A1 after its hold at 18:36:37, TV
+display `reason=match`), then MUSIC LOOP played 5 tracks; app markers and Airfoil state only,
+nothing was recorded or heard by the agent, the TV picture was not looked at. The agent's STOP
+inside its own lease was refused, so MusicLoop played ~17 s at normal level before the second
+STOP. Runbook: [Stream Deck](deploy/macos/stream-deck.md) "Edifier not listed".
 
 **Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
 the main profile was marked default, and Stream Deck selects the default profile whenever
@@ -83,6 +94,8 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
+- 11-14 18:38 app stopped by the STOP key; levels read back at the defaults (Jabra 80%, A1 65%);
+  Airfoil keeps the Jabra and A1 connected, Edifiers released. `net-watch` `state=ok` at 18:29.
 - 11-14 17:45 app stopped after the VIDEO LOOP measurements (17 starts 17:21–17:45, all found
   the named TV display); levels read back at the defaults (Jabra 80%, A1 65%); Airfoil keeps
   the Jabra and A1 connected, Edifiers released; recordings deleted, RAM disk removed.
@@ -99,16 +112,10 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Next work / unresolved boundaries
 
-0. **After the owner's macOS upgrade (27.0.1 → 27.2.1, postponed by the owner 11-14; Airfoil
-   5.13.0, Jabra Direct and firmware, router firmware are the latest; BetterDisplay 5.0.6 is
-   deliberately kept, 5.3.0 exists):** before
-   the venue is used, press START and read `~/Library/Logs/MagicMirror/app.out.log`:
-   `MUSIC_OUTPUT music_output_route_settled` with `airfoil_speaker_reconnected speakers=2`
-   (music driver, Airfoil capture and its automation permission survived), `MIRROR_DISPLAY_SELECTED
-   ... reason=match` (TV identity and BetterDisplay's EDID fallback), no microphone or camera
-   failure marker. Then `launchctl print system/com.magicmirror.net-watch` and the board adb
-   daemon, `net-watch.log` `state=ok`, and Stream Deck: no profile marked default, main keys
-   shown. A1 is silent for 6.5 min after a reboot by design.
+0. After the macOS 27.2.1 upgrade (done 11-14 18:13; music route, Airfoil permission, TV
+   display match, `net-watch` and the board adb daemon checked): still to confirm at the Neo are
+   that no Stream Deck profile is marked default and the main keys show, and a conversation
+   (microphone, camera markers). A1 is silent for 6.5 min after a reboot by design.
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.

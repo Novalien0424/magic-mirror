@@ -177,6 +177,14 @@ Bonjour group replies, so both Edifiers vanished although healthy. A new Wi-Fi a
   `"/Library/Application Support/MagicMirror/net-watch" --once --state /tmp/nw.json`.
 - Second Edifier `621E`: Airfoil offset −0.130 s (11-14, 6–13 ms behind `8D58`); measure with
   block `F` of `measure-continuous.sh`.
+- **Airfoil lists only "Computer" (after the macOS 27.2.1 upgrade, 11-14):** macOS began
+  enforcing Local Network privacy on Airfoil, which had no recorded choice, so its Bonjour
+  search was refused (`/usr/bin/log show`: mDNSResponder `_return_browse_request_error: error
+  (-65570)` for Airfoil) and neither Edifier nor A1 was listed, while `dns-sd -B _airplay._tcp`
+  saw both speakers. Main's fallback cannot help. Quit and reopen Airfoil; the owner presses
+  **Allow** on "Allow Airfoil to find devices on local networks?" (or System Settings → Privacy
+  & Security → Local Network → Airfoil). Agents do not press it. Both Edifiers and A1 then join
+  within a minute. Check after every macOS upgrade.
 [Investigation](../../docs/testing/sound-system-2026-11-14.md).
 
 Calibration (2026-11-01, `~/Library/Application Support/MagicMirror/ops/music-device/calibration.json`):

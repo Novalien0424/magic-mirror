@@ -35,6 +35,9 @@ order in `app.out.log`. A 1% cold-loop check on the production app: quiet with
 `deploy/macos/qa-output-volume.swift`, bootstrap the LaunchAgent, send
 `scripts/operator-command.mjs play_loop|music_loop`, end with the STOP key, then restore.
 Wait for `RENDERER_READY` before sending, as the key does, or the start is doubled.
+Inside an `electron-owner.mjs` lease the STOP key is refused (`electron_owner_busy`, 11-14): the
+music then kept playing while the levels were restored. Release the lease, press STOP, check
+`APP_EXIT`, and only then restore the levels.
 Root cause of the 11-08 2 s echo: the old music device was both what apps played into and
 what Airfoil listened to, so its 2.081 s picture delay (`mmlt`) leaked into Airfoil's
 timing for the Jabra and A1 whenever coreaudiod loaded it. Producers now use output-only
@@ -51,7 +54,9 @@ contaminated by an earlier trigger is not a pass.
 Two attached Jabras make the normal-level reset
 refuse (`jabra_output_ambiguous`): report it, do not work around it.
 
-Edifier missing from Airfoil (11-14): suspect the Mac's Wi-Fi link before the speaker. It can
+Edifier missing from Airfoil (11-14): if Airfoil lists only "Computer" (no A1 either), macOS
+is refusing its Local Network access (after an upgrade; runbook "Edifier not listed"): the
+owner presses Allow. Otherwise suspect the Mac's Wi-Fi link before the speaker. It can
 stop receiving Bonjour group traffic after days while unicast works. Check
 `/Library/Logs/MagicMirror/net-watch.log` (`state=blind`), `curl http://<ip>:7000/info`, and
 `MUSIC_OUTPUT music_output_bonjour_group_blind` / `_airplay_proxied`; runbook "Edifier not
