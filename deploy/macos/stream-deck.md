@@ -226,7 +226,8 @@ and the Edifier but never the linked Jabras (echo cancelling). Findings:
   connect for at least 7 min. Values and method: `calibration.json` (`retune`).
 
 Current calibration, **2026-11-08 after the split-driver fix: Computer 0.222, A1 0,
-Edifier −0.108**. Two cold driver loads passed. Final Jabra–Edifier block differences
+Edifier 8D58 −0.108; 2026-11-14 Edifier 621E −0.130**. The AirPlay slider is not 1:1 (−0.112
+moved 621E only 94 ms): change, re-measure, repeat. Two cold driver loads passed. Final Jabra–Edifier block differences
 were 1–5 ms; settled A1–Edifier differences were 4–7 ms. Normal Bluetooth variation
 and the A1 settle hold above remain. [Evidence](../../docs/testing/airfoil-sync-2026-11-08-followup.md).
 
@@ -260,8 +261,8 @@ play into the output-only Music (keeps the picture delay) and Airfoil listens to
 input-only Capture (reports zero), so the delay cannot reach Airfoil.
 Measurements and remaining limits:
 [follow-up](../../docs/testing/airfoil-sync-2026-11-08-followup.md).
-Separately, a relaunched Airfoil can miss an unreachable Edifier until it re-announces;
-check discovery/readiness before judging sync.
+If Airfoil lists no Edifier, see "Edifier not listed" above before judging sync (11-14: three
+Airfoil relaunches on a healthy link each listed both Edifiers within 8 s).
 
 ### Speaker levels (calibrated 2026-11-07)
 

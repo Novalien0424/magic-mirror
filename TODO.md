@@ -101,12 +101,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   control apps: MUSIC LOOP, PREV/NEXT, VOL±, folder 1 (84 songs), the empty folder 2
   refused with the music kept, STOP back; no app focus change. Owner: press each Music page
   key once on the Neo and check the folder titles (the re-sync pause is direct-route only).
-- [ ] **A1 keeps leaving Bluetooth** (20:35, 21:13, and absent since; still off 11-01 night,
-  a reconnect attempt timed out, so Airfoil had only Jabra + Edifier). Likely its
-  auto power-off or the −80 dBm link; move it closer or disable auto-off. On rejoin it now
-  takes the Jabra's level. Not yet seen live: a speaker leaving or rejoining mid-song (no
-  rebuild, `speaker_matched` or `route_kept` event since the code shipped); Main's side is
-  unit-tested only.
+- [ ] **A1 leaving Bluetooth** (seen 10-31/11-01; connected and playing through 11-07…11-14).
+  Likely its auto power-off or the −80 dBm link; move it closer or disable auto-off. Not yet
+  seen live: a speaker leaving or rejoining mid-song; Main's side is unit-tested only.
 - [ ] **Online songs (owner 11-07 night).** The relaxed phrase and Dormant playback are done and
   QA-passed (`cloud_songs`: both owner sentences found, played, Raven Dormant during and after).
   Open: (1) the owner judges by ear in the room (QA ran at 1%); (2) local media keeps the old
