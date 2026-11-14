@@ -38,7 +38,9 @@ Rapid-press audit of 09:46:54–09:47:31: a VOL− press brought its own helper 
 the main keys came back under the finger and three presses meant for VOL− started DANCE FLOOR;
 same cause, same fix. The queue and its 3 s same-key debounce worked. One gap closed: a folder
 key pressed again keeps its playing folder (live at 1%, 16:51).
-Rulings: DECISIONS 2026-11-14. Not yet confirmed with a physical key press.
+Rulings: DECISIONS 2026-11-14. Owner's own presses 17:02:40–17:05:35: MUSIC LOOP showed the
+Music page and it stayed until the STOP key (`deck.log`); app switching and rapid VOL− at the
+physical keys are not yet confirmed.
 
 **Open from the owner's test 17:05, 11-14** ([measurements](docs/testing/video-loop-start-2026-11-14.md)):
 - VIDEO LOOP from STOP: "short sound first, then it plays later". The app's output is
@@ -80,29 +82,44 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
-- 11-14 16:38, 1% check on the production app: MUSIC LOOP, folder 1, MUSIC LOOP again kept
-  the folder playing; route settled in 2.3 s; STOP; levels at the defaults.
-- 11-14 15:48:57 START on the new build: both Edifiers joined, route settled in 2.2 s, A1 at
-  once (kept connected), no fallback marker; `net-watch` `state=ok`. Owner STOP 16:08. Before it, 15:30–15:44:
-  three chirp runs at measurement level, levels read back at the defaults.
+- 11-14 17:45 app stopped after the VIDEO LOOP measurements (17 starts 17:21–17:45, all found
+  the named TV display); levels read back at the defaults (Jabra 80%, A1 65%); Airfoil keeps
+  the Jabra and A1 connected, Edifiers released; recordings deleted, RAM disk removed.
+- 11-14 16:58 START: both Edifiers joined, route settled in 2.4 s; owner test 17:02–17:06
+  (MUSIC LOOP, folder 1, STOP, VIDEO LOOP from STOP). TV dark 16:57–17:07 (HDMI link, above).
+- 11-14 16:51, 1% check: repeated folder-key presses kept the song; 16:38: MUSIC LOOP kept a
+  playing folder. 15:48:57 START on the fallback build: route settled in 2.2 s, no fallback
+  marker; `net-watch` `state=ok`.
 - 11-14 11:47 cold boot: both Edifiers joined in 5 s; A1 joined after its 6.5 min hold.
-- Focused checks 11-14: 31 tests in the three music-output files, 95 in the music and
-  operator files, typecheck, build. The full
+- Focused checks 11-14: 31 tests in the three music-output files, 151 in the music and
+  operator files, typecheck, build (16:50). The full
   unit suite was last run 11-08 (151 files / 2364 tests); the six `phase4-qa-runner` cases
   still fail intermittently in the first full run after a build and pass alone (TODO).
 
 ## Next work / unresolved boundaries
 
-0. Owner, at the Neo: MUSIC LOOP, a folder key, then use the Mac (switch apps) for a while:
-   the Music page must stay; MUSIC LOOP again must not restart the song.
-1. Owner go-ahead for a simulated-fault test (temporary firewall rule dropping incoming group
+0. **After the owner's macOS upgrade (planned right after this clock-out, from 27.0.1):** before
+   the venue is used, press START and read `~/Library/Logs/MagicMirror/app.out.log`:
+   `MUSIC_OUTPUT music_output_route_settled` with `airfoil_speaker_reconnected speakers=2`
+   (music driver, Airfoil capture and its automation permission survived), `MIRROR_DISPLAY_SELECTED
+   ... reason=match` (TV identity and BetterDisplay's EDID fallback), no microphone or camera
+   failure marker. Then `launchctl print system/com.magicmirror.net-watch` and the board adb
+   daemon, `net-watch.log` `state=ok`, and Stream Deck: no profile marked default, main keys
+   shown. A1 is silent for 6.5 min after a reboot by design. Check that Airfoil 5.13 supports
+   the new macOS before a major upgrade; without it the music falls back to the direct route.
+1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
+   starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
+   microphone. No fix exists yet.
+2. Owner, at the Neo: on the Music page press VOL− quickly several times and use the Mac
+   (switch apps): the page must stay; MUSIC LOOP or the folder key again must not restart the song.
+3. Owner go-ahead for a simulated-fault test (temporary firewall rule dropping incoming group
    traffic on Wi-Fi): proves the Edifier fallback and whether playback survives the fault.
-2. At the next real fault: `/Library/Logs/MagicMirror/net-watch.log` (onset, roam count, heal
+4. At the next real fault: `/Library/Logs/MagicMirror/net-watch.log` (onset, roam count, heal
    result) and whether another 6 GHz client sees the speakers. Prevention is a wired LAN port
    for the Mac or leaving the 6 GHz multi-link network.
-3. Owner, in the room at real volume (all QA ran at 1%): an online song and a loop on every
-   speaker, the second Edifier included (no voice wake while music plays; use STOP); music
-   during a conversation comes only from A1 and the Edifiers.
-4. Owner, physical (carried from 11-01): press each Neo key once, including the Playback and
-   Music pages; the camera is damaged.
-5. Open items in [TODO](TODO.md), notably "Online songs" and "Airfoil sync".
+5. Owner, in the room at real volume: an online song and a loop on every speaker, the second
+   Edifier included (no voice wake while music plays; use STOP); music during a conversation
+   comes only from A1 and the Edifiers.
+6. Owner, physical (carried from 11-01): press each Neo key once, including the Playback page;
+   the camera is damaged.
+7. Open items in [TODO](TODO.md), notably "Online songs" and "Airfoil sync".
