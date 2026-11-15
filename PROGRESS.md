@@ -2,16 +2,20 @@
 
 ## Current delivery
 
-**Photo: several people allowed, 11-15 15:25, source only, not deployed** (owner: "multiple
+**Photo: several people allowed, deployed 11-15 15:29** (owner: "multiple
 people is allowed. we will lock into the nearest people that has the full face";
 [ruling](DECISIONS.md)): the still now reports where each clear face is; with several people
 the photo is cut to the nearest person whose whole face is in the frame (largest face not
 touching the edge, else the largest), at the camera's own pixels, and one person keeps the
 whole picture. Only a still with no clear face is refused. The consent line no longer asks the
 visitor to stand alone, and the photo prompt names the nearest person as the guest. Checks:
-typecheck, helper type-check, 442 focused tests. **Not built or deployed** (the app is
-running; a build needs the owner's word and would also carry the other operator's uncommitted
-Studio image-model change). Not tested: a real still with several people.
+typecheck, helper type-check, 442 focused tests, build; at 1% sound 20 open/capture cycles and
+the real-camera conversation 8/8 passed on the new build (stills now carry face boxes; the room
+had no face). The owner approved the stop and the build, which also carries the other
+operator's uncommitted Studio image-model change (`gpt-image-2.6-flare`), so the build stamp
+matches the working folder, not the last commit, until that change is committed.
+Not tested: a real still with one or several people, so the cut itself is proven only by tests.
+[Evidence](docs/testing/camera-paths-highest-resolution-2026-11-14.md).
 
 **Camera gates simplified and a daylight defect fixed, 11-15 14:37** (owner: "high resolution
 but not unnecessary gates"; [ruling](DECISIONS.md)): the helper picks the camera's best mode
@@ -57,10 +61,11 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-running (agent's START 14:37 11-15 after the camera work, Dormant, no loop playing); the 14:35
-11-15 build is deployed and its stamp matches the committed source; speakers at the defaults
+running (agent's START 15:29 11-15 after the photo change, Dormant, no loop playing); the 15:24
+11-15 build is deployed (it includes the uncommitted Studio image-model change, see above);
+speakers at the defaults
 (Jabra 80% in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1%).
-A1 joined again at 14:44:35 (below). Products and stories: [PRD](PRD.md); open work:
+A1 joined again at 14:44:35 and 15:04:46 (below). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
 
@@ -85,6 +90,8 @@ joins after the 6.5 min hold without a START. Seen in the middle of a run: the o
 A1 on at 14:37:58 (owner: "A1 has auto sleep"), Main connected it at 14:38:01 and it joined at
 14:44:35; it reported 30% again. Auto sleep versus a flat battery is not separated: ~10 h
 linked without music before the 04:24 drop fits the battery trend better than a sleep timer.
+It linked once more at 14:58:03 and joined at 15:04:46, and its battery now rises (30% at
+14:47, 50% at 14:58, 60% at 15:25), so it is charging again.
 
 **Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
 the main profile was marked default, and Stream Deck selects the default profile whenever
@@ -179,9 +186,8 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 0a. A1 (above): owner checks A1's charger and cable and its auto-sleep setting (battery fell
    from 100% to off in ~10 h and reads 30% at each return);
    a marker when a Bluetooth speaker drops is still missing.
-0b. Camera: the owner's word to stop the app, build and deploy the several-people photo
-   change (coordinate with the pending Studio image-model change); then photo-reference
-   Conversation and Studio runs with consenting people, one and several in view.
+0b. Camera: photo-reference Conversation and Studio runs with consenting people, one and
+   several in view (the several-people cut is deployed but proven only by tests).
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.

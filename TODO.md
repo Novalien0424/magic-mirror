@@ -36,7 +36,7 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   and human portrait quality remain unverified. 11-15: redundant full-HD rejections removed and
   a camera question's picture fitted to the Realtime message limit; recovery, 20 reopen
   cycles and the daylight Conversation passed at 14:36. Several people are now allowed in a
-  photo (nearest whole face; source only, build and deploy await the owner); real-person
+  photo (nearest whole face; deployed 15:29, the cut proven only by tests); real-person
   photo-reference and retake runs await consenting people, one and several in view ([follow-up](docs/testing/camera-paths-highest-resolution-2026-11-14.md)). Earlier minimum-mode cold-start
   and alternate-format failures remain recorded. [Current audit](docs/testing/usb-camera-audit-2026-11-14.md).
 - [ ] **Wake and voice quality.** Validate human names, corrections/spelling,
