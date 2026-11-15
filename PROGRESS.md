@@ -2,11 +2,22 @@
 
 ## Current delivery
 
+**Photo: several people allowed, 11-15 15:25, source only, not deployed** (owner: "multiple
+people is allowed. we will lock into the nearest people that has the full face";
+[ruling](DECISIONS.md)): the still now reports where each clear face is; with several people
+the photo is cut to the nearest person whose whole face is in the frame (largest face not
+touching the edge, else the largest), at the camera's own pixels, and one person keeps the
+whole picture. Only a still with no clear face is refused. The consent line no longer asks the
+visitor to stand alone, and the photo prompt names the nearest person as the guest. Checks:
+typecheck, helper type-check, 442 focused tests. **Not built or deployed** (the app is
+running; a build needs the owner's word and would also carry the other operator's uncommitted
+Studio image-model change). Not tested: a real still with several people.
+
 **Camera gates simplified and a daylight defect fixed, 11-15 14:37** (owner: "high resolution
 but not unnecessary gates"; [ruling](DECISIONS.md)): the helper picks the camera's best mode
 within the snapshot limit and keeps one resolution check (delivered frame = selected mode);
-Main's and the photo path's extra full-HD rejections are removed; the one-face photo rule is
-unchanged. The daylight run then showed that Raven could not answer camera questions since the
+Main's and the photo path's extra full-HD rejections are removed; the one-face photo rule was
+unchanged then (superseded above). The daylight run then showed that Raven could not answer camera questions since the
 11-14 HD change: the 359 KB picture exceeded the Realtime message limit (~256 KiB) and the send
 was refused silently (it passed at night with a small picture). Main now fits that picture
 (full size, lower JPEG quality first) and a refused send is reported and spoken. Checks at 1%:
@@ -168,8 +179,9 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 0a. A1 (above): owner checks A1's charger and cable and its auto-sleep setting (battery fell
    from 100% to off in ~10 h and reads 30% at each return);
    a marker when a Bluetooth speaker drops is still missing.
-0b. Camera: photo-reference Conversation and Studio runs with a consenting person; owner's
-   ruling on the one-face rule (two people in view are refused).
+0b. Camera: the owner's word to stop the app, build and deploy the several-people photo
+   change (coordinate with the pending Studio image-model change); then photo-reference
+   Conversation and Studio runs with consenting people, one and several in view.
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.

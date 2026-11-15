@@ -38,6 +38,17 @@ afterwards. Not tested: a camera other than the Arducam, a picture that needs sh
 the photo path with a person (still waiting for a consenting person). Synthetic visitor speech;
 no images or transcripts retained.
 
+### 11-15 15:25: several people allowed in a photo (source only)
+
+Owner: "multiple people is allowed. we will lock into the nearest people that has the full
+face" ([ruling](../../DECISIONS.md)). The still carries the box of each clear face (same
+confidence as gaze, clipped to the picture); `src/main/camera/photo-subject.ts` picks the
+largest face not touching the edge (else the largest) and, with several people, cuts the photo
+to that person (`image_photo_nearest_person_selected`). Statements below about the single-face
+gate are superseded. Checks: typecheck, helper type-check with its header, 442 tests in 12
+focused files. Not built, not deployed, and no real still with several people has been taken:
+the next real runs below now also need a run with two or more consenting people in view.
+
 ## Delivery and remaining physical input
 
 The owner authorized implementation and real runs after the camera-path audit.

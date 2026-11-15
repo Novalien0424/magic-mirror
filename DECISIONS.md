@@ -1,5 +1,18 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-15 — Photo: several people allowed, nearest whole face (owner)
+
+Owner: "multiple people is allowed. we will lock into the nearest people that has the full face"
+
+- **Several people may be in view** when a photo is taken for artwork (Conversation and
+  Studio). The photo follows the nearest person whose whole face is in the frame: the largest
+  clear face that does not touch the picture's edge; when none is whole, the largest.
+- **One person:** the whole picture is used, as before. **Several:** the picture is cut to
+  that person at the camera's own pixels (never enlarged), leaving a neighbour's face out
+  where the two do not overlap; the photo prompt names the nearest person as the guest.
+- Only a still with no clear face is refused. Supersedes the one-face rule below. Gaze already
+  follows the nearest face and is unchanged.
+
 ## 2026-11-15 — Camera: best resolution, one check (owner)
 
 Owner: "I want high resolution but not unnecessary gates."
@@ -10,8 +23,8 @@ Owner: "I want high resolution but not unnecessary gates."
 - **One resolution check:** the helper drops a frame whose real size differs from the selected
   mode. Main and the photo path add no size rule of their own (supersedes the 11-14 strict
   full-HD rejections).
-- **Unchanged:** a photo is used only with exactly one face in view (owner has not ruled on
-  changing it); frames whose source time does not advance count as a frozen stream.
+- **Unchanged:** frames whose source time does not advance count as a frozen stream. (The
+  one-face photo rule, unchanged at that time, is superseded by the entry above.)
 
 ## 2026-11-14 — Stream Deck pages stay during a loop (owner report)
 

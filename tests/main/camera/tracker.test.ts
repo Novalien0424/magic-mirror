@@ -130,6 +130,17 @@ describe('camera resolution', () => {
     expect(await pending).toMatchObject({ width, height })
     await f.service.stop()
   })
+  it('passes the still’s face boxes to Main and refuses a still with a malformed box', async () => {
+    const f = fixture(), worker = f.children[0]!, faces = [{ x: 0.4, y: 0.3, width: 0.2, height: 0.3 }]
+    let pending = f.service.capture()
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: JSON.parse(worker.stdin.read().toString()).id, jpeg: '/9j/2Q==', width: 1920, height: 1080, faceCount: 1, faces }) + '\n')
+    expect(await pending).toMatchObject({ faceCount: 1, faces })
+    pending = f.service.capture()
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: JSON.parse(worker.stdin.read().toString()).id, jpeg: '/9j/2Q==', width: 1920, height: 1080, faceCount: 1, faces: [{ ...faces[0], x: 0.9 }] }) + '\n')
+    expect(await pending).toBeNull()
+    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_snapshot_invalid')
+    await f.service.stop()
+  })
   it('fails promptly when the camera offers no supported mode, without requesting USB reset', async () => {
     const f = fixture(), worker = f.children[0]!
     worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_mode_unsupported"}\n')

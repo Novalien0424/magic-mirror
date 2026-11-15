@@ -1,8 +1,13 @@
 /** Transient direction only: no images, embeddings or guest identifiers. */
 export interface CameraTarget { readonly x: number; readonly y: number }
 
+/** A detected face's box in a still: fractions of the picture, top-left origin. No identity. */
+export interface CameraFace { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export const CAMERA_SNAPSHOT_MAX_FACES = 16
+
 /** One requested frame, RAM-only. Never include this object in diagnostics. */
-export interface CameraSnapshot { readonly dataUrl: string; readonly width: number; readonly height: number; readonly faceCount?: number }
+export interface CameraSnapshot { readonly dataUrl: string; readonly width: number; readonly height: number; readonly faceCount?: number
+  readonly faces?: readonly CameraFace[] }
 // Keep the native JPEG encoder's bounds in deploy/macos/camera-tracker.swift aligned.
 export const CAMERA_SNAPSHOT_MAX_DIMENSION = 1920
 export const CAMERA_SNAPSHOT_MAX_PIXELS = 1920 * 1080
@@ -21,10 +26,19 @@ export function isCameraSnapshotDimensions(width: unknown, height: unknown): boo
     && width * height <= CAMERA_SNAPSHOT_MAX_PIXELS
 }
 
+function isCameraFaces(value: unknown): value is readonly CameraFace[] {
+  return Array.isArray(value) && value.length <= CAMERA_SNAPSHOT_MAX_FACES && value.every(box =>
+    !!box && typeof box === 'object' && !Array.isArray(box) && Object.keys(box).sort().join(',') === 'height,width,x,y'
+    && Object.values(box).every(n => typeof n === 'number' && Number.isFinite(n))
+    && box.x >= 0 && box.y >= 0 && box.width > 0 && box.height > 0
+    && box.x + box.width <= 1.000001 && box.y + box.height <= 1.000001)
+}
+
 export function isCameraSnapshot(value: unknown): value is CameraSnapshot {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const v = value as CameraSnapshot
-  if (Object.keys(v).sort().join(',') !== ('faceCount' in v ? 'dataUrl,faceCount,height,width' : 'dataUrl,height,width')
+  if (Object.keys(v).filter(key => key !== 'faceCount' && key !== 'faces').sort().join(',') !== 'dataUrl,height,width'
+    || ('faces' in v && !isCameraFaces(v.faces))
     || ('faceCount' in v && (!Number.isSafeInteger(v.faceCount) || v.faceCount! < 0 || v.faceCount! > 100))
     || !isCameraSnapshotDimensions(v.width, v.height)
     || typeof v.dataUrl !== 'string' || v.dataUrl.length > SNAPSHOT_DATA_URL_PREFIX.length + CAMERA_SNAPSHOT_MAX_BASE64_LENGTH

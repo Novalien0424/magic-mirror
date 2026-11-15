@@ -1,6 +1,7 @@
 import { nativeImage } from 'electron'
 import { IMAGE_SKILL_CHANNEL, parseImageSkillRequest, type ImageSkillReply } from '../../shared/image-skill'
 import { isCameraSnapshotDimensions, type CameraSnapshot } from '../../shared/camera-tracking'
+import { selectPhotoSubject } from '../camera/photo-subject'
 import type { AvatarControlCommand } from '../../shared/bridge'
 import type { StudioQuality } from '../../shared/portrait-studio'
 import type { StudioIpc } from './studio-ipc'
@@ -28,12 +29,18 @@ export function registerImageSkillIpc(deps: {
     capture: async () => {
       const frame = await deps.capture()
       // The native helper selects the camera's best mode and checks every delivered frame;
-      // here only the snapshot bounds and the one-face rule apply. Never upscale.
-      if (!frame || !isCameraSnapshotDimensions(frame.width, frame.height) || frame.faceCount !== 1) { deps.report('image_photo_quality_rejected'); return null }
+      // here only the snapshot bounds and a clear face apply. Several people are allowed:
+      // the photo follows the nearest person with a whole face. Never upscale.
+      const subject = frame && isCameraSnapshotDimensions(frame.width, frame.height) ? selectPhotoSubject(frame) : null
+      if (!frame || !subject) { deps.report('image_photo_quality_rejected'); return null }
       const decoded = nativeImage.createFromDataURL(frame.dataUrl)
       const size = decoded.getSize()
       if (decoded.isEmpty() || size.width !== frame.width || size.height !== frame.height) { deps.report('image_photo_decode_rejected'); return null }
-      return { bytes: Buffer.from(frame.dataUrl.slice('data:image/jpeg;base64,'.length), 'base64'), mimeType: 'image/jpeg' }
+      if (!subject.crop) return { bytes: Buffer.from(frame.dataUrl.slice('data:image/jpeg;base64,'.length), 'base64'), mimeType: 'image/jpeg' }
+      const person = decoded.crop(subject.crop)
+      if (person.isEmpty()) { deps.report('image_photo_decode_rejected'); return null }
+      deps.report('image_photo_nearest_person_selected')
+      return { bytes: person.toJPEG(95), mimeType: 'image/jpeg' }
     },
     dispatch: view => { if (!deps.dispatch({ type: 'image_view', view })) deps.report('image_view_delivery_failed') },
     event: (event, owner) => { if (!deps.dispatch({ type: 'image_event', event, identity: owner })) deps.report('image_event_delivery_failed') }, report: deps.report, activity: deps.activity })

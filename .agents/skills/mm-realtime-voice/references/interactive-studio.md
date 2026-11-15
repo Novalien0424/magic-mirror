@@ -45,6 +45,10 @@ rulings; read the relevant section before older designs.
   captions, never identity confirmation. Image prompts quote visitor data behind
   the fixed `imagePrompt.guard`. Reveal/failure speech waits for idle; language follows the start script
   then visitor speech. A revision preamble suppresses the duplicate result reply.
+- Photo reference (Conversation and Studio, owner 11-15): several people may be in view. The
+  still carries each clear face's box; `src/main/camera/photo-subject.ts` takes the largest
+  face not touching the edge (else the largest) and cuts the photo to that person. Only a
+  still with no clear face is refused; add `tests/unit/{camera-photo-subject,image-skill-ipc}.test.ts`.
 
 ## Focused evidence
 

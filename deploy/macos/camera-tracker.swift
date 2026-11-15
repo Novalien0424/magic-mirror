@@ -456,12 +456,23 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     status("camera_snapshot_jpeg_oversized"); emit(["type": "snapshot", "id": id]); return
                 }
                 // Avoid escaping base64 slashes, so a bounded JPEG fits the framed pipe limit.
-                // Count faces in this exact still, never a previous gaze frame. No recognition or identifiers.
+                // Find faces in this exact still, never a previous gaze frame. No recognition or identifiers.
                 var snapshot: [String: Any] = ["type": "snapshot", "id": id,
                     "jpeg": jpeg.base64EncodedString(), "width": width, "height": height]
                 let faces = VNDetectFaceRectanglesRequest()
                 if (try? VNImageRequestHandler(ciImage: image, options: [:]).perform([faces])) != nil {
                     snapshot["faceCount"] = min(100, faces.results?.count ?? 0)
+                    // Where each clear face is in this still (same confidence as gaze), so Main can
+                    // use the nearest person when several are in view. A box cut by the picture's
+                    // edge is clipped to it; Main reads an edge-touching box as a partial face.
+                    snapshot["faces"] = (faces.results ?? []).filter { $0.confidence >= 0.65 }
+                        .sorted { $0.boundingBox.width * $0.boundingBox.height > $1.boundingBox.width * $1.boundingBox.height }
+                        .prefix(16).compactMap { face -> [String: Double]? in
+                            let box = face.boundingBox.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+                            guard !box.isNull, box.width > 0, box.height > 0 else { return nil }
+                            return ["x": Double(box.minX), "y": Double(1 - box.maxY),
+                                    "width": Double(box.width), "height": Double(box.height)]
+                        }
                 }
                 guard let message = try? JSONSerialization.data(withJSONObject: snapshot, options: [.withoutEscapingSlashes]),
                     let line = String(data: message, encoding: .utf8) else {
