@@ -49,7 +49,7 @@ LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 1
 running (agent's START 14:37 11-15 after the camera work, Dormant, no loop playing); the 14:35
 11-15 build is deployed and its stamp matches the committed source; speakers at the defaults
 (Jabra 80% in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1%).
-A1 is off (battery, below). Products and stories: [PRD](PRD.md); open work:
+A1 joined again at 14:44:35 (below). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
 
@@ -70,7 +70,10 @@ STOP. Runbook: [Stream Deck](deploy/macos/stream-deck.md) "Edifier not listed".
 and went off again at 14:08:15 while MUSIC LOOP played. So A1 is not charging; the app and
 Airfoil are not the cause. Owner: check A1's charger and cable. The app logs nothing when A1
 drops (gap, no marker yet). When A1 is on and linked, Main connects it at its 10 s check and it
-joins after the 6.5 min hold without a START; a rejoin in the middle of a run has not been observed.
+joins after the 6.5 min hold without a START. Seen in the middle of a run: the owner switched
+A1 on at 14:37:58 (owner: "A1 has auto sleep"), Main connected it at 14:38:01 and it joined at
+14:44:35; it reported 30% again. Auto sleep versus a flat battery is not separated: ~10 h
+linked without music before the 04:24 drop fits the battery trend better than a sleep timer.
 
 **Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
 the main profile was marked default, and Stream Deck selects the default profile whenever
@@ -162,7 +165,8 @@ Earlier delivery, detail in the archived handoff and the linked reports:
    display match, `net-watch` and the board adb daemon checked): still to confirm at the Neo are
    that no Stream Deck profile is marked default and the main keys show, and a conversation
    (microphone, camera markers). A1 is silent for 6.5 min after a reboot by design.
-0a. A1 (above): owner checks A1's charger and cable (battery fell from 100% to off in ~10 h);
+0a. A1 (above): owner checks A1's charger and cable and its auto-sleep setting (battery fell
+   from 100% to off in ~10 h and reads 30% at each return);
    a marker when a Bluetooth speaker drops is still missing.
 0b. Camera: photo-reference Conversation and Studio runs with a consenting person; owner's
    ruling on the one-face rule (two people in view are refused).
