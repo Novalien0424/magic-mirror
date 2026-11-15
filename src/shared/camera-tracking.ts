@@ -18,6 +18,12 @@ export function isCameraSnapshotDimensions(width: unknown, height: unknown): boo
     && width * height <= CAMERA_SNAPSHOT_MAX_PIXELS
 }
 
+/** Production currently supports full-HD source pixels only, in either orientation.
+ * Larger advertised maxima must be rejected by native capture, never resized. */
+export function isProductionCameraSnapshotDimensions(width: unknown, height: unknown): boolean {
+  return width === 1920 && height === 1080 || width === 1080 && height === 1920
+}
+
 export function isCameraSnapshot(value: unknown): value is CameraSnapshot {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const v = value as CameraSnapshot

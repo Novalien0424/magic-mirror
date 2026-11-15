@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createImageSkillRuntime } from '../../src/main/studio/image-skill-runtime'
+import { createImageSkillRuntime, type SkillImage } from '../../src/main/studio/image-skill-runtime'
 import { IMAGE_SKILL, parseImageSkillEvent, parseImageSkillRequest, parseImageSkillView, type ImageSkillEvent, type ImageSkillView } from '../../src/shared/image-skill'
 import type { PortraitImageProvider, PortraitImageResult } from '../../src/main/studio/image-provider'
 import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
@@ -12,7 +12,7 @@ function harness(enabled = true) {
   let current: typeof ID | null = ID
   const provider = { generate: vi.fn<PortraitImageProvider['generate']>(async () => ok()), edit: vi.fn<PortraitImageProvider['edit']>(async () => ok()) }
   const capture = vi.fn(async () => ({ bytes: Buffer.from('synthetic-photo'), mimeType: 'image/jpeg' as const }))
-  const studioUsePhoto = vi.fn(() => true), studioActive = vi.fn(() => false), studioCanUsePhoto = vi.fn(() => true)
+  const studioUsePhoto = vi.fn<(identity: typeof ID, photo: SkillImage) => boolean>(() => true), studioActive = vi.fn(() => false), studioCanUsePhoto = vi.fn(() => true)
   const activity = vi.fn(), quality = vi.fn(async () => 'medium' as const), usable = vi.fn(async () => true)
   const runtime = createImageSkillRuntime({ provider, usable, quality, enabled: () => enabled, current: () => current, capture,
     studioActive, studioCanUsePhoto, studioUsePhoto, dispatch: view => views.push(view), event: event => events.push(event), report: reason => reports.push(reason), activity })
@@ -168,6 +168,40 @@ describe('shared image skill ownership and photo consent', () => {
     await vi.waitFor(() => expect(h.provider.edit).toHaveBeenCalledTimes(2))
     expect(h.provider.edit.mock.calls[1]![0]).toMatchObject({ image: Buffer.from('synthetic-png') })
     runtime.close('studio_exited')
+  })
+  it('requires fresh consent for a Studio retake and paints with the replacement reference', async () => {
+    vi.useFakeTimers()
+    const h = harness(), commands: unknown[] = []
+    const studio = createStudioRuntime({ provider: () => h.provider, dispatch: command => { commands.push(command); return true }, activity: vi.fn(), report: vi.fn() })
+    const experience = defaultExperience(); experience.studio.askName = false; experience.studio.questions = [experience.studio.questions[0]!]
+    studio.start(ID, experience, 'visitor')
+    h.studioActive.mockReturnValue(true)
+    h.studioUsePhoto.mockImplementation((_identity, photo) => studio.usePhoto(ID, photo))
+    const approve = async (itemId: string) => {
+      const consent = h.consent()
+      await h.runtime.handle({ action: 'consent_ready', ticket: consent.ticket }, ID)
+      await h.runtime.handle({ action: 'photo_reply', ticket: consent.ticket, text: 'use my photo', itemId }, ID)
+      await vi.advanceTimersByTimeAsync(IMAGE_SKILL.countdownMs)
+      return consent.ticket
+    }
+    h.capture.mockResolvedValueOnce({ bytes: Buffer.from('original'), mimeType: 'image/jpeg' })
+    await h.runtime.handle({ action: 'studio_photo', language: 'en' }, ID)
+    const oldTicket = await approve('first')
+    h.capture.mockResolvedValueOnce({ bytes: Buffer.from('retake'), mimeType: 'image/jpeg' })
+    await h.runtime.handle({ action: 'studio_photo', language: 'en' }, ID)
+    expect(h.capture).toHaveBeenCalledTimes(1)
+    expect(await h.runtime.handle({ action: 'photo_reply', ticket: oldTicket, text: 'use my photo', itemId: 'replay' }, ID)).toMatchObject({ code: 'image_consent_stale' })
+    await approve('second')
+    expect(h.capture).toHaveBeenCalledTimes(2)
+    expect(studio.phase()).toBe('question')
+    studio.handle({ action: 'answer', question: 1, answer: 'a forest', language: 'en' }, ID)
+    const event = commands.findLast(c => (c as { event?: { event: string } }).event?.event === 'step') as { event: { step: { id: string } } }
+    studio.handle({ action: 'paint', stepId: event.event.step.id }, ID)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.provider.edit).toHaveBeenCalledOnce()
+    expect(h.provider.edit.mock.calls[0]![0].image).toEqual(Buffer.from('retake'))
+    expect(studio.usePhoto(ID, { bytes: Buffer.from('late'), mimeType: 'image/jpeg' })).toBe(false)
+    studio.close('test_completed'); h.end()
   })
   it('rejects malformed commands, URLs and event payloads', () => {
     expect(parseImageSkillRequest({ action: 'generate', prompt: 'x', source: 'photo', picture: 'portrait', language: 'en', confirmed: true })).toBeNull()

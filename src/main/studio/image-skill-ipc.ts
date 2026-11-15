@@ -1,6 +1,6 @@
 import { nativeImage } from 'electron'
 import { IMAGE_SKILL_CHANNEL, parseImageSkillRequest, type ImageSkillReply } from '../../shared/image-skill'
-import { isCameraSnapshotDimensions, type CameraSnapshot } from '../../shared/camera-tracking'
+import { isProductionCameraSnapshotDimensions, type CameraSnapshot } from '../../shared/camera-tracking'
 import type { AvatarControlCommand } from '../../shared/bridge'
 import type { StudioQuality } from '../../shared/portrait-studio'
 import type { StudioIpc } from './studio-ipc'
@@ -27,9 +27,9 @@ export function registerImageSkillIpc(deps: {
     current: () => identity(deps.snapshot()), studioActive: deps.studio.active, studioCanUsePhoto: deps.studio.canUsePhoto, studioUsePhoto: deps.studio.usePhoto, studioClearPhoto: deps.studio.clearPhoto,
     capture: async () => {
       const frame = await deps.capture()
-      // Owner temporarily accepts the camera's smallest advertised 96×96 mode.
-      // Preserve actual dimensions; never upscale a low-resolution capture to pass.
-      if (!frame || !isCameraSnapshotDimensions(frame.width, frame.height) || frame.width < 96 || frame.height < 96 || frame.faceCount !== 1) { deps.report('image_photo_quality_rejected'); return null }
+      // Native capture verifies the camera's maximum; this boundary also rejects
+      // any lower-resolution source before it can reach the image service.
+      if (!frame || !isProductionCameraSnapshotDimensions(frame.width, frame.height) || frame.faceCount !== 1) { deps.report('image_photo_quality_rejected'); return null }
       const decoded = nativeImage.createFromDataURL(frame.dataUrl)
       const size = decoded.getSize()
       if (decoded.isEmpty() || size.width !== frame.width || size.height !== frame.height) { deps.report('image_photo_decode_rejected'); return null }

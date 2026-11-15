@@ -10,6 +10,31 @@ import Darwin
 setvbuf(stdout, nil, _IOLBF, 0)
 let parentPID = getppid()
 
+// Highest advertised pixel count first; choose the supported rate endpoint
+// nearest 5 FPS. Prefer native NV12 only after resolution and rate agree.
+func preferredCameraMode(_ modes: [(Int32, Int32, UInt32, Double)]) -> (Int32, Int32, UInt32, Double)? {
+    modes.filter { $0.0 > 0 && $0.1 > 0 && $0.3.isFinite && $0.3 > 0 }.sorted { a, b in
+        let aPixels = Int64(a.0) * Int64(a.1), bPixels = Int64(b.0) * Int64(b.1)
+        if aPixels != bPixels { return aPixels > bPixels }
+        if abs(a.3 - 5) != abs(b.3 - 5) { return abs(a.3 - 5) < abs(b.3 - 5) }
+        if a.3 != b.3 { return a.3 < b.3 }
+        let aNative = a.2 == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        let bNative = b.2 == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        if aNative != bNative { return aNative }
+        return a.0 > b.0
+    }.first
+}
+
+// Keep the supported production dimensions aligned with shared/camera-tracking.ts.
+func productionCameraDimensions(_ width: Int, _ height: Int) -> Bool {
+    (width == 1920 && height == 1080) || (width == 1080 && height == 1920)
+}
+func cameraFrameDimensionsMatch(_ width: Int, _ height: Int, _ inputWidth: Int, _ inputHeight: Int,
+                                _ expectedWidth: Int, _ expectedHeight: Int, _ diagnostic: Bool) -> Bool {
+    width == expectedWidth && height == expectedHeight && inputWidth == expectedWidth && inputHeight == expectedHeight
+        && (diagnostic || productionCameraDimensions(width, height))
+}
+
 final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let queue = DispatchQueue(label: "com.magicmirror.camera", qos: .utility)
     let visionQueue = DispatchQueue(label: "com.magicmirror.camera.vision", qos: .utility)
@@ -38,7 +63,8 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var qaInputPixelFormat: UInt32 = 0
     var qaFrameDuration = 0.0
     var qaSequence = 0
-    var qaSourceTime = CMTime.invalid
+    var lastSourceTime = CMTime.invalid
+    var captureWidth = 0, captureHeight = 0, captureInputWidth = 0, captureInputHeight = 0
     var reportedDrops = Set<String>()
     let imageContext = CIContext(options: [.cacheIntermediates: false])
     // Empty selector means the sole external USB video device, never an arbitrary first camera.
@@ -121,7 +147,8 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     func releaseCapture() {
         captureGeneration += 1
-        qaSourceTime = .invalid
+        lastSourceTime = .invalid
+        captureWidth = 0; captureHeight = 0; captureInputWidth = 0; captureInputHeight = 0
         captureID = nil
         autoreleasepool {
             session?.outputs.forEach { ($0 as? AVCaptureVideoDataOutput)?.setSampleBufferDelegate(nil, queue: nil) }
@@ -233,6 +260,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 "nv12720": (1280, 720, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, 15),
                 "mjpeg1080": (1920, 1080, kCVPixelFormatType_422YpCbCr8, 15),
                 "mjpeg10805": (1920, 1080, kCVPixelFormatType_422YpCbCr8, 5),
+                "nv1210805": (1920, 1080, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, 5),
                 "yuy210805": (1920, 1080, kCVPixelFormatType_422YpCbCr8_yuvs, 5),
                 "yuy2720": (1280, 720, kCVPixelFormatType_422YpCbCr8_yuvs, 5)
             ]
@@ -260,14 +288,25 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                         "pixelFormat": Int(CMFormatDescriptionGetMediaSubType(format.formatDescription)), "fps": rate])
                 }
             }
-            let desired = qaObserve && qaMode != "minimum" ? modes[qaMode ?? "vga15"] : minimum
+            let maximum = preferredCameraMode(device.formats.flatMap { format in
+                let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let pixelFormat = CMFormatDescriptionGetMediaSubType(format.formatDescription)
+                return format.videoSupportedFrameRateRanges.flatMap { range in
+                    [(size.width, size.height, pixelFormat, range.minFrameRate),
+                     (size.width, size.height, pixelFormat, range.maxFrameRate)]
+                }
+            })
+            let desired = qaObserve ? qaMode == "minimum" ? minimum : modes[qaMode ?? "vga15"] : maximum
             guard let desired else { next.commitConfiguration(); status("camera_qa_mode_invalid"); return }
+            guard qaObserve || productionCameraDimensions(Int(desired.0), Int(desired.1)) else {
+                next.commitConfiguration(); status("camera_maximum_resolution_unsupported"); return
+            }
             let configureAfterStart = qaObserve && CommandLine.arguments.contains("--qa-configure-after-start")
             let directRate = qaObserve ? CommandLine.arguments.first(where: { $0.hasPrefix("--qa-rate=") })?
                 .split(separator: "=").last.flatMap { Int32($0) } : nil
             var selectedFormat: AVCaptureDevice.Format?
             var selectedDuration: CMTime?
-            if qaObserve && CommandLine.arguments.contains("--qa-output-size") {
+            if !qaObserve || CommandLine.arguments.contains("--qa-output-size") {
                 output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                     kCVPixelBufferWidthKey as String: Int(desired.0), kCVPixelBufferHeightKey as String: Int(desired.1)]
             }
@@ -314,6 +353,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             if configureAfterStart { device.unlockForConfiguration(); deviceLocked = false }
             next.commitConfiguration()
             session = next; deviceID = device.uniqueID
+            captureWidth = Int(desired.0); captureHeight = Int(desired.1)
             lastFrame = ProcessInfo.processInfo.systemUptime
             status("camera_starting")
             next.startRunning()
@@ -323,9 +363,10 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 device.activeVideoMinFrameDuration = duration
                 device.activeVideoMaxFrameDuration = duration
             }
+            let activeSize = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            captureInputWidth = Int(activeSize.width); captureInputHeight = Int(activeSize.height)
             if qaObserve {
-                let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-                qaInputWidth = Int(size.width); qaInputHeight = Int(size.height)
+                qaInputWidth = captureInputWidth; qaInputHeight = captureInputHeight
                 qaInputPixelFormat = CMFormatDescriptionGetMediaSubType(device.activeFormat.formatDescription)
                 qaFrameDuration = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
             }
@@ -364,21 +405,26 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 return
             }
         }
-        if qaDeliveryOnly || qaObserve {
-            let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            guard sourceTime.isNumeric, !qaSourceTime.isValid || CMTimeCompare(sourceTime, qaSourceTime) > 0 else {
-                status("camera_qa_frame_timestamp_stale"); return
-            }
-            qaSourceTime = sourceTime
-            if qaObserve, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                qaSequence += 1
-                emit(["type": "qa_sample", "sequence": qaSequence,
-                    "sourceSeconds": CMTimeGetSeconds(sourceTime),
-                    "width": CVPixelBufferGetWidth(pixels), "height": CVPixelBufferGetHeight(pixels),
-                    "pixelFormat": CVPixelBufferGetPixelFormatType(pixels),
-                    "inputWidth": qaInputWidth, "inputHeight": qaInputHeight,
-                    "inputPixelFormat": qaInputPixelFormat, "frameDurationSeconds": qaFrameDuration])
-            }
+        // Source freshness applies to production too: repeated callbacks must
+        // not keep a frozen stream alive or satisfy a requested snapshot.
+        let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        guard sourceTime.isNumeric, !lastSourceTime.isValid || CMTimeCompare(sourceTime, lastSourceTime) > 0 else {
+            status(qaDeliveryOnly || qaObserve ? "camera_qa_frame_timestamp_stale" : "camera_frame_timestamp_stale"); return
+        }
+        lastSourceTime = sourceTime
+        if qaObserve, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            qaSequence += 1
+            emit(["type": "qa_sample", "sequence": qaSequence,
+                "sourceSeconds": CMTimeGetSeconds(sourceTime),
+                "width": CVPixelBufferGetWidth(pixels), "height": CVPixelBufferGetHeight(pixels),
+                "pixelFormat": CVPixelBufferGetPixelFormatType(pixels),
+                "inputWidth": qaInputWidth, "inputHeight": qaInputHeight,
+                "inputPixelFormat": qaInputPixelFormat, "frameDurationSeconds": qaFrameDuration])
+        }
+        guard let deliveredPixels = CMSampleBufferGetImageBuffer(sampleBuffer),
+              cameraFrameDimensionsMatch(CVPixelBufferGetWidth(deliveredPixels), CVPixelBufferGetHeight(deliveredPixels),
+                captureInputWidth, captureInputHeight, captureWidth, captureHeight, qaObserve) else {
+            status("camera_frame_dimensions_mismatch"); return
         }
         lastFrame = now
         if now - lastFrameReceipt >= 0.5 {
@@ -396,16 +442,13 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let maximumJPEGBytes = 4 * 1024 * 1024
                 let maximumMessageBytes = 6 * 1024 * 1024
                 let source = CIImage(cvPixelBuffer: pixels)
-                let scale = min(1, min(CGFloat(maximumDimension) / max(source.extent.width, source.extent.height),
-                    sqrt(CGFloat(maximumPixels) / (source.extent.width * source.extent.height))))
-                let width = Int((source.extent.width * scale).rounded(.down))
-                let height = Int((source.extent.height * scale).rounded(.down))
+                let width = Int(source.extent.width), height = Int(source.extent.height)
                 guard width > 0, height > 0, width <= maximumDimension, height <= maximumDimension,
                       width * height <= maximumPixels else {
                     status("camera_snapshot_dimensions_invalid"); emit(["type": "snapshot", "id": id]); return
                 }
-                let image = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-                    .cropped(to: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+                // Preserve the delivered maximum-resolution pixels exactly: no resizing or upscaling.
+                let image = source
                 guard let jpeg = imageContext.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(),
                     options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.95]) else {
                     status("camera_snapshot_encode_failed"); emit(["type": "snapshot", "id": id]); return

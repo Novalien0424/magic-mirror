@@ -1,11 +1,11 @@
 // Live, isolated QA of the published Raven. No visitor data or credentials are copied.
 import { createHash } from 'node:crypto'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyBuild } from './qa-build.mjs'
-import { acquireElectronOwner } from './electron-owner.mjs'
+import { acquireElectronOwner, assertElectronStopped } from './electron-owner.mjs'
 import { createQaArtifact, finishQaArtifact } from './qa-artifacts.mjs'
 import { runRavenQaLaunchAgent } from './raven-qa-launchagent.mjs'
 import { RAVEN_SYNTHETIC_MEDIA, RAVEN_CONVERSATION_SCENARIOS, RAVEN_QUALITY_JUDGE_CONTRACT } from '../src/main/raven-conversation-fixture.ts'
@@ -58,7 +58,7 @@ if (!isCameraQaCase(cameraCase)) throw Error('camera_qa_case_invalid')
 if (cameraCaseIndex >= 0) args.splice(cameraCaseIndex, 2)
 const cameraCheckIndex = args.indexOf('--camera-check')
 const cameraCheck = cameraCheckIndex < 0 ? 'screen' : args[cameraCheckIndex + 1]
-if (!['screen', 'stable', 'cycles'].includes(cameraCheck)) throw Error('camera_qa_check_invalid')
+if (!['screen', 'stable', 'cycles', 'soak'].includes(cameraCheck)) throw Error('camera_qa_check_invalid')
 if (cameraCheckIndex >= 0) args.splice(cameraCheckIndex, 2)
 // Interactive Studio story (portrait_studio only); --keep-transcript keeps the synthetic visit's
 // transcript (and Studio pictures) in the run folder for an owner review, never by default.
@@ -74,7 +74,7 @@ if (nameOnly) args.splice(args.indexOf('--studio-name-only'), 1)
 const studioPhoto = args.includes('--studio-photo')
 if (studioPhoto) args.splice(args.indexOf('--studio-photo'), 1)
 const selected = args[0] === '--scenario' && args.length === 2 ? args[1] : ''
-if (nativeCameraJourney && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_native_camera_journey_invalid')
+if (nativeCameraJourney && (!['camera', 'image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_native_camera_journey_invalid')
 if (portraitFixtureBytes && (!['image_skill', 'portrait_studio'].includes(selected) || keepTranscript)) throw Error('raven_qa_portrait_fixture_journey_invalid')
 const conversationScenario = RAVEN_CONVERSATION_SCENARIOS.some(s => s.id === selected)
 if ((storyIndex >= 0 || keepTranscript && !conversationScenario || studioPhoto || nameOnly) && selected !== 'portrait_studio') throw Error('raven_qa_studio_story_requires_portrait_studio')
@@ -87,7 +87,10 @@ const nativeCamera = ['camera_native', 'camera_delivery', 'camera_availability']
 const reviewUi = ['review_ui', 'memory_calendar', 'camera_native', 'camera_delivery', 'camera_availability'].includes(selected)
 if (args.length !== 0 && (!selected || ![...RAVEN_CONVERSATION_SCENARIOS.map(s => s.id), 'review_ui', 'memory_calendar', 'media_bgm', 'media_stop', 'portrait_studio', 'image_skill', 'additional_capabilities', 'camera', 'camera_native', 'camera_delivery', 'camera_availability', 'judge_calibration', 'memory_intent_calibration', 'wake_diagnostic', 'wake_media', 'wake_media_routes', 'wake_media_mac', 'wake_soak', 'wake_soak_mac', 'wake_replay', 'wake_capture', 'wake_control', 'wake_aec', 'wake_aec_alignment', 'wake_aec_alignment_native', 'wake_browser', 'wake_levels', 'wake_levels_asr'].includes(selected))) throw Error('raven_qa_scenario_invalid')
 // The caller must preserve operator edits and quit the ordinary app first.
-if (spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' }).status === 0) throw Error('raven_qa_electron_already_running')
+try { assertElectronStopped() } catch (error) {
+  if (error.message === 'electron_already_running') throw Error('raven_qa_electron_already_running')
+  throw error
+}
 const build = await verifyBuild(repo)
 const operator = join(process.env.HOME, 'Library/Application Support/magic-mirror')
 const published = await readFile(join(operator, 'config/active.json'))
@@ -204,7 +207,7 @@ await writeFile(join(root, 'raven-provenance.json'), JSON.stringify({ publishedC
 const env = { ...process.env, MIRROR_PHASE4_QA: '1', MIRROR_RAVEN_CONVERSATION_QA: '1', MIRROR_PHASE4_QA_LIVE: '1',
   MIRROR_RAVEN_CONVERSATION_QA_SCENARIO: selected,
   MIRROR_PHASE4_QA_CONSOLE: '1', MIRROR_PHASE4_QA_OUTPUT_DIR: output, MIRROR_PHASE0_USER_DATA_ROOT: root,
-  MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: ['wake_soak', 'wake_soak_mac'].includes(selected) ? '2400000' : '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
+  MIRROR_USER_DATA_DIR: data, MIRROR_SMOKE_MS: ['wake_soak', 'wake_soak_mac'].includes(selected) ? '2400000' : selected === 'camera_availability' && cameraCheck === 'soak' ? '2100000' : '1800000', MIRROR_DEVELOPER_MODE: 'disabled' }
 for (const key of Object.keys(env)) if (key.startsWith('MIRROR_') && !['MIRROR_PHASE4_QA', 'MIRROR_RAVEN_CONVERSATION_QA', 'MIRROR_RAVEN_CONVERSATION_QA_SCENARIO', 'MIRROR_PHASE4_QA_LIVE', 'MIRROR_PHASE4_QA_CONSOLE', 'MIRROR_PHASE4_QA_OUTPUT_DIR', 'MIRROR_PHASE0_USER_DATA_ROOT', 'MIRROR_USER_DATA_DIR', 'MIRROR_SMOKE_MS', 'MIRROR_DEVELOPER_MODE'].includes(key)) delete env[key]
 env.MIRROR_QA_PROMPT_VARIANT = promptVariant
 if (selected === 'camera_availability') Object.assign(env, { MIRROR_CAMERA_QA_CASE: cameraCase, MIRROR_CAMERA_QA_CHECK: cameraCheck })

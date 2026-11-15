@@ -2,18 +2,28 @@
 
 ## Current delivery
 
-**Replacement camera work, 11-14 (Codex):** compact repository/Claude handoff
-knowledge retained in [this index](docs/testing/claude-knowledge-2026-11-14.md).
-Production and native QA now select the sole external USB camera instead of
-hard-coding Arducam; minimum-mode QA derives expected dimensions/rate from
-advertised descriptors instead of assuming 96×96/5. 116 focused camera tests,
-TypeScript and Swift typechecks pass. **Source only, not deployed:** build was
-blocked by `electron_owner_busy`, then `electron_already_running` during separate
-sound work ([logs](.artifacts/camera-replacement-2026-11-14/)). At 17:29 Taipei,
-after owner-confirmed replug, macOS still lists zero cameras and only three USB
-hubs, Jabra and Stream Deck. Physical capture/recovery remain unverified; next:
-resolve USB enumeration, then build and run native delivery/stability/cycle QA
-when the shared runtime is available. Preserve the other operator's runtime.
+**Highest-resolution path enforcement, 11-14 20:33:** native capture now refuses
+input/output below the selected maximum and never resizes snapshots; Main and
+Conversation/Studio photo validation reject sub-HD. Current camera: 1920×1080
+NV12 near 5 FPS. Fresh evidence: 296 focused tests, typechecks/build, production
+USB recovery, **20/20 reopen cycles / 27 HD snapshots**, real-camera Conversation
+**8/8**, and default Studio with real image generation/revision **26/26** pass.
+Real-person photo-reference/retake runs await a consenting person (last native
+samples: zero faces); those paths are not claimed live-passed. Normal app restored,
+output reset/readback passed. [Changes, evidence and next real runs](docs/testing/camera-paths-highest-resolution-2026-11-14.md).
+
+**USB camera audit, 11-14 evening (Codex):** Arducam now enumerates. Per the
+owner's updated request, production selects maximum resolution near 5 FPS:
+actual **1920×1080 NV12**. **30-minute normal-processing soak passed** with
+30/30 decoded HD snapshots, zero stale timestamps/resets/restarts; source/receipt
+gaps 184/381 ms. Production HD recovery also passed (six snapshots before/six
+after targeted reset, fresh frames in 4.682 s). Fixed production timestamp
+freshness and the QA executable guard's shell-argument false positive. 217 focused
+tests, typechecks and build pass. Real-camera consent/room-description journey
+passed 8/8 with synthetic speech; physical speech at 1% failed before capture
+(camera wake/sleep ownership passed). Normal app restored 19:32, outputs restored;
+portrait likeness/reboot/days-long acceptance excluded. [Audit and retained failures](docs/testing/usb-camera-audit-2026-11-14.md).
+Earlier compact repository/Claude knowledge: [index](docs/testing/claude-knowledge-2026-11-14.md).
 
 **Codex harness updated 11-10:** user-wide Astra orchestration, Sol implementation
 and Terra computer-use roles; catalog-resolved local aliases with login/hourly
@@ -24,7 +34,7 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-stopped (18:38, STOP key after the 1% loop check); the build made 16:50 is deployed and the next START runs it; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
+running (20:33, restored after the camera-path tests); the 20:18 build with strict HD capture validation is deployed; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
 Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
@@ -94,6 +104,13 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
+- 11-14 20:33 production restored after strict-HD path testing; speaker restoration
+  passed. Real-person photo-reference tests await physical availability.
+
+- 11-14 19:32 production restored after HD camera QA: Main/renderer ready, named TV
+  display matched, music route settled in 2.3 s, two speakers reconnected. Calibrated
+  output restoration passed. Camera owns no worker while Dormant by design.
+
 - 11-14 18:38 app stopped by the STOP key; levels read back at the defaults (Jabra 80%, A1 65%);
   Airfoil keeps the Jabra and A1 connected, Edifiers released. `net-watch` `state=ok` at 18:29.
 - 11-14 17:45 app stopped after the VIDEO LOOP measurements (17 starts 17:21–17:45, all found
@@ -130,5 +147,5 @@ Earlier delivery, detail in the archived handoff and the linked reports:
    Edifier included (no voice wake while music plays; use STOP); music during a conversation
    comes only from A1 and the Edifiers.
 6. Owner, physical (carried from 11-01): press each Neo key once, including the Playback page;
-   the camera is damaged.
+   the USB camera has now passed the HD soak and recovery checks above.
 7. Open items in [TODO](TODO.md), notably "Online songs" and "Airfoil sync".

@@ -84,6 +84,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
   const started = Date.now(), results: Result[] = []
   const physical = process.env['MIRROR_QA_PHYSICAL_DEVICES'] === '1'
   const nativeCameraJourney = process.env['MIRROR_QA_NATIVE_CAMERA'] === '1'
+  const liveCamera = physical || nativeCameraJourney
   const publicPortraitFixture = process.env['MIRROR_QA_PORTRAIT_FIXTURE'] === '1'
   const cameraWorkers = () => execFileSync('/bin/ps', ['-axo', 'ppid=,comm='], { encoding: 'utf8' })
     .split('\n').filter(line => {
@@ -374,6 +375,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
     mediaStop: texts.push(realtimeMessages.mediaStopPhrases[0]!) - 1,
     mediaAfterStop: texts.push('Can we keep talking? Tell me one brief fact about rain.') - 1,
     camera: texts.push(physical ? '請看一下攝影機，用兩句話描述眼前看得清楚的物品，不必猜測人物身分。'
+      : liveCamera ? 'Look through the camera and describe clearly visible objects in two sentences, without guessing anyone’s identity.'
       : 'Look through the camera. What two colored shapes can you see, and which one is on the left?') - 1,
     cameraYes: texts.push(physical ? '使用我的照片。' : 'Use my photo.') - 1,
     bargePrompt: texts.push('Tell me three different ways to prepare for a small exhibition, and explain the advantages of each.') - 1,
@@ -401,6 +403,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       studioThanks: texts.push(story.visitor.thanks) - 1,
       ...(story.visitor.denyName ? { studioDenyName: texts.push(story.visitor.denyName) - 1 } : {}),
       ...(storyFile?.photo ? { studioPhoto: texts.push('請先拍我的新照片，用我的樣子來畫這次工作室的畫。') - 1,
+        studioPhotoRetake: texts.push('請重新拍一張我的新照片，換掉剛才那張，接下來用新照片畫。') - 1,
         studioPhotoNo: texts.push('取消。') - 1, studioPhotoYes: texts.push('使用我的照片。') - 1 } : {}),
     } : {}),
   } as Record<string, number>
@@ -980,6 +983,19 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
         if (await phase() !== 'question') throw Error('raven_qa_studio_photo_changed_step')
         await shot('photo-attached')
       })
+      if (photoReady && storyFile?.photo) photoReady = await check('studio_photo_retake', async () => {
+        const since = Date.now()
+        const photoPhase = () => evaluate<string | null>(`return document.querySelector('.image-skill')?.getAttribute('data-phase')??null`)
+        await turn(extra.studioPhotoRetake!, 'studio_photo_request_retake', 'studio_use_photo')
+        await wait(async () => await photoPhase() === 'consent', 'studio_retake_consent')
+        if (events(since).some(e => e.reason === 'image_photo_captured')) throw Error('raven_qa_studio_retake_without_permission')
+        await speak(extra.studioPhotoYes!, 'studio_photo_retake_approve', true)
+        await wait(async () => events(since).some(e => e.reason === 'studio_photo_attached'), 'studio_retake_attached')
+        await wait(settled, 'studio_retake_settled')
+        if (events(since).filter(e => e.reason === 'image_photo_captured').length !== 1 || await phase() !== 'question') {
+          throw Error('raven_qa_studio_retake_invalid')
+        }
+      })
       const remoteChecked = photoReady && await check('studio_remote_console', () => operator('show_console_main', besideMirror, ['question']))
       let answered = remoteChecked
       for (let i = 0; answered && i < story.visitor.answers.length; i++) {
@@ -1196,11 +1212,11 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       await check('studio_release', stop)
     }
     if (!selection || ['additional_capabilities', 'camera'].includes(selection)) {
-    if (physical && selection === 'camera') await check('camera_asleep_released', async () => {
+    if (liveCamera && selection === 'camera') await check('camera_asleep_released', async () => {
       if (input.runtime.snapshot().lifecycle !== 'dormant' || cameraWorkers() !== 0) throw Error('raven_qa_camera_asleep_owned')
     })
     await check('additional_capabilities_start', start)
-    if (physical && selection === 'camera') await check('camera_awake_owned', async () => {
+    if (liveCamera && selection === 'camera') await check('camera_awake_owned', async () => {
       await wait(async () => cameraWorkers() === 1, 'camera_awake_unowned', 10000)
     })
     if (selection !== 'camera') {
@@ -1263,7 +1279,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       const result = observation.tools.find(c => c.direction === 'result' && c.callId === call.callId)?.result as { status?: string } | undefined
       if (result?.status !== 'accepted') throw Error('raven_qa_camera_not_added')
       const reply = observation.records.filter(r => r.stage === 'camera_visual_approval' && r.role === 'avatar' && r.audible !== false).map(r => r.text).join(' ')
-      if (physical) {
+      if (liveCamera) {
         const image = await evaluate<string | undefined>(`return window.__ravenQa.images.find(i=>i.stage==='camera_visual_approval')?.image`)
         if (!image) throw Error('raven_qa_camera_image_unobserved')
         const fields = ['answersFromImage', 'objectsGrounded', 'noIdentityInference', 'noInventedPrecision']
@@ -1300,7 +1316,7 @@ export async function runRavenConversationQa(input: Phase4QaInput): Promise<Phas
       capabilityQuality.bargeIn = verdict as Record<string, boolean>
     })
     await check('final_release', stop)
-    if (physical && selection === 'camera') await check('camera_sleep_released', async () => {
+    if (liveCamera && selection === 'camera') await check('camera_sleep_released', async () => {
       await wait(async () => cameraWorkers() === 0, 'camera_sleep_owned', 8000)
       await delay(3000)
       if (input.runtime.snapshot().lifecycle !== 'dormant' || cameraWorkers() !== 0) throw Error('raven_qa_camera_sleep_restarted')

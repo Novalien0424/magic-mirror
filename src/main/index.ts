@@ -1751,7 +1751,7 @@ void app.whenReady().then(async () => {
     && process.env['MIRROR_QA_PHYSICAL_DEVICES'] === '1'
   const nativeCameraJourneyQa = phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
     && process.env['MIRROR_QA_NATIVE_CAMERA'] === '1'
-    && ['image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
+    && ['camera', 'image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')
   let qaPortraitFixture: CameraSnapshot | null = null
   if (phase4QaEnabled && process.env['MIRROR_RAVEN_CONVERSATION_QA'] === '1'
     && ['image_skill', 'portrait_studio'].includes(process.env['MIRROR_RAVEN_CONVERSATION_QA_SCENARIO'] ?? '')

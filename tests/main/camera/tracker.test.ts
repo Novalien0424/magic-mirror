@@ -121,6 +121,33 @@ describe('Main camera snapshot bounds', () => {
   })
 })
 
+describe('production camera resolution', () => {
+  it.each([[96, 96], [640, 480], [1280, 720]])('rejects lower-resolution %sx%s snapshots in Main', async (width, height) => {
+    const f = fixture(), worker = f.children[0]!, pending = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString())
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id, jpeg: '/9j/2Q==', width, height }) + '\n')
+    expect(await pending).toBeNull()
+    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_snapshot_resolution_rejected')
+    await f.service.stop()
+  })
+  it('allows lower snapshots only with the explicit isolated-diagnostic opt-in', async () => {
+    const f = fixture({ allowDiagnosticSnapshots: true }), worker = f.children[0]!, pending = f.service.capture()
+    const { id } = JSON.parse(worker.stdin.read().toString())
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id, jpeg: '/9j/2Q==', width: 96, height: 96 }) + '\n')
+    expect(await pending).toMatchObject({ width: 96, height: 96 })
+    await f.service.stop()
+  })
+  it('fails promptly for an unsupported advertised maximum without requesting USB reset', async () => {
+    const f = fixture(), worker = f.children[0]!
+    worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_maximum_resolution_unsupported"}\n')
+    expect(await f.service.capture()).toBeNull()
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(worker.stdin.read()).toBeNull()
+    expect(f.onStatus).not.toHaveBeenCalledWith('degraded', 'camera_usb_reset_requested')
+    await f.service.stop()
+  })
+})
+
 describe('Main-owned camera recovery', () => {
   it('bounds the whole visitor request to 15 seconds, including the final snapshot after recovery', async () => {
     const f = fixture(), worker = f.children[0]!
@@ -191,8 +218,8 @@ describe('Main-owned camera recovery', () => {
     replacement.stdout.write('{"type":"status","status":"degraded","reason":"camera_usb_reset_complete"}\n{"type":"frame"}\n')
     await vi.advanceTimersByTimeAsync(0)
     const request = JSON.parse(replacement.stdin.read().toString())
-    replacement.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await pending).toMatchObject({ width: 640, height: 480 })
+    replacement.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await pending).toMatchObject({ width: 1920, height: 1080 })
     await f.service.stop()
   })
   it('defers USB reset while the conversation microphone is the camera itself, without spending budget', async () => {
@@ -336,8 +363,8 @@ describe('Main-owned camera recovery', () => {
     worker.stdout.write('{"type":"frame"}\n{"type":"faces","faces":[]}\n')
     await vi.advanceTimersByTimeAsync(0)
     const request = JSON.parse(worker.stdin.read().toString())
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await capture).toMatchObject({ width: 640, height: 480 })
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await capture).toMatchObject({ width: 1920, height: 1080 })
     await f.service.stop()
   })
   it('starts USB recovery before capture when startup blocks without delivering any frame', async () => {
@@ -382,8 +409,8 @@ describe('Main-owned camera recovery', () => {
     expect(await capture).toBeNull()
     worker.stdout.write('{"type":"frame"}\n')
     const recovered = f.service.capture(), request = JSON.parse(worker.stdin.read().toString())
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await recovered).toMatchObject({ width: 640, height: 480 })
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await recovered).toMatchObject({ width: 1920, height: 1080 })
     await f.service.stop()
   })
   it('settles failed captures as soon as recovery is exhausted and permits fresh frames without another reset', async () => {
@@ -405,8 +432,8 @@ describe('Main-owned camera recovery', () => {
     expect(f.onStatus).not.toHaveBeenCalledWith('degraded', 'camera_capture_recovery_timeout')
     worker.stdout.write('{"type":"frame"}\n')
     const fresh = f.service.capture(), request = JSON.parse(worker.stdin.read().toString())
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await fresh).toMatchObject({ width: 640, height: 480 })
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await fresh).toMatchObject({ width: 1920, height: 1080 })
     await vi.advanceTimersByTimeAsync(2500)
     expect(worker.stdin.read()).toBeNull() // A few frames do not replenish the USB budget.
     await f.service.stop()
@@ -426,8 +453,8 @@ describe('Main-owned camera recovery', () => {
     replacement.stdout.write('{"type":"frame"}\n')
     await vi.advanceTimersByTimeAsync(0)
     const request = JSON.parse(replacement.stdin.read().toString())
-    replacement.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await pending).toMatchObject({ width: 640, height: 480 })
+    replacement.stdout.write(JSON.stringify({ type: 'snapshot', id: request.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await pending).toMatchObject({ width: 1920, height: 1080 })
     await f.service.stop()
   })
   it('reports dropped frames without discarding fresh gaze or resetting a delivering camera', async () => {
@@ -519,8 +546,8 @@ describe('Main-owned camera recovery', () => {
     await vi.advanceTimersByTimeAsync(0)
     const retried = JSON.parse(worker.stdin.read().toString())
     expect(retried).toMatchObject({ type: 'capture', id: 2 })
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: retried.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await pending).toMatchObject({ width: 640, height: 480 })
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: retried.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await pending).toMatchObject({ width: 1920, height: 1080 })
     await f.service.stop()
   })
   it('does not reset for frame gaps below the deadline', async () => {
@@ -667,8 +694,8 @@ describe('Main-owned camera recovery', () => {
     const command = JSON.parse(worker.stdin.read().toString())
     expect(command.type).toBe('capture')
     expect(await f.service.capture()).toBeNull()
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: command.id, jpeg: '/9j/2Q==', width: 640, height: 480 }) + '\n')
-    expect(await result).toEqual({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 640, height: 480 })
+    worker.stdout.write(JSON.stringify({ type: 'snapshot', id: command.id, jpeg: '/9j/2Q==', width: 1920, height: 1080 }) + '\n')
+    expect(await result).toEqual({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 1920, height: 1080 })
     expect(JSON.stringify(f.onStatus.mock.calls)).not.toContain('/9j/')
     const pending = f.service.capture()
     await f.service.stop()

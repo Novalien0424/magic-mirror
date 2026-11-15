@@ -30,12 +30,13 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   and in a production start; a full production conversation needs a real visitor (synthetic wake
   is never detected). Confirm Raven's voice at the normal level and `JABRA_VOICE
   reason=jabra_voice_level_reset` in the app log. [Report](docs/testing/jabra-call-volume-2026-11-08.md).
-- [ ] **USB camera stability.** Blocked (physical, 11-01): the camera is damaged and not
-  on the USB bus; replace or reconnect it. Before that, temporary 96×96 / 5 fps mode delivered frames but
-  failed strict stability; one sample averaged 2.18 fps. Qualify cable/port/host or
-  vendor-matched firmware across restart/reboot.
-  [Native checks](docs/testing/low-camera-image-journeys-2026-10-21.md) ·
-  [Investigation](docs/testing/camera-availability-qa-2026-10-18.md).
+- [ ] **USB camera long-run/reboot qualification.** The 11-14 reconnect is detected.
+  Maximum-resolution 1920×1080 NV12 near 5 FPS passed a 30-minute normal-processing
+  soak and production USB-recovery test. Reboot persistence, days-long operation
+  and human portrait quality remain unverified. Strict-HD validation, 20 reopen
+  cycles, Conversation and default Studio passed at 20:33; real-person photo-reference
+  and retake runs await a consenting person ([follow-up](docs/testing/camera-paths-highest-resolution-2026-11-14.md)). Earlier minimum-mode cold-start
+  and alternate-format failures remain recorded. [Current audit](docs/testing/usb-camera-audit-2026-11-14.md).
 - [ ] **Wake and voice quality.** Validate human names, corrections/spelling,
   near-negative wake phrases, cold start, media interference, barge-in and echo.
   Synthetic speech is not human accuracy. Owner wake-media check (11-01 evening, run under

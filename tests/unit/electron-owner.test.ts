@@ -1,11 +1,16 @@
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error The runner is plain JavaScript shared by CLI entrypoints.
-import { acquireElectronOwner } from '../../scripts/electron-owner.mjs'
+import { acquireElectronOwner, assertElectronStopped } from '../../scripts/electron-owner.mjs'
+
+vi.mock('node:child_process', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) }
+})
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -41,5 +46,24 @@ describe('Electron operation ownership', () => {
       const release = acquireElectronOwner('after-crash', dir)
       try { expect(JSON.parse(await readFile(dir + '.json', 'utf8')).owner).toBe('after-crash') } finally { release() }
     } finally { child.kill('SIGKILL') }
+  })
+})
+
+
+describe.skipIf(process.platform !== 'darwin')('Electron executable ownership probe', () => {
+  it.each([
+    ['/bin/zsh\n/usr/bin/pgrep\n/Applications/Other.app/Contents/MacOS/Other\n', false],
+    ['/checkout/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper\n', false],
+    ['/bin/zsh\n/checkout/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron\n', true],
+  ])('checks executable inventory without matching arguments: %s', (stdout, busy) => {
+    const probe = vi.mocked(spawnSync)
+    probe.mockReturnValueOnce({ status: 0, stdout } as ReturnType<typeof spawnSync>)
+    if (busy) expect(() => assertElectronStopped()).toThrow('electron_already_running')
+    else expect(() => assertElectronStopped()).not.toThrow()
+    expect(probe).toHaveBeenLastCalledWith('/bin/ps', ['-axo', 'comm='], { encoding: 'utf8' })
+  })
+  it('fails closed when the executable inventory cannot be read', () => {
+    vi.mocked(spawnSync).mockReturnValueOnce({ status: 1, stdout: '' } as ReturnType<typeof spawnSync>)
+    expect(() => assertElectronStopped()).toThrow('electron_process_probe_failed')
   })
 })

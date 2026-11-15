@@ -12,9 +12,12 @@ const alive = pid => {
 
 export function assertElectronStopped() {
   if (process.platform === 'darwin') {
-    const probe = spawnSync('/usr/bin/pgrep', ['-f', '/Electron.app/Contents/MacOS/Electron'], { encoding: 'utf8' })
-    if (probe.status === 0) throw Error('electron_already_running')
-    if (probe.status !== 1) throw Error('electron_process_probe_failed')
+    // Match executable paths, never shell arguments that merely mention Electron.
+    const probe = spawnSync('/bin/ps', ['-axo', 'comm='], { encoding: 'utf8' })
+    if (probe.status !== 0 || typeof probe.stdout !== 'string') throw Error('electron_process_probe_failed')
+    if (probe.stdout.split('\n').some(command => command.trim().endsWith('/Electron.app/Contents/MacOS/Electron'))) {
+      throw Error('electron_already_running')
+    }
   } else if (process.platform === 'win32') {
     const probe = spawnSync('tasklist.exe', ['/FI', 'IMAGENAME eq electron.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true })
     if (probe.status !== 0) throw Error('electron_process_probe_failed')

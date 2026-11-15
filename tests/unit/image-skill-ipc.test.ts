@@ -46,7 +46,8 @@ describe('image IPC authorization and portrait acceptance', () => {
     expect(await h.handler('mirror', { identity: { ...identity, sessionGeneration: 2 }, request })).toMatchObject({ code: 'image_session_stale' })
     expect(h.capture).not.toHaveBeenCalled(); expect(h.provider.edit).not.toHaveBeenCalled()
   })
-  it.each([null, { ...photo(), width: 95, height: 96 }, { ...photo(), width: 4096 }, { ...photo(), faceCount: undefined }, { ...photo(), faceCount: 0 }, { ...photo(), faceCount: 2 }])('does not upload an absent, invalid-sized or non-single-face capture %#', async frame => {
+  it.each([null, { ...photo(), width: 95, height: 96 }, { ...photo(), width: 96, height: 96 },
+    { ...photo(), width: 640, height: 480 }, { ...photo(), width: 1280, height: 720 }, { ...photo(), width: 4096 }, { ...photo(), faceCount: undefined }, { ...photo(), faceCount: 0 }, { ...photo(), faceCount: 2 }])('does not upload an absent, invalid-sized or non-single-face capture %#', async frame => {
     vi.useFakeTimers(); const h = harness(frame); await h.approve()
     expect(h.capture).toHaveBeenCalledOnce(); expect(h.provider.edit).not.toHaveBeenCalled()
     expect(h.report).toHaveBeenCalledWith('image_photo_quality_rejected')
@@ -59,7 +60,7 @@ describe('image IPC authorization and portrait acceptance', () => {
     expect(h.provider.edit).not.toHaveBeenCalled(); expect(h.report).toHaveBeenCalledWith('image_photo_decode_rejected')
     h.runtime.close('test_end')
   })
-  it.each([[96, 96], [320, 240], [1920, 1080]])('uploads only the fresh approved %ix%i single-face photo through the shared provider', async (width, height) => {
+  it.each([[1920, 1080], [1080, 1920]])('uploads only the fresh approved %ix%i single-face photo through the shared provider', async (width, height) => {
     vi.useFakeTimers(); decoder.width = width; decoder.height = height
     const h = harness({ ...photo(), width, height }); await h.approve()
     expect(h.provider.edit).toHaveBeenCalledOnce()
