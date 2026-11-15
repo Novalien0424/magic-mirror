@@ -1,4 +1,4 @@
-# Magic Mirror — current handoff, 2026-11-14
+# Magic Mirror — current handoff, 2026-11-15
 
 ## Current delivery
 
@@ -34,8 +34,10 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-running (20:33, restored after the camera-path tests); the 20:18 build with strict HD capture validation is deployed; speakers at the defaults (Jabra 80% in normal playback and in its call volume, A1 65%,
-Edifiers 50%; Mac mini speaker 1%). Products and stories: [PRD](PRD.md); open work:
+running (owner's START 14:01 11-15, MUSIC LOOP playing); the 20:18 11-14 build with strict HD capture
+validation is deployed and its stamp matches the committed source; speaker defaults are Jabra 80%
+in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1% (at 14:06 the
+owner's VOL keys had them at Jabra 60%, A1 45%). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
 
@@ -49,6 +51,14 @@ display `reason=match`), then MUSIC LOOP played 5 tracks; app markers and Airfoi
 nothing was recorded or heard by the agent, the TV picture was not looked at. The agent's STOP
 inside its own lease was refused, so MusicLoop played ~17 s at normal level before the second
 STOP. Runbook: [Stream Deck](deploy/macos/stream-deck.md) "Edifier not listed".
+
+**A1 switched itself off, 11-15:** A1 ended its Bluetooth link at 04:24:55 from its own side
+(macOS Bluetooth log, reason 10721, read as a speaker power-off; not confirmed), after ~10 h
+connected with no music. The app logs nothing when A1 drops (gap, no marker yet). A1 linked to
+the Mac again at 13:55:44 while the app was stopped; the 13:58 START connected it in Airfoil, the
+6.5 min hold carried over the 14:01 STOP/START and A1 joined at 14:04:57 by itself. Main connects a
+listed A1 at every 10 s check, so no START is needed; a rejoin in the middle of a run has not
+been observed. If A1 has an auto-standby or runs on battery, that is the place to look.
 
 **Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
 the main profile was marked default, and Stream Deck selects the default profile whenever
@@ -104,6 +114,10 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
+- 11-15 14:04:57 A1 joined after its hold; Airfoil: Jabra, A1 and both Edifiers connected,
+  MUSIC LOOP playing since 14:01:43 (owner). Codex's camera work committed as `090b410` after
+  typecheck and its eight changed test files (202 tests) passed again.
+
 - 11-14 20:33 production restored after strict-HD path testing; speaker restoration
   passed. Real-person photo-reference tests await physical availability.
 
@@ -133,6 +147,8 @@ Earlier delivery, detail in the archived handoff and the linked reports:
    display match, `net-watch` and the board adb daemon checked): still to confirm at the Neo are
    that no Stream Deck profile is marked default and the main keys show, and a conversation
    (microphone, camera markers). A1 is silent for 6.5 min after a reboot by design.
+0a. A1 (above): a marker when a Bluetooth speaker drops, and the owner's check of A1's power
+   (auto-standby, battery or charger).
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.
