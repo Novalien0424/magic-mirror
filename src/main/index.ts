@@ -55,6 +55,7 @@ import { createCrashRecovery } from './crash-recovery'
 import { createRendererLiveness, startMainLiveness } from './liveness'
 import { Microphone } from 'decibri'
 import { effectiveMicrophoneName, startCameraTracking } from './camera/tracker'
+import { fitCameraQuestionImage } from './camera/question-image'
 import { cameraLifecycleStatus, createCameraLifecycle, type CameraLifecycleService } from './camera/lifecycle'
 import {
   chooseMirrorDisplay,
@@ -1953,6 +1954,7 @@ void app.whenReady().then(async () => {
     isShuttingDown: () => shutdownStarted,
     youtube: youtubePlayer,
     searchYoutube: createYoutubeSearch({ credentialSource: createYoutubeCredentialSource() }),
+    fitCameraQuestionImage,
     captureCamera: () => qaPortraitFixture && !nativeCameraJourneyQa
       ? (() => {
         marker('PHASE4_CAMERA_FIXTURE', { source: 'owner_authorized_public_portrait',
@@ -1965,7 +1967,8 @@ void app.whenReady().then(async () => {
         : `(()=>{const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,640,480);x.fillStyle='blue';x.fillRect(60,140,160,160);x.fillStyle='yellow';x.beginPath();x.arc(460,220,80,0,Math.PI*2);x.fill();return {dataUrl:c.toDataURL('image/jpeg',.8),width:640,height:480}})()`)
       : (cameraTracking?.capture() ?? Promise.resolve(null)).then(frame => {
         if (nativeCameraJourneyQa) marker('PHASE4_CAMERA_CAPTURE', { status: frame ? 'received' : 'unavailable',
-          width: frame?.width ?? 0, height: frame?.height ?? 0, faces: frame?.faceCount ?? -1 })
+          width: frame?.width ?? 0, height: frame?.height ?? 0, faces: frame?.faceCount ?? -1,
+          jpeg_bytes: frame ? Math.floor((frame.dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4) : 0 })
         // Explicit owner-authorized QA substitution only AFTER a fresh native
         // still succeeds. The real camera bytes never leave Main or enter logs.
         if (frame && qaPortraitFixture) {

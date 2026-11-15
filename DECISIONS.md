@@ -1,5 +1,18 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-15 — Camera: best resolution, one check (owner)
+
+Owner: "I want high resolution but not unnecessary gates."
+
+- **Best supported mode:** the camera helper selects the camera's largest mode within the
+  snapshot limit (1920×1080) at the rate nearest 5 FPS. A camera whose best mode is smaller or
+  larger than full HD is still used; no fixed size is required. Snapshots are never resized.
+- **One resolution check:** the helper drops a frame whose real size differs from the selected
+  mode. Main and the photo path add no size rule of their own (supersedes the 11-14 strict
+  full-HD rejections).
+- **Unchanged:** a photo is used only with exactly one face in view (owner has not ruled on
+  changing it); frames whose source time does not advance count as a frozen stream.
+
 ## 2026-11-14 — Stream Deck pages stay during a loop (owner report)
 
 Evidence: [Stream Deck page 2026-11-14](docs/testing/stream-deck-page-2026-11-14.md).

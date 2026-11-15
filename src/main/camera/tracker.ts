@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createNearestFaceTracker, parseCameraFrame } from './nearest-face'
-import { CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES, isCameraSnapshot, isCameraSnapshotDimensions, isProductionCameraSnapshotDimensions, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
+import { CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES, isCameraSnapshot, isCameraSnapshotDimensions, type CameraSnapshot, type CameraTarget } from '../../shared/camera-tracking'
 
 export interface CameraTrackingService {
   stop(): Promise<void>
@@ -75,8 +75,6 @@ export function startCameraTracking(input: {
   executable: string
   /** Empty selects the sole external USB camera; ambiguous discovery fails closed. */
   cameraName: string
-  /** Isolated availability experiments only; production never accepts lower-resolution snapshots. */
-  allowDiagnosticSnapshots?: boolean
   onTarget(target: CameraTarget | null): void
   onStatus(status: 'ready' | 'degraded', reason: string): void
   onFrame?(): void
@@ -104,7 +102,7 @@ export function startCameraTracking(input: {
   }
   let statusKey = ''
   // Diagnostics describe events; they do not grant camera availability.
-  let unavailableReason: 'camera_permission_denied' | 'camera_device_absent' | 'camera_device_ambiguous' | 'camera_maximum_resolution_unsupported' | null = null
+  let unavailableReason: 'camera_permission_denied' | 'camera_device_absent' | 'camera_device_ambiguous' | 'camera_mode_unsupported' | null = null
   let stale = true
   let captureSequence = 0
   let capturePending: { id: number; finish(value: CameraSnapshot | null): void } | null = null
@@ -284,10 +282,9 @@ export function startCameraTracking(input: {
           const snapshot = { dataUrl: `data:image/jpeg;base64,${typeof frame.jpeg === 'string' ? frame.jpeg : ''}`, width: frame.width, height: frame.height,
             ...('faceCount' in frame ? { faceCount: frame.faceCount } : {}) }
           if (capturePending && capturePending.id === frame.id) {
-            const productionDimensions = input.allowDiagnosticSnapshots === true || isProductionCameraSnapshotDimensions(frame.width, frame.height)
-            const valid = isCameraSnapshot(snapshot) && productionDimensions
+            const valid = isCameraSnapshot(snapshot)
             if (!valid) status('degraded', !isCameraSnapshotDimensions(frame.width, frame.height)
-              ? 'camera_snapshot_dimensions_invalid' : !productionDimensions ? 'camera_snapshot_resolution_rejected' : 'camera_snapshot_invalid')
+              ? 'camera_snapshot_dimensions_invalid' : 'camera_snapshot_invalid')
             capturePending.finish(valid ? snapshot : null)
           }
           continue
@@ -334,7 +331,7 @@ export function startCameraTracking(input: {
             resetPending = false
             // Completion permits rediscovery; a reset receipt alone is not ready.
             resetNeeded = event.reason !== 'camera_usb_reset_complete'
-          } else if (event.reason === 'camera_permission_denied' || event.reason === 'camera_device_absent' || event.reason === 'camera_device_ambiguous' || event.reason === 'camera_maximum_resolution_unsupported') {
+          } else if (event.reason === 'camera_permission_denied' || event.reason === 'camera_device_absent' || event.reason === 'camera_device_ambiguous' || event.reason === 'camera_mode_unsupported') {
             unavailableReason = event.reason
             frameWatchArmed = false
             resetNeeded = false

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   CAMERA_SNAPSHOT_MAX_JPEG_BYTES,
   isCameraSnapshot,
-  isProductionCameraSnapshotDimensions,
 } from '../../src/shared/camera-tracking'
 
 function snapshot(byteLength = 4, width = 1920, height = 1080) {
@@ -14,10 +13,6 @@ function snapshot(byteLength = 4, width = 1920, height = 1080) {
 }
 
 describe('RAM-only full-HD camera snapshot validation', () => {
-  it.each([[1920, 1080, true], [1080, 1920, true], [96, 96, false], [640, 480, false],
-    [1280, 720, false], [1440, 1440, false], [3840, 2160, false]])('production source dimensions %sx%s require supported full HD', (width, height, accepted) => {
-    expect(isProductionCameraSnapshotDimensions(width, height)).toBe(accepted)
-  })
   it.each([[1920, 1080], [1080, 1920], [1440, 1440], [640, 480], [1, 1]])(
     'accepts bounded dimensions %sx%s without requiring upscaling', (width, height) => {
       expect(isCameraSnapshot(snapshot(4, width, height))).toBe(true)

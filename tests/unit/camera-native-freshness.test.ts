@@ -44,7 +44,7 @@ for mode in 0...2 {
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
   }, 25_000)
-  it('selects maximum advertised resolution before nearest supported 5 FPS and native NV12', () => {
+  it('selects the best supported resolution before nearest supported 5 FPS and native NV12', () => {
     const start = source.indexOf('func preferredCameraMode(')
     const selection = source.slice(start, source.indexOf('final class CameraTracker:', start))
     const result = spawnSync('xcrun', ['swift', '-e', `
@@ -56,29 +56,31 @@ let modes: [(Int32, Int32, UInt32, Double)] = [(96, 96, nv12, 5), (1920, 1080, y
   (1920, 1080, nv12, 30), (1920, 1080, nv12, 5)]
 let chosen = preferredCameraMode(modes)!
 precondition(chosen.0 == 1920 && chosen.1 == 1080 && chosen.2 == nv12 && chosen.3 == 5)
-let largest = preferredCameraMode(modes + [(3840, 2160, yuv, 30)])!
-precondition(largest.0 == 3840 && largest.3 == 30)
+// A mode above the snapshot limit is passed over, not a reason to refuse the camera.
+let capped = preferredCameraMode(modes + [(3840, 2160, yuv, 30)])!
+precondition(capped.0 == 1920 && capped.1 == 1080 && capped.2 == nv12 && capped.3 == 5)
+// A camera whose best mode is below full HD is used at its best.
+let smaller = preferredCameraMode([(640, 480, yuv, 5), (1280, 720, yuv, 30), (1280, 720, nv12, 10)])!
+precondition(smaller.0 == 1280 && smaller.1 == 720 && smaller.3 == 10)
+let portrait = preferredCameraMode([(1080, 1920, nv12, 5), (640, 480, nv12, 5)])!
+precondition(portrait.0 == 1080 && portrait.1 == 1920)
+precondition(preferredCameraMode([(3840, 2160, yuv, 30)]) == nil)
 let nearest = preferredCameraMode([(1920, 1080, yuv, 4), (1920, 1080, nv12, 10)])!
 precondition(nearest.3 == 4)
 precondition(preferredCameraMode([]) == nil)
-precondition(productionCameraDimensions(1920, 1080))
-precondition(productionCameraDimensions(1080, 1920))
-precondition(!productionCameraDimensions(3840, 2160))
 for size in [(96, 96), (640, 480), (1280, 720)] {
-  precondition(!productionCameraDimensions(size.0, size.1))
-  precondition(!cameraFrameDimensionsMatch(size.0, size.1, 1920, 1080, 1920, 1080, false))
+  precondition(!cameraFrameDimensionsMatch(size.0, size.1, 1920, 1080, 1920, 1080))
 }
-precondition(cameraFrameDimensionsMatch(1920, 1080, 1920, 1080, 1920, 1080, false))
-precondition(!cameraFrameDimensionsMatch(1920, 1080, 640, 480, 1920, 1080, false))
-precondition(!cameraFrameDimensionsMatch(1920, 1080, 3840, 2160, 3840, 2160, false))
-precondition(cameraFrameDimensionsMatch(96, 96, 96, 96, 96, 96, true))
+precondition(cameraFrameDimensionsMatch(1920, 1080, 1920, 1080, 1920, 1080))
+precondition(!cameraFrameDimensionsMatch(1920, 1080, 640, 480, 1920, 1080))
+precondition(cameraFrameDimensionsMatch(1280, 720, 1280, 720, 1280, 720))
 `], { encoding: 'utf8', timeout: 20_000 })
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
     expect(source).toContain('qaMode == "minimum" ? minimum : modes[qaMode ?? "vga15"] : maximum')
     expect(source).toContain('if !qaObserve || CommandLine.arguments.contains("--qa-output-size")')
-    expect(source).toContain('guard qaObserve || productionCameraDimensions(Int(desired.0), Int(desired.1))')
-    expect(source).toContain('camera_maximum_resolution_unsupported')
+    expect(source).toContain('status(qaObserve ? "camera_qa_mode_invalid" : "camera_mode_unsupported")')
+    expect(source).not.toContain('productionCameraDimensions')
     expect(source).not.toContain('source.transformed(')
     expect(source.indexOf('cameraFrameDimensionsMatch(CVPixelBufferGetWidth')).toBeLessThan(source.indexOf('lastFrame = now\n'))
   }, 25_000)

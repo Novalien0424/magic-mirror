@@ -1,6 +1,6 @@
 import { nativeImage } from 'electron'
 import { IMAGE_SKILL_CHANNEL, parseImageSkillRequest, type ImageSkillReply } from '../../shared/image-skill'
-import { isProductionCameraSnapshotDimensions, type CameraSnapshot } from '../../shared/camera-tracking'
+import { isCameraSnapshotDimensions, type CameraSnapshot } from '../../shared/camera-tracking'
 import type { AvatarControlCommand } from '../../shared/bridge'
 import type { StudioQuality } from '../../shared/portrait-studio'
 import type { StudioIpc } from './studio-ipc'
@@ -27,9 +27,9 @@ export function registerImageSkillIpc(deps: {
     current: () => identity(deps.snapshot()), studioActive: deps.studio.active, studioCanUsePhoto: deps.studio.canUsePhoto, studioUsePhoto: deps.studio.usePhoto, studioClearPhoto: deps.studio.clearPhoto,
     capture: async () => {
       const frame = await deps.capture()
-      // Native capture verifies the camera's maximum; this boundary also rejects
-      // any lower-resolution source before it can reach the image service.
-      if (!frame || !isProductionCameraSnapshotDimensions(frame.width, frame.height) || frame.faceCount !== 1) { deps.report('image_photo_quality_rejected'); return null }
+      // The native helper selects the camera's best mode and checks every delivered frame;
+      // here only the snapshot bounds and the one-face rule apply. Never upscale.
+      if (!frame || !isCameraSnapshotDimensions(frame.width, frame.height) || frame.faceCount !== 1) { deps.report('image_photo_quality_rejected'); return null }
       const decoded = nativeImage.createFromDataURL(frame.dataUrl)
       const size = decoded.getSize()
       if (decoded.isEmpty() || size.width !== frame.width || size.height !== frame.height) { deps.report('image_photo_decode_rejected'); return null }

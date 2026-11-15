@@ -2,7 +2,19 @@
 
 ## Current delivery
 
-**Highest-resolution path enforcement, 11-14 20:33:** native capture now refuses
+**Camera gates simplified and a daylight defect fixed, 11-15 14:37** (owner: "high resolution
+but not unnecessary gates"; [ruling](DECISIONS.md)): the helper picks the camera's best mode
+within the snapshot limit and keeps one resolution check (delivered frame = selected mode);
+Main's and the photo path's extra full-HD rejections are removed; the one-face photo rule is
+unchanged. The daylight run then showed that Raven could not answer camera questions since the
+11-14 HD change: the 359 KB picture exceeded the Realtime message limit (~256 KiB) and the send
+was refused silently (it passed at night with a small picture). Main now fits that picture
+(full size, lower JPEG quality first) and a refused send is reported and spoken. Checks at 1%:
+410 focused tests, typecheck, build, native recovery, 20 cycles, real-camera conversation 8/8
+after two retained failures. Photo path with a person still untested.
+[Evidence](docs/testing/camera-paths-highest-resolution-2026-11-14.md).
+
+**Highest-resolution path enforcement, 11-14 20:33 (partly superseded above):** native capture now refuses
 input/output below the selected maximum and never resizes snapshots; Main and
 Conversation/Studio photo validation reject sub-HD. Current camera: 1920×1080
 NV12 near 5 FPS. Fresh evidence: 296 focused tests, typechecks/build, production
@@ -34,10 +46,10 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-running (owner's START 14:01 11-15, MUSIC LOOP playing); the 20:18 11-14 build with strict HD capture
-validation is deployed and its stamp matches the committed source; speaker defaults are Jabra 80%
-in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1% (at 14:06 the
-owner's VOL keys had them at Jabra 60%, A1 45%). Products and stories: [PRD](PRD.md); open work:
+running (agent's START 14:37 11-15 after the camera work, Dormant, no loop playing); the 14:35
+11-15 build is deployed and its stamp matches the committed source; speakers at the defaults
+(Jabra 80% in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1%).
+A1 is off (battery, below). Products and stories: [PRD](PRD.md); open work:
 [TODO](TODO.md); rulings: [DECISIONS](DECISIONS.md). Previous handoff:
 [archived 11-14](docs/archive/progress-before-sound-system-2026-11-14.md).
 
@@ -52,13 +64,13 @@ nothing was recorded or heard by the agent, the TV picture was not looked at. Th
 inside its own lease was refused, so MusicLoop played ~17 s at normal level before the second
 STOP. Runbook: [Stream Deck](deploy/macos/stream-deck.md) "Edifier not listed".
 
-**A1 switched itself off, 11-15:** A1 ended its Bluetooth link at 04:24:55 from its own side
-(macOS Bluetooth log, reason 10721, read as a speaker power-off; not confirmed), after ~10 h
-connected with no music. The app logs nothing when A1 drops (gap, no marker yet). A1 linked to
-the Mac again at 13:55:44 while the app was stopped; the 13:58 START connected it in Airfoil, the
-6.5 min hold carried over the 14:01 STOP/START and A1 joined at 14:04:57 by itself. Main connects a
-listed A1 at every 10 s check, so no START is needed; a rejoin in the middle of a run has not
-been observed. If A1 has an auto-standby or runs on battery, that is the place to look.
+**A1 runs flat, 11-15:** A1 reports its battery to macOS (Bluetooth log, "Battery changed"):
+100% at 18:30 11-14, falling about 10% per 1.4 h to 30% at 03:00, link ended from A1's side at
+04:24:55 (reason 10721). It linked again at 13:55:44 at 30%, joined after its hold at 14:04:57
+and went off again at 14:08:15 while MUSIC LOOP played. So A1 is not charging; the app and
+Airfoil are not the cause. Owner: check A1's charger and cable. The app logs nothing when A1
+drops (gap, no marker yet). When A1 is on and linked, Main connects it at its 10 s check and it
+joins after the 6.5 min hold without a START; a rejoin in the middle of a run has not been observed.
 
 **Stream Deck page lost during a loop, 11-14** ([evidence](docs/testing/stream-deck-page-2026-11-14.md)):
 the main profile was marked default, and Stream Deck selects the default profile whenever
@@ -114,6 +126,9 @@ Earlier delivery, detail in the archived handoff and the linked reports:
 
 ## Last observed runtime — not a live health guarantee
 
+- 11-15 14:37:09 START after the camera work: Main/renderer ready, TV display `reason=match`,
+  route settled in 1.1 s with the Jabra and both Edifiers, no A1 (off since 14:08:15); levels
+  read back at the defaults (Jabra 80%). Owner's own STOP was at 14:18:29.
 - 11-15 14:04:57 A1 joined after its hold; Airfoil: Jabra, A1 and both Edifiers connected,
   MUSIC LOOP playing since 14:01:43 (owner). Codex's camera work committed as `090b410` after
   typecheck and its eight changed test files (202 tests) passed again.
@@ -147,8 +162,10 @@ Earlier delivery, detail in the archived handoff and the linked reports:
    display match, `net-watch` and the board adb daemon checked): still to confirm at the Neo are
    that no Stream Deck profile is marked default and the main keys show, and a conversation
    (microphone, camera markers). A1 is silent for 6.5 min after a reboot by design.
-0a. A1 (above): a marker when a Bluetooth speaker drops, and the owner's check of A1's power
-   (auto-standby, battery or charger).
+0a. A1 (above): owner checks A1's charger and cable (battery fell from 100% to off in ~10 h);
+   a marker when a Bluetooth speaker drops is still missing.
+0b. Camera: photo-reference Conversation and Studio runs with a consenting person; owner's
+   ruling on the one-face rule (two people in view are refused).
 1. VIDEO LOOP start sound and the dark TV (above): a non-Jabra recording of two VIDEO LOOP
    starts from STOP, or the owner's go-ahead for three starts at normal volume through the A1's
    microphone. No fix exists yet.

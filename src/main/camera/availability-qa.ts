@@ -41,7 +41,7 @@ export async function runCameraAvailabilityQa(input: Phase4QaInput): Promise<Pha
       const rateProbes: CameraQaRateProbe[] = []
       const advertisedFormats: CameraQaFormat[] = []
       const snapshots: { elapsedMs: number; requestMs: number; decoded: boolean; width: number; height: number }[] = []
-      const service = startCameraTracking({ executable, cameraName: '', allowDiagnosticSnapshots: true,
+      const service = startCameraTracking({ executable, cameraName: '',
         spawn: (file, args, options) => spawn(file, [...args, '--qa-observe', ...CAMERA_QA_CASES[mode],
           ...(['cycles', 'soak'].includes(check!) ? [] : ['--qa-delivery-only'])], options),
         onTarget: () => {},

@@ -2739,9 +2739,15 @@ export function createRealtimeSession(
         }
         if (frame) whenImageIdle(() => {
           if (stale()) { emitMetadata(input, 'realtime_observer_event', 'info', 'camera_result_stale', sessionGeneration, createdAt); return false }
-          session.addImage(frame.dataUrl, { triggerResponse: false })
-          transport.sendEvent({ type: 'response.create', response: { instructions: `${baseInstructions}\n\n${IMAGE_SKILL.cameraAnswer}\n\n${IMAGE_SKILL.language[replyLanguage === 'english' ? 'en' : 'zh']}`,
-            tool_choice: 'none', metadata: { mirror_image: 'camera' } } })
+          // A refused send (for example a picture larger than the connection accepts) must not be silent.
+          try {
+            session.addImage(frame.dataUrl, { triggerResponse: false })
+            transport.sendEvent({ type: 'response.create', response: { instructions: `${baseInstructions}\n\n${IMAGE_SKILL.cameraAnswer}\n\n${IMAGE_SKILL.language[replyLanguage === 'english' ? 'en' : 'zh']}`,
+              tool_choice: 'none', metadata: { mirror_image: 'camera' } } })
+          } catch {
+            emitMetadata(input, 'realtime_observer_event', 'degraded', 'camera_image_send_failed', sessionGeneration, createdAt)
+            speakVerbatim(IMAGE_SKILL.cameraUnavailable[replyLanguage === 'english' ? 'en' : 'zh'], imageCues.signal)
+          }
           return true
         })
         else speakVerbatim(IMAGE_SKILL.cameraUnavailable[replyLanguage === 'english' ? 'en' : 'zh'], imageCues.signal)

@@ -51,6 +51,7 @@ export const REALTIME_METADATA_REASONS = Object.freeze([
   'media_discovery_visitor_clue',
   'media_selection_required',
   'camera_result_stale',
+  'camera_image_send_failed',
   'memory_brief_oversized',
   'memory_brief_unacknowledged',
   'memory_brief_installed',

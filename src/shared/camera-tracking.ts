@@ -11,17 +11,14 @@ export const CAMERA_SNAPSHOT_MAX_BASE64_LENGTH = 4 * Math.ceil(CAMERA_SNAPSHOT_M
 /** UTF-8 JSON frame, including its terminating newline. */
 export const CAMERA_SNAPSHOT_MAX_MESSAGE_BYTES = 6 * 1024 * 1024
 const SNAPSHOT_DATA_URL_PREFIX = 'data:image/jpeg;base64,'
+/** A camera question's picture is one Realtime message; the connection refuses messages above
+ * about 256 KiB, so its data URL stays below that with room for the message envelope. */
+export const CAMERA_QUESTION_MAX_DATA_URL_LENGTH = 240_000
 
 export function isCameraSnapshotDimensions(width: unknown, height: unknown): boolean {
   return typeof width === 'number' && Number.isInteger(width) && width > 0 && width <= CAMERA_SNAPSHOT_MAX_DIMENSION
     && typeof height === 'number' && Number.isInteger(height) && height > 0 && height <= CAMERA_SNAPSHOT_MAX_DIMENSION
     && width * height <= CAMERA_SNAPSHOT_MAX_PIXELS
-}
-
-/** Production currently supports full-HD source pixels only, in either orientation.
- * Larger advertised maxima must be rejected by native capture, never resized. */
-export function isProductionCameraSnapshotDimensions(width: unknown, height: unknown): boolean {
-  return width === 1920 && height === 1080 || width === 1080 && height === 1920
 }
 
 export function isCameraSnapshot(value: unknown): value is CameraSnapshot {

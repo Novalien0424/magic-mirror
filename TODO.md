@@ -33,8 +33,9 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 - [ ] **USB camera long-run/reboot qualification.** The 11-14 reconnect is detected.
   Maximum-resolution 1920×1080 NV12 near 5 FPS passed a 30-minute normal-processing
   soak and production USB-recovery test. Reboot persistence, days-long operation
-  and human portrait quality remain unverified. Strict-HD validation, 20 reopen
-  cycles, Conversation and default Studio passed at 20:33; real-person photo-reference
+  and human portrait quality remain unverified. 11-15: redundant full-HD rejections removed and
+  a camera question's picture fitted to the Realtime message limit; recovery, 20 reopen
+  cycles and the daylight Conversation passed at 14:36; real-person photo-reference
   and retake runs await a consenting person ([follow-up](docs/testing/camera-paths-highest-resolution-2026-11-14.md)). Earlier minimum-mode cold-start
   and alternate-format failures remain recorded. [Current audit](docs/testing/usb-camera-audit-2026-11-14.md).
 - [ ] **Wake and voice quality.** Validate human names, corrections/spelling,

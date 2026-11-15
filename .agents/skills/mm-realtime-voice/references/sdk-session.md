@@ -138,3 +138,9 @@ Use bounded metadata reasons for unavailable transcripts and SDK failures;
   top-level `modalities` and `turnDetection` aliases are deprecated.
 - Choose focused checks for the changed contract: configured model/voice,
   interruption, item-ID mapping, fresh session/history ownership or privacy.
+- One Realtime message over the WebRTC data channel must stay below about 256 KiB: a larger
+  `addImage` throws in the renderer (11-15: a 359 KB full-HD camera picture, Raven stayed
+  silent; it had passed at night only because the dark picture was small). Main fits a camera
+  question's picture in `src/main/camera/question-image.ts` (full size, lower JPEG quality
+  first); a refused send reports `camera_image_send_failed` and speaks the camera-unavailable
+  line. Test camera questions in daylight; QA marker `PHASE4_CAMERA_CAPTURE jpeg_bytes=`.

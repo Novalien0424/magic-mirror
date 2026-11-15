@@ -177,6 +177,8 @@ export interface RegisterIpcHandlersOptions {
   readonly mediaWakeMicrophone?: (released: boolean) => unknown | PromiseLike<unknown>
   readonly searchYoutube?: import('./avatar/youtube-search').YoutubeSearch
   readonly captureCamera?: () => Promise<import('../shared/camera-tracking').CameraSnapshot | null>
+  /** Fits a camera question's picture to the Realtime connection; null when it cannot fit. */
+  readonly fitCameraQuestionImage?: (frame: import('../shared/camera-tracking').CameraSnapshot) => import('../shared/camera-tracking').CameraSnapshot | null
   readonly mediaFolders?: (request: MediaFolderCommand) => Promise<MediaFoldersView>
   readonly getFolderMedia?: (avatarId: string) => FolderMediaEntry[]
   /** Copies linked-folder media for local playback; false when it cannot be read in time. */
@@ -1864,8 +1866,10 @@ export function registerIpcHandlers(options: RegisterIpcHandlersOptions): SceneR
     let reason = 'camera_capture_session_stale'
     if (current() && imageSkill?.consumeCameraPermit({ realtimeSessionId: readProperty(identity, 'realtimeSessionId') as string,
       sessionGeneration: readProperty(identity, 'sessionGeneration') as number })) {
-      frame = await options.captureCamera?.().catch(() => null) ?? null
-      reason = frame ? 'camera_frame_captured' : 'camera_capture_unavailable'
+      const captured = await options.captureCamera?.().catch(() => null) ?? null
+      try { frame = captured && options.fitCameraQuestionImage ? options.fitCameraQuestionImage(captured) : captured } catch { frame = null }
+      reason = frame ? 'camera_frame_captured' : captured ? 'camera_question_image_oversized' : 'camera_capture_unavailable'
+      if (frame && frame !== captured) emit(telemetry, { module: 'camera', event: 'camera_capture', source: 'runtime', status: 'info', reason: 'camera_question_image_fitted' })
       if (!current()) { frame = null; reason = 'camera_capture_session_stale' }
     } else if (current()) reason = 'camera_capture_permission_required'
     emit(telemetry, { module: 'camera', event: 'camera_capture', source: 'runtime', status: frame ? 'success' : 'degraded', reason })

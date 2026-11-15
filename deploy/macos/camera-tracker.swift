@@ -10,10 +10,13 @@ import Darwin
 setvbuf(stdout, nil, _IOLBF, 0)
 let parentPID = getppid()
 
-// Highest advertised pixel count first; choose the supported rate endpoint
-// nearest 5 FPS. Prefer native NV12 only after resolution and rate agree.
+// Highest advertised pixel count within the snapshot limit first (owner 11-15:
+// the best the camera offers, no fixed size required); then the supported rate
+// endpoint nearest 5 FPS. Prefer native NV12 only after resolution and rate agree.
+// Keep the limit aligned with shared/camera-tracking.ts; snapshots are never resized.
 func preferredCameraMode(_ modes: [(Int32, Int32, UInt32, Double)]) -> (Int32, Int32, UInt32, Double)? {
-    modes.filter { $0.0 > 0 && $0.1 > 0 && $0.3.isFinite && $0.3 > 0 }.sorted { a, b in
+    modes.filter { $0.0 > 0 && $0.1 > 0 && $0.0 <= 1920 && $0.1 <= 1920
+        && Int64($0.0) * Int64($0.1) <= 1920 * 1080 && $0.3.isFinite && $0.3 > 0 }.sorted { a, b in
         let aPixels = Int64(a.0) * Int64(a.1), bPixels = Int64(b.0) * Int64(b.1)
         if aPixels != bPixels { return aPixels > bPixels }
         if abs(a.3 - 5) != abs(b.3 - 5) { return abs(a.3 - 5) < abs(b.3 - 5) }
@@ -25,14 +28,11 @@ func preferredCameraMode(_ modes: [(Int32, Int32, UInt32, Double)]) -> (Int32, I
     }.first
 }
 
-// Keep the supported production dimensions aligned with shared/camera-tracking.ts.
-func productionCameraDimensions(_ width: Int, _ height: Int) -> Bool {
-    (width == 1920 && height == 1080) || (width == 1080 && height == 1920)
-}
+// The one resolution check: the camera must deliver the mode that was selected
+// (11-14: one format reported 1080p and delivered 96x96).
 func cameraFrameDimensionsMatch(_ width: Int, _ height: Int, _ inputWidth: Int, _ inputHeight: Int,
-                                _ expectedWidth: Int, _ expectedHeight: Int, _ diagnostic: Bool) -> Bool {
+                                _ expectedWidth: Int, _ expectedHeight: Int) -> Bool {
     width == expectedWidth && height == expectedHeight && inputWidth == expectedWidth && inputHeight == expectedHeight
-        && (diagnostic || productionCameraDimensions(width, height))
 }
 
 final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -297,9 +297,8 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 }
             })
             let desired = qaObserve ? qaMode == "minimum" ? minimum : modes[qaMode ?? "vga15"] : maximum
-            guard let desired else { next.commitConfiguration(); status("camera_qa_mode_invalid"); return }
-            guard qaObserve || productionCameraDimensions(Int(desired.0), Int(desired.1)) else {
-                next.commitConfiguration(); status("camera_maximum_resolution_unsupported"); return
+            guard let desired else {
+                next.commitConfiguration(); status(qaObserve ? "camera_qa_mode_invalid" : "camera_mode_unsupported"); return
             }
             let configureAfterStart = qaObserve && CommandLine.arguments.contains("--qa-configure-after-start")
             let directRate = qaObserve ? CommandLine.arguments.first(where: { $0.hasPrefix("--qa-rate=") })?
@@ -423,7 +422,7 @@ final class CameraTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
         guard let deliveredPixels = CMSampleBufferGetImageBuffer(sampleBuffer),
               cameraFrameDimensionsMatch(CVPixelBufferGetWidth(deliveredPixels), CVPixelBufferGetHeight(deliveredPixels),
-                captureInputWidth, captureInputHeight, captureWidth, captureHeight, qaObserve) else {
+                captureInputWidth, captureInputHeight, captureWidth, captureHeight) else {
             status("camera_frame_dimensions_mismatch"); return
         }
         lastFrame = now

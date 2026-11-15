@@ -761,6 +761,19 @@ describe("RealtimeSession adapter", () => {
     expect(probe.addImage).toHaveBeenCalledOnce();
     expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
   });
+  it('reports a refused camera picture send instead of staying silent', async () => {
+    const probe = makeAdapterProbe(), sink = vi.fn();
+    probe.addImage.mockImplementation(() => { throw new TypeError('Message too large') });
+    const handle = createRealtimeSession({ ...makeSessionInput(makeSnapshot(), sink, probe), sessionGeneration: 1,
+      onCameraCapture: async () => ({ dataUrl: 'data:image/jpeg;base64,/9j/2Q==', width: 1920, height: 1080 }) });
+    const identity = { realtimeSessionId: 'session-a', sessionGeneration: 1 }
+    handle.imageEvent!({ event: 'closed', id: 'camera-a' }, identity)
+    handle.imageEvent!({ event: 'camera_approved', id: 'camera-a' }, identity)
+    await vi.waitFor(() => expect(sink).toHaveBeenCalledWith(expect.objectContaining({ status: 'degraded', reason: 'camera_image_send_failed' })), { timeout: 2500 });
+    expect(probe.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'response.create', response: expect.objectContaining({ metadata: { mirror_image: 'camera' } }) }))
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('data:image');
+    await handle.close('manual_stop');
+  });
   it.each(['new_turn', 'media_started'])('discards a camera result after %s without adding an image', async boundary => {
     const probe = makeAdapterProbe(), sink = vi.fn();
     let deliver!: (frame: any) => void;

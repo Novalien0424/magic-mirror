@@ -121,25 +121,18 @@ describe('Main camera snapshot bounds', () => {
   })
 })
 
-describe('production camera resolution', () => {
-  it.each([[96, 96], [640, 480], [1280, 720]])('rejects lower-resolution %sx%s snapshots in Main', async (width, height) => {
+describe('camera resolution', () => {
+  // The native helper selects the camera's best mode and checks each frame; Main adds no size rule.
+  it.each([[96, 96], [1280, 720], [1920, 1080]])('passes the %sx%s snapshot the helper delivered', async (width, height) => {
     const f = fixture(), worker = f.children[0]!, pending = f.service.capture()
     const { id } = JSON.parse(worker.stdin.read().toString())
     worker.stdout.write(JSON.stringify({ type: 'snapshot', id, jpeg: '/9j/2Q==', width, height }) + '\n')
-    expect(await pending).toBeNull()
-    expect(f.onStatus).toHaveBeenCalledWith('degraded', 'camera_snapshot_resolution_rejected')
+    expect(await pending).toMatchObject({ width, height })
     await f.service.stop()
   })
-  it('allows lower snapshots only with the explicit isolated-diagnostic opt-in', async () => {
-    const f = fixture({ allowDiagnosticSnapshots: true }), worker = f.children[0]!, pending = f.service.capture()
-    const { id } = JSON.parse(worker.stdin.read().toString())
-    worker.stdout.write(JSON.stringify({ type: 'snapshot', id, jpeg: '/9j/2Q==', width: 96, height: 96 }) + '\n')
-    expect(await pending).toMatchObject({ width: 96, height: 96 })
-    await f.service.stop()
-  })
-  it('fails promptly for an unsupported advertised maximum without requesting USB reset', async () => {
+  it('fails promptly when the camera offers no supported mode, without requesting USB reset', async () => {
     const f = fixture(), worker = f.children[0]!
-    worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_maximum_resolution_unsupported"}\n')
+    worker.stdout.write('{"type":"status","status":"degraded","reason":"camera_mode_unsupported"}\n')
     expect(await f.service.capture()).toBeNull()
     await vi.advanceTimersByTimeAsync(15000)
     expect(worker.stdin.read()).toBeNull()

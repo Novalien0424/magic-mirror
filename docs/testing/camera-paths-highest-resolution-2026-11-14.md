@@ -1,5 +1,43 @@
 # Highest-resolution camera paths — 2026-11-14 follow-up
 
+## 11-15 revision (owner: "high resolution but not unnecessary gates")
+
+The statements below about rejecting sub-HD images are superseded
+([ruling](../../DECISIONS.md), 2026-11-15):
+
+- The helper selects the camera's best mode within the snapshot limit (1920×1080) instead of
+  refusing every camera whose maximum is not exactly 1920×1080 (reason now
+  `camera_mode_unsupported`, only when no mode fits). The per-frame "delivered = selected"
+  check and the frozen-stream check stay; Main's and the photo path's own full-HD rejections
+  are removed. The one-face rule for photos is unchanged.
+- **Defect found by the daylight run:** a camera question's picture is one Realtime message,
+  and the connection refuses messages above about 256 KiB. The 11-14 runs passed at night with
+  a small picture; at 14:25 and 14:27 on 11-15 a 359 KB picture was refused and Raven gave no
+  answer (`raven_qa_camera_answer_settled`, twice; no marker existed). Now Main fits that
+  picture (full size, lower JPEG quality first, smaller only if needed; `camera_question_image_fitted`),
+  and a refused send is reported (`camera_image_send_failed`) and spoken. The photo used for
+  portrait art keeps the camera's full quality.
+
+| Check, 11-15 14:20–14:37, sound at 1% | Result |
+| --- | --- |
+| Typecheck; 15 camera, photo, IPC and adapter test files | Passed (410 tests) |
+| Native USB recovery on production selection | Passed, 12/12 snapshots 1920×1080 |
+| Open/capture/release, 20 cycles | Passed, 27/27 decoded 1920×1080, no resets, zero owners after release |
+| Real-camera conversation, before the fit | **Failed twice** at `camera_visual_question`; third run with the new marker: `camera_image_send_failed`, picture 358,671 bytes |
+| Real-camera conversation, with the fit | Passed 8/8; picture 353,241 bytes at 1920×1080, fitted; all four image judgments passed |
+
+[Recovery](../../.artifacts/phase4-qa/2026-11-15T06-21-09-735Z/camera-native.json)
+· [cycles](../../.artifacts/phase4-qa/2026-11-15T06-22-17-767Z/camera-availability.json)
+· [failed](../../.artifacts/phase4-qa/2026-11-15T06-24-40-870Z/raven-results.json)
+· [failed retry](../../.artifacts/phase4-qa/2026-11-15T06-26-56-916Z/raven-results.json)
+· [send refused](../../.artifacts/phase4-qa/2026-11-15T06-31-21-350Z/raven-results.json)
+· [passed](../../.artifacts/phase4-qa/2026-11-15T06-35-23-943Z/raven-results.json)
+· [logs](../../.artifacts/camera-gates-2026-11-15/).
+Recovery and cycles ran on the first 11-15 build; the helper and Main's tracker did not change
+afterwards. Not tested: a camera other than the Arducam, a picture that needs shrinking, and
+the photo path with a person (still waiting for a consenting person). Synthetic visitor speech;
+no images or transcripts retained.
+
 ## Delivery and remaining physical input
 
 The owner authorized implementation and real runs after the camera-path audit.
