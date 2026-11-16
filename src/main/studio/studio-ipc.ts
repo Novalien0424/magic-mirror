@@ -9,6 +9,7 @@ import { STUDIO_SAMPLE_ANSWERS } from '../../shared/studio-image-prompt'
 import type { MirrorModeStore } from '../mirror-mode'
 import type { ConsoleResponse } from '../../shared/console-types'
 import { buildPortraitPrompt } from './prompt-builder'
+import { cleanSticker } from './sticker-cleanup'
 import { createStudioRuntime, type KeepsakeSink, type StudioIdentity, type StudioStartSource } from './studio-runtime'
 import { deferredPrinterSkill } from './printer-skill'
 import { matchGuestNames } from './guest-names'
@@ -70,6 +71,7 @@ export function registerStudioIpc(deps: {
   const runtime = createStudioRuntime({
     provider: () => provider,
     concepts: deps.images.concepts,
+    cleanSticker,
     dispatch: command => deps.dispatch(command),
     activity: (kind, runId) => deps.activity(kind, runId),
     report: (reason, status, timingMs) => { handling?.add(reason); deps.report(reason, status ?? 'info', timingMs) },
@@ -274,8 +276,11 @@ export function registerStudioIpc(deps: {
     // A successful test picture resumes visits paused by a plan-limit or sign-in failure.
     noteImage(result)
     deps.report(result.ok ? 'studio_test_ready' : result.code, result.ok ? 'info' : 'degraded', result.elapsedMs)
+    // The Console shows the same cut-ready sticker a visit would show and print.
+    const shown = result.ok && studioPictureType(experience.studio) === 'sticker' && result.mimeType === 'image/png'
+      ? await cleanSticker(result.image).catch(() => null) : null
     return { ok: true, value: { status: await status(), test: result.ok
-      ? { ok: true, elapsedMs: result.elapsedMs, dataUrl: `data:${result.mimeType};base64,${result.image.toString('base64')}` }
+      ? { ok: true, elapsedMs: result.elapsedMs, dataUrl: `data:${result.mimeType};base64,${(shown ?? result.image).toString('base64')}` }
       : { ok: false, code: result.code, elapsedMs: result.elapsedMs } } }
   })
 

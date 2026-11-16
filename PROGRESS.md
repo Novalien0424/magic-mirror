@@ -2,6 +2,22 @@
 
 ## Current delivery
 
+**11-16 16:18 stickers cleaned for a cutter, deployed (Claude):** owner asked whether
+the stickers suit an automatic cutter, then "go ahead with the clean-up step, white
+margin is fine" ([ruling](DECISIONS.md)). Main now clears invisible dust, makes the
+body solid and grows the canvas to 8% empty space on every side; the mirror, the
+Console test picture and the printer seam get that copy. The frame and the concept
+step ask for one connected shape. Three fresh real pictures: one piece each (13
+pieces before with the same answers), dust 0, 8% space. Studio journey with the
+real camera at 1% sound **26/26**, `studio_sticker_cleaned` on the picture and on
+the change. Also fixed: `37205a4` imported `./studio-concept` without `.ts` in
+`src/shared/portrait-studio.ts`, so `run-raven-conversation-qa.mjs` crashed at
+launch; a test now loads the runners' imports under Node. Not done: a real cut (the
+cutter's model and sticker size are unknown; printing is not connected).
+[Record](docs/testing/studio-sticker-cut-2026-11-16.md). The 11-16 audit of Codex's
+Studio and camera work left three open items in [TODO](TODO.md): a Studio photo
+against the creature rule, no log line for camera faults, cutter acceptance.
+
 **11-16 13:56 minimalist symbolic style deployed:** owner requested clean modern
 shapes instead of sophisticated painterly texture/detail. Astra now uses medium
 reasoning and meaning-first direction: express spirit through behavior, posture,
@@ -123,9 +139,8 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-running (agent's START 16:32:36 11-15 after the concept-first art change, no loop playing); the
-16:30 11-15 build is deployed and matches this commit (stamp checked 11-16 13:04; Codex's Studio
-work above was committed by Claude on the owner's word, 11-16);
+running (agent's START 16:18:08 11-16 after the sticker clean-up, no loop playing); the 16:10
+11-16 build is deployed and matches this commit (stamp checked 16:18);
 speakers at the defaults
 (Jabra 80% in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1%).
 A1 joined again at 14:44:35 and 15:04:46 (below). Products and stories: [PRD](PRD.md); open work:
@@ -209,6 +224,10 @@ Earlier delivery, detail in the archived handoff and the linked reports:
   their microphone is open ([evidence](docs/testing/online-songs-2026-11-07.md)).
 
 ## Last observed runtime — not a live health guarantee
+
+- 11-16 16:18:08 START after the sticker clean-up build (owner-approved STOP 16:09:32):
+  Main/renderer ready, TV display `reason=match`, route settled in 2.4 s; levels read
+  back at the defaults (Jabra 80%, A1 65%).
 
 - 11-15 16:32:36 START after the concept-first art build: Main/renderer ready, TV display
   `reason=match`, route settled in 2.2 s. Still running 11-16 13:04; levels read back at the

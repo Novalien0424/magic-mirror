@@ -24,6 +24,13 @@ rulings; read the relevant section before older designs.
 - Images: Main's `image-provider.ts` uses owner-run ChatGPT sign-in. Never read
   `.env.chatgpt`. Stickers are the default; full pictures and name font are
   configurable. `KeepsakeSink` is a future printing seam, not a working printer.
+- Cut-ready stickers (owner 11-16): after the provider returns a sticker, Main's
+  `sticker-cleanup.ts` clears invisible dust (alpha ≤ 16), makes the body fully opaque
+  and grows the canvas, never resampling, so the subject has 8% empty space on every
+  side. The mirror, the Console test picture and the `KeepsakeSink` get that copy; a
+  change edits the provider's original (`StoredImage.source`). A picture it cannot
+  clean is kept as is with `studio_sticker_cleanup_skipped`. To judge a picture for a
+  cutter, measure alpha (dust, pieces, margins); the eye does not see the dust.
 
 ## Contracts to check
 

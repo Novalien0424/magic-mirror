@@ -23,7 +23,8 @@ export type StudioStartSource = 'visitor' | 'session_default' | 'console' | 'mod
  */
 export interface KeepsakeSink { readonly name: string; deliver(image: { bytes: Buffer; mimeType: string }): void | Promise<void> }
 
-interface StoredImage { readonly bytes: Buffer; readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp' }
+/** `source` is the provider's own picture when `bytes` is its cut-ready copy: changes edit the original. */
+interface StoredImage { readonly bytes: Buffer; readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp'; readonly source?: Buffer }
 interface Run {
   readonly id: string
   readonly identity: StudioIdentity
@@ -70,6 +71,8 @@ const reply = (status: StudioReply['status'], code: string, next?: string, candi
 export function createStudioRuntime(input: {
   provider(): PortraitImageProvider | null
   concepts: StudioConceptProvider
+  /** Cut-ready copy of a transparent picture (sticker-cleanup.ts); null keeps the provider's picture. */
+  cleanSticker?(png: Buffer): Promise<Buffer | null>
   dispatch(command: { type: 'studio_view'; view: StudioView | null } | { type: 'studio_event'; event: StudioSessionEvent; identity: StudioIdentity }): boolean
   activity(kind: 'started' | 'finished', runId: string): void
   report(reason: string, status?: 'info' | 'degraded', timingMs?: number): void
@@ -274,22 +277,29 @@ export function createStudioRuntime(input: {
       result = photo
         ? await provider.edit({ prompt: `${IMAGE_SKILL.photo}\n\n${buildPortraitPrompt({ studio: r.experience.studio, concept, name: r.name })}`, image: photo.bytes, mimeType: photo.mimeType, quality, picture, signal: abort.signal })
         : kind === 'edit' && previous
-        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, concept, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
+        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, concept, change: r.change ?? '', name: r.name }), image: previous.source ?? previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
         : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, concept, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return
     try { input.imageResult?.(result.ok ? { ok: true } : { ok: false, code: result.code }) } catch { /* diagnostics only */ }
     if (!result.ok) { fail(r, result.code, kind === 'edit'); return }
-    if (kind === 'edit' && previous?.bytes.equals(result.image)) {
+    if (kind === 'edit' && (previous?.source ?? previous?.bytes)?.equals(result.image)) {
       input.report('studio_revision_unchanged', 'degraded')
       fail(r, 'studio_provider_contract', true); return
+    }
+    // A sticker is shown and handed to the printer in its cut-ready form.
+    let cutReady: Buffer | null = null
+    if (picture === 'sticker' && input.cleanSticker) {
+      cutReady = result.mimeType === 'image/png' ? await input.cleanSticker(result.image).catch(() => null) : null
+      if (run !== r || abort.signal.aborted) return
+      input.report(cutReady ? 'studio_sticker_cleaned' : 'studio_sticker_cleanup_skipped', cutReady ? 'info' : 'degraded')
     }
     r.concept = selectedConcept
     input.report(kind === 'edit' ? 'studio_revision_ready' : 'studio_image_ready', 'info', result.elapsedMs)
     const id = randomUUID()
     if (r.imageId && kind === 'generate') images.delete(r.imageId)
     for (const key of [...images.keys()]) if (key !== r.imageId) images.delete(key)
-    images.set(id, { bytes: result.image, mimeType: result.mimeType })
+    images.set(id, cutReady ? { bytes: cutReady, mimeType: 'image/png', source: result.image } : { bytes: result.image, mimeType: result.mimeType })
     r.imageId = id
     r.revision += kind === 'edit' ? 1 : 0
     r.phase = 'reveal'

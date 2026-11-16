@@ -6,11 +6,22 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 
 ## Reliability and product gaps
 
-- [ ] **Studio transparent-edge quality (11-15).** Concept-first painterly art and
-  functional journeys are deployed, but 3/5 final live samples fail the no-pale-
-  fringe/halo check; sparse sample also has glow/tight cropping. Alpha transparency
-  is present. Improve isolation/padding without eroding fine artwork; retain failed
-  evidence and obtain owner visual acceptance. [Audit](docs/testing/studio-art-direction-plan-2026-11-15.md).
+- [ ] **Sticker cutter acceptance (11-16).** Stickers are now cleaned for a cutter
+  that traces the shape and cuts with a white margin (dust cleared, 8% empty space,
+  one connected shape asked for). Open: the cutter's model and sticker size are not
+  known, so no real cut has been made; antennae, claws and feather tips are under
+  1 mm, so cutting on the art's edge is not supported; a picture can still come back
+  in several pieces. The 11-15 pale-fringe/glow finding (3 of 5 painterly samples)
+  did not appear in six minimalist samples; owner visual acceptance is still open.
+  [Record](docs/testing/studio-sticker-cut-2026-11-16.md).
+
+- [ ] **Studio photo against the creature rule (11-16 audit).** With a camera photo
+  the image prompt asks to keep the guest's features while the concept step, which
+  is not told about the photo, picks a creature. Untested; the owner decides whether
+  the photo shapes the creature or is dropped from Studio.
+
+- [ ] **Camera faults leave no log line (11-16 audit).** Camera status reaches only
+  the Console, so past visits cannot be checked afterwards.
 
 
 - [ ] **Studio operator rescue.** Speech-failure recovery is implemented (10-31:
@@ -83,7 +94,8 @@ rulings. Historical failures remain in linked reports, even when later repaired.
   Existing phonetic retrieval is shipped; this redesign is deferred.
   [Research and acceptance](docs/testing/llm-media-catalog-design-2026-10-25.md).
 - [ ] **Physical sticker printing.** The final cue calls a deferred printer sink;
-  physical printer and delivery are not connected. [Journey](PRD.md#3-完整訪客旅程).
+  physical printer and delivery are not connected. The sink receives the cut-ready
+  sticker (11-16). [Journey](PRD.md#3-完整訪客旅程).
 
 - [ ] **Audit follow-ups not fixed on 10-31.** Hourly rollover does not wait for a
   quiet turn; a person switch/forget restarts the session silently and drops the

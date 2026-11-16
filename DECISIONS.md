@@ -1,5 +1,23 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-16 — Stickers cleaned for an automatic cutter (owner)
+
+Owner: "go ahead with the clean-up step, white margin is fine".
+
+- The target is a cutter that traces the picture's shape and cuts with a white
+  margin. The unprinted paper is that margin: no border is drawn (11-15 ruling
+  stays). Cutting on the art's edge is not supported.
+- Main cleans every Studio sticker after the provider returns it
+  (`src/main/studio/sticker-cleanup.ts`): alpha ≤ 16 becomes clear, alpha ≥ 248
+  becomes solid, and the canvas grows, never resampled, until the subject has 8%
+  empty space on every side, centred. The mirror, the Console test picture and the
+  printer seam get that copy; a change edits the provider's original.
+- A picture that cannot be cleaned is kept as it is, with
+  `studio_sticker_cleanup_skipped`.
+- The sticker frame and the concept step ask for one connected shape.
+- Conversation pictures and full pictures are not cleaned.
+  [Measurements](docs/testing/studio-sticker-cut-2026-11-16.md).
+
 ## 2026-11-16 — Minimalist art and meaning-first expression (owner, later ruling)
 
 Replace the prior sophisticated painterly style with modern minimalist symbolic

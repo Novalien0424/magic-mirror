@@ -1,4 +1,4 @@
-import { studioConceptDirectionIssue } from './studio-concept'
+import { studioConceptDirectionIssue } from './studio-concept.ts'
 /** Interactive Studio contracts (internal name: portrait studio). Dependency-free: also used by the sandboxed preloads. */
 import { speechScriptIssue } from './speech-script.ts'
 
